@@ -26,7 +26,7 @@
     "test:unit": "vitest run",
     "test:integration": "node test-harnesses/integration.mjs",
     "test:coverage-gate": "node scripts/assert-check-count.mjs",
-    "verify": "pnpm run test:unit && pnpm run build && pnpm run test:integration 2>&1 | tee /tmp/integration.log && node scripts/assert-check-count.mjs /tmp/integration.log"
+    "verify": "pnpm run build && pnpm run test:unit && pnpm run test:integration 2>&1 | tee /tmp/integration.log && node scripts/assert-check-count.mjs /tmp/integration.log"
   },
   "repository": {
     "type": "git",
