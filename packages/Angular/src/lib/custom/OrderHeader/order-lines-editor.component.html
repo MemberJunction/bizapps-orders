@@ -78,6 +78,19 @@
                     <i class="fa-solid fa-sliders" aria-hidden="true"></i>
                 </button>
 
+                <!-- An event that names each attendee sells one seat per line, so another seat is
+                     another line rather than a higher quantity. -->
+                @if (EditMode && IsSeatPerLine(line)) {
+                    <button
+                        type="button"
+                        class="mjo-ol-iconbtn"
+                        (click)="AddSeat(line)"
+                        title="Add seat"
+                        [attr.aria-label]="'Add another seat for ' + (ProductFor(line)?.Name ?? 'this event')">
+                        <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                    </button>
+                }
+
                 @if (EditMode) {
                     <button
                         type="button"

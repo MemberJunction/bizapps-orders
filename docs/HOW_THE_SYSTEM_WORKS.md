@@ -177,7 +177,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Annual billed annually = one order, deferred, recognized ratably (forward-dated JEs at booking).
 - Monthly billed monthly = one renewal Order Header per cycle (`Orders.SpawnRenewals` places Drafts at lead time; a human confirms).
 - Cancel is `Orders.CancelSubscription` (policy → reversal).
-- **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee. Capacity is **not** enforced on confirm.
+- **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee, one per line. When the event's `RequiresAttendeeInfo` is set, each seat is its own line: confirm refuses a line of that event with a quantity other than 1 or with no attendee (reversals exempt), checkout asks for one set of attendee details per ticket, and the order-lines editor holds such a line at one seat and adds another seat as another line (#590). Capacity is **not** enforced on confirm.
 
 Revenue recognition is **real forward-dated JEs written at booking**. A 12-month $1,200 subscription writes 12 × $100 Dr Deferred / Cr Revenue dated on the monthly anniversaries. Accounting's batch sweep by date is what "fires" recognition. Staged entries are never edited; corrections are reversing orders.
 

@@ -20,6 +20,7 @@ import {
     OrderHeaderEntity,
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
+    AttendeeSeatCap,
     ClampLineQuantity,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
@@ -295,12 +296,43 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public QuantityAtMax(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        const max = this.ProductFor(line)?.MaxQuantityPerLine;
+        const max = this.seatCap(this.ProductFor(line));
         return max != null && max > 0 && Number(line.Quantity ?? 0) >= max;
     }
 
+    /**
+     * True when the line holds the one unit it may. A line ABOVE that cap — a draft saved before an
+     * event required attendees — keeps its stepper so it can be brought down to one.
+     */
     public QuantityCappedToOne(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return this.ProductFor(line)?.MaxQuantityPerLine === 1;
+        return this.seatCap(this.ProductFor(line)) === 1 && Number(line.Quantity ?? 0) <= 1;
+    }
+
+    /**
+     * True when the line's product is an event naming each attendee: one seat per line, so a second
+     * seat is a second line (#590).
+     */
+    public IsSeatPerLine(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !!this.ProductFor(line)?.RequiresAttendeeInfo;
+    }
+
+    /**
+     * Another seat for the same event: a new line of the same product, with its own attendee to fill
+     * in. The attendee is not copied — each seat names a different person — and the price is resolved
+     * for the new line like any other.
+     */
+    public async AddSeat(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this.EditMode) return;
+        const product = this.ProductFor(line);
+        if (!product) return;
+        if (product.OrderLineExtensionEntity) {
+            await this.addExtendedLine(product);
+        } else {
+            await this.addPlainLine(product);
+        }
+        this.schedulePricing();
+        void this.refreshAllApplicable();
+        this.cdr.detectChanges();
     }
 
     /* ── Term start (D-TERMSTART) ───────────────────────────────────────────
@@ -1229,7 +1261,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this._order) return;
         const line = await this._order.Lines.Create();
         line.ProductID = product.ID;
-        line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+        line.Quantity = ClampLineQuantity(1, this.seatCap(product));
     }
 
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
@@ -1237,7 +1269,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         CachedExtensionEntityInfo(this.metadata, product.OrderLineExtensionEntity);
         const line = (await this._order.Lines.Create()) as OrderLineEntity;
         line.ProductID = product.ID;
-        line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
+        line.Quantity = ClampLineQuantity(1, this.seatCap(product));
         await line.EnsureISAChild(product.OrderLineExtensionEntity);
         this.expandedLineIds.add(line.ID);
     }
@@ -1270,7 +1302,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {
-        return ClampLineQuantity(quantity, this.ProductFor(line)?.MaxQuantityPerLine);
+        return ClampLineQuantity(quantity, this.seatCap(this.ProductFor(line)));
+    }
+
+    /** The most a line of `product` may hold: one seat for an event naming attendees, else its own cap. */
+    private seatCap(product: MJOProductOption | undefined): number | null {
+        return AttendeeSeatCap(!!product?.RequiresAttendeeInfo, product?.MaxQuantityPerLine);
     }
 
     private extensionEntityName(line: mjBizAppsOrdersOrderLineEntity): string {

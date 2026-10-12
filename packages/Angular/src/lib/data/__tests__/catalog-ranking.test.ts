@@ -17,6 +17,7 @@ function option(partial: Partial<MJOProductOption> & { ID: string; Name: string 
         Taxable: false,
         MaxQuantityPerLine: null,
         SubscriptionTypeID: null,
+        RequiresAttendeeInfo: false,
         ...partial,
     };
 }

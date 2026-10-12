@@ -53,6 +53,7 @@ import {
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
 import { EscapeText } from './sql-guards.js';
+import { CheckoutAttendeeShortfall } from './AttendeeSeatGate.js';
 import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } from './CheckoutPrePurchaseCheck.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
@@ -2089,6 +2090,24 @@ export class CheckoutSessionService {
                         SessionID: sessionID,
                         Status: 'Open'
                     };
+                }
+
+                // AN EVENT THAT NAMES EVERY ATTENDEE NEEDS ONE SET OF DETAILS PER SEAT (#590). Each set
+                // becomes a line of quantity 1 below; the confirm refuses anything else, so the buyer is
+                // told here, before anything is written, rather than by the confirm.
+                if (inputLine.ProductID) {
+                    const attendeeRefusal = await CheckoutAttendeeShortfall(
+                        inputLine.ProductID,
+                        inputLine.Quantity,
+                        unitPayloads.length,
+                        Metadata.Provider,
+                        contextUser,
+                    );
+                    if (attendeeRefusal) {
+                        await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                        session.Status = 'Open';
+                        return { Success: false, ErrorMessage: attendeeRefusal, SessionID: sessionID, Status: 'Open' };
+                    }
                 }
 
                 if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {

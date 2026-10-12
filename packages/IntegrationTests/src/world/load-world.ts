@@ -595,7 +595,7 @@ async function loadEventProducts(ctx: IntegrationCheckContext, world: WorldState
             EventEndsAt: new Date(row.EventEndsAt),
             VenueName: row.VenueName,
             Capacity: Number(row.Capacity),
-            RequiresAttendeeInfo: true,
+            RequiresAttendeeInfo: row.RequiresAttendeeInfo === '1',
             CompanyID: company.ID,
             ProductTypeID: typeID,
             ProductCategoryID: catID,

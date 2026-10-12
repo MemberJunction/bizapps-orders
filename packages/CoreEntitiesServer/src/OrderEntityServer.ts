@@ -49,6 +49,7 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    mjBizAppsOrdersEventOrderLineEntity,
     mjBizAppsOrdersOrderCheckoutAnswerEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
@@ -80,6 +81,7 @@ import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
+import { FindAttendeeShortfalls } from './AttendeeSeatGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
@@ -562,6 +564,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
+
+        // NO CONFIRM OF AN EVENT SEAT WITHOUT ITS ATTENDEE (#590), refused here for the same reason.
+        if (booking && !(await this.passesAttendeeGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -1144,6 +1149,51 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ),
         );
         return false;
+    }
+
+    /**
+     * Refuse the confirm while a line for an event that requires attendee information is not one seat
+     * naming its attendee (#590). See `AttendeeSeatGate`.
+     *
+     * The lines are loaded first when the order was saved and its collection never was: a form that
+     * saved the draft and then confirmed reloads the header only, and judging an empty collection
+     * would wave through every seat on disk. Booking loads them anyway; this only does it sooner.
+     */
+    private async passesAttendeeGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+
+        const problems = await FindAttendeeShortfalls(
+            this.Lines.Items.map((line) => ({
+                ID: line.ID,
+                IsSaved: line.IsSaved,
+                LineNumber: line.LineNumber ?? null,
+                ProductID: line.ProductID ?? null,
+                Quantity: line.Quantity,
+                ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+                AttendeePersonID: this.attendeeInMemory(line),
+            })),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
+        if (problems.length === 0) return true;
+
+        this.RegisterResultHistoryEntry(
+            this.buildFailureResult(
+                new Error(`Order ${this.OrderNumber ?? ''} cannot be confirmed: ${problems.join('; ')}.`),
+            ),
+        );
+        return false;
+    }
+
+    /**
+     * The attendee on the line's `EventOrderLine` held in memory, or `undefined` when none is. The
+     * extension is the line's IS-A child, so it is found at the leaf of the line's chain.
+     */
+    private attendeeInMemory(line: mjBizAppsOrdersOrderLineEntity): string | null | undefined {
+        const leaf = line.LeafEntity;
+        return leaf instanceof mjBizAppsOrdersEventOrderLineEntity ? (leaf.PersonID ?? null) : undefined;
     }
 
     /**

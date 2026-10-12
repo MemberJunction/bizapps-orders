@@ -285,6 +285,7 @@ In `CheckoutSessionService.CompleteCheckout`:
   - Line 1: `Quantity = 1`, `Description = "Jane Doe (jane@example.com)"` ➔ `EventOrderLine` (`PersonID` = Jane's Person, `DietaryPreferences = Vegan`)
   - Line 2: `Quantity = 1`, `Description = "John Smith (john@example.com)"` ➔ `EventOrderLine` (`PersonID` = John's Person, `DietaryPreferences = None`)
 - All lines and companion records are saved atomically within the order transaction.
+- When the product is an event whose `RequiresAttendeeInfo` is set, the line must carry one set of attendee details per ticket. Otherwise completion refuses it before anything is written ("Enter the attendee for each of the 3 tickets to …") and the session returns to `Open`; the order's confirm refuses the same case for any other caller (#590).
 
 ---
 

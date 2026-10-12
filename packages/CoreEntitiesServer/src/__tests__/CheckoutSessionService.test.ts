@@ -337,6 +337,15 @@ const describeMocks = vi.hoisted(() => ({
     mockSendOrderDescription: vi.fn(),
 }));
 
+// The attendee rule's own reads are tested in AttendeeSeatGate.test.ts; here only its answer matters.
+const attendeeMocks = vi.hoisted(() => ({
+    mockAttendeeShortfall: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock('../AttendeeSeatGate.js', () => ({
+    CheckoutAttendeeShortfall: (...args: unknown[]) => attendeeMocks.mockAttendeeShortfall(...args),
+}));
+
 vi.mock('../IntentDescription.js', () => ({
     DescribeCheckoutSnapshot: (...args: unknown[]) => describeMocks.mockDescribeCheckoutSnapshot(...args),
     SendOrderDescriptionToGateway: (...args: unknown[]) => describeMocks.mockSendOrderDescription(...args),
@@ -1829,6 +1838,38 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(mocks.mockOrderInstance.Lines.Items).toHaveLength(1);
             expect(mocks.mockOrderInstance.Lines.Items[0].Quantity).toBe(3);
+        });
+
+        it('asks the attendee rule with the line\'s quantity and its attendee sets (#590)', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 3, ExtensionFields: { DietaryPreferences: 'Vegetarian' } }]
+            });
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perLine' });
+            mocks.mockProductInstance.MaxQuantityPerLine = null;
+
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+
+            expect(attendeeMocks.mockAttendeeShortfall).toHaveBeenCalledWith('prod-1', 3, 1, expect.anything(), undefined);
+        });
+
+        it('refuses an event line missing attendees before writing anything, and unlatches the session (#590)', async () => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 3 }]
+            });
+            attendeeMocks.mockAttendeeShortfall.mockResolvedValueOnce(
+                'Enter the attendee for each of the 3 tickets to Annual Summit (attendees were given for 0).',
+            );
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toBe('Enter the attendee for each of the 3 tickets to Annual Summit (attendees were given for 0).');
+            expect(mocks.mockOrderInstance.Lines.Items).toHaveLength(0);
         });
 
         it('rejects invalid or out-of-range quantities in CompleteCheckout and unlatches session to Open', async () => {

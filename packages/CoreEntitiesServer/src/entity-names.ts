@@ -58,3 +58,9 @@ export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 /** Subscription families — the bands of one subscription offering, per company (golive #276). */
 export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';
+
+/** Event products — the IS-A child of Product carrying the event's dates and attendee rule. */
+export const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+/** Event order lines — the IS-A child of OrderLine naming the line's attendee. */
+export const EVENT_ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Event Order Lines';

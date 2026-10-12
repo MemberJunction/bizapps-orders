@@ -1,5 +1,5 @@
 /**
- * events.checks.ts — the `events` bundle (EV1–EV10).
+ * events.checks.ts — the `events` bundle (EV1–EV13).
  *
  * WHAT AN EVENT IS HERE
  * A ticket sold in advance for something that happens on a fixed future date. The money arrives now
@@ -37,6 +37,7 @@ import {
 } from "@memberjunction/testing-integration";
 import {
   ACCT_SCHEMA,
+  COMMON_SCHEMA,
   CreateOrdersFixture,
   CreateProductPrice,
   createViaEntity,
@@ -47,8 +48,10 @@ import {
   TxOne,
   TxQuery,
 } from "../fixture.js";
-import { EVENT_ORDER_LINE_ENTITY, EVENT_PRODUCT_ENTITY } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { EVENT_ORDER_LINE_ENTITY, EVENT_PRODUCT_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
+import { Metadata } from "@memberjunction/core";
 
 const AR_CODE = "11201";
 const DEFERRED_CODE = "21301";
@@ -111,6 +114,35 @@ const lineServicePeriod = (ctx: IntegrationCheckContext, orderID: string) =>
     `SELECT TOP 1 ID, ServicePeriodStart, ServicePeriodEnd
        FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
   );
+
+/**
+ * An event of this run's own that names every attendee (#590). The shared catalog's events do not, so
+ * the date and revenue checks above sell them without attendees; these checks need the rule on.
+ */
+async function createAttendeeEvent(ctx: IntegrationCheckContext): Promise<string> {
+  const f = Fx();
+  const catA = await TxOne<{ ID: string }>(
+    ctx,
+    `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID='${f.CoA.ID}'`,
+  );
+  const productID = await createViaEntity(ctx, EVENT_PRODUCT_ENTITY, {
+    EventStartsAt: "2027-03-10T15:00:00Z",
+    EventEndsAt: "2027-03-10T22:00:00Z",
+    RequiresAttendeeInfo: true,
+    CompanyID: f.CoA.ID,
+    ProductTypeID: f.ProductTypeIDs.Event,
+    ProductCategoryID: catA.ID,
+    Name: `${f.Run} Named Seat Workshop`,
+    Status: "Active",
+    RevenueRecognitionTypeID: f.RevRecTypeIDs.get("AllBackEnd"),
+    IsTaxable: 0,
+  });
+  await CreateProductPrice(ctx, productID, 200);
+  return productID;
+}
+
+/** How many journal entries an order's lines caused: none when its confirm was refused. */
+const entryCount = async (ctx: IntegrationCheckContext, orderID: string) => (await entriesForOrder(ctx, orderID)).length;
 
 export const EventChecks: NamedCheck[] = [
   {
@@ -412,6 +444,91 @@ export const EventChecks: NamedCheck[] = [
           -300,
           "Co B earns its 300",
         );
+      }),
+  },
+  {
+    Id: "events.EV11",
+    Name: "EV11: an event naming each attendee refuses several seats on one line (#590)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const productID = await createAttendeeEvent(ctx);
+
+        // An attendee is named, but the line is for three seats: two of them name nobody.
+        const result = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [{ ProductID: productID, Quantity: 3, UnitPrice: 200, AttendeePersonID: f.Customers.PersonID }],
+        });
+
+        Assert(!result.Saved, "three seats on one line must not confirm");
+        Assert(/is for 3 seats/.test(result.Message), `the refusal names the seats; got: ${result.Message}`);
+        if (result.Order.IsSaved) AssertEqual(await entryCount(ctx, result.Order.ID as string), 0, "nothing booked");
+      }),
+  },
+  {
+    Id: "events.EV12",
+    Name: "EV12: an event naming each attendee refuses a seat with no attendee (#590)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const productID = await createAttendeeEvent(ctx);
+
+        const result = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [{ ProductID: productID, Quantity: 1, UnitPrice: 200 }],
+        });
+
+        Assert(!result.Saved, "a seat naming nobody must not confirm");
+        Assert(/has no attendee/.test(result.Message), `the refusal says the attendee is missing; got: ${result.Message}`);
+      }),
+  },
+  {
+    Id: "events.EV13",
+    Name: "EV13: one line per seat, each naming its attendee, confirms — also from a saved draft (#590)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const productID = await createAttendeeEvent(ctx);
+        const otherPerson = await TxOne<{ ID: string }>(
+          ctx,
+          `SELECT TOP 1 ID FROM ${COMMON_SCHEMA}.Person WHERE ID <> '${f.Customers.PersonID}'`,
+        );
+
+        // In one save: two seats, two lines, two attendees.
+        const direct = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [
+            { ProductID: productID, Quantity: 1, UnitPrice: 200, AttendeePersonID: f.Customers.PersonID },
+            { ProductID: productID, Quantity: 1, UnitPrice: 200, AttendeePersonID: otherPerson.ID },
+          ],
+        });
+        Assert(direct.Saved, `confirm failed: ${direct.Message}`);
+        const attendees = await TxOne<{ N: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.EventOrderLine e
+             JOIN ${ORDERS_SCHEMA}.OrderLine l ON l.ID = e.ID
+            WHERE l.OrderHeaderID = '${direct.Order.ID}'`,
+        );
+        AssertEqual(Number(attendees.N), 2, "one attendee row per seat");
+
+        // From a saved draft, confirmed through a fresh object that holds the header only: the gate
+        // finds the attendee on disk rather than refusing a line it never loaded.
+        const draft = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [{ ProductID: productID, Quantity: 1, UnitPrice: 200, AttendeePersonID: f.Customers.PersonID }],
+        });
+        Assert(await draft.Order.Save(), `draft save failed: ${draft.Order.LatestResult?.CompleteMessage}`);
+        const reloaded = await new Metadata().GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await reloaded.Load(draft.Order.ID as string), "draft reloads");
+        reloaded.Status = "Confirmed";
+        Assert(await reloaded.Save(), `confirm of the saved draft failed: ${reloaded.LatestResult?.CompleteMessage}`);
       }),
   },
 ];

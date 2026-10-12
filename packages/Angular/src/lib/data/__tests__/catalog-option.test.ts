@@ -26,6 +26,26 @@ describe('CatalogOptionFrom', () => {
         expect(option.Taxable).toBe(true);
         expect(option.MaxQuantityPerLine).toBe(1);
         expect(option.CompanyID).toBe('co-1');
+        expect(option.RequiresAttendeeInfo).toBe(false);
+    });
+
+    it('carries the event row\'s attendee rule (#590)', () => {
+        const product = {
+            ID: 'prod-1',
+            Name: 'Annual Summit Ticket',
+            SKU: 'EVT-SUMMIT',
+            ProductType: 'Event',
+            ProductTypeID: 'type-event',
+            CompanyID: 'co-1',
+            Company: 'Meridian',
+            IsTaxable: true,
+            MaxQuantityPerLine: null,
+            SubscriptionTypeID: null,
+        };
+        const type = { OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines' };
+
+        expect(CatalogOptionFrom(product, type, 450, { RequiresAttendeeInfo: true }).RequiresAttendeeInfo).toBe(true);
+        expect(CatalogOptionFrom(product, type, 450, { RequiresAttendeeInfo: false }).RequiresAttendeeInfo).toBe(false);
     });
 
     it('leaves OrderLineExtensionEntity null when the type is missing', () => {

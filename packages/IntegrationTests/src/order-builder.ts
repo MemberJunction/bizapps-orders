@@ -12,13 +12,13 @@ import type {
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersPaymentDetailEntity,
 } from '@mj-biz-apps/orders-entities';
-import { AsDateValue, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, TodayAsDateValue, mjBizAppsOrdersEventOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import type {
     ManualDiscountRequest,
     OrderEntityServer,
     RequestedCharge,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY, SALES_AUTHORITY_ENTITY } from './entity-names.js';
+import { EVENT_ORDER_LINE_ENTITY, ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY, SALES_AUTHORITY_ENTITY } from './entity-names.js';
 import { Fx } from './fixture.js';
 import type { BaseEntity, IMetadataProvider, UserInfo } from '@memberjunction/core';
 
@@ -67,6 +67,11 @@ export interface LineSpec {
      * graph. A conditional Product Entitlement grants only on a line carrying its choice.
      */
     Choices?: Array<{ GroupKey: string; OptionValue: string; GroupLabel?: string; OptionLabel?: string }>;
+    /**
+     * The attendee on an event line (#590): the line gets its `EventOrderLine` IS-A child naming this
+     * Person, written in the same save as the line.
+     */
+    AttendeePersonID?: string;
 }
 
 export interface OrderSpec {
@@ -247,6 +252,13 @@ export async function BuildOrder(
             row.GroupLabel = c.GroupLabel ?? c.GroupKey;
             row.OptionValue = c.OptionValue;
             row.OptionLabel = c.OptionLabel ?? c.OptionValue;
+        }
+        if (ls.AttendeePersonID) {
+            const attendee = await line.EnsureISAChild(EVENT_ORDER_LINE_ENTITY);
+            if (!(attendee instanceof mjBizAppsOrdersEventOrderLineEntity)) {
+                throw new Error(`Line for product ${ls.ProductID} could not take an Event Order Line`);
+            }
+            attendee.PersonID = ls.AttendeePersonID;
         }
         lines.push(line);
     }

@@ -358,7 +358,7 @@ JOIN __mj_BizAppsOrders.Product p ON p.ID=s.ProductID WHERE p.Name='ADV Monthly 
 **Seam:** event capacity, attendee capture, and back-end recognition.
 **Build:** ADV Tiny Event × **5** (EventProduct: capacity **1**, `RequiresAttendeeInfo = 1`, 2026-09-15 09:00 → 17:00).
 **Expected:**
-- Confirm **SUCCEEDS** at qty 5 against capacity 1 — capacity is never enforced.
+- Confirm **SUCCEEDS** at qty 5 against capacity 1 — capacity is never enforced. *(Since #590 it is refused instead, for the attendee rule below; set `RequiresAttendeeInfo = 0` to see the capacity gap on its own.)*
 - Line `ServicePeriodStart` = 2026-09-15, `ServicePeriodEnd` = 2026-09-15 (stamped from the event).
 - **1 booking JE**: Dr AR **125.00** / Cr **Deferred Revenue** 125.00.
 - **1 `RevenueRecognition` JE** dated **2026-09-15** (the event end): Dr Deferred Revenue 125.00 / Cr Sales 125.00. Exactly one — `AllBackEnd` produces a single slice.
@@ -408,7 +408,7 @@ held up under all of it. Everything below is a DOMAIN failure the ledger cannot 
 | C8 | **Flat pricing bills the wrong amount at qty > 1.** Under-bills at qty 3 (99.99), **over**-bills at qty 7 (**100.03**) for a flat-100 item. `ComputeAmount` returns 100.00 correctly; `PriceResolver` then stores a rounded unit price and the line rebuilds `qty × unit`, discarding the correct `ExtendedAmount`. | ORD-000029 (99.99), ORD-000040 (100.03) | **Fixed** for the amount billed and booked. `LineGross` in `packages/Entities/src/pricing/PricingBehavior.ts` uses the rule's exact extended amount for the line total and the charge and tax base. Test: `packages/Entities/src/__tests__/line-gross.test.ts`. The invoice still lists the line at `Quantity × UnitPrice` (`ListAmountOf` in `packages/CoreEntitiesServer/src/InvoiceBehavior.ts`): 99.99 at qty 3, which prints a 0.01 `Adjustment` row, and 100.03 at qty 7, which prints a 0.03 `Discount` row. |
 | C24b | **A product available from 2030-01-01 sold today**, at 85.00. | ORD-000052 | **Fixed when the engine prices the line; no test yet.** `assertProductSellable` in `packages/Entities/src/pricing/OrderPricingService.ts` refuses a line when the order's date is outside `AvailableFrom` / `AvailableTo`, or the product is not `Active`. It runs only for a line with no stated `UnitPrice`, so a hand-priced line of the same product still sells. |
 | C26 | **A product whose availability window closed 2021-12-31 sold today**, at 80.00. | ORD-000054 | **Fixed when the engine prices the line; no test yet.** Same check and same gap as C24b. |
-| C25 | **An event with `Capacity = 1` sold 5 seats** — and `RequiresAttendeeInfo` is true with no attendee rows. | ORD-000053 | **Open: #33.** Capacity is deliberately not enforced until there is a seat count or a reservation model (`docs/HOW_THE_SYSTEM_WORKS.md` §13, `plans/archive/bizapps-orders-master.md` §21b). `RequiresAttendeeInfo` is not enforced either: the product form edits it, and no order code reads it. |
+| C25 | **An event with `Capacity = 1` sold 5 seats** — and `RequiresAttendeeInfo` is true with no attendee rows. | ORD-000053 | **Capacity open: #33.** Capacity is deliberately not enforced until there is a seat count or a reservation model (`docs/HOW_THE_SYSTEM_WORKS.md` §13, `plans/archive/bizapps-orders-master.md` §21b). **Attendees fixed (#590):** an event with `RequiresAttendeeInfo` sells one seat per line, and confirm refuses a line of it with a quantity other than 1 or no `EventOrderLine` (`AttendeeSeatGate`). |
 | C18 | **A subscription bought with quantity 10 records no seat count.** The line says 10 and bills 10,000; the subscription is one coverage window with no notion of how many seats it covers. | ORD-000049 → SUB-000007 | **Open.** `Subscription` and `SubscriptionTerm` still have no quantity column. The decision it waits on is in `plans/archive/bizapps-orders-master.md` §21c. |
 
 The availability pair (C24b/C26) is one gap, not two: `Status = 'Discontinued'` **is**
@@ -475,7 +475,7 @@ case probes, on ORD-WORLD data rather than the case's own numbers.
 | C20 | `order-booking.OB2` | Each entry books in its line's company, with two companies rather than three. |
 | C21 | `intercompany.IC2`, `intercompany.IC3`, `intercompany.IC6`, `intercompany.IC5` | IC2 and IC3 are the control, IC6 the partial payment. IC5 targets the missing pair, but its company has no GL links in ORD-WORLD, so the confirm is refused before any allocation. |
 | C23 | `order-booking.OB9`, `order-booking.OB7`, `order-booking.OB8` | OB9 is case (a); OB7 and OB8 are case (b): a good line beside an unlinked company's line is refused and books nothing. |
-| C25 | `events.EV1`, `events.EV3`, `events.EV8` | Dates from the event, one release on its end date, and quantity scaling the deferral. Not capacity or attendee capture. |
+| C25 | `events.EV1`, `events.EV3`, `events.EV8`, `events.EV11`–`EV13` | Dates from the event, one release on its end date, and quantity scaling the deferral; EV11–EV13 refuse several seats on a line and a seat with no attendee, and confirm one line per seat. Not capacity. |
 | C26 | `order-booking.OB14` | A back-dated order keeps the date it states; the entry's date and its fiscal-year numbering are not checked. |
 
 No integration check covers C4, C5, C7, C8, C9, C15, C18, C22 or C24, nor two lines of one
