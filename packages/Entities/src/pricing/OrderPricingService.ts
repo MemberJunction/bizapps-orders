@@ -45,16 +45,7 @@ import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
-import { AllocateProRata, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
-/**
- * The one thing this walk needs from the SERVER line subclass: somewhere to record the extended
- * amount it resolved.
- *
- * Declared structurally rather than imported, because this file runs on both tiers now and the server
- * subclass exists on only one of them. A nominal import would drag the whole server package into the
- * browser's compile for a single optional property.
- */
-type CarriesResolvedExtendedAmount = { ResolvedExtendedAmount?: number | null };
+import { AllocateProRata, DropStaleExtendedAmount, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     AuthorizeManualDiscount,
@@ -231,6 +222,10 @@ export class OrderPricingService {
         };
 
         for (const line of ctx.Lines) {
+            // Before anything reads a line's stored extended amount — the charge and promotion bases
+            // below read it for lines this walk does not re-price — drop one the line has been edited
+            // past. A line re-priced here gets a fresh figure from `applyResolvedPrice`.
+            DropStaleExtendedAmount(line);
             if (skipPricingFor?.has(line)) continue;
             // Not for negative quantities: a negative line with no origin is refused by the line's
             // own validation, which names ReversesOrderLineID and says what would make it legal.
@@ -271,7 +266,7 @@ export class OrderPricingService {
         for (let i = 0; i < this.ctx.Lines.length; i++) {
             const line = this.ctx.Lines[i];
             const product = await this.loadProductForPricing(line.ProductID);
-            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            const gross = LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), this.resolvedExtendedFor(line));
             const net = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
             lines.push({
                 // Positional key: the real ID does not exist yet, and the writer maps it back by index.
@@ -631,13 +626,11 @@ export class OrderPricingService {
 
         line.UnitPrice = resolved.UnitPrice;
         line.ProductPriceID = resolved.ProductPriceID;
-        // The line computes its own totals in a hook outside this class, so it needs the
-        // exact figure too — otherwise it would re-derive quantity × a rounded unit rate
-        // and disagree with the base computed here.
-        // Set through the structural type: on the server this lands on `OrderLineEntityServer` and is
-        // read back by its own arithmetic; in the browser it is an ordinary property nobody reads, and
-        // the pricing answer is identical either way.
-        (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
+        // STORED, not just used. The line computes its own totals in a hook outside this class, and
+        // the invoice, the journal entry and any later save read the line back from the database;
+        // each of them would otherwise re-derive quantity × a rounded unit rate and disagree with
+        // the base computed here by a penny (#579).
+        line.ExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
         this.out.EngineDefaults.set(line, resolved);
     }
@@ -942,11 +935,13 @@ export class OrderPricingService {
     /**
      * The exact extended amount a price rule computed for this line, if one did.
      *
-     * `_priceComponents` is populated by the pricing pass in this same save, so this
-     * is the authority while the line is still in flight; the line itself carries the
-     * same figure for its own totals hook, which runs outside this class.
+     * `PriceComponents` is populated by the pricing pass in this same walk, so it is the
+     * authority for a line priced now. A line priced on an earlier save carries the figure
+     * it was priced with in `ExtendedAmount`, already cleared by `DropStaleExtendedAmount` if
+     * the line has since been edited past it. When promotions are decided
+     * outside a full walk there are no price components, and only the stored figure is there.
      */
     private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
-        return this.out.PriceComponents.get(line)?.ExtendedAmount ?? null;
+        return this.out?.PriceComponents?.get(line)?.ExtendedAmount ?? line.ExtendedAmount ?? null;
     }
 }

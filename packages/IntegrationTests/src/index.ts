@@ -22,7 +22,7 @@
  *   payment-ledger       PL1–PL12  the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
  *   line-subscriber      LS1–LS8   per-line ship-to and BenefitModel dedupe scope (D61/D62)
  *   account-credit       AC1–AC11  the allocation invariant, over-payment, credit as tender (D68)
- *   pricing              PC1–PC19  price resolution, the resolver walk, and the dry run (D69)
+ *   pricing              PC1–PC21  price resolution, the resolver walk, and the dry run (D69)
  *   promotions           PR1–PR15  offers, codes, stacking, allocation, authorized manual discounts (D70)
  *   charges              CH1–CH12  shipping, handling and TAX as one mechanism (D71)
  *   tax                  TX1–TX15  rate resolution by address, nexus, taxability and exemptions (D73)

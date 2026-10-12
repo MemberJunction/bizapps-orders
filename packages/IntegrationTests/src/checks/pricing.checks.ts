@@ -20,7 +20,7 @@
  *   DOC:  plans/archive/pricing-charges-and-promotions.md
  */
 import { randomUUID } from "crypto";
-import { BaseRemotableOperation } from "@memberjunction/core";
+import { BaseRemotableOperation, Metadata } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import {
   Assert,
@@ -43,14 +43,16 @@ import {
 } from "../fixture.js";
 import { FindRows, Quote } from "../world/entity-io.js";
 import {
+  ORDER_HEADER_ENTITY,
   PRICE_LIST_ASSIGNMENT_ENTITY,
   PRICE_LIST_ENTITY,
   PRICE_TIER_ENTITY,
   PRODUCT_ENTITY,
   PRODUCT_PRICE_ENTITY,
 } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import type { mjBizAppsOrdersProductPriceEntity } from "@mj-biz-apps/orders-entities";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 interface PreviewOutput {
   Success: boolean;
@@ -264,6 +266,12 @@ const lineOf = (ctx: IntegrationCheckContext, orderID: string) =>
     ctx,
     `SELECT TOP 1 ID, UnitPrice, LineTotalGross, ProductPriceID
        FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
+  );
+
+const extendedOf = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxOne<{ ExtendedAmount: number | null; LineTotalNet: number }>(
+    ctx,
+    `SELECT TOP 1 ExtendedAmount, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
   );
 
 async function preview(
@@ -684,6 +692,52 @@ export const PricingChecks: NamedCheck[] = [
         // is legitimate.
         const backDated = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 80, orderDate: daysFromToday(-3) });
         Assert(backDated.Saved, `an order dated inside the window should book: ${backDated.Message}`);
+      }),
+  },
+  {
+    Id: "pricing.PC20",
+    Name: "PC20: a Flat price stores the rule's figure, and the line totals the flat amount at any quantity",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // 100/3 → 33.33 → 99.99 and 100/7 → 14.29 → 100.03 when re-multiplied (#579).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        for (const qty of [3, 7]) {
+          const order = await confirmUnpriced(ctx, f.Products.WidgetA, qty);
+          Assert(order.Saved, `confirm failed at qty ${qty}: ${order.Message}`);
+          const line = await extendedOf(ctx, order.Order.ID as string);
+          AssertEqual(Number(line.ExtendedAmount), 100, `the rule's figure is stored at qty ${qty}`);
+          AssertEqual(Number(line.LineTotalNet), 100, `the line totals the flat amount at qty ${qty}`);
+        }
+      }),
+  },
+  {
+    Id: "pricing.PC21",
+    Name: "PC21: a Flat-priced draft reloaded and confirmed keeps the flat amount",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // A reloaded line has a unit price, so pricing treats it as stated and does not run the rule
+        // again. Before the figure was stored, the line then recomputed 3 × 33.33 = 99.99 (#579).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 3 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        const orderID = built.Order.ID as string;
+
+        const fresh = await new Metadata().GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await fresh.Load(orderID), "the draft did not reload");
+        fresh.Status = "Confirmed";
+        Assert(await fresh.Save(), `confirm failed: ${fresh.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const line = await extendedOf(ctx, orderID);
+        AssertEqual(Number(line.ExtendedAmount), 100, "the figure survived the reload");
+        AssertEqual(Number(line.LineTotalNet), 100, "the confirmed line still totals 100.00, not 99.99");
       }),
   },
 ];
