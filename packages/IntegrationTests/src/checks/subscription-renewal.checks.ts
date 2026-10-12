@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR21).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR31).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -34,9 +34,8 @@
  *   SR18  a subscription renews again at the end of the term its first renewal booked
  *   SR19  a renewal drafted by hand for this cycle holds the job off
  *   SR20  a voided renewal order does not hold the job off
- *   SR21  cancelling after the renewal is booked and invoiced reverses the renewal in full: the
- *         reversal points at the renewal order, and its credit memo takes the invoiced amount
- *         back off AR (#406)
+ *   SR21  cancelling a NoRefund subscription after the renewal is booked and invoiced cancels the
+ *         renewal and keeps its money: no reversal order, and the invoiced amount stays on AR (#560)
  *
  *   What a renewal is priced at (golive #304):
  *   SR22  a first-term discount lapses: the renewal is at the undiscounted price with no discount
@@ -51,6 +50,8 @@
  *   SR28  a successor that is not Active is not renewed onto
  *   SR29  a renewal priced below today's list books without a concession hold
  *   SR30  a monthly term that crosses no anniversary renews with no increase
+ *
+ *   SR31  a prorated 10-seat first term renews at 10 seats, not the line's prorated quantity (#589)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -862,7 +863,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR21',
-        Name: 'SR21: cancelling after the renewal is booked and invoiced reverses the renewal in full',
+        Name: 'SR21: a NoRefund cancel after the renewal is invoiced keeps the renewal\'s money',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -883,7 +884,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 const cancelled = await cancelSubscription(ctx, { SubscriptionID, RequestDate: daysBefore(Term.EndDate, 21) });
                 Assert(cancelled.Success, `the cancel must succeed: ${cancelled.Message}`);
-                AssertEqual(cancelled.TotalRefundAmount, 1200, 'the whole renewal comes back');
+                AssertEqual(cancelled.TotalRefundAmount, 0, 'a NoRefund type keeps the invoiced renewal');
+                AssertEqual(cancelled.ReversalOrderID ?? null, null, 'nothing is reversed, so no reversal order is booked');
 
                 const terms = await TxQuery<{ TermNumber: number; Status: string }>(
                     ctx,
@@ -892,33 +894,16 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 );
                 AssertEqual(terms.map((t) => t.Status).join(','), 'Completed,Canceled', 'term 1 rides out, term 2 is canceled');
 
-                const reversal = await TxOne<{ Status: string; ReversesOrderHeaderID: string | null }>(
+                const reversals = await TxQuery<{ ID: string }>(
                     ctx,
-                    `SELECT Status, ReversesOrderHeaderID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${cancelled.ReversalOrderID}'`,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ReversesOrderLineID = '${renewalLine.ID}'`,
                 );
-                AssertEqual(reversal.Status, 'Confirmed', 'the reversal is booked');
-                Assert(SameID(reversal.ReversesOrderHeaderID ?? '', renewalID), 'and points at the renewal order');
-                const lines = await TxQuery<{ ReversesOrderLineID: string; Quantity: number }>(
-                    ctx,
-                    `SELECT ReversesOrderLineID, Quantity FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${cancelled.ReversalOrderID}'`,
-                );
-                AssertEqual(lines.length, 1, 'one reversal line');
-                Assert(SameID(lines[0].ReversesOrderLineID, renewalLine.ID), 'reversing the renewal line');
-                AssertEqual(Number(lines[0].Quantity), -1, 'in full');
-
-                // The invoiced 1,200 is credited back off AR by the reversal's credit memo.
-                const ledger = await ledgerOf(
-                    ctx,
-                    `SELECT je.ID FROM ${ACCT_SCHEMA}.vwJournalEntries je
-                     WHERE je.LinkedRecordID IN (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine
-                                                 WHERE OrderHeaderID = '${cancelled.ReversalOrderID}')`,
-                );
-                AssertEqual(netOn(ledger, AR_CODE), -1200, `the credit memo credits AR the invoiced amount: ${JSON.stringify(ledger)}`);
+                AssertEqual(reversals.length, 0, 'nothing reverses the renewal line');
                 const billed = await TxOne<{ BilledToDate: number }>(
                     ctx,
                     `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${renewalLine.ID}'`,
                 );
-                AssertEqual(Number(billed.BilledToDate), 0, 'the renewal line is no longer billed');
+                AssertEqual(Number(billed.BilledToDate), 1200, 'the invoiced renewal stays billed, so it stays on AR');
             }),
     },
     // ─── What a renewal is priced at (golive #304) ──────────────────────────────────────────────
@@ -1149,6 +1134,46 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const c = out.Candidates[0];
                 AssertEqual(Number(c.IncreasePercent), 0, 'February is not an anniversary');
                 AssertEqual(Number(c.UnitPrice), 24, 'the prior price');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR31',
+        Name: 'SR31: a prorated 10-seat first term renews at 10 seats, not the prorated line quantity',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Mid-year on a Jan-1-anchored type, so the first term is prorated and the line's
+                // stored quantity is 10 × ~0.5. The renewal used to take its quantity from there.
+                const result = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 10, UnitPrice: 1200 }],
+                });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+                const term = await TxOne<{ SubscriptionID: string; EndDate: string; Quantity: number; IsProrated: boolean }>(
+                    ctx,
+                    `SELECT st.SubscriptionID, st.EndDate, st.Quantity, st.IsProrated
+                     FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+                     JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+                     WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                Assert(term.IsProrated, 'precondition: the first term is prorated');
+                AssertEqual(Number(term.Quantity), 10, 'the first term records 10 seats');
+
+                const out = await spawnRenewals(ctx, { SubscriptionID: term.SubscriptionID, AsOfDate: daysBefore(term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Message} ${out.Candidates[0]?.SkippedReason ?? ''}`);
+                const line = await TxOne<{ Quantity: number }>(
+                    ctx,
+                    `SELECT Quantity FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${out.Candidates[0].OrderID}'`,
+                );
+                AssertEqual(Number(line.Quantity), 10, 'the renewal line buys 10 seats');
+                const [, renewed] = await TxQuery<{ Quantity: number }>(
+                    ctx,
+                    `SELECT Quantity FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID = '${term.SubscriptionID}' ORDER BY TermNumber`,
+                );
+                AssertEqual(Number(renewed.Quantity), 10, 'term 2 records 10 seats');
             }),
     },
 ];

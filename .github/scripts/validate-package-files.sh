@@ -1,5 +1,7 @@
 #!/bin/bash
-# Validates that every publishable @mj-biz-apps package restricts what it ships.
+# Validates that every publishable workspace package restricts what it ships.
+# Every package.json under packages/ is checked -- no scope or name filter, so a copied script checks
+# whatever packages its repo has. `private: true` is the only exclusion.
 #
 # WHY THIS GATE EXISTS. npm includes EVERYTHING not excluded when a package declares neither a
 # `files` field nor an `.npmignore`. Contracts declared neither, and `pnpm publish -r --dry-run`
@@ -24,14 +26,11 @@ ERRORS=0
 CHECKED=0
 PRIVATE_SKIPPED=0
 
-echo "Checking files + publishConfig in all publishable @mj-biz-apps packages..."
+echo "Checking files + publishConfig in all publishable packages..."
 
 for pkg_json in $(find packages -name "package.json" -maxdepth 2 -not -path "*/node_modules/*" -not -path "*/dist/*"); do
   name=$(jq -r '.name // ""' "$pkg_json")
-
-  if [[ "$name" != @mj-biz-apps/orders-* ]]; then
-    continue
-  fi
+  [ -n "$name" ] || continue   # a nameless package.json cannot be published
 
   if [[ "$(jq -r '.private // false' "$pkg_json" 2>/dev/null)" == "true" ]]; then
     echo "   skipped: $name - private, never published"
@@ -57,6 +56,12 @@ for pkg_json in $(find packages -name "package.json" -maxdepth 2 -not -path "*/n
   fi
 done
 
+# Zero packages found means this looked in the wrong place, not that everything passed.
+if [ $((CHECKED + PRIVATE_SKIPPED)) -eq 0 ]; then
+  echo "::error::No package.json found under packages/ -- nothing was validated"
+  exit 1
+fi
+
 if [[ $PRIVATE_SKIPPED -gt 0 ]]; then
   echo "   ($PRIVATE_SKIPPED private package(s) skipped - never published)"
 fi
@@ -75,4 +80,4 @@ if [[ $ERRORS -gt 0 ]]; then
   exit 1
 fi
 
-echo "All $CHECKED publishable @mj-biz-apps packages restrict what they ship"
+echo "All $CHECKED publishable packages restrict what they ship"

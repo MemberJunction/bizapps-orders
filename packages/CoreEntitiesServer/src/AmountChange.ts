@@ -52,7 +52,7 @@ import { RequireUUID } from './sql-guards.js';
 import { SanctionTermAmendment, type SubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
 import {
     AcknowledgerIDs,
-    RaiseAcknowledgmentTask,
+    RaiseRecutAcknowledgment,
     RenewalAlreadyPlaced,
     StagedRecognitionEntries,
     TermRecognition,
@@ -372,7 +372,7 @@ export async function ApplyAmountChange(concession: ApprovedAmountChange, ctx: A
     await setTermAmount(checked, ctx);
     await lowerInstalments(checked, ctx);
     await logAmountChanged(checked, concession, written.Results ?? [], ctx);
-    await RaiseAcknowledgmentTask(
+    await RaiseRecutAcknowledgment(
         {
             Name: `Confirm the recognition re-cut: ${changeLabel(checked)}`,
             Description: acknowledgmentDescription(checked, concession),

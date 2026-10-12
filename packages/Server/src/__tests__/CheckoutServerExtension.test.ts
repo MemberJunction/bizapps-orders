@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Application, Request, Response } from 'express';
 
 const mockRunView = vi.fn();
@@ -56,7 +56,8 @@ import {
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
+import { LogStatus } from '@memberjunction/core';
+import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap, turnstileConfigGap } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -126,6 +127,18 @@ describe('shouldServeCheckoutElementSourceMap', () => {
     });
 });
 
+describe('turnstileConfigGap', () => {
+    it('is null when the site key and the secret both resolve', () => {
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, { TS: 'secret' })).toBeNull();
+    });
+
+    it('names the missing setting', () => {
+        expect(turnstileConfigGap({}, {})).toBe('Settings.TurnstileSecretEnvVar unset');
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, {})).toBe("Settings.TurnstileSecretEnvVar='TS' resolved empty");
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: '  ' }, { TS: 'secret' })).toBe('Settings.TurnstileSiteKey unset');
+    });
+});
+
 describe('CheckoutServerExtension', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -165,6 +178,30 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/access-status',
             'GET /checkout/:slug',
         ]);
+    });
+
+    it('warns at startup when Turnstile is not configured, naming the missing setting', async () => {
+        const { app } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+        expect(lines.some((line) => line.includes('Turnstile is not configured (Settings.TurnstileSecretEnvVar unset)'))).toBe(true);
+    });
+
+    it('stays quiet at startup when Turnstile is configured', async () => {
+        process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP = 'secret';
+        try {
+            const { app } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, {
+                Enabled: true,
+                DriverClass: 'OrdersCheckoutEdge',
+                RootPath: '/checkout',
+                Settings: { TurnstileSecretEnvVar: 'CHECKOUT_TURNSTILE_SECRET_STARTUP', TurnstileSiteKey: 'site-key-1' },
+            });
+            const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+            expect(lines.some((line) => line.includes('Turnstile'))).toBe(false);
+        } finally {
+            delete process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP;
+        }
     });
 
     it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
@@ -435,6 +472,82 @@ describe('CheckoutServerExtension', () => {
         expect(await hit('/checkout/account/password')).toBe(200);
         expect(await hit('/checkout/account/password')).toBe(200);
         expect(await hit('/checkout/account/password')).toBe(429);
+    });
+
+    describe('Turnstile names its site key so the built-in clients can answer (#592)', () => {
+        type Guarded = {
+            settings: Record<string, unknown>;
+            resolveEdgePolicy(req: Request): Promise<unknown>;
+            guardAndRun(req: Request, res: Response, handler: (req: Request, res: Response) => Promise<void>): Promise<void>;
+        };
+        const SECRET_ENV = 'CHECKOUT_TURNSTILE_SECRET_TEST';
+        const guarded = (settings: Record<string, unknown>) => {
+            const ext = new CheckoutServerExtension() as unknown as Guarded;
+            ext.settings = settings;
+            ext.resolveEdgePolicy = async () => ({ requireTurnstile: true });
+            return ext;
+        };
+        const configured = { TurnstileSecretEnvVar: SECRET_ENV, TurnstileSiteKey: 'site-key-1' };
+        const post = async (ext: Guarded, path: string, body: Record<string, unknown>) => {
+            const handler = vi.fn(async (_req: Request, res: Response) => { res.status(200).json({ Success: true }); });
+            const res = mockRes();
+            await ext.guardAndRun(
+                { path, body: { slug: 'summit-2027', ...body }, headers: {}, socket: { remoteAddress: '10.0.0.9' } } as unknown as Request,
+                res as unknown as Response,
+                handler,
+            );
+            return { res, handler, reply: JSON.parse(res.body || '{}') as Record<string, unknown> };
+        };
+
+        beforeEach(() => {
+            process.env[SECRET_ENV] = 'secret';
+        });
+        afterEach(() => {
+            delete process.env[SECRET_ENV];
+            vi.unstubAllGlobals();
+        });
+
+        it.each(['/checkout/initialize', '/checkout/complete'])('answers %s without a token with a 403 that names the site key', async (path) => {
+            const { res, handler, reply } = await post(guarded(configured), path, {});
+            expect(res.statusCode).toBe(403);
+            expect(reply).toMatchObject({ Success: false, TurnstileRequired: true, TurnstileSiteKey: 'site-key-1' });
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('names the site key again when Cloudflare refuses the token, so the client can retry', async () => {
+            vi.stubGlobal('fetch', vi.fn(async () => ({ json: async () => ({ success: false, 'error-codes': ['timeout-or-duplicate'] }) })));
+            const { res, reply } = await post(guarded(configured), '/checkout/complete', { turnstileToken: 'used' });
+            expect(res.statusCode).toBe(403);
+            expect(reply).toMatchObject({ TurnstileRequired: true, TurnstileSiteKey: 'site-key-1' });
+        });
+
+        it('runs the handler when Cloudflare accepts the token', async () => {
+            const verify = vi.fn(async () => ({ json: async () => ({ success: true }) }));
+            vi.stubGlobal('fetch', verify);
+            const { res, handler } = await post(guarded(configured), '/checkout/initialize', { turnstileToken: 'fresh' });
+            expect(res.statusCode).toBe(200);
+            expect(handler).toHaveBeenCalledOnce();
+            const [, init] = verify.mock.calls[0] as unknown as [string, { body: string }];
+            expect(init.body).toContain('response=fresh');
+        });
+
+        it('fails closed with a 503 and no site key when the site key is not configured', async () => {
+            const { res, handler, reply } = await post(guarded({ TurnstileSecretEnvVar: SECRET_ENV }), '/checkout/initialize', {});
+            expect(res.statusCode).toBe(503);
+            expect(reply.TurnstileRequired).toBeUndefined();
+            expect(handler).not.toHaveBeenCalled();
+        });
+
+        it('fails closed with a 503 when the secret is not configured', async () => {
+            const { res } = await post(guarded({ TurnstileSiteKey: 'site-key-1' }), '/checkout/initialize', {});
+            expect(res.statusCode).toBe(503);
+        });
+
+        it('leaves routes outside initialize and complete alone', async () => {
+            const { res, handler } = await post(guarded(configured), '/checkout/draft', {});
+            expect(res.statusCode).toBe(200);
+            expect(handler).toHaveBeenCalledOnce();
+        });
     });
 
     describe('outbound dispatch after completion (#293)', () => {

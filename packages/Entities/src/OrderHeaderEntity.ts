@@ -49,6 +49,7 @@ export interface OrderConfirmOutcome {
     DisplacedTermStarts: DisplacedTermStart[];
 }
 import { OrdersEngine } from './pricing/OrdersEngine';
+import { SplitIntoSeatLines } from './attendee-seats';
 import { anyFieldIsDirty } from './field-dirty';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
 import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
@@ -673,6 +674,24 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     /**
+     * Splits a line of an event that requires attendee information into one quantity-1 line per
+     * seat, each with its own attendee record, and returns the added lines. Returns none when the
+     * line needs no split. See {@link SplitIntoSeatLines}.
+     *
+     * Reads `OrdersEngine`; the caller loads it.
+     */
+    public async SplitLineIntoSeats(line: OrderHeaderEntity['Lines']['Items'][number]): Promise<OrderHeaderEntity['Lines']['Items']> {
+        const engine = OrdersEngine.Instance;
+        const product = engine.ProductByID(line.ProductID);
+        const extensionEntity = engine.ProductTypeByID(product?.ProductTypeID)?.OrderLineExtensionEntity ?? null;
+        return SplitIntoSeatLines(line, async () => {
+            const seat = await this.Lines.Create();
+            if (extensionEntity) await seat.EnsureISAChild(extensionEntity);
+            return seat;
+        });
+    }
+
+    /**
      * Confirm — the irreversible step.
      *
      * Setting the status and saving IS the confirm: the server subclass sees the transition into a
@@ -980,10 +999,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return !!f && f.Dirty && f.Value == null && f.OldValue != null;
     }
 
-    /** True when this save sets `field` to a value it did not have on disk. */
+    /**
+     * True when this save sets `field` to a value it did not have on disk. On a new record every
+     * value counts: MemberJunction records the first value set on a fresh field as its old value,
+     * so `Dirty` is false for a field set once before the first save.
+     */
     private isChangedThisSave(field: string): boolean {
         const f = this.GetFieldByName(field);
-        return !!f && f.Dirty && f.Value != null;
+        if (!f || f.Value == null) return false;
+        return f.Dirty || !this.IsSaved;
     }
 
     /**

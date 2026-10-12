@@ -8,16 +8,14 @@
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
-import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, EntityFieldInfo, IMetadataProvider, IRunViewProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
     BusinessTimeZoneEngine,
     mjBizAppsCommonAddressEntity,
     mjBizAppsCommonAddressLinkEntity
 } from '@mj-biz-apps/common-entities';
-// Local fallback engine — see identityClaimContracts.ts. Restore this import to
-// '@memberjunction/core-entities-server' once MJ publishes the engine.
+import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { IdentityClaimEngineServer } from './identityClaimContracts.js';
 import {
     CheckBillingLocation,
     LoadOrdersEngine,
@@ -52,8 +50,9 @@ import {
     type CheckoutChoicesCheck,
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
-import { EscapeText } from './sql-guards.js';
+import { EscapeText, IsUUID } from './sql-guards.js';
 import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } from './CheckoutPrePurchaseCheck.js';
+import { ExplainMissingCheckoutAttendees, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
@@ -349,8 +348,8 @@ export interface CompleteCheckoutResult {
     PaymentIntentID?: string;
     ClientSecret?: string;
     /**
-     * The IdentityClaim row id minted for the buyer's email (the actual verification token is
-     * only ever delivered in the claim email — it is never returned through the checkout path).
+     * The IdentityClaim row id minted for the buyer's email. The verification token is never
+     * returned through the checkout path; it would only travel in the claim e-mail, which is off.
      */
     ClaimToken?: string;
 }
@@ -736,6 +735,7 @@ export class CheckoutSessionService {
             type: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select';
             required: boolean;
             placeholder?: string;
+            options?: Array<{ label: string; value: string }>;
         }> = [];
 
         // Check if extension links to a Person
@@ -776,9 +776,16 @@ export class CheckoutSessionService {
                 fieldType = 'date';
             } else if (['int', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'float', 'real', 'money', 'smallmoney'].includes(sqlType)) {
                 fieldType = 'number';
-            } else if (['ntext', 'text', 'nvarchar(max)', 'varchar(max)'].includes(sqlType) || (f.Length && f.Length > 255)) {
+            } else if (['ntext', 'text'].includes(sqlType) || f.Length === -1 || f.MaxLength > 255) {
+                // MJ stores NVARCHAR(MAX) as Type 'nvarchar' with Length -1. Length is bytes;
+                // MaxLength is characters, which is what the 255 threshold means.
                 fieldType = 'textarea';
             }
+            const options = fieldType === 'select'
+                ? [...(f.EntityFieldValues ?? [])]
+                    .sort((a, b) => a.Sequence - b.Sequence)
+                    .map(v => ({ label: v.Value, value: v.Value }))
+                : undefined;
 
             const camelName = f.Name.charAt(0).toLowerCase() + f.Name.slice(1);
             const label = f.DisplayName?.trim() || f.Name.replace(/([a-z])([A-Z])/g, '$1 $2');
@@ -787,8 +794,10 @@ export class CheckoutSessionService {
                 name: camelName,
                 label,
                 type: fieldType,
-                required: !f.AllowsNull,
-                placeholder: f.Description || label
+                // A column with a default is filled by the database when the buyer leaves it blank.
+                required: !f.AllowsNull && !f.HasDefaultValue,
+                placeholder: f.Description || label,
+                ...(options ? { options } : {})
             });
         }
 
@@ -806,7 +815,7 @@ export class CheckoutSessionService {
         contextUser?: UserInfo,
         createIfMissing = true
     ): Promise<string | null> {
-        const email = (fields['Email'] || fields['email'] || fields['AttendeeEmail'] || fields['attendeeEmail']) as string | undefined;
+        const email = this.attendeeEmail(fields);
         if (!email || !email.trim()) {
             return null;
         }
@@ -1034,6 +1043,8 @@ export class CheckoutSessionService {
 
     /**
      * Dynamically populates and coerces extension companion properties from a field map.
+     * Returns the Person it resolved (null when none) and the extension row, so a caller that
+     * resolved without creating can create the Person later and set it with `setExtensionPerson`.
      */
     private static async hydrateLineExtension(
         line: OrderLineEntity,
@@ -1041,9 +1052,9 @@ export class CheckoutSessionService {
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo,
         createPersons = true
-    ): Promise<void> {
+    ): Promise<{ PersonID: string | null; Extension: BaseEntity | null }> {
         if (!fieldValues || Object.keys(fieldValues).length === 0) {
-            return;
+            return { PersonID: null, Extension: null };
         }
 
         // Build descriptive summary for the line card if names/email are present
@@ -1060,9 +1071,9 @@ export class CheckoutSessionService {
             line.Description = String(nameOrEmail);
         }
 
-        // Auto-resolve PersonID if person fields exist on the entity or extension. Person
-        // creation only happens on the completion path — draft pricing passes createPersons=false
-        // so abandoned checkouts never mint Person rows.
+        // Auto-resolve PersonID if person fields exist on the entity or extension. Neither draft
+        // pricing nor completion creates here (createPersons=false): completion creates a missing
+        // attendee only once payment has checked out (#583).
         const resolvedPersonID = await this.resolveOrEnsurePerson(fieldValues, contextUser, createPersons);
 
         const excludedClientFields = new Set([
@@ -1082,10 +1093,7 @@ export class CheckoutSessionService {
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
                 );
                 if (resolvedPersonID) {
-                    const extPField = extFieldsByName.get('personid') || extFieldsByName.get('attendeepersonid');
-                    if (extPField && !extPField.IsPrimaryKey && !extPField.IsVirtual && extPField.AllowUpdateAPI) {
-                        ext.Set(extPField.Name, resolvedPersonID);
-                    }
+                    this.setExtensionPerson(ext, resolvedPersonID);
                 }
                 for (const [key, rawValue] of Object.entries(fieldValues)) {
                     const lowerKey = key.toLowerCase();
@@ -1106,6 +1114,32 @@ export class CheckoutSessionService {
                     }
                 }
             }
+        return { PersonID: resolvedPersonID, Extension: ext };
+    }
+
+    /** Sets an extension row's attendee Person, when it has an updatable PersonID / AttendeePersonID column. */
+    private static setExtensionPerson(ext: BaseEntity, personID: string): void {
+        const fields = ext.EntityInfo?.Fields ?? [];
+        const field = fields.find((f) => f.Name.toLowerCase() === 'personid') ?? fields.find((f) => f.Name.toLowerCase() === 'attendeepersonid');
+        if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
+            ext.Set(field.Name, personID);
+        }
+    }
+
+    /**
+     * A per-unit product books one line per unit, so it needs one set of unit details per unit. A
+     * widget that sends fewer or more sets than the quantity (a per-line widget sends one) would
+     * otherwise book a different number of units than the buyer chose (#583).
+     */
+    private static unitDetailsMismatch(
+        unitMode: 'perUnit' | 'perLine',
+        quantity: number,
+        unitPayloads: Array<Record<string, unknown>>
+    ): string | null {
+        if (unitMode !== 'perUnit' || unitPayloads.length === 0 || unitPayloads.length === quantity) {
+            return null;
+        }
+        return `Enter details for each of the ${quantity} items (details were given for ${unitPayloads.length}).`;
     }
 
     /**
@@ -1370,6 +1404,10 @@ export class CheckoutSessionService {
             const unitPayloads = this.extractUnitPayloads(inputLine);
             if (unitPayloads.length > effectiveMax) {
                 return failed(`Unit payload count ${unitPayloads.length} exceeds maximum allowed quantity of ${effectiveMax} for this item`);
+            }
+            const unitMismatch = this.unitDetailsMismatch(unitMode, inputLine.Quantity, unitPayloads);
+            if (unitMismatch) {
+                return failed(unitMismatch);
             }
 
             if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {
@@ -1673,6 +1711,14 @@ export class CheckoutSessionService {
             return { ...failed(refused.Message), Refusal: refused.Refusal };
         }
 
+        // An event that requires attendee information needs one attendee per ticket. Refused here,
+        // before the intent opens: completion takes the money before it confirms, so the order's
+        // own refusal at confirm would leave a paid checkout with no order.
+        const missingAttendees = await this.checkDraftedAttendees(session, contextUser);
+        if (missingAttendees) {
+            return failed(missingAttendees);
+        }
+
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
         let autoRenewConsentText: string | undefined;
@@ -1765,19 +1811,57 @@ export class CheckoutSessionService {
         };
     }
 
+    /** The lines the session's draft stored, as the buyer sent them; empty when there are none. */
+    private static readDraftedLines(session: mjBizAppsOrdersCheckoutSessionEntity): CheckoutLineInput[] {
+        try {
+            const parsed = JSON.parse(session.MetadataJSON ?? '{}') as { Lines?: CheckoutLineInput[] };
+            return Array.isArray(parsed.Lines) ? parsed.Lines : [];
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * The buyer-facing refusal when an event ticket in the session's draft has no attendee; null when
+     * every ticket has one. Counts the per-unit payloads completion turns into attendee rows, so what
+     * passes here is what completion can write.
+     */
+    private static async checkDraftedAttendees(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        contextUser: UserInfo,
+    ): Promise<string | null> {
+        const lines = this.readDraftedLines(session);
+        if (lines.length === 0) return null;
+        // An id that is not a UUID names no product, so it names no event either.
+        const requiring = await LoadProductsRequiringAttendees(
+            lines.map((l) => l.ProductID).filter(IsUUID),
+            Metadata.Provider as unknown as IRunViewProvider,
+            contextUser,
+        );
+        if (requiring.size === 0) return null;
+        return ExplainMissingCheckoutAttendees(
+            lines.map((line) => ({
+                ProductID: line.ProductID,
+                Quantity: line.Quantity,
+                AttendeeEmails: this.extractUnitPayloads(line).map((unit) => this.attendeeEmail(unit)),
+            })),
+            requiring,
+        );
+    }
+
+    /** The e-mail an attendee payload carries, under any of the names completion reads it from. */
+    private static attendeeEmail(fields: Record<string, unknown>): string | null {
+        const email = fields['Email'] || fields['email'] || fields['AttendeeEmail'] || fields['attendeeEmail'];
+        return typeof email === 'string' ? email : null;
+    }
+
     /** Re-runs the pre-purchase checks against the lines the session's draft stored. */
     private static async recheckDraftedPurchase(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         companyID: string,
         contextUser: UserInfo,
     ): Promise<PrePurchaseRefusal | null> {
-        let lines: CheckoutLineInput[] = [];
-        try {
-            const parsed = JSON.parse(session.MetadataJSON ?? '{}') as { Lines?: CheckoutLineInput[] };
-            lines = Array.isArray(parsed.Lines) ? parsed.Lines : [];
-        } catch {
-            lines = [];
-        }
+        const lines = this.readDraftedLines(session);
         return RunPrePurchaseChecks({
             Email: session.Email ?? '',
             PersonID: session.PersonID ?? null,
@@ -1982,10 +2066,12 @@ export class CheckoutSessionService {
                 };
             }
 
-            // Resolve — creating if necessary — the payer Person. OrderHeaderEntity.Validate()
-            // refuses to confirm an order without a customer, so a missing payer must fail
-            // HERE with a clear message, not deep inside Confirm(). Contact fields come from
-            // the first unit payload (name etc.); the email is the session's captured email.
+            // Resolve the payer Person; a new buyer's Person is created only once payment has
+            // checked out (below), so a refused payment leaves none behind (#583). Confirm()
+            // refuses an order without a customer, so a payer that can never be created (no
+            // e-mail) must fail HERE with a clear message. Contact fields come from the first unit
+            // payload (name etc.); the email is the session's captured email.
+            let newPayerFields: Record<string, unknown> | null = null;
             if (!session.PersonID) {
                 const firstPayload = linesInput.length > 0 ? this.extractUnitPayloads(linesInput[0])[0] ?? {} : {};
                 const payerFields: Record<string, unknown> = { ...firstPayload, Email: session.Email ?? '' };
@@ -1999,12 +2085,14 @@ export class CheckoutSessionService {
                         payerFields['Name'] = localPart;
                     }
                 }
-                const payerPersonID = await this.resolveOrEnsurePerson(payerFields, contextUser, true);
+                const payerPersonID = await this.resolveOrEnsurePerson(payerFields, contextUser, false);
                 if (payerPersonID) {
                     session.PersonID = payerPersonID;
+                } else if (session.Email?.trim()) {
+                    newPayerFields = payerFields;
                 }
             }
-            if (!session.PersonID) {
+            if (!session.PersonID && !newPayerFields) {
                 await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
                 session.Status = 'Open';
                 return {
@@ -2033,6 +2121,8 @@ export class CheckoutSessionService {
             await BusinessTimeZoneEngine.Instance.Config(false, contextUser ?? md.CurrentUser, Metadata.Provider);
             order.OrderDate = TodayAsDateValue();
 
+            // Attendees whose e-mail matches no Person yet: created after payment checks out.
+            const newAttendees: Array<{ Fields: Record<string, unknown>; Extension: BaseEntity }> = [];
             let sequence = 1;
             for (const inputLine of linesInput) {
                 // Validate quantity: must be positive integer >= 1
@@ -2100,7 +2190,24 @@ export class CheckoutSessionService {
                         Status: 'Open'
                     };
                 }
+                const unitMismatch = this.unitDetailsMismatch(unitMode, inputLine.Quantity, unitPayloads);
+                if (unitMismatch) {
+                    await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
+                    session.Status = 'Open';
+                    return {
+                        Success: false,
+                        ErrorMessage: unitMismatch,
+                        SessionID: sessionID,
+                        Status: 'Open'
+                    };
+                }
 
+                const hydrate = async (line: OrderLineEntity, unitData: Record<string, unknown>): Promise<void> => {
+                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    if (!hydrated.PersonID && hydrated.Extension) {
+                        newAttendees.push({ Fields: unitData, Extension: hydrated.Extension });
+                    }
+                };
                 if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {
                     for (const unitData of unitPayloads) {
                         const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -2108,7 +2215,7 @@ export class CheckoutSessionService {
                         line.Quantity = 1;
                         line.LineNumber = sequence++;
 
-                        await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser);
+                        await hydrate(line, unitData);
                     }
                 } else {
                     const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -2117,7 +2224,7 @@ export class CheckoutSessionService {
                     line.LineNumber = sequence++;
 
                     if (unitPayloads.length > 0) {
-                        await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser);
+                        await hydrate(line, unitPayloads[0]);
                     }
                 }
             }
@@ -2161,8 +2268,11 @@ export class CheckoutSessionService {
                 User: contextUser ?? (order.ContextCurrentUser as UserInfo),
             });
 
-            // Priced inline, exactly as the draft was: the Address row is recorded only once
-            // payment checks out, so a refused payment leaves no row behind.
+            // Priced inline, exactly as the draft was: the Address row and any new Person are
+            // recorded only once payment checks out, so a refused payment leaves no row behind.
+            // A new buyer is priced with no BillToPersonID, as the draft was; a Person created
+            // moments later holds no price list, membership, exemption or order history, so
+            // pricing it would not change the price.
             const priced = await pricingService.Price({
                 OrderHeaderID: order.ID || null,
                 CompanyID: widget.CompanyID,
@@ -2240,6 +2350,23 @@ export class CheckoutSessionService {
                 confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', 'Checkout', contextUser);
             }
 
+            // Payment has checked out (or none was due): create the Persons the checkout needs.
+            if (newPayerFields) {
+                const payerPersonID = await this.resolveOrEnsurePerson(newPayerFields, contextUser, true);
+                if (!payerPersonID) {
+                    throw new Error(`Could not create the buyer's Person record for ${session.Email}`);
+                }
+                session.PersonID = payerPersonID;
+                order.BillToPersonID = payerPersonID;
+                order.ShipToPersonID = payerPersonID;
+            }
+            for (const attendee of newAttendees) {
+                const attendeePersonID = await this.resolveOrEnsurePerson(attendee.Fields, contextUser, true);
+                if (attendeePersonID) {
+                    this.setExtensionPerson(attendee.Extension, attendeePersonID);
+                }
+            }
+
             // The billing location is the only location a self-serve sale has, so it is both the
             // bill-to and the ship-to — the ship-to is what tax is resolved from when Confirm()
             // re-prices the order.
@@ -2277,13 +2404,18 @@ export class CheckoutSessionService {
             let claimToken: string | undefined;
             if (session.Email) {
                 try {
+                    // Claim types are cached at startup; Config() is a no-op once loaded.
+                    await IdentityClaimEngineServer.Instance.Config(false, contextUser);
                     const claim = await IdentityClaimEngineServer.Instance.CreateClaim({
                         ClaimTypeName: 'GuestOrder',
                         RecordID: order.ID,
                         EntityID: md.EntityByName(ORDER_HEADER_ENTITY)?.ID ?? null,
                         NormalizedEmail: session.Email,
                         Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber || order.ID },
-                        SendEmail: true
+                        // Claim e-mails stay off until a claim e-mail template and the portal base
+                        // URL are configured; without them MJ sends a generic message linking to
+                        // its default host.
+                        SendEmail: false
                     }, contextUser);
                     claimToken = claim?.ID;
                 } catch (claimErr) {

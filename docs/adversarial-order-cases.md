@@ -1,5 +1,13 @@
 # Adversarial order cases — bizapps-orders
 
+> **Status:** a test design and the record of one run of it through the UI on 2026-08-04, against
+> one instance database. The setup values below (company codes, the organization ID, the `ADV`
+> catalog, the `ORD-` and `SUB-` numbers) come from that database. Neither the `ADV` catalog nor
+> the `BOOK-MS…` companies are in the ORD-WORLD fixtures (`packages/IntegrationTests/src/world/`),
+> and the IDs and codes are that database's, so the run cannot be reproduced from ORD-WORLD. The
+> RESULTS section gives each confirmed bug's status as of 2026-10-11; the last section maps the
+> cases to the integration checks that cover them now.
+
 Authored 2026-08-04 as an adversarial test design. **All catalog data below already exists in the
 instance DB** (created by this pass, every name prefixed `ADV `). Nothing existing was modified;
 `DEMO *` products, orders and subscriptions were left untouched.
@@ -354,13 +362,8 @@ JOIN __mj_BizAppsOrders.Product p ON p.ID=s.ProductID WHERE p.Name='ADV Monthly 
 - Line `ServicePeriodStart` = 2026-09-15, `ServicePeriodEnd` = 2026-09-15 (stamped from the event).
 - **1 booking JE**: Dr AR **125.00** / Cr **Deferred Revenue** 125.00.
 - **1 `RevenueRecognition` JE** dated **2026-09-15** (the event end): Dr Deferred Revenue 125.00 / Cr Sales 125.00. Exactly one — `AllBackEnd` produces a single slice.
-- **Zero `EventOrderLine` rows** despite `RequiresAttendeeInfo = 1`:
-  ```sql
-  SELECT COUNT(*) FROM __mj_BizAppsOrders.EventOrderLine e
-  JOIN __mj_BizAppsOrders.OrderLine l ON l.ID = e.ID
-  JOIN __mj_BizAppsOrders.OrderHeader h ON h.ID = l.OrderHeaderID WHERE h.OrderNumber = @ord;  -- expect 0
-  ```
-**Prediction:** all three gaps at once — you can sell 5 seats to a 1-seat event, no attendee is ever captured though the product demands it, and the ticket revenue defers correctly but with no per-attendee record to fulfil against. Also try **two separate orders** of qty 1 each: capacity is not counted across orders either.
+- **Confirm is now REFUSED** because `RequiresAttendeeInfo = 1` and the line sells 5 seats with no attendee: an event that requires attendee information is sold one seat per line, each line naming its attendee (`EventOrderLine`). Rebuild the case as 5 lines at quantity 1, each with an attendee, to reach the capacity and recognition expectations above.
+**Prediction:** two gaps remain: you can sell 5 seats to a 1-seat event, and the ticket revenue defers correctly. Also try **two separate orders** of qty 1 each: capacity is not counted across orders either.
 
 ## C26 · Backdating across a fiscal year
 **Seam:** the order date is the accounting date, with no period-close check, and the JE number embeds the fiscal year.
@@ -395,18 +398,24 @@ held up under all of it. Everything below is a DOMAIN failure the ledger cannot 
 
 ## Confirmed bugs
 
-| # | What happens | Evidence |
-|---|---|---|
-| C8 | **Flat pricing bills the wrong amount at qty > 1.** Under-bills at qty 3 (99.99), **over**-bills at qty 7 (**100.03**) for a flat-100 item. `ComputeAmount` returns 100.00 correctly; `PriceResolver` then stores a rounded unit price and the line rebuilds `qty × unit`, discarding the correct `ExtendedAmount`. | ORD-000029 (99.99), ORD-000040 (100.03) |
-| C24b | **A product available from 2030-01-01 sold today**, at 85.00. | ORD-000052 |
-| C26 | **A product whose availability window closed 2021-12-31 sold today**, at 80.00. | ORD-000054 |
-| C25 | **An event with `Capacity = 1` sold 5 seats** — and `RequiresAttendeeInfo` is true with no attendee rows. | ORD-000053 |
-| C18 | **A subscription bought with quantity 10 records no seat count.** The line says 10 and bills 10,000; the subscription is one coverage window with no notion of how many seats it covers. | ORD-000049 → SUB-000007 |
+| # | What happens | Evidence | Status (checked 2026-10-11) |
+|---|---|---|---|
+| C8 | **Flat pricing bills the wrong amount at qty > 1.** Under-bills at qty 3 (99.99), **over**-bills at qty 7 (**100.03**) for a flat-100 item. `ComputeAmount` returns 100.00 correctly; `PriceResolver` then stores a rounded unit price and the line rebuilds `qty × unit`, discarding the correct `ExtendedAmount`. | ORD-000029 (99.99), ORD-000040 (100.03) | **Fixed.** The rule's exact figure is stored on the line as `OrderLine.ExtendedAmount` (#579), and `LineGross` in `packages/Entities/src/pricing/PricingBehavior.ts` uses it for the line total, the charge and tax base, the promotion base, the journal entry's discount split and the invoice's list amount (`ListAmountOf` in `packages/CoreEntitiesServer/src/InvoiceBehavior.ts`). A draft line saved again keeps it; editing the quantity or unit price without re-pricing clears it (`DropStaleExtendedAmount`). Tests: `packages/Entities/src/__tests__/line-gross.test.ts`, integration checks PC17, PC18 and IV16. |
+| C24b | **A product available from 2030-01-01 sold today**, at 85.00. | ORD-000052 | **Fixed.** `assertProductSellable` in `packages/Entities/src/pricing/OrderPricingService.ts` refuses a line when the order's date is outside `AvailableFrom` / `AvailableTo`, or the product is not `Active`, whether or not the line states a `UnitPrice` (#578). Tests: `packages/Entities/src/__tests__/ProductSellable.test.ts`, `pricing.PC17`–`PC19`. |
+| C26 | **A product whose availability window closed 2021-12-31 sold today**, at 80.00. | ORD-000054 | **Fixed.** Same check and tests as C24b. |
+| C25 | **An event with `Capacity = 1` sold 5 seats** — and `RequiresAttendeeInfo` is true with no attendee rows. | ORD-000053 | **Capacity open: #33.** Capacity is deliberately not enforced until there is a seat count or a reservation model (`docs/HOW_THE_SYSTEM_WORKS.md` §13, `plans/archive/bizapps-orders-master.md` §21b). **Attendees fixed.** An order refuses to book an event line of a product requiring attendee information unless it is quantity 1 with an attendee row (`AttendeeRequirement.ts`), and checkout refuses to open a payment intent until each ticket has an attendee with an e-mail. |
+| C18 | **A subscription bought with quantity 10 records no seat count.** The line says 10 and bills 10,000; the subscription is one coverage window with no notion of how many seats it covers. | ORD-000049 → SUB-000007 | **Fixed (#589).** `SubscriptionTerm.Quantity` records the seats bought, taken before proration scales the line's quantity. Entitlement grants and renewals read it. A fractional quantity (the 2.5 variant) is refused. Tests: `subscriptions.SB30`, `SB31`, `subscription-renewal.SR31`, `entitlements.EN15`. |
 
-The availability pair (C24b/C26) is one gap, not two: `Status = 'Discontinued'` **is**
-enforced (C24 was correctly refused), but `AvailableFrom` / `AvailableTo` are not
-checked at all. So the field that reads as the deliberate control works, and the dates
-beside it are decoration.
+The availability pair (C24b/C26) was one gap, not two: at the time of the run `Status = 'Discontinued'`
+was refused (C24), but `AvailableFrom` / `AvailableTo` were not checked at all.
+
+C24b and C26 are the run's labels for the `ADV Future Widget` and `ADV Expired Window Widget`
+lines of case C24, each run as its own order; this C26 is not the backdating case C26 above.
+The status refusal that C24 met came from the UI's product picker: the server checked neither
+the status nor the dates until `assertProductSellable` was added the same day. That check first ran
+only for a line the engine priced; since #578 it runs for a hand-priced line too, and for a saved
+line, which reloads with its price and reads as hand-priced. Only a reversal line, settled from the
+line it reverses, skips it.
 
 ## Where the app was right — and the predictions that were wrong
 
@@ -436,3 +445,44 @@ Round 1 initially reported six Playwright timeouts. That was the runner, not the
 clicked a correctly-**disabled** "Confirm and book" instead of reading the refusal, so
 six correct behaviours looked like crashes. It now checks `isEnabled()` and reports
 `REFUSED — <reason>`, which is the thing those cases exist to capture.
+
+---
+
+# Integration checks for these cases (checked 2026-10-11)
+
+Check IDs are the `Id` values in `packages/IntegrationTests/src/checks/`. A check covers the seam a
+case probes, on ORD-WORLD data rather than the case's own numbers.
+
+| Case | Checks | What they cover |
+|---|---|---|
+| C1 | `pricing.PC11` | An unpriceable line is refused and the order rolls back. |
+| C2 | `pricing.PC5`, `pricing.PC15` | Equal-priority rules refuse, at confirm and in the dry run. |
+| C3 | `pricing.PC7` | Band selection only; no check orders a quantity between bands. |
+| C6 | `revenue-recognition.RR8` | An undated deferred line is refused, and confirms once dated. |
+| C10 | `order-booking.OB6` | A discount with no contra account nets into the sales credit. |
+| C11 | `order-booking.OB10` | The receivable equals the order's gross on a discounted order, though not at sub-cent prices. |
+| C12 | `arithmetic-edges.AE6` | A large line keeps its precision through to the stored totals. |
+| C13 | `volume.VL13` | Sixty lines of one product book sixty separate entries. |
+| C14 | `revenue-recognition.RR2` | Releases sum to the line amount, on an amount that divides evenly; where a remainder lands is not checked. |
+| C15 | `subscriptions.SB27` | Two lines of one `ExtendExisting` product for one subscriber on one order make one subscription with contiguous terms. |
+| C16 | `subscriptions.SB8`, `subscriptions.SB28`, `volume.VL7`, `line-subscriber.LS6` | `RejectDuplicate` across separate orders (SB8) and between two lines of one order (SB28), and the seat type's refusal when no person resolves. |
+| C17 | `subscriptions.SB7`, `volume.VL6`, `subscriptions.SB29` | Extension across separate orders (orders A and B), and order C's two lines taking the next two term numbers in sequence (SB29). |
+| C18 | `subscriptions.SB31`, `subscriptions.SB32`, `subscription-renewal.SR31`, `entitlements.EN15` | Seats on a prorated and an unprorated term, the 2.5 variant refused, two seats on a one-person type, a renewal and a grant at the seat count. |
+| C19 | `events.EV10` | Deferral and release in each line's company, for event lines. No check sells a subscription on a mixed-company order; `payment-deposit.PM11` confirms Harbor House's membership on its own order and asserts nothing about the subscription. |
+| C20 | `order-booking.OB2` | Each entry books in its line's company, with two companies rather than three. |
+| C21 | `intercompany.IC2`, `intercompany.IC3`, `intercompany.IC6`, `intercompany.IC5` | IC2 and IC3 are the control, IC6 the partial payment. IC5 confirms an order with a line of a GL-linked company that has no pair with the collector, and asserts the payment is refused naming the missing `IntercompanyAccountMatch`; two companies rather than three. |
+| C23 | `order-booking.OB9`, `order-booking.OB7`, `order-booking.OB8` | OB9 is case (a); OB7 and OB8 are case (b): a good line beside an unlinked company's line is refused and books nothing. |
+| C24, C24b, C26 (availability) | `pricing.PC17`, `pricing.PC18`, `pricing.PC19` | A product that is not `Active`, or an order dated outside the product's window, is refused with and without a stated price; an order back-dated into the window books. |
+| C25 | `events.EV1`, `events.EV3`, `events.EV8`, `events.EV11`, `events.EV12` | Dates from the event, one release on its end date, and quantity scaling the deferral. EV11 refuses five seats with no attendee; EV12 confirms one seat per line with an attendee each. Not capacity. |
+| C26 | `order-booking.OB14` | A back-dated order keeps the date it states; the entry's date and its fiscal-year numbering are not checked. |
+
+No integration check covers C4, C5, C7, C8, C9 or C22. Two lines of one subscription
+product for the same subscriber on one order are covered by `subscriptions.SB27` (C15),
+`subscriptions.SB28` (C16) and `subscriptions.SB29` (order C of C17).
+`line-subscriber.LS4` and `LS8` put several lines of one seat product on one order, each for a
+different person, and `subscriptions.SB19` refuses two bands of one family on one order.
+
+Unit tests cover some of the rest: C3's band edges, C4, C5 and C9 in
+`packages/Entities/src/__tests__/PricingBehavior.test.ts`; C8 in `line-gross.test.ts` beside it;
+C21's missing-pair refusal in `packages/CoreEntitiesServer/src/__tests__/PaymentAllocation.test.ts`;
+and C22 in `GLAccountResolver.test.ts` beside it.

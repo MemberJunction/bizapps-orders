@@ -36,6 +36,7 @@ import { AssessConcession } from './ConcessionBehavior.js';
 import {
     ApplyPromotions,
     type ApplyPromotionsResult,
+    type PromotionRejection,
     type PromotionRule,
     type PromotionValueKind,
     type StackingMode,
@@ -47,11 +48,15 @@ const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
 const PROMOTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Promotion Types';
 const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
 const ORDER_ADJUSTMENT_ALLOCATION_ENTITY = 'MJ_BizApps_Orders: Order Adjustment Allocations';
+const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
+
+/** A database-issued key, so it can go into a filter as it is. */
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class PromotionError extends Error {
     constructor(message: string) {
@@ -153,11 +158,17 @@ async function loadCandidates(
 ): Promise<{
     rows: PromotionRow[];
     codeFor: Map<string, string>;
+    typedFor: Map<string, string>;
+    codeLimitFor: Map<string, number>;
     unusable: Array<{ Code: string; Reason: string }>;
 }> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const unusable: Array<{ Code: string; Reason: string }> = [];
     const codeFor = new Map<string, string>();
+    // Keyed by promotion: the code as the customer typed it, which is what a reason is reported
+    // against, and the code's own redemption limit, which is separate from the promotion's.
+    const typedFor = new Map<string, string>();
+    const codeLimitFor = new Map<string, number>();
     const wanted = new Set<string>();
 
     if (codes.length) {
@@ -195,10 +206,12 @@ async function loadCandidates(
             }
             wanted.add(uuidKey(row.PromotionID));
             codeFor.set(uuidKey(row.PromotionID), row.ID);
+            typedFor.set(uuidKey(row.PromotionID), c);
+            if (row.MaxRedemptions != null) codeLimitFor.set(uuidKey(row.PromotionID), row.MaxRedemptions);
         }
     }
 
-    if (!wanted.size) return { rows: [], codeFor, unusable };
+    if (!wanted.size) return { rows: [], codeFor, typedFor, codeLimitFor, unusable };
 
     const ids = [...wanted].map((id) => `'${id}'`).join(',');
     const res = await rv.RunView<PromotionRow>(
@@ -219,13 +232,13 @@ async function loadCandidates(
     });
     // A code naming a promotion that is paused, expired or another company's is a REAL answer the
     // customer needs, not a silent no-op.
-    for (const [promoID, codeID] of codeFor) {
+    for (const promoID of codeFor.keys()) {
         if (!live.some((p) => uuidKey(p.ID) === promoID)) {
-            const c = codes.find((x) => codeFor.get(promoID) === codeID);
+            const c = typedFor.get(promoID);
             if (c) unusable.push({ Code: c, Reason: 'the promotion is not currently running' });
         }
     }
-    return { rows: live, codeFor, unusable };
+    return { rows: live, codeFor, typedFor, codeLimitFor, unusable };
 }
 
 /** Which promotions target this product? No target rows at all means "everything". */
@@ -265,22 +278,41 @@ async function targetsFor(
     return out;
 }
 
-/** Redemption counts, read from what actually happened rather than a stored counter. */
+interface RedemptionCounts {
+    /** Per promotion: orders that redeemed it, and how many of those were this customer's. */
+    promotions: Map<string, { total: number; customer: number }>;
+    /** Per promotion code: orders that redeemed that code. */
+    codes: Map<string, number>;
+}
+
+/**
+ * Redemption counts, read from what actually happened rather than a stored counter.
+ *
+ * A redemption is an ORDER, not an adjustment row. An order-level promotion writes one row per line
+ * its amount is allocated to, and a line-level one writes a row per line it discounts, so counting
+ * rows would let a two-line order spend two of a code's uses.
+ *
+ * The order being priced is left out. A saved draft already holds the rows its own walk wrote, and
+ * the confirm re-decides the same promotion and replaces them, so counting them would find a
+ * single-use code used up by the order that is using it.
+ */
 async function redemptionCounts(
     promotionIDs: string[],
     organizationID: string | null,
     personID: string | null,
+    orderHeaderID: string | null,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<Map<string, { total: number; customer: number }>> {
-    const out = new Map<string, { total: number; customer: number }>();
+): Promise<RedemptionCounts> {
+    const out: RedemptionCounts = { promotions: new Map(), codes: new Map() };
     if (!promotionIDs.length) return out;
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ PromotionID: string; OrderHeaderID: string }>(
+    const notThisOrder = UUID_PATTERN.test(orderHeaderID ?? '') ? ` AND OrderHeaderID <> '${orderHeaderID}'` : '';
+    const res = await rv.RunView<{ PromotionID: string; PromotionCodeID: string | null; OrderHeaderID: string }>(
         {
             EntityName: ORDER_ADJUSTMENT_ENTITY,
-            ExtraFilter: `PromotionID IN (${promotionIDs.map((i) => `'${i}'`).join(',')})`,
-            Fields: ['PromotionID', 'OrderHeaderID'],
+            ExtraFilter: `PromotionID IN (${promotionIDs.map((i) => `'${i}'`).join(',')})${notThisOrder}`,
+            Fields: ['PromotionID', 'PromotionCodeID', 'OrderHeaderID'],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -305,19 +337,39 @@ async function redemptionCounts(
         byOrder = new Map((ordRes?.Results ?? []).map((o) => [uuidKey(o.ID), o]));
     }
 
+    const ordersByPromotion = new Map<string, { total: Set<string>; customer: Set<string> }>();
+    const ordersByCode = new Map<string, Set<string>>();
     for (const r of rows) {
+        const orderKey = uuidKey(r.OrderHeaderID);
         const key = uuidKey(r.PromotionID);
-        const cur = out.get(key) ?? { total: 0, customer: 0 };
-        cur.total += 1;
-        const o = byOrder.get(uuidKey(r.OrderHeaderID));
+        const cur = ordersByPromotion.get(key) ?? { total: new Set<string>(), customer: new Set<string>() };
+        cur.total.add(orderKey);
+        const o = byOrder.get(orderKey);
         const sameCustomer =
             (organizationID && o && uuidKey(o.BillToOrganizationID) === uuidKey(organizationID)) ||
             (personID && o && uuidKey(o.BillToPersonID) === uuidKey(personID));
-        if (sameCustomer) cur.customer += 1;
-        out.set(key, cur);
+        if (sameCustomer) cur.customer.add(orderKey);
+        ordersByPromotion.set(key, cur);
+
+        if (r.PromotionCodeID) {
+            const codeKey = uuidKey(r.PromotionCodeID);
+            const orders = ordersByCode.get(codeKey) ?? new Set<string>();
+            orders.add(orderKey);
+            ordersByCode.set(codeKey, orders);
+        }
     }
+    for (const [key, v] of ordersByPromotion) out.promotions.set(key, { total: v.total.size, customer: v.customer.size });
+    for (const [key, v] of ordersByCode) out.codes.set(key, v.size);
     return out;
 }
+
+const CODE_LIMIT_REASON = 'this code has reached its redemption limit';
+
+/** What the customer is told when a redemption limit stops their code. */
+const LIMIT_REASONS: Partial<Record<PromotionRejection, string>> = {
+    RedemptionLimitReached: CODE_LIMIT_REASON,
+    CustomerRedemptionLimitReached: 'this customer has reached the redemption limit for this code',
+};
 
 /** The category chain for a product, so a category-targeted promotion reaches descendants. */
 async function categoryChain(
@@ -365,7 +417,7 @@ export async function RunPromotions(
     const perLine = new Map<string, number>();
     const orderNet = Money(input.Lines.reduce((s, l) => s + l.Net, 0));
 
-    const { rows, codeFor, unusable } = await loadCandidates(
+    const { rows, codeFor, typedFor, codeLimitFor, unusable } = await loadCandidates(
         input.Codes,
         input.CompanyID,
         input.AsOf,
@@ -424,14 +476,39 @@ export async function RunPromotions(
     }
     if (!qualified.length) return { Applications: applications, PerLine: perLine, Unusable: unusable };
 
-    const targets = await targetsFor(qualified.map((p) => p.ID), provider, user);
     const counts = await redemptionCounts(
         qualified.map((p) => p.ID),
         input.OrganizationID,
         input.PersonID,
+        input.OrderHeaderID,
         provider,
         user,
     );
+
+    // A code's own limit is separate from its promotion's: several codes can share one promotion,
+    // each with its own number of uses.
+    const usable = qualified.filter((p) => {
+        const limit = codeLimitFor.get(uuidKey(p.ID));
+        const codeID = codeFor.get(uuidKey(p.ID));
+        if (limit == null || !codeID || (counts.codes.get(uuidKey(codeID)) ?? 0) < limit) return true;
+        unusable.push({ Code: typedFor.get(uuidKey(p.ID)) ?? p.Code, Reason: CODE_LIMIT_REASON });
+        return false;
+    });
+    if (!usable.length) return { Applications: applications, PerLine: perLine, Unusable: unusable };
+
+    // A promotion stopped by a limit is reported once, however many lines it was screened against.
+    const reported = new Set<string>();
+    const reportLimits = (outcome: ApplyPromotionsResult): void => {
+        for (const r of outcome.Rejected) {
+            const reason = LIMIT_REASONS[r.Reason];
+            const key = uuidKey(r.Promotion.ID);
+            if (!reason || reported.has(key)) continue;
+            reported.add(key);
+            unusable.push({ Code: typedFor.get(key) ?? r.Promotion.Code, Reason: reason });
+        }
+    };
+
+    const targets = await targetsFor(usable.map((p) => p.ID), provider, user);
 
     const toRule = (p: PromotionRow): PromotionRule => ({
         ID: p.ID,
@@ -444,9 +521,9 @@ export async function RunPromotions(
         StackSequence: p.StackSequence,
         MinimumOrderAmount: p.MinimumOrderAmount == null ? null : Number(p.MinimumOrderAmount),
         MinimumQuantity: p.MinimumQuantity == null ? null : Number(p.MinimumQuantity),
-        RedemptionCount: counts.get(uuidKey(p.ID))?.total ?? 0,
+        RedemptionCount: counts.promotions.get(uuidKey(p.ID))?.total ?? 0,
         MaxRedemptions: p.MaxRedemptions,
-        CustomerRedemptionCount: counts.get(uuidKey(p.ID))?.customer ?? 0,
+        CustomerRedemptionCount: counts.promotions.get(uuidKey(p.ID))?.customer ?? 0,
         MaxRedemptionsPerCustomer: p.MaxRedemptionsPerCustomer,
     });
 
@@ -463,7 +540,7 @@ export async function RunPromotions(
     for (const line of input.Lines) {
         remainingByLine.set(uuidKey(line.ID), line.Net);
         const chain = await categoryChain(line.ProductCategoryID, provider, user);
-        const forThisLine = qualified.filter((p) => {
+        const forThisLine = usable.filter((p) => {
             if (p.AppliesAt === 'Order') return false;
             const t = targets.get(uuidKey(p.ID));
             if (!t) return true; // no targets = everything
@@ -481,6 +558,7 @@ export async function RunPromotions(
             StackingMode: input.StackingMode,
             AllowStacking: input.AllowStacking,
         });
+        reportLimits(outcome);
         for (const a of outcome.Applied) {
             if (a.Amount <= 0) continue;
             applications.push({
@@ -498,7 +576,7 @@ export async function RunPromotions(
 
     // ── 2. ORDER LEVEL, against what line promotions left behind ─────────────
     const netAfterLines = Money([...remainingByLine.values()].reduce((s, v) => s + v, 0));
-    const orderPromos = qualified.filter((p) => p.AppliesAt !== 'Line' && !consideredAtLineLevel.has(uuidKey(p.ID)));
+    const orderPromos = usable.filter((p) => p.AppliesAt !== 'Line' && !consideredAtLineLevel.has(uuidKey(p.ID)));
     if (orderPromos.length && netAfterLines > 0) {
         const outcome = ApplyPromotions(orderPromos.map(toRule), {
             BaseAmount: netAfterLines,
@@ -507,6 +585,7 @@ export async function RunPromotions(
             StackingMode: input.StackingMode,
             AllowStacking: input.AllowStacking,
         });
+        reportLimits(outcome);
 
         // ── 3. ALLOCATE DOWN TO LINES — mandatory, see the module header ─────
         for (const a of outcome.Applied) {
@@ -797,6 +876,155 @@ export async function WriteAdjustments(
             );
         }
     }
+}
+
+/**
+ * Per saved line, the discount it carries that is NOT a promotion's: its stored `DiscountAmount`
+ * less what the order's promotion allocations give it. Keyed by lowercased line ID.
+ *
+ * A walk that re-decides promotions on a saved order replaces the promotion's share and has to keep
+ * the rest, which is manual discounts and any amount stated on the line. Both figures are read from
+ * the database rather than from the line in memory, which may already carry a stamp from a save
+ * that did not complete.
+ */
+export async function ReadStandingDiscounts(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    if (!lineIDs.length) return out;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+
+    const stored = await rv.RunView<{ ID: string; DiscountAmount: number | null }>(
+        {
+            EntityName: ORDER_LINE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND ID IN (${quoted(lineIDs)})`,
+            Fields: ['ID', 'DiscountAmount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!stored?.Success) {
+        throw new PromotionError(`Could not read the order's line discounts: ${stored?.ErrorMessage ?? 'unknown error'}`);
+    }
+    for (const row of stored.Results) out.set(uuidKey(row.ID), Money(Number(row.DiscountAmount ?? 0)));
+
+    const promotional = await promotionAllocations(orderHeaderID, lineIDs, provider, user);
+    for (const a of promotional.Allocations) {
+        const key = uuidKey(a.OrderLineID);
+        if (!out.has(key)) continue;
+        out.set(key, Money((out.get(key) ?? 0) - Number(a.Amount ?? 0)));
+    }
+    for (const [key, amount] of out) if (amount < 0) out.set(key, 0);
+    return out;
+}
+
+/**
+ * Remove the promotion adjustment rows an earlier walk wrote for these lines, allocations first.
+ *
+ * The companion of {@link ReadStandingDiscounts}: the walk that re-decides promotions writes its own
+ * rows with {@link WriteAdjustments}, so the earlier ones go first or the trail records the
+ * discount twice while the line shows it once. Manual discount rows (no `PromotionID`) are left
+ * alone, as they are not re-decided.
+ *
+ * Scoped to the lines the walk priced. An adjustment with an allocation on one of them goes whole.
+ * Only for an order whose money is not yet frozen; the caller owns that rule.
+ */
+export async function DeletePromotionAdjustments(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    if (!lineIDs.length) return;
+    const promotional = await promotionAllocations(orderHeaderID, lineIDs, provider, user);
+    if (!promotional.AdjustmentIDs.length) return;
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const allocations = await rv.RunView<mjBizAppsOrdersOrderAdjustmentAllocationEntity>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY,
+            ExtraFilter: `OrderAdjustmentID IN (${quoted(promotional.AdjustmentIDs)})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new PromotionError(`Could not read the promotion allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    const adjustments = await rv.RunView<mjBizAppsOrdersOrderAdjustmentEntity>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter: `ID IN (${quoted(promotional.AdjustmentIDs)})`,
+            ResultType: 'entity_object',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!adjustments?.Success) {
+        throw new PromotionError(`Could not read the promotion adjustments: ${adjustments?.ErrorMessage ?? 'unknown error'}`);
+    }
+
+    for (const row of [...allocations.Results, ...adjustments.Results]) {
+        if (!(await row.Delete())) {
+            throw new PromotionError(
+                `Could not remove the previous promotion on this order: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+    }
+}
+
+/** The order's promotion adjustments touching these lines, and their allocations on them. */
+async function promotionAllocations(
+    orderHeaderID: string,
+    lineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<{ AdjustmentIDs: string[]; Allocations: Array<{ OrderLineID: string; Amount: number | null }> }> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const promotions = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${orderHeaderID}' AND PromotionID IS NOT NULL`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!promotions?.Success) {
+        throw new PromotionError(`Could not read the order's promotion adjustments: ${promotions?.ErrorMessage ?? 'unknown error'}`);
+    }
+    if (!promotions.Results.length) return { AdjustmentIDs: [], Allocations: [] };
+
+    const allocations = await rv.RunView<{ OrderAdjustmentID: string; OrderLineID: string; Amount: number | null }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ALLOCATION_ENTITY,
+            ExtraFilter:
+                `OrderAdjustmentID IN (${quoted(promotions.Results.map((p) => p.ID))})` +
+                ` AND OrderLineID IN (${quoted(lineIDs)})`,
+            Fields: ['OrderAdjustmentID', 'OrderLineID', 'Amount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!allocations?.Success) {
+        throw new PromotionError(`Could not read the promotion allocations: ${allocations?.ErrorMessage ?? 'unknown error'}`);
+    }
+    return {
+        AdjustmentIDs: [...new Set(allocations.Results.map((a) => uuidKey(a.OrderAdjustmentID)))],
+        Allocations: allocations.Results,
+    };
+}
+
+/** Database-issued IDs as a SQL `IN` list, each once. */
+function quoted(ids: string[]): string {
+    return [...new Set(ids.map(uuidKey))].map((id) => `'${id}'`).join(',');
 }
 
 /** Tree-shaking anchor for the qualifier base registration. */

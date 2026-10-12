@@ -17,6 +17,7 @@
  * pick → (clear | replace) → server save.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { EntitySavePlan } from '@memberjunction/core';
 import { DescribeClearedEmployers, OrderHeaderEntity, type PartyOrganizationClear } from '../OrderHeaderEntity';
 import { KeptPartyOrganizationsCompanion } from '../KeptPartyOrganizationsCompanion';
 
@@ -32,21 +33,31 @@ type Values = Record<string, unknown>;
  * An order with the real prototype over a plain value store. `onDisk` is what a loaded order
  * read from the database, and is what each field reports as its `OldValue`.
  */
-function order(options: { onDisk?: Values; employers?: Record<string, string> } = {}) {
+function order(options: { onDisk?: Values; employers?: Record<string, string>; unsaved?: boolean } = {}) {
     const onDisk: Values = { Status: 'Draft', OrderDate: '2026-09-25', ...options.onDisk };
     const values: Values = { ...onDisk };
+    // `unsaved` models a record MemberJunction has never saved: the first value set on a field
+    // becomes its OldValue, so that field is not Dirty.
+    const firstSet: Values = {};
     const employers = options.employers ?? { [PERSON]: EMPLOYER, [OTHER_PERSON]: OTHER_EMPLOYER };
 
     const o = Object.create(OrderHeaderEntity.prototype) as OrderHeaderEntity;
     Object.defineProperty(o, 'partyFills', { value: new Map() });
     Object.defineProperty(o, 'partyCopiesCleared', { value: new Set() });
     Object.defineProperty(o, 'Get', { value: (f: string) => values[f] ?? null });
-    Object.defineProperty(o, 'Set', { value: (f: string, v: unknown) => { values[f] = v; } });
+    Object.defineProperty(o, 'Set', {
+        value: (f: string, v: unknown) => {
+            if (options.unsaved && !(f in firstSet) && v != null) firstSet[f] = v;
+            values[f] = v;
+        },
+    });
+    Object.defineProperty(o, 'IsSaved', { value: !options.unsaved });
+    const oldValue = (f: string) => (f in firstSet ? firstSet[f] : onDisk[f]) ?? null;
     Object.defineProperty(o, 'GetFieldByName', {
         value: (f: string) => ({
             Value: values[f] ?? null,
-            OldValue: onDisk[f] ?? null,
-            Dirty: (values[f] ?? null) !== (onDisk[f] ?? null),
+            OldValue: oldValue(f),
+            Dirty: (values[f] ?? null) !== oldValue(f),
         }),
     });
     Object.defineProperty(o, 'ProviderToUse', {
@@ -226,6 +237,17 @@ describe('the server save', () => {
     it('still fills an empty ship-to from the bill-to on a new order', async () => {
         const { o, values } = order();
         o.Set('BillToPersonID', PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ ShipToPersonID: PERSON, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
+    });
+
+    it('fills the ship-to and stamps the employer on a record never saved, whose person field is not Dirty', async () => {
+        // A writer that creates the order (an API call, a GraphQL create) sets the person once
+        // before the first save, so MemberJunction records it as the field's old value.
+        const { o, values } = order({ unsaved: true });
+        o.Set('BillToPersonID', PERSON);
+        expect(o.GetFieldByName('BillToPersonID')?.Dirty).toBe(false);
         await serverSave(o);
 
         expect(values).toMatchObject({ ShipToPersonID: PERSON, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
@@ -425,6 +447,32 @@ describe('the kept-organizations companion', () => {
 
         commit();
         expect(o.KeptPartyOrganizations.Dirty).toBe(false);
+    });
+
+    it('routes a client save that carries a keep through the graph save, the one that carries companions', () => {
+        const { o } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        const plan = new EntitySavePlan(o);
+        plan.AddSave(o, 'root', undefined, true);
+
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(1);
+
+        o.KeepPartyOrganization('BillToOrganizationID');
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(2);
+    });
+
+    it('adds no node where the save runs in this process, so the order saves once', () => {
+        const { o } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        Object.assign(o.ProviderToUse, { SupportsEntityTransactions: true });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.KeepPartyOrganization('BillToOrganizationID');
+        const plan = new EntitySavePlan(o);
+        plan.AddSave(o, 'root', undefined, true);
+
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(1);
     });
 
     it('reads back what it wrote and drops entries it cannot read', async () => {

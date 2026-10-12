@@ -126,12 +126,23 @@ export interface CancellationContext {
     Term: CancellableTerm;
 }
 
+/**
+ * How much of a later term has been invoiced (#560). An order with no payment schedule invoices in
+ * full when it is confirmed; a scheduled one invoices instalment by instalment.
+ *   Invoiced      every live instalment has gone out, or the order has no schedule
+ *   NotInvoiced   no instalment has gone out
+ *   PartInvoiced  some have and some are still to come
+ */
+export type LaterTermBilling = 'Invoiced' | 'NotInvoiced' | 'PartInvoiced';
+
 /** A term that starts after the cancelled term's coverage ends (#406). */
 export interface LaterTermCancellationContext {
     Rules: SubscriptionTypeRules;
     Term: CancellableTerm;
     /** The cancelled term's `EffectiveDate` — when the subscription's coverage ends. */
     CoverageEndsDate: Date;
+    /** What has been invoiced for the term so far. */
+    Billing: LaterTermBilling;
 }
 
 /**
@@ -181,6 +192,11 @@ export interface CoverageOverlap {
     /** The `ConcurrencyMode` and code of the other band's subscription type. */
     ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
     SubscriptionTypeCode: string;
+    /** The other band's type's `CancellationMode` and `GracePeriodDays`: when cancelling it would end its coverage. */
+    CancellationMode: SubscriptionTypeRules['CancellationMode'];
+    GracePeriodDays: number;
+    /** True when that subscription can still be cancelled: it exists and is not already Canceled. */
+    Cancelable: boolean;
 }
 
 export interface CoverageOverlapContext {
@@ -355,6 +371,25 @@ function describeOverlap(o: CoverageOverlap): string {
     return `${who} (${o.ProductName}, ${isoDay(o.CoverageStart)} to ${isoDay(o.CoverageEnd)})`;
 }
 
+/**
+ * The cancel-first way out, or null when cancelling would not let the line confirm.
+ *
+ * Only an `Immediate` type ends coverage on the cancellation date; `EndOfTerm` and
+ * `EndOfBillingPeriod` keep it running, and that coverage still counts. Grace extends access past
+ * the cancellation, and access is what the overlap check reads, so the new band starts after it.
+ * Every overlapping band must qualify: one that keeps running still blocks the line.
+ */
+function cancelFirstHint(overlaps: CoverageOverlap[]): string | null {
+    if (!overlaps.every((o) => o.Cancelable && o.CancellationMode === 'Immediate')) return null;
+    const numbers = overlaps.map((o) => o.SubscriptionNumber ?? o.SubscriptionID).join(', ');
+    const grace = Math.max(0, ...overlaps.map((o) => o.GracePeriodDays ?? 0));
+    const when =
+        grace > 0
+            ? `${grace + 1} days after the cancellation date, once its ${grace}-day grace period ends`
+            : 'the day after the cancellation date';
+    return `cancel ${numbers} first and start it ${when}`;
+}
+
 @RegisterClass(SubscriptionBehavior, 'Default')
 export class SubscriptionBehavior {
     /**
@@ -475,6 +510,23 @@ export class SubscriptionBehavior {
         }
 
         return null;
+    }
+
+    /**
+     * How many seats a subscription line buys, or why the quantity cannot be a seat count (#589).
+     *
+     * Read from the quantity as ENTERED, before proration scales it to price a short first period;
+     * the term stores the result, and entitlement grants and renewals read it from there.
+     *
+     * A seat is whole: 2.5 seats bills 2.5 × the rate for coverage nobody can hold. Every benefit
+     * model records the count as bought; ten staff can still be ten lines, each naming its person
+     * (see `DedupeIdentity`).
+     */
+    public SeatCount(_rules: SubscriptionTypeRules, quantity: number): { Seats: number } | { Error: string } {
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            return { Error: `a subscription is bought in whole seats, so the quantity must be a whole number of at least 1 (it is ${quantity}).` };
+        }
+        return { Seats: quantity };
     }
 
     /**
@@ -676,9 +728,10 @@ export class SubscriptionBehavior {
      * the holder twice. So it refuses unless the line says the overlap is intended.
      *
      * The way out the message offers is a start after the existing coverage, or (where the mode
-     * permits) marking the line to run alongside it. It does not offer cancelling the existing
-     * subscription: a cancelled subscription keeps its coverage through its end date, and that
-     * coverage still counts.
+     * permits) marking the line to run alongside it. It offers cancelling the existing subscription
+     * first only when that would clear the overlap: a cancelled subscription keeps its coverage
+     * through its end date, and that coverage still counts, so only an `Immediate` type, which ends
+     * coverage on the cancellation date, qualifies.
      */
     public DecideCoverageOverlap(ctx: CoverageOverlapContext): CoverageOverlapDecision {
         if (ctx.Overlaps.length === 0) return { Outcome: 'None', Message: null };
@@ -691,6 +744,7 @@ export class SubscriptionBehavior {
             `${ctx.ProductName} overlaps coverage this holder already has in subscription family ` +
             `${ctx.Family}: ${ctx.Overlaps.map(describeOverlap).join('; ')}.`;
         const startAfter = isoDay(new Date(Math.max(...ctx.Overlaps.map((o) => utcDay(o.CoveredThrough).getTime()))));
+        const cancelFirst = cancelFirstHint(ctx.Overlaps);
 
         switch (governing.Mode) {
             case 'AllowMultiple':
@@ -703,7 +757,9 @@ export class SubscriptionBehavior {
                     Outcome: 'Refused',
                     Message:
                         `${what} Subscription type ${governing.Code} does not allow concurrent subscriptions. ` +
-                        `Start this band after ${startAfter}.`,
+                        (cancelFirst
+                            ? `Start this band after ${startAfter}, or ${cancelFirst}.`
+                            : `Start this band after ${startAfter}.`),
                 };
             case 'ExtendExisting':
                 return ctx.Acknowledged
@@ -715,7 +771,9 @@ export class SubscriptionBehavior {
                           Outcome: 'NeedsAck',
                           Message:
                               `${what} A different band does not extend the existing subscription, so both would be billed. ` +
-                              `Start this band after ${startAfter}, or mark the line to run alongside it.`,
+                              (cancelFirst
+                                  ? `Start this band after ${startAfter}, ${cancelFirst}, or mark the line to run alongside it.`
+                                  : `Start this band after ${startAfter}, or mark the line to run alongside it.`),
                       };
         }
     }
@@ -778,14 +836,33 @@ export class SubscriptionBehavior {
 
     /**
      * What cancelling does to a LATER term — one that starts after the cancelled term's effective
-     * date, such as a renewal already booked (#406). The subscription ends before it begins, so
-     * none of it is ever delivered: it is cancelled and reversed in full, whatever the type's
-     * refund mode. `CancellationRefundMode` governs coverage the customer has had; a term that
-     * never started has none. Override to change that.
+     * date, such as a renewal already booked (#406). The subscription ends before the term begins,
+     * so the term is always `Canceled` and grants no access.
+     *
+     * The money follows the type's refund mode (#560). `ProrateUnused` and
+     * `FullRefundWithinWindow` give the whole term back, because none of it was used and it is
+     * inside any window. `NoRefund` keeps what was invoiced: such a term reverses nothing. A
+     * `NoRefund` term not invoiced yet is reversed in full, which withdraws its instalments and
+     * credits nothing, since there is no money to keep. This policy is provisional until the
+     * refund-policy owner confirms it on #560; override to change it.
      */
     public DecideLaterTermCancellation(rawContext: LaterTermCancellationContext): CancellationDecision {
         const start = utcDay(rawContext.Term.StartDate);
         const amount = money(Math.max(rawContext.Term.Amount, 0));
+        const coverage =
+            `Term ${rawContext.Term.TermNumber} starts ${isoDay(start)}, after coverage ends ` +
+            `${isoDay(utcDay(rawContext.CoverageEndsDate))}, so it is canceled`;
+        const keeps = rawContext.Rules.CancellationRefundMode === 'NoRefund' && rawContext.Billing !== 'NotInvoiced';
+        if (keeps) {
+            return {
+                EffectiveDate: start,
+                AccessThroughDate: start,
+                RefundAmount: 0,
+                ReversalFraction: 0,
+                TermStatus: 'Canceled',
+                Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept.`,
+            };
+        }
         return {
             EffectiveDate: start,
             // Access is the subscription's, decided by the cancelled term; this term grants none.
@@ -795,8 +872,9 @@ export class SubscriptionBehavior {
             ReversalFraction: amount > 0 ? 1 : 0,
             TermStatus: 'Canceled',
             Explanation:
-                `Term ${rawContext.Term.TermNumber} starts ${isoDay(start)}, after coverage ends ` +
-                `${isoDay(utcDay(rawContext.CoverageEndsDate))}, so it is canceled and its full ${amount} reversed.`,
+                rawContext.Rules.CancellationRefundMode === 'NoRefund'
+                    ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed and its instalments withdrawn.`
+                    : `${coverage} and its full ${amount} reversed.`,
         };
     }
 
@@ -905,6 +983,10 @@ export interface FamilyCoverageTerm {
     /** The `ConcurrencyMode` and code of that band's subscription type. */
     ConcurrencyMode: SubscriptionTypeRules['ConcurrencyMode'];
     SubscriptionTypeCode: string;
+    /** That band's type's cancellation rules, and whether its subscription can still be cancelled. See {@link CoverageOverlap}. */
+    CancellationMode: SubscriptionTypeRules['CancellationMode'];
+    GracePeriodDays: number;
+    Cancelable: boolean;
 }
 
 /**
@@ -950,6 +1032,9 @@ export function OverlappingCoverage(terms: FamilyCoverageTerm[], start: Date, en
                 CoveredThrough: new Date(coveredThrough.get(key)!),
                 ConcurrencyMode: term.ConcurrencyMode,
                 SubscriptionTypeCode: term.SubscriptionTypeCode,
+                CancellationMode: term.CancellationMode,
+                GracePeriodDays: term.GracePeriodDays,
+                Cancelable: term.Cancelable,
             });
         }
     });

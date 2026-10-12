@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
-import { FormatDate, FormatMoney, DaysSince } from '../../panels/money-format';
+import { FormatDate, FormatInstantDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { RunView, Metadata, type EntityInfo } from '@memberjunction/core';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
@@ -183,7 +183,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                             @for (event of Events; track event['ID']) {
                                 <div class="mjo-sub__event">
                                     <span class="mj-chip mj-chip--outline">{{ event['EventType'] }}</span>
-                                    <span class="small muted">{{ dateOf(event['OccurredAt']) }}</span>
+                                    <span class="small muted">{{ instantOf(event['OccurredAt']) }}</span>
                                 </div>
                             } @empty {
                                 <div class="small muted">No history yet.</div>
@@ -387,9 +387,9 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     }
 
     /**
-     * Dates and amounts arrive as `unknown` off a loosely-typed row.
+     * A term's start or end date. Dates and amounts arrive as `unknown` off a loosely-typed row.
      *
-     * The value goes to `FormatDate` as it is. Terms and events are entity objects,
+     * The value goes to the formatter as it is. Terms and events are entity objects,
      * so their dates are `Date`, and `String(date)` is 'Mon Aug 10 2026 …', which
      * no ISO reader parses — every term window and history row rendered '—'.
      *
@@ -397,24 +397,21 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      * of an annual subscription runs Jul 31 → Jul 30 exactly like the term before
      * it — so the short format rendered two different years as the same window and
      * made an appended renewal look like a duplicate.
-     */
-    protected dateOf(value: unknown): string {
-        if (value instanceof Date || typeof value === 'string') return FormatDate(value);
-        return '—';
-    }
-
-    /**
-     * A term's start or end date.
      *
-     * TERM DATES ARE CALENDAR DAYS, NOT INSTANTS. They arrive as midnight UTC, and
-     * `dateOf` reads local parts, so west of Greenwich Jan 1 rendered as Dec 31 and
-     * a renewal term appeared to overlap the one before it by a day. `ToISODate`
-     * reads the stored day, the same way `CoveredThrough` does. History timestamps
-     * are real instants and stay on `dateOf`.
+     * TERM DATES ARE CALENDAR DAYS, NOT INSTANTS. They arrive as midnight UTC; read
+     * with local parts, west of Greenwich Jan 1 rendered as Dec 31 and a renewal term
+     * appeared to overlap the one before it by a day. `ToISODate` reads the stored
+     * day, the same way `CoveredThrough` does. History timestamps are real instants
+     * and go through `instantOf`.
      */
     protected termDateOf(value: unknown): string {
         const day = ToISODate(value);
         return day ? FormatDate(day) : '—';
+    }
+
+    /** A `datetimeoffset` (an event's `OccurredAt`), as the business day it happened on. */
+    protected instantOf(value: unknown): string {
+        return value ? FormatInstantDate(value as DateCell) : '—';
     }
 
     /**

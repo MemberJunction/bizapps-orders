@@ -9,7 +9,7 @@ import {
     OrdersIssueExternalInvoiceOperation,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
-import { FormatDate, FormatMoney } from '../panels/money-format';
+import { FormatInstantDate, FormatMoney } from '../panels/money-format';
 import { BilledOnScheduleFromRows, CanCancel, CanResolveInFlight, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
 
 /** One `ExternalInvoice` row as this panel needs it. Read by name; the panel never writes one. */
@@ -205,7 +205,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public BilledOnSchedule = false;
 
     public readonly money = (n: number): string => FormatMoney(n);
-    public readonly date = (iso: string): string => FormatDate(iso, { Short: true });
+    /** `SentAt` is a `datetimeoffset`: shown as the business day it happened on. */
+    public readonly date = (iso: string): string => FormatInstantDate(iso, { Short: true });
 
     public async ngOnInit(): Promise<void> {
         await this.load();

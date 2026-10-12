@@ -338,8 +338,8 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C420"
     },
     "sync": {
-      "lastModified": "2026-10-05T14:47:07.610Z",
-      "checksum": "f77c01cfba960a423c2bedc7b87c08a95f8d6fda36fc640c2cfeeff674a448e0"
+      "lastModified": "2026-10-08T21:14:48.541Z",
+      "checksum": "5031fe0ca1f6451ddd002e54e921faa77b9dac799bc69a95f69bdd5180505ae5"
     }
   },
   {
@@ -365,8 +365,8 @@
       "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C421"
     },
     "sync": {
-      "lastModified": "2026-09-10T23:31:28.053Z",
-      "checksum": "85cd784d374c8ea10ebe7bbfed59bb45c84d98f6f459929d9cf49b2ad9652b97"
+      "lastModified": "2026-10-08T21:14:48.565Z",
+      "checksum": "d1d06c74b740fc333cf66fff8e67e7a02f5073a3dc586acbc0fee1d7cc8dab0f"
     }
   },
   {
@@ -617,7 +617,7 @@
       "Name": "Amend Arrangement",
       "OperationKey": "Orders.AmendArrangement",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
-      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount (NewAmount, optionally AppliesToInvoiceID) is previewed the same way: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and any credit memo. Otherwise it records a Price concession carrying NewAmount, routed for approval; when approved, the catch-up and re-cut are posted, the term's amount and the uninvoiced instalments are lowered, and accounting is asked to confirm. A change that needs a credit memo or a refund is refused for now.",
+      "Description": "Extend a booked subscription term at no charge, or move its start and end together (a shift). Preview returns what the amendment would do and writes nothing. An extension records a Duration concession, routed for approval like any other; it applies when approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A shift records a Shift concession valued at zero, which goes through under the TermShiftReviewDays setting and otherwise waits for the finance acknowledgment role; it applies when approved: the term's dates, a re-spread from the new start with one catch-up or reversal in the current open period, access, instalments not yet invoiced, and the acknowledgment task. A holder of that role can escalate a shift awaiting review to the ConcessionLimit approver. A change of amount (NewAmount, optionally AppliesToInvoiceID) is previewed the same way: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and any credit memo. Otherwise it records a Price concession carrying NewAmount, routed for approval; when approved, the catch-up and re-cut are posted, the term's amount and the uninvoiced instalments are lowered, and accounting is asked to confirm. A change that needs a credit memo or a refund is refused for now. A shortening is refused until that same credit-memo path exists.",
       "InputTypeName": "AmendArrangementInput",
       "InputTypeDefinition": "@file:types/orders-amend-arrangement.input.ts",
       "InputTypeIsArray": false,

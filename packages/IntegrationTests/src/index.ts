@@ -22,7 +22,7 @@
  *   payment-ledger       PL1–PL12  the CASH leg: capture/refund journal entries, AR reconciliation (D17/D18)
  *   line-subscriber      LS1–LS8   per-line ship-to and BenefitModel dedupe scope (D61/D62)
  *   account-credit       AC1–AC11  the allocation invariant, over-payment, credit as tender (D68)
- *   pricing              PC1–PC16  price resolution, the resolver walk, and the dry run (D69)
+ *   pricing              PC1–PC21  price resolution, the resolver walk, and the dry run (D69)
  *   promotions           PR1–PR15  offers, codes, stacking, allocation, authorized manual discounts (D70)
  *   charges              CH1–CH12  shipping, handling and TAX as one mechanism (D71)
  *   tax                  TX1–TX15  rate resolution by address, nexus, taxability and exemptions (D73)
@@ -32,9 +32,9 @@
  *   concurrency          CN1–CN6   document numbering under contention, on a second connection (D30)
  *   events               EV1–EV10  event products and one-time deferred revenue
  *   volume               VL1–VL13  populations, repeated purchases, and a SECOND MJ session
- *   entitlements         EN1–EN24  what a purchase confers, for how long, and when payment gates it (D27/D76, #223)
+ *   entitlements         EN1–EN32  what a purchase confers, for how long, when payment gates it, and access override requests (D27/D76, #223, #360)
  *   entitlement-read     ER1–ER7   Orders.CheckEntitlement / ListEntitlements in-process Execute
- *   payment-providers    PV1–PV16  the gateway seam against a real database (D19/D37); PV13–PV16 an order from an unmatched charge (#481)
+ *   payment-providers    PV1–PV20  the gateway seam against a real database (D19/D37); PV13–PV16 an order from an unmatched charge (#481); PV17–PV18 the reconciliation's automatic path; PV19–PV20 resolving its finance exception (#567)
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
@@ -43,8 +43,10 @@
  *   concessions          CS1–CS25  concessions valued in any form, approved before the customer sees them
  *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
  *   amount-change        AC1–AC7   lowering a booked term's amount: preview, record, approve and apply; credit-memo cases refused (#506)
+ *   term-shift           TS1–TS6   a booked term's start and end moved together, with recognition, access and instalments following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
+ *   billcom-rail         BR1–BR20  the Bill.com invoice rail through its gateway seam: send, cancel, poll, webhook, job gate (#591)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.
@@ -120,6 +122,8 @@ export * from './checks/outbound-events.checks.js';
 export * from './checks/concessions.checks.js';
 export * from './checks/term-extension.checks.js';
 export * from './checks/amount-change.checks.js';
+export * from './checks/term-shift.checks.js';
+export * from './checks/billcom-rail.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

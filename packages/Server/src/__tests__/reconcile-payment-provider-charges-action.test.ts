@@ -24,6 +24,7 @@ function run(params: ActionParam[], output?: Partial<OrdersReconcilePaymentProvi
         Mismatches: [],
         Raised: 0,
         AlreadyRaised: 0,
+        OrdersCreated: [],
         Errors: [],
         Message: '0 mismatch(es)',
         ...output,
@@ -57,6 +58,13 @@ describe('Orders.ReconcilePaymentProviderCharges action', () => {
         const { res, routed } = await run([p('Preview', 'maybe')]);
         expect(res).toMatchObject({ Success: false, ResultCode: 'INVALID_PREVIEW' });
         expect(routed).toHaveLength(0);
+    });
+
+    it('reports the orders created from unmatched charges as an output', async () => {
+        const created = { PaymentProviderID: 'p', ProviderChargeID: 'ch_1', OrderHeaderID: 'o', OrderNumber: 'ORD-1', Amount: 300 };
+        const params = [p('Preview', 'false')];
+        await run(params, { Preview: false, OrdersCreated: [created] });
+        expect(params.find((x) => x.Name === 'OrdersCreated')?.Value).toEqual([created]);
     });
 
     it('fails the run when a provider could not be read', async () => {
