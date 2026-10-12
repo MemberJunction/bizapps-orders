@@ -206,6 +206,7 @@ export async function ExpandBundleLines(
             // The overlap acknowledgment is made on the line the rep entered, which for a band sold
             // inside a bundle is the bundle line. The band's own line does not exist until now.
             row.AcknowledgesCoverageOverlap = !!line.AcknowledgesCoverageOverlap;
+            row.CoverageOverlapReason = line.CoverageOverlapReason ?? null;
             lines.push(row);
             out.ChildrenCreated++;
         }
@@ -229,7 +230,8 @@ export async function ExpandBundleLines(
  * Bring a bundle line's existing children in line with its current plan.
  *
  * The parent's quantity or price may have changed since the last save. A child whose quantity or
- * price was set by hand keeps it. An acknowledgment made on the bundle line reaches every child.
+ * price was set by hand keeps it. An acknowledgment made on the bundle line, and its reason, reach
+ * every child.
  */
 function refreshChildren(parent: ExpandableLine, existing: ExpandableLine[], planned: PlannedBundleChild[]): void {
     const unmatched = [...existing];
@@ -241,7 +243,10 @@ function refreshChildren(parent: ExpandableLine, existing: ExpandableLine[], pla
         if (!row.PriceOverridden) row.UnitPrice = child.UnitPrice;
     }
     if (parent.AcknowledgesCoverageOverlap) {
-        for (const row of existing) row.AcknowledgesCoverageOverlap = true;
+        for (const row of existing) {
+            row.AcknowledgesCoverageOverlap = true;
+            row.CoverageOverlapReason = parent.CoverageOverlapReason ?? null;
+        }
     }
 }
 

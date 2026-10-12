@@ -56,6 +56,8 @@ export interface LineSpec {
     RenewsSubscriptionID?: string;
     /** `OrderLine.AcknowledgesCoverageOverlap` — the line is meant to run alongside another band. */
     AcknowledgesCoverageOverlap?: boolean;
+    /** `OrderLine.CoverageOverlapReason` — why it runs alongside; confirm needs it with the acknowledgment. */
+    CoverageOverlapReason?: string;
     /**
      * The line this one UNWINDS (D16). Required for a negative quantity — `OrderLineEntityServer`
      * refuses one without it, because a negative line with no origin is indistinguishable from a
@@ -240,6 +242,7 @@ export async function BuildOrder(
         if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
         if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
         if (ls.AcknowledgesCoverageOverlap) line.AcknowledgesCoverageOverlap = true;
+        if (ls.CoverageOverlapReason) line.CoverageOverlapReason = ls.CoverageOverlapReason;
         if (ls.ReversesOrderLineID) line.ReversesOrderLineID = ls.ReversesOrderLineID;
         for (const c of ls.Choices ?? []) {
             const row = await line.Choices.Create();

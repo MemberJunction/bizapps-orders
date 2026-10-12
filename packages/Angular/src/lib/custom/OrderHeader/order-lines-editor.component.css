@@ -505,6 +505,29 @@
     font-weight: var(--mj-font-semibold);
     cursor: pointer;
 }
+.mjo-ol-overlap__hint {
+    font-style: italic;
+}
+.mjo-ol-overlap__reason span {
+    display: block;
+    margin-bottom: 4px;
+}
+.mjo-ol-overlap__reason textarea {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+    min-height: 48px;
+    padding: 6px 8px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+}
+.mjo-ol-overlap__reason.is-required textarea {
+    border-color: var(--mj-status-danger-text, #b42318);
+}
 .mjo-ol-overlap-err {
     margin-bottom: var(--mj-space-2);
     font-size: var(--mj-text-xs);

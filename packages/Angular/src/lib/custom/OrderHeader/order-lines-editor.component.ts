@@ -21,6 +21,7 @@ import {
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
+    CoverageOverlapReasonMissing,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
     LineNeedsOverrideReason,
@@ -29,6 +30,7 @@ import {
     LoadOrdersEngine,
     OrdersEngine,
     RestoreLineDefault,
+    UserCanRunAlongside,
     loadApplicabilityContext,
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
@@ -175,6 +177,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     @ViewChild('pickerHost') private pickerHost?: ElementRef<HTMLElement>;
     /** 'none' hides the picker; 'list' is named prices only; 'any' also types an amount. */
     public OverrideKind: PriceOverrideKind = 'none';
+    /** The user holds the run-alongside grant (bizapps-orders#511); confirm checks it again. */
+    public CanRunAlongside = false;
     private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
     private readonly overrideEditorLineIds = new Set<string>();
     private readonly defaultUnitByLine = new Map<string, number | null>();
@@ -438,21 +442,41 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     /**
-     * True while confirm would refuse this line. Read from the checkbox as it stands, not the
-     * server's last answer, so ticking it clears the warning before the next save.
+     * True while confirm would refuse this line. Read from the checkbox and reason as they stand,
+     * not the server's last answer, so ticking it and giving a reason clears the warning before the
+     * next save. A tick also needs the run-alongside grant (bizapps-orders#511).
      */
     public OverlapBlocksConfirm(line: mjBizAppsOrdersOrderLineEntity): boolean {
         const found = this.CoverageOverlapFor(line);
         if (!found) return false;
         if (found.Outcome === 'Refused') return true;
-        return this.CanAcknowledgeOverlap(line) && !line.AcknowledgesCoverageOverlap;
+        if (!this.CanAcknowledgeOverlap(line)) return false;
+        return !line.AcknowledgesCoverageOverlap || !this.CanRunAlongside || this.OverlapReasonMissing(line);
+    }
+
+    /** The line is ticked to run alongside and gives no reason, which confirm refuses. */
+    public OverlapReasonMissing(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return CoverageOverlapReasonMissing(line);
     }
 
     public SetOverlapAcknowledged(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         if (!this.EditMode) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
+        if (target.checked && !this.CanRunAlongside) {
+            target.checked = false;
+            return;
+        }
         line.AcknowledgesCoverageOverlap = target.checked;
+        // A reason left on an unticked line would read as an overlap someone approved.
+        if (!target.checked) line.CoverageOverlapReason = null;
+    }
+
+    public SetOverlapReason(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) return;
+        line.CoverageOverlapReason = target.value;
     }
 
     private async refreshCoverage(): Promise<void> {
@@ -1186,6 +1210,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         }
         await this.hydrateExtensions();
         await this.resolveOverrideKind();
+        this.CanRunAlongside = UserCanRunAlongside(this.metadata.CurrentUser as UserInfo | null, this.metadata);
         if (!this.DiscountAuthorityLoaded) await this.loadDiscountAuthority();
         // The staged rows are consumed by the SERVER's copy of the order, so the browser has to be
         // told the save happened or it would hand the same concessions over again on the next one.

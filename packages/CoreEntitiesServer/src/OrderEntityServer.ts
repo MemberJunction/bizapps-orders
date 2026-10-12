@@ -62,6 +62,7 @@ import {
     ToISODate,
     HostOrderConfirmVeto,
     ResolveOrderConfirmRefusal,
+    RunAlongsideRefusal,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -3386,6 +3387,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     if (verdict.Outcome !== 'None') preview.push({ Line: line, Decision: verdict, Overlaps: overlaps });
                 } else if (verdict.Outcome === 'Refused' || verdict.Outcome === 'NeedsAck') {
                     throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${verdict.Message}`);
+                } else if (verdict.Outcome === 'Acknowledged') {
+                    // The acknowledgment is what lets this line through, so it needs the person
+                    // confirming to hold the grant and the line to say why (bizapps-orders#511).
+                    const refusal = RunAlongsideRefusal(
+                        line,
+                        this.ContextCurrentUser as UserInfo,
+                        this.ProviderToUse as unknown as IMetadataProvider,
+                    );
+                    if (refusal) {
+                        throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${refusal}`);
+                    }
+                    LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message} Reason: ${line.CoverageOverlapReason}`);
                 } else if (verdict.Outcome !== 'None') {
                     LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message}`);
                 }
