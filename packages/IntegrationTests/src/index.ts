@@ -43,6 +43,7 @@
  *   concessions          CS1–CS25  concessions valued in any form, approved before the customer sees them
  *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
  *   amount-change        AC1–AC4   previewing a lower amount on a booked term: catch-up, re-spread, instalments, credit (#506)
+ *   term-shift           TS1–TS6   a booked term's start and end moved together, with recognition, access and instalments following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
  *
@@ -120,6 +121,7 @@ export * from './checks/outbound-events.checks.js';
 export * from './checks/concessions.checks.js';
 export * from './checks/term-extension.checks.js';
 export * from './checks/amount-change.checks.js';
+export * from './checks/term-shift.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

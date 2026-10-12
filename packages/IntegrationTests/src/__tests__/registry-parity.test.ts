@@ -71,6 +71,7 @@ import '../checks/outbound-events.checks.js';
 import '../checks/concessions.checks.js';
 import '../checks/term-extension.checks.js';
 import '../checks/amount-change.checks.js';
+import '../checks/term-shift.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -127,6 +128,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     concessions: 34,
     'term-extension': 9,
     'amount-change': 4,
+    'term-shift': 6,
 };
 
 /**

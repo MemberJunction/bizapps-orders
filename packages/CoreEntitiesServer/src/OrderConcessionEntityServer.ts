@@ -27,6 +27,13 @@
  * approval, whatever the requester's authority, and the requester cannot decide it even when they hold the
  * approving role. ./PaymentTermsChange.ts applies it in the approval's own transaction.
  *
+ * AN APPROVED SHIFT CONCESSION MOVES ITS TERM'S START AND END TOGETHER (#507). A shift is a term change, not a sales
+ * concession: it is valued at zero and the rep's authority and the ConcessionLimit tiers do not decide it. Under the
+ * `TermShiftReviewDays` setting it is approved on save; at or above it, it waits for the finance acknowledgment role
+ * (`AmendmentAcknowledgmentRole`), and the requester cannot decide it. A holder of that role can approve or reject it,
+ * or escalate it to the ConcessionLimit tier it meets (`EscalateShift`), whose role then decides it. ./TermShift.ts
+ * applies it in the approval's own transaction and raises the acknowledgment task, so it gets no second one.
+ *
  * A LINE WHOSE PRODUCT ALWAYS NEEDS APPROVAL (golive #281) is valued like any other Price or Scope concession, at
  * zero when it gives nothing away against an engine price, and always goes to the approval tier it meets: the
  * requester's own authority never approves it, and the requester cannot decide it. The confirm gate holds the order
@@ -63,6 +70,7 @@
  *   TASKS:  ./ConcessionApprovalTask.ts (raise, close) · ./ConcessionApprovalListener.ts (decide from task)
  *   APPLY:  ./TermExtension.ts (a Duration concession reaching Approved)
  *           ./PaymentTermsChange.ts (a Terms concession reaching Approved)
+ *           ./TermShift.ts (a Shift concession reaching Approved)
  *   GATE:   OrderEntityServer (confirm) and the send-document action refuse while one is Pending
  */
 import {
@@ -84,6 +92,7 @@ import {
     ConcessionShare,
     ConcessionValue,
     InclusiveDays,
+    ShiftNeedsFinanceReview,
     SplitTermDateChange,
     TermLengthChangeDays,
     IsEditable,
@@ -114,8 +123,10 @@ import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RaiseConcessionAcknowledgment } from './ConcessionAcknowledgment.js';
 import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram } from './ReferralProgram.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import { RequireUUID } from './sql-guards.js';
-import { ApplyTermExtension, CheckTermExtension, type ApprovedDurationConcession } from './TermExtension.js';
+import { ApplyTermExtension, AsDay, CheckTermExtension, IsoDay, type ApprovedDurationConcession } from './TermExtension.js';
+import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftConcession } from './TermShift.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
@@ -134,6 +145,10 @@ const AUTHORED_FIELDS = [
     'PriorPaymentTermsTypeID',
     'NewPaymentTermsTypeID',
     'ReferralProgramID',
+    'PriorStartDate',
+    'PriorEndDate',
+    'NewStartDate',
+    'NewEndDate',
     'ComputedValue',
     'OrderNetTotal',
     'CumulativeShare',
@@ -168,6 +183,7 @@ interface TermRow {
 export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionEntity {
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         const recording = !this.IsSaved;
+        if (this.escalation) return this.saveEscalation(options);
         const problem = recording ? await this.prepareNew() : await this.applyDecision();
         if (problem) {
             this.RegisterResultHistoryEntry(this.buildRejection(problem));
@@ -193,17 +209,21 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         // An approved Terms concession changes the order's payment terms the same way (#309). It is never
         // Approved on save, so only a decision applies it.
         const changingTerms = this.DeliveryForm === 'Terms' && this.Status === 'Approved' && deciding;
+        // An approved Shift concession moves its term the same way (#507).
+        const shifting = this.DeliveryForm === 'Shift' && this.Status === 'Approved' && (recording || deciding);
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
         const closing =
             deciding && !this.DecidedThroughTask && (this.Status === 'Approved' || this.Status === 'Rejected') ? this.Status : null;
         // Every other approval is acknowledged by accounting too (golive #268); an extension's own task carries its schedule.
-        const acknowledging = this.Status === 'Approved' && (recording || deciding) && this.DeliveryForm !== 'Duration';
-        if (extending || changingTerms || closing || acknowledging) {
+        const acknowledging =
+            this.Status === 'Approved' && (recording || deciding) && this.DeliveryForm !== 'Duration' && this.DeliveryForm !== 'Shift';
+        if (extending || changingTerms || shifting || closing || acknowledging) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
                 // Closed first: closing completes every open task linked to the concession, and the acknowledgment
                 // raised below must stay open.
                 if (closing) await CloseConcessionTasks(this.ID, this.OrderHeaderID, closing, ctx);
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
+                if (shifting) await ApplyTermShift(this.asApprovedShift(), ctx);
                 if (acknowledging) await RaiseConcessionAcknowledgment(this.asApprovedFacts(), ctx);
                 if (changingTerms) {
                     await ApplyTermsChange(
@@ -233,6 +253,19 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             AddedQuantity: this.AddedQuantity,
             RequestedByUserID: this.RequestedByUserID,
             ApprovedOnAuthority: !this.SalesRuleID && !!this.AuthorizedBySalesAuthorityID,
+        };
+    }
+
+    private asApprovedShift(): ApprovedShiftConcession {
+        return {
+            ID: this.ID,
+            SubscriptionTermID: this.SubscriptionTermID!,
+            PriorStartDate: this.PriorStartDate!,
+            PriorEndDate: this.PriorEndDate!,
+            NewStartDate: this.NewStartDate!,
+            RequestedByUserID: this.RequestedByUserID,
+            ReasonCategory: this.ReasonCategory,
+            Reason: this.Reason,
         };
     }
 
@@ -372,6 +405,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         };
         this.valuedPercent = valued.Percent ?? null;
 
+        if (this.DeliveryForm === 'Shift') return this.routeShift(user);
         if (ConcessionAlwaysEscalates(this.DeliveryForm) || this.saleApprovalRequired) return this.escalate(user, measure);
 
         if (this.ReferralProgramID) {
@@ -476,6 +510,97 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return null;
     }
 
+    /**
+     * Route a shift (#507). It is not a concession on the rep's authority: under `TermShiftReviewDays` it goes
+     * through, and at or above it the finance acknowledgment role reviews it. Recording already checked that
+     * someone other than the requester holds that role (`CheckTermShift`).
+     */
+    private async routeShift(user: UserInfo): Promise<string | null> {
+        await OrdersSettings.Load(this.provider(), user);
+        const days = this.termDateChange?.ShiftDays ?? 0;
+        if (!ShiftNeedsFinanceReview(days, OrdersSettings.TermShiftReviewDays)) {
+            this.decide('Approved', user);
+            return null;
+        }
+        const roleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
+        if (!roleID) {
+            return (
+                'A shift of this size is reviewed by the finance acknowledgment role, and none is configured (Orders ' +
+                'setting AmendmentAcknowledgmentRole).'
+            );
+        }
+        this.Status = 'Pending';
+        this.approvingRole = roleID;
+        this.approvalSummary = ConcessionSummary({ DeliveryForm: 'Shift', ComputedValue: 0, AddedDays: days });
+        return null;
+    }
+
+    /** Set by `EscalateShift` for the save that hands a Shift from finance review to a ConcessionLimit tier. */
+    private escalation: { Note: string; Rule: ConcessionTierRule } | null = null;
+
+    /**
+     * Send a Shift awaiting finance review to the ConcessionLimit tier it meets, for an unusual case (#507). Only
+     * a holder of the finance acknowledgment role may, and not the requester. The finance review task is
+     * cancelled with `note`, and the tier's role gets an approval task in the same transaction. Returns false
+     * with the reason on `LatestResult` when it cannot be escalated.
+     */
+    public async EscalateShift(note: string): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        const refuse = (message: string): boolean => {
+            this.RegisterResultHistoryEntry(this.buildRejection(message, 'update'));
+            return false;
+        };
+        if (!user?.ID) return refuse('An escalation must be attributable to a user, and no user was supplied.');
+        if (!this.IsSaved || this.DeliveryForm !== 'Shift' || this.Status !== 'Pending' || this.SalesRuleID) {
+            return refuse('Only a Shift concession awaiting finance review can be escalated.');
+        }
+        if (!note?.trim()) return refuse('An escalation must say why the case is unusual.');
+        if (UUIDsEqual(user.ID, this.RequestedByUserID)) return refuse('The person who asked for a shift cannot escalate it.');
+        const reviewRoleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
+        if (!reviewRoleID || !(await UserHoldsRole(reviewRoleID, this.provider(), user, user.ID))) {
+            return refuse('Only a holder of the finance acknowledgment role can escalate a shift.');
+        }
+        const tier = await FindConcessionTier(
+            { Value: 0, CumulativeShare: this.CumulativeShare == null ? null : Number(this.CumulativeShare), TermLengthChangeDays: 0 },
+            this.provider(),
+            user,
+        );
+        if (tier.Conflict) return refuse(tier.Conflict);
+        if (!tier.Rule?.ApprovalRequiredRoleID) {
+            return refuse(
+                'No active SalesRule of type ConcessionLimit names an approving role for this shift, so there is no one ' +
+                    'to escalate it to. Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no thresholds.',
+            );
+        }
+        this.escalation = { Note: note.trim(), Rule: tier.Rule };
+        try {
+            return await this.Save();
+        } finally {
+            this.escalation = null;
+        }
+    }
+
+    /** The escalation's own save: the tier is stamped, finance's task cancelled and the tier's role told. */
+    private async saveEscalation(options?: EntitySaveOptions): Promise<boolean> {
+        const { Note, Rule } = this.escalation!;
+        this.SalesRuleID = Rule.ID;
+        return this.withApprovalTask('update', () => super.Save(options), async (ctx) => {
+            await CloseConcessionTasks(this.ID, this.OrderHeaderID, 'Escalated', ctx, true, Note);
+            await RouteConcessionToApproval(
+                { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+                Rule.ApprovalRequiredRoleID!,
+                ConcessionSummary({ DeliveryForm: 'Shift', ComputedValue: 0, AddedDays: this.shiftDays() }),
+                ctx,
+            );
+        });
+    }
+
+    /** How far a recorded Shift moves its term, in days. */
+    private shiftDays(): number {
+        if (!this.PriorStartDate || !this.NewStartDate) return 0;
+        return Math.round((AsDay(this.NewStartDate).getTime() - AsDay(this.PriorStartDate).getTime()) / 86_400_000);
+    }
+
     /** Value the concession from its own line or term, and stamp the order it belongs to. */
     private async valueByForm(user: UserInfo): Promise<ConcessionValuation | string> {
         switch (this.DeliveryForm) {
@@ -488,6 +613,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 return this.valueSeats(user);
             case 'Terms':
                 return this.valueTerms(user);
+            case 'Shift':
+                return this.valueShift(user);
             default:
                 return `'${String(this.DeliveryForm)}' is not a concession form.`;
         }
@@ -619,6 +746,46 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return !!line && (await this.lineRequiresSaleApproval(line, user));
     }
 
+    /**
+     * A shift is worth nothing: the same price buys the same length of time, later or earlier. The requester names
+     * the term and its new start and end; the dates before are read from the term.
+     */
+    private async valueShift(user: UserInfo): Promise<ConcessionValuation | string> {
+        if (!this.SubscriptionTermID) return 'A Shift concession must name the term it moves.';
+        if (!this.NewStartDate || !this.NewEndDate) return 'A Shift concession must give the term\'s new start and end dates.';
+        const term = await this.loadRow<TermRow>(SUBSCRIPTION_TERM_ENTITY, this.SubscriptionTermID, ['OrderLineID', 'StartDate', 'EndDate', 'Amount', 'Status'], user);
+        if (!term) return `Subscription term ${this.SubscriptionTermID} was not found.`;
+
+        const priorStart = AsDay(term.StartDate);
+        const priorEnd = AsDay(term.EndDate);
+        const change = SplitTermDateChange(
+            { StartDate: priorStart, EndDate: priorEnd },
+            { StartDate: AsDay(this.NewStartDate), EndDate: AsDay(this.NewEndDate) },
+        );
+        if (change.ShiftDays === 0 || change.ExtensionDays !== 0 || change.ShorteningDays !== 0) {
+            return (
+                `A Shift moves a term's start and end by the same number of days. Term ${IsoDay(priorStart)} – ` +
+                `${IsoDay(priorEnd)} to ${IsoDay(AsDay(this.NewStartDate))} – ${IsoDay(AsDay(this.NewEndDate))} is not one.`
+            );
+        }
+
+        // Refuse now what could never be applied, rather than route it for review and refuse the approval.
+        const applicable = await CheckTermShift(
+            { SubscriptionTermID: this.SubscriptionTermID, ShiftDays: change.ShiftDays, RequestedByUserID: user.ID },
+            { Provider: this.provider(), User: user },
+        );
+        if (typeof applicable === 'string') return applicable;
+
+        this.OrderHeaderID = applicable.OrderHeaderID;
+        this.OrderLineID = applicable.OrderLineID;
+        this.AddedDays = null;
+        this.AddedQuantity = null;
+        this.PriorStartDate = priorStart;
+        this.PriorEndDate = priorEnd;
+        this.termDateChange = change;
+        return { Value: 0, Percent: null };
+    }
+
     private async requireLine(user: UserInfo): Promise<LineRow | string> {
         if (!this.OrderLineID) return `A ${this.DeliveryForm} concession must name the order line it applies to.`;
         const line = await this.loadLine(this.OrderLineID, user);
@@ -661,6 +828,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             return 'A concession on a line whose product always needs approval cannot be decided by the person who asked for it.';
         }
 
+        if (this.DeliveryForm === 'Shift' && !this.SalesRuleID) return this.decideShiftReview(user);
+
         const rule = await this.approvingRule(user);
         if (!rule?.ApprovalRequiredRoleID) {
             return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
@@ -681,8 +850,24 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return null;
     }
 
-    /** The role that decides this concession: its ConcessionLimit rule's, or null when it names none. */
+    /** A Shift under finance review: a holder of the finance acknowledgment role decides it, never the requester. */
+    private async decideShiftReview(user: UserInfo): Promise<string | null> {
+        if (UUIDsEqual(user.ID, this.RequestedByUserID)) return 'A shift cannot be decided by the person who asked for it.';
+        const roleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
+        if (!roleID) return 'No finance acknowledgment role is configured (Orders setting AmendmentAcknowledgmentRole), so no one can decide this shift.';
+        if (!(await UserHoldsRole(roleID, this.provider(), user, user.ID))) {
+            return 'Only a holder of the finance acknowledgment role can decide a shift under review.';
+        }
+        this.decide(this.Status as 'Approved' | 'Rejected', user);
+        return null;
+    }
+
+    /**
+     * The role that decides this concession: its ConcessionLimit rule's, or null when it names none. A Shift
+     * under finance review is decided by the finance acknowledgment role.
+     */
     public async ApprovingRoleID(user: UserInfo): Promise<string | null> {
+        if (this.DeliveryForm === 'Shift' && !this.SalesRuleID) return ShiftReviewRoleID({ Provider: this.provider(), User: user });
         return (await this.approvingRule(user))?.ApprovalRequiredRoleID ?? null;
     }
 

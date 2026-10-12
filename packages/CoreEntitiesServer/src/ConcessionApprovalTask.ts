@@ -88,7 +88,7 @@ export interface ConcessionForApproval {
 }
 
 export type ConcessionDecision = 'Approved' | 'Rejected';
-export type ConcessionTaskClosing = ConcessionDecision | 'Withdrawn';
+export type ConcessionTaskClosing = ConcessionDecision | 'Withdrawn' | 'Escalated';
 
 /**
  * The concession status a terminal task outcome decides, or null for an outcome this app does not know.
@@ -140,6 +140,11 @@ export function ConcessionSummary(facts: ConcessionSummaryFacts): string {
         case 'Seats': {
             const seats = Number(facts.AddedQuantity ?? 0);
             return `${seats} added seat${seats === 1 ? '' : 's'}, ${amount}`;
+        }
+        case 'Shift': {
+            // Valued at nothing: AddedDays carries how far the term moves.
+            const days = Number(facts.AddedDays ?? 0);
+            return `term moved ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days < 0 ? 'earlier' : 'later'}`;
         }
         case 'Terms': {
             // Valued in days to payment, not currency: AddedDays holds the change.
@@ -232,8 +237,8 @@ export async function RaiseConcessionApprovalAgain(
 }
 
 /**
- * Close a concession's open approval task once it is decided on its own record or withdrawn: Completed
- * when approved, Cancelled otherwise. The order moves on to its most recent other open task, unless
+ * Close a concession's open approval task once it is decided on its own record, withdrawn, or escalated to
+ * another approver (`note` says why): Completed when approved, Cancelled otherwise. The order moves on to its most recent other open task, unless
  * `releaseOrder` is false: a draft-line removal runs inside the order's own save, where a second save of
  * the same header would race it, so there the order keeps its pointer.
  */
@@ -243,6 +248,7 @@ export async function CloseConcessionTasks(
     closing: ConcessionTaskClosing,
     ctx: ApprovalTaskContext,
     releaseOrder = true,
+    note?: string,
 ): Promise<void> {
     if (!ctx.Provider.EntityByName(TASK_LINK_ENTITY)) return; // without the tasks app nothing was ever raised
     const closed: string[] = [];
@@ -253,7 +259,9 @@ export async function CloseConcessionTasks(
         task.CompletionNotes =
             closing === 'Withdrawn'
                 ? 'The concession was withdrawn.'
-                : `The concession was ${closing.toLowerCase()} on its own record.`;
+                : closing === 'Escalated'
+                  ? `Escalated to the ConcessionLimit approver: ${note ?? ''}`.trim()
+                  : `The concession was ${closing.toLowerCase()} on its own record.`;
         if (!(await task.Save())) {
             throw new Error(`Approval task ${task.ID} could not be closed: ${task.LatestResult?.CompleteMessage}`);
         }
