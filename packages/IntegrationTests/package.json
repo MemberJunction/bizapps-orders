@@ -19,7 +19,7 @@
   "devDependencies": {
     "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
     "@mj-biz-apps/accounting-server": ">=0.21.0",
-    "@mj-biz-apps/common-entities": ">=5.49.0",
+    "@mj-biz-apps/common-entities": ">=5.52.0",
     "@types/node": "^22.10.2",
     "typescript": "^5.9.3",
     "vite": "^7.1.5",
@@ -36,7 +36,7 @@
     "@memberjunction/testing-integration": "^6.1.5",
     "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
     "@mj-biz-apps/accounting-server": ">=0.21.0",
-    "@mj-biz-apps/common-entities": ">=5.49.0",
+    "@mj-biz-apps/common-entities": ">=5.52.0",
     "@memberjunction/actions": "^6.1.5",
     "@memberjunction/actions-base": "^6.1.5",
     "@memberjunction/core-entities": "^6.1.5"
