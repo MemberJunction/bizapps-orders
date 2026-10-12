@@ -7,7 +7,10 @@ import {
     DaysAdded,
     PaymentTermsDaysChange,
     InclusiveDays,
-    TermDateChangeDays,
+    SplitTermDateChange,
+    TermLengthChangeDays,
+    ShiftNeedsFinanceReview,
+    RouteTermShortening,
     ConcessionTierMet,
     PickConcessionTier,
     type ConcessionAuthority,
@@ -75,7 +78,7 @@ describe('AssessConcession', () => {
         expect(result.WithinAuthority).toBe(false);
         expect(result.Breaches).toHaveLength(2);
         expect(result.Breaches.join(' ')).toMatch(/concession limit/);
-        expect(result.Breaches.join(' ')).toMatch(/90-day change to the term's dates is at or above the 31-day limit/);
+        expect(result.Breaches.join(' ')).toMatch(/90-day extension is at or above the 31-day limit/);
     });
 
     it('lets a rep grant an extension inside both limits', () => {
@@ -88,7 +91,7 @@ describe('AssessConcession', () => {
         const at = ConcessionValue({ Form: 'Duration', TermAmount: 1200, TermDays: 365, AddedDays: 30 });
         const under = ConcessionValue({ Form: 'Duration', TermAmount: 1200, TermDays: 365, AddedDays: 29 });
         expect(AssessConcession('Duration', at, limit, 30).Breaches).toEqual([
-            "a 30-day change to the term's dates is at or above the 30-day limit",
+            'a 30-day extension is at or above the 30-day limit',
         ]);
         expect(AssessConcession('Duration', under, limit, 29).WithinAuthority).toBe(true);
     });
@@ -101,43 +104,68 @@ describe('AssessConcession', () => {
         expect(result.Breaches).toHaveLength(2);
     });
 
-    describe('any change to a term\'s dates, not only days added — #307', () => {
-        // A 12-month term, and the same term extended, shortened and shifted by `days`.
+    describe('a change to a term\'s dates, split by kind — #307, #507', () => {
+        // A 12-month term, and the same term with its start and end moved by whole days.
         const term = { StartDate: new Date('2026-01-01'), EndDate: new Date('2026-12-31') };
         const moved = (startDays: number, endDays: number) => ({
             StartDate: new Date(term.StartDate.getTime() + startDays * 86_400_000),
             EndDate: new Date(term.EndDate.getTime() + endDays * 86_400_000),
         });
-        const changes = {
-            extension: (days: number) => moved(0, days),
-            shortening: (days: number) => moved(0, -days),
-            shift: (days: number) => moved(days, days),
-        };
         const limit = authority({ MaxTermExtensionDays: 30 });
         const none = { Value: 0, Percent: null };
 
-        for (const [name, change] of Object.entries(changes)) {
-            it(`measures a ${name} of N days as N`, () => {
-                expect(TermDateChangeDays(term, change(30))).toBe(30);
-            });
-
-            it(`escalates a ${name} of N days at a limit of N, and passes one of N − 1`, () => {
-                expect(AssessConcession('Duration', none, limit, TermDateChangeDays(term, change(30))).Breaches).toEqual([
-                    "a 30-day change to the term's dates is at or above the 30-day limit",
-                ]);
-                expect(AssessConcession('Duration', none, limit, TermDateChangeDays(term, change(29))).WithinAuthority).toBe(true);
-            });
-        }
-
-        it('measures a change as the larger of how far the start and the end move', () => {
-            expect(TermDateChangeDays(term, moved(-10, 25))).toBe(25);
-            expect(TermDateChangeDays(term, moved(-40, 5))).toBe(40);
+        it('splits an extension, a shortening and a shift of N days', () => {
+            expect(SplitTermDateChange(term, moved(0, 30))).toEqual({ ShiftDays: 0, ExtensionDays: 30, ShorteningDays: 0 });
+            expect(SplitTermDateChange(term, moved(0, -30))).toEqual({ ShiftDays: 0, ExtensionDays: 0, ShorteningDays: 30 });
+            expect(SplitTermDateChange(term, moved(30, 30))).toEqual({ ShiftDays: 30, ExtensionDays: 0, ShorteningDays: 0 });
+            expect(SplitTermDateChange(term, moved(-30, -30))).toEqual({ ShiftDays: -30, ExtensionDays: 0, ShorteningDays: 0 });
         });
 
-        it('checks a date change made through a concession of another form', () => {
+        it('reads a later start with the end left alone as a shortening, not a shift', () => {
+            expect(SplitTermDateChange(term, moved(10, 0))).toEqual({ ShiftDays: 0, ExtensionDays: 0, ShorteningDays: 10 });
+        });
+
+        it('takes the movement both dates share as the shift and the rest as a change of length', () => {
+            expect(SplitTermDateChange(term, moved(10, 30))).toEqual({ ShiftDays: 10, ExtensionDays: 20, ShorteningDays: 0 });
+            expect(SplitTermDateChange(term, moved(30, 10))).toEqual({ ShiftDays: 10, ExtensionDays: 0, ShorteningDays: 20 });
+            expect(SplitTermDateChange(term, moved(-10, 25))).toEqual({ ShiftDays: 0, ExtensionDays: 35, ShorteningDays: 0 });
+        });
+
+        it('measures the change of length either way, and ignores the shift', () => {
+            expect(TermLengthChangeDays(SplitTermDateChange(term, moved(0, 30)))).toBe(30);
+            expect(TermLengthChangeDays(SplitTermDateChange(term, moved(0, -30)))).toBe(30);
+            expect(TermLengthChangeDays(SplitTermDateChange(term, moved(30, 30)))).toBe(0);
+        });
+
+        it('escalates an extension of N days at a limit of N, and passes one of N − 1', () => {
+            const at = SplitTermDateChange(term, moved(0, 30)).ExtensionDays;
+            const under = SplitTermDateChange(term, moved(0, 29)).ExtensionDays;
+            expect(AssessConcession('Duration', none, limit, at).Breaches).toEqual(['a 30-day extension is at or above the 30-day limit']);
+            expect(AssessConcession('Duration', none, limit, under).WithinAuthority).toBe(true);
+        });
+
+        it('does not count a shift or a shortening against the rep\'s extension limit', () => {
+            const price = { Value: 0, Percent: 0 };
+            for (const change of [moved(30, 30), moved(0, -30)]) {
+                expect(AssessConcession('Price', price, limit, SplitTermDateChange(term, change).ExtensionDays).WithinAuthority).toBe(true);
+            }
+        });
+
+        it('checks an extension made through a concession of another form', () => {
             const price = { Value: 0, Percent: 0 };
             expect(AssessConcession('Price', price, limit, 30).WithinAuthority).toBe(false);
             expect(AssessConcession('Price', price, limit, 0).WithinAuthority).toBe(true);
+        });
+
+        it('reviews a shift of N days at a limit of N, either direction, and lets one of N − 1 through', () => {
+            expect(ShiftNeedsFinanceReview(30, 30)).toBe(true);
+            expect(ShiftNeedsFinanceReview(-30, 30)).toBe(true);
+            expect(ShiftNeedsFinanceReview(29, 30)).toBe(false);
+        });
+
+        it('reviews every shift when no limit is configured, and none when the term does not move', () => {
+            expect(ShiftNeedsFinanceReview(1, null)).toBe(true);
+            expect(ShiftNeedsFinanceReview(0, null)).toBe(false);
         });
     });
 
@@ -271,7 +299,7 @@ describe('approval tiers (#308)', () => {
 
     it('keeps a single rule with no tier or thresholds taking every concession', () => {
         expect(PickConcessionTier([manager], { Value: 5 }).Rule?.ID).toBe('rule-base');
-        expect(PickConcessionTier([manager], { Value: 1_000_000, CumulativeShare: 0.9, TermDateChangeDays: 400 }).Rule?.ID).toBe('rule-base');
+        expect(PickConcessionTier([manager], { Value: 1_000_000, CumulativeShare: 0.9, TermLengthChangeDays: 400 }).Rule?.ID).toBe('rule-base');
     });
 
     it('routes below the thresholds to the lower tier, and at or above them to the higher tier', () => {
@@ -283,9 +311,9 @@ describe('approval tiers (#308)', () => {
     it('meets a tier on any one threshold it sets', () => {
         const senior = tier({ ConcessionTier: 1, MinConcessionValue: 1000, MinConcessionPctOfContract: 0.1, MinTermExtensionDays: 60 });
         expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: 0.1 })).toBe(true);
-        expect(ConcessionTierMet(senior, { Value: 10, TermDateChangeDays: 60 })).toBe(true);
-        expect(ConcessionTierMet(senior, { Value: 10, TermDateChangeDays: -60 })).toBe(true);
-        expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: 0.0999, TermDateChangeDays: 59 })).toBe(false);
+        expect(ConcessionTierMet(senior, { Value: 10, TermLengthChangeDays: 60 })).toBe(true);
+        expect(ConcessionTierMet(senior, { Value: 10, TermLengthChangeDays: -60 })).toBe(true);
+        expect(ConcessionTierMet(senior, { Value: 10, CumulativeShare: 0.0999, TermLengthChangeDays: 59 })).toBe(false);
     });
 
     it('meets a share threshold when the order has no net total, as a share limit is breached', () => {
@@ -295,8 +323,8 @@ describe('approval tiers (#308)', () => {
     });
 
     it('does not meet a term-date threshold when the dates do not move, even one of 0 days', () => {
-        expect(ConcessionTierMet(tier({ MinTermExtensionDays: 0 }), { Value: 10, TermDateChangeDays: 0 })).toBe(false);
-        expect(ConcessionTierMet(tier({ MinTermExtensionDays: 0 }), { Value: 10, TermDateChangeDays: 1 })).toBe(true);
+        expect(ConcessionTierMet(tier({ MinTermExtensionDays: 0 }), { Value: 10, TermLengthChangeDays: 0 })).toBe(false);
+        expect(ConcessionTierMet(tier({ MinTermExtensionDays: 0 }), { Value: 10, TermLengthChangeDays: 1 })).toBe(true);
     });
 
     it('chooses no tier when the concession meets none', () => {
@@ -314,6 +342,24 @@ describe('approval tiers (#308)', () => {
     it('ignores a rank tie between tiers the concession does not meet', () => {
         const otherSenior = tier({ ID: 'rule-other', Name: 'Finance', ConcessionTier: 1, MinConcessionValue: 50_000 });
         expect(PickConcessionTier([manager, director, otherSenior], { Value: 2000 }).Rule?.ID).toBe('rule-senior');
+    });
+
+    describe('routing a shortening (#507)', () => {
+        const shortening = tier({ ID: 'rule-days', Name: 'Term changes', ConcessionTier: 1, MinTermExtensionDays: 30 });
+
+        it('sends a shortening of N days to the tier at a threshold of N, and one of N − 1 to finance review', () => {
+            expect(RouteTermShortening([manager, shortening], { Value: 0, TermLengthChangeDays: 30 }).Rule?.ID).toBe('rule-days');
+            expect(RouteTermShortening([manager, shortening], { Value: 0, TermLengthChangeDays: 29 })).toEqual({ Rule: null, Conflict: null });
+        });
+
+        it('does not treat the floor tier with no thresholds as one the shortening reached', () => {
+            expect(RouteTermShortening([manager], { Value: 0, TermLengthChangeDays: 400 }).Rule).toBeNull();
+        });
+
+        it('reports two met tiers of one rank', () => {
+            const other = tier({ ID: 'rule-other', Name: 'Finance', ConcessionTier: 1, MinTermExtensionDays: 10 });
+            expect(RouteTermShortening([shortening, other], { Value: 0, TermLengthChangeDays: 30 }).Conflict).toContain('share tier 1');
+        });
     });
 });
 

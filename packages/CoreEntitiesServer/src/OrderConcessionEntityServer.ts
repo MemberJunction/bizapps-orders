@@ -84,13 +84,15 @@ import {
     ConcessionShare,
     ConcessionValue,
     InclusiveDays,
-    TermDateChangeDays,
+    SplitTermDateChange,
+    TermLengthChangeDays,
     IsEditable,
     UserHoldsRole,
     mjBizAppsOrdersOrderConcessionEntity,
     type ConcessionTierMeasure,
     type ConcessionTierRule,
     type ConcessionValuation,
+    type TermDateChange,
 } from '@mj-biz-apps/orders-entities';
 import {
     ActiveRoleHolderIDs,
@@ -251,8 +253,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
     /** The ConcessionLimit rule's role, kept by `prepareNew` for routing a Pending concession. */
     private approvingRole: string | null = null;
-    /** How far this concession moves its term's dates, set when a Duration concession is valued. */
-    private termDateChangeDays: number | null = null;
+    /** How this concession changes its term's dates, set when a Duration concession is valued. */
+    private termDateChange: TermDateChange | null = null;
     /** Set when a Price or Scope concession is valued on a line whose product always needs approval (golive #281). */
     private saleApprovalRequired = false;
     /** The line that bought the term a Duration concession extends, set when it is valued. */
@@ -342,7 +344,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!user?.ID) return 'A concession must be attributable to a user, and no user was supplied.';
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
-        this.termDateChangeDays = null;
+        this.termDateChange = null;
         this.saleApprovalRequired = false;
         this.extendedLine = null;
         const valued = await this.valueByForm(user);
@@ -366,7 +368,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const measure: ConcessionTierMeasure = {
             Value: valued.Value,
             CumulativeShare: share,
-            TermDateChangeDays: this.termDateChangeDays,
+            TermLengthChangeDays: this.termDateChange ? TermLengthChangeDays(this.termDateChange) : null,
         };
         this.valuedPercent = valued.Percent ?? null;
 
@@ -382,7 +384,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
 
         const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
-        const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChangeDays, share);
+        const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChange?.ExtensionDays, share);
         const tier = await FindConcessionTier(measure, this.provider(), user);
         if (tier.Conflict) return tier.Conflict;
 
@@ -520,7 +522,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.OrderHeaderID = line.OrderHeaderID;
         this.OrderLineID = line.ID;
         this.extendedLine = line;
-        this.termDateChangeDays = TermDateChangeDays(
+        this.termDateChange = SplitTermDateChange(
             { StartDate: applicable.TermStartDate, EndDate: applicable.CurrentEndDate },
             { StartDate: applicable.TermStartDate, EndDate: applicable.NewEndDate },
         );

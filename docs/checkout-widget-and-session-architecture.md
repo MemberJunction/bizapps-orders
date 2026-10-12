@@ -25,13 +25,13 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 │     └── Server-priced amount + widget-configured provider → ClientSecret                 │
 │                                                                                          │
 │  3. CompleteCheckout(sessionId, clientKey)                                               │
-│     ├── Resolve / Create Person Records                                                  │
+│     ├── Resolve Person Records (create missing ones after payment verifies)             │
 │     ├── Multi-Unit Line Splitting (unitMode: 'perUnit' vs 'perLine')                      │
 │     ├── Atomic Companion Persistence (OrderLine.Extension BaseEntity)                    │
 │     ├── Full Lifecycle Booking: await order.Confirm()                                    │
 │     │   ├── Emits Double-Entry Journal Entries to BizApps Accounting                     │
 │     │   └── Forward-Dated Revenue-Recognition Journal Entries                            │
-│     └── GuestOrder Claim: dormant (calls a local stand-in that throws)                   │
+│     └── GuestOrder Claim: minted through MJ's IdentityClaimEngineServer, no e-mail       │
 └─────────────────────────────────────────┬────────────────────────────────────────────────┘
                                           │
                                           ▼
@@ -70,7 +70,7 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 - 🎟️ **Multi-Attendee / Discrete Unit Expansion**: When buying multiple tickets or seats (`unitMode: 'perUnit'`), the widget dynamically expands discrete attendee cards and creates individual, fully-associated order lines in the database.
 - ⚡ **Zero Database Clutter During Shopping**: Real-time line calculations and discount pricing execute 100% in-memory via `OrderPricingService`. No temporary draft rows pollute `OrderHeader`.
 - 📒 **Double-Entry Accounting on Confirm**: Free ($0) orders, and paid orders once their payment is verified, execute `order.Confirm()`, which posts balanced debits and credits into [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting) for each line with a value to book (a free item posts nothing); deferred revenue is released by forward-dated journal entries, one per recognition period.
-- 🔐 **Guest Identity Claiming** (not active yet): designed to e-mail anonymous buyers a claim link that attaches their orders and entitlements to their account once they sign in. Checkout still calls a local stand-in for MemberJunction's claim engine, which throws; see [Guest Record Claiming Workflow](#guest-record-claiming-workflow).
+- 🔐 **Guest Identity Claiming**: checkout mints a GuestOrder claim through MemberJunction's claim engine; redeeming it attaches the order and its entitlements to the buyer's account. Claim e-mails are off for now; see [Guest Record Claiming Workflow](#guest-record-claiming-workflow).
 
 ---
 
@@ -123,7 +123,7 @@ In **MemberJunction Explorer** (or via code/migrations):
        }
      }
      ```
-   *(Note: If you omit `extensionFields`, the system automatically discovers them from metadata!)* An Event product is the exception: discovery turns Event Order Lines' `AttendanceStatus` into a required dropdown with no choices, so the form cannot be submitted. For an Event widget, author `extensionFields`, with `options` on any `select` (see [Auto-Discovery Rules](#auto-discovery-rules)).
+   *(Note: If you omit `extensionFields`, the system automatically discovers them from metadata!)* See [Auto-Discovery Rules](#auto-discovery-rules).
 
    A paid product needs the three keys after `productSku`: without `unitPrice` the widget shows the item as free and renders no card form, without `stripePublishableKey` no card form is mounted, and without `paymentProviderId` `/checkout/payment-intent` refuses. A free product needs none of them.
 
@@ -136,8 +136,8 @@ In **MemberJunction Explorer** (or via code/migrations):
 
 Anonymous access is inherent to the checkout edge (there is no per-distribution toggle);
 the widget's `Configuration` carries the security knobs — `allowedOrigins` (embed origin
-allowlist) and `requireTurnstile` (Cloudflare Turnstile on initialize/complete, usable only from a custom
-front end; see [Configuration Keys](#configuration-keys)).
+allowlist) and `requireTurnstile` (Cloudflare Turnstile on initialize/complete; see [Configuration Keys](#configuration-keys)
+and [Turnstile](#turnstile)).
 
 Your checkout widget distribution is now active for `summit-2027`: MJAPI serves it at `GET {MJAPI}/checkout/summit-2027`, and another page can embed it as `<mj-orders-checkout slug="summit-2027">` (see [Embedding the Widget](#embedding-the-widget-in-your-applications)). The Angular `<mj-checkout-widget>` makes no server calls itself; its `distributionSlug` input only reaches the `onInit` hook, and the host page drives the API.
 
@@ -166,14 +166,14 @@ The diagram shows a few columns; discovery lists every column the rules below ke
 ### Auto-Discovery Rules
 1. **Person Identity Detection**: If the extension entity contains a `PersonID` field, standard contact inputs (`firstName`, `lastName`, `email`, `company`, `title`) are automatically populated.
 2. **Type Mapping** (first match wins):
-   - Fields with a value list ➔ `select`. Discovery does not send the list's values, so the dropdown has no choices; when the column is also `NOT NULL` the field is required and the form cannot be submitted. Event Order Lines' `AttendanceStatus` is such a column, so an Event widget needs authored `extensionFields`. To offer choices, author `extensionFields` yourself (which replaces discovery) with `options` on that field.
+   - Fields with a value list ➔ `select`, with the list's values as `options` in their `Sequence` order (each value is both label and value).
    - `bit` ➔ `boolean` (checkbox)
    - `date` / `datetime` / `datetime2` / `datetimeoffset` / `smalldatetime` ➔ `date`
    - `int` / `bigint` / `smallint` / `tinyint` / `decimal` / `numeric` / `float` / `real` / `money` / `smallmoney` ➔ `number`
-   - `ntext` / `text`, and strings whose `EntityField.Length` (in bytes) is over 255, so `nvarchar(128)` and longer ➔ `textarea`
-   - Any other string ➔ `text`. This includes `nvarchar(max)`, whose `Length` is -1.
+   - `ntext` / `text`, `nvarchar(max)` / `varchar(max)` (stored as `Length` -1), and strings longer than 255 characters (`EntityField.MaxLength`; `Length` is bytes) ➔ `textarea`
+   - Any other string ➔ `text`
 3. **Exclusions**: System audit fields (`__mj_CreatedAt`, `__mj_UpdatedAt`), primary keys (`ID`), parent `OrderLine` fields, `PersonID` (replaced by the contact inputs), `CheckInAt`, virtual fields and fields the API cannot update are excluded.
-4. **Required**: a discovered field is required when its column is `NOT NULL`.
+4. **Required**: a discovered field is required when its column is `NOT NULL` and has no default. A column with a default (Event Order Lines' `AttendanceStatus`, default `Registered`) is optional, since the database fills it.
 
 ---
 
@@ -198,7 +198,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `productName` | Name shown for the item; `/initialize` fills it from the product when unset. |
 | `unitPrice` | Price per unit the widget displays. Unset or 0 shows the checkout as free, with no card form. The amount charged is the server's price. |
 | `currency` | Currency of the payment. Unset means USD; a payment intent in any other currency is refused, because orders do not yet record one. |
-| `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode` (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
+| `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode`. When the product type is `'perUnit'`, a line that sends unit details must send one set per unit, so a `'perLine'` widget on a per-unit product is refused at quantity above 1 (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
 | `allowQuantity` | Shows the quantity selector. |
 | `maxQuantity` | Highest quantity the selector offers (default 50). The server's cap comes from the product and product type instead. |
 | `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. |
@@ -215,7 +215,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `paymentProviderId` | The Payment Provider row that opens payment intents for this widget's sessions. Never taken from the client; required before a paid checkout can complete. Server-side only. |
 | `tenderCode` | `PaymentType.Code` the payment is booked with (e.g. `CreditCard`, `ACH`). Server-side only; defaults to `CreditCard`. |
 | `allowedOrigins` | Origins (scheme, host and port) allowed to embed and drive this widget through the checkout edge. Other browser origins are refused and get no CORS grant; MJAPI's own origin always passes. Unset or empty allows any origin. |
-| `requireTurnstile` | Requires a Cloudflare Turnstile token on initialize and complete. The edge refuses both when no Turnstile secret is configured. Neither `<mj-orders-checkout>` nor the fallback page sends a token, so only a custom front end can use this. |
+| `requireTurnstile` | Requires a Cloudflare Turnstile token on initialize and complete. Both built-in clients render the challenge; the edge also needs `Settings.TurnstileSecretEnvVar` and `Settings.TurnstileSiteKey`, and refuses both calls with a 503 when either is missing. See [Turnstile](#turnstile). |
 | `memberDiscountResolver` | Registration key of the resolver that verifies a host's member token (see [Verified-member discount](#verified-member-discount)). Server-side only. |
 | `customUI` | `js`, `css`, `theme` and `componentOverrideKey` (below). |
 
@@ -281,6 +281,7 @@ When `unitMode === 'perUnit'` (or the Angular config sets `isEvent`) and the qua
 
 ### Database Persistence
 In `CheckoutSessionService.CompleteCheckout`:
+- When the product type's `unitMode` is `'perUnit'` and the line carries unit details, it must carry one set per unit: a `Quantity` that differs from the number of sets is refused at `/draft` and `/complete` with a message asking for details for each item, rather than booked as a different number of units.
 - A line is split into one `OrderLine` per set of unit details (`Quantity = 1` each) when it carries unit details and either its product type's `unitMode` is `'perUnit'` or it carries more than one set:
   - Line 1: `Quantity = 1`, `Description = "Jane Doe (jane@example.com)"` ➔ `EventOrderLine` (`PersonID` = Jane's Person, `DietaryPreferences = Vegan`)
   - Line 2: `Quantity = 1`, `Description = "John Smith (john@example.com)"` ➔ `EventOrderLine` (`PersonID` = John's Person, `DietaryPreferences = None`)
@@ -423,7 +424,7 @@ code that was priced — `MemberPromotionCode` or `PromotionCodes`, both only un
 ### Confirmation & Booking Phase
 Once the buyer has paid (or pressed **Complete Free Registration** on a free checkout), `/complete` runs `CompleteCheckout`. Simplified from `CheckoutSessionService.ts`:
 ```typescript
-// The payer Person has been found or created from the session's e-mail.
+// The payer Person has been found from the session's e-mail; a new buyer's is created after payment checks out.
 const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Order Headers', contextUser);
 order.NewRecord();                        // Status defaults to 'Draft'
 order.CompanyID = widget.CompanyID;
@@ -436,8 +437,11 @@ order.OrderDate = TodayAsDateValue();
 
 // Lines (one per unit where split), their extension rows, the checkout answers, the line choices and
 // the promotion codes are added to the order's graph from the session snapshot. None of the order's
-// rows is saved yet; each unit's attendee Person is found or created as its line is built.
+// rows is saved yet; each unit's attendee Person is found as its line is built.
 // The lines are priced, and a paid order's payment intent is verified (see the note below).
+// Only then are missing payer and attendee Persons created, so a refused payment leaves none behind.
+// A new buyer is priced with no BillToPersonID, as the draft was: a Person created afterwards holds no
+// price list, membership, exemption or order history that pricing could read.
 
 order.BillToAddressID = billingAddressID; // the snapshot's billing location, recorded as an Address
 order.ShipToAddressID = billingAddressID;
@@ -445,7 +449,7 @@ order.ShipToAddressID = billingAddressID;
 await order.Confirm(); // sets Status = 'Confirmed' and saves; throws with the reason when refused
 ```
 
-After `Confirm()` commits, `CompleteCheckout` marks the session `Confirmed` with the order's id, books a paid order's payment against it through `CapturePayment`, and tries to mint a GuestOrder claim, which is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
+After `Confirm()` commits, `CompleteCheckout` marks the session `Confirmed` with the order's id, books a paid order's payment against it through `CapturePayment`, and mints a GuestOrder claim, best-effort (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 
 > [!IMPORTANT]
 > **Payment Verification Status**: Free/zero-dollar checkouts ($0) book and confirm immediately upon submission. For orders with `TotalGross > 0`, `CompleteCheckout` verifies the session's payment intent **state and amount** server-side — the intent must exist, be `Succeeded` (as set by the signature-verified payment webhook, or read from the gateway with the server's own key when the webhook has not arrived yet), and cover the freshly re-priced total. A session acquires its intent only through `CheckoutSessionService.OpenPaymentIntentForSession`, which prices from the session's own server-computed snapshot and resolves the provider from the widget's `Configuration.paymentProviderId` — the client never supplies an amount or a provider. `UpdateDraft` detaches the intent whenever the priced total changes, forcing a reopen at the new amount.
@@ -524,12 +528,12 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
   - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
   - `Confirm` is not replayable here.
 - The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
-- GuestOrder claim minting is not recorded: it is dormant while `CheckoutSessionService` calls the local stand-in for the claim engine (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
+- GuestOrder claim minting is not recorded as a step: it is best-effort, and a failure is logged without failing the booked order (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 
 ## Guest Record Claiming Workflow
 
 > [!NOTE]
-> **Not active.** `CompleteCheckout` asks `IdentityClaimEngineServer.CreateClaim` for a `GuestOrder` claim, but imports the engine from the local stand-in in `packages/CoreEntitiesServer/src/identityClaimContracts.ts`, which throws. `CompleteCheckout` logs the failure, and the order books without a claim: no claim row, no e-mail, and no `ClaimToken` in the response. MemberJunction 6.1.5, which this repo builds against, exports the engine (`@memberjunction/core-entities-server`) and `BaseIdentityClaimDriver` (`@memberjunction/core-entities`). The flow below is the design. It takes effect once `CheckoutSessionService` imports MJ's engine and `GuestOrderClaimDriver` registers against MJ's `BaseIdentityClaimDriver`, in place of the stand-ins.
+> `CompleteCheckout` asks MJ's `IdentityClaimEngineServer.CreateClaim` (`@memberjunction/core-entities-server`) for a `GuestOrder` claim with `SendEmail: false`: claim e-mails stay off until a claim e-mail template and the portal base URL are configured, since without them MJ sends a generic message linking to its default host. `GuestOrderClaimDriver` and `EntitlementGrantClaimDriver` register against MJ's `BaseIdentityClaimDriver` (`@memberjunction/core-entities`). The host needs MJ's Identity Claim entities and the `GuestOrder` claim type; when minting fails, `CompleteCheckout` logs it and the order books without a claim.
 
 When an unauthenticated guest completes an order:
 
@@ -541,7 +545,8 @@ When an unauthenticated guest completes an order:
    ├── Person ("Jane Doe", jane@example.com)
    └── GuestOrder IdentityClaim for jane@example.com
    │
-3. The claim engine e-mails Jane a claim link:
+3. The claim engine would e-mail Jane a claim link (off until a template and the portal
+   base URL are configured):
    "Click here to claim your tickets: https://app.example.com/claim?token=..."
    │
 4. Jane follows the link, or signs in to MemberJunction:
@@ -550,8 +555,6 @@ When an unauthenticated guest completes an order:
        ├── sets the order's ship-to (and an empty bill-to) to that Person
        └── makes that Person the beneficiary of the order's entitlement grants
 ```
-
-The last step does not work yet: the driver's grant query filters `vwOrderLines` on `OrderID`, a column the view does not have, and the driver ignores the error.
 
 ---
 
@@ -671,7 +674,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 | Event | When | `detail` |
 |---|---|---|
 | `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
-| `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units; `currency` is the widget's `currency` upper-cased, or `null` when the widget sets none; `coupon` is reserved for the applied promotion code and is always `null` at present |
+| `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units; `currency` is the widget's `currency` upper-cased, or `null` when the widget sets none; `coupon` is the promotion code the draft applied, or `null` when none was |
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
@@ -724,6 +727,14 @@ The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-
 When the element bundle was built, the edge also serves it at `GET /checkout/element/main.js`.
 
 The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting (`access-status`, which the success screen polls, counts in a window of its own), the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
+
+#### Turnstile
+
+A widget that sets `requireTurnstile` needs both edge settings: `TurnstileSecretEnvVar` (the env var holding the Turnstile secret) and `TurnstileSiteKey` (the public site key paired with that secret). The key is set once per edge, because Cloudflare accepts a token only under the secret of the site key that issued it.
+
+The widget configuration reaches the browser only in the reply to `initialize`, so a client cannot know the site key before its first call. The edge tells it: an `initialize` or `complete` without a token, or with one Cloudflare refuses, answers 403 with `{ Success: false, ErrorMessage, TurnstileRequired: true, TurnstileSiteKey }`. `<mj-orders-checkout>` and the fallback page answer by rendering the challenge (invisible unless Cloudflare needs the buyer to interact) and retrying once with the token. A token works once and expires after five minutes, so they get a fresh one for every later `initialize` or `complete`. A custom front end follows the same handshake.
+
+The checkout page MJAPI serves allows `https://challenges.cloudflare.com` in `script-src` and `frame-src`. A site that embeds `<mj-orders-checkout>` must allow the same in its own Content-Security-Policy, and its hostname must be on the site key's hostname list in Cloudflare.
 
 ---
 
@@ -815,7 +826,7 @@ Refuses while a required question is unanswered. Opens (or idempotently re-opens
 ```
 
 ### 4. `CompleteCheckout(sessionID, clientSessionKey)`
-Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers and picks as Order Line Choices, atomic lifecycle booking, booking a paid order's payment against it (`CapturePayment`), and an attempt to mint a GuestOrder claim, which is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
+Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution by the session's captured email, payment verification (intent `Succeeded` + amount covers the re-priced total), creation of any payer or attendee Person not found (only once payment checks out), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers and picks as Order Line Choices, atomic lifecycle booking, booking a paid order's payment against it (`CapturePayment`), and a best-effort GuestOrder claim (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
 
 Once payment checks out, the snapshot's billing location is recorded as a Common `Address` (street and city empty), linked to the buyer as their `Billing` address, and set as the order's `BillToAddressID` and `ShipToAddressID` before `Confirm()`. The ship-to is what tax is resolved from. A session whose snapshot holds no valid location is refused and reverted to `Open`; an Address that cannot be saved fails the checkout, while a failed address-book link is logged and tolerated.
 
@@ -839,4 +850,4 @@ Once payment checks out, the snapshot's billing location is recorded as a Common
 }
 ```
 
-> `ClaimToken` is absent at present, because GuestOrder claim minting is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). Once minting is switched on it carries the `IdentityClaim` **row id**; the verification token itself is only ever delivered in the claim e-mail.
+> `ClaimToken` carries the GuestOrder `IdentityClaim` **row id**, and is absent when minting failed (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). The verification token itself is never returned; it would travel only in the claim e-mail, which is off.
