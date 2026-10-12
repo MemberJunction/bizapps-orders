@@ -92,6 +92,27 @@ describe('CatalogOptionFrom', () => {
         expect(option.SubscriptionTypeID).toBe('subtype-annual');
     });
 
+    it('marks an event that requires attendee information, so its line is sold one seat at a time', () => {
+        const product = {
+            ID: 'prod-6',
+            Name: 'Annual Summit Ticket',
+            SKU: 'EVT-SUMMIT',
+            ProductType: 'Event',
+            ProductTypeID: 'type-event',
+            CompanyID: 'co-1',
+            Company: 'Meridian',
+            IsTaxable: true,
+            MaxQuantityPerLine: null,
+            SubscriptionTypeID: null,
+        };
+        const type = { OrderLineExtensionEntity: 'MJ_BizApps_Orders: Event Order Lines' };
+
+        expect(CatalogOptionFrom(product, type, 450, { RequiresAttendeeInfo: true }).RequiresAttendeeInfo).toBe(true);
+        expect(CatalogOptionFrom(product, type, 450, { RequiresAttendeeInfo: false }).RequiresAttendeeInfo).toBe(false);
+        // A product with no event row is not an event.
+        expect(CatalogOptionFrom(product, type, 450).RequiresAttendeeInfo).toBe(false);
+    });
+
     it('shows no list price when the product has no base price row', () => {
         const option = CatalogOptionFrom(
             {

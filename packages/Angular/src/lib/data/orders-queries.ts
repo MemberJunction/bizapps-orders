@@ -58,6 +58,7 @@ import {
 import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
+    mjBizAppsOrdersEventProductEntity,
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersOrderLineDimensionEntity,
     mjBizAppsOrdersOrderLineEntity,
@@ -1939,6 +1940,12 @@ export interface MJOProductOption {
      * force a per-line catalog lookup in the browser.
      */
     SubscriptionTypeID: string | null;
+    /**
+     * Set when the product is an event that requires attendee information
+     * (`EventProduct.RequiresAttendeeInfo`). Booking refuses such a line unless it sells one seat
+     * with its attendee, so the line editor keeps it at quantity 1 and adds a line per seat.
+     */
+    RequiresAttendeeInfo: boolean;
 }
 
 /** Flatten a product + its type into the picker row. */
@@ -1958,6 +1965,7 @@ export function CatalogOptionFrom(
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
     listPrice: number | null,
+    eventProduct?: Pick<mjBizAppsOrdersEventProductEntity, 'RequiresAttendeeInfo'>,
 ): MJOProductOption {
     return {
         ID: product.ID,
@@ -1972,6 +1980,7 @@ export function CatalogOptionFrom(
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
         SubscriptionTypeID: product.SubscriptionTypeID ?? null,
+        RequiresAttendeeInfo: !!eventProduct?.RequiresAttendeeInfo,
     };
 }
 
@@ -2045,7 +2054,12 @@ export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOpti
     const engine = OrdersEngine.Instance;
     return products.map((product) => {
         const list = engine.BaseProductPrices(product.ID)[0];
-        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), list ? Number(list.Amount) : null);
+        return CatalogOptionFrom(
+            product,
+            engine.ProductTypeByID(product.ProductTypeID),
+            list ? Number(list.Amount) : null,
+            engine.EventProductByID(product.ID),
+        );
     });
 }
 

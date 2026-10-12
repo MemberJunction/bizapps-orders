@@ -40,7 +40,12 @@ import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
 
+import { AddSeatLine, SplitIntoSeatLines } from './seat-lines';
+
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+
+/** A line as the order's `Lines` collection holds it. */
+type OrderLineItem = OrderHeaderEntity['Lines']['Items'][number];
 
 /** What {@link OrderHeaderEntity.Confirm} reports beyond success. */
 export interface OrderConfirmOutcome {
@@ -661,6 +666,22 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 !(line.ServicePeriodStart && line.ServicePeriodEnd) &&
                 engine.ServicePeriodSource(line.ProductID) === 'Line',
         );
+    }
+
+    /**
+     * Add one more seat of `source`'s event as its own quantity-1 line with an empty attendee
+     * record. See `seat-lines.ts` for what the new line copies.
+     */
+    public async AddSeatLine(source: OrderLineItem, extensionEntity: string | null): Promise<OrderLineItem> {
+        return AddSeatLine(this.Lines, source, extensionEntity);
+    }
+
+    /**
+     * Split a line selling N seats into N quantity-1 lines. `source` keeps the first seat; returns
+     * the lines added for the others.
+     */
+    public async SplitIntoSeatLines(source: OrderLineItem, extensionEntity: string | null): Promise<OrderLineItem[]> {
+        return SplitIntoSeatLines(this.Lines, source, extensionEntity);
     }
 
     /**

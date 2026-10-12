@@ -21,6 +21,7 @@ import {
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
+    SeatCount,
     CanRestoreLineDefault,
     IsLinePriceOverridden,
     LineNeedsOverrideReason,
@@ -300,7 +301,116 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public QuantityCappedToOne(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return this.ProductFor(line)?.MaxQuantityPerLine === 1;
+        return this.ProductFor(line)?.MaxQuantityPerLine === 1 || this.SoldPerSeat(line);
+    }
+
+    /* ── Seats (one line per attendee) ──────────────────────────────────────
+     *
+     * An event that requires attendee information is booked only as quantity-1 lines, each with its
+     * attendee: the attendee lives on the line's `EventOrderLine` row, which shares the line's key.
+     * So the quantity on such a line stays at 1, a second seat is a second line, and a draft line
+     * already selling N seats (entered before this rule, or by another path) is offered a split.
+     */
+
+    /** What a split left to tell staff about a line, keyed by line ID. */
+    private readonly seatNotices = new Map<string, string>();
+
+    /** True when the line's event requires attendee information, so each seat is its own line. */
+    public SoldPerSeat(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.ProductFor(line)?.RequiresAttendeeInfo === true;
+    }
+
+    /** "Add seat" is offered on an editable one-seat line of such an event. */
+    public CanAddSeat(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.EditMode && this.SoldPerSeat(line) && !line.JournalEntryID && SeatCount(line.Quantity) === 1;
+    }
+
+    /** How many seats a split would make, or 0 when the line is not one to split. */
+    public SeatsToSplit(line: mjBizAppsOrdersOrderLineEntity): number {
+        if (!this.EditMode || !this.SoldPerSeat(line) || line.JournalEntryID) return 0;
+        const seats = SeatCount(line.Quantity);
+        return seats > 1 ? seats : 0;
+    }
+
+    public SeatNotice(line: mjBizAppsOrdersOrderLineEntity): string | null {
+        return this.seatNotices.get(line.ID) ?? null;
+    }
+
+    /** One more seat: a new quantity-1 line beside this one, with its attendee block open. */
+    public async AddSeat(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this._order || !this.CanAddSeat(line)) return;
+        const added = await this._order.AddSeatLine(line, this.ProductFor(line)?.OrderLineExtensionEntity ?? null);
+        this.copyDiscountDraft(line, [added], 1);
+        this.afterSeatsAdded([added]);
+    }
+
+    /**
+     * Split a line selling N seats into N quantity-1 lines, each with its own attendee block. The
+     * line keeps the first seat and any attendee it already names.
+     *
+     * A discount being composed here is spread across the seats: a rate applies to each, an amount
+     * is divided. A discount ALREADY GRANTED on a saved line stays on that line: it was authorized
+     * for it, and putting it on the new lines would be a concession nobody approved, so the staff
+     * member is told rather than the discount silently copied.
+     */
+    public async SplitIntoSeats(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        const order = this._order;
+        const seats = this.SeatsToSplit(line);
+        if (!order || seats < 2) return;
+        const granted = await this.grantedManualDiscount(line);
+        const added = await order.SplitIntoSeatLines(line, this.ProductFor(line)?.OrderLineExtensionEntity ?? null);
+        this.copyDiscountDraft(line, added, seats);
+        if (granted > 0) {
+            this.seatNotices.set(
+                line.ID,
+                `The ${FormatMoney(granted)} discount granted on this line stays on this seat. ` +
+                    `Discount the other ${seats - 1} seats if they should have it too.`,
+            );
+        }
+        this.expandedLineIds.add(line.ID);
+        this.afterSeatsAdded(added);
+    }
+
+    private afterSeatsAdded(added: mjBizAppsOrdersOrderLineEntity[]): void {
+        for (const line of added) this.expandedLineIds.add(line.ID);
+        this.schedulePricing();
+        void this.refreshAllApplicable();
+        this.cdr.detectChanges();
+    }
+
+    /**
+     * Give each new seat line its share of the discount being composed on `source`. A rate is the
+     * same on every seat. An amount was typed for all `seats` together, so each seat takes an equal
+     * share in cents and `source` keeps the remainder, which keeps the total what was typed.
+     */
+    private copyDiscountDraft(
+        source: mjBizAppsOrdersOrderLineEntity,
+        added: mjBizAppsOrdersOrderLineEntity[],
+        seats: number,
+    ): void {
+        const draft = this.discountDrafts.get(source.ID);
+        if (!draft || draft.Value == null || !this.CanDiscountLine(source)) return;
+        const share = draft.Mode === 'amount' ? Math.floor((draft.Value * 100) / seats) / 100 : draft.Value;
+        for (const line of added) {
+            this.discountDrafts.set(line.ID, { ...draft, Value: share });
+            this.syncStagedDiscount(line);
+        }
+        if (draft.Mode === 'amount' && added.length) {
+            draft.Value = round(draft.Value - share * added.length);
+            this.syncStagedDiscount(source);
+        }
+    }
+
+    /** What saved manual discounts on `line` add up to; 0 for an unsaved line or none. */
+    private async grantedManualDiscount(line: mjBizAppsOrdersOrderLineEntity): Promise<number> {
+        const order = this._order;
+        if (!order?.IsSaved || !line.IsSaved) return 0;
+        if (!order.Adjustments.IsLoaded) await order.Adjustments.Load();
+        return round(
+            order.Adjustments.Items.filter(
+                (row) => row.IsSaved && !row.PromotionID && UUIDsEqual(row.OrderLineID ?? '', line.ID),
+            ).reduce((sum, row) => sum + Number(row.Amount ?? 0), 0),
+        );
     }
 
     /* ── Term start (D-TERMSTART) ───────────────────────────────────────────
@@ -647,6 +757,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!this.EditMode) return;
         this.expandedLineIds.delete(line.ID);
         this.overrideEditorLineIds.delete(line.ID);
+        this.seatNotices.delete(line.ID);
         this._order?.Lines.Remove(line);
         this.schedulePricing();
     }
@@ -1213,6 +1324,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // it would offer one order the values that were live for another.
         this.DimensionCatalog = [];
         this.expandedLineIds.clear();
+        this.seatNotices.clear();
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
@@ -1270,6 +1382,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {
+        if (this.SoldPerSeat(line)) return ClampLineQuantity(quantity, 1);
         return ClampLineQuantity(quantity, this.ProductFor(line)?.MaxQuantityPerLine);
     }
 

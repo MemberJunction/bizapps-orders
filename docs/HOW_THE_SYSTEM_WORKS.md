@@ -178,6 +178,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Monthly billed monthly = one renewal Order Header per cycle (`Orders.SpawnRenewals` places Drafts at lead time; a human confirms).
 - Cancel is `Orders.CancelSubscription` (policy → reversal).
 - **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee. Capacity is **not** enforced on confirm.
+  - The order form sells an event whose `EventProduct.RequiresAttendeeInfo` is set one seat per line: its quantity stays at 1, "Add seat" adds a quantity-1 line with its own attendee block, and a draft line already selling N seats offers a split into N lines (`OrderHeaderEntity.AddSeatLine` / `SplitIntoSeatLines`, `seat-lines.ts`). New seats copy the product, price, parties, dates and dimension; pricing recomputes their discounts. A manual discount already granted on a saved line stays on that line.
 
 Revenue recognition is **real forward-dated JEs written at booking**. A 12-month $1,200 subscription writes 12 × $100 Dr Deferred / Cr Revenue dated on the monthly anniversaries. Accounting's batch sweep by date is what "fires" recognition. Staged entries are never edited; corrections are reversing orders.
 

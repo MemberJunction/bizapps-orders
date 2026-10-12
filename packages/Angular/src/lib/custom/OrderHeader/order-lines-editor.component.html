@@ -375,6 +375,29 @@
                 </div>
             }
 
+            <!-- An event that requires attendee information sells one seat per line, each with its
+                 attendee. A second seat is a second line; a line already selling several is split. -->
+            @if (SeatsToSplit(line); as seats) {
+                <div class="mjo-ol-seat is-split" role="status">
+                    <span>{{ seats }} seats on one line. This event needs one line per attendee.</span>
+                    <button type="button" class="mjo-ol-seat__btn" (click)="SplitIntoSeats(line)">
+                        <i class="fa-solid fa-users" aria-hidden="true"></i>
+                        Split into {{ seats }} lines
+                    </button>
+                </div>
+            } @else if (CanAddSeat(line)) {
+                <div class="mjo-ol-seat">
+                    <button type="button" class="mjo-ol-seat__btn" (click)="AddSeat(line)">
+                        <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                        Add seat
+                    </button>
+                    <span class="mjo-ol-seat__hint">One line per attendee</span>
+                </div>
+            }
+            @if (SeatNotice(line); as notice) {
+                <div class="mjo-ol-seat__notice" role="status">{{ notice }}</div>
+            }
+
             @if (ExtensionFor(line); as ext) {
                 <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">
                     <button
