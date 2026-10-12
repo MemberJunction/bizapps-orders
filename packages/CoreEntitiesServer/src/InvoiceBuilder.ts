@@ -332,6 +332,8 @@ export async function BuildInvoiceDocuments(
             CompanyName: str(l.Company) ?? '',
             Quantity: num(l.Quantity),
             UnitPrice: num(l.UnitPrice),
+            ExtendedAmount: l.ExtendedAmount === null || l.ExtendedAmount === undefined ? null : num(l.ExtendedAmount),
+            DiscountPct: num(l.DiscountPct),
             DiscountAmount: num(l.DiscountAmount),
             LineTotalNet: num(l.LineTotalNet),
             ChargeAmount: num(l.ChargeAmount),

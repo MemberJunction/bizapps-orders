@@ -28,6 +28,7 @@ export * from './booked-money';
 export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
+export * from './attendee-seats';
 export * from './order-line-edit-veto';
 export * from './order-confirm-veto';
 
@@ -46,6 +47,7 @@ export * from './CustomerPaymentMethodEntity';
 export * from './PaymentHeaderEntity';
 export * from './save-populated-fields';
 export * from './InitialPaymentIntentCompanion';
+export * from './KeptPartyOrganizationsCompanion';
 
 /**
  * Forces the generated entity subclasses to be loaded. Without an explicit
@@ -100,6 +102,8 @@ export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
 // Access overrides (bizapps-orders#268) — the authorization names and who may request each type.
 export * from './accessOverride';
+// Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
+export * from './coverage-overlap';
 export * from './pricing/linePricePick';
 
 /**

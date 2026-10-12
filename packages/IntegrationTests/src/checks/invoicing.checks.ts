@@ -39,6 +39,7 @@
  *   IV13  rendering twice gives byte-identical output, because nothing is stored
  *   IV14  the action's DriverClass in metadata resolves to a registered class
  *   IV15  a clean order produces no diagnostic notes
+ *   IV16  a Flat price that does not divide by the quantity lists at the flat amount, with no residual row
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -642,6 +643,31 @@ export const InvoicingChecks: NamedCheck[] = [
         // finding on an ordinary order.
         AssertEqual(run.Notes.length, 0, `an ordinary order needs no judgement calls: ${run.Notes.join(" | ")}`);
         Assert(!run.HTML!.includes("not for the customer"), "so the diagnostics block does not print");
+      }),
+  },
+  {
+    Id: "invoicing.IV16",
+    Name: "IV16: a Flat price that does not divide by the quantity lists at the flat amount, with no residual row",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Flat 100 at quantity 3 has a unit price of 33.33. Listed at 3 × 33.33 = 99.99, the
+        // derived discount was −0.01 and the ladder printed a one-cent Adjustment nobody gave (#579).
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100, { PricingModel: "Flat", Priority: 10 });
+        const result = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 3 }],
+        });
+        Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+        const run = await invoice(ctx, { OrderID: result.Order.ID as string });
+        Assert(run.Result.Success, `render failed: ${run.Result.Message}`);
+        const doc = run.Invoices[0];
+        AssertEqual(money(ladder(doc, "Subtotal")[0]?.Amount), 100, "the line lists at the flat amount");
+        AssertEqual(ladder(doc, "Discount").length, 0, `no discount or adjustment row: ${JSON.stringify(ladder(doc, "Discount"))}`);
+        AssertEqual(money(doc.Gross), 100, "and the document totals 100.00");
       }),
   },
 ];

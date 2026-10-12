@@ -61,6 +61,13 @@ export const ORDERS_SETTING = {
      * approve their own override.
      */
     AccessOverrideFallbackApproverRole: 'AccessOverrideFallbackApproverRole',
+    /**
+     * Days a booked term's start and end may move together before the shift goes to finance review
+     * (bizapps-orders#507). A shift is a term change, not a sales concession, so this is one figure for
+     * the app rather than a rep's SalesAuthority limit. At or above it is reviewed. Unset or unreadable
+     * reviews every shift.
+     */
+    TermShiftReviewDays: 'TermShiftReviewDays',
 } as const;
 
 /**
@@ -95,6 +102,12 @@ function asDaysOrOff(raw: string | undefined, fallback: number): number | null {
     if (['off', 'none', 'disabled'].includes(v)) return null;
     if (!/^\d+$/.test(v)) return fallback;
     return Number(v);
+}
+
+/** A whole number of days, or `null` when the value is absent, empty or unreadable. */
+function asDaysOrNull(raw: string | undefined): number | null {
+    const v = raw?.trim();
+    return v && /^\d+$/.test(v) ? Number(v) : null;
 }
 
 function asList(raw: string | undefined, fallback: readonly string[]): string[] {
@@ -214,6 +227,11 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
+    public static get TermShiftReviewDays(): number | null {
+        return asDaysOrNull(this.raw(ORDERS_SETTING.TermShiftReviewDays));
     }
 
 }

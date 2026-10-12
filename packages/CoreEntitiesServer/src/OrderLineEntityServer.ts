@@ -43,6 +43,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    DropStaleExtendedAmount,
     HostOrderLineEditVeto,
     IsBooked,
     LineGross,
@@ -67,24 +68,9 @@ function money(value: number): number {
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends OrderLineEntity {
     /**
-     * The exact extended amount the price rule computed, when a rule priced this line.
-     *
-     * TRANSIENT — not a column, and deliberately so. It is the pricing pass handing
-     * this line the figure it already computed exactly, rather than the line
-     * re-deriving it from a unit rate that cannot always represent it (see
-     * {@link LineGross}). Persisting it would add a column whose only job is to
-     * restate `LineTotalNet` before discount, and a second stored number that can
-     * disagree with the first is the thing worth avoiding.
-     *
-     * Null means "no rule priced this" — a hand-typed unit price, where the unit
-     * rate genuinely IS the authority — and the classic quantity × price applies.
-     */
-    public ResolvedExtendedAmount: number | null = null;
-
-    /**
      * Set only by bundle expansion, on the component lines it writes (bc-aidp-next-golive#292).
      *
-     * TRANSIENT, like `ResolvedExtendedAmount`. A line with a `ParentOrderLineID` is a bundle
+     * TRANSIENT: not a column. A line with a `ParentOrderLineID` is a bundle
      * component, priced at its share of the bundle, and the concession confirm gate does not re-price
      * it. Only expansion may make a line one: a parent set any other way would let an ordinary line
      * skip the gate. See `refuseParentNotFromExpansion`.
@@ -532,8 +518,14 @@ export class OrderLineEntityServer extends OrderLineEntity {
         // `NetAfterDiscount` is shared with the charge/tax base in OrderEntityServer. It used to be
         // computed independently in both places, and both clamped a reversal line to zero — see
         // PricingBehavior for what that cost.
+        //
+        // The gross is the rule's stored figure when there is one (#579): Flat 100.00 at quantity 3
+        // is 100.00, not 3 × 33.33. A draft line saved again keeps it; one edited past it drops it
+        // and goes back to quantity × unit price, here as well as in the pricing walk, because a
+        // line can be saved on its own without the walk running.
+        DropStaleExtendedAmount(this);
         const net = NetAfterDiscount(
-            LineGross(this.Quantity, this.UnitPrice, this.ResolvedExtendedAmount),
+            LineGross(this.Quantity, this.UnitPrice, this.ExtendedAmount),
             pct,
             this.DiscountAmount ?? 0,
         );
