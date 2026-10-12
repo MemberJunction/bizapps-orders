@@ -3386,6 +3386,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field(() => Float, {nullable: true}) 
     RenewalIncreasePercent?: number;
         
+    @Field(() => Boolean, {nullable: true}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(255)
     VenueAddress?: string;
@@ -3493,6 +3496,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent: number | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3595,6 +3601,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5836,6 +5845,10 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     NewPaymentTermsTypeID?: string;
         
+    @Field({nullable: true, description: `Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.`}) 
+    @MaxLength(500)
+    SignedAmendmentReference?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -5933,6 +5946,9 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field({ nullable: true })
     NewPaymentTermsTypeID: string | null;
 
+    @Field({ nullable: true })
+    SignedAmendmentReference: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6005,6 +6021,9 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     NewPaymentTermsTypeID?: string | null;
+
+    @Field({ nullable: true })
+    SignedAmendmentReference?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -12452,6 +12471,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`}) 
     RenewalIncreasePercent?: number;
         
+    @Field(() => Boolean, {nullable: true, description: `When true, every line for a product in this category holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it. NULL means inherit from the next level: the parent category, then the product type. A product's own value overrides this.`}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -12528,6 +12550,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent: number | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -12579,6 +12604,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13373,6 +13401,9 @@ export class mjBizAppsOrdersProductType_ {
     @Field({nullable: true, description: `Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`}) 
     Configuration?: string;
         
+    @Field(() => Boolean, {nullable: true, description: `When true, every line for a product of this type holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. For products priced per engagement, such as professional services or custom scope. NULL means not required. A product category or the product itself overrides this.`}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultRevenueRecognitionType?: string;
@@ -13442,6 +13473,9 @@ export class CreatemjBizAppsOrdersProductTypeInput {
     @Field({ nullable: true })
     Configuration: string | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13502,6 +13536,9 @@ export class UpdatemjBizAppsOrdersProductTypeInput {
 
     @Field({ nullable: true })
     Configuration?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13692,6 +13729,9 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`}) 
     RenewalIncreasePercent?: number;
         
+    @Field(() => Boolean, {nullable: true, description: `When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -13799,6 +13839,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent: number | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13877,6 +13920,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -15380,6 +15426,21 @@ export class mjBizAppsOrdersSalesRule_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Int, {nullable: true, description: `ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.`}) 
+    ConcessionTier?: number;
+        
+    @Field(() => Float, {nullable: true, description: `ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.`}) 
+    MinConcessionValue?: number;
+        
+    @Field(() => Float, {nullable: true, description: `ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.`}) 
+    MinConcessionPctOfContract?: number;
+        
+    @Field(() => Int, {nullable: true, description: `ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.`}) 
+    MinTermExtensionDays?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: `ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.`}) 
+    RequiresDecisionWithinAuthority?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     ApprovalRequiredRole?: string;
@@ -15418,6 +15479,21 @@ export class CreatemjBizAppsOrdersSalesRuleInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field(() => Int, { nullable: true })
+    ConcessionTier: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionValue: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionPctOfContract: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MinTermExtensionDays: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresDecisionWithinAuthority?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -15451,6 +15527,21 @@ export class UpdatemjBizAppsOrdersSalesRuleInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field(() => Int, { nullable: true })
+    ConcessionTier?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionValue?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionPctOfContract?: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MinTermExtensionDays?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresDecisionWithinAuthority?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

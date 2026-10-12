@@ -171,7 +171,7 @@ export async function CheckTermExtension(
         })
     )[0];
 
-    const acknowledgers = await acknowledgerIDs(request.RequestedByUserID, ctx);
+    const acknowledgers = await AcknowledgerIDs(request.RequestedByUserID, ctx);
     if (typeof acknowledgers === 'string') return acknowledgers;
 
     const currentEnd = asDay(term.EndDate);
@@ -282,7 +282,7 @@ async function renewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Pr
 }
 
 /** Every active holder of the acknowledgment role except the requester, or why there are none. */
-async function acknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): Promise<string[] | string> {
+export async function AcknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): Promise<string[] | string> {
     await OrdersSettings.Load(ctx.Provider, ctx.User);
     const roleName = OrdersSettings.AmendmentAcknowledgmentRole;
     if (!roleName) {

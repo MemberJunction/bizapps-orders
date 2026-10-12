@@ -153,6 +153,23 @@ export function ConcessionAlwaysEscalates(form: ConcessionDeliveryForm): boolean
     return form === 'Terms';
 }
 
+/** Each level's stated `RequiresSaleApproval` for one product; null or undefined means "not set here". */
+export interface SaleApprovalFacts {
+    Product: boolean | null | undefined;
+    /** The product's own category first, then each ancestor, nearest first. */
+    Categories: (boolean | null | undefined)[];
+    Type: boolean | null | undefined;
+}
+
+/**
+ * Whether a line for this product always needs an approver's sign-off (golive #281): the most specific
+ * value stated, Product -> its category -> each ancestor category -> Product Type, else false. False is a
+ * stated value, so a product or category can opt out of what it would inherit.
+ */
+export function ResolveRequiresSaleApproval(facts: SaleApprovalFacts): boolean {
+    return [facts.Product, ...facts.Categories, facts.Type].find((v) => v != null) ?? false;
+}
+
 /** One figure for a concession, whatever form it was delivered in. */
 export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
     switch (facts.Form) {
@@ -262,4 +279,84 @@ function utcDay(d: Date): number {
 
 function pct(fraction: number): string {
     return `${(fraction * 100).toFixed(1)}%`;
+}
+
+// ─── Approval tiers (#308) ─────────────────────────────────────────────────────
+
+/**
+ * An active ConcessionLimit rule read as an approval tier. Several active rules are tiers; one with
+ * no rank and no thresholds is the single rule every concession went to before tiers existed.
+ */
+export interface ConcessionTierRule {
+    ID: string;
+    Name: string;
+    ApprovalRequiredRoleID: string | null;
+    /** The tier's rank; higher is more senior. NULL ranks as 0. */
+    ConcessionTier: number | null;
+    /** Thresholds, each the counterpart of a SalesAuthority limit. Meeting any one set threshold meets the tier. */
+    MinConcessionValue: number | null;
+    MinConcessionPctOfContract: number | null;
+    MinTermExtensionDays: number | null;
+    /** The tier decides a concession routed to it even inside the requester's authority, and never the requester. */
+    RequiresDecisionWithinAuthority: boolean;
+}
+
+/** What a concession is routed on: the figures its authority is judged on. */
+export interface ConcessionTierMeasure {
+    Value: number;
+    /** The order's concessions as a share of its net total; null when it has none; undefined when not measured. */
+    CumulativeShare?: number | null;
+    TermDateChangeDays?: number | null;
+}
+
+/**
+ * Whether a concession meets a tier: the tier sets no threshold, or the concession is at or above any
+ * one it sets. At or above, as the matching SalesAuthority limits read. An order with no net total meets
+ * a share threshold, as it breaches a share limit.
+ */
+export function ConcessionTierMet(rule: ConcessionTierRule, measure: ConcessionTierMeasure): boolean {
+    const value = rule.MinConcessionValue == null ? null : Number(rule.MinConcessionValue);
+    const share = rule.MinConcessionPctOfContract == null ? null : Number(rule.MinConcessionPctOfContract);
+    const days = rule.MinTermExtensionDays == null ? null : Number(rule.MinTermExtensionDays);
+    if (value == null && share == null && days == null) return true;
+
+    if (value != null && measure.Value >= value - 0.005) return true;
+    if (share != null && measure.CumulativeShare !== undefined) {
+        if (measure.CumulativeShare === null || measure.CumulativeShare >= share - 1e-9) return true;
+    }
+    // A concession that leaves the term's dates alone meets no term-date threshold, even one of 0 days.
+    const changed = Math.abs(Number(measure.TermDateChangeDays ?? 0));
+    return days != null && changed > 0 && changed >= days;
+}
+
+/** The tier a concession goes to, or why none can be chosen. */
+export interface ConcessionTierChoice {
+    /** The highest-ranked tier the concession meets; null when it meets none. */
+    Rule: ConcessionTierRule | null;
+    /** Set when two met tiers share the highest rank, so neither can be chosen. */
+    Conflict: string | null;
+}
+
+/**
+ * Route a concession to the highest-ranked active ConcessionLimit rule whose thresholds it meets. Two
+ * met rules of one rank are a configuration error and are reported rather than one picked at random:
+ * which role decides a concession must not depend on the order rows come back in.
+ */
+export function PickConcessionTier(rules: ConcessionTierRule[], measure: ConcessionTierMeasure): ConcessionTierChoice {
+    const rank = (r: ConcessionTierRule) => Number(r.ConcessionTier ?? 0);
+    const met = rules.filter((r) => ConcessionTierMet(r, measure));
+    if (met.length === 0) return { Rule: null, Conflict: null };
+
+    const top = Math.max(...met.map(rank));
+    const atTop = met.filter((r) => rank(r) === top);
+    if (atTop.length > 1) {
+        return {
+            Rule: null,
+            Conflict:
+                `The active ConcessionLimit rules ${atTop.map((r) => `'${r.Name}'`).join(', ')} share tier ${top} and this ` +
+                `concession meets each of them, so which role decides it is ambiguous. Give each active ConcessionLimit ` +
+                `rule its own ConcessionTier.`,
+        };
+    }
+    return { Rule: atTop[0], Conflict: null };
 }

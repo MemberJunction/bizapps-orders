@@ -42,6 +42,28 @@
  *   CS26      a DiscountPct holds the confirm until a Price concession covers it; inside authority it is Approved
  *   CS27      with no SalesAuthority the same concession is Pending, and the confirm stays held
  *
+ * A product priced per engagement always needs an approver's sign-off (golive #281):
+ *
+ *   CS28      a line for a product that requires sale approval holds the confirm with no engine price to compare
+ *             against; its concession is Pending at no value whatever the requester's authority, the requester
+ *             cannot decide it, and another holder's approval releases the order
+ *
+ * Accounting hears of every approved concession, not only term extensions (golive #268):
+ *
+ *   CS29      a Price concession approved on the requester's authority raises the acknowledgment task, assigned to
+ *             the acknowledgment role's other holders; withdrawing the concession cancels it
+ *
+ * A concession's signed contract amendment is recorded on it once signed (golive #268):
+ *
+ *   CS30      an Approved concession takes a signed-amendment reference after its decision; a Pending one does not
+ *
+ * Several ConcessionLimit rules are approval tiers (#308):
+ *
+ *   CS32      below a higher tier's threshold the lower tier's role decides; at or above it only the higher tier's,
+ *             and a holder of the lower tier's role cannot decide it
+ *   CS33      a tier that requires sign-off holds a concession within the requester's authority Pending, for
+ *             someone other than the requester
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -121,6 +143,36 @@ async function addRule(ctx: IntegrationCheckContext, ruleType: string, roleID: s
   });
 }
 
+interface TierSpec {
+  roleID: string;
+  tier?: number | null;
+  minValue?: number | null;
+  requiresDecision?: boolean;
+}
+
+/** A ConcessionLimit rule as an approval tier (#308). */
+async function addTier(ctx: IntegrationCheckContext, spec: TierSpec): Promise<string> {
+  return createViaEntity(ctx, SALES_RULE_ENTITY, {
+    Name: `ConcessionLimit tier ${spec.tier ?? 0}`,
+    RuleType: "ConcessionLimit",
+    Scope: "Global",
+    ApprovalRequiredRoleID: spec.roleID,
+    ConcessionTier: spec.tier ?? null,
+    MinConcessionValue: spec.minValue ?? null,
+    RequiresDecisionWithinAuthority: spec.requiresDecision ? 1 : 0,
+    IsActive: 1,
+  });
+}
+
+/** A saved draft of five WidgetA at 100. A Seats concession on its line is worth 100 a seat. */
+async function draftOfFiveWidgets(ctx: IntegrationCheckContext): Promise<string> {
+  const f = Fx();
+  await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+  const built = await BuildOrder(ctx.User, { CompanyID: f.CoA.ID, Lines: [{ ProductID: f.Products.WidgetA, Quantity: 5 }] });
+  Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+  return built.Lines[0].ID;
+}
+
 /**
  * A role this user lacks and some other active user holds. A Pending concession is assigned to the person
  * records of the rule role's active holders, and one no one could be told of is refused, so the role is
@@ -169,6 +221,7 @@ async function approvalTasksOf(ctx: IntegrationCheckContext, concessionID: strin
        FROM __mj_BizAppsTasks.Task t
        JOIN __mj_BizAppsTasks.TaskType tt ON tt.ID = t.TypeID
       WHERE t.ID IN (SELECT TaskID FROM __mj_BizAppsTasks.TaskLink WHERE RecordID = '${concessionID}')
+        AND tt.Code <> 'ACTION_ITEM'
       ORDER BY t.__mj_CreatedAt DESC`);
   return Promise.all(tasks.map(async (task) => {
     const links = await TxQuery<{ RecordID: string }>(ctx,
@@ -179,6 +232,17 @@ async function approvalTasksOf(ctx: IntegrationCheckContext, concessionID: strin
         WHERE ta.TaskID = '${task.ID}'`);
     return { Task: task, Links: links, Assignees: assignees, IsLinked: (id: string) => links.some((l) => sameID(l.RecordID, id)) };
   }));
+}
+
+/** Accounting's acknowledgment tasks linked to a concession (golive #268), newest first. */
+async function acknowledgmentTasksOf(ctx: IntegrationCheckContext, concessionID: string) {
+  return TxQuery<{ ID: string; Status: string; Name: string }>(ctx,
+    `SELECT t.ID, t.Status, t.Name
+       FROM __mj_BizAppsTasks.Task t
+       JOIN __mj_BizAppsTasks.TaskType tt ON tt.ID = t.TypeID
+      WHERE tt.Code = 'ACTION_ITEM'
+        AND t.ID IN (SELECT TaskID FROM __mj_BizAppsTasks.TaskLink WHERE RecordID = '${concessionID}')
+      ORDER BY t.__mj_CreatedAt DESC`);
 }
 
 async function orderApprovalTaskID(ctx: IntegrationCheckContext, orderID: string): Promise<string | null> {
@@ -835,7 +899,7 @@ export const ConcessionChecks: NamedCheck[] = [
         const [one, two] = [firstTasks[0], secondTasks[0]];
         Assert(!sameID(one.Task.ID, two.Task.ID), "the two concessions do not share a task");
         for (const t of [one, two]) {
-          AssertEqual(t.Task.TypeCode, "APPROVAL_REQUEST", "the task is the tasks app's approval type");
+          AssertEqual(t.Task.TypeCode, "ORDERS_CONCESSION_APPROVAL", "the task is the concession approval type");
           AssertEqual(t.Task.Status, "Open", "the task is waiting on a decision");
           AssertEqual(t.Links.length, 2, "a task links the order and its one concession");
           Assert(t.IsLinked(Built.Order.ID), "the task links the order");
@@ -1015,6 +1079,8 @@ export const ConcessionChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make its approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
         const orderID = await bookOnNet30(ctx);
         const net30 = await termsOf(ctx, "Net30");
         const net60 = await termsOf(ctx, "Net60");
@@ -1130,6 +1196,199 @@ export const ConcessionChecks: NamedCheck[] = [
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+      }),
+  },
+  {
+    Id: "concessions.CS28",
+    Name: "CS28: a product that requires sale approval holds the confirm until another approver decides it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make the approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+        const f = Fx();
+        // Wide authority: within it, any other concession on this order would be Approved on save.
+        await grantAuthority(ctx, { maxPct: 1, maxValue: 1_000_000, maxShare: 1 });
+        await addRule(ctx, "ConcessionLimit", await roleSharedWithAnother(ctx));
+        await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Product SET RequiresSaleApproval = 1 WHERE ID = '${f.Products.WidgetA}'`);
+
+        // No ProductPrice: nothing resolves an engine price, so no price concession exists to hold the line.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 500 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "a line whose product requires sale approval must hold the confirm");
+        Assert(/line 1 is for a product that always needs approval/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should name the line, got: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID, Reason: "custom scope" });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Pending", "the requester's authority never approves it");
+        AssertEqual(Number(c.Entity.ComputedValue), 0, "nothing is given away against an engine price");
+
+        const own = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        Assert(await own.Load(c.Entity.ID), "the concession did not load");
+        own.Status = "Approved";
+        Assert(!(await own.Save()), "the requester must not decide their own");
+        Assert(/cannot be decided by the person who asked for it/.test(own.LatestResult?.CompleteMessage ?? ""),
+          `expected the self-decision refusal, got: ${own.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "a Pending concession must hold the confirm");
+
+        // Stand another user in as the requester, as the harness runs as one user: this user is the approver.
+        await TxQuery(ctx,
+          `UPDATE ${ORDERS_SCHEMA}.OrderConcession SET RequestedByUserID = '${await anotherUser(ctx)}' WHERE ID = '${c.Entity.ID}'`);
+        const decided = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+        Assert(await decided.Load(c.Entity.ID), "the concession did not reload");
+        decided.Status = "Approved";
+        Assert(await decided.Save(), `another holder's approval failed: ${decided.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `with the sale approved, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS29",
+    Name: "CS29: an approved Price concession raises accounting's acknowledgment task; withdrawing it cancels the task",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const acknowledger = await AcknowledgeAmendmentsWith(ctx);
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Approved", "inside the requester's authority");
+
+        const tasks = await acknowledgmentTasksOf(ctx, c.Entity.ID);
+        AssertEqual(tasks.length, 1, "one acknowledgment task for the approval");
+        AssertEqual(tasks[0].Status, "Open", "open until accounting confirms it");
+        const assignees = await TxQuery<{ AssigneeRecordID: string }>(ctx,
+          `SELECT AssigneeRecordID FROM __mj_BizAppsTasks.TaskAssignment WHERE TaskID = '${tasks[0].ID}'`);
+        Assert(assignees.some((a) => sameID(a.AssigneeRecordID, acknowledger.HolderID)), "assigned to the role's other holder");
+        Assert(!assignees.some((a) => sameID(a.AssigneeRecordID, ctx.User.ID)), "never to the requester");
+        const orderLink = await TxQuery<{ RecordID: string }>(ctx,
+          `SELECT RecordID FROM __mj_BizAppsTasks.TaskLink WHERE TaskID = '${tasks[0].ID}' AND RecordID = '${built.Order.ID}'`);
+        AssertEqual(orderLink.length, 1, "linked to the order as well as the concession");
+
+        Assert(await c.Entity.Delete(), `withdrawing failed: ${c.Entity.LatestResult?.CompleteMessage}`);
+        const after = await TxOne<{ Status: string }>(ctx,
+          `SELECT Status FROM __mj_BizAppsTasks.Task WHERE ID = '${tasks[0].ID}'`);
+        AssertEqual(after.Status, "Cancelled", "withdrawing the concession cancels its acknowledgment");
+      }),
+  },
+  {
+    Id: "concessions.CS30",
+    Name: "CS30: an Approved concession takes a signed-amendment reference after its decision; a Pending one does not",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 },
+            { ProductID: f.Products.WidgetA, Quantity: 1, DiscountPct: 0.5 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const approved = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        AssertEqual(approved.Entity.Status, "Approved", `inside authority: ${approved.Message}`);
+        approved.Entity.SignedAmendmentReference = "AMD-0001";
+        Assert(await approved.Entity.Save(), `the reference should save: ${approved.Entity.LatestResult?.CompleteMessage}`);
+        const stored = await TxOne<{ SignedAmendmentReference: string | null }>(ctx,
+          `SELECT SignedAmendmentReference FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${approved.Entity.ID}'`);
+        AssertEqual(stored.SignedAmendmentReference, "AMD-0001", "stored on the concession");
+
+        const pending = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[1].ID });
+        AssertEqual(pending.Entity.Status, "Pending", `50% is outside a 25% cap: ${pending.Message}`);
+        pending.Entity.SignedAmendmentReference = "AMD-0002";
+        Assert(!(await pending.Entity.Save()), "a Pending concession must refuse a signed-amendment reference");
+        Assert(/only against an Approved concession/.test(pending.Entity.LatestResult?.CompleteMessage ?? ""),
+          `expected the Approved-only refusal, got: ${pending.Entity.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS32",
+    Name: "CS32: below a higher tier's threshold the lower tier decides; at or above it only the higher tier's role can",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make its approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+        await grantAuthority(ctx, { maxValue: 50 });
+        // This user holds the lower tier's role, not the higher tier's.
+        const lowerID = await addTier(ctx, { roleID: await roleTheUserHolds(ctx), tier: 0 });
+        const higherID = await addTier(ctx, { roleID: await roleTheUserLacks(ctx), tier: 1, minValue: 150 });
+        const lineID = await draftOfFiveWidgets(ctx);
+
+        const below = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 1 });
+        Assert(below.Saved, `the concession below the threshold did not save: ${below.Message}`);
+        Assert(sameID(below.Entity.SalesRuleID, lowerID), "a 100 concession goes to the lower tier");
+        AssertEqual(below.Entity.Status, "Approved", "which this user, holding its role, decides");
+
+        const above = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 2 });
+        Assert(above.Saved, `the concession above the threshold did not save: ${above.Message}`);
+        Assert(sameID(above.Entity.SalesRuleID, higherID), "a 200 concession goes to the higher tier");
+        AssertEqual(above.Entity.Status, "Pending", "and waits for its role");
+
+        above.Entity.Status = "Approved";
+        Assert(!(await above.Entity.Save()), "a holder of the lower tier's role must not decide a higher tier's concession");
+        Assert(/Only a holder of the role/.test(above.Entity.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${above.Entity.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS33",
+    Name: "CS33: a tier that requires sign-off holds a concession within authority Pending, for someone other than the requester",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Not about accounting's acknowledgment: an earlier check's role would make its approval raise one, and the stand-in requester may be that role's only holder.
+        OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+        const authorityID = await grantAuthority(ctx, { maxValue: 5000 });
+        // This user holds the role, and so does someone else.
+        const ruleID = await addTier(ctx, { roleID: await roleSharedWithAnother(ctx), requiresDecision: true });
+        const lineID = await draftOfFiveWidgets(ctx);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 1 });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Pending", "within authority, the sign-off tier still decides it");
+        Assert(sameID(c.Entity.SalesRuleID, ruleID), "stamped with the tier that decides it");
+        Assert(sameID(c.Entity.AuthorizedBySalesAuthorityID, authorityID), "and with the authority that covered it");
+        Assert((await approvalTasksOf(ctx, c.Entity.ID)).length === 1, "it raised its approval task");
+
+        c.Entity.Status = "Approved";
+        Assert(!(await c.Entity.Save()), "the requester must not sign off their own concession, even holding the role");
+        Assert(/someone other than the person who asked for it/.test(c.Entity.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should say why, got: ${c.Entity.LatestResult?.CompleteMessage}`);
+
+        // With the option off, the same rule leaves a concession within authority to the requester's authority.
+        const rule = await new Metadata().GetEntityObject<mjBizAppsOrdersSalesRuleEntity>(SALES_RULE_ENTITY, ctx.User);
+        Assert(await rule.Load(ruleID), "rule did not load");
+        rule.RequiresDecisionWithinAuthority = false;
+        Assert(await rule.Save(), `rule update failed: ${rule.LatestResult?.CompleteMessage}`);
+        const onAuthority = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: lineID, AddedQuantity: 1 });
+        Assert(onAuthority.Saved, `recording failed: ${onAuthority.Message}`);
+        AssertEqual(onAuthority.Entity.Status, "Approved", "without sign-off it is Approved on the requester's authority");
+        AssertEqual(onAuthority.Entity.SalesRuleID ?? null, null, "and no tier decided it");
       }),
   },
 ];
