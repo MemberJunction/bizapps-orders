@@ -2,8 +2,10 @@
  * Whether a referral program approves a Duration concession (golive #268).
  *
  * A referral's earned time goes on the renewed term, on the renewal order, never on the current one. A Duration
- * concession that names an active program of the order's company, extends a term bought by a renewal line, and
- * adds no more than the program's `DaysPerReferral` is approved by the program. One that adds more, or names an
+ * concession that names an active program of the order's company, extends a term bought by a renewal line that has
+ * not started yet, and adds no more than the program's `DaysPerReferral` is approved by the program. A renewal line
+ * alone is not enough: from the second year on, the term a customer is in was bought by last year's renewal, and
+ * extending it re-spreads revenue already scheduled and moves the renewal date. One that adds more, or names an
  * inactive program, is routed like any other concession. Naming a program on anything else is refused.
  *
  * One rule, read in two places: the concession applies it when it is recorded, and `Orders.AmendArrangement`'s
@@ -29,6 +31,10 @@ export interface ReferralProgramRequest {
     OrderHeaderID: string;
     /** The subscription the extended term's line renews; null when that line is not a renewal. */
     RenewsSubscriptionID: string | null;
+    /** The extended term's first day. */
+    TermStartDate: Date;
+    /** Today on the business calendar, as the term extension reads it. */
+    Today: Date;
 }
 
 export interface ReferralProgramVerdict {
@@ -64,6 +70,13 @@ export async function CheckReferralProgram(
         return (
             `Referral program '${program.Name}' adds its time to the next term, on the renewal order. This term was not ` +
             `bought by a renewal; record the concession against the renewed term once the renewal is confirmed.`
+        );
+    }
+    if (request.TermStartDate.getTime() <= request.Today.getTime()) {
+        return (
+            `Referral program '${program.Name}' adds its time to a renewed term that has not started. This term started ` +
+            `on ${request.TermStartDate.toISOString().slice(0, 10)}; record the concession against the next term once ` +
+            `its renewal is confirmed.`
         );
     }
     const daysPerReferral = Number(program.DaysPerReferral);

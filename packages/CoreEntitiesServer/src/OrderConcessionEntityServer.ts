@@ -125,7 +125,7 @@ import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram } from './ReferralProgram.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { RequireUUID } from './sql-guards.js';
-import { ApplyTermExtension, AsDay, CheckTermExtension, IsoDay, type ApprovedDurationConcession } from './TermExtension.js';
+import { ApplyTermExtension, AsDay, CheckTermExtension, IsoDay, type ApprovedDurationConcession, type CheckedTermExtension } from './TermExtension.js';
 import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftConcession } from './TermShift.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -292,6 +292,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private saleApprovalRequired = false;
     /** The line that bought the term a Duration concession extends, set when it is valued. */
     private extendedLine: LineRow | null = null;
+    /** That term's first day and today's business day, as the extension check read them; set with `extendedLine`. */
+    private extendedTerm: Pick<CheckedTermExtension, 'TermStartDate' | 'EffectiveDate'> | null = null;
 
     /** What the approval task calls this concession ("25% discount, 3,000.00"), kept by `prepareNew`. */
     private approvalSummary = '';
@@ -380,6 +382,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.termDateChange = null;
         this.saleApprovalRequired = false;
         this.extendedLine = null;
+        this.extendedTerm = null;
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
@@ -649,6 +652,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.OrderHeaderID = line.OrderHeaderID;
         this.OrderLineID = line.ID;
         this.extendedLine = line;
+        this.extendedTerm = { TermStartDate: applicable.TermStartDate, EffectiveDate: applicable.EffectiveDate };
         this.termDateChange = SplitTermDateChange(
             { StartDate: applicable.TermStartDate, EndDate: applicable.CurrentEndDate },
             { StartDate: applicable.TermStartDate, EndDate: applicable.NewEndDate },
@@ -666,7 +670,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
      * is routed like any other, or why naming the program is refused.
      */
     private async inReferralProgram(user: UserInfo): Promise<boolean | string> {
-        if (this.DeliveryForm !== 'Duration' || !this.extendedLine) {
+        if (this.DeliveryForm !== 'Duration' || !this.extendedLine || !this.extendedTerm) {
             return 'A referral program grants extra time on a renewed term, so only a Duration concession names one.';
         }
         const verdict = await CheckReferralProgram(
@@ -677,6 +681,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 AddedDays: Number(this.AddedDays ?? 0),
                 OrderHeaderID: this.OrderHeaderID,
                 RenewsSubscriptionID: this.extendedLine.RenewsSubscriptionID,
+                TermStartDate: this.extendedTerm.TermStartDate,
+                Today: this.extendedTerm.EffectiveDate,
             },
             { Provider: this.provider(), User: user },
         );

@@ -165,6 +165,8 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
                     AddedDays: addedDays,
                     OrderHeaderID: checked.OrderHeaderID,
                     RenewsSubscriptionID: await this.renewsSubscription(checked.OrderLineID, provider, user),
+                    TermStartDate: checked.TermStartDate,
+                    Today: checked.EffectiveDate,
                 },
                 { Provider: provider, User: user },
             );
