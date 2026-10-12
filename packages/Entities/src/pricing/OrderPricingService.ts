@@ -598,6 +598,14 @@ export class OrderPricingService {
      * for nothing looks exactly like a deliberate freebie.
      */
     private async applyResolvedPrice(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        // Whether the product may be sold at all comes first, ahead of the stated-price branch: a
+        // typed price settles WHAT the line costs, not WHETHER it may be sold. It also covers lines
+        // saved earlier, which reload with a UnitPrice and so read as stated on every later save — a
+        // draft whose product was retired since. Refusing here aborts the confirm before any line is
+        // written.
+        const product = await this.loadProductForPricing(line.ProductID);
+        if (product) this.assertProductSellable(line, product);
+
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price
         // for a free line and must not be mistaken for silence.
@@ -608,11 +616,6 @@ export class OrderPricingService {
             return;
         }
 
-        const product = await this.loadProductForPricing(line.ProductID);
-        // Before pricing it, establish that it may be sold at all — a retired or
-        // out-of-window product should not reach the ledger, and refusing here aborts
-        // the confirm before any line is written.
-        if (product) this.assertProductSellable(line, product);
         const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
 
         if (!resolved) {
@@ -790,6 +793,9 @@ export class OrderPricingService {
      * Checked here because pricing already loads the product per line, so this costs
      * no extra query, and because refusing during pricing aborts the confirm BEFORE
      * any line is written — the same all-or-none point the subscription rules use.
+     * It runs for a line with a stated price as well as one the engine prices; only
+     * a reversal, settled from the line it reverses, skips it, so a retired product
+     * can still be returned.
      *
      * The order's own date is the test, not today: back-dating an order to when the
      * product WAS on sale is legitimate, and re-pricing an old order must not start
