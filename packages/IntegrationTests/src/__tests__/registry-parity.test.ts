@@ -70,6 +70,8 @@ import '../checks/progress-measurement.checks.js';
 import '../checks/outbound-events.checks.js';
 import '../checks/concessions.checks.js';
 import '../checks/term-extension.checks.js';
+import '../checks/amount-change.checks.js';
+import '../checks/term-shift.checks.js';
 import '../checks/billcom-rail.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -87,19 +89,19 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
     'order-booking': 30,
     'revenue-recognition': 8,
-    subscriptions: 29,
-    'subscription-cancellation': 10,
-    'subscription-renewal': 30,
+    subscriptions: 32,
+    'subscription-cancellation': 11,
+    'subscription-renewal': 31,
     'payments-rollups': 9,
     'payment-ledger': 12,
     intercompany: 14,
-    events: 10,
+    events: 12,
     'line-subscriber': 17,
     'account-credit': 11,
-    pricing: 16,
-    promotions: 27,
+    pricing: 21,
+    promotions: 30,
     charges: 15,
-    tax: 17,
+    tax: 18,
     composition: 10,
     returns: 16,
     'gift-cards': 15,
@@ -107,7 +109,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     fulfillment: 12,
     'capture-payment': 12,
     'advance-order-state': 11,
-    invoicing: 15,
+    invoicing: 16,
     'order-status': 8,
     'payment-terms': 14,
     'arithmetic-edges': 12,
@@ -115,7 +117,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     volume: 13,
     entitlements: 32,
     'entitlement-read': 7,
-    'payment-providers': 12,
+    'payment-providers': 20,
     'ach-settlement': 17,
     'embedded-payment-detail': 17,
     'payment-schedule': 23,
@@ -124,8 +126,10 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'party-roster': 2,
     'progress-measurement': 25,
     'outbound-events': 7,
-    concessions: 27,
+    concessions: 34,
     'term-extension': 9,
+    'amount-change': 4,
+    'term-shift': 6,
     'billcom-rail': 20,
 };
 

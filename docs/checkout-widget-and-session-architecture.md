@@ -736,6 +736,20 @@ The widget configuration reaches the browser only in the reply to `initialize`, 
 
 The checkout page MJAPI serves allows `https://challenges.cloudflare.com` in `script-src` and `frame-src`. A site that embeds `<mj-orders-checkout>` must allow the same in its own Content-Security-Policy, and its hostname must be on the site key's hostname list in Cloudflare.
 
+##### Setting up Turnstile on a deployment
+
+Do this before any widget on the deployment sets `requireTurnstile`. Until it is done, MJAPI logs `Turnstile is not configured (...)` at startup, naming the missing setting, and a widget that sets `requireTurnstile` answers 503 on `initialize` and `complete`.
+
+1. **Create a site key.** In the Cloudflare dashboard, open Turnstile and add a widget. Use one site key per deployment (per MJAPI that runs the checkout edge), so a deployment's secret can be replaced, or a leak contained, without touching the others. Choose the Managed mode: the built-in clients render with `appearance: 'interaction-only'`, so the buyer sees the challenge only when Cloudflare needs them to interact.
+2. **List the hostnames.** Add every hostname a buyer loads the checkout from: MJAPI's own host (for the `GET /checkout/:slug` page) and each site that embeds `<mj-orders-checkout>`. A token from a hostname not on the list fails verification.
+3. **Store the secret.** Put the widget's secret key in the deployment's secret store and expose it to MJAPI as an environment variable, for example `CHECKOUT_TURNSTILE_SECRET`. Never put the secret itself in `mj.config.cjs`.
+4. **Configure the edge.** In the deployment's `mj.config.cjs`, set the `OrdersCheckoutEdge` extension's `Settings.TurnstileSecretEnvVar` to that variable's name and `Settings.TurnstileSiteKey` to the widget's site key. The site key is public; the clients receive it in the edge's 403.
+5. **Update each embedding site's CSP.** Allow `https://challenges.cloudflare.com` in `script-src` and `frame-src`.
+6. **Restart MJAPI** and confirm the startup line no longer appears.
+7. **Test with the real key** on the deployed host before turning it on for buyers: set `requireTurnstile` on a test widget, then check that `initialize` without a token answers 403 naming the site key, that the challenge renders and checkout completes from MJAPI's page and from an embedding site, and that a reused token is refused.
+
+For local development, Cloudflare publishes test site keys and secrets that always pass or always fail; they work on any hostname, including `localhost`.
+
 ---
 
 ## Server API & Service Reference

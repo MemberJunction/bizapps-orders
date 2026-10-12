@@ -49,6 +49,8 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    OrderLineEntity,
+    mjBizAppsOrdersEventOrderLineEntity,
     mjBizAppsOrdersOrderCheckoutAnswerEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
@@ -62,6 +64,7 @@ import {
     ToISODate,
     HostOrderConfirmVeto,
     ResolveOrderConfirmRefusal,
+    RunAlongsideRefusal,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -79,11 +82,12 @@ import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
-import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
+import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
 import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
 import { DisplacedStartEventData } from './displaced-start-event.js';
@@ -140,7 +144,7 @@ export interface LineCoverageOverlap {
 
 /** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
 interface SubscriptionMaterialization {
-    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>;
+    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>;
     RecognitionMonthsByLine: Map<string, number>;
 }
 
@@ -240,6 +244,11 @@ interface SubscriptionDecisionForLine {
      * subscription's `Extended` event (golive #299).
      */
     RequestedStart: Date | null;
+    /**
+     * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
+     * the term, where entitlement grants and renewals read it.
+     */
+    Seats: number;
 }
 
 /**
@@ -459,6 +468,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             );
         }
 
+        for (const message of await this.checkEventAttendees()) {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo('Status', message, this.Status, ValidationErrorType.Failure));
+        }
+
         for (const message of await this.checkBillToNameFitsRails()) {
             result.Success = false;
             const field = this.BillToOrganizationID ? 'BillToOrganizationID' : 'BillToPersonID';
@@ -468,6 +482,50 @@ export class OrderEntityServer extends OrderHeaderEntity {
         await this.refuseVetoedConfirm(result);
 
         return result;
+    }
+
+    /**
+     * An event that requires attendee information books one seat per line, each line naming its
+     * attendee (see `AttendeeRequirement`).
+     *
+     * GATED ON `willBookOnThisSave()`, like the rules around it: a draft is saved while its
+     * attendees are still being entered, and an order that has booked is never re-judged.
+     *
+     * Reads `Lines` as held: the booking save loads the collection before validation runs, so on
+     * the save this guards the collection is the whole order. A line's attendee is the event row in
+     * memory when there is one, and otherwise the row on disk.
+     */
+    private async checkEventAttendees(): Promise<string[]> {
+        if (!this.willBookOnThisSave() || this.Lines.Count === 0) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        const lines = this.Lines.Items;
+
+        const requiring = await LoadProductsRequiringAttendees(lines.map((l) => l.ProductID), provider, this.ContextCurrentUser);
+        if (requiring.size === 0) return [];
+
+        const eventRowInMemory = (line: mjBizAppsOrdersOrderLineEntity): mjBizAppsOrdersEventOrderLineEntity | null => {
+            const child = line.ISAChild ?? (line instanceof OrderLineEntity ? line.Extension.Entity : null);
+            return child instanceof mjBizAppsOrdersEventOrderLineEntity ? child : null;
+        };
+        const onDisk = await LoadLinesWithAttendee(
+            lines.filter((l) => l.IsSaved && requiring.has(uuidKey(l.ProductID)) && !eventRowInMemory(l)).map((l) => l.ID),
+            provider,
+            this.ContextCurrentUser,
+        );
+
+        return ExplainMissingAttendees(
+            lines.map((line) => {
+                const inMemory = eventRowInMemory(line);
+                return {
+                    LineNumber: line.LineNumber,
+                    ProductID: line.ProductID,
+                    Quantity: line.Quantity,
+                    Exempt: !!line.ReversesOrderLineID || !!line.ParentOrderLineID,
+                    HasAttendee: inMemory ? !!inMemory.PersonID : onDisk.has(uuidKey(line.ID)),
+                };
+            }),
+            requiring,
+        );
     }
 
     /**
@@ -1420,11 +1478,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * The exact extended amount a price rule computed for this line, if one did.
      *
      * `_priceComponents` is populated by the pricing pass in this same save, so this
-     * is the authority while the line is still in flight; the line itself carries the
-     * same figure for its own totals hook, which runs outside this class.
+     * is the authority for a line priced now. A line priced on an earlier save carries
+     * its figure in `ExtendedAmount`, which the pricing walk has already cleared if the
+     * line was edited past it.
      */
     private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
-        return this._priceComponents.get(line)?.ExtendedAmount ?? null;
+        return this._priceComponents.get(line)?.ExtendedAmount ?? line.ExtendedAmount ?? null;
     }
 
     /** Persist priced lines and the component/charge rows that need their IDs. */
@@ -2595,9 +2654,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * what the line itself is.
      *
      * CHILD ROWS, NOT THE COLUMNS. `OrderLine.DimensionID` / `.DimensionValueID` hold one axis, so
-     * they cannot carry five. They stay the HUMAN OVERRIDE: `MergeLineDimensions` gives the column
-     * precedence over a child row naming the same axis when the factory builds the entry, so
-     * somebody who sets a tag by hand overrules what was derived for that one axis and nothing else.
+     * they cannot carry five. They stay the HUMAN OVERRIDE: somebody who sets a tag by hand overrules
+     * what was derived for that one axis and nothing else.
+     *
+     * THE OVERRIDE IS STORED, NOT ONLY BOOKED. The column used to win only inside the journal entry
+     * factory, so the child rows kept the derived value while the ledger carried the hand-set one,
+     * and the line's own record of its tags disagreed with what it booked. `reconcileLineDimensions`
+     * now applies the column before writing, so the child rows are exactly what the entry will carry.
+     * Clearing the column puts the derived value back on the next save.
      *
      * A RULE BEATS THE PRODUCT MAPPING. They normally address different axes — Venture, Product and
      * Event come from the mapping; ARR-Type and Vintage are facts about this line — but where both
@@ -2732,14 +2796,22 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return out;
     }
 
-    /** Bring a line's stored tags in line with what was derived, touching only what differs. */
+    /**
+     * Bring a line's stored tags in line with what was derived plus the tag set on the line by hand,
+     * touching only what differs. The hand-set tag wins on its axis, the same rule the journal entry
+     * factory applies, so the stored rows and the booked entry cannot disagree.
+     */
     private async reconcileLineDimensions(
         line: mjBizAppsOrdersOrderLineEntity,
         derived: LineDimensionTag[],
         existing: mjBizAppsOrdersOrderLineDimensionEntity[],
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const wanted = new Map(derived.map((tag) => [uuidKey(tag.DimensionID), tag]));
+        const stored = MergeLineDimensions(
+            { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+            derived,
+        );
+        const wanted = new Map(stored.map((tag) => [uuidKey(tag.DimensionID), tag]));
 
         for (const row of existing) {
             const key = uuidKey(row.DimensionID);
@@ -3167,6 +3239,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             termEntity.Amount = term.Amount;
             termEntity.IsProrated = term.IsProrated;
             termEntity.ProrationFactor = term.ProrationFactor;
+            // The seats bought, not `line.Quantity`: by now that is prorated (#589).
+            termEntity.Quantity = decided.Seats;
             // Frozen at purchase: later changes to the product's rules must never restate a
             // term that has already been booked.
             termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
@@ -3186,6 +3260,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 StartDate: term.StartDate,
                 EndDate: term.EndDate,
                 Amount: term.Amount,
+                Quantity: decided.Seats,
             });
             out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
@@ -3228,7 +3303,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
              * external veto, so outside booking this loop has to let the line be asked.
              */
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
-            await line.Save(options);
+            // Checked like the term save above: a refused save here left the line's link and service
+            // period unwritten while the confirm reported success.
+            if (!(await line.Save(options))) {
+                throw new Error(
+                    `Failed to link order line ${line.LineNumber} to its subscription: ` +
+                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+
+            // `lines` were loaded for booking, so they are separate objects from `this.Lines`. Booking
+            // later saves the `this.Lines` copy (journal entry and running-total stamps), and an update
+            // writes every column, so that copy has to carry what was just written or it puts the
+            // link and the service period back to their pre-confirm values.
+            const inMemory = this.Lines.Items.find((l) => l !== line && UUIDsEqual(l.ID, line.ID));
+            if (inMemory) {
+                inMemory.SubscriptionID = line.SubscriptionID;
+                inMemory.ServicePeriodStart = line.ServicePeriodStart;
+                inMemory.ServicePeriodEnd = line.ServicePeriodEnd;
+            }
         }
 
         return out;
@@ -3299,6 +3392,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
+            // Before anything else reads the quantity: `prepareLines` prorates it after this pass,
+            // and the prorated figure prices the short period but no longer counts seats (#589).
+            const seats = behavior.SeatCount(rules, Number(line.Quantity ?? 0));
+            if ('Error' in seats) {
+                if (preview) continue;
+                throw new Error(`Order line ${line.LineNumber} (${product.Name}): ${seats.Error}`);
+            }
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
             const identity = behavior.DedupeIdentity(rules, subscriber);
             const match = behavior.DedupeMatch(rules, subscriber);
@@ -3386,6 +3486,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     if (verdict.Outcome !== 'None') preview.push({ Line: line, Decision: verdict, Overlaps: overlaps });
                 } else if (verdict.Outcome === 'Refused' || verdict.Outcome === 'NeedsAck') {
                     throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${verdict.Message}`);
+                } else if (verdict.Outcome === 'Acknowledged') {
+                    // The acknowledgment is what lets this line through, so it needs the person
+                    // confirming to hold the grant and the line to say why (bizapps-orders#511).
+                    const refusal = RunAlongsideRefusal(
+                        line,
+                        this.ContextCurrentUser as UserInfo,
+                        this.ProviderToUse as unknown as IMetadataProvider,
+                    );
+                    if (refusal) {
+                        throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${refusal}`);
+                    }
+                    LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message} Reason: ${line.CoverageOverlapReason}`);
                 } else if (verdict.Outcome !== 'None') {
                     LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message}`);
                 }
@@ -3452,6 +3564,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
                 RequestedStart: requestedStart,
+                Seats: seats.Seats,
             });
         }
         return out;

@@ -1,7 +1,7 @@
 {
   "fields": {
     "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
-    "Name": "ORD-44 - Bill.com Invoice Rail",
+    "Name": "ORD-45 - Bill.com Invoice Rail",
     "Description": "The Bill.com invoice rail against a real database, with Bill.com replaced by an in-memory stub behind the rail's gateway seam (BR1-BR20). A BillCom provider row resolves to the rail through its Company Integration, and a live provider over a sandbox connection is refused before anything reaches Bill.com. The send sweep previews without writing, then sends: the rail's invoice and customer are recorded, a second send creates nothing, and a second order reuses the customer. Cancelling archives on Bill.com and reads it back, and is refused while Bill.com shows unpolled money. The payment poll previews without writing, captures a cleared payment once with its cash leg, advances its watermark, handles part payments, payments across two orders, scheduled payments and payments on invoices Orders did not issue. A signed webhook asks for the poll; a forged or unkeyed one is refused. The send and poll jobs ship Disabled and in Preview, and a poll asked to record cash follows its job: Disabled records nothing, Preview only previews. After one payment across two invoices, each invoice row carries its own due amount.",
     "InputDefinition": {},
     "ExpectedOutcomes": {

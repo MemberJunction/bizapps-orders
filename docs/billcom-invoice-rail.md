@@ -110,7 +110,7 @@ needs `orders:read`, the others `orders:write`.
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
 | `Orders.SendExternalInvoices` | The sweep: sends worklist units up to `MaxCount` (default 25) and retries transient failures, never cancelled or in-flight units. |
-| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. |
+| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. It also reads HubSpot Payments provider rows ([hubspot-payments.md](hubspot-payments.md)). |
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
@@ -200,8 +200,9 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The
   instalment stamp and `ExternalDocumentNumber` are best effort, so `ExternalInvoice` is the record to
   trust. `PAYPAL`, `WALLET` and `UNDEFINED` are recorded as ACH. A zero-value unit cannot be sent.
-- **BILL words in shared code.** `BILLCOM_PAYMENT_STATUS`, `TenderFor` and some messages name Bill.com
-  in provider-neutral files (design §13.8).
+- **BILL words in shared code.** `TenderFor`, the invoice allocation and the re-application messages
+  name Bill.com in provider-neutral files (design §13.8). Status tables are per rail
+  (`PaymentStatusVocabularyFor`).
 
 ## Open questions
 

@@ -145,8 +145,9 @@ Three client-only bundles run over GraphQL instead:
 | `wire-crud` | W1–W3 |
 | `wire-volume` | WV1–WV7 (committed) |
 | `wire-entitlements` | WE1–WE5 (Check/List over GraphQL; WE1 confirms) |
+| `wire-party-keep` | KP1–KP3 (a kept party organization survives a bill-to replacement saved over GraphQL) |
 
-`wire-crud`, `wire-volume`, and `wire-entitlements` are **not** in `src/index.ts` or `EXPECTED_BUNDLES`. They register from `src/client-index.ts` and `test-harnesses/integration-client.mjs` so a GraphQL process never loads `*EntityServer`. `wire-entitlements` confirms one STYLE-HB order (`Notes` `ER-WIRE:<runId>`) so Check/List have a real grant on the wire.
+`wire-crud`, `wire-volume`, `wire-entitlements` and `wire-party-keep` are **not** in `src/index.ts` or `EXPECTED_BUNDLES`. They register from `src/client-index.ts` and `test-harnesses/integration-client.mjs` so a GraphQL process never loads `*EntityServer`. `wire-entitlements` confirms one STYLE-HB order (`Notes` `ER-WIRE:<runId>`) so Check/List have a real grant on the wire. `wire-party-keep` saves Draft orders (`Notes` `KP-WIRE:<runId>`) and deletes each one.
 
 `volume` is the slow one: it confirms several hundred orders and runs last for that reason. It is
 also the only bundle that creates a SECOND `SQLServerDataProvider`, which is how a real

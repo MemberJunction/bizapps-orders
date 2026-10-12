@@ -65,6 +65,7 @@
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import {
+    LineGross,
     LoadOrdersEngine,
     OrdersEngine,
     type mjBizAppsOrdersOrderHeaderEntity,
@@ -198,9 +199,16 @@ function isoDate(d: Date): string {
  * non-scheduled order cannot disagree about what a line is worth.
  */
 export function LineAmounts(line: mjBizAppsOrdersOrderLineEntity): ValueEntryAmounts {
-    const grossFromRate = money(Math.abs(line.Quantity) * line.UnitPrice);
-    const pctDiscount = money(grossFromRate * (line.DiscountPct ?? 0));
-    const amountDiscount = money(Math.min(Math.max(0, grossFromRate - pctDiscount), line.DiscountAmount ?? 0));
+    // The discount is split off the same gross the line computed its total from: the rule's stored
+    // figure when a rule priced the line (#579), quantity × unit price otherwise. Off the re-multiplied
+    // rate, a Flat line's percentage discount could come out a cent away from the one the line took.
+    const listGross = LineGross(
+        Math.abs(line.Quantity),
+        line.UnitPrice,
+        line.ExtendedAmount === null || line.ExtendedAmount === undefined ? null : Math.abs(line.ExtendedAmount),
+    );
+    const pctDiscount = money(listGross * (line.DiscountPct ?? 0));
+    const amountDiscount = money(Math.min(Math.max(0, listGross - pctDiscount), line.DiscountAmount ?? 0));
     const discount = money(pctDiscount + amountDiscount);
     const net = money(Math.abs(Number(line.LineTotalNet ?? 0)));
     return {

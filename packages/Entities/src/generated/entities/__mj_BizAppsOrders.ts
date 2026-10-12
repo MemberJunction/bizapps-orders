@@ -1233,10 +1233,18 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: AcknowledgesCoverageOverlap
         * * Display Name: Acknowledges Coverage Overlap
         * * SQL Data Type: bit`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
         * * SQL Data Type: nvarchar(201)`),
+    ExtendedAmount: z.number().nullable().describe(`
+        * * Field Name: ExtendedAmount
+        * * Display Name: Extended Amount
+        * * SQL Data Type: decimal(18, 2)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -1396,6 +1404,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: RenewalIncreasePercent
         * * Display Name: Renewal Increase Percent
         * * SQL Data Type: decimal(7, 4)`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit`),
     VenueAddress: z.string().nullable().describe(`
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
@@ -2151,7 +2163,7 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Terms (vwSubscriptionTerms.ID)
         * * Description: The subscription term a Duration concession extends.`),
-    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Terms')]).describe(`
+    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Shift'), z.literal('Shorten'), z.literal('Terms')]).describe(`
         * * Field Name: DeliveryForm
         * * Display Name: Delivery Form
         * * SQL Data Type: nvarchar(20)
@@ -2161,8 +2173,10 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     *   * Price
     *   * Scope
     *   * Seats
+    *   * Shift
+    *   * Shorten
     *   * Terms
-        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`),
+        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`),
     ReasonCategory: z.union([z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
         * * Field Name: ReasonCategory
         * * Display Name: Reason Category
@@ -2270,6 +2284,37 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
         * * Description: For a Terms concession, the payment terms the order moves to when it is approved.`),
+    SignedAmendmentReference: z.string().nullable().describe(`
+        * * Field Name: SignedAmendmentReference
+        * * Display Name: Signed Amendment Reference
+        * * SQL Data Type: nvarchar(500)
+        * * Description: Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.`),
+    ReferralProgramID: z.string().nullable().describe(`
+        * * Field Name: ReferralProgramID
+        * * Display Name: Referral Program ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Referral Programs (vwReferralPrograms.ID)
+        * * Description: For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).`),
+    PriorStartDate: z.date().nullable().describe(`
+        * * Field Name: PriorStartDate
+        * * Display Name: Prior Start Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's start date before the change.`),
+    PriorEndDate: z.date().nullable().describe(`
+        * * Field Name: PriorEndDate
+        * * Display Name: Prior End Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's end date before the change.`),
+    NewStartDate: z.date().nullable().describe(`
+        * * Field Name: NewStartDate
+        * * Display Name: New Start Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's start date once it is approved and applied.`),
+    NewEndDate: z.date().nullable().describe(`
+        * * Field Name: NewEndDate
+        * * Display Name: New End Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's end date once it is approved and applied.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -2293,6 +2338,10 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     NewPaymentTermsType: z.string().nullable().describe(`
         * * Field Name: NewPaymentTermsType
         * * Display Name: New Payment Terms Type
+        * * SQL Data Type: nvarchar(200)`),
+    ReferralProgram: z.string().nullable().describe(`
+        * * Field Name: ReferralProgram
+        * * Display Name: Referral Program
         * * SQL Data Type: nvarchar(200)`),
 });
 
@@ -2657,6 +2706,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
         * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`),
+    IPCountry: z.string().nullable().describe(`
+        * * Field Name: IPCountry
+        * * Display Name: IP Country
+        * * SQL Data Type: char(2)
+        * * Description: ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.`),
+    CardIssuingCountry: z.string().nullable().describe(`
+        * * Field Name: CardIssuingCountry
+        * * Display Name: Card Issuing Country
+        * * SQL Data Type: char(2)
+        * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -3268,6 +3327,16 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
+    ExtendedAmount: z.number().nullable().describe(`
+        * * Field Name: ExtendedAmount
+        * * Display Name: Extended Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -4000,6 +4069,65 @@ export const mjBizAppsOrdersPaymentLineSchema = z.object({
 });
 
 export type mjBizAppsOrdersPaymentLineEntityType = z.infer<typeof mjBizAppsOrdersPaymentLineSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Provider Prices
+ */
+export const mjBizAppsOrdersPaymentProviderPriceSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The payment provider (gateway account) the price belongs to.`),
+    ProviderPriceID: z.string().describe(`
+        * * Field Name: ProviderPriceID
+        * * Display Name: Provider Price ID
+        * * SQL Data Type: nvarchar(255)
+        * * Description: The gateway's own price id (for Stripe, price_...). Unique per provider.`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+        * * Description: The Orders product an order created from a charge for this price carries.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(255)
+        * * Description: What the price is, in the gateway's or finance's words, for the people maintaining the map. Not read by code.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether the map is used. An inactive row creates no orders, as if the price were unmapped.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider Name
+        * * SQL Data Type: nvarchar(200)`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product Name
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersPaymentProviderPriceEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderPriceSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Payment Provider Sync States
@@ -4807,6 +4935,11 @@ export const mjBizAppsOrdersProductCategorySchema = z.object({
         * * Display Name: Renewal Increase Percent
         * * SQL Data Type: decimal(7, 4)
         * * Description: Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit
+        * * Description: When true, every line for a product in this category holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it. NULL means inherit from the next level: the parent category, then the product type. A product's own value overrides this.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company
@@ -5232,6 +5365,11 @@ export const mjBizAppsOrdersProductTypeSchema = z.object({
         * * Display Name: Configuration
         * * SQL Data Type: nvarchar(MAX)
         * * Description: Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit
+        * * Description: When true, every line for a product of this type holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. For products priced per engagement, such as professional services or custom scope. NULL means not required. A product category or the product itself overrides this.`),
     DefaultRevenueRecognitionType: z.string().nullable().describe(`
         * * Field Name: DefaultRevenueRecognitionType
         * * Display Name: Default Revenue Recognition Type
@@ -5396,6 +5534,11 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Renewal Increase Percent
         * * SQL Data Type: decimal(7, 4)
         * * Description: Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`),
+    RequiresSaleApproval: z.boolean().nullable().describe(`
+        * * Field Name: RequiresSaleApproval
+        * * Display Name: Requires Sale Approval
+        * * SQL Data Type: bit
+        * * Description: When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -5752,6 +5895,60 @@ export const mjBizAppsOrdersPromotionSchema = z.object({
 export type mjBizAppsOrdersPromotionEntityType = z.infer<typeof mjBizAppsOrdersPromotionSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Referral Programs
+ */
+export const mjBizAppsOrdersReferralProgramSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    CompanyID: z.string().describe(`
+        * * Field Name: CompanyID
+        * * Display Name: Company ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+        * * Description: The company that runs the program. A concession may name the program only on that company's orders.`),
+    Name: z.string().describe(`
+        * * Field Name: Name
+        * * Display Name: Name
+        * * SQL Data Type: nvarchar(200)
+        * * Description: The program's name, unique within its company.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(MAX)
+        * * Description: The program's terms as the customer was told them.`),
+    DaysPerReferral: z.number().describe(`
+        * * Field Name: DaysPerReferral
+        * * Display Name: Days Per Referral
+        * * SQL Data Type: int
+        * * Description: Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    Company: z.string().describe(`
+        * * Field Name: Company
+        * * Display Name: Company
+        * * SQL Data Type: nvarchar(50)`),
+});
+
+export type mjBizAppsOrdersReferralProgramEntityType = z.infer<typeof mjBizAppsOrdersReferralProgramSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Revenue Recognition Types
  */
 export const mjBizAppsOrdersRevenueRecognitionTypeSchema = z.object({
@@ -5963,6 +6160,32 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    ConcessionTier: z.number().nullable().describe(`
+        * * Field Name: ConcessionTier
+        * * Display Name: Concession Tier
+        * * SQL Data Type: int
+        * * Description: ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.`),
+    MinConcessionValue: z.number().nullable().describe(`
+        * * Field Name: MinConcessionValue
+        * * Display Name: Minimum Concession Value
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.`),
+    MinConcessionPctOfContract: z.number().nullable().describe(`
+        * * Field Name: MinConcessionPctOfContract
+        * * Display Name: Minimum Concession % of Contract
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.`),
+    MinTermExtensionDays: z.number().nullable().describe(`
+        * * Field Name: MinTermExtensionDays
+        * * Display Name: Minimum Term Extension (Days)
+        * * SQL Data Type: int
+        * * Description: ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.`),
+    RequiresDecisionWithinAuthority: z.boolean().describe(`
+        * * Field Name: RequiresDecisionWithinAuthority
+        * * Display Name: Requires Decision Within Authority
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.`),
     ApprovalRequiredRole: z.string().nullable().describe(`
         * * Field Name: ApprovalRequiredRole
         * * Display Name: Approval Required Role
@@ -6152,7 +6375,7 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
         * * Display Name: Subscription
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)`),
-    EventType: z.union([z.literal('Activated'), z.literal('Canceled'), z.literal('CancellationRequested'), z.literal('Created'), z.literal('Extended'), z.literal('Migrated'), z.literal('Paused'), z.literal('PaymentFailed'), z.literal('PaymentSucceeded'), z.literal('RenewalOrderSpawned'), z.literal('Resumed'), z.literal('TrialEnded'), z.literal('TrialStarted')]).describe(`
+    EventType: z.union([z.literal('Activated'), z.literal('Canceled'), z.literal('CancellationRequested'), z.literal('Created'), z.literal('Extended'), z.literal('Migrated'), z.literal('Paused'), z.literal('PaymentFailed'), z.literal('PaymentSucceeded'), z.literal('RenewalOrderSpawned'), z.literal('Rescheduled'), z.literal('Resumed'), z.literal('Shortened'), z.literal('TrialEnded'), z.literal('TrialStarted')]).describe(`
         * * Field Name: EventType
         * * Display Name: Event Type
         * * SQL Data Type: nvarchar(40)
@@ -6168,7 +6391,9 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
     *   * PaymentFailed
     *   * PaymentSucceeded
     *   * RenewalOrderSpawned
+    *   * Rescheduled
     *   * Resumed
+    *   * Shortened
     *   * TrialEnded
     *   * TrialStarted
         * * Description: The lifecycle event kind (Created ... RenewalOrderSpawned).`),
@@ -10372,12 +10597,38 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: CoverageOverlapReason
+    * * Display Name: Coverage Overlap Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get CoverageOverlapReason(): string | null {
+        return this.Get('CoverageOverlapReason');
+    }
+    set CoverageOverlapReason(value: string | null) {
+        this.Set('CoverageOverlapReason', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
     */
     get Person(): string {
         return this.Get('Person');
+    }
+
+    /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
     }
 }
 
@@ -10896,6 +11147,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     }
     set RenewalIncreasePercent(value: number | null) {
         this.Set('RenewalIncreasePercent', value);
+    }
+
+    /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
     }
 
     /**
@@ -13034,6 +13298,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     * * ComputedValue: The computed value must be greater than or equal to zero.
     * * CumulativeShare: Cumulative share must be greater than or equal to zero to ensure that negative values are not recorded.
     * * Table-Level: If the status is 'Pending', decision details are not required. However, if the status is changed to anything other than 'Pending', both the deciding user and the decision timestamp must be provided.
+    * * Table-Level: Validates delivery modification rules for subscription dates. When delivery form is 'Shift' or 'Shorten', all start and end dates and subscription term are required while payment terms and added quantity must be empty. 'Shift' requires both start and end dates to move by the exact same number of days. 'Shorten' requires the new dates to fall within the original date range with at least one date modified. For other delivery forms, all date fields must remain empty.
     * * Table-Level: If the delivery form is set to 'Duration', a valid subscription term must be specified and the number of added days must be greater than zero.
     * * Table-Level: If the delivery form is set to 'Seats', an order line must be specified and the added quantity must be greater than zero.
     * * Table-Level: If the delivery form is set to 'Scope' or 'Price', an order line must be specified.
@@ -13048,6 +13313,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
         this.ValidateComputedValueGreaterThanOrEqualToZero(result);
         this.ValidateCumulativeShareGreaterThanOrEqualToZero(result);
         this.ValidateDecisionDetailsByStatus(result);
+        this.ValidateDeliveryFormDatesAndTerms(result);
         this.ValidateDeliveryFormDurationRequirements(result);
         this.ValidateDeliveryFormSeatsRequirements(result);
         this.ValidateOrderLineRequiredForScopeOrPriceDeliveryForm(result);
@@ -13110,6 +13376,112 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
                 ));
             }
         }
+    }
+
+    /**
+    * Validates delivery modification rules for subscription dates. When delivery form is 'Shift' or 'Shorten', all start and end dates and subscription term are required while payment terms and added quantity must be empty. 'Shift' requires both start and end dates to move by the exact same number of days. 'Shorten' requires the new dates to fall within the original date range with at least one date modified. For other delivery forms, all date fields must remain empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateDeliveryFormDatesAndTerms(result: ValidationResult): void {
+    	const isShorten = this.DeliveryForm === 'Shorten';
+    	const isShift = this.DeliveryForm === 'Shift';
+    
+    	if (!isShorten && !isShift) {
+    		if (this.PriorStartDate != null || this.PriorEndDate != null || this.NewStartDate != null || this.NewEndDate != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"DeliveryForm",
+    				"Prior and new start and end dates must be empty when delivery form is not 'Shorten' or 'Shift'.",
+    				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	} else {
+    		if (this.SubscriptionTermID == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"SubscriptionTermID",
+    				"Subscription Term ID is required when delivery form is 'Shorten' or 'Shift'.",
+    				this.SubscriptionTermID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    
+    		if (this.PriorStartDate == null || this.PriorEndDate == null || this.NewStartDate == null || this.NewEndDate == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"DeliveryForm",
+    				"Prior and new start and end dates are required when delivery form is 'Shorten' or 'Shift'.",
+    				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		} else {
+    			const priorStart = new Date(this.PriorStartDate).getTime();
+    			const priorEnd = new Date(this.PriorEndDate).getTime();
+    			const newStart = new Date(this.NewStartDate).getTime();
+    			const newEnd = new Date(this.NewEndDate).getTime();
+    
+    			if (newEnd < newStart) {
+    				result.Errors.push(new ValidationErrorInfo(
+    					"NewEndDate",
+    					"New End Date must be greater than or equal to New Start Date.",
+    					this.NewEndDate,
+    					ValidationErrorType.Failure
+    				));
+    			}
+    
+    			if (isShift) {
+    				const startShiftDays = Math.round((newStart - priorStart) / (1000 * 60 * 60 * 24));
+    				const endShiftDays = Math.round((newEnd - priorEnd) / (1000 * 60 * 60 * 24));
+    
+    				if (startShiftDays !== endShiftDays || newStart === priorStart) {
+    					result.Errors.push(new ValidationErrorInfo(
+    						"DeliveryForm",
+    						"For a 'Shift' delivery form, start and end dates must be shifted by the exact same number of days and must differ from prior dates.",
+    						this.DeliveryForm,
+    						ValidationErrorType.Failure
+    					));
+    				}
+    			}
+    
+    			if (isShorten) {
+    				if (newStart < priorStart || newEnd > priorEnd || (newStart === priorStart && newEnd === priorEnd)) {
+    					result.Errors.push(new ValidationErrorInfo(
+    						"DeliveryForm",
+    						"For a 'Shorten' delivery form, the new date range must be within the prior date range and at least one date must be changed.",
+    						this.DeliveryForm,
+    						ValidationErrorType.Failure
+    					));
+    				}
+    			}
+    		}
+    
+    		if (this.AddedQuantity != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"AddedQuantity",
+    				"Added Quantity must be empty when delivery form is 'Shorten' or 'Shift'.",
+    				this.AddedQuantity,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    
+    		if (this.PriorPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"PriorPaymentTermsTypeID",
+    				"Prior Payment Terms Type ID must be empty when delivery form is 'Shorten' or 'Shift'.",
+    				this.PriorPaymentTermsTypeID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    
+    		if (this.NewPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"NewPaymentTermsTypeID",
+    				"New Payment Terms Type ID must be empty when delivery form is 'Shorten' or 'Shift'.",
+    				this.NewPaymentTermsTypeID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
     }
 
     /**
@@ -13309,13 +13681,15 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     *   * Price
     *   * Scope
     *   * Seats
+    *   * Shift
+    *   * Shorten
     *   * Terms
-    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).
+    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).
     */
-    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms' {
+    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms' {
         return this.Get('DeliveryForm');
     }
-    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms') {
+    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms') {
         this.Set('DeliveryForm', value);
     }
 
@@ -13565,6 +13939,85 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: SignedAmendmentReference
+    * * Display Name: Signed Amendment Reference
+    * * SQL Data Type: nvarchar(500)
+    * * Description: Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.
+    */
+    get SignedAmendmentReference(): string | null {
+        return this.Get('SignedAmendmentReference');
+    }
+    set SignedAmendmentReference(value: string | null) {
+        this.Set('SignedAmendmentReference', value);
+    }
+
+    /**
+    * * Field Name: ReferralProgramID
+    * * Display Name: Referral Program ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Referral Programs (vwReferralPrograms.ID)
+    * * Description: For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).
+    */
+    get ReferralProgramID(): string | null {
+        return this.Get('ReferralProgramID');
+    }
+    set ReferralProgramID(value: string | null) {
+        this.Set('ReferralProgramID', value);
+    }
+
+    /**
+    * * Field Name: PriorStartDate
+    * * Display Name: Prior Start Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's start date before the change.
+    */
+    get PriorStartDate(): Date | null {
+        return this.Get('PriorStartDate');
+    }
+    set PriorStartDate(value: Date | null) {
+        this.Set('PriorStartDate', value);
+    }
+
+    /**
+    * * Field Name: PriorEndDate
+    * * Display Name: Prior End Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's end date before the change.
+    */
+    get PriorEndDate(): Date | null {
+        return this.Get('PriorEndDate');
+    }
+    set PriorEndDate(value: Date | null) {
+        this.Set('PriorEndDate', value);
+    }
+
+    /**
+    * * Field Name: NewStartDate
+    * * Display Name: New Start Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's start date once it is approved and applied.
+    */
+    get NewStartDate(): Date | null {
+        return this.Get('NewStartDate');
+    }
+    set NewStartDate(value: Date | null) {
+        this.Set('NewStartDate', value);
+    }
+
+    /**
+    * * Field Name: NewEndDate
+    * * Display Name: New End Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's end date once it is approved and applied.
+    */
+    get NewEndDate(): Date | null {
+        return this.Get('NewEndDate');
+    }
+    set NewEndDate(value: Date | null) {
+        this.Set('NewEndDate', value);
+    }
+
+    /**
     * * Field Name: OrderHeader
     * * Display Name: Order Header
     * * SQL Data Type: nvarchar(40)
@@ -13616,6 +14069,15 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     */
     get NewPaymentTermsType(): string | null {
         return this.Get('NewPaymentTermsType');
+    }
+
+    /**
+    * * Field Name: ReferralProgram
+    * * Display Name: Referral Program
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ReferralProgram(): string | null {
+        return this.Get('ReferralProgram');
     }
 }
 
@@ -14778,6 +15240,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set ConfirmedByUserID(value: string | null) {
         this.Set('ConfirmedByUserID', value);
+    }
+
+    /**
+    * * Field Name: IPCountry
+    * * Display Name: IP Country
+    * * SQL Data Type: char(2)
+    * * Description: ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.
+    */
+    get IPCountry(): string | null {
+        return this.Get('IPCountry');
+    }
+    set IPCountry(value: string | null) {
+        this.Set('IPCountry', value);
+    }
+
+    /**
+    * * Field Name: CardIssuingCountry
+    * * Display Name: Card Issuing Country
+    * * SQL Data Type: char(2)
+    * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.
+    */
+    get CardIssuingCountry(): string | null {
+        return this.Get('CardIssuingCountry');
+    }
+    set CardIssuingCountry(value: string | null) {
+        this.Set('CardIssuingCountry', value);
     }
 
     /**
@@ -16603,6 +17091,32 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set AcknowledgesCoverageOverlap(value: boolean) {
         this.Set('AcknowledgesCoverageOverlap', value);
+    }
+
+    /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
+    }
+
+    /**
+    * * Field Name: CoverageOverlapReason
+    * * Display Name: Coverage Overlap Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.
+    */
+    get CoverageOverlapReason(): string | null {
+        return this.Get('CoverageOverlapReason');
+    }
+    set CoverageOverlapReason(value: string | null) {
+        this.Set('CoverageOverlapReason', value);
     }
 
     /**
@@ -18727,6 +19241,157 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
     */
     get AllocatedByUser(): string | null {
         return this.Get('AllocatedByUser');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payment Provider Prices - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentProviderPrice
+ * * Base View: vwPaymentProviderPrices
+ * * @description Which Orders product a payment gateway's price sells, per payment provider. An order created from a charge that matched no order carries the product its checkout's price maps to here; a price with no active row creates no order and stays a finance exception.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Provider Prices')
+export class mjBizAppsOrdersPaymentProviderPriceEntity extends BaseEntity<mjBizAppsOrdersPaymentProviderPriceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Provider Prices record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Provider Prices record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentProviderPriceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The payment provider (gateway account) the price belongs to.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ProviderPriceID
+    * * Display Name: Provider Price ID
+    * * SQL Data Type: nvarchar(255)
+    * * Description: The gateway's own price id (for Stripe, price_...). Unique per provider.
+    */
+    get ProviderPriceID(): string {
+        return this.Get('ProviderPriceID');
+    }
+    set ProviderPriceID(value: string) {
+        this.Set('ProviderPriceID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    * * Description: The Orders product an order created from a charge for this price carries.
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(255)
+    * * Description: What the price is, in the gateway's or finance's words, for the people maintaining the map. Not read by code.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether the map is used. An inactive row creates no orders, as if the price were unmapped.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
     }
 }
 
@@ -21128,6 +21793,19 @@ export class mjBizAppsOrdersProductCategoryEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * Description: When true, every line for a product in this category holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it. NULL means inherit from the next level: the parent category, then the product type. A product's own value overrides this.
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company
     * * SQL Data Type: nvarchar(50)
@@ -22391,6 +23069,19 @@ export class mjBizAppsOrdersProductTypeEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * Description: When true, every line for a product of this type holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. For products priced per engagement, such as professional services or custom scope. NULL means not required. A product category or the product itself overrides this.
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
     * * Field Name: DefaultRevenueRecognitionType
     * * Display Name: Default Revenue Recognition Type
     * * SQL Data Type: nvarchar(200)
@@ -22893,6 +23584,19 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set RenewalIncreasePercent(value: number | null) {
         this.Set('RenewalIncreasePercent', value);
+    }
+
+    /**
+    * * Field Name: RequiresSaleApproval
+    * * Display Name: Requires Sale Approval
+    * * SQL Data Type: bit
+    * * Description: When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.
+    */
+    get RequiresSaleApproval(): boolean | null {
+        return this.Get('RequiresSaleApproval');
+    }
+    set RequiresSaleApproval(value: boolean | null) {
+        this.Set('RequiresSaleApproval', value);
     }
 
     /**
@@ -23891,6 +24595,147 @@ export class mjBizAppsOrdersPromotionEntity extends BaseEntity<mjBizAppsOrdersPr
 
 
 /**
+ * MJ_BizApps_Orders: Referral Programs - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: ReferralProgram
+ * * Base View: vwReferralPrograms
+ * * @description A program that grants a customer extra subscription time for a referral. The time is applied on the renewal order, as a Duration concession on the renewed term, never to the current term, and lapses if the customer does not renew.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Referral Programs')
+export class mjBizAppsOrdersReferralProgramEntity extends BaseEntity<mjBizAppsOrdersReferralProgramEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Referral Programs record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Referral Programs record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersReferralProgramEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: CompanyID
+    * * Display Name: Company ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Companies (vwCompanies.ID)
+    * * Description: The company that runs the program. A concession may name the program only on that company's orders.
+    */
+    get CompanyID(): string {
+        return this.Get('CompanyID');
+    }
+    set CompanyID(value: string) {
+        this.Set('CompanyID', value);
+    }
+
+    /**
+    * * Field Name: Name
+    * * Display Name: Name
+    * * SQL Data Type: nvarchar(200)
+    * * Description: The program's name, unique within its company.
+    */
+    get Name(): string {
+        return this.Get('Name');
+    }
+    set Name(value: string) {
+        this.Set('Name', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(MAX)
+    * * Description: The program's terms as the customer was told them.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: DaysPerReferral
+    * * Display Name: Days Per Referral
+    * * SQL Data Type: int
+    * * Description: Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.
+    */
+    get DaysPerReferral(): number {
+        return this.Get('DaysPerReferral');
+    }
+    set DaysPerReferral(value: number) {
+        this.Set('DaysPerReferral', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: Company
+    * * Display Name: Company
+    * * SQL Data Type: nvarchar(50)
+    */
+    get Company(): string {
+        return this.Get('Company');
+    }
+}
+
+
+/**
  * MJ_BizApps_Orders: Revenue Recognition Types - strongly typed entity sub-class
  * * Schema: __mj_BizAppsOrders
  * * Base Table: RevenueRecognitionType
@@ -24403,6 +25248,121 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
     }
 
     /**
+    * Validate() method override for MJ_BizApps_Orders: Sales Rules entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * ConcessionTier: Concession tier must be greater than or equal to 0 to ensure that negative tier values are not entered.
+    * * MinConcessionPctOfContract: The minimum concession percentage of the contract must be a value between 0 and 1 (inclusive), representing a valid percentage from 0% to 100%.
+    * * MinConcessionValue: The minimum concession value must be greater than or equal to zero to prevent negative concession amounts from being entered.
+    * * MinTermExtensionDays: The minimum term extension days must be a non-negative number (0 or greater) to ensure valid extension periods.
+    * * Table-Level: Ensures that concession-specific parameters (such as Concession Tier, Min Concession Value, Min Concession % of Contract, Min Term Extension Days, and Requires Decision Within Authority) are only specified when the Rule Type is 'ConcessionLimit'.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateConcessionTierGreaterThanOrEqualToZero(result);
+        this.ValidateMinConcessionPctOfContractRange(result);
+        this.ValidateMinConcessionValueGreaterThanOrEqualToZero(result);
+        this.ValidateMinTermExtensionDaysGreaterThanOrEqualToZero(result);
+        this.ValidateConcessionFieldsByRuleType(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Concession tier must be greater than or equal to 0 to ensure that negative tier values are not entered.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateConcessionTierGreaterThanOrEqualToZero(result: ValidationResult) {
+    	if (this.ConcessionTier != null && this.ConcessionTier < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"ConcessionTier",
+    			"Concession tier must be greater than or equal to 0.",
+    			this.ConcessionTier,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * The minimum concession percentage of the contract must be a value between 0 and 1 (inclusive), representing a valid percentage from 0% to 100%.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinConcessionPctOfContractRange(result: ValidationResult) {
+    	if (this.MinConcessionPctOfContract != null && (this.MinConcessionPctOfContract < 0 || this.MinConcessionPctOfContract > 1)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MinConcessionPctOfContract",
+    			"The minimum concession percentage of the contract must be between 0 and 1 (inclusive).",
+    			this.MinConcessionPctOfContract,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * The minimum concession value must be greater than or equal to zero to prevent negative concession amounts from being entered.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinConcessionValueGreaterThanOrEqualToZero(result: ValidationResult) {
+        if (this.MinConcessionValue != null && this.MinConcessionValue < 0) {
+            result.Errors.push(new ValidationErrorInfo(
+                "MinConcessionValue",
+                "Minimum concession value must be greater than or equal to 0.",
+                this.MinConcessionValue,
+                ValidationErrorType.Failure
+            ));
+        }
+    }
+
+    /**
+    * The minimum term extension days must be a non-negative number (0 or greater) to ensure valid extension periods.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinTermExtensionDaysGreaterThanOrEqualToZero(result: ValidationResult) {
+    	if (this.MinTermExtensionDays != null && this.MinTermExtensionDays < 0) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MinTermExtensionDays",
+    			"Minimum term extension days must be greater than or equal to 0.",
+    			this.MinTermExtensionDays,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Ensures that concession-specific parameters (such as Concession Tier, Min Concession Value, Min Concession % of Contract, Min Term Extension Days, and Requires Decision Within Authority) are only specified when the Rule Type is 'ConcessionLimit'.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateConcessionFieldsByRuleType(result: ValidationResult) {
+    	if (this.RuleType !== "ConcessionLimit") {
+    		if (this.ConcessionTier != null ||
+    			this.MinConcessionValue != null ||
+    			this.MinConcessionPctOfContract != null ||
+    			this.MinTermExtensionDays != null ||
+    			this.RequiresDecisionWithinAuthority === true) {
+    			
+    			result.Errors.push(new ValidationErrorInfo(
+    				"RuleType",
+    				"Concession-specific fields and 'Requires Decision Within Authority' can only be defined when Rule Type is 'ConcessionLimit'.",
+    				this.RuleType,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
     * * Field Name: ID
     * * Display Name: ID
     * * SQL Data Type: uniqueidentifier
@@ -24540,6 +25500,72 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ConcessionTier
+    * * Display Name: Concession Tier
+    * * SQL Data Type: int
+    * * Description: ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.
+    */
+    get ConcessionTier(): number | null {
+        return this.Get('ConcessionTier');
+    }
+    set ConcessionTier(value: number | null) {
+        this.Set('ConcessionTier', value);
+    }
+
+    /**
+    * * Field Name: MinConcessionValue
+    * * Display Name: Minimum Concession Value
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.
+    */
+    get MinConcessionValue(): number | null {
+        return this.Get('MinConcessionValue');
+    }
+    set MinConcessionValue(value: number | null) {
+        this.Set('MinConcessionValue', value);
+    }
+
+    /**
+    * * Field Name: MinConcessionPctOfContract
+    * * Display Name: Minimum Concession % of Contract
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.
+    */
+    get MinConcessionPctOfContract(): number | null {
+        return this.Get('MinConcessionPctOfContract');
+    }
+    set MinConcessionPctOfContract(value: number | null) {
+        this.Set('MinConcessionPctOfContract', value);
+    }
+
+    /**
+    * * Field Name: MinTermExtensionDays
+    * * Display Name: Minimum Term Extension (Days)
+    * * SQL Data Type: int
+    * * Description: ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.
+    */
+    get MinTermExtensionDays(): number | null {
+        return this.Get('MinTermExtensionDays');
+    }
+    set MinTermExtensionDays(value: number | null) {
+        this.Set('MinTermExtensionDays', value);
+    }
+
+    /**
+    * * Field Name: RequiresDecisionWithinAuthority
+    * * Display Name: Requires Decision Within Authority
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.
+    */
+    get RequiresDecisionWithinAuthority(): boolean {
+        return this.Get('RequiresDecisionWithinAuthority');
+    }
+    set RequiresDecisionWithinAuthority(value: boolean) {
+        this.Set('RequiresDecisionWithinAuthority', value);
     }
 
     /**
@@ -25098,15 +26124,17 @@ export class mjBizAppsOrdersSubscriptionEventEntity extends BaseEntity<mjBizApps
     *   * PaymentFailed
     *   * PaymentSucceeded
     *   * RenewalOrderSpawned
+    *   * Rescheduled
     *   * Resumed
+    *   * Shortened
     *   * TrialEnded
     *   * TrialStarted
     * * Description: The lifecycle event kind (Created ... RenewalOrderSpawned).
     */
-    get EventType(): 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted' {
+    get EventType(): 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Rescheduled' | 'Resumed' | 'Shortened' | 'TrialEnded' | 'TrialStarted' {
         return this.Get('EventType');
     }
-    set EventType(value: 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted') {
+    set EventType(value: 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Rescheduled' | 'Resumed' | 'Shortened' | 'TrialEnded' | 'TrialStarted') {
         this.Set('EventType', value);
     }
 

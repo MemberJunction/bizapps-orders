@@ -599,8 +599,30 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
-            "TestID": "@lookup:MJ: Tests.Name=ORD-44 - Bill.com Invoice Rail",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-43 - Amount Change Preview",
+            "Sequence": 43,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "28808448-F93E-4C40-8727-EE66C20A0A3C"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-44 - Term Shift",
             "Sequence": 44,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "1D98BFEE-AB44-4FCC-80C9-233EF4FF4D1B"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-45 - Bill.com Invoice Rail",
+            "Sequence": 45,
             "Status": "Active"
           },
           "primaryKey": {
