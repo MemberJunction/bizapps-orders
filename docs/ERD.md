@@ -595,7 +595,8 @@ charge or an order-level discount still lands on a line, which still lands on on
 `OrderLinePriceComponent` is the audit trail of the pricing walk: how the number was arrived at, kept
 beside the number itself. `OrderLineDimension` holds the tags derived for a line, from `DimensionDefault`
 rows and from the line's own facts (§6); the one tag a person types is on the line,
-`OrderLine.DimensionID` / `DimensionValueID`. `OrderCompanyPolicy` is the per-company orders
+`OrderLine.DimensionID` / `DimensionValueID`, and on save it replaces the derived row on its axis, so
+the rows are exactly the tags the line books. `OrderCompanyPolicy` is the per-company orders
 settings row, and its ID is the `__mj.Company` ID: promotion stacking, whether unpriced lines are
 refused, and the company's default price list, payment terms, pricing driver and renewal increase.
 `OrderSequence` is a singleton counter for `ORD-{seq}`, not part of the graph.
@@ -1697,7 +1698,7 @@ about where its value came from.
 | **GL account** | product → its category → that category's ancestors → its product type → the line's company | **Refuses the confirm.** Booked money with nowhere to go is worse than no order. |
 | **Price** | stated `UnitPrice` → the pricing plugin named by `PricingDriverClass` on the product, its category chain, its type or the company policy (refused when that name has no registered plugin) → a pricing plugin registered by ID for the product, its category or an ancestor, or the company → the default resolver, which picks by `Priority` among the `ProductPrice` rows on the product or inherited from its category chain, from the customer's price lists and the base prices | When no price rule is found, the line is refused unless the company's `OrderCompanyPolicy.RefuseUnpricedLines` is off, and then it books at zero. Rules that exist but do not apply to the quantity or date, or two that tie, are refused either way. |
 | **Payment terms** | stated `DueDate` → stated `PaymentTermsTypeID` → `CustomerPaymentTerms` → the selling company's default, `OrderCompanyPolicy.DefaultPaymentTermsTypeID` → due on receipt | Falls through to due on receipt. |
-| **GL dimensions** | the tag stated on the line (`OrderLine.DimensionID` / `DimensionValueID`) → tags derived from the line itself (ARR type from its subscription action, vintage from its event's start year) → `DimensionDefault` rows on the product → its category → that category's ancestors → its product type → the line's company, nearest level per dimension; derived tags are written as `OrderLineDimension` rows | The line books untagged on that dimension. The booking is refused only where the GL account's link requires the dimension. |
+| **GL dimensions** | the tag stated on the line (`OrderLine.DimensionID` / `DimensionValueID`) → tags derived from the line itself (ARR type from its subscription action, vintage from its event's start year) → `DimensionDefault` rows on the product → its category → that category's ancestors → its product type → the line's company, nearest level per dimension; the result, with the line's own tag winning on its axis, is written as `OrderLineDimension` rows | The line books untagged on that dimension. The booking is refused only where the GL account's link requires the dimension. |
 
 Two more behaviours are server-side only:
 
