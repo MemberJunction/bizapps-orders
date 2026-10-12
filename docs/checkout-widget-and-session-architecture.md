@@ -31,7 +31,7 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 │     ├── Full Lifecycle Booking: await order.Confirm()                                    │
 │     │   ├── Emits Double-Entry Journal Entries to BizApps Accounting                     │
 │     │   └── Forward-Dated Revenue-Recognition Journal Entries                            │
-│     └── GuestOrder Claim: dormant (calls a local stand-in that throws)                   │
+│     └── GuestOrder Claim: minted through MJ's IdentityClaimEngineServer, no e-mail       │
 └─────────────────────────────────────────┬────────────────────────────────────────────────┘
                                           │
                                           ▼
@@ -70,7 +70,7 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 - 🎟️ **Multi-Attendee / Discrete Unit Expansion**: When buying multiple tickets or seats (`unitMode: 'perUnit'`), the widget dynamically expands discrete attendee cards and creates individual, fully-associated order lines in the database.
 - ⚡ **Zero Database Clutter During Shopping**: Real-time line calculations and discount pricing execute 100% in-memory via `OrderPricingService`. No temporary draft rows pollute `OrderHeader`.
 - 📒 **Double-Entry Accounting on Confirm**: Free ($0) orders, and paid orders once their payment is verified, execute `order.Confirm()`, which posts balanced debits and credits into [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting) for each line with a value to book (a free item posts nothing); deferred revenue is released by forward-dated journal entries, one per recognition period.
-- 🔐 **Guest Identity Claiming** (not active yet): designed to e-mail anonymous buyers a claim link that attaches their orders and entitlements to their account once they sign in. Checkout still calls a local stand-in for MemberJunction's claim engine, which throws; see [Guest Record Claiming Workflow](#guest-record-claiming-workflow).
+- 🔐 **Guest Identity Claiming**: checkout mints a GuestOrder claim through MemberJunction's claim engine; redeeming it attaches the order and its entitlements to the buyer's account. Claim e-mails are off for now; see [Guest Record Claiming Workflow](#guest-record-claiming-workflow).
 
 ---
 
@@ -449,7 +449,7 @@ order.ShipToAddressID = billingAddressID;
 await order.Confirm(); // sets Status = 'Confirmed' and saves; throws with the reason when refused
 ```
 
-After `Confirm()` commits, `CompleteCheckout` marks the session `Confirmed` with the order's id, books a paid order's payment against it through `CapturePayment`, and tries to mint a GuestOrder claim, which is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
+After `Confirm()` commits, `CompleteCheckout` marks the session `Confirmed` with the order's id, books a paid order's payment against it through `CapturePayment`, and mints a GuestOrder claim, best-effort (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 
 > [!IMPORTANT]
 > **Payment Verification Status**: Free/zero-dollar checkouts ($0) book and confirm immediately upon submission. For orders with `TotalGross > 0`, `CompleteCheckout` verifies the session's payment intent **state and amount** server-side — the intent must exist, be `Succeeded` (as set by the signature-verified payment webhook, or read from the gateway with the server's own key when the webhook has not arrived yet), and cover the freshly re-priced total. A session acquires its intent only through `CheckoutSessionService.OpenPaymentIntentForSession`, which prices from the session's own server-computed snapshot and resolves the provider from the widget's `Configuration.paymentProviderId` — the client never supplies an amount or a provider. `UpdateDraft` detaches the intent whenever the priced total changes, forcing a reopen at the new amount.
@@ -528,12 +528,12 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
   - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
   - `Confirm` is not replayable here.
 - The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
-- GuestOrder claim minting is not recorded: it is dormant while `CheckoutSessionService` calls the local stand-in for the claim engine (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
+- GuestOrder claim minting is not recorded as a step: it is best-effort, and a failure is logged without failing the booked order (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 
 ## Guest Record Claiming Workflow
 
 > [!NOTE]
-> **Not active.** `CompleteCheckout` asks `IdentityClaimEngineServer.CreateClaim` for a `GuestOrder` claim, but imports the engine from the local stand-in in `packages/CoreEntitiesServer/src/identityClaimContracts.ts`, which throws. `CompleteCheckout` logs the failure, and the order books without a claim: no claim row, no e-mail, and no `ClaimToken` in the response. MemberJunction 6.1.5, which this repo builds against, exports the engine (`@memberjunction/core-entities-server`) and `BaseIdentityClaimDriver` (`@memberjunction/core-entities`). The flow below is the design. It takes effect once `CheckoutSessionService` imports MJ's engine and `GuestOrderClaimDriver` registers against MJ's `BaseIdentityClaimDriver`, in place of the stand-ins.
+> `CompleteCheckout` asks MJ's `IdentityClaimEngineServer.CreateClaim` (`@memberjunction/core-entities-server`) for a `GuestOrder` claim with `SendEmail: false`: claim e-mails stay off until a claim e-mail template and the portal base URL are configured, since without them MJ sends a generic message linking to its default host. `GuestOrderClaimDriver` and `EntitlementGrantClaimDriver` register against MJ's `BaseIdentityClaimDriver` (`@memberjunction/core-entities`). The host needs MJ's Identity Claim entities and the `GuestOrder` claim type; when minting fails, `CompleteCheckout` logs it and the order books without a claim.
 
 When an unauthenticated guest completes an order:
 
@@ -545,7 +545,8 @@ When an unauthenticated guest completes an order:
    ├── Person ("Jane Doe", jane@example.com)
    └── GuestOrder IdentityClaim for jane@example.com
    │
-3. The claim engine e-mails Jane a claim link:
+3. The claim engine would e-mail Jane a claim link (off until a template and the portal
+   base URL are configured):
    "Click here to claim your tickets: https://app.example.com/claim?token=..."
    │
 4. Jane follows the link, or signs in to MemberJunction:
@@ -554,8 +555,6 @@ When an unauthenticated guest completes an order:
        ├── sets the order's ship-to (and an empty bill-to) to that Person
        └── makes that Person the beneficiary of the order's entitlement grants
 ```
-
-The last step does not work yet: the driver's grant query filters `vwOrderLines` on `OrderID`, a column the view does not have, and the driver ignores the error.
 
 ---
 
@@ -819,7 +818,7 @@ Refuses while a required question is unanswered. Opens (or idempotently re-opens
 ```
 
 ### 4. `CompleteCheckout(sessionID, clientSessionKey)`
-Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution by the session's captured email, payment verification (intent `Succeeded` + amount covers the re-priced total), creation of any payer or attendee Person not found (only once payment checks out), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers and picks as Order Line Choices, atomic lifecycle booking, booking a paid order's payment against it (`CapturePayment`), and an attempt to mint a GuestOrder claim, which is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
+Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution by the session's captured email, payment verification (intent `Succeeded` + amount covers the re-priced total), creation of any payer or attendee Person not found (only once payment checks out), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers and picks as Order Line Choices, atomic lifecycle booking, booking a paid order's payment against it (`CapturePayment`), and a best-effort GuestOrder claim (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
 
 Once payment checks out, the snapshot's billing location is recorded as a Common `Address` (street and city empty), linked to the buyer as their `Billing` address, and set as the order's `BillToAddressID` and `ShipToAddressID` before `Confirm()`. The ship-to is what tax is resolved from. A session whose snapshot holds no valid location is refused and reverted to `Open`; an Address that cannot be saved fails the checkout, while a failed address-book link is logged and tolerated.
 
@@ -843,4 +842,4 @@ Once payment checks out, the snapshot's billing location is recorded as a Common
 }
 ```
 
-> `ClaimToken` is absent at present, because GuestOrder claim minting is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). Once minting is switched on it carries the `IdentityClaim` **row id**; the verification token itself is only ever delivered in the claim e-mail.
+> `ClaimToken` carries the GuestOrder `IdentityClaim` **row id**, and is absent when minting failed (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). The verification token itself is never returned; it would travel only in the claim e-mail, which is off.

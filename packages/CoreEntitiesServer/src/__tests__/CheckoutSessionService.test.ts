@@ -323,12 +323,10 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-// The engine import moved to the local fallback module (see identityClaimContracts.ts);
-// partial-mock it so the real contracts stay live and only the engine is overridden.
-vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../identityClaimContracts.js')>()),
+vi.mock('@memberjunction/core-entities-server', () => ({
     IdentityClaimEngineServer: {
         Instance: {
+            Config: () => Promise.resolve(),
             CreateClaim: (params: unknown, user?: unknown) => mocks.mockClaimCreate(params, user)
         }
     }
@@ -1648,8 +1646,10 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
             // The claim ships the entity GUID (not the entity name) and the buyer email
             expect(mocks.mockClaimCreate).toHaveBeenCalled();
-            const claimParams = mocks.mockClaimCreate.mock.calls[0][0] as { ClaimTypeName: string; EntityID: string; NormalizedEmail: string };
+            const claimParams = mocks.mockClaimCreate.mock.calls[0][0] as { ClaimTypeName: string; EntityID: string; NormalizedEmail: string; SendEmail: boolean };
             expect(claimParams.ClaimTypeName).toBe('GuestOrder');
+            // Claim e-mails stay off until a template and the portal base URL are configured (#583).
+            expect(claimParams.SendEmail).toBe(false);
             expect(claimParams.EntityID).toBe('entity-order-headers-id');
             expect(claimParams.NormalizedEmail).toBe('guest@example.com');
             expect(res.ClaimToken).toBe('claim-1');
