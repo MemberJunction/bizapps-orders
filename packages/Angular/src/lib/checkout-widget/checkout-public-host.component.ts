@@ -562,8 +562,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 productId: this.config?.productId,
                 totalGross: done.TotalGross,
                 currency: this.config?.currency,
-                // The applied promotion code, once the checkout takes one.
-                coupon: null,
+                coupon: this.appliedPromotion?.code ?? null,
             })
         );
         this.cdr.detectChanges();

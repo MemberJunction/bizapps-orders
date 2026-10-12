@@ -306,6 +306,8 @@ const mocks = vi.hoisted(() => {
         /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
         peopleByEmail: {} as Record<string, string>,
         personLookups: 0,
+        /** Replaces the Event Order Lines fields the discovery reads, for one test. */
+        extensionFieldsOverride: undefined as Array<Record<string, unknown>> | undefined,
         subscriptionRunViewResults: [] as Array<{ ProductID: string; Product: string }>,
         subscriptionRunViewParams: [] as Array<{ ExtraFilter?: string }>,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
@@ -419,6 +421,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 { Name: 'MJ_BizApps_Common: People', ID: 'entity-people-id', Fields: [] }
             ];
             EntityByName = vi.fn().mockImplementation((name: string) => {
+                if (mocks.extensionFieldsOverride && name === 'MJ_BizApps_Orders: Event Order Lines') {
+                    return { Name: name, Fields: mocks.extensionFieldsOverride, ParentEntityFieldNames: new Set<string>() };
+                }
                 return this.Entities.find((e: { Name: string }) => e.Name.toLowerCase() === name.toLowerCase());
             });
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
@@ -634,6 +639,59 @@ describe('CheckoutSessionService', () => {
             expect(names).toContain('dietaryPreferences');
             expect(names).toContain('comments');
             expect(names).toContain('customCount');
+        });
+
+        describe('field mapping (#583)', () => {
+            type Discovered = { name: string; type: string; required: boolean; options?: Array<{ label: string; value: string }> };
+            const discover = async (fields: Array<Record<string, unknown>>): Promise<Discovered[]> => {
+                mocks.extensionFieldsOverride = fields;
+                try {
+                    const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+                    return res.Configuration?.extensionFields as Discovered[];
+                } finally {
+                    mocks.extensionFieldsOverride = undefined;
+                }
+            };
+            const base = { AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false };
+
+            it('sends a value-list field its values as options, in sequence order', async () => {
+                const fields = await discover([{
+                    ...base, Name: 'AttendanceStatus', Type: 'nvarchar', Length: 40, MaxLength: 20, ValueListType: 'List',
+                    EntityFieldValues: [
+                        { Value: 'Attended', Sequence: 2 },
+                        { Value: 'Registered', Sequence: 1 },
+                        { Value: 'No Show', Sequence: 3 },
+                    ],
+                }]);
+                const status = fields.find(f => f.name === 'attendanceStatus');
+                expect(status?.type).toBe('select');
+                expect(status?.options).toEqual([
+                    { label: 'Registered', value: 'Registered' },
+                    { label: 'Attended', value: 'Attended' },
+                    { label: 'No Show', value: 'No Show' },
+                ]);
+            });
+
+            it('does not require a NOT NULL field the database defaults', async () => {
+                const fields = await discover([
+                    { ...base, Name: 'AttendanceStatus', Type: 'nvarchar', MaxLength: 20, DefaultValue: 'Registered', HasDefaultValue: true },
+                    { ...base, Name: 'BadgeName', Type: 'nvarchar', MaxLength: 100, DefaultValue: null, HasDefaultValue: false },
+                ]);
+                expect(fields.find(f => f.name === 'attendanceStatus')?.required).toBe(false);
+                expect(fields.find(f => f.name === 'badgeName')?.required).toBe(true);
+            });
+
+            it('maps NVARCHAR(MAX) (Length -1) and long columns to a textarea, judged in characters', async () => {
+                const fields = await discover([
+                    { ...base, Name: 'Notes', Type: 'nvarchar', Length: -1, MaxLength: 0 },
+                    { ...base, Name: 'Bio', Type: 'nvarchar', Length: 1000, MaxLength: 500 },
+                    { ...base, Name: 'Nickname', Type: 'nvarchar', Length: 400, MaxLength: 200 },
+                ]);
+                expect(fields.find(f => f.name === 'notes')?.type).toBe('textarea');
+                expect(fields.find(f => f.name === 'bio')?.type).toBe('textarea');
+                expect(fields.find(f => f.name === 'nickname')?.type).toBe('text');
+                expect(fields.find(f => f.name === 'nickname')?.options).toBeUndefined();
+            });
         });
 
         it('writes a SKU-resolved productId onto Configuration so the public host can draft a line', async () => {
