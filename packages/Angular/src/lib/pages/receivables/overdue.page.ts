@@ -6,6 +6,7 @@ import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import {
     OrdersGetOverdueWorklistOperation,
     OverdueFilter,
+    Today,
     type OverdueWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
@@ -183,7 +184,7 @@ export class MJOOverduePageComponent implements OnInit {
 
     public get OverdueView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo) return null;
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         return {
             EntityID: this.OrderEntityInfo.ID,
             Entity: this.OrderEntityInfo.Name,
