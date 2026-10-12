@@ -136,8 +136,8 @@ In **MemberJunction Explorer** (or via code/migrations):
 
 Anonymous access is inherent to the checkout edge (there is no per-distribution toggle);
 the widget's `Configuration` carries the security knobs — `allowedOrigins` (embed origin
-allowlist) and `requireTurnstile` (Cloudflare Turnstile on initialize/complete, usable only from a custom
-front end; see [Configuration Keys](#configuration-keys)).
+allowlist) and `requireTurnstile` (Cloudflare Turnstile on initialize/complete; see [Configuration Keys](#configuration-keys)
+and [Turnstile](#turnstile)).
 
 Your checkout widget distribution is now active for `summit-2027`: MJAPI serves it at `GET {MJAPI}/checkout/summit-2027`, and another page can embed it as `<mj-orders-checkout slug="summit-2027">` (see [Embedding the Widget](#embedding-the-widget-in-your-applications)). The Angular `<mj-checkout-widget>` makes no server calls itself; its `distributionSlug` input only reaches the `onInit` hook, and the host page drives the API.
 
@@ -215,7 +215,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `paymentProviderId` | The Payment Provider row that opens payment intents for this widget's sessions. Never taken from the client; required before a paid checkout can complete. Server-side only. |
 | `tenderCode` | `PaymentType.Code` the payment is booked with (e.g. `CreditCard`, `ACH`). Server-side only; defaults to `CreditCard`. |
 | `allowedOrigins` | Origins (scheme, host and port) allowed to embed and drive this widget through the checkout edge. Other browser origins are refused and get no CORS grant; MJAPI's own origin always passes. Unset or empty allows any origin. |
-| `requireTurnstile` | Requires a Cloudflare Turnstile token on initialize and complete. The edge refuses both when no Turnstile secret is configured. Neither `<mj-orders-checkout>` nor the fallback page sends a token, so only a custom front end can use this. |
+| `requireTurnstile` | Requires a Cloudflare Turnstile token on initialize and complete. Both built-in clients render the challenge; the edge also needs `Settings.TurnstileSecretEnvVar` and `Settings.TurnstileSiteKey`, and refuses both calls with a 503 when either is missing. See [Turnstile](#turnstile). |
 | `memberDiscountResolver` | Registration key of the resolver that verifies a host's member token (see [Verified-member discount](#verified-member-discount)). Server-side only. |
 | `customUI` | `js`, `css`, `theme` and `componentOverrideKey` (below). |
 
@@ -724,6 +724,14 @@ The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-
 When the element bundle was built, the edge also serves it at `GET /checkout/element/main.js`.
 
 The edge enforces, in order and fail-closed: a body-size cap, per-IP(+slug) fixed-window rate limiting (`access-status`, which the success screen polls, counts in a window of its own), the widget's `Configuration.allowedOrigins` allowlist (with CORS grants only for allowed origins), and — when the widget sets `requireTurnstile` — Cloudflare Turnstile verification against the secret named by the extension's `Settings.TurnstileSecretEnvVar`. Writes run as the principal named by `Settings.ServiceUserEmail`, falling back to MJ's system user. **No request body carries an amount, a price, a product resolution, or a payment provider** — those all resolve server-side.
+
+#### Turnstile
+
+A widget that sets `requireTurnstile` needs both edge settings: `TurnstileSecretEnvVar` (the env var holding the Turnstile secret) and `TurnstileSiteKey` (the public site key paired with that secret). The key is set once per edge, because Cloudflare accepts a token only under the secret of the site key that issued it.
+
+The widget configuration reaches the browser only in the reply to `initialize`, so a client cannot know the site key before its first call. The edge tells it: an `initialize` or `complete` without a token, or with one Cloudflare refuses, answers 403 with `{ Success: false, ErrorMessage, TurnstileRequired: true, TurnstileSiteKey }`. `<mj-orders-checkout>` and the fallback page answer by rendering the challenge (invisible unless Cloudflare needs the buyer to interact) and retrying once with the token. A token works once and expires after five minutes, so they get a fresh one for every later `initialize` or `complete`. A custom front end follows the same handshake.
+
+The checkout page MJAPI serves allows `https://challenges.cloudflare.com` in `script-src` and `frame-src`. A site that embeds `<mj-orders-checkout>` must allow the same in its own Content-Security-Policy, and its hostname must be on the site key's hostname list in Cloudflare.
 
 ---
 

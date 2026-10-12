@@ -29,7 +29,7 @@ describe('renderCheckoutHostPage', () => {
         expect(html).toContain('src="/checkout/element/main.js"');
         expect(html).toContain('type="module"');
         expect(html).toContain('nonce="nOnce+/1"');
-        expect(html).not.toContain("post('/initialize'");
+        expect(html).not.toContain("'/initialize'");
     });
 
     it('bakes slug and api root into data-* attributes, never into the script block', () => {
@@ -48,10 +48,10 @@ describe('renderCheckoutHostPage', () => {
 
     it('drives only the existing POST verbs (no amount/price/provider in the request shape)', () => {
         const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
-        expect(html).toContain("post('/initialize'");
+        expect(html).toContain("postGated('/initialize'");
         expect(html).toContain("post('/draft'");
         expect(html).toContain("post('/payment-intent'");
-        expect(html).toContain("post('/complete'");
+        expect(html).toContain("postGated('/complete'");
         expect(html).toContain('if (stripe) { resolve(stripe); return; }');
         expect(html).toContain('crypto.getRandomValues');
         expect(html).not.toContain('Math.random');
@@ -104,4 +104,23 @@ describe('the fallback host page redirect (#295)', () => {
         expect(html).not.toMatch(/searchParams\.set\('(email|name)'/);
     });
 });
+});
+
+describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
+    it('lets the Turnstile script and challenge frame load', () => {
+        const csp = checkoutHostSecurityHeaders('n')['Content-Security-Policy'];
+        const directive = (name: string) => csp.split('; ').find((d) => d.startsWith(`${name} `)) ?? '';
+        expect(directive('script-src')).toContain('https://challenges.cloudflare.com');
+        expect(directive('frame-src')).toContain('https://challenges.cloudflare.com');
+    });
+
+    it('answers a Turnstile refusal on initialize and complete, with a container the form redraws cannot remove', () => {
+        const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+        expect(html).toContain('<div id="mj-co-turnstile"></div>');
+        expect(html.indexOf('id="mj-co-turnstile"')).toBeGreaterThan(html.indexOf('</main>'));
+        expect(html).toContain('reply.TurnstileRequired === true');
+        expect(html).toContain('copy.turnstileToken = token');
+        expect(html).not.toContain("post('/initialize'");
+        expect(html).not.toContain("post('/complete'");
+    });
 });
