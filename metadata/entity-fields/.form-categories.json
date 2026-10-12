@@ -836,6 +836,15 @@
   },
   {
     "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=CoverageOverlapReason"
+    }
+  },
+  {
+    "fields": {
       "Category": "Event Details",
       "GeneratedFormSection": "Category"
     },
@@ -2301,6 +2310,15 @@
     "sync": {
       "lastModified": "2026-10-08T21:17:23.567Z",
       "checksum": "69be6db6144b44ecf8559fceb502addd8936ebf4a2e185f8cbb0115348ecc46b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Subscription Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=CoverageOverlapReason"
     }
   },
   {

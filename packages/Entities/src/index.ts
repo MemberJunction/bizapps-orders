@@ -102,6 +102,8 @@ export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
 // Access overrides (bizapps-orders#268) — the authorization names and who may request each type.
 export * from './accessOverride';
+// Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
+export * from './coverage-overlap';
 export * from './pricing/linePricePick';
 
 /**
