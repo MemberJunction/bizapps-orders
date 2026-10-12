@@ -81,8 +81,7 @@ export class KeptPartyOrganizationsCompanion extends EntityCompanion<KeptPartyOr
      * that carries companions.
      *
      * A client save whose plan holds only the order's own row takes the plain GraphQL update,
-     * which sends field values and nothing else (MemberJunction 6.1.5 `BaseEntity.Save` takes the
-     * graph path only when the plan has more than one node). The entry would not
+     * which sends field values and nothing else (MemberJunction/MJ#5528). The entry would not
      * reach the server, and the server save would clear the organization the writer kept. A
      * second node makes the client route the save through `MJ.SaveEntityGraph`, which restores
      * companions before saving. The client never runs the plan's nodes; the server builds its
