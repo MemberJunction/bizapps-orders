@@ -24,9 +24,15 @@
  * one. Absence is not permission; it is the same rule `AuthorizeManualDiscount` applies to a user
  * with no `SalesAuthority` row.
  *
- * TERM DATES. `MaxTermExtensionDays` limits any change to a term's dates, not only days added.
- * Shortening a term or shifting it moves when its revenue is recognised as much as extending it, so a
- * change is measured as the larger of how far its start and its end move (`TermDateChangeDays`).
+ * TERM DATES. A change to a term's dates splits into a shift (start and end move together) and a
+ * change of length (`SplitTermDateChange`), and each part is routed by its own rule (#507):
+ *   extension    a concession: days added count against `MaxTermExtensionDays`
+ *   shortening   an early termination, through cancellation, and always an exception: it goes to the
+ *                ConcessionLimit tier whose thresholds it meets, else to finance review
+ *   shift        a term change, not a concession: at or above the `TermShiftReviewDays` setting it goes
+ *                to finance review, under it it goes through
+ * One measure for all three (the larger of how far either date moved) sent a shift to the concession
+ * approver and let a small shortening through, so the kinds are kept apart.
  *
  * SHARE OF THE ORDER. A currency limit treats a small order and a large one alike, so the same
  * concession can be trivial on one and most of the other. `MaxConcessionPctOfContract` limits every
@@ -117,14 +123,71 @@ export interface TermDates {
     EndDate: Date;
 }
 
+/** A change to a term's dates, split into the parts that are routed differently. Whole days. */
+export interface TermDateChange {
+    /** How far start and end move together; positive is later. */
+    ShiftDays: number;
+    /** Days the term gets longer. */
+    ExtensionDays: number;
+    /** Days the term gets shorter. */
+    ShorteningDays: number;
+}
+
 /**
- * How far a change moves a term's dates: the larger of how far its start and its end move, in whole
- * days, in either direction. An extension, a shortening and a shift of N days each measure N.
+ * Split a change to a term's dates. The movement both dates share, in the same direction, is the shift;
+ * what is left changes the term's length. Moving start and end 30 days later is a 30-day shift; moving
+ * the start 10 days later and the end 30 days later is a 10-day shift and a 20-day extension; moving
+ * only the start later is a shortening.
  */
-export function TermDateChangeDays(previous: TermDates, next: TermDates): number {
-    const start = Math.abs(utcDay(next.StartDate) - utcDay(previous.StartDate));
-    const end = Math.abs(utcDay(next.EndDate) - utcDay(previous.EndDate));
-    return Math.round(Math.max(start, end) / DAY_MS);
+export function SplitTermDateChange(previous: TermDates, next: TermDates): TermDateChange {
+    const start = Math.round((utcDay(next.StartDate) - utcDay(previous.StartDate)) / DAY_MS);
+    const end = Math.round((utcDay(next.EndDate) - utcDay(previous.EndDate)) / DAY_MS);
+    // Opposite directions share no movement. Zero is written out so an unmoved term is never a shift of -0.
+    const shared = Math.sign(start) === Math.sign(end) ? Math.min(Math.abs(start), Math.abs(end)) : 0;
+    const length = end - start;
+    return {
+        ShiftDays: shared === 0 ? 0 : Math.sign(start) * shared,
+        ExtensionDays: Math.max(0, length),
+        ShorteningDays: Math.max(0, -length),
+    };
+}
+
+/** How many days a change moves a term's length by, either way: what ConcessionLimit tiers are met on. */
+export function TermLengthChangeDays(change: TermDateChange): number {
+    return change.ExtensionDays + change.ShorteningDays;
+}
+
+/**
+ * Whether a shift goes to finance review. At or above `reviewDays` it does, as the other day limits
+ * read. Null means no limit is configured, and every shift is reviewed: a shift nobody in finance sees
+ * is what the review exists to prevent.
+ */
+export function ShiftNeedsFinanceReview(shiftDays: number, reviewDays: number | null): boolean {
+    const days = Math.abs(Number(shiftDays));
+    if (days === 0) return false;
+    return reviewDays == null || days >= Number(reviewDays);
+}
+
+/** Who decides a shortening: the ConcessionLimit tier it meets, or finance review below the thresholds. */
+export interface ShorteningRoute {
+    /** The tier that decides it; null when it goes to finance review. */
+    Rule: ConcessionTierRule | null;
+    /** Set when two met tiers share the highest rank; see {@link PickConcessionTier}. */
+    Conflict: string | null;
+}
+
+/**
+ * Route a shortening. It is always an exception (#507): at or above a ConcessionLimit tier's thresholds
+ * it goes to that tier's approver, and below them to finance review. A tier that sets no threshold is the
+ * floor every concession meets, so it is not a threshold the shortening reached; meeting only that tier
+ * sends it to finance review.
+ */
+export function RouteTermShortening(rules: ConcessionTierRule[], measure: ConcessionTierMeasure): ShorteningRoute {
+    const withThresholds = rules.filter(
+        (r) => r.MinConcessionValue != null || r.MinConcessionPctOfContract != null || r.MinTermExtensionDays != null,
+    );
+    const choice = PickConcessionTier(withThresholds, measure);
+    return { Rule: choice.Rule, Conflict: choice.Conflict };
 }
 
 /**
@@ -200,8 +263,9 @@ export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
  * Whether a rep's authority covers a concession. Every limit is checked and every breach reported,
  * so the person asking for approval sees all of what the approver will be deciding.
  *
- * `termDateChangeDays` is the concession's `TermDateChangeDays`. It is checked against
- * `MaxTermExtensionDays` for a Duration concession, and for any other form that changes a term's dates.
+ * `extensionDays` is the days the concession adds to a term (`SplitTermDateChange`). It is checked against
+ * `MaxTermExtensionDays` for a Duration concession, and for any other form that lengthens a term. A shift
+ * or a shortening is not a concession on the rep's authority and is routed on its own (#507).
  *
  * @param cumulativeShare  the order's concessions, this one included, from {@link ConcessionShare}.
  *   Omit it where no order is measured (a manual discount); null means the order has no net total.
@@ -210,7 +274,7 @@ export function AssessConcession(
     form: ConcessionDeliveryForm,
     valuation: ConcessionValuation,
     authority: ConcessionAuthority | null,
-    termDateChangeDays?: number | null,
+    extensionDays?: number | null,
     cumulativeShare?: number | null,
 ): ConcessionAssessment {
     if (!authority) {
@@ -236,13 +300,13 @@ export function AssessConcession(
         breaches.push('the SalesAuthority sets no MaxConcessionValue, so it grants no authority for this concession');
     }
 
-    const days = Math.abs(Number(termDateChangeDays ?? 0));
+    const days = Math.max(0, Number(extensionDays ?? 0));
     if (form === 'Duration' || days > 0) {
         if (authority.MaxTermExtensionDays == null) {
-            breaches.push("the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to change a term's dates");
+            breaches.push('the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to extend a term');
         } else if (days >= Number(authority.MaxTermExtensionDays)) {
             // At or above: the limit is the length that needs approval, so it reads as the policy does.
-            breaches.push(`a ${days}-day change to the term's dates is at or above the ${authority.MaxTermExtensionDays}-day limit`);
+            breaches.push(`a ${days}-day extension is at or above the ${authority.MaxTermExtensionDays}-day limit`);
         }
     }
 
@@ -306,7 +370,8 @@ export interface ConcessionTierMeasure {
     Value: number;
     /** The order's concessions as a share of its net total; null when it has none; undefined when not measured. */
     CumulativeShare?: number | null;
-    TermDateChangeDays?: number | null;
+    /** Days the term gets longer or shorter (`TermLengthChangeDays`). A shift does not count: it is not a concession. */
+    TermLengthChangeDays?: number | null;
 }
 
 /**
@@ -324,8 +389,8 @@ export function ConcessionTierMet(rule: ConcessionTierRule, measure: ConcessionT
     if (share != null && measure.CumulativeShare !== undefined) {
         if (measure.CumulativeShare === null || measure.CumulativeShare >= share - 1e-9) return true;
     }
-    // A concession that leaves the term's dates alone meets no term-date threshold, even one of 0 days.
-    const changed = Math.abs(Number(measure.TermDateChangeDays ?? 0));
+    // A concession that leaves the term's length alone meets no term-date threshold, even one of 0 days.
+    const changed = Math.abs(Number(measure.TermLengthChangeDays ?? 0));
     return days != null && changed > 0 && changed >= days;
 }
 
