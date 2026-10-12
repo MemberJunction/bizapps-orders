@@ -17,6 +17,14 @@
  * the new schedule, the instalments reduced and the credit memo. Recording one is refused until its application
  * (the credit-memo document, the entries, the instalment rewrite and accounting's task) exists.
  *
+ * A shift (#507) moves the term's start and end by the same number of days: the caller names the term and its
+ * new start, and the new end follows. It records a Shift `OrderConcession`, valued at zero, which goes through
+ * under the `TermShiftReviewDays` setting and otherwise waits for finance to review it; it takes effect when
+ * approved (see ./TermShift.ts). `Preview` returns the offsets, the new schedule and the catch-up or reversal for
+ * periods already behind us. Finance escalates a shift awaiting its review to the ConcessionLimit approver by
+ * naming the concession in `EscalateOrderConcessionID`, with the reason. A shortening (an earlier end, or a later
+ * start with the same end) is refused until the credit-memo path its credit follows exists.
+ *
  * A confirmed order's payment terms (#309): the caller names the order and its new terms instead of a term. It
  * records a Terms `OrderConcession`, which always waits for someone other than the requester to approve it; the
  * terms and the due date change when it is approved (see ./PaymentTermsChange.ts). `Preview` returns the change in
@@ -25,6 +33,7 @@
  * CONNECTS TO:
  *   PLAN:    ./TermExtension.ts (CheckTermExtension) · ./PaymentTermsChange.ts (CheckTermsChange)
  *            ./AmountChange.ts (CheckAmountChange) · ./ReferralProgram.ts (CheckReferralProgram)
+ *            ./TermShift.ts (CheckTermShift)
  *   RECORDS: OrderConcessionEntityServer (value, approval, application)
  */
 import {
@@ -42,6 +51,7 @@ import {
     type AmendArrangementOutput,
     ConcessionValue,
     InclusiveDays,
+    SplitTermDateChange,
     type mjBizAppsOrdersOrderConcessionEntity,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
@@ -49,7 +59,9 @@ import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
 import { CheckAmountChange } from './AmountChange.js';
 import { CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram, type ReferralProgramVerdict } from './ReferralProgram.js';
-import { CheckTermExtension } from './TermExtension.js';
+import { AsDay, CheckTermExtension, IsoDay } from './TermExtension.js';
+import { CheckTermShift } from './TermShift.js';
+import type { OrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
 
 const REASON_CATEGORIES: readonly string[] = ['Retention', 'Referral', 'Other'];
 
@@ -60,13 +72,15 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<AmendArrangementOutput> {
-        if (!REASON_CATEGORIES.includes(input.ReasonCategory)) {
+        if (input.EscalateOrderConcessionID != null) return this.escalateShift(input, provider, user);
+        if (!input.ReasonCategory || !REASON_CATEGORIES.includes(input.ReasonCategory)) {
             return { Success: false, Message: `ReasonCategory must be one of ${REASON_CATEGORIES.join(', ')}.` };
         }
         if (!input.Reason?.trim()) return { Success: false, Message: 'An amendment must state its reason.' };
         if (input.NewPaymentTermsTypeID != null || input.OrderHeaderID != null) {
             if (
                 input.SubscriptionTermID != null ||
+                input.NewStartDate != null ||
                 input.NewEndDate != null ||
                 input.NewAmount != null ||
                 input.AppliesToInvoiceID != null ||
@@ -80,8 +94,8 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             return this.amendPaymentTerms(input, provider, user);
         }
         if (input.NewAmount != null) {
-            if (input.NewEndDate != null) {
-                return { Success: false, Message: 'A change of amount and a change of end date are amended separately.' };
+            if (input.NewEndDate != null || input.NewStartDate != null) {
+                return { Success: false, Message: 'A change of amount and a change of dates are amended separately.' };
             }
             if (input.ReferralProgramID != null) {
                 return { Success: false, Message: 'A referral program extends a term; it does not go with a change of amount.' };
@@ -93,19 +107,47 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         }
 
         let newEnd: Date | null;
+        let newStart: Date | null;
         try {
             RequireUUID(input.SubscriptionTermID as string, 'SubscriptionTermID');
             newEnd = AsDateValue(RequireOptionalDay(input.NewEndDate, 'NewEndDate'));
+            newStart = AsDateValue(RequireOptionalDay(input.NewStartDate, 'NewStartDate'));
             if (input.ReferralProgramID != null) RequireUUID(input.ReferralProgramID, 'ReferralProgramID');
         } catch (e) {
             return { Success: false, Message: String((e as Error).message) };
         }
-        if (!newEnd) return { Success: false, Message: 'NewEndDate is required.' };
+        if (!newEnd && !newStart) return { Success: false, Message: 'NewEndDate or NewStartDate is required.' };
         const termID = input.SubscriptionTermID as string;
 
-        const current = await this.currentEnd(termID, provider, user);
+        const current = await this.currentDates(termID, provider, user);
         if (typeof current === 'string') return { Success: false, Message: current };
-        const addedDays = Math.round((newEnd.getTime() - current.getTime()) / 86_400_000);
+        const startDays = newStart ? Math.round((AsDay(newStart).getTime() - current.StartDate.getTime()) / 86_400_000) : 0;
+        const change = SplitTermDateChange(current, {
+            StartDate: newStart ? AsDay(newStart) : current.StartDate,
+            // A new start alone moves the end with it: that is a shift.
+            EndDate: newEnd ? AsDay(newEnd) : new Date(current.EndDate.getTime() + startDays * 86_400_000),
+        });
+        if (change.ShorteningDays > 0) {
+            return {
+                Success: false,
+                Message:
+                    'Shortening a booked term (an earlier end, or a later start with the same end) is not supported yet: ' +
+                    'its credit follows the change-of-amount path, which cannot record a change yet.',
+            };
+        }
+        if (change.ShiftDays !== 0 && change.ExtensionDays !== 0) {
+            return {
+                Success: false,
+                Message: 'This change both moves the term and lengthens it. Move it first, then extend it, as two amendments.',
+            };
+        }
+        if (change.ShiftDays !== 0) {
+            if (input.ReferralProgramID != null) {
+                return { Success: false, Message: 'A referral program extends a term; it does not go with a move of its dates.' };
+            }
+            return this.amendShift(input, termID, current, change.ShiftDays, provider, user);
+        }
+        const addedDays = change.ExtensionDays;
 
         const checked = await CheckTermExtension(
             { SubscriptionTermID: termID, AddedDays: addedDays, RequestedByUserID: user.ID },
@@ -119,7 +161,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
                 {
                     ReferralProgramID: input.ReferralProgramID,
                     DeliveryForm: 'Duration',
-                    ReasonCategory: input.ReasonCategory,
+                    ReasonCategory: input.ReasonCategory!,
                     AddedDays: addedDays,
                     OrderHeaderID: checked.OrderHeaderID,
                     RenewsSubscriptionID: await this.renewsSubscription(checked.OrderLineID, provider, user),
@@ -159,7 +201,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         concession.DeliveryForm = 'Duration';
         concession.SubscriptionTermID = termID;
         concession.AddedDays = addedDays;
-        concession.ReasonCategory = input.ReasonCategory;
+        concession.ReasonCategory = input.ReasonCategory!;
         concession.Reason = input.Reason.trim();
         if (input.ReferralProgramID != null) concession.ReferralProgramID = input.ReferralProgramID;
         if (!(await concession.Save())) {
@@ -285,7 +327,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         concession.DeliveryForm = 'Terms';
         concession.OrderHeaderID = checked.OrderHeaderID;
         concession.NewPaymentTermsTypeID = checked.NewPaymentTermsTypeID;
-        concession.ReasonCategory = input.ReasonCategory;
+        concession.ReasonCategory = input.ReasonCategory!;
         concession.Reason = (input.Reason ?? '').trim();
         if (!(await concession.Save())) {
             return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The amendment could not be recorded.' };
@@ -314,13 +356,13 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         return res?.Results?.[0]?.RenewsSubscriptionID ?? null;
     }
 
-    private async currentEnd(termID: string, provider: IMetadataProvider, user: UserInfo): Promise<Date | string> {
+    private async currentDates(termID: string, provider: IMetadataProvider, user: UserInfo): Promise<{ StartDate: Date; EndDate: Date } | string> {
         const rv = new RunView(provider as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ EndDate: Date | string }>(
+        const res = await rv.RunView<{ StartDate: Date | string; EndDate: Date | string }>(
             {
                 EntityName: 'MJ_BizApps_Orders: Subscription Terms',
                 ExtraFilter: `ID = '${RequireUUID(termID, 'SubscriptionTermID')}'`,
-                Fields: ['EndDate'],
+                Fields: ['StartDate', 'EndDate'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -328,8 +370,100 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         );
         const term = res?.Results?.[0];
         if (!term) return `Subscription term ${termID} was not found.`;
-        const d = new Date(term.EndDate);
-        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+        return { StartDate: AsDay(term.StartDate), EndDate: AsDay(term.EndDate) };
+    }
+
+    /** Record a Shift concession, or preview what it would do (#507). */
+    private async amendShift(
+        input: AmendArrangementInput,
+        termID: string,
+        current: { StartDate: Date; EndDate: Date },
+        shiftDays: number,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<AmendArrangementOutput> {
+        const checked = await CheckTermShift(
+            { SubscriptionTermID: termID, ShiftDays: shiftDays, RequestedByUserID: user.ID },
+            { Provider: provider, User: user },
+        );
+        if (typeof checked === 'string') return { Success: false, Message: checked };
+
+        const plan = checked.Plan;
+        const summary: AmendArrangementOutput = {
+            Success: true,
+            CurrentStartDate: IsoDay(checked.CurrentStartDate),
+            NewStartDate: IsoDay(checked.NewStartDate),
+            CurrentEndDate: IsoDay(checked.CurrentEndDate),
+            NewEndDate: IsoDay(checked.NewEndDate),
+            EffectiveDate: IsoDay(checked.EffectiveDate),
+            Value: 0,
+            Offsets: plan.Offsets.map((d, i) => ({
+                EffectiveDate: d.EffectiveDate,
+                Amount: d.Lines.reduce((sum, l) => sum + Number(l.DebitAmount ?? 0), 0),
+                Offsets: plan.Targets[i].EntryNumber,
+            })),
+            NewSchedule: plan.Schedule.map((d) => ({ EffectiveDate: d.EffectiveDate, Amount: d.Lines[0].DebitAmount ?? 0 })),
+            Correction: plan.Correction ? { EffectiveDate: plan.Correction.EffectiveDate, Amount: plan.CorrectionAmount } : null,
+            MovedInstalments: checked.Instalments.map((m) => ({
+                InstallmentNumber: m.InstallmentNumber,
+                DueDate: IsoDay(m.DueDate),
+                NewDueDate: IsoDay(m.NewDueDate),
+            })),
+            InstalmentsLeft: checked.InstalmentsLeft,
+        };
+        const window = `${summary.NewStartDate} – ${summary.NewEndDate}`;
+        if (input.Preview) {
+            return { ...summary, Message: `Term would run ${window} instead of ${IsoDay(current.StartDate)} – ${IsoDay(current.EndDate)}.` };
+        }
+
+        const concession = await provider.GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, user);
+        concession.NewRecord();
+        concession.DeliveryForm = 'Shift';
+        concession.SubscriptionTermID = termID;
+        concession.NewStartDate = checked.NewStartDate;
+        concession.NewEndDate = checked.NewEndDate;
+        concession.ReasonCategory = input.ReasonCategory!;
+        concession.Reason = input.Reason.trim();
+        if (!(await concession.Save())) {
+            return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The amendment could not be recorded.' };
+        }
+        return {
+            ...summary,
+            OrderConcessionID: concession.ID,
+            Status: concession.Status,
+            Message:
+                concession.Status === 'Approved'
+                    ? `Term moved to ${window}. Accounting has been asked to confirm the re-cut.`
+                    : `The move to ${window} is awaiting finance review; it takes effect when approved.`,
+        };
+    }
+
+    /** Finance sends a Shift awaiting its review to the ConcessionLimit approver (#507). */
+    private async escalateShift(input: AmendArrangementInput, provider: IMetadataProvider, user: UserInfo): Promise<AmendArrangementOutput> {
+        let id: string;
+        try {
+            id = RequireUUID(input.EscalateOrderConcessionID as string, 'EscalateOrderConcessionID');
+        } catch (e) {
+            return { Success: false, Message: String((e as Error).message) };
+        }
+        const others = [input.SubscriptionTermID, input.NewStartDate, input.NewEndDate, input.NewAmount, input.OrderHeaderID, input.ReferralProgramID];
+        if (others.some((v) => v != null)) {
+            return { Success: false, Message: 'An escalation names only the concession and the reason.' };
+        }
+        const concession = await provider.GetEntityObject<OrderConcessionEntityServer>(ORDER_CONCESSION_ENTITY, user);
+        if (!(await concession.Load(id))) return { Success: false, Message: `Order concession ${id} was not found.` };
+        if (typeof concession.EscalateShift !== 'function') {
+            return { Success: false, Message: 'The orders server subclass of Order Concessions is not registered, so the shift cannot be escalated.' };
+        }
+        if (!(await concession.EscalateShift(input.Reason ?? ''))) {
+            return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The shift could not be escalated.' };
+        }
+        return {
+            Success: true,
+            OrderConcessionID: concession.ID,
+            Status: concession.Status,
+            Message: 'The shift was sent to the ConcessionLimit approver; it takes effect when approved.',
+        };
     }
 }
 
