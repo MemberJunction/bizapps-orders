@@ -310,6 +310,7 @@ const mocks = vi.hoisted(() => {
         /** Replaces the Event Order Lines fields the discovery reads, for one test. */
         extensionFieldsOverride: undefined as Array<Record<string, unknown>> | undefined,
         subscriptionRunViewResults: [] as Array<{ ProductID: string; Product: string }>,
+        eventProductsRequiringAttendees: [] as string[],
         subscriptionRunViewParams: [] as Array<{ ExtraFilter?: string }>,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
@@ -472,6 +473,12 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         Results: mocks.subscriptionRunViewResults
                     });
                 }
+                if (params.EntityName.includes('Event Products')) {
+                    return Promise.resolve({
+                        Success: true,
+                        Results: mocks.eventProductsRequiringAttendees.map((ID) => ({ ID }))
+                    });
+                }
                 if (params.EntityName.includes('Products') && !params.EntityName.includes('Product Types')) {
                     return Promise.resolve({
                         Success: true,
@@ -561,6 +568,7 @@ describe('CheckoutSessionService', () => {
         mocks.peopleByEmail = {};
         mocks.personLookups = 0;
         mocks.subscriptionRunViewResults = [];
+        mocks.eventProductsRequiringAttendees = [];
         mocks.subscriptionRunViewParams = [];
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
@@ -1347,6 +1355,40 @@ describe('CheckoutSessionService', () => {
                 expect(again.IdempotencyKey).toBe(first.IdempotencyKey);
                 expect(first.IdempotencyKey).not.toContain('example');
             });
+        });
+    });
+
+    describe('OpenPaymentIntentForSession — event attendees', () => {
+        const EVENT_ID = 'e1c2d3e4-0000-4000-8000-000000000001';
+        const open = async (line: Record<string, unknown>) => {
+            mocks.eventProductsRequiringAttendees = [EVENT_ID];
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING, Lines: [{ ProductID: EVENT_ID, ...line }] });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: EVENT_ID, paymentProviderId: 'pp-1', currency: 'USD' });
+            mocks.mockOpenPaymentIntent.mockClear();
+            return CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+        };
+
+        it('refuses to take payment for tickets without an attendee each', async () => {
+            const res = await open({ Quantity: 3, ExtensionData: { Fields: { email: 'a@example.com' } } });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('each of the 3 attendees');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens the intent when every ticket has an attendee with an e-mail', async () => {
+            const res = await open({
+                Quantity: 2,
+                ExtensionData: { Units: [{ email: 'a@example.com', FirstName: 'A' }, { Email: 'b@example.com', FirstName: 'B' }] },
+            });
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOpenPaymentIntent).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves an event that does not require attendees alone', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING, Lines: [{ ProductID: EVENT_ID, Quantity: 3 }] });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: EVENT_ID, paymentProviderId: 'pp-1', currency: 'USD' });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
         });
     });
 

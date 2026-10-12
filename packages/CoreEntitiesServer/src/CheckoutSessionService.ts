@@ -8,7 +8,7 @@
  * @module @mj-biz-apps/orders-core-entities-server/CheckoutSessionService
  */
 
-import { BaseEntity, EntityFieldInfo, IMetadataProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { BaseEntity, EntityFieldInfo, IMetadataProvider, IRunViewProvider, LogError, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import {
     BusinessTimeZoneEngine,
     mjBizAppsCommonAddressEntity,
@@ -50,8 +50,9 @@ import {
     type CheckoutChoicesCheck,
     type CheckoutChoicesInput
 } from '@mj-biz-apps/orders-entities';
-import { EscapeText } from './sql-guards.js';
+import { EscapeText, IsUUID } from './sql-guards.js';
 import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } from './CheckoutPrePurchaseCheck.js';
+import { ExplainMissingCheckoutAttendees, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
@@ -814,7 +815,7 @@ export class CheckoutSessionService {
         contextUser?: UserInfo,
         createIfMissing = true
     ): Promise<string | null> {
-        const email = (fields['Email'] || fields['email'] || fields['AttendeeEmail'] || fields['attendeeEmail']) as string | undefined;
+        const email = this.attendeeEmail(fields);
         if (!email || !email.trim()) {
             return null;
         }
@@ -1710,6 +1711,14 @@ export class CheckoutSessionService {
             return { ...failed(refused.Message), Refusal: refused.Refusal };
         }
 
+        // An event that requires attendee information needs one attendee per ticket. Refused here,
+        // before the intent opens: completion takes the money before it confirms, so the order's
+        // own refusal at confirm would leave a paid checkout with no order.
+        const missingAttendees = await this.checkDraftedAttendees(session, contextUser);
+        if (missingAttendees) {
+            return failed(missingAttendees);
+        }
+
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
         let autoRenewConsentText: string | undefined;
@@ -1802,19 +1811,57 @@ export class CheckoutSessionService {
         };
     }
 
+    /** The lines the session's draft stored, as the buyer sent them; empty when there are none. */
+    private static readDraftedLines(session: mjBizAppsOrdersCheckoutSessionEntity): CheckoutLineInput[] {
+        try {
+            const parsed = JSON.parse(session.MetadataJSON ?? '{}') as { Lines?: CheckoutLineInput[] };
+            return Array.isArray(parsed.Lines) ? parsed.Lines : [];
+        } catch {
+            return [];
+        }
+    }
+
+    /**
+     * The buyer-facing refusal when an event ticket in the session's draft has no attendee; null when
+     * every ticket has one. Counts the per-unit payloads completion turns into attendee rows, so what
+     * passes here is what completion can write.
+     */
+    private static async checkDraftedAttendees(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        contextUser: UserInfo,
+    ): Promise<string | null> {
+        const lines = this.readDraftedLines(session);
+        if (lines.length === 0) return null;
+        // An id that is not a UUID names no product, so it names no event either.
+        const requiring = await LoadProductsRequiringAttendees(
+            lines.map((l) => l.ProductID).filter(IsUUID),
+            Metadata.Provider as unknown as IRunViewProvider,
+            contextUser,
+        );
+        if (requiring.size === 0) return null;
+        return ExplainMissingCheckoutAttendees(
+            lines.map((line) => ({
+                ProductID: line.ProductID,
+                Quantity: line.Quantity,
+                AttendeeEmails: this.extractUnitPayloads(line).map((unit) => this.attendeeEmail(unit)),
+            })),
+            requiring,
+        );
+    }
+
+    /** The e-mail an attendee payload carries, under any of the names completion reads it from. */
+    private static attendeeEmail(fields: Record<string, unknown>): string | null {
+        const email = fields['Email'] || fields['email'] || fields['AttendeeEmail'] || fields['attendeeEmail'];
+        return typeof email === 'string' ? email : null;
+    }
+
     /** Re-runs the pre-purchase checks against the lines the session's draft stored. */
     private static async recheckDraftedPurchase(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         companyID: string,
         contextUser: UserInfo,
     ): Promise<PrePurchaseRefusal | null> {
-        let lines: CheckoutLineInput[] = [];
-        try {
-            const parsed = JSON.parse(session.MetadataJSON ?? '{}') as { Lines?: CheckoutLineInput[] };
-            lines = Array.isArray(parsed.Lines) ? parsed.Lines : [];
-        } catch {
-            lines = [];
-        }
+        const lines = this.readDraftedLines(session);
         return RunPrePurchaseChecks({
             Email: session.Email ?? '',
             PersonID: session.PersonID ?? null,

@@ -49,6 +49,8 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    OrderLineEntity,
+    mjBizAppsOrdersEventOrderLineEntity,
     mjBizAppsOrdersOrderCheckoutAnswerEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
@@ -79,6 +81,7 @@ import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
@@ -459,6 +462,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             );
         }
 
+        for (const message of await this.checkEventAttendees()) {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo('Status', message, this.Status, ValidationErrorType.Failure));
+        }
+
         for (const message of await this.checkBillToNameFitsRails()) {
             result.Success = false;
             const field = this.BillToOrganizationID ? 'BillToOrganizationID' : 'BillToPersonID';
@@ -468,6 +476,50 @@ export class OrderEntityServer extends OrderHeaderEntity {
         await this.refuseVetoedConfirm(result);
 
         return result;
+    }
+
+    /**
+     * An event that requires attendee information books one seat per line, each line naming its
+     * attendee (see `AttendeeRequirement`).
+     *
+     * GATED ON `willBookOnThisSave()`, like the rules around it: a draft is saved while its
+     * attendees are still being entered, and an order that has booked is never re-judged.
+     *
+     * Reads `Lines` as held: the booking save loads the collection before validation runs, so on
+     * the save this guards the collection is the whole order. A line's attendee is the event row in
+     * memory when there is one, and otherwise the row on disk.
+     */
+    private async checkEventAttendees(): Promise<string[]> {
+        if (!this.willBookOnThisSave() || this.Lines.Count === 0) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        const lines = this.Lines.Items;
+
+        const requiring = await LoadProductsRequiringAttendees(lines.map((l) => l.ProductID), provider, this.ContextCurrentUser);
+        if (requiring.size === 0) return [];
+
+        const eventRowInMemory = (line: mjBizAppsOrdersOrderLineEntity): mjBizAppsOrdersEventOrderLineEntity | null => {
+            const child = line.ISAChild ?? (line instanceof OrderLineEntity ? line.Extension.Entity : null);
+            return child instanceof mjBizAppsOrdersEventOrderLineEntity ? child : null;
+        };
+        const onDisk = await LoadLinesWithAttendee(
+            lines.filter((l) => l.IsSaved && requiring.has(uuidKey(l.ProductID)) && !eventRowInMemory(l)).map((l) => l.ID),
+            provider,
+            this.ContextCurrentUser,
+        );
+
+        return ExplainMissingAttendees(
+            lines.map((line) => {
+                const inMemory = eventRowInMemory(line);
+                return {
+                    LineNumber: line.LineNumber,
+                    ProductID: line.ProductID,
+                    Quantity: line.Quantity,
+                    Exempt: !!line.ReversesOrderLineID || !!line.ParentOrderLineID,
+                    HasAttendee: inMemory ? !!inMemory.PersonID : onDisk.has(uuidKey(line.ID)),
+                };
+            }),
+            requiring,
+        );
     }
 
     /**
