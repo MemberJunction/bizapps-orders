@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121600 — Shifting or shortening a booked term (#507)
+-- V202610121610 — Shifting or shortening a booked term (#507)
 -- =============================================================================
 -- An amendment could only move a booked term's end later (a Duration concession).
 -- Moving its start and end together (a shift) or giving the customer less time (a

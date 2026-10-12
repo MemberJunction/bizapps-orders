@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610082215 — OrderHeader.IPCountry and OrderHeader.CardIssuingCountry: VAT location
+-- V202610121700 — OrderHeader.IPCountry and OrderHeader.CardIssuingCountry: VAT location
 -- evidence for self-serve checkout (MemberJunction/bizapps-orders#480)
 -- =============================================================================
 -- VAT on digital sales to buyers in the EU or UK expects two pieces of non-contradictory
