@@ -26,46 +26,15 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
-const UUID = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+import { InvalidOperationInputError } from '@mj-biz-apps/orders-entities';
 
-/** Raised when caller-supplied input cannot safely reach a filter. */
-export class InvalidOperationInputError extends Error {
-    constructor(message: string) {
-        super(message);
-        this.name = 'InvalidOperationInputError';
-    }
-}
+// The UUID guards live in `orders-entities` so its pricing engines can use them without a
+// dependency cycle; they are re-exported here so server code keeps one import site.
+export { InvalidOperationInputError, RequireOptionalUUID, RequireUUID, RequireUUIDs } from '@mj-biz-apps/orders-entities';
 
-/**
- * Require a UUID, or throw.
- *
- * @param value The caller-supplied value.
- * @param field Field name, used in the error so the caller can find their mistake.
- * @returns The value, unchanged, once it is known to be a UUID.
- * @throws {InvalidOperationInputError} If it is not a UUID.
- */
-export function RequireUUID(value: string, field: string): string {
-    if (typeof value !== 'string' || !UUID.test(value)) {
-        throw new InvalidOperationInputError(`${field} must be a UUID.`);
-    }
-    return value;
-}
-
-/**
- * Require a UUID when present. Absent stays absent — many id inputs are optional
- * filters, and an omitted filter is not an invalid one.
- */
-export function RequireOptionalUUID<T extends string | null | undefined>(value: T, field: string): T {
-    if (value === undefined || value === null || value === '') return value;
-    RequireUUID(value as string, field);
-    return value;
-}
-
-/** Require every element of an id list to be a UUID. */
-export function RequireUUIDs(values: string[] | null | undefined, field: string): string[] {
-    if (!values?.length) return [];
-    return values.map((v) => RequireUUID(v, field));
-}
+// MJ publishes `EscapeSQLString` from 6.1.5, the floor this repo requires. Re-exported so
+// existing server imports keep working.
+export { EscapeSQLString } from '@memberjunction/global';
 
 /**
  * Require an ISO date, returning just the `YYYY-MM-DD` portion.
@@ -130,26 +99,4 @@ export function RequireOptionalDay(value: Date | string | null | undefined, fiel
  */
 export function EscapeText(value: string): string {
     return String(value).replace(/'/g, "''");
-}
-
-/**
- * LOCAL FALLBACK for `EscapeSQLString` from `@memberjunction/global`.
- *
- * CLAUDE.md requires this function for SQL string escaping, but no published
- * `@memberjunction/global` exports it — `6.1.0-edge.3` ships `Escape` and `EscapeHTML`
- * and nothing else. Following the rule as written therefore broke the build. This keeps
- * the rule followable at the call sites until MJ publishes the real one; delete it then
- * and re-point `claimDriverHelpers.ts` and `GuestOrderClaimDriver.ts` at the package.
- *
- * Stricter than {@link EscapeText} on two counts, both of which CLAUDE.md calls out as
- * the reasons to prefer `EscapeSQLString`: `null`/`undefined` become an empty string
- * rather than the literal text `"null"`, and embedded null bytes are stripped — SQL
- * Server truncates at `\0`, so a value carrying one can end a quoted literal early and
- * leave the remainder of the input parsed as SQL.
- */
-export function EscapeSQLString(value: string | null | undefined): string {
-    if (value === null || value === undefined) {
-        return '';
-    }
-    return String(value).replace(/\0/g, '').replace(/'/g, "''");
 }

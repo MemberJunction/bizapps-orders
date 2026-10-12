@@ -4,8 +4,7 @@
  * @module @mj-biz-apps/orders-core-entities-server/claimDriverHelpers
  */
 
-// Local fallback — see sql-guards.ts. Restore to '@memberjunction/global' once published.
-import { EscapeSQLString } from './sql-guards.js';
+import { EscapeSQLString } from '@memberjunction/global';
 import { RunView, UserInfo, IRunViewProvider, IEntityDataProvider, IMetadataProvider } from '@memberjunction/core';
 
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';

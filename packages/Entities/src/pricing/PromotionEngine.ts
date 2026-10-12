@@ -30,7 +30,7 @@ import {
     mjBizAppsOrdersOrderAdjustmentEntity,
     mjBizAppsOrdersOrderLineEntity,
 } from '../generated/entity_subclasses';
-import { MJGlobal } from '@memberjunction/global';
+import { EscapeSQLString, MJGlobal } from '@memberjunction/global';
 import { AllocateProRata, Money } from './PricingBehavior.js';
 import { AssessConcession } from './ConcessionBehavior.js';
 import {
@@ -165,7 +165,7 @@ async function loadCandidates(
     const wanted = new Set<string>();
 
     if (codes.length) {
-        const quoted = codes.map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
+        const quoted = codes.map((c) => `'${EscapeSQLString(c)}'`).join(',');
         const res = await rv.RunView<{
             ID: string;
             PromotionID: string;

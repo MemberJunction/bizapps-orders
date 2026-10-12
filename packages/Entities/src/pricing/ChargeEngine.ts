@@ -19,6 +19,7 @@
  *   DOC:    plans/archive/pricing-charges-and-promotions.md §5
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import {
     mjBizAppsOrdersOrderChargeAllocationEntity,
     mjBizAppsOrdersOrderChargeEntity,
@@ -94,7 +95,7 @@ export async function RunCharges(
     //
     // This is the boundary of what the engine cache is for: rows nobody changes mid-transaction.
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const codes = [...new Set(requested.map((r) => r.Code))].map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
+    const codes = [...new Set(requested.map((r) => r.Code))].map((c) => `'${EscapeSQLString(c)}'`).join(',');
     const res = await rv.RunView<ChargeTypeRow>(
         { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Code IN (${codes})`, ResultType: 'simple', BypassCache: true },
         user,
