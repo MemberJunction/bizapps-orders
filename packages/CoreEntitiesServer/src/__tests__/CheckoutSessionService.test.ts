@@ -1517,6 +1517,95 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('CompleteCheckout — Persons after payment and per-unit details (#583)', () => {
+        const pricedAt = (amount: number) =>
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = amount;
+                    line.LineTotalGross = amount * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+        const snapshot = (lines: unknown[]) => JSON.stringify({ BillingAddress: BILLING, Lines: lines });
+        const attendee = { FirstName: 'Ada', LastName: 'Attendee', Email: 'ada@example.com' };
+
+        it('creates no Person when the payment is refused', async () => {
+            mocks.mockSessionInstance.Email = 'new-buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = null;
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('creates the new payer and attendee once payment checks out, pricing the new buyer with no Person', async () => {
+            mocks.mockSessionInstance.Email = 'new-buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(priceCtx.BillToPersonID).toBeNull();
+            expect(mocks.mockPersonSave).toHaveBeenCalledTimes(2);
+            expect(mocks.mockOrderInstance.BillToPersonID).toBe('person-new-1');
+            expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
+            const ext = mocks.mockOrderInstance.Lines.Items[0].extensionInstance;
+            expect(ext.Set).toHaveBeenCalledWith('PersonID', 'person-new-1');
+        });
+
+        it('prices an existing buyer with their Person and creates nothing', async () => {
+            mocks.peopleByEmail = { 'member@example.com': 'person-1', 'ada@example.com': 'person-ada' };
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(priceCtx.BillToPersonID).toBe('person-1');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Lines.Items[0].extensionInstance.Set).toHaveBeenCalledWith('PersonID', 'person-ada');
+        });
+
+        it('refuses a per-unit line whose quantity differs from its sets of unit details', async () => {
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
+            const lines = [{ ProductID: 'prod-1', Quantity: 3, Units: [attendee] }];
+
+            const draft = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', lines, BILLING);
+            expect(draft.Success).toBe(false);
+            expect(draft.ErrorMessage).toContain('each of the 3 items');
+
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.MetadataJSON = snapshot(lines);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toContain('each of the 3 items');
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+        });
+
+        it('still splits a per-unit line whose quantity matches its sets of unit details', async () => {
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
+            mocks.peopleByEmail = { 'member@example.com': 'person-1' };
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([
+                { ProductID: 'prod-1', Quantity: 2, Units: [attendee, { ...attendee, FirstName: 'Bo', Email: 'bo@example.com' }] },
+            ]);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.Lines.Items.map((l) => l.Quantity)).toEqual([1, 1]);
+        });
+    });
+
     describe('CompleteCheckout', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', 'wrong-key');
