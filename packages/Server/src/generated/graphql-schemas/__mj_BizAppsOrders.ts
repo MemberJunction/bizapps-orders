@@ -5779,7 +5779,7 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     SubscriptionTermID?: string;
         
-    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`}) 
+    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`}) 
     @MaxLength(20)
     DeliveryForm?: string;
         
@@ -5852,6 +5852,18 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field({nullable: true, description: `For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).`}) 
     @MaxLength(36)
     ReferralProgramID?: string;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's start date before the change.`}) 
+    PriorStartDate?: Date;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's end date before the change.`}) 
+    PriorEndDate?: Date;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's start date once it is approved and applied.`}) 
+    NewStartDate?: Date;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's end date once it is approved and applied.`}) 
+    NewEndDate?: Date;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -5960,6 +5972,18 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field({ nullable: true })
     ReferralProgramID: string | null;
 
+    @Field({ nullable: true })
+    PriorStartDate: Date | null;
+
+    @Field({ nullable: true })
+    PriorEndDate: Date | null;
+
+    @Field({ nullable: true })
+    NewStartDate: Date | null;
+
+    @Field({ nullable: true })
+    NewEndDate: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6038,6 +6062,18 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     ReferralProgramID?: string | null;
+
+    @Field({ nullable: true })
+    PriorStartDate?: Date | null;
+
+    @Field({ nullable: true })
+    PriorEndDate?: Date | null;
+
+    @Field({ nullable: true })
+    NewStartDate?: Date | null;
+
+    @Field({ nullable: true })
+    NewEndDate?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
