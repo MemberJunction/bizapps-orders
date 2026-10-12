@@ -4,8 +4,9 @@ There are two committed datasets you can inspect, and they are not the same thin
 
 1. **`seed-review-data.mjs`** — the labelled scenarios [below](#what-was-seeded-and-why-each-one-is-there)
    plus a population of varied orders (60 by default; `SEED_POPULATION` changes it), booked through
-   the *server* entity path (`OrderEntityServer.Save`) on the shared ORD-WORLD companies. The orders
-   carry no per-run tag.
+   the *server* entity path (`OrderEntityServer.Save`) on the shared ORD-WORLD companies. Each run
+   has a marker, `REVIEW-<base36 time>`, that opens every order's `Description` and every promotion's
+   `Code`.
 2. **`wire-volume`** — hundreds of orders booked over **GraphQL** (`MJ.SaveEntityGraph`). Every
    header `Notes` is `WIRE-VOL:<runId>`. This is the one that proves the client confirm path at
    volume, with split payments, renewals, seats and event attendees.
@@ -15,16 +16,24 @@ always rolls back, which is what makes them independent and re-runnable. To look
 them deliberately:
 
 ```bash
-node test-harnesses/seed-review-data.mjs      # commits the scenarios and the population
+node test-harnesses/seed-review-data.mjs      # removes earlier review runs, then commits the scenarios and the population
+node test-harnesses/seed-review-data.mjs --purge REVIEW-XXXXXXXX   # deletes one run by its marker and exits
+node test-harnesses/seed-review-data.mjs --purge                   # deletes every review run and exits
 
 # GraphQL-over-the-wire volume (MJAPI on GRAPHQL_PORT=4103, DB_DATABASE=bizapps_orders)
 WIRE_VOL_COUNT=200 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
 node test-harnesses/purge-wire-volume.mjs     # deletes WIRE-VOL-* orders only
 ```
 
-Nothing removes the seeded orders. The seeder's own purge and `purge-fixture-data.mjs` both run
+The seeder's purge (`PurgeReviewRun` in `packages/IntegrationTests/src/fixture.ts`) finds a run's
+orders by the marker and deletes them with everything that hangs off them: lines, charges,
+adjustments, subscriptions and terms, grants, stored value, payments, progress observations and the
+journal entries linked to any of these, in one transaction. It also deletes the run's promotions
+unless an order outside the run uses one. The prices and bundle items the seeder sets are updates to
+ORD-WORLD rows, which the next world load restores from CSV. `purge-fixture-data.mjs` runs
 `PurgeAllFixtureData`, which sweeps only the per-run `IT-ORD-…` companies the fixture created before
-it moved to the shared ORD-WORLD catalog, so each seeder run adds another set.
+it moved to ORD-WORLD. Orders seeded before the marker existed carry none, so neither purge finds
+them.
 
 The seeder walks the **same** `OrderEntityServer.Save()` pipeline the checks do. Nothing about the
 data below is hand-written; it is all engine output.
