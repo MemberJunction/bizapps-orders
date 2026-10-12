@@ -1,5 +1,5 @@
 ---
-'@mj-biz-apps/orders-ng': patch
+'@mj-biz-apps/orders-ng': minor
 '@mj-biz-apps/orders-entities': patch
 ---
 
