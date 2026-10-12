@@ -44,6 +44,8 @@ const request = {
     AddedDays: 30,
     OrderHeaderID: ORDER_ID,
     RenewsSubscriptionID: SUBSCRIPTION_ID as string | null,
+    TermStartDate: new Date('2027-01-01T00:00:00Z'),
+    Today: new Date('2026-10-12T00:00:00Z'),
 };
 
 beforeEach(() => {
@@ -71,6 +73,18 @@ describe('CheckReferralProgram', () => {
         expect(await CheckReferralProgram({ ...request, RenewsSubscriptionID: null }, ctx)).toMatch(
             /adds its time to the next term, on the renewal order/,
         );
+    });
+
+    it('refuses a renewal-bought term that has started, as from the second year on', async () => {
+        database(activeProgram);
+        expect(await CheckReferralProgram({ ...request, TermStartDate: new Date('2026-01-01T00:00:00Z') }, ctx)).toMatch(
+            /a renewed term that has not started\. This term started on 2026-01-01/,
+        );
+    });
+
+    it('refuses a renewal-bought term that starts today', async () => {
+        database(activeProgram);
+        expect(await CheckReferralProgram({ ...request, TermStartDate: request.Today }, ctx)).toMatch(/has not started/);
     });
 
     it('refuses a program of another company', async () => {

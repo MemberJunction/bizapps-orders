@@ -59,10 +59,12 @@
  *
  * A referral's earned time is added to the renewed term and approved by its program (golive #268):
  *
- *   CS31      naming a referral program on a term that is not a renewal is refused; on the renewed term, time within
- *             the program's days is Approved by the program with no authority, and more than that is routed Pending
+ *   CS31      naming a referral program on a term that is not a renewal, or on a renewed term that has started, is
+ *             refused; on the renewed term, time within the program's days is Approved by the program with no
+ *             authority, and more than that is routed Pending
  *   CS34      Orders.AmendArrangement takes the program: its preview says whether the program approves and writes
- *             nothing; in-program days are Approved and applied in the call, more days are recorded Pending
+ *             nothing; in-program days are Approved and applied in the call, more days are recorded Pending; a
+ *             renewed term that has started is refused
  *
  * Several ConcessionLimit rules are approval tiers (#308):
  *
@@ -480,6 +482,14 @@ async function renewTerm(ctx: IntegrationCheckContext, termID: string): Promise<
       WHERE ol.OrderHeaderID = '${renewal.Order.ID}'`);
   Assert(renewed?.ID != null, "the renewal wrote no term");
   return renewed;
+}
+
+/**
+ * Move a renewed term's start to today, as a renewal-bought term is once its year begins. Written directly: a
+ * saved term's dates cannot be changed through the entity, and the check rolls back.
+ */
+async function startTermToday(ctx: IntegrationCheckContext, termID: string, today: Date | string): Promise<void> {
+  await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.SubscriptionTerm SET StartDate = '${daysAfter(today, 0)}' WHERE ID = '${termID}'`);
 }
 
 /** A term's end date moved by some days, as the YYYY-MM-DD the operation takes. */
@@ -1418,6 +1428,16 @@ export const ConcessionChecks: NamedCheck[] = [
         });
         Assert(over.Saved, `recording failed: ${over.Message}`);
         AssertEqual(over.Entity.Status, "Pending", "more than the program grants is routed for approval");
+
+        // From the second year on, the term a customer is in was bought by last year's renewal.
+        await startTermToday(ctx, renewed.ID, first.Term.StartDate);
+        const started = await recordConcession(ctx, {
+          DeliveryForm: "Duration", SubscriptionTermID: renewed.ID, AddedDays: 30,
+          ReasonCategory: "Referral", Reason: "referred a peer", ReferralProgramID: programID,
+        });
+        Assert(!started.Saved, "a referral's time must not extend a renewed term the customer is already in");
+        Assert(/a renewed term that has not started/.test(started.Message),
+          `expected the started-term refusal, got: ${started.Message}`);
       }),
   },
   {
@@ -1537,6 +1557,12 @@ export const ConcessionChecks: NamedCheck[] = [
         const over = await amend({ ...referral, SubscriptionTermID: renewed.ID, NewEndDate: overEnd });
         Assert(over.Success, `recording failed: ${over.Message}`);
         AssertEqual(over.Status, "Pending", "more than the program grants is routed for approval");
+
+        // From the second year on, the term a customer is in was bought by last year's renewal.
+        await startTermToday(ctx, renewed.ID, first.Term.StartDate);
+        const started = await amend({ ...referral, SubscriptionTermID: renewed.ID, NewEndDate: daysAfter(overEnd, 30), Preview: true });
+        Assert(!started.Success && /a renewed term that has not started/.test(started.Message ?? ""),
+          `a referral's time must not extend a renewed term the customer is already in: ${started.Message}`);
       }),
   },
 ];
