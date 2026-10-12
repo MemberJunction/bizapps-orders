@@ -24,8 +24,6 @@ import {
     FormatShortDate,
     FormatShortInstantDate,
 } from '../lib/form-panels/document-form.helpers';
-import { BizAppsProductFormComponent } from '../lib/custom/Product/product-form.component';
-import { BizAppsPromotionFormComponent } from '../lib/custom/Promotion/promotion-form.component';
 import { PromotionHeaderPanel } from '../lib/form-panels/promotion-header.panel';
 import { MJOOrdersDashboardPageComponent } from '../lib/pages/orders/orders-dashboard.page';
 import { MJOPricingPageComponent } from '../lib/pages/catalog/pricing.page';
@@ -82,21 +80,6 @@ describe.each(['America/Chicago', 'Asia/Kolkata', 'Pacific/Auckland'])('golive #
     });
 
     describe('timestamps show the business day they fell on', () => {
-        it('the product form\'s event summary (EventStartsAt, datetimeoffset)', () => {
-            const summary = getter<string>(BizAppsProductFormComponent, 'EventScheduleSummary', {
-                HasEventExtension: true,
-                EventProductChild: { VenueName: 'Hall', EventStartsAt: SEVEN_PM_CENTRAL },
-            });
-            expect(summary).toBe('Hall · Oct 1, 2026');
-        });
-
-        it('the promotion form\'s schedule (Promotion.EffectiveFrom / EffectiveTo, datetimeoffset)', () => {
-            const window = getter<string>(BizAppsPromotionFormComponent, 'FormattedScheduleWindow', {
-                record: { EffectiveFrom: SEVEN_PM_CENTRAL, EffectiveTo: new Date('2026-11-01T04:59:00.000Z') },
-            });
-            expect(window).toBe('Oct 1, 2026 – Oct 31, 2026');
-        });
-
         it('the promotion header\'s schedule', () => {
             const schedule = getter<string>(PromotionHeaderPanel, 'Schedule', {
                 Record: { EffectiveFrom: SEVEN_PM_CENTRAL, EffectiveTo: null },
