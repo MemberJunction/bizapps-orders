@@ -19,6 +19,7 @@ import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
+import { LoadChargeRenewalsAction } from './custom/charge-renewals.action.js';
 import { LoadDispatchOutboundEventsAction } from './custom/dispatch-outbound-events.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
@@ -211,6 +212,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
     LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
+    LoadChargeRenewalsAction();        // 'Orders.ChargeRenewals' — daily charge of renewal cards, with retries (#289)
     LoadDispatchOutboundEventsAction(); // 'Orders.DispatchOutboundEvents' — sends recorded outbound events (#293)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll

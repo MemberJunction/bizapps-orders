@@ -123,6 +123,8 @@ The table lists the main ones. The full list, by area, is in [`orders-api-and-ui
 | `Orders.CancelSubscription` | Policy in, reversal out. |
 | `Orders.SpawnRenewals` | Long-running: place renewal orders at lead time. |
 
+`Orders.ChargeRenewals` is a scheduled Action rather than a remote operation: it charges renewal cards daily and has no browser caller (`packages/Server/src/custom/charge-renewals.action.ts`).
+
 `Orders.SaveOrder` / `ConfirmOrder` / `PreviewOrder` / `PreviewConfirm` were retired when related-record collections landed ([why the old pattern existed](ui-architecture.md#what-changed-in-mj-61-and-why-the-old-pattern-existed-at-all)).
 
 **Unstated `UnitPrice` is omitted, never sent as `0`.** A stated `0` is a free line and suppresses resolution ([the price rule](orders-api-and-ui-architecture.md#the-one-rule-about-prices-that-carries-real-risk)).
@@ -179,6 +181,8 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Monthly billed monthly = one renewal Order Header per cycle (`Orders.SpawnRenewals` places Drafts at lead time; a human confirms).
 - **Renewal pricing** (`Orders.SpawnRenewals`): the prior term's undiscounted unit price, or a successor product's list price, plus any `RenewalIncreasePercent` when the new term crosses an anniversary. A first-term discount lapses unless `Subscription.CarryDiscountOnRenewal` is set.
 - **Promotions on renewal**: a promotion with `AppliesToRenewals` set carries into automatic renewals. The pass reads the codes recorded on the line that bought the expiring term and presents the flagged ones on the renewal order, where the ordinary promotion engine decides: the promotion must be Active, inside its `EffectiveFrom`/`EffectiveTo` dates on the renewal's order date, and pass its targets, minimums, limits and qualifier. A code that no longer applies is reported on the candidate (`UnusableRenewalPromotionCodes`), in the order notes and on the `RenewalOrderSpawned` event, and the renewal is placed at the undiscounted price. Preview runs the same engine without saving. Unflagged promotions apply to the purchase only.
+
+- **Charging the renewal card** (#289). A checkout that sells an auto-renewing product keeps the card (`Subscription.DefaultCustomerPaymentMethodID`, a wallet entry). That subscription's renewal order is due on the new term's first day, and the daily `Orders.ChargeRenewals` job (`RenewalCharging.ts`, ships disabled and set to preview) charges the card off-session that day. A decline, or a demand that the absent customer authenticate (SCA), is retried on the days in the `RenewalChargeRetryDays` setting (default 3, 7 and 11 after the due day) until the access cutoff suspends the renewal. Each attempt is its own `PaymentIntent` and a `PaymentSucceeded` / `PaymentFailed` subscription event; a success is captured through `Orders.CapturePayment`, dated the business day the gateway took the money. A subscription without a renewal card stays invoice-only.
 - Cancel is `Orders.CancelSubscription` (policy → reversal).
 - **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee, one per line. When `EventProduct.RequiresAttendeeInfo` is set, the order refuses to book unless each line of that event is quantity 1 with an attendee row, and checkout refuses to open a payment intent until each ticket has an attendee with an e-mail (`AttendeeRequirement.ts`). Reversals and bundle components are exempt. Capacity is **not** enforced on confirm.
 
@@ -313,7 +317,7 @@ Not documented here yet: the steps that register a local checkout in a running M
 | Price / promo / charge / tax | `packages/Entities/src/pricing/` |
 | Capture / refund | `CapturePaymentOperation.ts`, `RefundPaymentOperation.ts` |
 | Intercompany cash | `PaymentAllocationFactory.ts` |
-| Subscriptions | `SubscriptionBehavior.ts`, `CancelSubscriptionOperation.ts`, `SpawnRenewalsOperation.ts` |
+| Subscriptions | `SubscriptionBehavior.ts`, `CancelSubscriptionOperation.ts`, `SpawnRenewalsOperation.ts`, `RenewalCharging.ts` |
 | Explorer sections | `packages/Angular/src/lib/sections/` |
 | Order compose form | `packages/Angular/src/lib/custom/OrderHeader/` |
 | Form contributions | `packages/Angular/src/lib/form-panels/` |

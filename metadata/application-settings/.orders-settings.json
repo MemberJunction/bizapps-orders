@@ -80,5 +80,16 @@
     "primaryKey": {
       "ID": "586B7952-62A9-4121-A71B-F6EBC4A967BE"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RenewalChargeRetryDays",
+      "Value": "3,7,11",
+      "Comments": "Comma-separated days after a renewal order's due day on which the daily renewal-charge job tries a declined renewal card again (#289). The due day is always the first attempt; with the default the card is tried on the due day and 3, 7 and 11 days after it. Attempts stop at the access cutoff (RenewalAccessCutoffDaysPastDue) whatever this lists. Empty means no retries. A value with any entry that is not a whole number of 1 or more falls back to 3,7,11."
+    },
+    "primaryKey": {
+      "ID": "790CAE86-689A-4984-AF17-3200CE72D36B"
+    }
   }
 ]

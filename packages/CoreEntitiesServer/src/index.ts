@@ -363,6 +363,27 @@ export type {
     EnforcePaymentGatedAccessInput,
     EnforcePaymentGatedAccessOutput,
 } from './PaymentGatedAccess.js';
+// Charging the renewal card (#289) — the daily pass that collects a renewal order off-session.
+export {
+    ChargeRenewals,
+    ClassifyRenewalCharge,
+    DecideRenewalCharge,
+    NextRenewalChargeDay,
+    RENEWAL_CHARGE_SOURCE,
+    RenewalCaptureDay,
+    RenewalCaptureIdempotencyKey,
+    RenewalChargeDays,
+    RenewalChargeIdempotencyKey,
+} from './RenewalCharging.js';
+export type {
+    ChargeRenewalsInput,
+    ChargeRenewalsOutput,
+    RenewalChargeAttempt,
+    RenewalChargeDecision,
+    RenewalChargeFacts,
+    RenewalChargeOutcome,
+    RenewalChargeResultKind,
+} from './RenewalCharging.js';
 // Approved exceptions to payment-gated access (bizapps-orders#268).
 export {
     ACCESS_OVERRIDE_AUTH,
@@ -502,6 +523,8 @@ export {
     AddCreatedRange,
     StripeRefundFromObject,
     StripeChargeFromObject,
+    StripeChargeRefusal,
+    StubDigest,
 } from './StripePaymentProvider.js';
 export {
     CheckPaymentWebhookEndpoints,
