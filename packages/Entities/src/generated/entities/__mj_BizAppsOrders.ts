@@ -2155,7 +2155,7 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Terms (vwSubscriptionTerms.ID)
         * * Description: The subscription term a Duration concession extends.`),
-    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Terms')]).describe(`
+    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Shift'), z.literal('Shorten'), z.literal('Terms')]).describe(`
         * * Field Name: DeliveryForm
         * * Display Name: Delivery Form
         * * SQL Data Type: nvarchar(20)
@@ -2165,8 +2165,10 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     *   * Price
     *   * Scope
     *   * Seats
+    *   * Shift
+    *   * Shorten
     *   * Terms
-        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`),
+        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`),
     ReasonCategory: z.union([z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
         * * Field Name: ReasonCategory
         * * Display Name: Reason Category
@@ -2279,6 +2281,26 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Signed Amendment Reference
         * * SQL Data Type: nvarchar(500)
         * * Description: Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.`),
+    PriorStartDate: z.date().nullable().describe(`
+        * * Field Name: PriorStartDate
+        * * Display Name: Prior Start Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's start date before the change.`),
+    PriorEndDate: z.date().nullable().describe(`
+        * * Field Name: PriorEndDate
+        * * Display Name: Prior End Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's end date before the change.`),
+    NewStartDate: z.date().nullable().describe(`
+        * * Field Name: NewStartDate
+        * * Display Name: New Start Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's start date once it is approved and applied.`),
+    NewEndDate: z.date().nullable().describe(`
+        * * Field Name: NewEndDate
+        * * Display Name: New End Date
+        * * SQL Data Type: date
+        * * Description: For a Shift or Shorten concession, the term's end date once it is approved and applied.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -6202,7 +6224,7 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
         * * Display Name: Subscription
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)`),
-    EventType: z.union([z.literal('Activated'), z.literal('Canceled'), z.literal('CancellationRequested'), z.literal('Created'), z.literal('Extended'), z.literal('Migrated'), z.literal('Paused'), z.literal('PaymentFailed'), z.literal('PaymentSucceeded'), z.literal('RenewalOrderSpawned'), z.literal('Resumed'), z.literal('TrialEnded'), z.literal('TrialStarted')]).describe(`
+    EventType: z.union([z.literal('Activated'), z.literal('Canceled'), z.literal('CancellationRequested'), z.literal('Created'), z.literal('Extended'), z.literal('Migrated'), z.literal('Paused'), z.literal('PaymentFailed'), z.literal('PaymentSucceeded'), z.literal('RenewalOrderSpawned'), z.literal('Rescheduled'), z.literal('Resumed'), z.literal('Shortened'), z.literal('TrialEnded'), z.literal('TrialStarted')]).describe(`
         * * Field Name: EventType
         * * Display Name: Event Type
         * * SQL Data Type: nvarchar(40)
@@ -6218,7 +6240,9 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
     *   * PaymentFailed
     *   * PaymentSucceeded
     *   * RenewalOrderSpawned
+    *   * Rescheduled
     *   * Resumed
+    *   * Shortened
     *   * TrialEnded
     *   * TrialStarted
         * * Description: The lifecycle event kind (Created ... RenewalOrderSpawned).`),
@@ -13097,6 +13121,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     * * ComputedValue: The computed value must be greater than or equal to zero.
     * * CumulativeShare: Cumulative share must be greater than or equal to zero to ensure that negative values are not recorded.
     * * Table-Level: If the status is 'Pending', decision details are not required. However, if the status is changed to anything other than 'Pending', both the deciding user and the decision timestamp must be provided.
+    * * Table-Level: Validates delivery modification rules for subscription dates. When delivery form is 'Shift' or 'Shorten', all start and end dates and subscription term are required while payment terms and added quantity must be empty. 'Shift' requires both start and end dates to move by the exact same number of days. 'Shorten' requires the new dates to fall within the original date range with at least one date modified. For other delivery forms, all date fields must remain empty.
     * * Table-Level: If the delivery form is set to 'Duration', a valid subscription term must be specified and the number of added days must be greater than zero.
     * * Table-Level: If the delivery form is set to 'Seats', an order line must be specified and the added quantity must be greater than zero.
     * * Table-Level: If the delivery form is set to 'Scope' or 'Price', an order line must be specified.
@@ -13111,6 +13136,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
         this.ValidateComputedValueGreaterThanOrEqualToZero(result);
         this.ValidateCumulativeShareGreaterThanOrEqualToZero(result);
         this.ValidateDecisionDetailsByStatus(result);
+        this.ValidateDeliveryFormDatesAndTerms(result);
         this.ValidateDeliveryFormDurationRequirements(result);
         this.ValidateDeliveryFormSeatsRequirements(result);
         this.ValidateOrderLineRequiredForScopeOrPriceDeliveryForm(result);
@@ -13173,6 +13199,112 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
                 ));
             }
         }
+    }
+
+    /**
+    * Validates delivery modification rules for subscription dates. When delivery form is 'Shift' or 'Shorten', all start and end dates and subscription term are required while payment terms and added quantity must be empty. 'Shift' requires both start and end dates to move by the exact same number of days. 'Shorten' requires the new dates to fall within the original date range with at least one date modified. For other delivery forms, all date fields must remain empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateDeliveryFormDatesAndTerms(result: ValidationResult): void {
+    	const isShorten = this.DeliveryForm === 'Shorten';
+    	const isShift = this.DeliveryForm === 'Shift';
+    
+    	if (!isShorten && !isShift) {
+    		if (this.PriorStartDate != null || this.PriorEndDate != null || this.NewStartDate != null || this.NewEndDate != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"DeliveryForm",
+    				"Prior and new start and end dates must be empty when delivery form is not 'Shorten' or 'Shift'.",
+    				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	} else {
+    		if (this.SubscriptionTermID == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"SubscriptionTermID",
+    				"Subscription Term ID is required when delivery form is 'Shorten' or 'Shift'.",
+    				this.SubscriptionTermID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    
+    		if (this.PriorStartDate == null || this.PriorEndDate == null || this.NewStartDate == null || this.NewEndDate == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"DeliveryForm",
+    				"Prior and new start and end dates are required when delivery form is 'Shorten' or 'Shift'.",
+    				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		} else {
+    			const priorStart = new Date(this.PriorStartDate).getTime();
+    			const priorEnd = new Date(this.PriorEndDate).getTime();
+    			const newStart = new Date(this.NewStartDate).getTime();
+    			const newEnd = new Date(this.NewEndDate).getTime();
+    
+    			if (newEnd < newStart) {
+    				result.Errors.push(new ValidationErrorInfo(
+    					"NewEndDate",
+    					"New End Date must be greater than or equal to New Start Date.",
+    					this.NewEndDate,
+    					ValidationErrorType.Failure
+    				));
+    			}
+    
+    			if (isShift) {
+    				const startShiftDays = Math.round((newStart - priorStart) / (1000 * 60 * 60 * 24));
+    				const endShiftDays = Math.round((newEnd - priorEnd) / (1000 * 60 * 60 * 24));
+    
+    				if (startShiftDays !== endShiftDays || newStart === priorStart) {
+    					result.Errors.push(new ValidationErrorInfo(
+    						"DeliveryForm",
+    						"For a 'Shift' delivery form, start and end dates must be shifted by the exact same number of days and must differ from prior dates.",
+    						this.DeliveryForm,
+    						ValidationErrorType.Failure
+    					));
+    				}
+    			}
+    
+    			if (isShorten) {
+    				if (newStart < priorStart || newEnd > priorEnd || (newStart === priorStart && newEnd === priorEnd)) {
+    					result.Errors.push(new ValidationErrorInfo(
+    						"DeliveryForm",
+    						"For a 'Shorten' delivery form, the new date range must be within the prior date range and at least one date must be changed.",
+    						this.DeliveryForm,
+    						ValidationErrorType.Failure
+    					));
+    				}
+    			}
+    		}
+    
+    		if (this.AddedQuantity != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"AddedQuantity",
+    				"Added Quantity must be empty when delivery form is 'Shorten' or 'Shift'.",
+    				this.AddedQuantity,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    
+    		if (this.PriorPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"PriorPaymentTermsTypeID",
+    				"Prior Payment Terms Type ID must be empty when delivery form is 'Shorten' or 'Shift'.",
+    				this.PriorPaymentTermsTypeID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    
+    		if (this.NewPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"NewPaymentTermsTypeID",
+    				"New Payment Terms Type ID must be empty when delivery form is 'Shorten' or 'Shift'.",
+    				this.NewPaymentTermsTypeID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
     }
 
     /**
@@ -13372,13 +13504,15 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     *   * Price
     *   * Scope
     *   * Seats
+    *   * Shift
+    *   * Shorten
     *   * Terms
-    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).
+    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).
     */
-    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms' {
+    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms' {
         return this.Get('DeliveryForm');
     }
-    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms') {
+    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms') {
         this.Set('DeliveryForm', value);
     }
 
@@ -13638,6 +13772,58 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
     set SignedAmendmentReference(value: string | null) {
         this.Set('SignedAmendmentReference', value);
+    }
+
+    /**
+    * * Field Name: PriorStartDate
+    * * Display Name: Prior Start Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's start date before the change.
+    */
+    get PriorStartDate(): Date | null {
+        return this.Get('PriorStartDate');
+    }
+    set PriorStartDate(value: Date | null) {
+        this.Set('PriorStartDate', value);
+    }
+
+    /**
+    * * Field Name: PriorEndDate
+    * * Display Name: Prior End Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's end date before the change.
+    */
+    get PriorEndDate(): Date | null {
+        return this.Get('PriorEndDate');
+    }
+    set PriorEndDate(value: Date | null) {
+        this.Set('PriorEndDate', value);
+    }
+
+    /**
+    * * Field Name: NewStartDate
+    * * Display Name: New Start Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's start date once it is approved and applied.
+    */
+    get NewStartDate(): Date | null {
+        return this.Get('NewStartDate');
+    }
+    set NewStartDate(value: Date | null) {
+        this.Set('NewStartDate', value);
+    }
+
+    /**
+    * * Field Name: NewEndDate
+    * * Display Name: New End Date
+    * * SQL Data Type: date
+    * * Description: For a Shift or Shorten concession, the term's end date once it is approved and applied.
+    */
+    get NewEndDate(): Date | null {
+        return this.Get('NewEndDate');
+    }
+    set NewEndDate(value: Date | null) {
+        this.Set('NewEndDate', value);
     }
 
     /**
@@ -25394,15 +25580,17 @@ export class mjBizAppsOrdersSubscriptionEventEntity extends BaseEntity<mjBizApps
     *   * PaymentFailed
     *   * PaymentSucceeded
     *   * RenewalOrderSpawned
+    *   * Rescheduled
     *   * Resumed
+    *   * Shortened
     *   * TrialEnded
     *   * TrialStarted
     * * Description: The lifecycle event kind (Created ... RenewalOrderSpawned).
     */
-    get EventType(): 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted' {
+    get EventType(): 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Rescheduled' | 'Resumed' | 'Shortened' | 'TrialEnded' | 'TrialStarted' {
         return this.Get('EventType');
     }
-    set EventType(value: 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted') {
+    set EventType(value: 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Rescheduled' | 'Resumed' | 'Shortened' | 'TrialEnded' | 'TrialStarted') {
         this.Set('EventType', value);
     }
 

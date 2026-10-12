@@ -47,7 +47,7 @@
 import { Money } from './PricingBehavior.js';
 
 /** How the value was given. Mirrors `CK_OrderConcession_DeliveryForm`. */
-export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms';
+export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms' | 'Shift' | 'Shorten';
 
 /** Why it was given. Mirrors `CK_OrderConcession_ReasonCategory`. */
 export type ConcessionReasonCategory = 'Retention' | 'Referral' | 'Other';
