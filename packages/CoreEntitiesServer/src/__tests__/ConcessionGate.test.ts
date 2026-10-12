@@ -293,3 +293,80 @@ describe('FindUnapprovedConcessions — share of the order', () => {
         expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
     });
 });
+
+describe('FindUnapprovedConcessions — products that always need approval (golive #281)', () => {
+    const PRODUCT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3310';
+    const CATEGORY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
+    const PARENT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3312';
+    const TYPE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3313';
+    /** A line at its stated price with no engine price: nothing for the price check to compare against. */
+    const servicesLine = { ...apiLine, ProductID: PRODUCT_ID, UnitPrice: 500, Quantity: 1 };
+
+    function catalog(opts: {
+        concessions?: Row[];
+        lines?: Row[];
+        product?: boolean | null;
+        category?: boolean | null;
+        parent?: boolean | null;
+        type?: boolean | null;
+    }) {
+        mockRunView.mockImplementation(async (params: { EntityName: string }) => {
+            const name = params.EntityName;
+            const results = name.endsWith('Order Concessions')
+                ? opts.concessions ?? []
+                : name.endsWith('Product Categories')
+                  ? [
+                        { ID: CATEGORY_ID, ParentProductCategoryID: PARENT_ID, RequiresSaleApproval: opts.category ?? null },
+                        { ID: PARENT_ID, ParentProductCategoryID: null, RequiresSaleApproval: opts.parent ?? null },
+                    ]
+                  : name.endsWith('Product Types')
+                    ? [{ ID: TYPE_ID, RequiresSaleApproval: opts.type ?? null }]
+                    : name.endsWith('Products')
+                      ? [{ ID: PRODUCT_ID, ProductTypeID: TYPE_ID, ProductCategoryID: CATEGORY_ID, RequiresSaleApproval: opts.product ?? null }]
+                      : opts.lines ?? [servicesLine];
+            return { Success: true, Results: results };
+        });
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+    }
+
+    it('holds a line whose product type requires approval, with no engine price to compare against', async () => {
+        catalog({ type: true });
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+        expect(problems).toEqual([
+            'line 1 is for a product that always needs approval, and no Price or Scope concession approved by the ' +
+                'ConcessionLimit approver is recorded for it',
+        ]);
+    });
+
+    it('takes the nearest stated level: a category opting out wins over its parent and the type', async () => {
+        catalog({ category: false, parent: true, type: true });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('is cleared only by an approved concession decided under the ConcessionLimit rule', async () => {
+        const onAuthority = { Status: 'Approved', DeliveryForm: 'Price', ComputedValue: 0, OrderLineID: LINE_ID, AuthorizedBySalesAuthorityID: '3f2504e0-4f89-41d3-9a0c-0305e82c3314', SalesRuleID: null, ReasonCategory: 'Other' };
+        catalog({ product: true, concessions: [onAuthority] });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toHaveLength(1);
+
+        catalog({ product: true, concessions: [{ ...onAuthority, AuthorizedBySalesAuthorityID: null, SalesRuleID: 'rule-1' }] });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('leaves a renewal line alone', async () => {
+        catalog({ product: true, lines: [{ ...servicesLine, RenewsSubscriptionID: 'sub-1' }] });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('tells the rep to save first when the line is not saved', async () => {
+        catalog({ product: true, lines: [] });
+        const unsaved = { ...servicesLine, ID: null, PriceStated: true };
+        const problems = await FindUnapprovedConcessions(null, [unsaved], true, provider, user);
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatch(/always needs approval\. Save the order without confirming it first/);
+    });
+
+    it('does not check a confirmed order', async () => {
+        catalog({ product: true });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
+    });
+});

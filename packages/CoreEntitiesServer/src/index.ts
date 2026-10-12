@@ -52,7 +52,8 @@ export {
     type ConcessionDecisionResult,
 } from './ConcessionApprovalListener.js';
 export {
-    FindConcessionLimitRule,
+    FindConcessionTier,
+    LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
     LineConcessionTerms,
@@ -261,7 +262,7 @@ export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './
 export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
-export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export { ProductPriceEntityServer, LoadProductPriceEntityServer } from './ProductPriceEntityServer.js';
 export {
     ProductEntityServer,
     SubscriptionFamilyEntityServer,
@@ -302,6 +303,8 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    IsSuspensionReason,
+    ReadTimeAccessCutoffDay,
     ReadTimeCutoffSuspension,
     ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
@@ -311,6 +314,7 @@ export {
     CacheUntilFor,
     ShouldRevokeGrantsOnCancel,
     ENTITLEMENT_CHECK_TTL_MS,
+    AccessOverrideApprovers,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -334,6 +338,8 @@ export type {
     TermAccessFacts,
     GrantAccessEvaluation,
     RankableAccess,
+    AccessOverrideApproverFacts,
+    AccessOverrideApproverResult,
 } from './EntitlementBehavior.js';
 export {
     CreateEntitlementGrants,

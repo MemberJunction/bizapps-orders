@@ -210,6 +210,8 @@ export interface AmendArrangementInput {
     AppliesToInvoiceID?: string;
     /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
     RefundRequested?: boolean;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
@@ -282,6 +284,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -594,7 +599,8 @@ export interface CapturePaymentOrderEffect {
     /** As the rollup triggers left it, not as the operation calculated it. */
     AmountPaid: number;
     Balance: number;
-    PaymentStatus: string;
+    /** Derived from TotalGross, AmountPaid and Balance; the order stores no payment status. */
+    PaymentStatus: 'Unpaid' | 'PartiallyPaid' | 'Paid';
     /**
      * True when this order's balance went NEGATIVE — the customer over-paid and the surplus is now
      * spendable credit (D68). Not an error: the account-credit screen depends on these existing.
@@ -757,6 +763,12 @@ export type EntitlementDecision =
     | 'Suspended'
     | 'SubscriptionInactive';
 
+/**
+ * Why a grant is suspended: waiting for its first payment (a new purchase), past due beyond the
+ * renewal cutoff, or waiting for activation.
+ */
+export type EntitlementSuspensionReason = 'AwaitingPayment' | 'PastDue' | 'AwaitingActivation';
+
 export interface CheckEntitlementOutput {
     HasAccess: boolean;
     Decision: EntitlementDecision;
@@ -767,6 +779,14 @@ export interface CheckEntitlementOutput {
     Quantity?: number;
     /** Audit handle of the winning grant. */
     GrantID?: string;
+    /** Present only with `Decision: 'Suspended'`: why access is held. Null when no reason is recorded (a suspension a person made). */
+    SuspensionReason?: EntitlementSuspensionReason | null;
+    /**
+     * Present only while access holds on a renewal that is past due: the last day (`YYYY-MM-DD`, business
+     * time zone) access is kept before the past-due cutoff suspends it, or an approved cutoff deferral's
+     * last day when that is later.
+     */
+    AccessCutoffDate?: string;
     EvaluatedAt: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
     CacheUntil: string;
@@ -1589,6 +1609,10 @@ export interface ListedEntitlement {
     ValidTo?: string;
     Quantity?: number;
     GrantID?: string;
+    /** As `CheckEntitlementOutput.SuspensionReason`. */
+    SuspensionReason?: EntitlementSuspensionReason | null;
+    /** As `CheckEntitlementOutput.AccessCutoffDate`. */
+    AccessCutoffDate?: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. */
     CacheUntil: string;
 }

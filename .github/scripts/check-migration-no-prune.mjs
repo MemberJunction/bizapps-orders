@@ -23,7 +23,8 @@
  * CodeGen marks these calls `isRecurringScript: true`, and `omitRecurringScriptsFromLog: true`
  * suppresses them from emitted migration logs. They must remain live-CodeGen-only.
  *
- * See plans/entityfield-prune-replay-defect.md.
+ * See https://github.com/MemberJunction/MJ/blob/next/plans/entityfield-prune-replay-defect.md
+ * (the plan lives in the MJ repo; the heal migration V202609101800 cites it by its MJ path).
  *
  * ── SCOPE ───────────────────────────────────────────────────────────────────────
  * CI form (`<base> <head>`): migration files added, modified, copied or renamed between
@@ -219,9 +220,16 @@ function main() {
         const baseRef = process.env.BASE_REF || 'origin/next';
         let mergeBase;
         try {
-            mergeBase = git(['merge-base', baseRef, 'HEAD'], { cwd: root }).trim();
-        } catch {
-            mergeBase = 'HEAD';
+            // stdio: capture git's stderr instead of inheriting it -- otherwise its "fatal:" line
+            // prints live to this process's stderr AND gets re-printed below via err.stderr, twice.
+            mergeBase = git(['merge-base', baseRef, 'HEAD'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        } catch (err) {
+            // A silent fallback to 'HEAD' here would diff the working tree against itself, so any
+            // already-committed violation on the branch would never be scanned. Fail loudly instead.
+            console.error(`${RED}✗ could not resolve base ref '${baseRef}'${NC}`);
+            console.error(`  ${err.stderr?.toString().trim() || err.message}`);
+            console.error(`  Fetch it (e.g. \`git fetch origin next\`), or set BASE_REF to a ref that resolves.`);
+            process.exit(1);
         }
         const diffFiles = git(['diff', '--name-only', '--diff-filter=ACMR', mergeBase], { cwd: root })
             .split('\n')
@@ -270,7 +278,7 @@ spDeleteUnneededEntityFields is a live-reconciler and must never be emitted into
 replayable versioned migrations (it deletes fields on clean replay).
 Ensure omitRecurringScriptsFromLog: true is set in mj.config.cjs and CodeGenLib.
 
-See plans/entityfield-prune-replay-defect.md for details.`);
+See https://github.com/MemberJunction/MJ/blob/next/plans/entityfield-prune-replay-defect.md for details.`);
         process.exit(1);
     }
 
