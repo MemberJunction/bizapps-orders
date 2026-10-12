@@ -132,7 +132,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'outbound-events': 7,
     concessions: 34,
     'term-extension': 9,
-    'amount-change': 7,
+    'amount-change': 9,
     'term-shift': 6,
     'billcom-rail': 20,
 };
