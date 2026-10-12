@@ -56,7 +56,8 @@ import {
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
+import { LogStatus } from '@memberjunction/core';
+import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap, turnstileConfigGap } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -126,6 +127,18 @@ describe('shouldServeCheckoutElementSourceMap', () => {
     });
 });
 
+describe('turnstileConfigGap', () => {
+    it('is null when the site key and the secret both resolve', () => {
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, { TS: 'secret' })).toBeNull();
+    });
+
+    it('names the missing setting', () => {
+        expect(turnstileConfigGap({}, {})).toBe('Settings.TurnstileSecretEnvVar unset');
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, {})).toBe("Settings.TurnstileSecretEnvVar='TS' resolved empty");
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: '  ' }, { TS: 'secret' })).toBe('Settings.TurnstileSiteKey unset');
+    });
+});
+
 describe('CheckoutServerExtension', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -165,6 +178,30 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/access-status',
             'GET /checkout/:slug',
         ]);
+    });
+
+    it('warns at startup when Turnstile is not configured, naming the missing setting', async () => {
+        const { app } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+        expect(lines.some((line) => line.includes('Turnstile is not configured (Settings.TurnstileSecretEnvVar unset)'))).toBe(true);
+    });
+
+    it('stays quiet at startup when Turnstile is configured', async () => {
+        process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP = 'secret';
+        try {
+            const { app } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, {
+                Enabled: true,
+                DriverClass: 'OrdersCheckoutEdge',
+                RootPath: '/checkout',
+                Settings: { TurnstileSecretEnvVar: 'CHECKOUT_TURNSTILE_SECRET_STARTUP', TurnstileSiteKey: 'site-key-1' },
+            });
+            const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+            expect(lines.some((line) => line.includes('Turnstile'))).toBe(false);
+        } finally {
+            delete process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP;
+        }
     });
 
     it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
