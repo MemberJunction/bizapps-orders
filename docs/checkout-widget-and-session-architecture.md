@@ -123,7 +123,7 @@ In **MemberJunction Explorer** (or via code/migrations):
        }
      }
      ```
-   *(Note: If you omit `extensionFields`, the system automatically discovers them from metadata!)* An Event product is the exception: discovery turns Event Order Lines' `AttendanceStatus` into a required dropdown with no choices, so the form cannot be submitted. For an Event widget, author `extensionFields`, with `options` on any `select` (see [Auto-Discovery Rules](#auto-discovery-rules)).
+   *(Note: If you omit `extensionFields`, the system automatically discovers them from metadata!)* See [Auto-Discovery Rules](#auto-discovery-rules).
 
    A paid product needs the three keys after `productSku`: without `unitPrice` the widget shows the item as free and renders no card form, without `stripePublishableKey` no card form is mounted, and without `paymentProviderId` `/checkout/payment-intent` refuses. A free product needs none of them.
 
@@ -166,14 +166,14 @@ The diagram shows a few columns; discovery lists every column the rules below ke
 ### Auto-Discovery Rules
 1. **Person Identity Detection**: If the extension entity contains a `PersonID` field, standard contact inputs (`firstName`, `lastName`, `email`, `company`, `title`) are automatically populated.
 2. **Type Mapping** (first match wins):
-   - Fields with a value list ➔ `select`. Discovery does not send the list's values, so the dropdown has no choices; when the column is also `NOT NULL` the field is required and the form cannot be submitted. Event Order Lines' `AttendanceStatus` is such a column, so an Event widget needs authored `extensionFields`. To offer choices, author `extensionFields` yourself (which replaces discovery) with `options` on that field.
+   - Fields with a value list ➔ `select`, with the list's values as `options` in their `Sequence` order (each value is both label and value).
    - `bit` ➔ `boolean` (checkbox)
    - `date` / `datetime` / `datetime2` / `datetimeoffset` / `smalldatetime` ➔ `date`
    - `int` / `bigint` / `smallint` / `tinyint` / `decimal` / `numeric` / `float` / `real` / `money` / `smallmoney` ➔ `number`
-   - `ntext` / `text`, and strings whose `EntityField.Length` (in bytes) is over 255, so `nvarchar(128)` and longer ➔ `textarea`
-   - Any other string ➔ `text`. This includes `nvarchar(max)`, whose `Length` is -1.
+   - `ntext` / `text`, `nvarchar(max)` / `varchar(max)` (stored as `Length` -1), and strings longer than 255 characters (`EntityField.MaxLength`; `Length` is bytes) ➔ `textarea`
+   - Any other string ➔ `text`
 3. **Exclusions**: System audit fields (`__mj_CreatedAt`, `__mj_UpdatedAt`), primary keys (`ID`), parent `OrderLine` fields, `PersonID` (replaced by the contact inputs), `CheckInAt`, virtual fields and fields the API cannot update are excluded.
-4. **Required**: a discovered field is required when its column is `NOT NULL`.
+4. **Required**: a discovered field is required when its column is `NOT NULL` and has no default. A column with a default (Event Order Lines' `AttendanceStatus`, default `Registered`) is optional, since the database fills it.
 
 ---
 
@@ -671,7 +671,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 | Event | When | `detail` |
 |---|---|---|
 | `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
-| `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units; `currency` is the widget's `currency` upper-cased, or `null` when the widget sets none; `coupon` is reserved for the applied promotion code and is always `null` at present |
+| `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units; `currency` is the widget's `currency` upper-cased, or `null` when the widget sets none; `coupon` is the promotion code the draft applied, or `null` when none was |
 | `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
