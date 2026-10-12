@@ -136,7 +136,7 @@ export async function HandleBillComWebhook(
  * have captured a real payment and posted Dr Cash / Cr A/R before anyone had approved a preview.
  *
  * So the webhook follows the job rather than overriding it: it polls only when the scheduled poll
- * job is Active AND out of Preview. Anything else is logged and ignored, because a webhook-driven
+ * job governing the notified provider is Active AND out of Preview. Anything else is logged and ignored, because a webhook-driven
  * preview writes nothing and nobody reads its output — the scheduled run is where a preview belongs.
  * The operation enforces the same rule itself (`ClassifyPollJob` in orders-entities); this check
  * only saves running a poll whose writes it would refuse.
@@ -146,14 +146,14 @@ export function PollJobIsLive(job: PollJobRow | null | undefined): { Live: boole
     return { Live: state.State === 'Live', Why: state.Why };
 }
 
-/** Every installed poll job has to be live; the most restrictive one wins (`ClassifyPollJobs`). */
-async function pollIsLive(provider: IMetadataProvider, user: UserInfo): Promise<{ Live: boolean; Why: string }> {
-    const state = await LoadPollJobState(user, provider as unknown as IRunViewProvider);
+/** The poll jobs governing this provider have to be live (`ClassifyPollJobsFor`); another provider's job does not count. */
+async function pollIsLive(providerId: string, provider: IMetadataProvider, user: UserInfo): Promise<{ Live: boolean; Why: string }> {
+    const state = await LoadPollJobState(user, provider as unknown as IRunViewProvider, providerId);
     return { Live: state.State === 'Live', Why: state.Why };
 }
 
 async function defaultRunPoll(providerId: string, provider: IMetadataProvider, user: UserInfo): Promise<void> {
-    const live = await pollIsLive(provider, user);
+    const live = await pollIsLive(providerId, provider, user);
     if (!live.Live) {
         LogStatus(`[Orders] Bill.com notification for ${providerId} acknowledged but NOT polled: ${live.Why}. Nothing was recorded.`);
         return;

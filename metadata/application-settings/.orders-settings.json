@@ -69,5 +69,16 @@
     "primaryKey": {
       "ID": "9DF2DE35-392B-47E2-AA91-9C948AF72DD3"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "TermShiftReviewDays",
+      "Value": "",
+      "Comments": "Days a booked term's start and end may move together before the change goes to the finance acknowledgment role for review (bizapps-orders#507). A shift is a term change, not a sales concession, so it is one figure for the app rather than a SalesAuthority limit. At or above the value, the shift is reviewed; under it, it goes through. Empty, or anything other than a whole number, reviews every shift."
+    },
+    "primaryKey": {
+      "ID": "586B7952-62A9-4121-A71B-F6EBC4A967BE"
+    }
   }
 ]
