@@ -2712,6 +2712,9 @@ export class CheckoutSessionService {
                 return;
             }
             intent.Status = retrieved.Status;
+            // The gateway's state as of this read, so any webhook event created before now is older
+            // than this status and is not allowed to move it backwards (#475).
+            intent.LastEventAt = new Date();
             if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
                 intent.Amount = retrieved.Amount;
             }

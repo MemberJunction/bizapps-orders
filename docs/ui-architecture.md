@@ -14,10 +14,11 @@ injected rather than assumed. A service that wraps it is a second, weaker abstra
 existing one.
 
 **Typing.** This is where the real damage is. Generated entity classes are typed from the schema —
-the compiler knows `OrderLine.Status` is a closed union and `LineTotalGross` is `DECIMAL(18,2)`. A
-service that accepts and returns DTOs re-types the same data by hand, and every field is a place the
-two can drift. In practice the boundary degrades to `any` and the strong typing the platform
-generated for free is thrown away one method signature at a time.
+the compiler knows `OrderLine.FulfillmentStatus` is a closed union and `LineTotalGross` is a
+`number | null` (a `DECIMAL(18,2)` column). A service that accepts and returns DTOs re-types the same
+data by hand, and every field is a place the two can drift. In practice the boundary degrades to
+`any` and the strong typing the platform generated for free is thrown away one method signature at a
+time.
 
 **Orchestration.** That is what Remote Operations *are*: typed, registered, network-capable units of
 server work, with a generated base class per operation. `Orders.CapturePayment` already has an
@@ -45,8 +46,11 @@ was never the pattern — it was scaffolding around a missing primitive.
 **Read one record and its children**
 
 ```typescript
+import { Metadata, RunView } from '@memberjunction/core';
+import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+
 const md = new Metadata();
-const order = await md.GetEntityObject<OrderEntity>('MJ_BizApps_Orders: Orders');
+const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Order Headers');
 await order.Load(orderId);
 await order.Lines.Load();          // or LoadRelatedRecords() for every declared collection
 ```
@@ -55,8 +59,8 @@ await order.Lines.Load();          // or LoadRelatedRecords() for every declared
 
 ```typescript
 const rv = new RunView();
-const result = await rv.RunView<OrderEntity>({
-    EntityName: 'MJ_BizApps_Orders: Orders',
+const result = await rv.RunView<OrderHeaderEntity>({
+    EntityName: 'MJ_BizApps_Orders: Order Headers',
     ExtraFilter: `Status = 'Draft'`,
     ResultType: 'entity_object',   // real entities, not rows
     IncludeRelatedRecords: ['Lines'],  // 1 + K queries for ALL orders' lines
@@ -64,26 +68,32 @@ const result = await rv.RunView<OrderEntity>({
 ```
 
 > **`ResultType: 'entity_object'` is load-bearing, not decoration.** `'simple'` — the default —
-> returns the **raw database shape**: no `BaseEntity` is constructed, so a `DATETIME` column arrives
-> as an ISO string, not a `Date`. `RunView<T>` takes a caller-supplied `T` with no relationship to
-> `ResultType`, so passing an entity type to a `'simple'` read compiles perfectly and is wrong at
-> runtime.
+> returns plain rows: no `BaseEntity` is constructed, so there are no entity methods, no validation
+> and no related-record collections, and a closed-union column such as `Status` holds whatever string
+> the database held. `RunView<T>` takes a caller-supplied `T` with no relationship to `ResultType`, so
+> passing an entity type to a `'simple'` read compiles and is wrong at runtime: `row.Save()`
+> type-checks and throws, and a field left out of `Fields` is absent.
 >
-> We shipped that bug for months. `String(r.OrderDate).slice(0, 4)` read a year out of a string;
+> Dates were the costly case. Simple rows used to carry a `DATETIME` as an ISO string, and we shipped
+> that bug for months. `String(r.OrderDate).slice(0, 4)` read a year out of a string;
 > `o.DueDate < today` compared a date to a string; `AllocateOldestFirst` sorted payments with
 > `localeCompare`. That last one is the one to remember — it produces an **order**, not an error, so
 > every allocation still summed exactly to the payment while the oldest debt quietly stopped being
-> paid first.
+> paid first. MJ now converts date and numeric columns on simple rows to `Date` and `number` on every
+> tier (see `ResultType` in MJ's
+> [`runView.ts`](https://github.com/MemberJunction/MJ/blob/next/packages/MJCore/src/views/runView.ts)),
+> which closes that case and none of the others. The conversion applies when the call names
+> `EntityName`; a run by view ID or view name alone skips it.
 >
 > **Want entity types, ask for entity objects.** Reach for `'simple'` only when you want cheap rows
-> for an aggregate and will treat them as raw database output — `GetOrderSummary` in
-> `lib/data/orders-queries.ts` is the one place in this app that qualifies, and it types its rows
-> accordingly and says why.
+> for an aggregate and will treat them as raw database output. `GetOrderSummary` in
+> `lib/data/orders-queries.ts` is the reference case: it types its rows as the columns it reads and
+> says why.
 
 **Compose and save — one call, one transaction**
 
 ```typescript
-const line = await order.Lines.Create();   // stamps the FK and the LineNumber for you
+const line = await order.Lines.Create();   // sets LineNumber and the FK as it adds the line
 line.ProductID = productId;
 line.Quantity = 2;
 
@@ -109,8 +119,17 @@ its children belongs there; anything needing the database stays in `OrderEntityS
 **Server-side work — call the operation**
 
 ```typescript
-const op = new OrdersCapturePaymentOperation();
-const result = await op.Execute({ PaymentID: id, Amount: amount });
+const op = new OrdersCapturePaymentOperation();   // generated into @mj-biz-apps/orders-entities
+const result = await op.Execute({
+    Amount: 250,
+    ReceivingCompanyID: companyId,
+    BillToOrganizationID: customerOrgId,          // exactly one payer: an organization or a person
+    TenderCode: 'Check',                          // a PaymentType code
+    Allocations: [{ OrderHeaderID: orderId, Amount: 250 }],   // must sum to Amount
+});
+if (!result.Success || !result.Output?.Success) {
+    // the call failed (result.ErrorMessage), or the capture was refused (result.Output.Blockers)
+}
 ```
 
 **Cached lookups — ask the engine**
@@ -144,5 +163,7 @@ usually a DTO that mirrors an entity.
 
 - `packages/Entities/src/OrderHeaderEntity.ts` — the shared subclass and what belongs on it
 - `metadata/entity-relationships/` — how `Lines` is declared (metadata, not TypeScript)
+- [`orders-api-and-ui-architecture.md`](orders-api-and-ui-architecture.md) — every remote operation,
+  and the Explorer sections built on these rules
 - [`HOW_THE_SYSTEM_WORKS.md`](HOW_THE_SYSTEM_WORKS.md) — the running system
-- MJ: `packages/MJCore/docs/related-record-collections.md`
+- MJ: [related-record collections](https://github.com/MemberJunction/MJ/blob/next/packages/MJCore/docs/related-record-collections.md)

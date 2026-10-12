@@ -405,6 +405,8 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             /** Two bands of one offering (subscription family MEM-TIER) on an ExtendExisting type. */
             SubTierStandard: requireProduct('SubTierStandard'),
             SubTierPremium: requireProduct('SubTierPremium'),
+            /** A third band on CalendarYear, whose cancellation is Immediate with a 30-day grace period. */
+            SubTierBasic: requireProduct('SubTierBasic'),
             EventTicket: requireProduct('EventTicket'),
             EventTicketB: requireProduct('EventTicketB'),
         },

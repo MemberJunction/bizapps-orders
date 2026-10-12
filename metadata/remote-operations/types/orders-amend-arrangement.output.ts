@@ -23,6 +23,16 @@ export interface AmendArrangementOutput {
     Respread?: number;
     Offsets?: AmendArrangementEntry[];
     NewSchedule?: AmendArrangementEntry[];
+    /** A change of payment terms: the terms before and after, by name. */
+    CurrentPaymentTerms?: string | null;
+    NewPaymentTerms?: string;
+    /** Days to payment the new terms move by: positive when the customer pays later. */
+    DaysChange?: number;
+    CurrentDueDate?: string | null;
+    NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
