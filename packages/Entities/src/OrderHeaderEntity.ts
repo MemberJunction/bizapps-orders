@@ -49,6 +49,7 @@ export interface OrderConfirmOutcome {
     DisplacedTermStarts: DisplacedTermStart[];
 }
 import { OrdersEngine } from './pricing/OrdersEngine';
+import { SplitIntoSeatLines } from './attendee-seats';
 import { anyFieldIsDirty } from './field-dirty';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
 import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
@@ -670,6 +671,24 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 !(line.ServicePeriodStart && line.ServicePeriodEnd) &&
                 engine.ServicePeriodSource(line.ProductID) === 'Line',
         );
+    }
+
+    /**
+     * Splits a line of an event that requires attendee information into one quantity-1 line per
+     * seat, each with its own attendee record, and returns the added lines. Returns none when the
+     * line needs no split. See {@link SplitIntoSeatLines}.
+     *
+     * Reads `OrdersEngine`; the caller loads it.
+     */
+    public async SplitLineIntoSeats(line: OrderHeaderEntity['Lines']['Items'][number]): Promise<OrderHeaderEntity['Lines']['Items']> {
+        const engine = OrdersEngine.Instance;
+        const product = engine.ProductByID(line.ProductID);
+        const extensionEntity = engine.ProductTypeByID(product?.ProductTypeID)?.OrderLineExtensionEntity ?? null;
+        return SplitIntoSeatLines(line, async () => {
+            const seat = await this.Lines.Create();
+            if (extensionEntity) await seat.EnsureISAChild(extensionEntity);
+            return seat;
+        });
     }
 
     /**
