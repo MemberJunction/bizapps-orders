@@ -1,24 +1,60 @@
 #!/usr/bin/env bash
 #
-# Append CodeGen's SQL output below the baseline migration's banner.
+# Append CodeGen's SQL output below a new migration's CODEGEN OUTPUT banner.
 #
-# WHY THIS IS A SCRIPT AND NOT A NOTE: the generated half of the baseline (entity/field metadata,
-# base views, CRUD procs, permissions) is what makes a fresh `mj migrate` produce a WORKING database
-# rather than bare tables. It has been lost once already by re-running CodeGen and forgetting this
-# step, which is unrecoverable without another full rebuild.
+# Schema changes are new V migrations (docs/database-migrations.md). Each one ends with a CODEGEN
+# OUTPUT banner, and the SQL CodeGen emits for that change (entity/field metadata, base views, CRUD
+# procs, permissions) goes below it, so a fresh `mj migrate` produces a working database rather than
+# bare tables. `migrations/codegen/` is gitignored; this script is how that output reaches the
+# migration.
 #
-# The migration is split at the CODEGEN OUTPUT banner: everything above it is hand-authored DDL and
-# is preserved verbatim; everything below is replaced with the current CodeGen output.
+# The cycle, per new migration:
 #
-# Usage: scripts/append-codegen.sh [migration-file]
+#     pnpm run mj:migrate                                  # apply the new migration
+#     pnpm run mj:codegen                                  # writes migrations/codegen/*.sql
+#     scripts/append-codegen.sh migrations/V<new>.sql      # fold that output in below the banner
+#
+# Everything above the banner is hand-authored DDL and is preserved verbatim; everything below it is
+# replaced with the current CodeGen output.
+#
+# The target is required, and a migration already on origin/next is refused: a merged migration is
+# locked (docs/database-migrations.md), and rewriting its generated half would change its checksum
+# for every database that already ran it. That includes the baseline.
+#
+# Usage: scripts/append-codegen.sh <migration-file> [--force]
 set -euo pipefail
 
+usage() { echo "usage: scripts/append-codegen.sh <migration-file> [--force]" >&2; exit 1; }
+[[ $# -ge 1 && -n "$1" && "$1" != --* ]] || usage
+
+# Resolve the argument against the caller's directory before moving to the repo root.
+ARG_DIR=$(cd "$(dirname "$1")" 2>/dev/null && pwd -P) || { echo "no such migration: $1" >&2; exit 1; }
 cd "$(dirname "$0")/.."
-MIGRATION="${1:-migrations/V202607061432__v0.1.x__Tables_and_Objects.sql}"
+ROOT=$(pwd -P)
+MIGRATION="${ARG_DIR#"$ROOT"/}/$(basename "$1")"
+[[ "$ARG_DIR" == "$ROOT"/* ]] || { echo "not a file in this repo: $1" >&2; exit 1; }
 GENERATED_DIR="migrations/codegen"
 MARKER='CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE'
 
 [[ -f "$MIGRATION" ]] || { echo "no such migration: $MIGRATION" >&2; exit 1; }
+
+# GUARD: a migration on origin/next is locked. Appending to it would rewrite merged history.
+git rev-parse --verify -q origin/next >/dev/null || {
+    echo "cannot check whether $MIGRATION is merged: no origin/next ref — run 'git fetch origin next'" >&2
+    exit 1
+}
+if git cat-file -e "origin/next:$MIGRATION" 2>/dev/null; then
+    cat >&2 <<EOF
+REFUSING: $MIGRATION is already on origin/next, so it is locked (docs/database-migrations.md).
+Rewriting its generated half changes its checksum for every database that already ran it.
+
+Put the change in a new V migration with its own CODEGEN OUTPUT banner and append to that:
+
+    pnpm run mj:migrate && pnpm run mj:codegen && scripts/append-codegen.sh migrations/V<new>.sql
+EOF
+    exit 1
+fi
+
 grep -q "$MARKER" "$MIGRATION" || { echo "no CODEGEN OUTPUT banner in $MIGRATION" >&2; exit 1; }
 
 shopt -s nullglob
@@ -30,28 +66,33 @@ BANNER_END=$(grep -n "$MARKER" "$MIGRATION" | head -1 | cut -d: -f1)
 BANNER_END=$(awk -v s="$BANNER_END" 'NR>=s && /^-- =+$/ { print NR; exit }' "$MIGRATION")
 [[ -n "$BANNER_END" ]] || { echo "could not find the end of the banner block" >&2; exit 1; }
 
-# GUARD: CodeGen regenerates INCREMENTALLY. Run against a database whose entities are already
-# current and it emits only a delta — and appending that delta silently replaces the full generated
-# half with a fragment, producing a baseline that migrates to bare tables. This has happened once
-# (88k lines -> 8k). Compare against what is already below the banner and refuse a large shrink.
+# The SQL a database without this migration needs: everything above the banner, nothing below it.
+REDO_CYCLE="    1. delete everything below the banner in $MIGRATION
+    2. build a throwaway database without it: point .env at one, move the migration out of
+       migrations/, run scripts/rebuild-db.sh (it drops the database .env names), move it back
+    3. pnpm run mj:migrate && pnpm run mj:codegen && scripts/append-codegen.sh $MIGRATION"
+
+# GUARD: CodeGen regenerates INCREMENTALLY. Run it again against a database whose entities are already
+# current and it emits only a delta, and appending that delta replaces this migration's earlier output
+# with a fragment. Compare against what is already below the banner and refuse a large shrink.
 EXISTING_GENERATED=$(( $(wc -l < "$MIGRATION") - BANNER_END ))
 INCOMING_GENERATED=$(cat "${GENERATED[@]}" | wc -l | tr -d ' ')
 if (( EXISTING_GENERATED > 1000 )) && (( INCOMING_GENERATED * 2 < EXISTING_GENERATED )); then
     cat >&2 <<EOF
 REFUSING: the incoming CodeGen output ($INCOMING_GENERATED lines) is less than half of what is
-already below the banner ($EXISTING_GENERATED lines). That is what a partial/incremental CodeGen run
-looks like, and appending it would drop the rest of the generated half.
+already below the banner ($EXISTING_GENERATED lines). That is what a second CodeGen run against a
+database that already has this migration's entities looks like, and appending it would drop the
+rest of the generated half.
 
-If this is intentional, pass --force. Otherwise rebuild the database from zero and re-run CodeGen so
-it regenerates everything:
+If this is intentional, pass --force. Otherwise regenerate it in full:
 
-    scripts/rebuild-db.sh && pnpm run mj:codegen && scripts/append-codegen.sh
+$REDO_CYCLE
 EOF
     [[ "${2:-}" == "--force" ]] || exit 1
     echo "  (--force given; proceeding anyway)" >&2
 fi
 
-# GUARD: A PARTIAL CODEGEN RUN PRODUCES A BASELINE THAT INSTALLS A BROKEN DATABASE.
+# GUARD: A PARTIAL CODEGEN RUN PRODUCES A MIGRATION THAT INSTALLS A BROKEN DATABASE.
 #
 # CodeGen creates entity metadata, base views, CRUD procs AND permissions per entity. A run that dies
 # partway — a request timeout on one entity is enough — leaves the rest without permission rows, and
@@ -73,11 +114,12 @@ if [[ -f .env ]]; then
         cat >&2 <<EOF
 REFUSING: $ORPHANS entity/entities in __mj_BizAppsOrders have NO EntityPermission rows.
 
-That is what a CodeGen run that died partway looks like. Appending now would bake a baseline that
-installs a database whose reads fail for those entities. Re-run the whole cycle so CodeGen
-regenerates from zero:
+That is what a CodeGen run that died partway looks like. Appending now would bake a migration that
+installs a database whose reads fail for those entities. Re-running CodeGen against this database
+does not repair it, because it never re-emits entities that already exist. Regenerate from a
+database that has not run this migration:
 
-    scripts/rebuild-db.sh && pnpm run mj:codegen && scripts/append-codegen.sh
+$REDO_CYCLE
 EOF
         exit 1
     fi

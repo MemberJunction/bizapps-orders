@@ -17,6 +17,9 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementFormComponent extends Ba
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'measurement', sectionName: 'Measurement', isExpanded: true },
+            { sectionKey: 'revenueRecognition', sectionName: 'Revenue Recognition', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLineProgressMeasurements', sectionName: 'Order Line Progress Measurements', isExpanded: false }
         ]);
     }

@@ -56,6 +56,7 @@ import {
     DecideGrantStatus,
     FirstPaymentAmount,
     PAYMENT_GATED_TIMINGS,
+    ReadTimeAccessCutoffDay,
     ReadTimeCutoffSuspension,
     ReadTimeWaiverExpirySuspension,
     ReconcileGrantStatus,
@@ -348,9 +349,34 @@ export interface ReadTimeGrant {
     GrantTimingApplied: string | null;
 }
 
+/** What the payment rule says about the grants a read is evaluating, beyond what their rows show. */
+export interface ReadTimePaymentAccess {
+    /** Suspensions reached that the nightly job has not written yet, keyed by lowercased grant ID. */
+    Suspensions: Map<string, GrantStatusDecision>;
+    /**
+     * The last day each past-due renewal grant keeps its access, `YYYY-MM-DD`, keyed by lowercased
+     * grant ID (#269). See `ReadTimeAccessCutoffDay`.
+     */
+    CutoffDays: Map<string, string>;
+}
+
 /**
  * The payment suspensions these grants have reached that the nightly job has not written yet,
- * keyed by lowercased grant ID. Two kinds, each decided as the job would decide it:
+ * keyed by lowercased grant ID. See {@link LoadReadTimePaymentAccess}.
+ */
+export async function LoadReadTimePaymentSuspensions(
+    grants: ReadTimeGrant[],
+    asOf: Date,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, GrantStatusDecision>> {
+    return (await LoadReadTimePaymentAccess(grants, asOf, provider, user)).Suspensions;
+}
+
+/**
+ * The payment suspensions these grants have reached that the nightly job has not written yet, and
+ * the last day each past-due renewal keeps its access. Two kinds of suspension, each decided as the
+ * job would decide it:
  *
  *   · a renewal past its cutoff (#287) — see `ReadTimeCutoffSuspension`;
  *   · a new purchase, or an `OnPaidInFull` grant, whose `WaivePaymentHold` has run out unpaid (#404)
@@ -365,20 +391,22 @@ export interface ReadTimeGrant {
  *
  * Throws on a failed read; the caller fails closed.
  */
-export async function LoadReadTimePaymentSuspensions(
+export async function LoadReadTimePaymentAccess(
     grants: ReadTimeGrant[],
     asOf: Date,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<Map<string, GrantStatusDecision>> {
+): Promise<ReadTimePaymentAccess> {
     const out = new Map<string, GrantStatusDecision>();
+    const cutoffDays = new Map<string, string>();
+    const result: ReadTimePaymentAccess = { Suspensions: out, CutoffDays: cutoffDays };
     const candidates = grants.filter(
         (g) =>
             g.Status === 'Active' &&
             (g.GrantTimingApplied === 'OnFirstPayment' || g.GrantTimingApplied === 'OnPaidInFull') &&
             !!g.OrderLineID,
     );
-    if (!candidates.length) return out;
+    if (!candidates.length) return result;
 
     await OrdersSettings.Load(provider, user);
     const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
@@ -404,7 +432,7 @@ export async function LoadReadTimePaymentSuspensions(
     );
     if (!lines.Success) throw new Error(`Could not read order lines for access decisions: ${lines.ErrorMessage}`);
     const lineByID = new Map((lines.Results ?? []).map((l) => [key(l.ID), l]));
-    if (!lineByID.size) return out;
+    if (!lineByID.size) return result;
 
     const orderIDs = [...new Set([...lineByID.values()].map((l) => key(l.OrderHeaderID)))];
     const facts = await LoadOrderPaymentFacts(orderIDs, provider, user, asOfDay);
@@ -421,8 +449,10 @@ export async function LoadReadTimePaymentSuspensions(
                 ? ReadTimeCutoffSuspension(g, true, order, cutoff, orderOverrides, asOfDay)
                 : ReadTimeWaiverExpirySuspension(g, isRenewal, order, orderOverrides, asOfDay);
         if (pending) out.set(key(g.ID), pending);
+        const lastDay = ReadTimeAccessCutoffDay(g, isRenewal, order, cutoff, orderOverrides, asOfDay);
+        if (lastDay) cutoffDays.set(key(g.ID), lastDay);
     }
-    return out;
+    return result;
 }
 
 async function writeGrantStatus(

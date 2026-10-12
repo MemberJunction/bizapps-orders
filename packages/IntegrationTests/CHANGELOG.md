@@ -1,5 +1,39 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.30.0
+
+### Patch Changes
+
+- 063bb40: A bundle line is expanded once. Saving a draft again after its lines changed used to add a second set of component lines, doubling the order, and the new set carried none of the edits made to the first, so an overlap acknowledged on a band inside a bundle came back unacknowledged and confirm refused it. A bundle line that already has children now updates them to its current quantity and price instead (a child whose quantity or price was set by hand keeps it). An overlap acknowledgment on the bundle line is copied to its component lines, so a bundle confirmed in one step can acknowledge a band inside it.
+- de64c27: EN22 places its renewal in time, so confirm grants it Active, then moves the renewal's due date past the cutoff and checks that `Orders.CheckEntitlement` and `Orders.ListEntitlements` read it Suspended before the nightly job runs. It previously placed the renewal already past its cutoff, which confirm grants Suspended, so its "rows still read Active" precondition never held. EN25 covers that case: a renewal past its cutoff when confirmed starts Suspended for `PastDue`.
+- 9d2cbc0: The payment-hold waiver check is now `entitlements.EN27`. It shared `entitlements.EN24` with the OnPaidInFull check, and the registry keeps one check per Id, so the OnPaidInFull check never ran. The registry-parity test now reads the check files and fails when two checks declare the same Id.
+- Updated dependencies [ac78d0d]
+- Updated dependencies [557b6b3]
+- Updated dependencies [573ff96]
+- Updated dependencies [5cd3382]
+- Updated dependencies [c89ac1b]
+- Updated dependencies [063bb40]
+- Updated dependencies [9647922]
+- Updated dependencies [0db962e]
+- Updated dependencies [23d9f7f]
+- Updated dependencies [0c4815c]
+- Updated dependencies [036923f]
+- Updated dependencies [5d531bf]
+- Updated dependencies [7fe01d1]
+- Updated dependencies [de9be4d]
+- Updated dependencies [d8efa9f]
+- Updated dependencies [ba20d3e]
+- Updated dependencies [330c0e5]
+- Updated dependencies [a1810fd]
+- Updated dependencies [f22d329]
+- Updated dependencies [6c5e3e2]
+- Updated dependencies [d0c3fa6]
+- Updated dependencies [ff4e795]
+- Updated dependencies [307859d]
+  - @mj-biz-apps/orders-core-entities-server@5.30.0
+  - @mj-biz-apps/orders-entities@5.30.0
+  - @mj-biz-apps/orders-server@5.30.0
+
 ## 5.29.0
 
 ### Patch Changes

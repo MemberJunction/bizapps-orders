@@ -28,7 +28,7 @@ Reference the class from the server bootstrap so the decorator is not tree-shake
 
 | `EventType` | When | `Payload` |
 |---|---|---|
-| `OrderConfirmed` | The first save that confirms a `Sale` order, renewals included. Returns, cancellations, amendments and account credits do not fire it; their effect on access arrives as `GrantStatusChanged`. A later save of a confirmed order does not fire again. | `OrderID`, `OrderNumber`, `OrderType`, `OrderDate`, `CompanyID`, `Origin`, `BillToPersonID`, `BillToOrganizationID`, `TotalGross`, `IsRenewal`, `Lines[]` (`OrderLineID`, `ProductID`, `Quantity`, `UnitPrice`, `LineTotalGross`, `RenewsSubscriptionID`, `ReversesOrderLineID`, `ShipToPersonID`, `ShipToOrganizationID`) |
+| `OrderConfirmed` | The first save that confirms a `Sale` order, renewals included. Returns, cancellations, amendments and account credits do not fire it; their effect on access arrives as `GrantStatusChanged`. A later save of a confirmed order does not fire again. | `OrderID`, `OrderNumber`, `OrderType`, `OrderDate`, `CompanyID`, `Origin`, `BillToPersonID`, `BillToOrganizationID`, `TotalGross`, `IsRenewal`, `Lines[]` (`OrderLineID`, `ProductID`, `Quantity`, `UnitPrice`, `LineTotalGross`, `RenewsSubscriptionID`, `ReversesOrderLineID`, `ShipToPersonID`, `ShipToOrganizationID`), `CheckoutAnswers[]` (`QuestionKey`, `QuestionLabel`, `Answer`, `OtherText`; the buyer's answers to the checkout widget's questions, ordered by `QuestionKey`, empty when none were asked) |
 | `GrantStatusChanged` | A grant is created, or a save changes its `Status` — whoever wrote it (booking, payment gating, a return or cancellation, an access override, a person). | `GrantID`, `Code`, `FromStatus` (null when new), `ToStatus`, `SuspensionReason`, `OrderLineID`, `SubscriptionID`, `SubscriptionTermID`, `BeneficiaryPersonID`, `BeneficiaryOrganizationID`, `ValidFrom`, `ValidTo` |
 
 The envelope is `{ EventID, EventType, OccurredAt, OrderHeaderID, EntitlementGrantID, Payload }`. `EventID` is stable across retries.
@@ -61,3 +61,17 @@ Each change is also dispatched as a bubbling, composed `checkout-access-state` D
 
 - `OutboundDelivery` rows show each consumer's status per event, and can be read per order through `OutboundEvent.OrderHeaderID`.
 - To re-send a dead-lettered row, set its `Status` back to `Pending` and its `DeadlineAt` into the future; the next pass sends it.
+
+## Where the code lives
+
+| What | Where |
+|---|---|
+| Consumer base class, envelope, recording, dispatch, and the retry, lease and timeout constants | [`packages/CoreEntitiesServer/src/OutboundEvents.ts`](../packages/CoreEntitiesServer/src/OutboundEvents.ts) |
+| `OrderConfirmed`, recorded in the booking transaction | `recordOrderConfirmedEvent` in [`packages/CoreEntitiesServer/src/OrderEntityServer.ts`](../packages/CoreEntitiesServer/src/OrderEntityServer.ts) |
+| `GrantStatusChanged`, recorded when a grant is created or a save changes its `Status` | [`packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts`](../packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts) |
+| The `Orders.DispatchOutboundEvents` action the scheduled job runs | [`packages/Server/src/custom/dispatch-outbound-events.action.ts`](../packages/Server/src/custom/dispatch-outbound-events.action.ts) |
+| The action and job metadata | [`metadata/actions/.orders-outbound-actions.json`](../metadata/actions/.orders-outbound-actions.json), [`metadata/scheduled-jobs/.orders-outbound-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-outbound-scheduled-jobs.json) |
+| The dispatch after `/complete`, and `POST /checkout/access-status` | [`packages/Server/src/CheckoutServerExtension.ts`](../packages/Server/src/CheckoutServerExtension.ts) |
+| The access state, read from the gating deliveries | [`packages/CoreEntitiesServer/src/CheckoutAccessStatus.ts`](../packages/CoreEntitiesServer/src/CheckoutAccessStatus.ts) |
+| The success screen's polling interval, timeout and default messages | [`packages/Angular/src/lib/checkout-widget/checkout-access.ts`](../packages/Angular/src/lib/checkout-widget/checkout-access.ts) |
+| Checks against a real database | [`packages/IntegrationTests/src/checks/outbound-events.checks.ts`](../packages/IntegrationTests/src/checks/outbound-events.checks.ts) |
