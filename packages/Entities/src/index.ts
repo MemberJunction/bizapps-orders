@@ -28,6 +28,7 @@ export * from './booked-money';
 export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
+export * from './attendee-seats';
 export * from './order-line-edit-veto';
 export * from './order-confirm-veto';
 
@@ -101,6 +102,8 @@ export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
 // Access overrides (bizapps-orders#268) — the authorization names and who may request each type.
 export * from './accessOverride';
+// Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
+export * from './coverage-overlap';
 export * from './pricing/linePricePick';
 
 /**
@@ -140,5 +143,7 @@ export * from './base-entity-augmentation';
 export * from './billing-location';
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
 export * from './ExternalPaymentBehavior.js';
+// Whether the scheduled poll job lets the payment poll record cash — read by the operation, the webhook and the queue page (#583).
+export * from './external-payment-poll-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
 export * from './renewal-price.js';

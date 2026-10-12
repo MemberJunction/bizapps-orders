@@ -11,6 +11,11 @@
  *
  * Exit 1 lists the JSON files whose IDs are in no migration. That is the table
  * docs/PUBLISHING.md used to maintain by hand.
+ *
+ * A record marked `deleteRecord` whose ID is in no migration is not counted: no seed ever created
+ * it, so no host has it and the release has nothing to carry. A push removes it from a developer's
+ * database. A retired record whose ID does appear in a migration still counts as declared, as
+ * before; this check does not look for the DELETE a host would then need.
  */
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, join, relative, sep } from 'node:path';
@@ -36,15 +41,17 @@ function walkJson(dir, acc = []) {
 const UUID =
     /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
-function collectIds(node, acc) {
+function collectIds(node, acc, retired) {
     if (Array.isArray(node)) {
-        for (const item of node) collectIds(item, acc);
+        for (const item of node) collectIds(item, acc, retired);
         return;
     }
     if (!node || typeof node !== 'object') return;
     const pk = node.primaryKey;
-    if (pk && typeof pk.ID === 'string' && UUID.test(pk.ID.trim())) acc.push(pk.ID.trim());
-    for (const value of Object.values(node)) collectIds(value, acc);
+    if (pk && typeof pk.ID === 'string' && UUID.test(pk.ID.trim())) {
+        (node.deleteRecord?.delete === true ? retired : acc).push(pk.ID.trim());
+    }
+    for (const value of Object.values(node)) collectIds(value, acc, retired);
 }
 
 const sql = readdirSync(MIGRATIONS)
@@ -54,9 +61,12 @@ const sql = readdirSync(MIGRATIONS)
     .toLowerCase();
 
 const missing = [];
+let retiredUnshipped = 0;
 for (const file of walkJson(METADATA)) {
     const ids = [];
-    collectIds(JSON.parse(readFileSync(file, 'utf8')), ids);
+    const retired = [];
+    collectIds(JSON.parse(readFileSync(file, 'utf8')), ids, retired);
+    retiredUnshipped += new Set(retired.filter((id) => !sql.includes(id.toLowerCase()))).size;
     const unseen = [...new Set(ids)].filter((id) => !sql.includes(id.toLowerCase()));
     if (unseen.length) {
         missing.push({
@@ -76,4 +86,7 @@ if (missing.length) {
     process.exit(1);
 }
 
-console.log('Release seed coverage passed — every metadata primaryKey appears in migrations/.');
+console.log(
+    'Release seed coverage passed — every metadata primaryKey appears in migrations/' +
+        (retiredUnshipped ? ` (${retiredUnshipped} retired, never-shipped records skipped).` : '.'),
+);

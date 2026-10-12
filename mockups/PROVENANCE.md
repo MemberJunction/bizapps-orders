@@ -12,10 +12,11 @@ What these mockups are derived from, so a reviewer can check freshness rather th
 | Synced | 2026-07-29 |
 | Scope | brand / neutral / status ramps, semantic surface-text-border roles, type, space, radius, shadow, z — plus the full `[data-theme="dark"]` override block |
 
-Freshness check before any future mockup session:
+Freshness check before any future mockup session, run from `mockups/` with `MJ_REPO` set to your
+MemberJunction checkout:
 
 ```bash
-diff <(grep -E '^\s*--mj-' ~/Dropbox/develop/M5/MJ/packages/Angular/Generic/shared/src/lib/_tokens.scss) \
+diff <(grep -E '^\s*--mj-' "$MJ_REPO/packages/Angular/Generic/shared/src/lib/_tokens.scss") \
      <(grep -E '^\s*--mj-' assets/tokens.css)
 ```
 
@@ -31,8 +32,8 @@ mechanical rather than interpretive:
 |---|---|
 | `.mj-page-layout` / `.mj-page-header` / `.mj-page-body` | the shared chrome trio in `@memberjunction/ng-ui-components` |
 | `.mj-page-header-interior` | `<mj-page-header-interior>` (rail sub-pages) |
-| `[slot="meta"]` / `[slot="actions"]` / `[slot="toolbar"]` | the header's three real projection slots |
-| `.mj-panel` | `<mj-collapsible-panel>` |
+| `[slot="meta"]` / `[slot="actions"]` / `[slot="toolbar"]` | the header's three real projection slots (`[meta]`, `[actions]`, `[toolbar]`) |
+| `.mj-panel` | `<mj-collapsible-panel>` (`@memberjunction/ng-base-forms`), the form-section panel the built forms use; outside a record form, `<mj-accordion-panel>` (`@memberjunction/ng-ui-components`) |
 | `.mj-modal` / `.mj-slide-in` | `<mj-form-dialog>` / `<mj-form-slide-in>` |
 | `.mj-btn` / `.mj-input` / `.mj-chip` / `.mj-stat` | `mjButton` / `<mj-form-field>` / chips / `<mj-stat-badge>` |
 
@@ -48,7 +49,7 @@ Two rules, applied deliberately:
 ### Aging severity ramp
 
 The only place colour encodes a value. Validated with the `dataviz` skill's checker against both
-surfaces:
+surfaces. `scripts/validate_palette.js` is that skill's script, not a file in this repo:
 
 ```
 node scripts/validate_palette.js "#64748b,#f59e0b,#ef4444,#991b1b" --mode light
@@ -72,7 +73,8 @@ catch, and it is why the ramp is pinned here.
 
 `assets/data.js` reproduces the eight scenarios committed by `test-harnesses/seed-review-data.mjs`
 (documented in `docs/reviewing-the-data.md`) — real engine output, inlined as plain objects so the
-mockups open from `file://` with no server.
+mockups open from `file://` with no server. The seed has since added a ninth, a
+percentage-of-completion project, which the mockups do not carry.
 
 The arithmetic ties out on every order:
 
@@ -88,9 +90,14 @@ origin filters something to bite on.
 
 - **Every server call is stubbed.** Where one belongs, a `STUBBED CALL` note names it —
   `Orders.PreviewOrder`, `Orders.PreviewConfirm`, `Orders.ConfirmOrder`, `Orders.SaveOrder`,
-  `Orders.GetOverdueWorklist`. None of these exist yet; see `plans/archive/orders-ux.md` §11.
-- **Fast entry computes in the browser.** Deliberate, so the live decomposition is demonstrably
-  honest rather than hardcoded — but in the build it is one `Orders.PreviewOrder` call, never client
-  arithmetic beside the engine's.
+  `Orders.GetOverdueWorklist`. The notes predate the build, and the gaps they stood in for are in
+  `plans/archive/orders-ux.md` §11. Since then `Orders.GetOverdueWorklist` has shipped, and the other
+  four were retired: the build saves and confirms an order with `order.Save()`, and prices it with
+  `Orders.PriceOrder`. See
+  [`docs/orders-api-and-ui-architecture.md`](../docs/orders-api-and-ui-architecture.md) §1–2.
+- **Fast entry computes in the browser.** Deliberate, so the live decomposition is computed rather
+  than hardcoded. The build has no fast entry; order entry prices through the engine's own
+  `OrderPricingService`, in the browser or through `Orders.PriceOrder`, never with client arithmetic
+  beside the engine's.
 - **Font Awesome loads from a CDN**, as MJ does. Icons are never the only carrier of meaning, so the
   screens stay legible offline.

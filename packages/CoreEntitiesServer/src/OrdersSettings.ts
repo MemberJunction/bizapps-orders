@@ -54,6 +54,20 @@ export const ORDERS_SETTING = {
      * accounting is told about is the failure the acknowledgment exists to prevent.
      */
     AmendmentAcknowledgmentRole: 'AmendmentAcknowledgmentRole',
+    /**
+     * The NAME of the MJ role whose active holders approve an access override when its requester is
+     * the order company's `ApprovalCFOUserID`, who would otherwise approve it (bizapps-orders#360).
+     * Every holder but the requester is assigned. Unset or empty refuses such a request: nobody may
+     * approve their own override.
+     */
+    AccessOverrideFallbackApproverRole: 'AccessOverrideFallbackApproverRole',
+    /**
+     * Days a booked term's start and end may move together before the shift goes to finance review
+     * (bizapps-orders#507). A shift is a term change, not a sales concession, so this is one figure for
+     * the app rather than a rep's SalesAuthority limit. At or above it is reviewed. Unset or unreadable
+     * reviews every shift.
+     */
+    TermShiftReviewDays: 'TermShiftReviewDays',
 } as const;
 
 /**
@@ -88,6 +102,12 @@ function asDaysOrOff(raw: string | undefined, fallback: number): number | null {
     if (['off', 'none', 'disabled'].includes(v)) return null;
     if (!/^\d+$/.test(v)) return fallback;
     return Number(v);
+}
+
+/** A whole number of days, or `null` when the value is absent, empty or unreadable. */
+function asDaysOrNull(raw: string | undefined): number | null {
+    const v = raw?.trim();
+    return v && /^\d+$/.test(v) ? Number(v) : null;
 }
 
 function asList(raw: string | undefined, fallback: readonly string[]): string[] {
@@ -195,12 +215,23 @@ export class OrdersSettings {
         return value ? value : null;
     }
 
+    /** The role that approves an access override its company's CFO approver requested, or `null` when none is configured. */
+    public static get AccessOverrideFallbackApproverRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.AccessOverrideFallbackApproverRole)?.trim();
+        return value ? value : null;
+    }
+
     /** Days past due at which a renewal loses access, or `null` when the cutoff is switched off. */
     public static get RenewalAccessCutoffDaysPastDue(): number | null {
         return asDaysOrOff(
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
+    public static get TermShiftReviewDays(): number | null {
+        return asDaysOrNull(this.raw(ORDERS_SETTING.TermShiftReviewDays));
     }
 
 }

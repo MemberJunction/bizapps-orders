@@ -10,6 +10,13 @@ export interface AmendArrangementEntry {
     Offsets?: string;
 }
 
+/** An instalment not yet invoiced that a shift moves. */
+export interface AmendArrangementMovedInstalment {
+    InstallmentNumber: number;
+    DueDate: string;
+    NewDueDate: string;
+}
+
 /** An instalment not yet invoiced that a change of amount reduces. A `NewAmount` of zero cancels it. */
 export interface AmendArrangementInstalment {
     InstalmentID: string;
@@ -30,9 +37,11 @@ export interface AmendArrangementCredit {
 export interface AmendArrangementOutput {
     Success: boolean;
     Message?: string;
+    CurrentStartDate?: string;
+    NewStartDate?: string;
     CurrentEndDate?: string;
     NewEndDate?: string;
-    /** The day the extension takes effect: staged entries from here on are replaced. */
+    /** The day the amendment takes effect: staged entries from here on are replaced. */
     EffectiveDate?: string;
     /** What the added days are worth at the term's own rate; for a change of amount, the reduction. */
     Value?: number;
@@ -57,6 +66,15 @@ export interface AmendArrangementOutput {
     /** The credit memo's part refunded, and the part left as the customer's credit. */
     Refund?: number;
     OpenCredit?: number;
+    /**
+     * A shift: the one entry, dated the effective day, that corrects periods already behind it. A positive amount
+     * catches up revenue the new dates place earlier; a negative one reverses revenue they place later.
+     */
+    Correction?: AmendArrangementEntry | null;
+    /** A shift: the instalments not yet invoiced that move with the term. */
+    MovedInstalments?: AmendArrangementMovedInstalment[];
+    /** A shift: why the order's instalments were left alone, when they were. */
+    InstalmentsLeft?: string | null;
     /** A change of payment terms: the terms before and after, by name. */
     CurrentPaymentTerms?: string | null;
     NewPaymentTerms?: string;
@@ -64,6 +82,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;

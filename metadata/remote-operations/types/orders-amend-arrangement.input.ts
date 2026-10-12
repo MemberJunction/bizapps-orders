@@ -8,8 +8,13 @@ export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
 export interface AmendArrangementInput {
     /** The booked term to amend. Not given with `NewPaymentTermsTypeID`. */
     SubscriptionTermID?: string;
-    /** The term's new end date. Must be later than its current end. */
+    /**
+     * The term's new end date. Alone, it must be later than the current end (an extension). With
+     * `NewStartDate`, it must move by the same days as the start (a shift); leave it out and it follows the start.
+     */
     NewEndDate?: string;
+    /** The term's new start date: a shift moves start and end by the same number of days. */
+    NewStartDate?: string;
     /** The confirmed order whose payment terms change. Given with `NewPaymentTermsTypeID`. */
     OrderHeaderID?: string;
     /** The order's new payment terms. */
@@ -26,8 +31,17 @@ export interface AmendArrangementInput {
     AppliesToInvoiceID?: string;
     /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
     RefundRequested?: boolean;
-    ReasonCategory: AmendmentReasonCategory;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
+    /** Required for every amendment; not given with `EscalateOrderConcessionID`. */
+    ReasonCategory?: AmendmentReasonCategory;
+    /** Why the amendment is made, or, with `EscalateOrderConcessionID`, why the case goes to the ConcessionLimit approver. */
     Reason: string;
+    /**
+     * A Shift concession awaiting finance review, which a holder of the finance acknowledgment role sends to the
+     * ConcessionLimit approver instead of deciding it. Given alone, with `Reason`.
+     */
+    EscalateOrderConcessionID?: string;
     /** Return what the amendment would do without writing anything. */
     Preview?: boolean;
 }

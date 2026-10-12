@@ -2,8 +2,11 @@
 
 There are two committed datasets you can inspect, and they are not the same thing.
 
-1. **`seed-review-data.mjs`** — eight labelled scenarios plus a small population, booked through
-   the *server* entity path (`OrderEntityServer.Save`). Tagged by the fixture run, not by Notes.
+1. **`seed-review-data.mjs`** — the labelled scenarios [below](#what-was-seeded-and-why-each-one-is-there)
+   plus a population of varied orders (60 by default; `SEED_POPULATION` changes it), booked through
+   the *server* entity path (`OrderEntityServer.Save`) on the shared ORD-WORLD companies. Each run
+   has a marker, `REVIEW-<base36 time>`, that opens every order's `Description` and every promotion's
+   `Code`.
 2. **`wire-volume`** — hundreds of orders booked over **GraphQL** (`MJ.SaveEntityGraph`). Every
    header `Notes` is `WIRE-VOL:<runId>`. This is the one that proves the client confirm path at
    volume, with split payments, renewals, seats and event attendees.
@@ -13,13 +16,24 @@ always rolls back, which is what makes them independent and re-runnable. To look
 them deliberately:
 
 ```bash
-node test-harnesses/seed-review-data.mjs      # clears earlier runs, then commits 8 scenarios
-node test-harnesses/purge-fixture-data.mjs    # removes everything again
+node test-harnesses/seed-review-data.mjs      # removes earlier review runs, then commits the scenarios and the population
+node test-harnesses/seed-review-data.mjs --purge REVIEW-XXXXXXXX   # deletes one run by its marker and exits
+node test-harnesses/seed-review-data.mjs --purge                   # deletes every review run and exits
 
 # GraphQL-over-the-wire volume (MJAPI on GRAPHQL_PORT=4103, DB_DATABASE=bizapps_orders)
 WIRE_VOL_COUNT=200 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs wire-volume
 node test-harnesses/purge-wire-volume.mjs     # deletes WIRE-VOL-* orders only
 ```
+
+The seeder's purge (`PurgeReviewRun` in `packages/IntegrationTests/src/fixture.ts`) finds a run's
+orders by the marker and deletes them with everything that hangs off them: lines, charges,
+adjustments, subscriptions and terms, grants, stored value, payments, progress observations and the
+journal entries linked to any of these, in one transaction. It also deletes the run's promotions
+unless an order outside the run uses one. The prices and bundle items the seeder sets are updates to
+ORD-WORLD rows, which the next world load restores from CSV. `purge-fixture-data.mjs` runs
+`PurgeAllFixtureData`, which sweeps only the per-run `IT-ORD-…` companies the fixture created before
+it moved to ORD-WORLD. Orders seeded before the marker existed carry none, so neither purge finds
+them.
 
 The seeder walks the **same** `OrderEntityServer.Save()` pipeline the checks do. Nothing about the
 data below is hand-written; it is all engine output.
@@ -31,8 +45,8 @@ The client bundle prints `wire-volume tag WIRE-VOL:<runId>` at setup. Filter on 
 ```sql
 -- Every order this run confirmed (and any renewal it tagged afterwards)
 SELECT h.OrderNumber, h.OrderDate, h.Status, h.TotalGross, h.AmountPaid, h.Balance,
-       h.PaymentStatus, h.BillToOrganizationID, h.ShipToOrganizationID, h.Notes
-  FROM __mj_BizAppsOrders.OrderHeader h
+       h.IsOverdue, h.BillToOrganizationID, h.ShipToOrganizationID, h.Notes
+  FROM __mj_BizAppsOrders.vwOrderHeaders h
  WHERE h.Notes LIKE 'WIRE-VOL:%'
  ORDER BY h.OrderDate, h.OrderNumber;
 ```
@@ -72,10 +86,6 @@ SELECT h.OrderNumber, l.LineNumber, l.ShipToPersonID, s.SubscriptionNumber
 
 One run is one `WIRE-VOL:<runId>` value. `purge-wire-volume.mjs` deletes only those rows (not ORD-WORLD catalog).
 
-> **Re-running the suite after seeding is fine.** The fixture clears the one thing it shares across
-> runs (charge-type GL links) at setup, and its teardown now removes committed orders properly. Both
-> of those were broken until the seeder existed to expose them — see the note at the end.
-
 ## What was seeded, and why each one is there
 
 | # | Order | Shows |
@@ -88,17 +98,27 @@ One run is one `WIRE-VOL:<runId>` value. `purge-wire-volume.mjs` deletes only th
 | 6 | a **return** of one unit from (1) | the reversal path: mirrored entry, tax given back |
 | 7 | a paid order | `PaymentHeader`/`PaymentLine` and the rollups they drive |
 | 8 | an **overpaid** order | a negative balance — i.e. account credit available to spend |
+| 9 | a gift card sale | a **liability**, not revenue: three spendable cards |
+| 10 | a bundle | component lines under a rollup parent that totals zero, split by relative value |
+| 11 | a project | percentage of completion: two attested observations, two revenue catch-ups |
+
+The seeder skips 7 and 8, and says so, when no ordinary payment type is seeded. Its `confirm(...)`
+calls are the source of truth for this list.
+
+The queries below that pick one scenario by its shape take the earliest matching order, so they
+assume a database this seeder populated once. Committed orders already there with lower order
+numbers — from the wire-volume suite, the demo seed or an earlier seeder run — are picked first.
 
 ---
 
 ## 1. Start here: every order, one row each
 
 ```sql
-SELECT h.OrderNumber, h.OrderType, h.Status, h.TotalGross, h.AmountPaid, h.Balance, h.PaymentStatus,
+SELECT h.OrderNumber, h.OrderType, h.Status, h.TotalGross, h.AmountPaid, h.Balance, h.IsOverdue,
        (SELECT SUM(LineTotalNet) FROM __mj_BizAppsOrders.OrderLine WHERE OrderHeaderID = h.ID) AS Net,
        (SELECT SUM(LineTax)      FROM __mj_BizAppsOrders.OrderLine WHERE OrderHeaderID = h.ID) AS Tax,
        (SELECT SUM(ChargeAmount) FROM __mj_BizAppsOrders.OrderLine WHERE OrderHeaderID = h.ID) AS Charges
-  FROM __mj_BizAppsOrders.OrderHeader h
+  FROM __mj_BizAppsOrders.vwOrderHeaders h
  ORDER BY h.OrderNumber;
 ```
 
@@ -106,7 +126,9 @@ SELECT h.OrderNumber, h.OrderType, h.Status, h.TotalGross, h.AmountPaid, h.Balan
 materialized by trigger from its lines and never authored. The everything-order shows `Net` of 320
 against 400 of goods, because 80 of promotions came off before tax was computed. The return carries
 negative everything. The overpaid order shows a negative `Balance`, which *is* the account credit —
-there is no separate credit-memo table (D-CREDIT).
+there is no separate credit-memo table (D-CREDIT). There is no stored payment status either:
+`AmountPaid`, `Balance` and the view's computed `IsOverdue` (see
+[overdue-and-layered-base-views.md](overdue-and-layered-base-views.md)) say where an order stands.
 
 ## 2. The line detail behind one order
 
@@ -118,13 +140,14 @@ SELECT l.LineNumber, p.Name AS Product, c.Name AS OwningCompany,
   FROM __mj_BizAppsOrders.OrderLine l
   JOIN __mj_BizAppsOrders.Product p ON p.ID = l.ProductID
   JOIN __mj.Company c ON c.ID = l.CompanyID
- -- Scenario 2, the two-company order. Selected by SHAPE rather than by number: order numbers
- -- restart from 1 on every rebuild, so a hard-coded 'ORD-000005' goes stale the first time the
- -- schema changes.
+ -- Scenario 2, the two-company order: the earliest order with lines from two companies. Selected
+ -- by SHAPE rather than by number: order numbers restart from 1 on every rebuild, so a hard-coded
+ -- 'ORD-000005' goes stale the first time the schema changes.
  WHERE l.OrderHeaderID = (
          SELECT TOP 1 h.ID FROM __mj_BizAppsOrders.OrderHeader h
            JOIN __mj_BizAppsOrders.OrderLine l2 ON l2.OrderHeaderID = h.ID
-          GROUP BY h.ID HAVING COUNT(DISTINCT l2.CompanyID) > 1)
+          GROUP BY h.ID, h.OrderNumber HAVING COUNT(DISTINCT l2.CompanyID) > 1
+          ORDER BY h.OrderNumber)
  ORDER BY l.LineNumber;
 ```
 
@@ -161,10 +184,14 @@ SELECT gl.Code, gl.Name, c.Name AS Company, jel.DebitAmount, jel.CreditAmount, j
   JOIN __mj_BizAppsAccounting.JournalEntryLine jel ON jel.JournalEntryID = je.ID
   JOIN __mj_BizAppsAccounting.GLAccount gl ON gl.ID = jel.GLAccountID
   JOIN __mj.Company c ON c.ID = gl.CompanyID
+ -- Scenario 5: the earliest order with two companies, promotions and charges.
  WHERE ol.OrderHeaderID = (
          SELECT TOP 1 h.ID FROM __mj_BizAppsOrders.OrderHeader h
            JOIN __mj_BizAppsOrders.OrderLine l2 ON l2.OrderHeaderID = h.ID
-          GROUP BY h.ID HAVING COUNT(DISTINCT l2.CompanyID) > 1)
+          WHERE EXISTS (SELECT 1 FROM __mj_BizAppsOrders.OrderAdjustment a WHERE a.OrderHeaderID = h.ID)
+            AND EXISTS (SELECT 1 FROM __mj_BizAppsOrders.OrderCharge oc WHERE oc.OrderHeaderID = h.ID)
+          GROUP BY h.ID, h.OrderNumber HAVING COUNT(DISTINCT l2.CompanyID) > 1
+          ORDER BY h.OrderNumber)
  ORDER BY c.Name, gl.Code;
 ```
 
@@ -209,11 +236,12 @@ so a naive `-amount` reversal does not fail a balance check — it fails to post
 ## 6. Tax, layer by layer
 
 ```sql
-SELECT h.OrderNumber, ct.Code AS ChargeType, oc.Description,
+SELECT h.OrderNumber, ct.Code AS ChargeType, tj.Name AS Jurisdiction,
        oc.BasisAmount, oc.Rate, oc.Amount, oc.ComputedAmount
   FROM __mj_BizAppsOrders.OrderCharge oc
   JOIN __mj_BizAppsOrders.OrderHeader h ON h.ID = oc.OrderHeaderID
   JOIN __mj_BizAppsOrders.ChargeType ct ON ct.ID = oc.ChargeTypeID
+  LEFT JOIN __mj_BizAppsAccounting.TaxJurisdiction tj ON tj.ID = oc.TaxJurisdictionID
  ORDER BY h.OrderNumber, oc.Sequence;
 ```
 
@@ -225,7 +253,7 @@ running total.
 And **why** each line was or was not taxed — a zero is the same number for four different reasons:
 
 ```sql
-SELECT h.OrderNumber, l.LineNumber, pc.ComponentType, pc.Amount, pc.Description
+SELECT h.OrderNumber, l.LineNumber, pc.ComponentType, pc.Amount, pc.Label
   FROM __mj_BizAppsOrders.OrderLinePriceComponent pc
   JOIN __mj_BizAppsOrders.OrderLine l ON l.ID = pc.OrderLineID
   JOIN __mj_BizAppsOrders.OrderHeader h ON h.ID = l.OrderHeaderID
@@ -269,7 +297,7 @@ to the Sales Discounts contra account, where it does not belong.
 ```sql
 SELECT ph.PaymentNumber, ptype.Code AS Tender, ph.Amount AS PaymentTotal, ph.Status,
        h.OrderNumber, pl.Amount AS AppliedToOrder,
-       h.TotalGross, h.AmountPaid, h.Balance, h.PaymentStatus
+       h.TotalGross, h.AmountPaid, h.Balance
   FROM __mj_BizAppsOrders.PaymentHeader ph
   JOIN __mj_BizAppsOrders.PaymentType ptype ON ptype.ID = ph.PaymentTypeID
   JOIN __mj_BizAppsOrders.PaymentLine pl ON pl.PaymentHeaderID = ph.ID
@@ -277,10 +305,9 @@ SELECT ph.PaymentNumber, ptype.Code AS Tender, ph.Amount AS PaymentTotal, ph.Sta
  ORDER BY ph.PaymentNumber;
 ```
 
-`AmountPaid`, `Balance` and `PaymentStatus` are all **trigger-maintained** from the payment lines
-(D41) — nothing in application code assigns them. A payment header's amount must equal the sum of
-its lines; that is enforced in business logic rather than by constraint, so an over-application has
-nowhere to hide.
+`AmountPaid` and `Balance` are **trigger-maintained** from the payment lines (D41) — nothing in
+application code assigns them. A payment header's amount must equal the sum of its lines; that is
+enforced in business logic rather than by constraint, so an over-application has nowhere to hide.
 
 The overpaid order is the interesting one: `Balance` goes negative, and that negative balance is
 spendable on another order through `Orders.ApplyAccountCredit`.
@@ -326,7 +353,8 @@ than merely unusual.
 
 ## A note on what the seeder found
 
-Committing data exposed two bugs that 217 rolling-back checks could not:
+Committing data exposed two bugs that the rolling-back checks could not. Both were in the per-run
+fixture the suite used before the shared ORD-WORLD catalog:
 
 - **The fixture teardown had never actually worked.** It could not clear a booked
   `OrderLine.JournalEntryID` (the immutability trigger refuses, correctly — a correction is a
@@ -340,5 +368,5 @@ Committing data exposed two bugs that 217 rolling-back checks could not:
   to an earlier run's accounts. It surfaced as composition's CX8 reporting a stranded receivable of
   2,902.59 belonging to a company the test had never created.
 
-Both are fixed. Both are the same lesson: an isolation mechanism that makes tests independent also
-hides everything that only goes wrong when data persists.
+Both were fixed in that fixture. Both are the same lesson: an isolation mechanism that makes tests
+independent also hides everything that only goes wrong when data persists.

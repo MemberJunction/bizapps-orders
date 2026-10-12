@@ -54,16 +54,32 @@ describe('DeleteTaxCharges', () => {
         const deleted: string[] = [];
         queue('MJ_BizApps_Orders: Charge Types', [{ ID: 'type-tax' }]);
         queue('MJ_BizApps_Orders: Order Charge Allocations', [{ OrderChargeID: 'charge-tax' }, { OrderChargeID: 'charge-ship' }]);
+        queue('MJ_BizApps_Orders: Order Charges', []); // no zero-amount tax rows
         queue('MJ_BizApps_Orders: Order Charges', [row('charge-tax', deleted)]);
         queue('MJ_BizApps_Orders: Order Charge Allocations', [row('alloc-tax', deleted)]);
 
         await DeleteTaxCharges('order-1', ['line-1'], {} as never, {} as never);
 
         expect(deleted).toEqual(['alloc-tax', 'charge-tax']);
-        const chargeFilter = views[2].params.ExtraFilter ?? '';
+        const chargeFilter = views[3].params.ExtraFilter ?? '';
         expect(chargeFilter).toContain(`OrderHeaderID = 'order-1'`);
         expect(chargeFilter).toContain(`ChargeTypeID IN ('type-tax')`);
         expect(views[1].params.ExtraFilter).toBe(`OrderLineID IN ('line-1')`);
+    });
+
+    it('also removes a zero tax charge no line leads to — a waiver, or a zero rate', async () => {
+        const deleted: string[] = [];
+        queue('MJ_BizApps_Orders: Charge Types', [{ ID: 'type-tax' }]);
+        queue('MJ_BizApps_Orders: Order Charge Allocations', []);
+        queue('MJ_BizApps_Orders: Order Charges', [{ ID: 'charge-waived' }]);
+        queue('MJ_BizApps_Orders: Order Charge Allocations', []);
+        queue('MJ_BizApps_Orders: Order Charges', [row('charge-waived', deleted)]);
+        queue('MJ_BizApps_Orders: Order Charge Allocations', []);
+
+        await DeleteTaxCharges('order-1', ['line-1'], {} as never, {} as never);
+
+        expect(deleted).toEqual(['charge-waived']);
+        expect(views[2].params.ExtraFilter).toContain('Amount = 0');
     });
 
     it('reads nothing for a save that priced no lines', async () => {
@@ -74,6 +90,7 @@ describe('DeleteTaxCharges', () => {
     it('stops when the lines carry no charge rows yet — a first save', async () => {
         queue('MJ_BizApps_Orders: Charge Types', [{ ID: 'type-tax' }]);
         queue('MJ_BizApps_Orders: Order Charge Allocations', []);
+        queue('MJ_BizApps_Orders: Order Charges', []);
 
         await DeleteTaxCharges('order-1', ['line-1'], {} as never, {} as never);
 
@@ -83,6 +100,7 @@ describe('DeleteTaxCharges', () => {
     it('refuses rather than leaving half the old tax behind', async () => {
         queue('MJ_BizApps_Orders: Charge Types', [{ ID: 'type-tax' }]);
         queue('MJ_BizApps_Orders: Order Charge Allocations', [{ OrderChargeID: 'charge-tax' }]);
+        queue('MJ_BizApps_Orders: Order Charges', []);
         queue('MJ_BizApps_Orders: Order Charges', [{ ID: 'charge-tax', Delete: async () => true }]);
         queue('MJ_BizApps_Orders: Order Charge Allocations', [
             { ID: 'alloc-tax', Delete: async () => false, LatestResult: { CompleteMessage: 'locked' } },

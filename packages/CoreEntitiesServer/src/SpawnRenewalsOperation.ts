@@ -153,6 +153,8 @@ interface DueRow {
     TermNumber: number;
     TermStartDate: string;
     TermEndDate: string;
+    /** Seats the expiring term covers (`SubscriptionTerm.Quantity`) — what the renewal buys again. */
+    TermQuantity: number;
     OrderLineID: string;
     SubscriptionStartDate: string;
     SubscriptionIncreasePercent: number | null;
@@ -334,6 +336,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 l.TermNumber,
                 l.StartDate           AS TermStartDate,
                 l.EndDate             AS TermEndDate,
+                l.Quantity            AS TermQuantity,
                 l.OrderLineID
             FROM __mj_BizAppsOrders.Subscription s
             JOIN __mj_BizAppsOrders.SubscriptionType t ON t.ID = s.SubscriptionTypeID
@@ -539,7 +542,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         const chain = await this.loadSuccessorChain(provider, due.ProductID);
         const product = chain[chain.length - 1];
         const movesToSuccessor = chain.length > 1;
-        const quantity = this.renewalQuantity(source);
+        const quantity = this.renewalQuantity(due);
         const renewalDay = this.dayAfter(due.TermEndDate);
         const carry = !!due.CarryDiscountOnRenewal;
 
@@ -687,15 +690,14 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
     }
 
     /**
-     * Quantity for the renewal.
+     * Quantity for the renewal: the seats the expiring term covers (#589).
      *
-     * A PRORATED source line carries a fractional quantity — the short first period into a calendar
-     * anchor (D54). Renewing at that fraction would bill half a year forever. A renewal is always a
-     * FULL period, so the fraction is dropped and the quantity rounds up to whole units.
+     * Not the source line's quantity. A PRORATED source line carries a scaled quantity — the short
+     * first period into a calendar anchor (D54) — so 10 seats over half a period read 5, and the
+     * renewal billed and granted 5 seats for a full period. The term records the seats as bought.
      */
-    private renewalQuantity(source: SourceLineRow): number {
-        const quantity = Number(source.Quantity);
-        return quantity > 0 && quantity < 1 ? 1 : Math.round(quantity);
+    private renewalQuantity(due: DueRow): number {
+        return Math.max(1, Number(due.TermQuantity));
     }
 
     private dayAfter(date: string): Date {
