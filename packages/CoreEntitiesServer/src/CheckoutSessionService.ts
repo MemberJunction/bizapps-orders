@@ -14,10 +14,8 @@ import {
     mjBizAppsCommonAddressEntity,
     mjBizAppsCommonAddressLinkEntity
 } from '@mj-biz-apps/common-entities';
-// Local fallback engine — see identityClaimContracts.ts. Restore this import to
-// '@memberjunction/core-entities-server' once MJ publishes the engine.
+import { IdentityClaimEngineServer } from '@memberjunction/core-entities-server';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { IdentityClaimEngineServer } from './identityClaimContracts.js';
 import {
     CheckBillingLocation,
     LoadOrdersEngine,
@@ -347,8 +345,8 @@ export interface CompleteCheckoutResult {
     PaymentIntentID?: string;
     ClientSecret?: string;
     /**
-     * The IdentityClaim row id minted for the buyer's email (the actual verification token is
-     * only ever delivered in the claim email — it is never returned through the checkout path).
+     * The IdentityClaim row id minted for the buyer's email. The verification token is never
+     * returned through the checkout path; it would only travel in the claim e-mail, which is off.
      */
     ClaimToken?: string;
 }
@@ -2345,13 +2343,18 @@ export class CheckoutSessionService {
             let claimToken: string | undefined;
             if (session.Email) {
                 try {
+                    // Claim types are cached at startup; Config() is a no-op once loaded.
+                    await IdentityClaimEngineServer.Instance.Config(false, contextUser);
                     const claim = await IdentityClaimEngineServer.Instance.CreateClaim({
                         ClaimTypeName: 'GuestOrder',
                         RecordID: order.ID,
                         EntityID: md.EntityByName(ORDER_HEADER_ENTITY)?.ID ?? null,
                         NormalizedEmail: session.Email,
                         Payload: { OrderID: order.ID, OrderNumber: order.OrderNumber || order.ID },
-                        SendEmail: true
+                        // Claim e-mails stay off until a claim e-mail template and the portal base
+                        // URL are configured; without them MJ sends a generic message linking to
+                        // its default host.
+                        SendEmail: false
                     }, contextUser);
                     claimToken = claim?.ID;
                 } catch (claimErr) {
