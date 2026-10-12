@@ -116,6 +116,7 @@ const mocks = vi.hoisted(() => {
         OrderHeaderID: string | null = null;
         BillToPersonID: string | null = null;
         BillToOrganizationID: string | null = null;
+        LastEventAt: Date | null = null;
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         Load = mockIntentLoad;
         Save = mockIntentSave;
@@ -563,6 +564,7 @@ describe('CheckoutSessionService', () => {
         mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
         mocks.mockPaymentIntentInstance.OrderHeaderID = null;
         mocks.mockPaymentIntentInstance.BillToPersonID = null;
+        mocks.mockPaymentIntentInstance.LastEventAt = null;
         mocks.mockOrderInstance.AmountPaid = 0;
         mocks.mockIntentSave.mockResolvedValue(true);
         mocks.mockCaptureExecute.mockResolvedValue({
@@ -1664,6 +1666,77 @@ describe('CheckoutSessionService', () => {
                 expect(order().CardIssuingCountry).toBe('GB');
                 // Once in the paid gate; the capture path finds the intent settled and does not read again.
                 expect(retrieve).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        describe('gateway read stamps the intent (#475)', () => {
+            const unpaidSession = () => {
+                mocks.mockSessionInstance.Email = 'payer@example.com';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                    BillingAddress: BILLING,
+                    Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+                });
+                mocks.mockPaymentIntentInstance.Status = 'RequiresPayment';
+                mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                    for (const line of ctx.Lines) {
+                        line.UnitPrice = 100;
+                        line.LineTotalGross = 100 * line.Quantity;
+                    }
+                    return Promise.resolve({});
+                });
+            };
+            const intent = () => mocks.mockPaymentIntentInstance as unknown as { Status: string; LastEventAt: Date | null };
+            let retrieve: ReturnType<typeof vi.fn>;
+
+            beforeEach(() => {
+                retrieve = vi.fn();
+                renewalMocks.resolveProvider = async () => ({ RetrieveIntent: retrieve });
+            });
+            afterEach(() => {
+                renewalMocks.resolveProvider = null;
+            });
+
+            it('saves a changed status with LastEventAt at or after the read, so an older webhook event cannot move it back', async () => {
+                unpaidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Amount: 100 });
+                const stampedAtSave: Array<Date | null> = [];
+                mocks.mockIntentSave.mockImplementation(async () => {
+                    stampedAtSave.push(intent().LastEventAt);
+                    return true;
+                });
+                const before = new Date();
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(true);
+                expect(intent().Status).toBe('Succeeded');
+                expect(stampedAtSave[0]).toBeInstanceOf(Date);
+                expect(stampedAtSave[0]!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+            });
+
+            it('does not save or stamp when the gateway reports the same status and no amount', async () => {
+                unpaidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'RequiresPayment' });
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(false);
+                expect(retrieve).toHaveBeenCalled();
+                expect(mocks.mockIntentSave).not.toHaveBeenCalled();
+                expect(intent().LastEventAt).toBeNull();
+            });
+
+            it('leaves the intent unchanged when the gateway read fails', async () => {
+                unpaidSession();
+                retrieve.mockRejectedValue(new Error('gateway down'));
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(false);
+                expect(intent().Status).toBe('RequiresPayment');
+                expect(intent().LastEventAt).toBeNull();
+                expect(mocks.mockIntentSave).not.toHaveBeenCalled();
             });
         });
 
