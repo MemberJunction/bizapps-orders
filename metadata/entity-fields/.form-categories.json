@@ -3420,5 +3420,57 @@
       "lastModified": "2026-10-08T21:17:25.737Z",
       "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
     }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Shipping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=IPCountry"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.817Z",
+      "checksum": "23aad8a820d87ff9684a8d9b0b6d12e0100406b746b719d982a2e88788428ab4"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Shipping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=CardIssuingCountry"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.865Z",
+      "checksum": "23aad8a820d87ff9684a8d9b0b6d12e0100406b746b719d982a2e88788428ab4"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=SourceCheckoutWidget"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.914Z",
+      "checksum": "edbc0cf9078421800b23982c20e28dd55811f955fb83a69b69796bf965427fcb"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Accounting and Audit",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=ConfirmedByUser"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.961Z",
+      "checksum": "805c369aa0ed78c7c8eb5d36b5ed4fbdc5f6e8b1ffe33079d435b96673e70e92"
+    }
   }
 ]
