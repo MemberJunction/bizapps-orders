@@ -1,0 +1,61 @@
+[
+  {
+    "_comments": [
+      "Order Headers' latitude/longitude fields for the bill-to and ship-to address embeds (#491). A migration's CodeGen output names them without AI (\"Mj Latitude Bill To Address ID\") and gives them no section, so a regenerated form put them in Details. These are the names and section the committed entity classes and form use."
+    ],
+    "fields": {
+      "DisplayName": "Billing Address Latitude",
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=__mj_Latitude_BillToAddressID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:08:10.290Z",
+      "checksum": "01ec301f66e2e9ec755348a06a493430bdd8285429b62653495d39d4658cd102"
+    }
+  },
+  {
+    "fields": {
+      "DisplayName": "Billing Address Longitude",
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=__mj_Longitude_BillToAddressID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:08:10.367Z",
+      "checksum": "8b125423d87640d52c18c982a7a50299c0fadbf6e70cd678ed74229b6e4e98b7"
+    }
+  },
+  {
+    "fields": {
+      "DisplayName": "Shipping Address Latitude",
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=__mj_Latitude_ShipToAddressID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:08:10.452Z",
+      "checksum": "112a2a5e5d9d6929b3abd519729ab371f162752485f7fcb7fa41bbbe7cecd10e"
+    }
+  },
+  {
+    "fields": {
+      "DisplayName": "Shipping Address Longitude",
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=__mj_Longitude_ShipToAddressID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:08:10.534Z",
+      "checksum": "63da2ace47f997d86991aabb560baef7479e1eaeea92be118ce79256f6a100fa"
+    }
+  }
+]

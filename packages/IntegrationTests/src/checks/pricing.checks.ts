@@ -221,6 +221,44 @@ async function confirmUnpriced(
   });
 }
 
+/**
+ * Confirm a one-line order, stating its price or not.
+ *
+ * The sellability checks run both ways because a stated price used to skip the check entirely: the
+ * engine path refused a retired product while a typed price on the same line booked it.
+ */
+async function confirmLine(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  opts: { unitPrice?: number; orderDate?: Date },
+) {
+  const f = Fx();
+  return ConfirmOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    BillToOrganizationID: f.Customers.OrganizationID,
+    OrderDate: opts.orderDate,
+    Lines: [{ ProductID: productID, Quantity: 1, UnitPrice: opts.unitPrice }],
+  });
+}
+
+/** Change the product's sale status or window, and make sure the catalog cache sees it. */
+async function setSellability(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  fields: { Status?: string; AvailableFrom?: Date | null; AvailableTo?: Date | null },
+): Promise<void> {
+  await upsertViaEntity(ctx, PRODUCT_ENTITY, productID, fields);
+  await ReloadOrdersEngine(ctx);
+}
+
+/** A local calendar day `n` days from today, at noon so no time zone moves it across midnight. */
+function daysFromToday(n: number): Date {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
 const lineOf = (ctx: IntegrationCheckContext, orderID: string) =>
   TxOne<{ UnitPrice: number; LineTotalGross: number; ProductPriceID: string | null; ID: string }>(
     ctx,
@@ -593,6 +631,59 @@ export const PricingChecks: NamedCheck[] = [
         AssertEqual(Number(comp.N), 1, "one component for a plain base price");
         AssertEqual(Number(comp.Total), 45, "the component carries the extended amount");
         Assert(/list rate/.test(comp.Label), `the component is labelled from the rule: ${comp.Label}`);
+      }),
+  },
+  {
+    Id: "pricing.PC17",
+    Name: "PC17: a product that is not Active is refused, whether the line's price is stated or not",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await setSellability(ctx, f.Products.WidgetA, { Status: "Discontinued" });
+
+        for (const unitPrice of [undefined, 10]) {
+          const how = unitPrice === undefined ? "engine-priced" : "hand-priced";
+          const order = await confirmLine(ctx, f.Products.WidgetA, { unitPrice });
+          Assert(!order.Saved, `a ${how} line of a Discontinued product must refuse the confirm`);
+          Assert(
+            /status is 'Discontinued', not 'Active'/.test(order.Message),
+            `the ${how} refusal should name the status, got: ${order.Message}`,
+          );
+        }
+      }),
+  },
+  {
+    Id: "pricing.PC18",
+    Name: "PC18: a hand-priced line is refused before the product's AvailableFrom",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await setSellability(ctx, f.Products.WidgetA, { AvailableFrom: daysFromToday(30) });
+
+        const order = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 85 });
+        Assert(!order.Saved, "a typed price must not sell a product before its window opens");
+        Assert(/not available until/.test(order.Message), `the refusal should name the window, got: ${order.Message}`);
+      }),
+  },
+  {
+    Id: "pricing.PC19",
+    Name: "PC19: a hand-priced line is refused after AvailableTo, and books when back-dated into the window",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await setSellability(ctx, f.Products.WidgetA, { AvailableTo: daysFromToday(-2) });
+
+        const late = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 80 });
+        Assert(!late.Saved, "a typed price must not sell a product after its window closed");
+        Assert(/was available until/.test(late.Message), `the refusal should name the window, got: ${late.Message}`);
+
+        // The order's own date is the test, not today: an order dated while the product was on sale
+        // is legitimate.
+        const backDated = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 80, orderDate: daysFromToday(-3) });
+        Assert(backDated.Saved, `an order dated inside the window should book: ${backDated.Message}`);
       }),
   },
 ];

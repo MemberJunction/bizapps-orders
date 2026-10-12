@@ -36,6 +36,11 @@ export class InvalidOperationInputError extends Error {
     }
 }
 
+/** Whether `value` is a UUID — for input that may legitimately not be one, where `RequireUUID` would throw. */
+export function IsUUID(value: unknown): value is string {
+    return typeof value === 'string' && UUID.test(value);
+}
+
 /**
  * Require a UUID, or throw.
  *
@@ -59,11 +64,6 @@ export function RequireOptionalUUID<T extends string | null | undefined>(value: 
     if (value === undefined || value === null || value === '') return value;
     RequireUUID(value as string, field);
     return value;
-}
-
-/** Whether a value is a UUID, for reads that skip what cannot name a row rather than refuse it. */
-export function IsUUID(value: unknown): value is string {
-    return typeof value === 'string' && UUID.test(value);
 }
 
 /** Require every element of an id list to be a UUID. */

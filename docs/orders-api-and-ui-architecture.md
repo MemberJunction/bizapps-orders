@@ -101,7 +101,7 @@ metadata descriptions predate the code.
 | **Subscriptions** | | | |
 | `Orders.CancelSubscription` | `orders:subscriptions:write` | Sync | Policy in, reversal out. Revokes standing grants when access-through has already passed. |
 | `Orders.SpawnRenewals` | `orders:subscriptions:write` | LongRunning | Places renewal orders at lead time. |
-| `Orders.AmendArrangement` | `orders:subscriptions:write` | Sync | Extends a booked term at no charge, or changes a confirmed order's payment terms, through an approved concession. Preview writes nothing. |
+| `Orders.AmendArrangement` | `orders:subscriptions:write` | Sync | Extends a booked term at no charge, moves its start and end together (a shift, reviewed by finance at or above `TermShiftReviewDays`), or changes a confirmed order's payment terms, through an approved concession. Finance can escalate a shift under review to the ConcessionLimit approver. Preview writes nothing. Shortening a term is refused for now. |
 | `Orders.CheckCoverageOverlap` | `orders:read` | Sync | Whether confirm will refuse, ask to acknowledge, or allow each subscription line's overlap with coverage the holder already has. Runs the check confirm runs. |
 | `Orders.DetectOverlappingSubscriptions` | `orders:subscriptions:write` | LongRunning | Raises a finance exception for each pair of one holder's live subscriptions whose terms overlap. |
 | **Entitlements and access** | | | |

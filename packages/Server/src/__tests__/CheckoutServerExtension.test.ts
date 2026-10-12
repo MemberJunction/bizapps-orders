@@ -56,7 +56,8 @@ import {
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
+import { LogStatus } from '@memberjunction/core';
+import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap, turnstileConfigGap } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -126,6 +127,18 @@ describe('shouldServeCheckoutElementSourceMap', () => {
     });
 });
 
+describe('turnstileConfigGap', () => {
+    it('is null when the site key and the secret both resolve', () => {
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, { TS: 'secret' })).toBeNull();
+    });
+
+    it('names the missing setting', () => {
+        expect(turnstileConfigGap({}, {})).toBe('Settings.TurnstileSecretEnvVar unset');
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, {})).toBe("Settings.TurnstileSecretEnvVar='TS' resolved empty");
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: '  ' }, { TS: 'secret' })).toBe('Settings.TurnstileSiteKey unset');
+    });
+});
+
 describe('CheckoutServerExtension', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -165,6 +178,30 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/access-status',
             'GET /checkout/:slug',
         ]);
+    });
+
+    it('warns at startup when Turnstile is not configured, naming the missing setting', async () => {
+        const { app } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+        expect(lines.some((line) => line.includes('Turnstile is not configured (Settings.TurnstileSecretEnvVar unset)'))).toBe(true);
+    });
+
+    it('stays quiet at startup when Turnstile is configured', async () => {
+        process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP = 'secret';
+        try {
+            const { app } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, {
+                Enabled: true,
+                DriverClass: 'OrdersCheckoutEdge',
+                RootPath: '/checkout',
+                Settings: { TurnstileSecretEnvVar: 'CHECKOUT_TURNSTILE_SECRET_STARTUP', TurnstileSiteKey: 'site-key-1' },
+            });
+            const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+            expect(lines.some((line) => line.includes('Turnstile'))).toBe(false);
+        } finally {
+            delete process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP;
+        }
     });
 
     it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
@@ -528,6 +565,25 @@ describe('CheckoutServerExtension', () => {
             const res = await complete({ Success: true, SessionID: 'sess-1', Status: 'Confirmed', OrderID: 'order-1' });
             expect(res.statusCode).toBe(200);
             expect(DispatchOutboundDeliveries).toHaveBeenCalledWith({ OrderHeaderID: 'order-1' }, expect.anything(), expect.anything());
+        });
+
+        it('passes the configured IP country header to the checkout as VAT location evidence (#480)', async () => {
+            mockGetSystemUser.mockReturnValue({ ID: 'svc-1', Email: 'svc@example.com' });
+            const completeMock = vi.mocked(CheckoutSessionService.CompleteCheckout);
+            completeMock.mockClear();
+            completeMock.mockResolvedValue({ Success: true, SessionID: 'sess-1', Status: 'Confirmed' } as never);
+            const ext = new CheckoutServerExtension() as unknown as {
+                settings: Record<string, unknown>;
+                handleComplete(req: Request, res: Response): Promise<void>;
+            };
+            const req = { body: { sessionId: 'sess-1', clientSessionKey: 'k' }, headers: { 'cf-ipcountry': 'SE' } } as unknown as Request;
+
+            await ext.handleComplete(req, mockRes() as unknown as Response);
+            expect(completeMock.mock.calls[0][3]).toEqual({ IPCountry: undefined });
+
+            ext.settings = { IPCountryHeader: 'CF-IPCountry' };
+            await ext.handleComplete(req, mockRes() as unknown as Response);
+            expect(completeMock.mock.calls[1][3]).toEqual({ IPCountry: 'SE' });
         });
 
         it('sends nothing for a checkout that did not complete', async () => {

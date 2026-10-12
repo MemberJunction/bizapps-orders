@@ -1233,10 +1233,18 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: AcknowledgesCoverageOverlap
         * * Display Name: Acknowledges Coverage Overlap
         * * SQL Data Type: bit`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
         * * SQL Data Type: nvarchar(201)`),
+    ExtendedAmount: z.number().nullable().describe(`
+        * * Field Name: ExtendedAmount
+        * * Display Name: Extended Amount
+        * * SQL Data Type: decimal(18, 2)`),
 });
 
 export type mjBizAppsOrdersEventOrderLineEntityType = z.infer<typeof mjBizAppsOrdersEventOrderLineSchema>;
@@ -2698,6 +2706,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
         * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`),
+    IPCountry: z.string().nullable().describe(`
+        * * Field Name: IPCountry
+        * * Display Name: IP Country
+        * * SQL Data Type: char(2)
+        * * Description: ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.`),
+    CardIssuingCountry: z.string().nullable().describe(`
+        * * Field Name: CardIssuingCountry
+        * * Display Name: Card Issuing Country
+        * * SQL Data Type: char(2)
+        * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -3309,6 +3327,16 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
+    ExtendedAmount: z.number().nullable().describe(`
+        * * Field Name: ExtendedAmount
+        * * Display Name: Extended Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -4041,6 +4069,65 @@ export const mjBizAppsOrdersPaymentLineSchema = z.object({
 });
 
 export type mjBizAppsOrdersPaymentLineEntityType = z.infer<typeof mjBizAppsOrdersPaymentLineSchema>;
+
+/**
+ * zod schema definition for the entity MJ_BizApps_Orders: Payment Provider Prices
+ */
+export const mjBizAppsOrdersPaymentProviderPriceSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    PaymentProviderID: z.string().describe(`
+        * * Field Name: PaymentProviderID
+        * * Display Name: Payment Provider
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The payment provider (gateway account) the price belongs to.`),
+    ProviderPriceID: z.string().describe(`
+        * * Field Name: ProviderPriceID
+        * * Display Name: Provider Price ID
+        * * SQL Data Type: nvarchar(255)
+        * * Description: The gateway's own price id (for Stripe, price_...). Unique per provider.`),
+    ProductID: z.string().describe(`
+        * * Field Name: ProductID
+        * * Display Name: Product
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+        * * Description: The Orders product an order created from a charge for this price carries.`),
+    Description: z.string().nullable().describe(`
+        * * Field Name: Description
+        * * Display Name: Description
+        * * SQL Data Type: nvarchar(255)
+        * * Description: What the price is, in the gateway's or finance's words, for the people maintaining the map. Not read by code.`),
+    IsActive: z.boolean().describe(`
+        * * Field Name: IsActive
+        * * Display Name: Is Active
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: Whether the map is used. An inactive row creates no orders, as if the price were unmapped.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    PaymentProvider: z.string().describe(`
+        * * Field Name: PaymentProvider
+        * * Display Name: Payment Provider Name
+        * * SQL Data Type: nvarchar(200)`),
+    Product: z.string().describe(`
+        * * Field Name: Product
+        * * Display Name: Product Name
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersPaymentProviderPriceEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderPriceSchema>;
 
 /**
  * zod schema definition for the entity MJ_BizApps_Orders: Payment Provider Sync States
@@ -10510,12 +10597,38 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: CoverageOverlapReason
+    * * Display Name: Coverage Overlap Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get CoverageOverlapReason(): string | null {
+        return this.Get('CoverageOverlapReason');
+    }
+    set CoverageOverlapReason(value: string | null) {
+        this.Set('CoverageOverlapReason', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
     */
     get Person(): string {
         return this.Get('Person');
+    }
+
+    /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
     }
 }
 
@@ -15130,6 +15243,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: IPCountry
+    * * Display Name: IP Country
+    * * SQL Data Type: char(2)
+    * * Description: ISO 3166-1 alpha-2 country of the buyer's IP address at self-serve checkout, read from the country header the proxy or CDN in front of the server sets. VAT location evidence alongside the billing address. The IP address itself is never stored. NULL when the order did not come through self-serve checkout, when no country header is configured, or when the country could not be resolved.
+    */
+    get IPCountry(): string | null {
+        return this.Get('IPCountry');
+    }
+    set IPCountry(value: string | null) {
+        this.Set('IPCountry', value);
+    }
+
+    /**
+    * * Field Name: CardIssuingCountry
+    * * Display Name: Card Issuing Country
+    * * SQL Data Type: char(2)
+    * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.
+    */
+    get CardIssuingCountry(): string | null {
+        return this.Get('CardIssuingCountry');
+    }
+    set CardIssuingCountry(value: string | null) {
+        this.Set('CardIssuingCountry', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -16952,6 +17091,32 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set AcknowledgesCoverageOverlap(value: boolean) {
         this.Set('AcknowledgesCoverageOverlap', value);
+    }
+
+    /**
+    * * Field Name: ExtendedAmount
+    * * Display Name: Extended Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The amount the price rule set for this line before any discount, exactly as the rule computed it. A Flat price that does not divide by the quantity cannot be rebuilt from Quantity x UnitPrice (Flat 100.00 at quantity 3 has a unit price of 33.33), so the line total, the invoice and the journal entry read this instead. NULL when no rule priced the line, such as a stated unit price; Quantity x UnitPrice is then the amount.
+    */
+    get ExtendedAmount(): number | null {
+        return this.Get('ExtendedAmount');
+    }
+    set ExtendedAmount(value: number | null) {
+        this.Set('ExtendedAmount', value);
+    }
+
+    /**
+    * * Field Name: CoverageOverlapReason
+    * * Display Name: Coverage Overlap Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.
+    */
+    get CoverageOverlapReason(): string | null {
+        return this.Get('CoverageOverlapReason');
+    }
+    set CoverageOverlapReason(value: string | null) {
+        this.Set('CoverageOverlapReason', value);
     }
 
     /**
@@ -19076,6 +19241,157 @@ export class mjBizAppsOrdersPaymentLineEntity extends BaseEntity<mjBizAppsOrders
     */
     get AllocatedByUser(): string | null {
         return this.Get('AllocatedByUser');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Payment Provider Prices - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: PaymentProviderPrice
+ * * Base View: vwPaymentProviderPrices
+ * * @description Which Orders product a payment gateway's price sells, per payment provider. An order created from a charge that matched no order carries the product its checkout's price maps to here; a price with no active row creates no order and stays a finance exception.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Payment Provider Prices')
+export class mjBizAppsOrdersPaymentProviderPriceEntity extends BaseEntity<mjBizAppsOrdersPaymentProviderPriceEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Payment Provider Prices record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Payment Provider Prices record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersPaymentProviderPriceEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: PaymentProviderID
+    * * Display Name: Payment Provider
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The payment provider (gateway account) the price belongs to.
+    */
+    get PaymentProviderID(): string {
+        return this.Get('PaymentProviderID');
+    }
+    set PaymentProviderID(value: string) {
+        this.Set('PaymentProviderID', value);
+    }
+
+    /**
+    * * Field Name: ProviderPriceID
+    * * Display Name: Provider Price ID
+    * * SQL Data Type: nvarchar(255)
+    * * Description: The gateway's own price id (for Stripe, price_...). Unique per provider.
+    */
+    get ProviderPriceID(): string {
+        return this.Get('ProviderPriceID');
+    }
+    set ProviderPriceID(value: string) {
+        this.Set('ProviderPriceID', value);
+    }
+
+    /**
+    * * Field Name: ProductID
+    * * Display Name: Product
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Products (vwProducts.ID)
+    * * Description: The Orders product an order created from a charge for this price carries.
+    */
+    get ProductID(): string {
+        return this.Get('ProductID');
+    }
+    set ProductID(value: string) {
+        this.Set('ProductID', value);
+    }
+
+    /**
+    * * Field Name: Description
+    * * Display Name: Description
+    * * SQL Data Type: nvarchar(255)
+    * * Description: What the price is, in the gateway's or finance's words, for the people maintaining the map. Not read by code.
+    */
+    get Description(): string | null {
+        return this.Get('Description');
+    }
+    set Description(value: string | null) {
+        this.Set('Description', value);
+    }
+
+    /**
+    * * Field Name: IsActive
+    * * Display Name: Is Active
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: Whether the map is used. An inactive row creates no orders, as if the price were unmapped.
+    */
+    get IsActive(): boolean {
+        return this.Get('IsActive');
+    }
+    set IsActive(value: boolean) {
+        this.Set('IsActive', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: PaymentProvider
+    * * Display Name: Payment Provider Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get PaymentProvider(): string {
+        return this.Get('PaymentProvider');
+    }
+
+    /**
+    * * Field Name: Product
+    * * Display Name: Product Name
+    * * SQL Data Type: nvarchar(200)
+    */
+    get Product(): string {
+        return this.Get('Product');
     }
 }
 
