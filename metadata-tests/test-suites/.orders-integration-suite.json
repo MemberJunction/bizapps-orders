@@ -595,6 +595,17 @@
           "primaryKey": {
             "ID": "E261B03C-0C83-4297-B5B4-A6F0C69EFA2B"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-44 - Bill.com Invoice Rail",
+            "Sequence": 44,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "67B1A23A-B0FD-4951-AEEA-5EEC7702D553"
+          }
         }
       ]
     },

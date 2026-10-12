@@ -44,6 +44,7 @@
  *   term-extension       TX1–TX9   a booked term extended at no charge, with recognition, access and renewal following
  *   party-roster         CR1–CR2   the Party Signals contract the shared party pickers read
  *   progress-measurement PM1–PM14   percentage-of-completion by attested catch-up, and rule 2 choosing its contra account (D90, D92)
+ *   billcom-rail         BR1–BR18  the Bill.com invoice rail through its gateway seam: send, cancel, poll, webhook (#591)
  *
  * Note that `events` and `line-subscriber` are listed out of order above because that is the order
  * they were written in; the runner's order is presentational — each bundle owns its own fixture.
@@ -118,6 +119,7 @@ export * from './checks/progress-measurement.checks.js';
 export * from './checks/outbound-events.checks.js';
 export * from './checks/concessions.checks.js';
 export * from './checks/term-extension.checks.js';
+export * from './checks/billcom-rail.checks.js';
 
 /**
  * Tree-shake guard. Importing this module registers the bundles; calling this makes that

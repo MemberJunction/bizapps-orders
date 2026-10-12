@@ -68,6 +68,12 @@ export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 
+// ── Orders: external invoice rails (Bill.com) ─────────────────────────────────────────────────────
+export const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
+export const EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers';
+export const EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments';
+export const PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States';
+
 // ── Tasks (peer app; a Pending concession is routed to its approvers as a task) ─────────────────────
 export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
 export const TASK_DECISION_ENTITY = 'MJ_BizApps_Tasks: Task Decisions';
@@ -96,6 +102,13 @@ export const RELATIONSHIP_TYPE_ENTITY = 'MJ_BizApps_Common: Relationship Types';
 export const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 
 export const COMPANY_ENTITY = 'MJ: Companies';
+
+// ── MJ core: the connector configuration a Bill.com provider row points at ───────────────────────
+export const INTEGRATION_ENTITY = 'MJ: Integrations';
+export const INTEGRATION_OBJECT_ENTITY = 'MJ: Integration Objects';
+export const INTEGRATION_OBJECT_FIELD_ENTITY = 'MJ: Integration Object Fields';
+export const COMPANY_INTEGRATION_ENTITY = 'MJ: Company Integrations';
+export const SCHEDULED_JOB_ENTITY = 'MJ: Scheduled Jobs';
 
 /**
  * Every name above, for the parity check that asserts each one resolves against live metadata.
@@ -140,6 +153,10 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PAYMENT_PROVIDER_TYPE_ENTITY,
     PAYMENT_INTENT_ENTITY,
     ORDER_LINE_DIMENSION_ENTITY,
+    EXTERNAL_INVOICE_ENTITY,
+    EXTERNAL_CUSTOMER_ENTITY,
+    EXTERNAL_PAYMENT_ENTITY,
+    PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
     GL_ACCOUNT_ENTITY,
     GL_ACCOUNT_ROLE_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
@@ -159,6 +176,11 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     RELATIONSHIP_TYPE_ENTITY,
     ADDRESS_ENTITY,
     COMPANY_ENTITY,
+    INTEGRATION_ENTITY,
+    INTEGRATION_OBJECT_ENTITY,
+    INTEGRATION_OBJECT_FIELD_ENTITY,
+    COMPANY_INTEGRATION_ENTITY,
+    SCHEDULED_JOB_ENTITY,
     TASK_ENTITY,
     TASK_DECISION_ENTITY,
 ];

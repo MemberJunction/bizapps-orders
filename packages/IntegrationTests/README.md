@@ -153,9 +153,12 @@ also the only bundle that creates a SECOND `SQLServerDataProvider`, which is how
 `ConfirmOrder` gets an independent session; its header explains what that does and does not make
 provable.
 
-No bundle covers the Bill.com invoice rail. It is covered by unit tests in `CoreEntitiesServer` and
-`Server` and by the sandbox harness `test-harnesses/billcom-live.mjs`, which never runs in CI; see
-[`docs/billcom-invoice-rail.md`](../../docs/billcom-invoice-rail.md).
+`billcom-rail` covers the Bill.com invoice rail with Bill.com replaced by an in-memory stub behind
+the rail's gateway seam (`UseBillComGatewaySeams`), so the operations, the rail class, the capture
+path and the ledger run as they do in production. Each check creates the `Bill.com` integration's
+field lengths when the database has none, since a send refuses names it cannot check. What Bill.com
+itself returns is probed by hand against a sandbox with `test-harnesses/billcom-live.mjs`, which
+never runs in CI; see [`docs/billcom-invoice-rail.md`](../../docs/billcom-invoice-rail.md).
 
 ## Drift guards
 
