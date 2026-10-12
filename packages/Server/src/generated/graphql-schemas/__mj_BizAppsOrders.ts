@@ -2834,6 +2834,10 @@ export class mjBizAppsOrdersEventOrderLine_ {
     AcknowledgesCoverageOverlap?: boolean;
         
     @Field({nullable: true}) 
+    @MaxLength(1000)
+    CoverageOverlapReason?: string;
+        
+    @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
         
@@ -3003,6 +3007,9 @@ export class CreatemjBizAppsOrdersEventOrderLineInput {
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
 
+    @Field({ nullable: true })
+    CoverageOverlapReason: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3168,6 +3175,9 @@ export class UpdatemjBizAppsOrdersEventOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field({ nullable: true })
+    CoverageOverlapReason?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7984,6 +7994,10 @@ export class mjBizAppsOrdersOrderLine_ {
     @Field(() => Boolean, {nullable: true, description: `True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`}) 
     AcknowledgesCoverageOverlap?: boolean;
         
+    @Field({nullable: true, description: `Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.`}) 
+    @MaxLength(1000)
+    CoverageOverlapReason?: string;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -8168,6 +8182,9 @@ export class CreatemjBizAppsOrdersOrderLineInput {
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
 
+    @Field({ nullable: true })
+    CoverageOverlapReason: string | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -8291,6 +8308,9 @@ export class UpdatemjBizAppsOrdersOrderLineInput {
 
     @Field(() => Boolean, { nullable: true })
     AcknowledgesCoverageOverlap?: boolean;
+
+    @Field({ nullable: true })
+    CoverageOverlapReason?: string | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

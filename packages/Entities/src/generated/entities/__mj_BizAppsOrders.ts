@@ -1233,6 +1233,10 @@ export const mjBizAppsOrdersEventOrderLineSchema = z.object({
         * * Field Name: AcknowledgesCoverageOverlap
         * * Display Name: Acknowledges Coverage Overlap
         * * SQL Data Type: bit`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)`),
     Person: z.string().describe(`
         * * Field Name: Person
         * * Display Name: Person
@@ -3268,6 +3272,11 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: True when this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Under ExtendExisting, confirm refuses an overlapping line unless this is set. Ignored under AllowMultiple, which permits the overlap, and under RejectDuplicate, which refuses it regardless.`),
+    CoverageOverlapReason: z.string().nullable().describe(`
+        * * Field Name: CoverageOverlapReason
+        * * Display Name: Coverage Overlap Reason
+        * * SQL Data Type: nvarchar(1000)
+        * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -10372,6 +10381,19 @@ export class mjBizAppsOrdersEventOrderLineEntity extends BaseEntity<mjBizAppsOrd
     }
 
     /**
+    * * Field Name: CoverageOverlapReason
+    * * Display Name: Coverage Overlap Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Order Lines
+    */
+    get CoverageOverlapReason(): string | null {
+        return this.Get('CoverageOverlapReason');
+    }
+    set CoverageOverlapReason(value: string | null) {
+        this.Set('CoverageOverlapReason', value);
+    }
+
+    /**
     * * Field Name: Person
     * * Display Name: Person
     * * SQL Data Type: nvarchar(201)
@@ -16603,6 +16625,19 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     }
     set AcknowledgesCoverageOverlap(value: boolean) {
         this.Set('AcknowledgesCoverageOverlap', value);
+    }
+
+    /**
+    * * Field Name: CoverageOverlapReason
+    * * Display Name: Coverage Overlap Reason
+    * * SQL Data Type: nvarchar(1000)
+    * * Description: Why this line is meant to run alongside coverage the holder already has for another band of the same subscription family. Confirm refuses a line with AcknowledgesCoverageOverlap set when this is blank, and the nightly overlap review shows it beside the acknowledged pair.
+    */
+    get CoverageOverlapReason(): string | null {
+        return this.Get('CoverageOverlapReason');
+    }
+    set CoverageOverlapReason(value: string | null) {
+        this.Set('CoverageOverlapReason', value);
     }
 
     /**
