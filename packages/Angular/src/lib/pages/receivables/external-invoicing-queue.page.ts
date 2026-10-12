@@ -7,7 +7,8 @@ import {
     OrdersIssueExternalInvoiceOperation,
     OrdersPollExternalPaymentsOperation,
     OrdersSendExternalInvoicesOperation,
-    LoadPollJobState,
+    ClassifyPollJobGroups,
+    LoadPollJobs,
     type ExternalInvoicingWorklistRow,
     type PollJobState,
 } from '@mj-biz-apps/orders-entities';
@@ -231,7 +232,13 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
 
     public Exceptions: PaymentExceptionRow[] = [];
     /** The scheduled poll job's state, which decides what the button may do. Null when it could not be read. */
+    /**
+     * The most permissive state across the poll jobs (one per provider a job names, plus the jobs that
+     * name none). The button follows it; the operation then gates each provider by its own job.
+     */
     public PollJob: PollJobState | null = null;
+    /** The poll jobs are not all in the same state, so a check treats providers differently. */
+    public PollJobsMixed = false;
 
     public readonly InvoiceColumns: MJOColumn<ExternalInvoicingWorklistRow>[] = [
         { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `instalment ${r.InstallmentNumber}` : 'whole order') },
@@ -304,9 +311,13 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             case 'Inactive':
                 return `Recording payments is off: ${this.PollJob.Why}.`;
             case 'Preview':
-                return 'The scheduled poll job is in Preview, so a check here records nothing.';
+                return this.PollJobsMixed
+                    ? 'No poll job is live, so a check here records nothing; providers whose job is off are skipped.'
+                    : 'The scheduled poll job is in Preview, so a check here records nothing.';
             case 'Live':
-                return 'Captured payments are not listed — only what the poll could not finish.';
+                return this.PollJobsMixed
+                    ? 'Payments are recorded only for providers whose poll job is live; the rest are previewed or skipped.'
+                    : 'Captured payments are not listed — only what the poll could not finish.';
             default:
                 return 'The poll job could not be read; the server decides whether a check records anything.';
         }
@@ -383,9 +394,10 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     }
 
     /**
-     * The poll, by hand, following the scheduled job: off → not offered; Preview → a preview, no
-     * confirmation since nothing is written; live (or unreadable) → confirm, because this records cash.
-     * The operation applies the same rule on the server, so this only decides what to ask and say.
+     * The poll, by hand, following the scheduled jobs: all off → not offered; none live → a preview,
+     * no confirmation since nothing is written; any live (or unreadable) → confirm, because this
+     * records cash. The operation gates each provider by its own job on the server, so this only
+     * decides what to ask and say.
      * Reports ATTENTION as a warning, because that means money is still waiting.
      */
     public async RunPoll(): Promise<void> {
@@ -476,10 +488,16 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
 
     private async loadPollJob(): Promise<void> {
         try {
-            this.PollJob = await LoadPollJobState();
+            const groups = ClassifyPollJobGroups(await LoadPollJobs());
+            const rank: Record<PollJobState['State'], number> = { NotInstalled: 0, Inactive: 1, Preview: 2, Live: 3 };
+            this.PollJob = groups.length
+                ? groups.reduce((best, g) => (rank[g.State] > rank[best.State] ? g : best))
+                : { State: 'NotInstalled', Why: 'no scheduled poll job is installed' };
+            this.PollJobsMixed = new Set(groups.map((g) => g.State)).size > 1;
         } catch {
             // A user who cannot read Scheduled Jobs still gets the button; the operation decides.
             this.PollJob = null;
+            this.PollJobsMixed = false;
         }
         this.cdr.detectChanges();
     }

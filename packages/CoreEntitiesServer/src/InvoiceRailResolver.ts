@@ -26,6 +26,14 @@ import { RequireUUID } from './sql-guards.js';
  */
 export const INVOICE_RAIL_TYPE_CODES: readonly string[] = ['BillCom'];
 
+/**
+ * Provider type codes the payment poller reads: every invoice rail, plus rails that only report
+ * payments (HubSpot Payments, #482). Kept apart from {@link INVOICE_RAIL_TYPE_CODES} because a
+ * company may have both a Bill.com rail and a HubSpot portal, and the invoice side allows one rail
+ * per company.
+ */
+export const PAYMENT_SOURCE_TYPE_CODES: readonly string[] = [...INVOICE_RAIL_TYPE_CODES, 'HubSpotPayments'];
+
 export class InvoiceRailNotConfiguredError extends Error {
     constructor(message: string) {
         super(message);
@@ -111,11 +119,20 @@ export async function FindInvoiceRailProviderID(companyID: string, provider: IMe
     return found[0].ID;
 }
 
-/** Every active rail provider row, for the poller's "run per company" loop. */
+/** Every active invoice-rail provider row, for the invoicing worklist. */
 export async function ListInvoiceRailProviderIDs(provider: IMetadataProvider, user: UserInfo): Promise<Array<{ ID: string; CompanyID: string }>> {
+    return listProviderIDs(INVOICE_RAIL_TYPE_CODES, provider, user);
+}
+
+/** Every active provider row the payment poller reads, for its "run per company" loop. */
+export async function ListPaymentSourceProviderIDs(provider: IMetadataProvider, user: UserInfo): Promise<Array<{ ID: string; CompanyID: string }>> {
+    return listProviderIDs(PAYMENT_SOURCE_TYPE_CODES, provider, user);
+}
+
+async function listProviderIDs(codes: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Array<{ ID: string; CompanyID: string }>> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const types = await rv.RunView<{ ID: string }>(
-        { EntityName: PAYMENT_PROVIDER_TYPE_ENTITY, ExtraFilter: `Code IN (${INVOICE_RAIL_TYPE_CODES.map((c) => `'${c}'`).join(',')})`, Fields: ['ID'], ResultType: 'simple' },
+        { EntityName: PAYMENT_PROVIDER_TYPE_ENTITY, ExtraFilter: `Code IN (${codes.map((c) => `'${c}'`).join(',')})`, Fields: ['ID'], ResultType: 'simple' },
         user,
     );
     const typeIDs = (types.Results ?? []).map((t) => `'${RequireUUID(t.ID, 'PaymentProviderTypeID')}'`);

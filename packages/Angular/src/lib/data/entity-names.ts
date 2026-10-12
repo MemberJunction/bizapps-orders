@@ -32,6 +32,7 @@ export const MJO_ENTITIES = {
     Promotion: 'MJ_BizApps_Orders: Promotions',
     PriceTier: 'MJ_BizApps_Orders: Price Tiers',
     OrderLineDimension: 'MJ_BizApps_Orders: Order Line Dimensions',
+    DimensionDefault: 'MJ_BizApps_Orders: Dimension Defaults',
     PaymentType: 'MJ_BizApps_Orders: Payment Types',
     SubscriptionTerm: 'MJ_BizApps_Orders: Subscription Terms',
     SubscriptionEvent: 'MJ_BizApps_Orders: Subscription Events',

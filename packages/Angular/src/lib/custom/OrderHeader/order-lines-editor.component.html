@@ -2,6 +2,9 @@
     @if (CoverageCheckError) {
         <div class="mjo-ol-overlap-err" role="status">{{ CoverageCheckError }}</div>
     }
+    @if (SeatSplitNotice) {
+        <div class="mjo-ol-seat-note" role="status">{{ SeatSplitNotice }}</div>
+    }
     @for (line of Lines; track line.ID) {
         <div class="mjo-ol-card">
             <div class="mjo-ol-card__top">
@@ -362,14 +365,31 @@
                     <div class="mjo-ol-overlap__body">
                         <span>{{ overlap.Message }}</span>
                         @if (CanAcknowledgeOverlap(line)) {
+                            <!-- Ticking it needs the run-alongside grant and a reason (bizapps-orders#511).
+                                 Unticking never does. Confirm checks both again on the server. -->
                             <label class="mjo-ol-overlap__ack">
                                 <input
                                     type="checkbox"
                                     [checked]="line.AcknowledgesCoverageOverlap"
-                                    [disabled]="!EditMode"
+                                    [disabled]="!EditMode || (!CanRunAlongside && !line.AcknowledgesCoverageOverlap)"
                                     (change)="SetOverlapAcknowledged(line, $event)">
                                 Run alongside the existing coverage. Both will be billed.
                             </label>
+                            @if (!CanRunAlongside) {
+                                <span class="mjo-ol-overlap__hint">Running alongside needs the Account Director role.</span>
+                            }
+                            @if (line.AcknowledgesCoverageOverlap) {
+                                <label class="mjo-ol-overlap__reason" [class.is-required]="OverlapReasonMissing(line)">
+                                    <span>Reason to run alongside<em class="mjo-ol-override__req" aria-hidden="true">*</em></span>
+                                    <textarea
+                                        rows="2"
+                                        maxlength="1000"
+                                        [value]="line.CoverageOverlapReason ?? ''"
+                                        [disabled]="!EditMode"
+                                        (input)="SetOverlapReason(line, $event)"
+                                        placeholder="Required — why both subscriptions should be billed"></textarea>
+                                </label>
+                            }
                         }
                     </div>
                 </div>
@@ -486,6 +506,8 @@
         [ProductSKU]="DetailsLine ? (ProductFor(DetailsLine)?.SKU ?? '') : ''"
         [ProductType]="DetailsLine ? (ProductFor(DetailsLine)?.TypeName ?? '') : ''"
         [Dimensions]="DimensionCatalog"
+        [StampedTags]="StampedTagsFor(DetailsLine)"
+        [CompanyValueIDs]="CompanyDimensionValueIDs"
         [EditMode]="EditMode"
         (Closed)="CloseDetails()">
     </mjo-order-line-details-panel>

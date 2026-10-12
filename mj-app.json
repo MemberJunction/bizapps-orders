@@ -23,7 +23,7 @@
       "repository": "https://github.com/MemberJunction/bizapps-accounting"
     },
     "mj-bizapps-tasks": {
-      "version": ">=1.4.0 <2.0.0",
+      "version": ">=1.7.0 <2.0.0",
       "repository": "https://github.com/MemberJunction/bizapps-tasks"
     }
   },
@@ -48,6 +48,10 @@
       {
         "name": "@mj-biz-apps/orders-core-entities-server",
         "role": "library"
+      },
+      {
+        "name": "@mj-biz-apps/orders-actions",
+        "role": "library"
       }
     ],
     "client": [
@@ -60,10 +64,6 @@
     "shared": [
       {
         "name": "@mj-biz-apps/orders-entities",
-        "role": "library"
-      },
-      {
-        "name": "@mj-biz-apps/orders-actions",
         "role": "library"
       }
     ]
