@@ -25,7 +25,7 @@ The **MemberJunction Checkout Engine** provides an adaptive, metadata-driven, em
 │     └── Server-priced amount + widget-configured provider → ClientSecret                 │
 │                                                                                          │
 │  3. CompleteCheckout(sessionId, clientKey)                                               │
-│     ├── Resolve / Create Person Records                                                  │
+│     ├── Resolve Person Records (create missing ones after payment verifies)             │
 │     ├── Multi-Unit Line Splitting (unitMode: 'perUnit' vs 'perLine')                      │
 │     ├── Atomic Companion Persistence (OrderLine.Extension BaseEntity)                    │
 │     ├── Full Lifecycle Booking: await order.Confirm()                                    │
@@ -198,7 +198,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `productName` | Name shown for the item; `/initialize` fills it from the product when unset. |
 | `unitPrice` | Price per unit the widget displays. Unset or 0 shows the checkout as free, with no card form. The amount charged is the server's price. |
 | `currency` | Currency of the payment. Unset means USD; a payment intent in any other currency is refused, because orders do not yet record one. |
-| `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode` (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
+| `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode`. When the product type is `'perUnit'`, a line that sends unit details must send one set per unit, so a `'perLine'` widget on a per-unit product is refused at quantity above 1 (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
 | `allowQuantity` | Shows the quantity selector. |
 | `maxQuantity` | Highest quantity the selector offers (default 50). The server's cap comes from the product and product type instead. |
 | `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. |
@@ -281,6 +281,7 @@ When `unitMode === 'perUnit'` (or the Angular config sets `isEvent`) and the qua
 
 ### Database Persistence
 In `CheckoutSessionService.CompleteCheckout`:
+- When the product type's `unitMode` is `'perUnit'` and the line carries unit details, it must carry one set per unit: a `Quantity` that differs from the number of sets is refused at `/draft` and `/complete` with a message asking for details for each item, rather than booked as a different number of units.
 - A line is split into one `OrderLine` per set of unit details (`Quantity = 1` each) when it carries unit details and either its product type's `unitMode` is `'perUnit'` or it carries more than one set:
   - Line 1: `Quantity = 1`, `Description = "Jane Doe (jane@example.com)"` ➔ `EventOrderLine` (`PersonID` = Jane's Person, `DietaryPreferences = Vegan`)
   - Line 2: `Quantity = 1`, `Description = "John Smith (john@example.com)"` ➔ `EventOrderLine` (`PersonID` = John's Person, `DietaryPreferences = None`)
@@ -423,7 +424,7 @@ code that was priced — `MemberPromotionCode` or `PromotionCodes`, both only un
 ### Confirmation & Booking Phase
 Once the buyer has paid (or pressed **Complete Free Registration** on a free checkout), `/complete` runs `CompleteCheckout`. Simplified from `CheckoutSessionService.ts`:
 ```typescript
-// The payer Person has been found or created from the session's e-mail.
+// The payer Person has been found from the session's e-mail; a new buyer's is created after payment checks out.
 const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Order Headers', contextUser);
 order.NewRecord();                        // Status defaults to 'Draft'
 order.CompanyID = widget.CompanyID;
@@ -436,8 +437,11 @@ order.OrderDate = TodayAsDateValue();
 
 // Lines (one per unit where split), their extension rows, the checkout answers, the line choices and
 // the promotion codes are added to the order's graph from the session snapshot. None of the order's
-// rows is saved yet; each unit's attendee Person is found or created as its line is built.
+// rows is saved yet; each unit's attendee Person is found as its line is built.
 // The lines are priced, and a paid order's payment intent is verified (see the note below).
+// Only then are missing payer and attendee Persons created, so a refused payment leaves none behind.
+// A new buyer is priced with no BillToPersonID, as the draft was: a Person created afterwards holds no
+// price list, membership, exemption or order history that pricing could read.
 
 order.BillToAddressID = billingAddressID; // the snapshot's billing location, recorded as an Address
 order.ShipToAddressID = billingAddressID;
@@ -815,7 +819,7 @@ Refuses while a required question is unanswered. Opens (or idempotently re-opens
 ```
 
 ### 4. `CompleteCheckout(sessionID, clientSessionKey)`
-Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution (find-or-create by the session's captured email), payment verification (intent `Succeeded` + amount covers the re-priced total), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers and picks as Order Line Choices, atomic lifecycle booking, booking a paid order's payment against it (`CapturePayment`), and an attempt to mint a GuestOrder claim, which is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
+Refuses while a required question is unanswered, before anything is written. Executes payer-Person resolution by the session's captured email, payment verification (intent `Succeeded` + amount covers the re-priced total), creation of any payer or attendee Person not found (only once payment checks out), line creation from the session's own snapshot (never fresh client input), companion extension hydration, the buyer's answers as Order Checkout Answers and picks as Order Line Choices, atomic lifecycle booking, booking a paid order's payment against it (`CapturePayment`), and an attempt to mint a GuestOrder claim, which is dormant (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)). **Replay-safe**: calling it again on a `Confirmed` session returns the existing order rather than booking twice, and a failure after the order has committed never reverts the session to `Open`.
 
 Once payment checks out, the snapshot's billing location is recorded as a Common `Address` (street and city empty), linked to the buyer as their `Billing` address, and set as the order's `BillToAddressID` and `ShipToAddressID` before `Confirm()`. The ship-to is what tax is resolved from. A session whose snapshot holds no valid location is refused and reverted to `Open`; an Address that cannot be saved fails the checkout, while a failed address-book link is logged and tolerated.
 
