@@ -49,6 +49,7 @@ import {
     type QuantityMode,
     type ValidityMode,
 } from './EntitlementBehavior.js';
+import { ResolveLineParty, type LineParty } from './LineParty.js';
 import { RequireUUID } from './sql-guards.js';
 import { OrdersSettings } from './OrdersSettings.js';
 
@@ -56,6 +57,7 @@ const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
@@ -85,6 +87,9 @@ export interface GrantableOrder {
     OrderDate: Date;
     /** From `PaymentGatedAccess.LoadOrderPaymentFacts`, read after the confirm's own payment landed. */
     Payment: OrderPaymentFacts;
+    /** Who a line naming no ship-to is for: the order's ship-to, then its bill-to (`ResolveLineParty`). */
+    ShipToPersonID?: string | null;
+    ShipToOrganizationID?: string | null;
     BillToPersonID?: string | null;
     BillToOrganizationID?: string | null;
 }
@@ -203,6 +208,31 @@ export async function CreateEntitlementGrants(
         for (const t of terms?.Results ?? []) subscriptionByTerm.set(key(t.ID), t.SubscriptionID);
     }
 
+    // The holders of those subscriptions. A subscription line's access goes to whoever holds the
+    // subscription, read from the row itself: the holder is not always the line's ship-to fallback,
+    // because a renewal keeps its target's holder (D61) and a blank organization may have been
+    // filled in from the person's affiliation (D64). Granting from the fallback instead would give
+    // the access to a different party than the subscription it belongs to (#622).
+    const holderBySubscription = new Map<string, LineParty>();
+    const subscriptionIDs = [...subscriptionByTerm.values()];
+    if (subscriptionIDs.length) {
+        const subs = await rv.RunView<{ ID: string; HolderOrganizationID: string | null; BeneficiaryPersonID: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID IN (${quote(subscriptionIDs)})`,
+                Fields: ['ID', 'HolderOrganizationID', 'BeneficiaryPersonID'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        for (const sub of subs?.Results ?? []) {
+            holderBySubscription.set(key(sub.ID), {
+                OrganizationID: sub.HolderOrganizationID ?? null,
+                PersonID: sub.BeneficiaryPersonID ?? null,
+            });
+        }
+    }
+
     for (const line of grantable) {
         const forThisProduct = templatesByProduct.get(key(line.ProductID)) ?? [];
         if (!forThisProduct.length) continue;
@@ -246,19 +276,19 @@ export async function CreateEntitlementGrants(
             grant.NewRecord();
             grant.ProductEntitlementID = template.ID;
             grant.OrderLineID = line.ID;
+            const subID = term ? subscriptionByTerm.get(key(term.ID)) : undefined;
             if (term) {
                 grant.SubscriptionTermID = term.ID;
-                const subID = subscriptionByTerm.get(key(term.ID));
                 if (subID) grant.SubscriptionID = subID;
             }
 
-            // BENEFICIARY: the line's own ship-to first, because that is where 'who is this for'
-            // lives (D61) — a seat bought for a named colleague, a ticket for an attendee, a gift for
-            // a recipient. Only then the buyer.
-            const person = line.ShipToPersonID ?? order.BillToPersonID ?? null;
-            const organization = line.ShipToOrganizationID ?? order.BillToOrganizationID ?? null;
-            if (person) grant.BeneficiaryPersonID = person;
-            if (organization) grant.BeneficiaryOrganizationID = organization;
+            // BENEFICIARY: the subscription's holder when the grant belongs to one, so access and
+            // the subscription never name different parties. Otherwise the line's own ship-to,
+            // because that is where 'who is this for' lives (D61) — a seat bought for a named
+            // colleague, a ticket for an attendee — then the order's ship-to, then the buyer.
+            const beneficiary = (subID && holderBySubscription.get(key(subID))) || ResolveLineParty(line, order);
+            if (beneficiary.PersonID) grant.BeneficiaryPersonID = beneficiary.PersonID;
+            if (beneficiary.OrganizationID) grant.BeneficiaryOrganizationID = beneficiary.OrganizationID;
 
             grant.Quantity = ResolveGrantQuantity(
                 template.Quantity,

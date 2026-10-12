@@ -65,6 +65,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
+import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
@@ -1673,6 +1674,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // midnight, without one it started at whatever instant the confirm happened to run.
                 OrderDate: await CalendarDayOrToday(this.OrderDate, provider, user),
                 Payment: payment,
+                ShipToPersonID: this.ShipToPersonID ?? null,
+                ShipToOrganizationID: this.ShipToOrganizationID ?? null,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1929,6 +1932,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             {
                 ID: this.ID,
                 IssuingCompanyID: this.CompanyID,
+                ShipToPersonID: this.ShipToPersonID ?? null,
+                ShipToOrganizationID: this.ShipToOrganizationID ?? null,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -3468,11 +3473,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * under the order's customer organization) and still inherit that organization from the header.
      */
     private resolveSubscriber(line: mjBizAppsOrdersOrderLineEntity): SubscriberIdentity {
-        return {
-            OrganizationID:
-                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.BillToOrganizationID ?? null,
-            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.BillToPersonID ?? null,
-        };
+        // The same fallback entitlement grants and gift cards use, so all three name one party (#622).
+        return ResolveLineParty(line, this);
     }
 
     /**
