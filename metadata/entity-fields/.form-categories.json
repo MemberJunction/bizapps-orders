@@ -3420,5 +3420,183 @@
       "lastModified": "2026-10-08T21:17:25.737Z",
       "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
     }
+  },
+  {
+    "_comments": [
+      "Fields added by the concession approvals work (golive #281, #268): RequiresSaleApproval sits with each form's pricing or default settings, and the signed-amendment reference with the concession's approval."
+    ],
+    "fields": {
+      "Category": "Pricing and Ordering",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:23.909Z",
+      "checksum": "ffab2c1daf707cbc68f9b03d55b38bbb9420e523430be000c978762e941cc837"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:23.939Z",
+      "checksum": "973bf067b193f4212a496b8b6645f6840ff5d4a4564b783cf399d63ca3fa015f"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Settings",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:23.969Z",
+      "checksum": "8cd33abfc06fbb15d591b6783f6c68a40623247bc083c15682b309032ac7ccd0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Configuration and Extensions",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Types&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:24.000Z",
+      "checksum": "9fccf5cd5a2da9acbab65eb320f084e6ba91fefd69112093726d3d8466f3a4b8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=SignedAmendmentReference"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:24.033Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "_comments": [
+      "The referral program a Duration concession names sits with the concession's other details (golive #268)."
+    ],
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=ReferralProgramID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:41:34.187Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "_comments": [
+      "Referral Programs was generated without CodeGen's AI layout pass, so its fields are grouped here (golive #268)."
+    ],
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=CompanyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.772Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=Name"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.808Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=Description"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.842Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=DaysPerReferral"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.875Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=IsActive"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.910Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.939Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.971Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
   }
 ]

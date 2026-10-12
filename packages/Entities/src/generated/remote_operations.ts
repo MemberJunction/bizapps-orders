@@ -210,6 +210,8 @@ export interface AmendArrangementInput {
     AppliesToInvoiceID?: string;
     /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
     RefundRequested?: boolean;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
@@ -282,6 +284,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -594,7 +599,8 @@ export interface CapturePaymentOrderEffect {
     /** As the rollup triggers left it, not as the operation calculated it. */
     AmountPaid: number;
     Balance: number;
-    PaymentStatus: string;
+    /** Derived from TotalGross, AmountPaid and Balance; the order stores no payment status. */
+    PaymentStatus: 'Unpaid' | 'PartiallyPaid' | 'Paid';
     /**
      * True when this order's balance went NEGATIVE — the customer over-paid and the surplus is now
      * spendable credit (D68). Not an error: the account-credit screen depends on these existing.

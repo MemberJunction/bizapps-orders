@@ -61,6 +61,11 @@ export function RequireOptionalUUID<T extends string | null | undefined>(value: 
     return value;
 }
 
+/** Whether a value is a UUID, for reads that skip what cannot name a row rather than refuse it. */
+export function IsUUID(value: unknown): value is string {
+    return typeof value === 'string' && UUID.test(value);
+}
+
 /** Require every element of an id list to be a UUID. */
 export function RequireUUIDs(values: string[] | null | undefined, field: string): string[] {
     if (!values?.length) return [];

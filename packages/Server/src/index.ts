@@ -35,6 +35,7 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadProductPriceEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -156,6 +157,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with

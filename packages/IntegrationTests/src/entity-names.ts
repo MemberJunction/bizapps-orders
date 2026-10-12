@@ -51,6 +51,7 @@ export const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assig
 
 export const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+export const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 export const CUSTOMER_TAX_EXEMPTION_ENTITY = 'MJ_BizApps_Orders: Customer Tax Exemptions';
@@ -126,6 +127,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRICE_LIST_ASSIGNMENT_ENTITY,
     SALES_AUTHORITY_ENTITY,
     SALES_RULE_ENTITY,
+    REFERRAL_PROGRAM_ENTITY,
     ORDER_CONCESSION_ENTITY,
     CUSTOMER_TAX_EXEMPTION_ENTITY,
     CUSTOMER_PAYMENT_TERMS_ENTITY,
