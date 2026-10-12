@@ -44,10 +44,10 @@ export function checkoutHostSecurityHeaders(nonce: string): Record<string, strin
         "base-uri 'none'",
         "form-action 'none'",
         "frame-ancestors 'none'",
-        `script-src 'nonce-${n}' 'self' https://js.stripe.com`,
+        `script-src 'nonce-${n}' 'self' https://js.stripe.com https://challenges.cloudflare.com`,
         `style-src 'nonce-${n}' 'self'`,
         "img-src 'self' data: https://*.stripe.com",
-        'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://*.stripe.com https://*.hcaptcha.com https://newassets.hcaptcha.com',
+        'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://*.stripe.com https://*.hcaptcha.com https://newassets.hcaptcha.com https://challenges.cloudflare.com',
         "connect-src 'self' https://api.stripe.com https://m.stripe.network",
     ].join('; ');
     return {
@@ -109,6 +109,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
   <main class="mj-co" id="mj-co" data-slug="${slug}" data-api-root="${apiRoot}">
     <p class="mj-co__status" role="status">Loading checkout…</p>
   </main>
+  <div id="mj-co-turnstile"></div>
   <script${nonceAttr}>${BOOT_SCRIPT}</script>
 </body>
 </html>`;
@@ -244,6 +245,73 @@ const BOOT_SCRIPT = `
       });
     });
   }
+  // Turnstile (#592): the edge's 403 names the site key, since the widget configuration only
+  // arrives with /initialize. Render the challenge, retry once; a token works once, so every
+  // later gated call asks for a fresh one.
+  var turnstileSiteKey = null;
+  var turnstileWidget = null;
+  var turnstileWaiting = null;
+  function loadTurnstile() {
+    return new Promise(function (resolve, reject) {
+      if (window.turnstile) { resolve(window.turnstile); return; }
+      var s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      s.onload = function () {
+        if (!window.turnstile) { reject(new Error('Human verification did not load.')); return; }
+        resolve(window.turnstile);
+      };
+      s.onerror = function () { reject(new Error('Could not load human verification. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+  }
+  function turnstileToken(siteKey) {
+    return loadTurnstile().then(function (ts) {
+      return new Promise(function (resolve, reject) {
+        turnstileWaiting = { resolve: resolve, reject: reject };
+        if (turnstileWidget === null) {
+          turnstileWidget = ts.render(document.getElementById('mj-co-turnstile'), {
+            sitekey: siteKey,
+            execution: 'execute',
+            appearance: 'interaction-only',
+            callback: function (token) {
+              var w = turnstileWaiting; turnstileWaiting = null;
+              if (w) w.resolve(token);
+            },
+            'error-callback': function () {
+              var w = turnstileWaiting; turnstileWaiting = null;
+              if (w) w.reject(new Error('Human verification failed. Please try again.'));
+              return true;
+            }
+          });
+        } else {
+          ts.reset(turnstileWidget);
+        }
+        ts.execute(turnstileWidget);
+      });
+    });
+  }
+  function turnstileChallenge(reply) {
+    return reply && reply._httpStatus === 403 && reply.TurnstileRequired === true && typeof reply.TurnstileSiteKey === 'string' && reply.TurnstileSiteKey
+      ? reply.TurnstileSiteKey
+      : null;
+  }
+  function withToken(body, token) {
+    var copy = {};
+    for (var k in body) copy[k] = body[k];
+    copy.turnstileToken = token;
+    return copy;
+  }
+  function postGated(path, body) {
+    var first = turnstileSiteKey
+      ? turnstileToken(turnstileSiteKey).then(function (token) { return post(path, withToken(body, token)); })
+      : post(path, body);
+    return first.then(function (reply) {
+      var siteKey = turnstileChallenge(reply);
+      if (!siteKey) return reply;
+      turnstileSiteKey = siteKey;
+      return turnstileToken(siteKey).then(function (token) { return post(path, withToken(body, token)); });
+    });
+  }
   function fieldValue(el) {
     if (el.type === 'checkbox') return el.checked;
     if (el.type === 'number') return el.value === '' ? '' : Number(el.value);
@@ -282,7 +350,7 @@ const BOOT_SCRIPT = `
   var stripe = null;
   var cardElement = null;
 
-  post('/initialize', { slug: slug, clientSessionKey: sessionKey }).then(function (init) {
+  postGated('/initialize', { slug: slug, clientSessionKey: sessionKey }).then(function (init) {
     if (!init || !init.Success) {
       showError((init && init.ErrorMessage) || 'This checkout is not available.');
       return;
@@ -413,7 +481,7 @@ const BOOT_SCRIPT = `
         totalEl.textContent = 'Total: ' + total.toFixed(2);
         if (!draft.RequiresPayment) {
           status.textContent = 'Completing…';
-          return post('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+          return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
         }
         status.textContent = 'Opening payment…';
         return post('/payment-intent', { sessionId: sessionId, clientSessionKey: sessionKey }).then(function (intent) {
@@ -442,7 +510,7 @@ const BOOT_SCRIPT = `
             }).then(function (result) {
               if (result.error) throw new Error(result.error.message || 'Payment failed.');
               status.textContent = 'Completing…';
-              return post('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+              return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
             });
           });
         });
@@ -482,8 +550,9 @@ const BOOT_SCRIPT = `
         submit.disabled = false;
       });
     });
-  }).catch(function () {
-    showError('Checkout is temporarily unavailable. Please try again.');
+  }).catch(function (err) {
+    var msg = err && /human verification/i.test(err.message || '') ? err.message : 'Checkout is temporarily unavailable. Please try again.';
+    showError(msg);
   });
 })();
 `;

@@ -64,12 +64,23 @@
                     @if (o.DecisionNotes) {
                         <p class="mjo-ao-meta">{{ o.DecisionNotes }}</p>
                     }
-                    @if (CanDecide(o)) {
-                        <div class="mjo-ao-decide">
-                            <input type="text" placeholder="Notes (optional)" [name]="'notes-' + o.ID" [(ngModel)]="DecisionNotes[o.ID]" />
-                            <button type="button" mjButton variant="flat" size="sm" [disabled]="Busy" (click)="Decide(o, 'Rejected')">Reject</button>
-                            <button type="button" mjButton variant="primary" size="sm" [disabled]="Busy" (click)="Decide(o, 'Approved')">Approve</button>
-                        </div>
+                    @if (o.Status === 'Requested') {
+                        @if (CanReject(o)) {
+                            <div class="mjo-ao-decide">
+                                <input type="text" placeholder="Notes (optional)" [name]="'notes-' + o.ID" [(ngModel)]="DecisionNotes[o.ID]" />
+                                <button type="button" mjButton variant="flat" size="sm" [disabled]="Busy" (click)="Decide(o, 'Rejected')">Reject</button>
+                                @if (CanApprove(o)) {
+                                    <button type="button" mjButton variant="primary" size="sm" [disabled]="Busy" (click)="Decide(o, 'Approved')">Approve</button>
+                                }
+                            </div>
+                            @if (ApproveNote(o); as note) {
+                                <p class="mjo-ao-meta mjo-ao-waiting">{{ note }}</p>
+                            }
+                        } @else {
+                            <p class="mjo-ao-meta mjo-ao-waiting">
+                                <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> {{ WaitingOn(o) }}
+                            </p>
+                        }
                     }
                 </li>
             }

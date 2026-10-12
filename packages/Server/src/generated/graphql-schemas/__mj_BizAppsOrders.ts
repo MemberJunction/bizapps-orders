@@ -17,7 +17,7 @@ import { MaxLength } from 'class-validator';
 import * as mj_core_schema_server_object_types from '@memberjunction/server'
 
 
-import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { mjBizAppsOrdersChargeTypeEntity, mjBizAppsOrdersCheckoutSessionStepEntity, mjBizAppsOrdersCheckoutSessionEntity, mjBizAppsOrdersCheckoutWidgetDistributionEntity, mjBizAppsOrdersCheckoutWidgetEntity, mjBizAppsOrdersCustomerPaymentMethodEntity, mjBizAppsOrdersCustomerPaymentTermsEntity, mjBizAppsOrdersCustomerTaxExemptionEntity, mjBizAppsOrdersDimensionDefaultEntity, mjBizAppsOrdersEntitlementAccessOverrideEntity, mjBizAppsOrdersEntitlementGrantEntity, mjBizAppsOrdersEventOrderLineEntity, mjBizAppsOrdersEventProductEntity, mjBizAppsOrdersExternalCustomerEntity, mjBizAppsOrdersExternalInvoiceEntity, mjBizAppsOrdersExternalPaymentEntity, mjBizAppsOrdersOrderAdjustmentAllocationEntity, mjBizAppsOrdersOrderAdjustmentEntity, mjBizAppsOrdersOrderChargeAllocationEntity, mjBizAppsOrdersOrderChargeEntity, mjBizAppsOrdersOrderCheckoutAnswerEntity, mjBizAppsOrdersOrderCompanyPolicyEntity, mjBizAppsOrdersOrderConcessionEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderLineChoiceEntity, mjBizAppsOrdersOrderLineDimensionEntity, mjBizAppsOrdersOrderLinePriceComponentEntity, mjBizAppsOrdersOrderLineProgressMeasurementEntity, mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersOrderSequenceEntity, mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity, mjBizAppsOrdersPaymentDetailEntity, mjBizAppsOrdersPaymentHeaderEntity, mjBizAppsOrdersPaymentIntentEntity, mjBizAppsOrdersPaymentLineEntity, mjBizAppsOrdersPaymentProviderPriceEntity, mjBizAppsOrdersPaymentProviderSyncStateEntity, mjBizAppsOrdersPaymentProviderTypeEntity, mjBizAppsOrdersPaymentProviderEntity, mjBizAppsOrdersPaymentSequenceEntity, mjBizAppsOrdersPaymentTermsTypeEntity, mjBizAppsOrdersPaymentTypeEntity, mjBizAppsOrdersPaymentWebhookDeliveryEntity, mjBizAppsOrdersPriceListAssignmentEntity, mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductBundleItemEntity, mjBizAppsOrdersProductCategoryEntity, mjBizAppsOrdersProductEntitlementEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersProductTypeEntity, mjBizAppsOrdersProductEntity, mjBizAppsOrdersPromotionCodeEntity, mjBizAppsOrdersPromotionTargetEntity, mjBizAppsOrdersPromotionTypeEntity, mjBizAppsOrdersPromotionEntity, mjBizAppsOrdersReferralProgramEntity, mjBizAppsOrdersRevenueRecognitionTypeEntity, mjBizAppsOrdersSalesAuthorityEntity, mjBizAppsOrdersSalesRuleEntity, mjBizAppsOrdersStoredValueAccountEntity, mjBizAppsOrdersStoredValueTransactionEntity, mjBizAppsOrdersSubscriptionEventEntity, mjBizAppsOrdersSubscriptionFamilyEntity, mjBizAppsOrdersSubscriptionSequenceEntity, mjBizAppsOrdersSubscriptionTermEntity, mjBizAppsOrdersSubscriptionTypeEntity, mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
     
 
 //****************************************************************************
@@ -3386,6 +3386,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @Field(() => Float, {nullable: true}) 
     RenewalIncreasePercent?: number;
         
+    @Field(() => Boolean, {nullable: true}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(255)
     VenueAddress?: string;
@@ -3493,6 +3496,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent: number | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3595,6 +3601,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -5770,7 +5779,7 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     SubscriptionTermID?: string;
         
-    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`}) 
+    @Field({nullable: true, description: `How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`}) 
     @MaxLength(20)
     DeliveryForm?: string;
         
@@ -5836,6 +5845,26 @@ export class mjBizAppsOrdersOrderConcession_ {
     @MaxLength(36)
     NewPaymentTermsTypeID?: string;
         
+    @Field({nullable: true, description: `Where the signed contract amendment for this concession is kept: a document number or a link. Set once the customer has signed; may be set or corrected after the concession is decided. NULL while no signed amendment is on file.`}) 
+    @MaxLength(500)
+    SignedAmendmentReference?: string;
+        
+    @Field({nullable: true, description: `For a Duration concession granted under a referral program, the program. Set by the requester when recording it; the program approves the concession when it is in program (see ReferralProgram.DaysPerReferral).`}) 
+    @MaxLength(36)
+    ReferralProgramID?: string;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's start date before the change.`}) 
+    PriorStartDate?: Date;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's end date before the change.`}) 
+    PriorEndDate?: Date;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's start date once it is approved and applied.`}) 
+    NewStartDate?: Date;
+        
+    @Field({nullable: true, description: `For a Shift or Shorten concession, the term's end date once it is approved and applied.`}) 
+    NewEndDate?: Date;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -5859,6 +5888,10 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     NewPaymentTermsType?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    ReferralProgram?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -5933,6 +5966,24 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field({ nullable: true })
     NewPaymentTermsTypeID: string | null;
 
+    @Field({ nullable: true })
+    SignedAmendmentReference: string | null;
+
+    @Field({ nullable: true })
+    ReferralProgramID: string | null;
+
+    @Field({ nullable: true })
+    PriorStartDate: Date | null;
+
+    @Field({ nullable: true })
+    PriorEndDate: Date | null;
+
+    @Field({ nullable: true })
+    NewStartDate: Date | null;
+
+    @Field({ nullable: true })
+    NewEndDate: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6005,6 +6056,24 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field({ nullable: true })
     NewPaymentTermsTypeID?: string | null;
+
+    @Field({ nullable: true })
+    SignedAmendmentReference?: string | null;
+
+    @Field({ nullable: true })
+    ReferralProgramID?: string | null;
+
+    @Field({ nullable: true })
+    PriorStartDate?: Date | null;
+
+    @Field({ nullable: true })
+    PriorEndDate?: Date | null;
+
+    @Field({ nullable: true })
+    NewStartDate?: Date | null;
+
+    @Field({ nullable: true })
+    NewEndDate?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -10169,6 +10238,197 @@ export class mjBizAppsOrdersPaymentLineResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Payment Provider Prices
+//****************************************************************************
+@ObjectType({ description: `Which Orders product a payment gateway\'s price sells, per payment provider. An order created from a charge that matched no order carries the product its checkout\'s price maps to here; a price with no active row creates no order and stays a finance exception.` })
+export class mjBizAppsOrdersPaymentProviderPrice_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: `The payment provider (gateway account) the price belongs to.`}) 
+    @MaxLength(36)
+    PaymentProviderID?: string;
+        
+    @Field({nullable: true, description: `The gateway's own price id (for Stripe, price_...). Unique per provider.`}) 
+    @MaxLength(255)
+    ProviderPriceID?: string;
+        
+    @Field({nullable: true, description: `The Orders product an order created from a charge for this price carries.`}) 
+    @MaxLength(36)
+    ProductID?: string;
+        
+    @Field({nullable: true, description: `What the price is, in the gateway's or finance's words, for the people maintaining the map. Not read by code.`}) 
+    @MaxLength(255)
+    Description?: string;
+        
+    @Field(() => Boolean, {nullable: true, description: `Whether the map is used. An inactive row creates no orders, as if the price were unmapped.`}) 
+    IsActive?: boolean;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    PaymentProvider?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(200)
+    Product?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Payment Provider Prices
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersPaymentProviderPriceInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    ProviderPriceID?: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Payment Provider Prices
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersPaymentProviderPriceInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    PaymentProviderID?: string;
+
+    @Field({ nullable: true })
+    ProviderPriceID?: string;
+
+    @Field({ nullable: true })
+    ProductID?: string;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Payment Provider Prices
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersPaymentProviderPriceViewResult {
+    @Field(() => [mjBizAppsOrdersPaymentProviderPrice_])
+    Results: mjBizAppsOrdersPaymentProviderPrice_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersPaymentProviderPrice_)
+export class mjBizAppsOrdersPaymentProviderPriceResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersPaymentProviderPriceViewResult)
+    async RunmjBizAppsOrdersPaymentProviderPriceViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersPaymentProviderPriceViewResult)
+    async RunmjBizAppsOrdersPaymentProviderPriceViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersPaymentProviderPriceViewResult)
+    async RunmjBizAppsOrdersPaymentProviderPriceDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Payment Provider Prices';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersPaymentProviderPrice_, { nullable: true })
+    async mjBizAppsOrdersPaymentProviderPrice(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersPaymentProviderPrice_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Payment Provider Prices', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwPaymentProviderPrices')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Payment Provider Prices', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Payment Provider Prices', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersPaymentProviderPrice_)
+    async CreatemjBizAppsOrdersPaymentProviderPrice(
+        @Arg('input', () => CreatemjBizAppsOrdersPaymentProviderPriceInput) input: CreatemjBizAppsOrdersPaymentProviderPriceInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Payment Provider Prices', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersPaymentProviderPrice_)
+    async UpdatemjBizAppsOrdersPaymentProviderPrice(
+        @Arg('input', () => UpdatemjBizAppsOrdersPaymentProviderPriceInput) input: UpdatemjBizAppsOrdersPaymentProviderPriceInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Payment Provider Prices', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersPaymentProviderPrice_)
+    async DeletemjBizAppsOrdersPaymentProviderPrice(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Payment Provider Prices', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Payment Provider Sync States
 //****************************************************************************
 @ObjectType({ description: `Poll watermark and last-run outcome per provider row per rail object (e.g. receivable-payments). Advanced only after a pass completes without a fault.` })
@@ -12472,6 +12732,9 @@ export class mjBizAppsOrdersProductCategory_ {
     @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews, for every product in this category and its child categories. NULL means inherit from the parent category, then the company's OrderCompanyPolicy. A subscription or product value overrides it.`}) 
     RenewalIncreasePercent?: number;
         
+    @Field(() => Boolean, {nullable: true, description: `When true, every line for a product in this category holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it. NULL means inherit from the next level: the parent category, then the product type. A product's own value overrides this.`}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -12548,6 +12811,9 @@ export class CreatemjBizAppsOrdersProductCategoryInput {
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent: number | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -12599,6 +12865,9 @@ export class UpdatemjBizAppsOrdersProductCategoryInput {
 
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13393,6 +13662,9 @@ export class mjBizAppsOrdersProductType_ {
     @Field({nullable: true, description: `Extensible JSON configuration for this product type including customUI (js, css, theme, componentOverrideKey), unitMode, allowQuantity, and fieldOverrides.`}) 
     Configuration?: string;
         
+    @Field(() => Boolean, {nullable: true, description: `When true, every line for a product of this type holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. For products priced per engagement, such as professional services or custom scope. NULL means not required. A product category or the product itself overrides this.`}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     DefaultRevenueRecognitionType?: string;
@@ -13462,6 +13734,9 @@ export class CreatemjBizAppsOrdersProductTypeInput {
     @Field({ nullable: true })
     Configuration: string | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13522,6 +13797,9 @@ export class UpdatemjBizAppsOrdersProductTypeInput {
 
     @Field({ nullable: true })
     Configuration?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -13712,6 +13990,9 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Float, {nullable: true, description: `Percent added to a subscription's price when it renews onto this product. Overrides the product's category and the company. NULL means inherit from the category and its ancestors, then the company's OrderCompanyPolicy. A subscription's own value overrides it.`}) 
     RenewalIncreasePercent?: number;
         
+    @Field(() => Boolean, {nullable: true, description: `When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`}) 
+    RequiresSaleApproval?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -13819,6 +14100,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent: number | null;
 
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval: boolean | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -13897,6 +14181,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Float, { nullable: true })
     RenewalIncreasePercent?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresSaleApproval?: boolean | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -14921,6 +15208,191 @@ export class mjBizAppsOrdersPromotionResolver extends ResolverBase {
 }
 
 //****************************************************************************
+// ENTITY CLASS for MJ_BizApps_Orders: Referral Programs
+//****************************************************************************
+@ObjectType({ description: `A program that grants a customer extra subscription time for a referral. The time is applied on the renewal order, as a Duration concession on the renewed term, never to the current term, and lapses if the customer does not renew.` })
+export class mjBizAppsOrdersReferralProgram_ {
+    @Field() 
+    @MaxLength(36)
+    ID: string;
+        
+    @Field({nullable: true, description: `The company that runs the program. A concession may name the program only on that company's orders.`}) 
+    @MaxLength(36)
+    CompanyID?: string;
+        
+    @Field({nullable: true, description: `The program's name, unique within its company.`}) 
+    @MaxLength(200)
+    Name?: string;
+        
+    @Field({nullable: true, description: `The program's terms as the customer was told them.`}) 
+    Description?: string;
+        
+    @Field(() => Int, {nullable: true, description: `Days one referral earns. A Duration concession naming this program is approved by the program when it adds no more than this to a term bought by a renewal line; a larger one is routed for approval like any other concession. Must be a whole number above zero.`}) 
+    DaysPerReferral?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: `Only an active program approves a concession. Deactivate a program rather than deleting it: approved concessions keep naming it.`}) 
+    IsActive?: boolean;
+        
+    @Field() 
+    _mj__CreatedAt: Date;
+        
+    @Field() 
+    _mj__UpdatedAt: Date;
+        
+    @Field({nullable: true}) 
+    @MaxLength(50)
+    Company?: string;
+        
+    @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
+    ReadableFields___?: string[];
+        
+}
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Referral Programs
+//****************************************************************************
+@InputType()
+export class CreatemjBizAppsOrdersReferralProgramInput {
+    @Field({ nullable: true })
+    ID?: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description: string | null;
+
+    @Field(() => Int, { nullable: true })
+    DaysPerReferral?: number;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+
+//****************************************************************************
+// INPUT TYPE for MJ_BizApps_Orders: Referral Programs
+//****************************************************************************
+@InputType()
+export class UpdatemjBizAppsOrdersReferralProgramInput {
+    @Field()
+    ID: string;
+
+    @Field({ nullable: true })
+    CompanyID?: string;
+
+    @Field({ nullable: true })
+    Name?: string;
+
+    @Field({ nullable: true })
+    Description?: string | null;
+
+    @Field(() => Int, { nullable: true })
+    DaysPerReferral?: number;
+
+    @Field(() => Boolean, { nullable: true })
+    IsActive?: boolean;
+
+    @Field(() => [KeyValuePairInput], { nullable: true })
+    OldValues___?: KeyValuePairInput[];
+
+    @Field(() => RestoreContextInput, { nullable: true })
+    RestoreContext___?: RestoreContextInput;
+}
+    
+//****************************************************************************
+// RESOLVER for MJ_BizApps_Orders: Referral Programs
+//****************************************************************************
+@ObjectType()
+export class RunmjBizAppsOrdersReferralProgramViewResult {
+    @Field(() => [mjBizAppsOrdersReferralProgram_])
+    Results: mjBizAppsOrdersReferralProgram_[];
+
+    @Field(() => String, {nullable: true})
+    UserViewRunID?: string;
+
+    @Field(() => Int, {nullable: true})
+    RowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    TotalRowCount: number;
+
+    @Field(() => Int, {nullable: true})
+    ExecutionTime: number;
+
+    @Field({nullable: true})
+    ErrorMessage?: string;
+
+    @Field(() => Boolean, {nullable: false})
+    Success: boolean;
+}
+
+@Resolver(mjBizAppsOrdersReferralProgram_)
+export class mjBizAppsOrdersReferralProgramResolver extends ResolverBase {
+    @Query(() => RunmjBizAppsOrdersReferralProgramViewResult)
+    async RunmjBizAppsOrdersReferralProgramViewByID(@Arg('input', () => RunViewByIDInput) input: RunViewByIDInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByIDGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersReferralProgramViewResult)
+    async RunmjBizAppsOrdersReferralProgramViewByName(@Arg('input', () => RunViewByNameInput) input: RunViewByNameInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        return super.RunViewByNameGeneric(input, provider, userPayload, pubSub);
+    }
+
+    @Query(() => RunmjBizAppsOrdersReferralProgramViewResult)
+    async RunmjBizAppsOrdersReferralProgramDynamicView(@Arg('input', () => RunDynamicViewInput) input: RunDynamicViewInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        input.EntityName = 'MJ_BizApps_Orders: Referral Programs';
+        return super.RunDynamicViewGeneric(input, provider, userPayload, pubSub);
+    }
+    @Query(() => mjBizAppsOrdersReferralProgram_, { nullable: true })
+    async mjBizAppsOrdersReferralProgram(@Arg('ID', () => String) ID: string, @Ctx() { userPayload, providers }: AppContext, @PubSub() pubSub: PubSubEngine): Promise<mjBizAppsOrdersReferralProgram_ | null> {
+        this.CheckUserReadPermissions('MJ_BizApps_Orders: Referral Programs', userPayload);
+        const provider = GetReadOnlyProvider(providers, { allowFallbackToReadWrite: true });
+        const sSQL = `SELECT * FROM ${provider.QuoteSchemaAndView('__mj_BizAppsOrders', 'vwReferralPrograms')} WHERE ${provider.QuoteIdentifier('ID')}=${provider.BuildParameterPlaceholder(0)} ` + this.getRowLevelSecurityWhereClause(provider, 'MJ_BizApps_Orders: Referral Programs', userPayload, EntityPermissionType.Read, 'AND');
+        const rows = await provider.ExecuteSQL(sSQL, [ID], undefined, this.GetUserFromPayload(userPayload));
+        const result = await this.MapFieldNamesToCodeNames('MJ_BizApps_Orders: Referral Programs', rows && rows.length > 0 ? rows[0] : null, this.GetUserFromPayload(userPayload));
+        return result;
+    }
+    
+    @Mutation(() => mjBizAppsOrdersReferralProgram_)
+    async CreatemjBizAppsOrdersReferralProgram(
+        @Arg('input', () => CreatemjBizAppsOrdersReferralProgramInput) input: CreatemjBizAppsOrdersReferralProgramInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.CreateRecord('MJ_BizApps_Orders: Referral Programs', input, provider, userPayload, pubSub)
+    }
+        
+    @Mutation(() => mjBizAppsOrdersReferralProgram_)
+    async UpdatemjBizAppsOrdersReferralProgram(
+        @Arg('input', () => UpdatemjBizAppsOrdersReferralProgramInput) input: UpdatemjBizAppsOrdersReferralProgramInput,
+        @Ctx() { providers, userPayload }: AppContext,
+        @PubSub() pubSub: PubSubEngine
+    ) {
+        const provider = GetReadWriteProvider(providers);
+        return this.UpdateRecord('MJ_BizApps_Orders: Referral Programs', input, provider, userPayload, pubSub);
+    }
+    
+    @Mutation(() => mjBizAppsOrdersReferralProgram_)
+    async DeletemjBizAppsOrdersReferralProgram(@Arg('ID', () => String) ID: string, @Arg('options___', () => DeleteOptionsInput) options: DeleteOptionsInput, @Ctx() { providers, userPayload }: AppContext, @PubSub() pubSub: PubSubEngine) {
+        const provider = GetReadWriteProvider(providers);
+        const key = new CompositeKey([{FieldName: 'ID', Value: ID}]);
+        return this.DeleteRecord('MJ_BizApps_Orders: Referral Programs', key, options, provider, userPayload, pubSub);
+    }
+    
+}
+
+//****************************************************************************
 // ENTITY CLASS for MJ_BizApps_Orders: Revenue Recognition Types
 //****************************************************************************
 @ObjectType()
@@ -15400,6 +15872,21 @@ export class mjBizAppsOrdersSalesRule_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Int, {nullable: true, description: `ConcessionLimit rules only: this tier's rank. A concession goes to the highest-ranked active ConcessionLimit rule whose thresholds it meets; two active rules may not share a rank. NULL ranks as 0.`}) 
+    ConcessionTier?: number;
+        
+    @Field(() => Float, {nullable: true, description: `ConcessionLimit rules only: a concession valued at or above this, in currency, meets this tier. NULL sets no value threshold.`}) 
+    MinConcessionValue?: number;
+        
+    @Field(() => Float, {nullable: true, description: `ConcessionLimit rules only: a concession whose order's concessions, as a share of its net total (0.05 = 5%), are at or above this meets this tier. NULL sets no share threshold.`}) 
+    MinConcessionPctOfContract?: number;
+        
+    @Field(() => Int, {nullable: true, description: `ConcessionLimit rules only: a concession that changes a term's dates by this many days or more meets this tier. NULL sets no term-date threshold.`}) 
+    MinTermExtensionDays?: number;
+        
+    @Field(() => Boolean, {nullable: true, description: `ConcessionLimit rules only: when 1, a concession routed to this tier is Pending even when the requester's SalesAuthority covers it, and the requester cannot decide it. When 0, a concession within authority is Approved on save.`}) 
+    RequiresDecisionWithinAuthority?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     ApprovalRequiredRole?: string;
@@ -15438,6 +15925,21 @@ export class CreatemjBizAppsOrdersSalesRuleInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field(() => Int, { nullable: true })
+    ConcessionTier: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionValue: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionPctOfContract: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MinTermExtensionDays: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresDecisionWithinAuthority?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -15471,6 +15973,21 @@ export class UpdatemjBizAppsOrdersSalesRuleInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field(() => Int, { nullable: true })
+    ConcessionTier?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionValue?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    MinConcessionPctOfContract?: number | null;
+
+    @Field(() => Int, { nullable: true })
+    MinTermExtensionDays?: number | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RequiresDecisionWithinAuthority?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

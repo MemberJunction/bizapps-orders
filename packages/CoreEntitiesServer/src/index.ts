@@ -52,7 +52,8 @@ export {
     type ConcessionDecisionResult,
 } from './ConcessionApprovalListener.js';
 export {
-    FindConcessionLimitRule,
+    FindConcessionTier,
+    LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
     LineConcessionTerms,
@@ -261,7 +262,7 @@ export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './
 export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
-export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export { ProductPriceEntityServer, LoadProductPriceEntityServer } from './ProductPriceEntityServer.js';
 export {
     ProductEntityServer,
     SubscriptionFamilyEntityServer,
@@ -302,6 +303,8 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    IsSuspensionReason,
+    ReadTimeAccessCutoffDay,
     ReadTimeCutoffSuspension,
     ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
@@ -311,6 +314,7 @@ export {
     CacheUntilFor,
     ShouldRevokeGrantsOnCancel,
     ENTITLEMENT_CHECK_TTL_MS,
+    AccessOverrideApprovers,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -334,6 +338,8 @@ export type {
     TermAccessFacts,
     GrantAccessEvaluation,
     RankableAccess,
+    AccessOverrideApproverFacts,
+    AccessOverrideApproverResult,
 } from './EntitlementBehavior.js';
 export {
     CreateEntitlementGrants,
@@ -476,6 +482,9 @@ export type {
     ListRefundsRequest,
     ListRefundsResult,
     GatewayCharge,
+    GatewayChargeItem,
+    ListChargeItemsRequest,
+    ListChargeItemsResult,
     ListChargesRequest,
     ListChargesResult,
     RetrieveChargeRequest,
@@ -524,6 +533,43 @@ export {
     CreateOrderFromGatewayCharge,
     LoadCreateOrderFromProviderPaymentOperation,
 } from './CreateOrderFromProviderPaymentOperation.js';
+export {
+    ParseChargeMismatchDedupeKey,
+    CheckChargeExceptionForOrder,
+    CheckResolveChargeExceptionInput,
+    ChargeExceptionResolutionNote,
+} from './ChargeExceptionResolution.js';
+export type {
+    ChargeExceptionRow,
+    ChargeExceptionTarget,
+    ChargeExceptionRefusal,
+    ChargeExceptionRefusalCode,
+    ParsedChargeMismatchKey,
+    ResolveChargeExceptionRequest,
+    CheckedResolveChargeExceptionRequest,
+} from './ChargeExceptionResolution.js';
+export {
+    ResolveChargeExceptionOperation,
+    ResolveChargeException,
+    UserCanClearFinanceExceptions,
+    FINANCE_EXCEPTIONS_CLEAR_AUTH,
+    LoadResolveChargeExceptionOperation,
+} from './ResolveChargeExceptionOperation.js';
+export type { BookExceptionCharge } from './ResolveChargeExceptionOperation.js';
+export {
+    BuyerFromCharge,
+    ChooseProductForCharge,
+    PriceMapLookup,
+    SplitBuyerName,
+} from './UnmatchedChargeRules.js';
+export type { ChargeBuyer, ProviderPriceMapRow, UnmatchedChargeUnresolved, UnmatchedChargeUnresolvedCode } from './UnmatchedChargeRules.js';
+export {
+    CreateOrderForUnmatchedCharge,
+    IsUnmatchedCharge,
+    LoadProviderPriceMap,
+    PAYMENT_PROVIDER_PRICE_ENTITY,
+} from './UnmatchedChargeOrders.js';
+export type { UnmatchedChargeOutcome } from './UnmatchedChargeOrders.js';
 export {
     BookProviderRefunds,
     PlanProviderRefundBooking,

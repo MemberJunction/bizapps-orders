@@ -1,5 +1,38 @@
 # @mj-biz-apps/orders-entities
 
+## 5.30.0
+
+### Minor Changes
+
+- 7fe01d1: `Orders.CheckEntitlement` and `Orders.ListEntitlements` say why access is held and when a past-due renewal loses it (#269). A `Suspended` answer now carries `SuspensionReason`: `AwaitingPayment` (a new purchase waiting for its first payment), `PastDue` (a renewal past the cutoff) or `AwaitingActivation`, or null for a suspension with no recorded reason. While a renewal is past due but still has access, `AccessCutoffDate` is the last day it keeps it, the overdue worklist's `GraceThroughDate`, or an approved cutoff deferral's last day when later. `Decision` is unchanged, so callers matching `Suspended` keep working.
+- de9be4d: `orders-entities` exports the "customer already holds this product" lookup behind a subscription line's extend-or-new question: `FindExistingHolding`, `HoldingSubscriberFor` and `FindUnansweredHeldLines`. It uses `RunView` only, so another app's server can refuse a confirm or a close while a line for a held product has no `SubscriptionAction`, using the same rule the order screen asks with. A failed read throws instead of reporting no holding. `orders-ng`'s `GetExistingHolding` and the order line editor now call it.
+- d8efa9f: Another app can now refuse an order's confirm, through a seam beside the one that refuses a line edit.
+
+  Confirming is where an order stops being a proposal: journal entries are written, a subscription may be created, recognition follows. Orders enforces its own rules — a legal status, a bill-to party, at least one line, a service period where one is needed — but it cannot know that an app upstream has a reason to say "not yet".
+
+  The case this exists for (bc-aidp-next-golive#323): Sales closes a deal Won, which mints the order; the deal is then reopened to Open; the order is confirmed from the order screen and books anyway, leaving an Open deal sitting on a booked order. Sales already refuses the reverse.
+
+  Nothing registers into this on the day it ships, and it cannot: Sales resolves this package from the registry and cannot call a function that has not been published. `HostOrderConfirmVeto()` returns null until something registers, the check returns early, and no host behaves differently.
+
+- 330c0e5: Migration `V202610081700` adds `PaymentWebhookDelivery`: one row per verified payment-gateway webhook event, with what Orders did with it (`Outcome`: Applied, AlreadyApplied, Ignored, Rejected, Failed), a `ReasonCode`, the intent and charge ids, and when it happened and arrived. Unique per provider and gateway event id. The entity class, GraphQL type and generated form carry it.
+
+### Patch Changes
+
+- 557b6b3: The order form's access overrides panel offers Approve and Reject only to an assignee of the approval task who is not the requester, and Approve only on or before the override's last day (bizapps-orders#517). Everyone else sees whom the request is waiting on. The decision rule (`AccessOverrideDecisionRefusal`) and the assignee read (`LoadAccessOverrideAssignees`) move to `@mj-biz-apps/orders-entities` so the browser and the server share them.
+- 573ff96: `Orders.AmendArrangement`'s generated input and output types now match the operation: `OrderHeaderID` and `NewPaymentTermsTypeID` for a change of payment terms, `SubscriptionTermID` and `NewEndDate` optional, and the payment-terms fields of the output. The input interface is declared once, and the server operation uses the generated types.
+- 9647922: On a saved order, clearing or replacing the bill-to or ship-to person also clears an organization that is that person's employer (#356). Which organization a default filled in is remembered only while the order is open, so on a reopened order the previous person's employer stayed as the payer. The order form says what it removed and offers Undo, for an order that should keep billing that organization. `ClearPersonParty` is now async and returns the organizations it cleared this way; `RestorePartyOrganizations` puts them back.
+- 0db962e: MemberJunction and other BizApps packages are peer dependencies with caret ranges (`^6.1.5` for
+  MemberJunction, `^5.49.0` for common, `>=0.21.0` for accounting; no `~`, nothing in
+  `dependencies`), so a 6.2 host keeps one copy of each instead of installing a second tree. MemberJunction
+  devDependencies and the root `pnpm.overrides` use the same `^6.1.5` floor. Adds `check-dependency-model` to CI.
+- 0c4815c: Confirming a saved draft that carries a promotion code records the promotion once. The code rides the order, so the confirm re-decides it, and it used to write a second set of adjustment rows beside the draft's. A save that re-decides a saved order's promotions now removes the earlier promotion rows for those lines first and keeps each line's manual discount. A requested manual discount is consumed by the save that applies it, so saving the same order object again no longer grants it twice, and a single-use code a draft already took is no longer counted against the same order at confirm.
+- 036923f: A tax rate, amount or override stated on a draft is kept when the draft is confirmed. The request lived only in memory, so a confirm from a reloaded draft resolved tax from the ship-to address and replaced the stated rows. The walk now reads a saved order's stated tax charges back as requests, and a restated override keeps its reason and the user who made it. A re-price also removes the order's zero-amount tax rows, which have no allocation to reach them by. Requested charges are consumed once the save commits, so confirming the same order object no longer writes them a second time.
+- 5d531bf: Confirming a saved draft with taxed lines books balanced entries. Each pricing save re-resolves tax, and the confirm used to add its tax charge rows beside the draft's, so booking credited the tax twice and refused the entry as unbalanced. A save of an unbooked order now removes the earlier tax rows for the lines it re-priced before writing the new ones, and a line re-priced to no tax has its `LineTax` cleared.
+- ba20d3e: The `OrderConfirmed` outbound event carries the buyer's checkout answers as `CheckoutAnswers[]` (`QuestionKey`, `QuestionLabel`, `Answer`, `OtherText`), empty when the checkout asked nothing (#322). Confirming an order now writes the answers attached to it: the booking save skipped the order's related collections so it could price the lines first, and that skip also left the answers unwritten. The "Other" text of a select question is capped at the question's own `maxLength`, as the answer is.
+- a1810fd: Changing the Receiving Company or the tender on a saved draft payment that already has instrument details (a reference number, card or bank fields) no longer fails with "Cannot use the ROLLBACK statement within an INSERT-EXEC statement". A saved payment detail is a snapshot the database refuses to edit; the payment now gets a new detail carrying the same instrument fields with the corrected company and tender, and the saved detail is left unchanged.
+- f22d329: The three ML models shipped in `metadata/ml-models` and their scoring bindings are retired with `deleteRecord`. They were trained on sample data and had no artifact file on any install. The training pipelines still ship; an install trains its own model from one. `scripts/rebuild-db.sh` now pushes the whole `metadata/` folder.
+- d0c3fa6: Two checks of Orders against the payment gateway. A webhook endpoint drift check finds each live provider's endpoint at the gateway (the one whose URL ends in the provider's id) and reports one that is missing, disabled, or does not send every event kind the driver handles; it runs once at server start and as the `Orders.CheckPaymentWebhookEndpoints` Action, and drift is logged as an error and fails the run. A charge reconciliation, the `Orders.ReconcilePaymentProviderCharges` remote operation and Action, matches the gateway's charges and refunds for a window of business days to Orders' intents and captured payments and reports a charge with no payment, a payment with no charge, and a refunded charge whose payment carries fewer refunds; with `Preview` false each is raised as a `PROVIDER_CHARGE_MISMATCH` finance exception. It corrects nothing. Both scheduled jobs ship disabled, the reconciliation in preview. New driver calls: `ListCharges`, `RetrieveCharge`, `ListWebhookEndpoints`, `ListsCharges`. A restricted gateway key needs read access to webhook endpoints, charges and refunds.
+
 ## 5.29.0
 
 ### Minor Changes
@@ -537,8 +570,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                  The INSERT statement conflicted with the FOREIGN KEY constraint
-                                  "FK_EntityFieldValue_EntityField"
+                                    The INSERT statement conflicted with the FOREIGN KEY constraint
+                                    "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

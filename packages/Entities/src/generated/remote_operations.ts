@@ -210,6 +210,8 @@ export interface AmendArrangementInput {
     AppliesToInvoiceID?: string;
     /** With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment. */
     RefundRequested?: boolean;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
     ReasonCategory: AmendmentReasonCategory;
     Reason: string;
     /** Return what the amendment would do without writing anything. */
@@ -282,6 +284,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -594,7 +599,8 @@ export interface CapturePaymentOrderEffect {
     /** As the rollup triggers left it, not as the operation calculated it. */
     AmountPaid: number;
     Balance: number;
-    PaymentStatus: string;
+    /** Derived from TotalGross, AmountPaid and Balance; the order stores no payment status. */
+    PaymentStatus: 'Unpaid' | 'PartiallyPaid' | 'Paid';
     /**
      * True when this order's balance went NEGATIVE — the customer over-paid and the surplus is now
      * spendable credit (D68). Not an error: the account-credit screen depends on these existing.
@@ -757,6 +763,12 @@ export type EntitlementDecision =
     | 'Suspended'
     | 'SubscriptionInactive';
 
+/**
+ * Why a grant is suspended: waiting for its first payment (a new purchase), past due beyond the
+ * renewal cutoff, or waiting for activation.
+ */
+export type EntitlementSuspensionReason = 'AwaitingPayment' | 'PastDue' | 'AwaitingActivation';
+
 export interface CheckEntitlementOutput {
     HasAccess: boolean;
     Decision: EntitlementDecision;
@@ -767,6 +779,14 @@ export interface CheckEntitlementOutput {
     Quantity?: number;
     /** Audit handle of the winning grant. */
     GrantID?: string;
+    /** Present only with `Decision: 'Suspended'`: why access is held. Null when no reason is recorded (a suspension a person made). */
+    SuspensionReason?: EntitlementSuspensionReason | null;
+    /**
+     * Present only while access holds on a renewal that is past due: the last day (`YYYY-MM-DD`, business
+     * time zone) access is kept before the past-due cutoff suspends it, or an approved cutoff deferral's
+     * last day when that is later.
+     */
+    AccessCutoffDate?: string;
     EvaluatedAt: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
     CacheUntil: string;
@@ -1589,6 +1609,10 @@ export interface ListedEntitlement {
     ValidTo?: string;
     Quantity?: number;
     GrantID?: string;
+    /** As `CheckEntitlementOutput.SuspensionReason`. */
+    SuspensionReason?: EntitlementSuspensionReason | null;
+    /** As `CheckEntitlementOutput.AccessCutoffDate`. */
+    AccessCutoffDate?: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. */
     CacheUntil: string;
 }
@@ -1913,7 +1937,21 @@ export interface PaymentProviderReconciliationResult {
     ChargesRead: number;
     RefundsRead: number;
     Mismatches: number;
+    /** Orders created from this provider's unmatched charges. Zero in preview. */
+    OrdersCreated: number;
     Message?: string;
+}
+
+/** A paid order created from a charge that matched no Orders payment (#481). */
+export interface PaymentProviderUnmatchedChargeOrder {
+    PaymentProviderID: string;
+    ProviderChargeID: string;
+    OrderHeaderID: string;
+    OrderNumber?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount, major units. */
+    Amount: number;
 }
 
 export interface PaymentProviderReconciliationError {
@@ -1935,6 +1973,11 @@ export interface OrdersReconcilePaymentProviderChargesOutput {
     Raised: number;
     /** Mismatches that already had an exception from an earlier run. */
     AlreadyRaised: number;
+    /**
+     * Charges without a payment that became paid orders: the provider's price map named the product
+     * and the charge's e-mail named the buyer. They are not in Mismatches. Empty in preview.
+     */
+    OrdersCreated: PaymentProviderUnmatchedChargeOrder[];
     Errors: PaymentProviderReconciliationError[];
 }
 
@@ -2184,6 +2227,55 @@ export interface RequestAccessOverrideOutput {
     Message?: string;
     AccessOverrideID?: string;
     ApprovalTaskID?: string;
+}
+
+/**
+ * Input for `Orders.ResolveChargeException`.
+ *
+ * Books the gateway charge a charge-without-payment finance exception names as a paid order, then
+ * clears the exception. The provider and charge come from the exception; the caller names the product
+ * and the buyer.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersResolveChargeExceptionInput {
+    /** The PROVIDER_CHARGE_MISMATCH finance exception to resolve. */
+    FinanceExceptionID: string;
+    /** The product the order's one line carries, priced at the charge's amount. */
+    ProductID: string;
+    /** The buyer. */
+    BillToPersonID: string;
+    /** The buyer's organization, when the order is billed to one. */
+    BillToOrganizationID?: string | null;
+}
+
+/**
+ * Output for `Orders.ResolveChargeException`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersResolveChargeExceptionOutput {
+    /** True when the order is booked and the exception cleared. */
+    Success: boolean;
+    Message: string;
+    /**
+     * Why it did not finish, when Success is false: BadInput, NotAuthorized, ExceptionNotFound, NotOpen,
+     * WrongType, WrongKind, OpenedByOrders, UnreadableKey, ClearRefused, or a code from
+     * Orders.CreateOrderFromProviderPayment. Only ClearRefused leaves a booked order behind.
+     */
+    Code?: string;
+    /** True when the exception was cleared. */
+    Cleared: boolean;
+    /** The gateway charge the exception names. */
+    ProviderChargeID?: string | null;
+    /** True when an earlier call already booked the order for this charge. */
+    WasExisting?: boolean;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount. */
+    Amount?: number | null;
 }
 
 /**
@@ -2802,6 +2894,22 @@ export class OrdersReplayCheckoutStepOperation extends BaseRemotableOperation<Or
  */
 export class OrdersRequestAccessOverrideOperation extends BaseRemotableOperation<RequestAccessOverrideInput, RequestAccessOverrideOutput> {
     public readonly OperationKey = "Orders.RequestAccessOverride";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ResolveChargeException — Resolve Charge Exception
+// ============================================================
+/**
+ * Resolve Charge Exception
+ * Book a charge-without-payment finance exception as a paid order and clear it. Reads the payment provider and gateway charge from the exception, books the order through Orders.CreateOrderFromProviderPayment with the product and buyer the caller names, then clears the exception as Corrected with a note naming the order and payment. Requires the authorization to clear finance exceptions, checked before anything is booked. Refuses an exception that is not Open, is not a PROVIDER_CHARGE_MISMATCH of kind ChargeWithoutPayment, or names a charge Orders opened. A repeat call returns the order already booked and clears the exception if that had failed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ResolveChargeException'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersResolveChargeExceptionOperation extends BaseRemotableOperation<OrdersResolveChargeExceptionInput, OrdersResolveChargeExceptionOutput> {
+    public readonly OperationKey = "Orders.ResolveChargeException";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;

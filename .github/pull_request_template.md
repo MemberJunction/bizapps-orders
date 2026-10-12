@@ -16,6 +16,16 @@ Keep this short. Reviewers read the diff; this is for what the diff cannot say.
 
 ---
 
+### Checklist
+
+Delete the lines that do not apply.
+
+- [ ] A change to a published package (anything under `packages/` except `IntegrationTests`) carries
+      a changeset (`pnpm exec changeset`).
+- [ ] A UI change shows before and after screenshots, with placeholder names and data.
+- [ ] A `metadata/` change a host needs is called out above. It reaches a host only through a
+      release's `*__Metadata_Sync.sql` migration (see `docs/database-migrations.md`).
+
 ### Migrations
 
 Delete this section if the PR adds no migration.
@@ -25,10 +35,10 @@ Delete this section if the PR adds no migration.
 - [ ] The CodeGen output is folded under its own migration's banner.
 - [ ] A changeset carries at least a minor bump.
 
-**A merged migration is locked.** Every database that ran it recorded its checksum, so a later change
-makes those databases refuse to migrate while the ones that never ran it get different SQL. Renaming
-counts: the runner keys on the version in the filename, so a renamed migration is one nobody has run.
-Fix it forward in a new file.
+**A merged migration is locked.** Every database that ran it has recorded it as applied and never
+runs it again, so a later change never reaches those databases while the ones that never ran it get
+different SQL. Renaming counts: the runner keys on the version in the filename, so a renamed migration
+is one nobody has run. Fix it forward in a new file.
 
 If a change to a merged migration is genuinely unavoidable, say so here, explain why nothing else
 works, and get a second reviewer. Do not merge past a red `changes_and_migrations` — that has

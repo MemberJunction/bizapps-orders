@@ -9,8 +9,9 @@
  *     `.DeferCutoff`, or the parent).
  *   · Approved or Rejected is written by the user named as the decider, and only once the approval
  *     task has closed the matching way (Completed for Approved, Cancelled for Rejected). Editing the
- *     row directly therefore cannot stand in for the approval. Who may decide the task is not settled
- *     here (bizapps-orders#360).
+ *     row directly therefore cannot stand in for the approval. The decider must be one of the task's
+ *     assignees and not the requester, and an approval is refused after the override's last day
+ *     (bizapps-orders#360; `DecisionRefusalFor`).
  *   · Withdrawn needs the approval task closed (Completed or Cancelled) — the request ended without a
  *     decision that could be applied — or no task at all, so a row written without going through
  *     `Orders.RequestAccessOverride` can be closed rather than block its order.
@@ -23,7 +24,7 @@ import { BaseEntity, BaseEntityResult, EntitySaveOptions, type IMetadataProvider
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { mjBizAppsOrdersEntitlementAccessOverrideEntity } from '@mj-biz-apps/orders-entities';
 import type { mjBizAppsTasksTaskEntity } from '@mj-biz-apps/tasks-entities';
-import { ACCESS_OVERRIDE_AUTH, UserMayRequestAccessOverride } from './AccessOverride.js';
+import { ACCESS_OVERRIDE_AUTH, DecisionRefusalFor, UserMayRequestAccessOverride } from './AccessOverride.js';
 import { ACCESS_OVERRIDE_ENTITY } from './PaymentGatedAccess.js';
 
 @RegisterClass(BaseEntity, ACCESS_OVERRIDE_ENTITY)
@@ -67,7 +68,7 @@ export class EntitlementAccessOverrideEntityServer extends mjBizAppsOrdersEntitl
                 if (taskStatus !== expected) {
                     return `An access override is ${this.Status} only through its approval task, which is ${taskStatus ?? 'missing'}.`;
                 }
-                return null;
+                return DecisionRefusalFor(this, user.ID, this.Status === 'Approved', this.metadata, user);
             }
             case 'Withdrawn': {
                 if (!this.ApprovalTaskID) return null;
