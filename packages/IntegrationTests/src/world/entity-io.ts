@@ -2,6 +2,7 @@
  * Find-or-save a record through BaseEntity. Lookups are RunView, never raw SQL.
  */
 import { BaseEntity, CompositeKey, Metadata, RunView, type IRunViewProvider } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import type { IntegrationCheckContext } from '@memberjunction/testing-integration';
 
 export async function FindId(
@@ -90,5 +91,5 @@ export async function Upsert(
 }
 
 export function Quote(value: string): string {
-    return value.replace(/'/g, "''");
+    return EscapeSQLString(value);
 }

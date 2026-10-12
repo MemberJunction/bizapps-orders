@@ -2,7 +2,7 @@ import { RunQuery, RunView, type IMetadataProvider, type IRunQueryProvider } fro
 import type { MJOSummaryFigure } from '../panels/summary-strip.component';
 import { FormatMoney } from '../panels/money-format';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { OverdueFilter, Today } from '@mj-biz-apps/orders-entities';
+import { OverdueFilter, RequireUUID, Today } from '@mj-biz-apps/orders-entities';
 
 export type PartyKind = 'person' | 'organization';
 
@@ -112,7 +112,7 @@ async function loadCountFigures(
 ): Promise<MJOSummaryFigure[]> {
     const partyCol = kind === 'person' ? 'BillToPersonID' : 'BillToOrganizationID';
     const subCol = kind === 'person' ? 'BeneficiaryPersonID' : 'HolderOrganizationID';
-    const id = partyId.replace(/'/g, "''");
+    const id = RequireUUID(partyId, 'partyId');
 
     const specs: CountSpec[] = [
         {

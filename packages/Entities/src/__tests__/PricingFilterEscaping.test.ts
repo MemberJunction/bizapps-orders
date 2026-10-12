@@ -3,11 +3,9 @@
  *
  * Charge and promotion codes come from the caller, and the pricing engines compose them into
  * `ExtraFilter` SQL on both tiers. `RunCharges` is driven against a stubbed RunView to check the
- * filter text it sends; a source-level guard keeps hand-rolled quote doubling out of the folder.
+ * filter text it sends. `SqlEscapingSource.test.ts` keeps hand-rolled quote doubling out of the repo.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { readdirSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 
 const filters: string[] = [];
@@ -48,15 +46,5 @@ describe('orders-entities UUID guards', () => {
         expect(RequireUUID(GOOD, 'ProductID')).toBe(GOOD);
         expect(() => RequireUUID(`${GOOD}' OR '1'='1`, 'ProductID')).toThrow(InvalidOperationInputError);
         expect(() => RequireUUIDs([GOOD, 'nope'], 'PriceListID')).toThrow(/PriceListID/);
-    });
-});
-
-describe('pricing source', () => {
-    it('has no hand-rolled quote doubling', () => {
-        const dir = join(import.meta.dirname, '..', 'pricing');
-        const offenders = readdirSync(dir)
-            .filter((f) => f.endsWith('.ts'))
-            .filter((f) => readFileSync(join(dir, f), 'utf8').includes(`.replace(/'/g`));
-        expect(offenders).toEqual([]);
     });
 });

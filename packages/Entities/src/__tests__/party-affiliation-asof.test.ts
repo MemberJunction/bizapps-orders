@@ -33,14 +33,20 @@ describe('ResolveActiveEmployerOrganization default asOf', () => {
 
     it('filters on the business day when no asOf is given', async () => {
         const c = capture();
-        await ResolveActiveEmployerOrganization(c.provider, 'person-1');
+        await ResolveActiveEmployerOrganization(c.provider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
         expect(c.filter()).toContain(`StartDate <= '2026-10-01'`);
         expect(c.filter()).toContain(`EndDate >= '2026-10-01'`);
     });
 
     it('reads a passed day (midnight UTC) as that day', async () => {
         const c = capture();
-        await ResolveActiveEmployerOrganization(c.provider, 'person-1', new Date('2026-09-15T00:00:00.000Z'));
+        await ResolveActiveEmployerOrganization(c.provider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302', new Date('2026-09-15T00:00:00.000Z'));
         expect(c.filter()).toContain(`StartDate <= '2026-09-15'`);
+    });
+
+    it('refuses a non-UUID person id instead of reading it as "no employer"', async () => {
+        const c = capture();
+        await expect(ResolveActiveEmployerOrganization(c.provider, "x' OR '1'='1")).rejects.toThrow(/personID must be a UUID/);
+        expect(c.filter()).toBe('');
     });
 });

@@ -16,7 +16,7 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
 
     it('resolves organization ID when person has exactly one active employer', async () => {
         const mockProvider = createMockProvider([{ ToOrganizationID: 'org-abc-123' }]);
-        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, 'person-xyz-789');
+        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
 
         expect(orgId).toBe('org-abc-123');
         expect(mockProvider.RunView).toHaveBeenCalledTimes(1);
@@ -27,14 +27,14 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
             { ToOrganizationID: 'org-short', StartDate: '2026-01-01', EndDate: null },
             { ToOrganizationID: 'org-long', StartDate: '2018-01-01', EndDate: null },
         ]);
-        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, 'person-xyz-789');
+        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
 
         expect(orgId).toBe('org-long');
     });
 
     it('returns null if person has zero active employers', async () => {
         const mockProvider = createMockProvider([]);
-        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, 'person-xyz-789');
+        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
 
         expect(orgId).toBeNull();
     });
