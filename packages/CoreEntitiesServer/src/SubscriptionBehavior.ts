@@ -513,6 +513,23 @@ export class SubscriptionBehavior {
     }
 
     /**
+     * How many seats a subscription line buys, or why the quantity cannot be a seat count (#589).
+     *
+     * Read from the quantity as ENTERED, before proration scales it to price a short first period;
+     * the term stores the result, and entitlement grants and renewals read it from there.
+     *
+     * A seat is whole: 2.5 seats bills 2.5 × the rate for coverage nobody can hold. Every benefit
+     * model records the count as bought; ten staff can still be ten lines, each naming its person
+     * (see `DedupeIdentity`).
+     */
+    public SeatCount(_rules: SubscriptionTypeRules, quantity: number): { Seats: number } | { Error: string } {
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            return { Error: `a subscription is bought in whole seats, so the quantity must be a whole number of at least 1 (it is ${quantity}).` };
+        }
+        return { Seats: quantity };
+    }
+
+    /**
      * The identity a duplicate is judged against — the heart of the concurrency rule.
      *
      * `Organization` keys on the ORG alone: a company holds ONE membership however many

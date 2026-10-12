@@ -94,6 +94,8 @@ export interface TermForLine {
     ID: string;
     StartDate: Date;
     EndDate: Date;
+    /** Seats the term covers (`SubscriptionTerm.Quantity`), before proration (#589). */
+    Quantity: number;
 }
 
 export interface GrantOutcome {
@@ -260,9 +262,11 @@ export async function CreateEntitlementGrants(
             if (person) grant.BeneficiaryPersonID = person;
             if (organization) grant.BeneficiaryOrganizationID = organization;
 
+            // A subscription line's seats come from its term: the line's own quantity is prorated
+            // by now, so 10 seats over a half-length first period would grant 5 (#589).
             grant.Quantity = ResolveGrantQuantity(
                 template.Quantity,
-                Number(line.Quantity ?? 0),
+                term ? term.Quantity : Number(line.Quantity ?? 0),
                 resolved.QuantityMode,
             );
             grant.ValidFrom = validity.ValidFrom;

@@ -144,7 +144,7 @@ export interface LineCoverageOverlap {
 
 /** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
 interface SubscriptionMaterialization {
-    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>;
+    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>;
     RecognitionMonthsByLine: Map<string, number>;
 }
 
@@ -244,6 +244,11 @@ interface SubscriptionDecisionForLine {
      * subscription's `Extended` event (golive #299).
      */
     RequestedStart: Date | null;
+    /**
+     * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
+     * the term, where entitlement grants and renewals read it.
+     */
+    Seats: number;
 }
 
 /**
@@ -3234,6 +3239,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             termEntity.Amount = term.Amount;
             termEntity.IsProrated = term.IsProrated;
             termEntity.ProrationFactor = term.ProrationFactor;
+            // The seats bought, not `line.Quantity`: by now that is prorated (#589).
+            termEntity.Quantity = decided.Seats;
             // Frozen at purchase: later changes to the product's rules must never restate a
             // term that has already been booked.
             termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
@@ -3253,6 +3260,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 StartDate: term.StartDate,
                 EndDate: term.EndDate,
                 Amount: term.Amount,
+                Quantity: decided.Seats,
             });
             out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
@@ -3384,6 +3392,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
+            // Before anything else reads the quantity: `prepareLines` prorates it after this pass,
+            // and the prorated figure prices the short period but no longer counts seats (#589).
+            const seats = behavior.SeatCount(rules, Number(line.Quantity ?? 0));
+            if ('Error' in seats) {
+                if (preview) continue;
+                throw new Error(`Order line ${line.LineNumber} (${product.Name}): ${seats.Error}`);
+            }
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
             const identity = behavior.DedupeIdentity(rules, subscriber);
             const match = behavior.DedupeMatch(rules, subscriber);
@@ -3549,6 +3564,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
                 RequestedStart: requestedStart,
+                Seats: seats.Seats,
             });
         }
         return out;

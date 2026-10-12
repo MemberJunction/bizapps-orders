@@ -1050,3 +1050,27 @@ describe("the line's own choice when the subscriber already holds the product (g
         expect(decision.Action).toBe('Reactivate');
     });
 });
+
+describe('seat count from the line quantity (#589)', () => {
+    const behavior = new SubscriptionBehavior();
+
+    it('records the whole-number quantity as the seats bought', () => {
+        expect(behavior.SeatCount(rules(), 10)).toEqual({ Seats: 10 });
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Organization' }), 25)).toEqual({ Seats: 25 });
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Individual' }), 1)).toEqual({ Seats: 1 });
+    });
+
+    it('refuses a fractional quantity: a half seat covers nobody', () => {
+        const result = behavior.SeatCount(rules(), 2.5);
+        expect('Error' in result && result.Error).toMatch(/whole seats/);
+    });
+
+    it('refuses zero and negative quantities', () => {
+        expect('Error' in behavior.SeatCount(rules(), 0)).toBe(true);
+        expect('Error' in behavior.SeatCount(rules(), -3)).toBe(true);
+    });
+
+    it('records more than one seat on a type that benefits one named person', () => {
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Individual', Code: 'SEAT' }), 10)).toEqual({ Seats: 10 });
+    });
+});

@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB30).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB32).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -37,6 +37,8 @@
  *   SB27  two lines of one ExtendExisting product on ONE order make one subscription with contiguous terms
  *   SB28  two lines of one RejectDuplicate product on ONE order refuse the whole confirm
  *   SB29  two such lines on an order after two earlier extensions take the next two term numbers, in sequence
+ *   SB30  a subscription bought at quantity 10 records 10 seats on its term, prorated or not (#589)
+ *   SB31  a fractional quantity is refused; a one-person type records more than one seat on its term
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -85,6 +87,7 @@ interface TermRow {
     Amount: number;
     IsProrated: boolean;
     ProrationFactor: number | null;
+    Quantity: number;
     RevenueRecognitionTypeID: string;
     Status: string;
 }
@@ -1225,6 +1228,59 @@ export const SubscriptionChecks: NamedCheck[] = [
                 );
                 AssertEqual(bands.length, 1, 'the bundle expanded its band');
                 AssertEqual(bands[0].CoverageOverlapReason, RUN_ALONGSIDE_REASON, 'the band carries the bundle line\'s reason');
+            }),
+    },
+    {
+        Id: 'subscriptions.SB31',
+        Name: 'SB31: a subscription bought at quantity 10 records 10 seats on its term, prorated or not',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // A rolling type: no proration, so line and term both say 10.
+                const rolling = await buySubscription(ctx, 'SubRolling', 1200, {
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 10, UnitPrice: 1200 }],
+                });
+                Assert(rolling.Saved, `rolling confirm failed: ${rolling.Message}`);
+                const [rollingTerm] = await termsForOrder(ctx, rolling.Order.ID as string);
+                AssertEqual(Number(rollingTerm.Quantity), 10, 'an unprorated term records the 10 seats');
+
+                // An anchored type bought mid-year: the line's quantity is scaled to price the short
+                // period, and the term must still say 10 — the line can no longer count seats.
+                const anchored = await buySubscription(ctx, 'SubCalendar', 1200, {
+                    Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 10, UnitPrice: 1200 }],
+                });
+                Assert(anchored.Saved, `anchored confirm failed: ${anchored.Message}`);
+                const [term] = await termsForOrder(ctx, anchored.Order.ID as string);
+                Assert(term.IsProrated, 'precondition: the anchored term is prorated');
+                AssertEqual(Number(term.Quantity), 10, 'the prorated term records the 10 seats bought');
+                const line = await TxOne<{ Quantity: number }>(
+                    ctx,
+                    `SELECT Quantity FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${anchored.Order.ID}'`,
+                );
+                Assert(Number(line.Quantity) < 10, `the line carries the proration (${line.Quantity}), which is why the term holds the count`);
+            }),
+    },
+    {
+        Id: 'subscriptions.SB32',
+        Name: 'SB32: a fractional quantity is refused; a one-person type records more than one seat',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const half = await buySubscription(ctx, 'SubRolling', 1200, {
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 2.5, UnitPrice: 1200 }],
+                });
+                Assert(!half.Saved, 'a quantity of 2.5 seats must be refused');
+                Assert(half.Message.includes('whole seats'), `the refusal names whole seats, got: ${half.Message}`);
+
+                const person = await makeContact(ctx, 'SeatHolder');
+                const seats = await buySubscription(ctx, 'SubSeat', 300, {
+                    Lines: [{ ProductID: f.Products.SubSeat, Quantity: 2, UnitPrice: 300, ShipToPersonID: person }],
+                });
+                Assert(seats.Saved, `two seats on one line of a one-person type confirm: ${seats.Message}`);
+                const [seatTerm] = await termsForOrder(ctx, seats.Order.ID as string);
+                AssertEqual(Number(seatTerm.Quantity), 2, 'the term records both seats');
             }),
     },
 ];
