@@ -2162,17 +2162,18 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     *   * Scope
     *   * Seats
     *   * Terms
-        * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`),
-    ReasonCategory: z.union([z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
+        * * Description: How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).`),
+    ReasonCategory: z.union([z.literal('Dispute'), z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
         * * Field Name: ReasonCategory
         * * Display Name: Reason Category
         * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
+    *   * Dispute
     *   * Other
     *   * Referral
     *   * Retention
-        * * Description: Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.`),
+        * * Description: Why it was granted: Retention, Referral, Dispute (a reduction agreed on a disputed charge) or Other. Each has different economics and is reported separately.`),
     Reason: z.string().describe(`
         * * Field Name: Reason
         * * Display Name: Reason
@@ -2270,6 +2271,22 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Terms Types (vwPaymentTermsTypes.ID)
         * * Description: For a Terms concession, the payment terms the order moves to when it is approved.`),
+    NewAmount: z.number().nullable().describe(`
+        * * Field Name: NewAmount
+        * * Display Name: New Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: For an amount change, the term's new amount: net of discount, before tax, and lower than its amount when recorded. NULL for every other concession.`),
+    AppliesToPaymentScheduleID: z.string().nullable().describe(`
+        * * Field Name: AppliesToPaymentScheduleID
+        * * Display Name: Applies To Payment Schedule ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+        * * Description: For an amount change about one invoice, the invoiced instalment it is about. NULL spreads the reduction over the instalments not yet invoiced.`),
+    ScheduleReduction: z.number().nullable().describe(`
+        * * Field Name: ScheduleReduction
+        * * Display Name: Schedule Reduction
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: For an approved amount change, the reduction and its tax taken off the order's instalments not yet invoiced. The order's balance and its schedule check subtract it from the booked lines. Set by the server when the change is applied.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -6162,13 +6179,14 @@ export const mjBizAppsOrdersSubscriptionEventSchema = z.object({
         * * Display Name: Subscription
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscriptions (vwSubscriptions.ID)`),
-    EventType: z.union([z.literal('Activated'), z.literal('Canceled'), z.literal('CancellationRequested'), z.literal('Created'), z.literal('Extended'), z.literal('Migrated'), z.literal('Paused'), z.literal('PaymentFailed'), z.literal('PaymentSucceeded'), z.literal('RenewalOrderSpawned'), z.literal('Resumed'), z.literal('TrialEnded'), z.literal('TrialStarted')]).describe(`
+    EventType: z.union([z.literal('Activated'), z.literal('AmountChanged'), z.literal('Canceled'), z.literal('CancellationRequested'), z.literal('Created'), z.literal('Extended'), z.literal('Migrated'), z.literal('Paused'), z.literal('PaymentFailed'), z.literal('PaymentSucceeded'), z.literal('RenewalOrderSpawned'), z.literal('Resumed'), z.literal('TrialEnded'), z.literal('TrialStarted')]).describe(`
         * * Field Name: EventType
         * * Display Name: Event Type
         * * SQL Data Type: nvarchar(40)
     * * Value List Type: List
     * * Possible Values 
     *   * Activated
+    *   * AmountChanged
     *   * Canceled
     *   * CancellationRequested
     *   * Created
@@ -13320,7 +13338,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     *   * Scope
     *   * Seats
     *   * Terms
-    * * Description: How the value was given: Price (a lower price than the price engine's), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).
+    * * Description: How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed).
     */
     get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Terms' {
         return this.Get('DeliveryForm');
@@ -13335,15 +13353,16 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     * * SQL Data Type: nvarchar(20)
     * * Value List Type: List
     * * Possible Values 
+    *   * Dispute
     *   * Other
     *   * Referral
     *   * Retention
-    * * Description: Why it was granted: Retention, Referral or Other. Retention concessions and referral credits have different economics and are reported separately.
+    * * Description: Why it was granted: Retention, Referral, Dispute (a reduction agreed on a disputed charge) or Other. Each has different economics and is reported separately.
     */
-    get ReasonCategory(): 'Other' | 'Referral' | 'Retention' {
+    get ReasonCategory(): 'Dispute' | 'Other' | 'Referral' | 'Retention' {
         return this.Get('ReasonCategory');
     }
-    set ReasonCategory(value: 'Other' | 'Referral' | 'Retention') {
+    set ReasonCategory(value: 'Dispute' | 'Other' | 'Referral' | 'Retention') {
         this.Set('ReasonCategory', value);
     }
 
@@ -13572,6 +13591,46 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
     set NewPaymentTermsTypeID(value: string | null) {
         this.Set('NewPaymentTermsTypeID', value);
+    }
+
+    /**
+    * * Field Name: NewAmount
+    * * Display Name: New Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: For an amount change, the term's new amount: net of discount, before tax, and lower than its amount when recorded. NULL for every other concession.
+    */
+    get NewAmount(): number | null {
+        return this.Get('NewAmount');
+    }
+    set NewAmount(value: number | null) {
+        this.Set('NewAmount', value);
+    }
+
+    /**
+    * * Field Name: AppliesToPaymentScheduleID
+    * * Display Name: Applies To Payment Schedule ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+    * * Description: For an amount change about one invoice, the invoiced instalment it is about. NULL spreads the reduction over the instalments not yet invoiced.
+    */
+    get AppliesToPaymentScheduleID(): string | null {
+        return this.Get('AppliesToPaymentScheduleID');
+    }
+    set AppliesToPaymentScheduleID(value: string | null) {
+        this.Set('AppliesToPaymentScheduleID', value);
+    }
+
+    /**
+    * * Field Name: ScheduleReduction
+    * * Display Name: Schedule Reduction
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: For an approved amount change, the reduction and its tax taken off the order's instalments not yet invoiced. The order's balance and its schedule check subtract it from the booked lines. Set by the server when the change is applied.
+    */
+    get ScheduleReduction(): number | null {
+        return this.Get('ScheduleReduction');
+    }
+    set ScheduleReduction(value: number | null) {
+        this.Set('ScheduleReduction', value);
     }
 
     /**
@@ -25125,6 +25184,7 @@ export class mjBizAppsOrdersSubscriptionEventEntity extends BaseEntity<mjBizApps
     * * Value List Type: List
     * * Possible Values 
     *   * Activated
+    *   * AmountChanged
     *   * Canceled
     *   * CancellationRequested
     *   * Created
@@ -25139,10 +25199,10 @@ export class mjBizAppsOrdersSubscriptionEventEntity extends BaseEntity<mjBizApps
     *   * TrialStarted
     * * Description: The lifecycle event kind (Created ... RenewalOrderSpawned).
     */
-    get EventType(): 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted' {
+    get EventType(): 'Activated' | 'AmountChanged' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted' {
         return this.Get('EventType');
     }
-    set EventType(value: 'Activated' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted') {
+    set EventType(value: 'Activated' | 'AmountChanged' | 'Canceled' | 'CancellationRequested' | 'Created' | 'Extended' | 'Migrated' | 'Paused' | 'PaymentFailed' | 'PaymentSucceeded' | 'RenewalOrderSpawned' | 'Resumed' | 'TrialEnded' | 'TrialStarted') {
         this.Set('EventType', value);
     }
 

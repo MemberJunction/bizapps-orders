@@ -1720,6 +1720,32 @@
   },
   {
     "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=NewAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:51:27.358Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=AppliesToPaymentScheduleID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:51:27.544Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
       "Category": "Value and Limits",
       "GeneratedFormSection": "Category"
     },
@@ -1754,6 +1780,19 @@
     },
     "sync": {
       "lastModified": "2026-10-08T21:17:22.621Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=ScheduleReduction"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:51:27.822Z",
       "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
     }
   },
