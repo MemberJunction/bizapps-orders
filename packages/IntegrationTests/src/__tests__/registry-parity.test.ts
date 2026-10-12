@@ -87,7 +87,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
     'order-booking': 30,
     'revenue-recognition': 8,
-    subscriptions: 23,
+    subscriptions: 26,
     'subscription-cancellation': 10,
     'subscription-renewal': 30,
     'payments-rollups': 9,
@@ -97,13 +97,13 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'line-subscriber': 17,
     'account-credit': 11,
     pricing: 16,
-    promotions: 24,
-    charges: 14,
-    tax: 15,
+    promotions: 27,
+    charges: 15,
+    tax: 17,
     composition: 10,
     returns: 16,
     'gift-cards': 15,
-    bundles: 13,
+    bundles: 14,
     fulfillment: 12,
     'capture-payment': 12,
     'advance-order-state': 11,
@@ -113,7 +113,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
-    entitlements: 24,
+    entitlements: 32,
     'entitlement-read': 7,
     'payment-providers': 16,
     'ach-settlement': 17,
@@ -123,7 +123,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'contract-reversal': 10,
     'party-roster': 2,
     'progress-measurement': 25,
-    'outbound-events': 6,
+    'outbound-events': 7,
     concessions: 27,
     'term-extension': 9,
     'amount-change': 4,
@@ -324,6 +324,27 @@ describe('no check file escapes this test', () => {
                     `bundle nobody verifies, and the rest of this file would stay green without it`,
             ).toContain(`import '../checks/${file}';`);
         }
+    });
+});
+
+describe('no two checks share an Id', () => {
+    it('declares every literal check Id once across the check files', () => {
+        // Read from SOURCE because the registry cannot show this. `Register` keys checks by Id, so a
+        // second check with the same Id replaces the first: the registry holds one, its count matches
+        // EXPECTED_BUNDLES, and the replaced check never runs and is never reported missing.
+        const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
+        const seen = new Map<string, string[]>();
+        for (const file of readdirSync(checksDir).filter((f) => f.endsWith('.checks.ts'))) {
+            const body = readFileSync(resolve(checksDir, file), 'utf8');
+            for (const m of body.matchAll(/\bId:\s*["'`]([a-z][a-z-]*\.[A-Za-z0-9_]+)["'`]/g)) {
+                seen.set(m[1], [...(seen.get(m[1]) ?? []), file]);
+            }
+        }
+        expect(seen.size, 'the pattern finds check Ids').toBeGreaterThan(0);
+        const dupes = [...seen.entries()]
+            .filter(([, files]) => files.length > 1)
+            .map(([id, files]) => `${id} (${files.join(', ')})`);
+        expect(dupes, `check Ids declared more than once: ${dupes.join('; ')}`).toEqual([]);
     });
 });
 

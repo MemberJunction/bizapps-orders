@@ -2,7 +2,7 @@ import { Component } from '@angular/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersPromotionEntity } from '@mj-biz-apps/orders-entities';
-import { FormatCoverageWindow, PromotionStatusChipClass, PromotionValueLabel } from './document-form.helpers';
+import { FormatInstantWindow, PromotionStatusChipClass, PromotionValueLabel } from './document-form.helpers';
 
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Promotions:header',
@@ -36,7 +36,7 @@ export class PromotionHeaderPanel extends BaseFormPanel<mjBizAppsOrdersPromotion
         if (!this.Record.EffectiveFrom && !this.Record.EffectiveTo) {
             return 'Continuous';
         }
-        return FormatCoverageWindow(this.Record.EffectiveFrom, this.Record.EffectiveTo);
+        return FormatInstantWindow(this.Record.EffectiveFrom, this.Record.EffectiveTo);
     }
 
     public get Stacking(): string {

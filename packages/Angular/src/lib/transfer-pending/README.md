@@ -39,9 +39,9 @@ hand-roll are now `mj-alert`, `mj-tab-nav` and `mj-input`.
 
 | Folder | Target home | Why it is generic |
 |---|---|---|
-| `workspace-tabs/` | `@memberjunction/ng-ui-components` | A tab carries an opaque `State`; the framework moves tabs around and never inspects the payload. Accounting fills it with journal-entry drafts, orders fills it with order drafts, and neither app appears anywhere in the framework's types. |
+| `workspace-tabs/` | `@memberjunction/ng-ui-components` | A tab carries an opaque `State`; the framework moves tabs around and never inspects the payload. Accounting fills it with journal-entry drafts, orders filled it with order drafts while it had an order workspace, and neither app appears anywhere in the framework's types. |
 
-## DESIGN RULE — size workspace content by CONTAINER, not viewport (Marcelo 2026-07-21)
+## DESIGN RULE — size workspace content by CONTAINER, not viewport
 
 Inside a workspace, **use CONTAINER units for sizing, never viewport units.** The workspace card
 (`mj-workspace-card`) is declared a query container (`container-type: size`), so content sizes with
@@ -53,5 +53,6 @@ breaks the moment the card is in a split or a smaller window.
 - ❌ `height: min(45vh, 560px);` (viewport-relative — wrong in a pane)
 - Fixed **px** floors/ceilings are fine as bounds (`min-height: 160px`); the *proportional* size is `cq*`.
 
-This rule was written naming the order editor as a future surface. It now is one — the order
-workspace obeys it.
+This rule was written naming the order editor as a future surface. The order workspace that
+followed has since been removed, and no orders screen uses the workspace card today; the rule holds
+for any content placed in one.

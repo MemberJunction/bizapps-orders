@@ -1,6 +1,16 @@
 # Checkout public URL + Open App `serverExtensions` auto-load
 
-Work that has not started. Use this file as the implementation checklist.
+**Status:** Shipped 2026-08-26 to 2026-08-27; archived. `GET /checkout/:slug` is in
+`packages/Server/src/CheckoutServerExtension.ts` and `checkout-host-page.ts`, and the extension
+manifest is `packages/Server/src/server-extensions-manifest.ts`. MJ's half shipped too: in 6.1.5,
+the version this repo builds against, `@memberjunction/server-extensions-core` exports the collect
+and merge functions and `serve()` in `@memberjunction/server` merges discovered extensions with the
+host's. Two things differ from the plan below:
+- The page hosts the `<mj-orders-checkout>` Angular element and keeps the vanilla form as its
+  fallback, although "Out of scope" ruled out a custom-element bundle.
+- The last "Local verification" item, a live boot that loads `OrdersCheckoutEdge` from
+  `dynamicPackages.server[]` alone, was never ticked.
+
 Two PRs, same scope, no extras:
 
 | Repo | Branch | Target | What |
@@ -34,7 +44,7 @@ Then merge with the host `serverExtensions[]`. Host `DriverClass` wins (RootPath
 - [x] ~~Custom-element / IIFE checkout widget bundle~~
 - [x] ~~Turnstile widget on the vanilla page~~ (initialize still fail-closes if the widget requires it)
 - [x] ~~`mj app install` writing `serverExtensions` into the host config~~ — auto-load replaces copy-paste
-- [x] ~~Entitlements, LXP API, identity-claim E2E~~ — parked here; read contract shipped separately on `an-dev-13` ([`entitlement-read-contract.md`](entitlement-read-contract.md))
+- [x] ~~Entitlements, LXP API, identity-claim E2E~~ — parked here; read contract shipped separately on `an-dev-13` ([`entitlement-read-contract.md`](../entitlement-read-contract.md))
 
 ---
 

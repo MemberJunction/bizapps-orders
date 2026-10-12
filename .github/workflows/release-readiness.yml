@@ -1,46 +1,47 @@
-# The gate on anything that moves a version.
+# The gate on the release itself: the PR from `next` into `main`.
 #
-# Runs on two kinds of PR, with the same two assertions, from the same script:
+# Scoped by TRIGGER to `main` only, which is why there is no scope-computing `gate` job any
+# more. That job existed because three checks shared one awkward condition spanning two base
+# branches; now each workflow targets the one branch its contexts are required on, and scope
+# is expressed where GitHub already understands it. Filtering at the `on:` level is only safe
+# when nothing requires the context on the branches you excluded — that holds here: these
+# three are required on `main`, and the `next`-side rules live in changes.yml.
 #
-#   * the Version Packages PR into `next` (head `changeset-release/next`) — the earliest
-#     point the resolved version exists, so a wrong bump level is one edit away from fixed:
-#     raise a changeset to minor and the PR regenerates itself.
-#   * any PR into `main` — the release itself, and the check that actually protects it.
+# Several INDEPENDENT contexts rather than one combined check, on purpose. A check name is the
+# error message most people actually read: "release readiness failed" says nothing when three
+# unrelated assertions live inside it, while "rr: minor bump" sends the developer straight to
+# the fix. They are also independently requireable. The `rr:` prefix keeps context names
+# unique across the repo — required checks match on context name alone — and the short form is
+# enough because GitHub displays the workflow name alongside.
 #
-# Deliberately a PR check rather than a step inside version.yml. A failure inside that job
-# lands on the push-to-next run, NOT on the Version Packages PR: the PR's checks reflect its
-# own head SHA, and with the default GITHUB_TOKEN it has no checks at all. A reviewer looking
-# at the PR would see nothing wrong, merge it, and hit the gate at `main` — the exact
-# backtrack this is meant to prevent. A PR check is visible where the decision is made, and
-# can be made blocking via required status checks.
-#
-# KNOWN GAP until the GitHub App token lands: PRs opened by GITHUB_TOKEN do not trigger
-# workflows, so the `next` half of this will not fire yet. The `main` half does, so the
-# release stays protected in the meantime — it just costs the longer recovery.
-#
-# Bypass: label the PR `bump-level-exempt`.
+# Deliberately PR checks rather than steps inside version.yml or publish.yml: a failure there
+# lands on a push run, not on the PR, so a reviewer would see nothing wrong and merge anyway.
 name: Release readiness
 
 on:
   pull_request:
-    branches: [next, main]
+    # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened), and the
+    # jobs skip while the PR is a draft — without it, marking a release PR ready would not
+    # re-trigger anything and a required check would never report.
+    # `labeled`/`unlabeled`: two of these honour labels, so without them adding an exempt
+    # label re-triggers nothing and removing one leaves a stale green.
+    types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
+    branches: [main]
 
 permissions:
   contents: read
 
 jobs:
-  release-readiness:
-    # On `next`, only the bot's version PR is in scope — ordinary feature PRs have changesets
-    # pending by design and must not be judged on bump level, since one minor anywhere in the
-    # release window covers the release.
-    if: github.base_ref == 'main' || github.head_ref == 'changeset-release/next'
+  # Nothing may still be waiting to be versioned. Merging unversioned work to `main` would put
+  # code on the release branch that no changelog describes, and publish.yml refuses to run in
+  # that state — so this is the same assertion, moved to where it is cheap to act on.
+  changesets:
+    name: 'rr: changesets'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          fetch-tags: true # both assertions compare against the last v* tag
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: No changesets may be pending
         run: |
@@ -51,11 +52,122 @@ jobs:
             exit 1
           fi
           echo "No pending changesets — releasing $(jq -r .version packages/Entities/package.json)"
+          echo "Releasing **$(jq -r .version packages/Entities/package.json)**" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: A release carrying migrations must be at least a minor
-        env:
-          BUMP_LEVEL_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'bump-level-exempt') }}
+  # The aggregate rule: this RELEASE ships migrations, so its version must be at least a minor.
+  # changes.yml enforces a stricter per-PR form of the same idea on the way into `next`; this
+  # is the backstop that judges what is actually about to be published.
+  minor-bump:
+    name: 'rr: minor bump'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true # resolves the previous release via `git tag --list 'v*'`
+
+      - name: A release carrying migrations or metadata must be at least a minor
         run: ./ci/check-bump-level.sh
 
-      - name: Summary
-        run: echo "Releasing **$(jq -r .version packages/Entities/package.json)**" >> "$GITHUB_STEP_SUMMARY"
+  # The installer runs migrations and never reads metadata/, so a metadata change reaches a
+  # customer only through a Metadata_Sync migration. A gate check rather than a door one: a
+  # feature PR may land metadata before its sync migration is written. What must be true is
+  # that by release time every change since the last tag has one.
+  metadata-shipped:
+    name: 'rr: metadata shipped'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - run: ./ci/check-metadata-shipped.sh
+
+  # Until the back-merge lands, `next` still holds the changesets the last release consumed and
+  # the version before it, so a version PR built from it proposes a number already on npm.
+  # publish.yml catches the result, but only after the merge; this catches it on the PR.
+  # Every migration added since the last release needs its Postgres counterpart before it ships.
+  # The door only warns about this (changes.yml), so the release is where it is enforced. With no
+  # v* tag yet there is no release to compare against, so the check passes and says so.
+  pg-counterparts:
+    name: 'rr: pg counterparts'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - name: Every migration since the last release has a PostgreSQL counterpart
+        run: |
+          LAST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -1)
+          if [ -z "$LAST_TAG" ]; then
+            echo "No v* tag yet, so no release to compare against. Nothing to check."
+            exit 0
+          fi
+          echo "Migrations added since $LAST_TAG:"
+          ./.github/scripts/check-pg-counterpart.sh "$LAST_TAG" HEAD
+
+  release-base-current:
+    name: 'rr: release base current'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+      - run: ./ci/check-release-base-current.sh
+
+  # A migration that has already shipped is frozen: Flyway checksums it at apply time, so
+  # editing it breaks every database that ran it while a fresh one silently gets the new text.
+  migration-immutability:
+    name: 'rr: migration immutability'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      - name: No already-released migration may be edited
+        env:
+          MIGRATION_IMMUTABILITY_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'migration-immutability-exempt') }}
+        run: |
+          # A full fetch, not a shallow one: the three-dot compare needs history on both sides.
+          git fetch --no-tags origin "${{ github.base_ref }}"
+          ./ci/check-migration-immutability.sh "origin/${{ github.base_ref }}"
+
+  # Would a publish abort on this tree? `changeset publish` can only publish a package that
+  # already exists on npm, because a trusted publisher is configured per package on npmjs.com
+  # and cannot be set on a package that has never been published. A newly added package
+  # therefore has to be bootstrapped by hand (a 0.0.0 placeholder) first.
+  #
+  # publish.yml keeps this same gate as the backstop — it is the last thing before an
+  # irreversible publish. Running it here as well moves the failure to where it is cheap: today
+  # a new package lets the release PR merge clean and then aborts the publish, leaving new
+  # versions on `main` with nothing on npm. Same door-plus-backstop shape as immutability.
+  #
+  # Costs ~3.5s for this repo's six packages.
+  packages-on-npm:
+    name: 'rr: packages on npm'
+    if: github.event.pull_request.draft == false && github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      # Pinned node so `npm view` is a known version rather than whatever the image ships.
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: Every publishable package must already exist on npm
+        run: ./.github/scripts/validate-npm-packages.sh
