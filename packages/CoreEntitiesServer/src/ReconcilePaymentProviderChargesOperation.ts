@@ -8,8 +8,9 @@
  *
  * A CHARGE NOBODY BOOKED BECOMES AN ORDER (#481). On a real run, a charge without a payment on an
  * intent Orders did not open is turned into a paid order when the provider's price map names its
- * product and its e-mail names a buyer (`UnmatchedChargeOrders.ts`). It is then no longer a mismatch.
- * One the rules cannot decide is raised as before, with the reason added. Preview creates nothing.
+ * product and its e-mail names a buyer (`UnmatchedChargeOrders.ts`). It is then no longer a mismatch,
+ * and an exception an earlier run raised for it is cleared as Corrected with the order named. One the
+ * rules cannot decide is raised as before, with the reason added. Preview creates nothing.
  *
  * PREVIEW REPORTS, A REAL RUN RAISES. With `Preview`, the mismatches come back in the output and
  * nothing is written. Without it, each is raised as a `PROVIDER_CHARGE_MISMATCH` finance exception —
@@ -58,6 +59,7 @@ import {
 } from './ChargeReconciliation.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import { EscapeSQLString, RequireOptionalDay, RequireUUID } from './sql-guards.js';
+import { ClearChargeExceptionsForBookedOrder } from './ResolveChargeExceptionOperation.js';
 import { CreateOrderForUnmatchedCharge, IsUnmatchedCharge, LoadProviderPriceMap } from './UnmatchedChargeOrders.js';
 import { NotCreatedNote } from './UnmatchedChargeRules.js';
 
@@ -256,6 +258,15 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
                     PaymentNumber: outcome.PaymentNumber,
                     Amount: m.Amount,
                 });
+                // An earlier run may have raised this charge before a price was mapped; the order now answers it.
+                const stale = await ClearChargeExceptionsForBookedOrder(
+                    paymentProviderID,
+                    ChargeMismatchDedupeKey(m),
+                    { ProviderChargeID: charge.ProviderChargeID, ...outcome },
+                    provider,
+                    user,
+                );
+                if (stale) out.Errors.push({ PaymentProviderID: paymentProviderID, Code: 'CLEAR_FAILED', Message: stale });
             }
         }
         return left;

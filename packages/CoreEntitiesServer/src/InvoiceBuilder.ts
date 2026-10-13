@@ -449,7 +449,7 @@ export async function BuildInvoiceDocuments(
         AsOf: asOf,
         OnlyCompanyID: onlyCompanyID,
         Instalment: instalment ? withCredits(instalment, instalmentResult.credited, options?.PaymentScheduleID ?? null, concessionResult.rows) : null,
-        Credits: instalment ? [] : OrderCredits(concessionResult.rows),
+        Credits: instalment ? [] : [...OrderCredits(concessionResult.rows), ...ReturnScheduleCredits(lineRows, orderFacts.ReversesOrderNumber)],
     });
 
     if (onlyCompanyID && !documents.length) {
@@ -638,6 +638,22 @@ function withCredits(instalment: InvoiceInstalmentFacts, credited: number, sched
         .map((c) => String(c.CreditMemoNumber));
     const label = memos.length ? `Credit memo ${memos.join(', ')}` : 'Credited';
     return { ...instalment, AmountCredited: credited, Payments: [...instalment.Payments, { Label: label, Amount: credited }] };
+}
+
+/**
+ * What a return against an instalment-billed order does not credit the customer (#661). A returning line that
+ * booked a credit memo is owed back only that memo; the rest of its value came off the origin's instalments not
+ * yet invoiced, so it was never billed. The order's balance counts the line at its memo, and this row makes the
+ * document ask for the same: the line's gross (negative) plus its memo, against the credit due.
+ */
+export function ReturnScheduleCredits(lines: Array<Record<string, unknown>>, originOrderNumber: string | null): InvoiceCreditFacts[] {
+    const taken = lines
+        .filter((l) => l.ReversesOrderLineID && l.CreditMemoAmount !== null && l.CreditMemoAmount !== undefined)
+        .reduce((sum, l) => sum + num(l.LineTotalGross) + num(l.CreditMemoAmount), 0);
+    const amount = Math.round(taken * 100) / 100;
+    if (amount === 0) return [];
+    const label = originOrderNumber ? `Taken off the instalments of ${originOrderNumber} not yet invoiced` : 'Taken off the instalments not yet invoiced';
+    return [{ Label: label, Amount: amount }];
 }
 
 /**

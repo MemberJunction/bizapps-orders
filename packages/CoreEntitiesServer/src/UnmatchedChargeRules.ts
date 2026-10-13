@@ -12,6 +12,11 @@
  *   two products) is left to a person: the product sets the revenue account, and a guess posts revenue
  *   to the wrong one.
  *
+ *   QUANTITY. The sum of the checkout lines' quantities, so three seats bought through a payment link
+ *   book three seats. The unit price is the charge divided by that quantity, and it must come out exact
+ *   at the line's four decimals; a charge that does not divide evenly is left to a person rather than
+ *   booked at a quantity and price that do not multiply back to what was paid.
+ *
  *   BUYER. The e-mail the checkout collected, else the charge's billing e-mail. The Person is the one
  *   `ResolvePersonByEmail` chooses; with none, a Person is created from the buyer's name. No name, no
  *   Person: an order billed to a row with no name is worse than an exception a person resolves. No
@@ -29,6 +34,8 @@ export type UnmatchedChargeUnresolvedCode =
     | 'NoCheckoutItems'
     | 'PriceNotMapped'
     | 'SeveralProducts'
+    | 'BadItemQuantity'
+    | 'QuantityDoesNotDivide'
     | 'NoBuyerEmail'
     | 'NoBuyerName';
 
@@ -43,12 +50,12 @@ export interface ProviderPriceMapRow {
     ProductID: string;
 }
 
-/** The product a charge's checkout lines name, or why none can be chosen. */
+/** The product a charge's checkout lines name and how many units they bought, or why neither can be chosen. */
 export function ChooseProductForCharge(
     chargeID: string,
     items: GatewayChargeItem[],
     priceMap: ReadonlyMap<string, string>,
-): { ProductID: string } | UnmatchedChargeUnresolved {
+): { ProductID: string; Quantity: number } | UnmatchedChargeUnresolved {
     if (items.length === 0) {
         return {
             Code: 'NoCheckoutItems',
@@ -69,7 +76,41 @@ export function ChooseProductForCharge(
             Message: `Charge ${chargeID} paid for ${products.length} different products; an order created from a payment carries one.`,
         };
     }
-    return { ProductID: priceMap.get(items[0].ProviderPriceID)! };
+    const badQuantity = items.find((i) => !Number.isInteger(Number(i.Quantity)) || Number(i.Quantity) < 1);
+    if (badQuantity) {
+        return {
+            Code: 'BadItemQuantity',
+            Message: `Charge ${chargeID} paid for gateway price ${badQuantity.ProviderPriceID} at quantity ${badQuantity.Quantity}, which is not a whole number of units.`,
+        };
+    }
+    const quantity = items.reduce((sum, i) => sum + Number(i.Quantity), 0);
+    return { ProductID: priceMap.get(items[0].ProviderPriceID)!, Quantity: quantity };
+}
+
+/** The decimals an order line's unit price holds (`UnitPrice` is decimal(19,4)). */
+const UNIT_PRICE_SCALE = 10_000;
+
+/**
+ * The unit price that books `quantity` units for exactly `amount`, or why there is none. A charge of
+ * 100.00 for 3 units is 33.3333 each, which multiplies back to 99.9999: the order would not total the
+ * payment, so it is left to a person.
+ */
+export function UnitPriceForCharge(
+    chargeID: string,
+    amount: number,
+    quantity: number,
+): { UnitPrice: number } | UnmatchedChargeUnresolved {
+    // Compared in ten-thousandths, the line's own precision, so 33.3333 × 3 does not round back to 100.00.
+    const scaled = Math.round(amount * 100) * (UNIT_PRICE_SCALE / 100);
+    const unitScaled = Math.round(scaled / quantity);
+    const unit = unitScaled / UNIT_PRICE_SCALE;
+    if (unitScaled * quantity !== scaled) {
+        return {
+            Code: 'QuantityDoesNotDivide',
+            Message: `Charge ${chargeID} of ${amount} for ${quantity} units does not divide into a unit price, so no line multiplies back to the payment.`,
+        };
+    }
+    return { UnitPrice: unit };
 }
 
 /** The price map as a lookup, keyed by the gateway's price id. */

@@ -8,7 +8,8 @@
  *   1. reads the charge from the gateway, and refuses one that has not succeeded, carries any refund,
  *      has no gateway intent or is in another currency (`ProviderPaymentOrder.ts`);
  *   2. in one transaction: records the gateway intent as a `PaymentIntent`, creates the order in the
- *      provider's company with one line of the named product at the charge's gross amount, confirms it
+ *      provider's company with one line of the named product for the charge's gross amount (the units
+ *      the checkout bought, at the charge divided by them; one unit when a person names the product), confirms it
  *      (which books it and makes it the invoice), and stamps the order on the intent;
  *   3. captures the charge against the order through `Orders.CapturePayment`, which asks the gateway
  *      for the charge and its fee, so the payment is gross, the fee is booked, and the bank deposit
@@ -65,6 +66,7 @@ import {
     ProviderPaymentLineReason,
 } from './ProviderPaymentOrder.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
+import { UnitPriceForCharge } from './UnmatchedChargeRules.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -124,6 +126,8 @@ export async function CreateOrderFromGatewayCharge(
         PaymentProviderID: string;
         ProviderChargeID: string;
         ProductID: string;
+        /** Units the charge paid for; 1 when a person names only the product. */
+        Quantity?: number;
         BillToPersonID: string;
         BillToOrganizationID: string | null;
         Charge: GatewayCharge;
@@ -181,6 +185,8 @@ async function createOrderAndIntent(
         PaymentProviderID: string;
         ProviderChargeID: string;
         ProductID: string;
+        /** Units the charge paid for; 1 when a person names only the product. */
+        Quantity?: number;
         BillToPersonID: string;
         BillToOrganizationID: string | null;
         Charge: GatewayCharge;
@@ -220,10 +226,13 @@ async function createOrderAndIntent(
 
         const line = (await order.Lines.Create()) as OrderLineEntity;
         await line.EnsureISAChild();
+        const quantity = args.Quantity ?? 1;
+        const unitPrice = UnitPriceForCharge(args.ProviderChargeID, amount, quantity);
+        if ('Code' in unitPrice) throw new RefusedStep(unitPrice.Code, unitPrice.Message);
         line.ProductID = args.ProductID;
-        line.Quantity = 1;
+        line.Quantity = quantity;
         line.LineNumber = 1;
-        line.UnitPrice = amount;
+        line.UnitPrice = unitPrice.UnitPrice;
         line.PriceOverridden = true;
         line.PriceOverrideReason = ProviderPaymentLineReason(args.ProviderChargeID);
 

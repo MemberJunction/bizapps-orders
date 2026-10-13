@@ -2426,6 +2426,16 @@ export interface RenewalCandidate {
     UnitPrice?: number;
     /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
     DiscountPct?: number;
+    /**
+     * Promotion codes that carried into the renewal and discounted it: codes recorded on the line that
+     * bought the expiring term whose promotion has `AppliesToRenewals` set. Absent when none were presented.
+     */
+    RenewalPromotionCodes?: string[];
+    /**
+     * Codes presented on the renewal that gave no discount, each with the reason: the promotion paused,
+     * expired or out of its dates, or its other rules not met. The renewal is placed without them.
+     */
+    UnusableRenewalPromotionCodes?: Array<{ Code: string; Reason: string }>;
 }
 
 export interface SpawnRenewalsOutput {

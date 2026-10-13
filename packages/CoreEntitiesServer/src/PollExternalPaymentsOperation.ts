@@ -23,7 +23,8 @@
  * WHAT NEEDS A PERSON. `Unmatched` (an invoice we did not issue — pre-cutover AR, or created directly
  * in Bill.com) and `ReversalNeeded` (captured, then voided on the rail) are reported as `ATTENTION`
  * with Success false so a job that notifies on failure tells somebody; the rows stay in
- * `ExternalPayment` until dealt with.
+ * `ExternalPayment` until dealt with. A payment the rail itself records Unmatched (HubSpot, which
+ * cannot name a payment's deal yet) is counted but does not fail the run on its own.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
@@ -138,7 +139,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const faults: string[] = [];
             const skipped: string[] = [];
             const previewed: string[] = [];
-            const passes: Array<{ Preview: boolean; Outcomes: ExternalPaymentOutcome[] }> = [];
+            const passes: Array<{ Preview: boolean; Outcomes: ExternalPaymentOutcome[]; RailUnmatched: number }> = [];
             for (const p of providers) {
                 let providerPreview = preview;
                 if (jobs) {
@@ -153,7 +154,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                     }
                 }
                 const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, provider, user);
-                passes.push({ Preview: providerPreview, Outcomes: result.Outcomes });
+                passes.push({ Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0 });
                 out.Outcomes.push(...result.Outcomes);
                 out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
                 if (result.Fault) faults.push(result.Fault);
@@ -188,17 +189,23 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             if (faults.length) {
                 return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
-            if (!preview && out.Unmatched + out.Refused + out.Reapplied + out.ReversalNeeded > 0) {
+            // A payment the rail itself records Unmatched (every HubSpot payment, until its deal can be read) is the
+            // expected state, not something this run found wrong: it is counted and listed, but on its own it does
+            // not fail the run, or every hourly run would fail for as long as such payments exist.
+            const railUnmatched = passes.filter((x) => x.Preview === preview).reduce((n, x) => n + x.RailUnmatched, 0);
+            const awaitingNote = railUnmatched > 0 ? ` ${railUnmatched} recorded Unmatched by a rail that cannot match payments to orders yet (see External Payments).` : '';
+            const needsPerson = out.Unmatched - railUnmatched + out.Refused + out.Reapplied + out.ReversalNeeded;
+            if (!preview && needsPerson > 0) {
                 return {
                     ...out,
                     Success: false,
                     ResultCode: 'ATTENTION',
-                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).`,
+                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched - railUnmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).${awaitingNote}`,
                 };
             }
             out.Message = preview
                 ? `${previewNote}Would capture ${out.Outcomes.filter((o) => o.Disposition === 'Captured').length} payment(s); ${out.Held} held, ${out.Unmatched} unmatched.`
-                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.`;
+                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.${awaitingNote}`;
             return out;
         } catch (err) {
             LogError(`Orders.PollExternalPayments failed: ${err}`);
@@ -211,8 +218,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         opts: { preview: boolean; maxCount: number; since: string | null },
         provider: IMetadataProvider,
         user: UserInfo,
-    ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null }> {
+    ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null; RailUnmatched?: number }> {
         const outcomes: ExternalPaymentOutcome[] = [];
+        let railUnmatched = 0;
         const rail = await ResolveInvoiceRail(paymentProviderID, provider, user);
         // A configuration fault (no Company Integration, live/sandbox mismatch, connector not loaded)
         // is the provider's problem, not any payment's: report it as a fault, write nothing.
@@ -263,6 +271,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 const prior = seen.get(p.ExternalPaymentRef) ?? null;
                 const outcome = await this.handlePayment(rail, p, prior, opts.preview, bookingCurrency, provider, user);
                 outcomes.push(outcome);
+                if (outcome.Disposition === 'Unmatched' && p.UnmatchedReason) railUnmatched++;
             } catch (err) {
                 // One bad payment must not stop the pass — but it must stop the watermark.
                 fault = `${p.ExternalPaymentRef}: ${err instanceof Error ? err.message : String(err)}`;
@@ -290,7 +299,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                     : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${fresh.length - freshBatch.length} more next pass.` : null },
             );
         }
-        return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null };
+        return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null, RailUnmatched: railUnmatched };
     }
 
     private async handlePayment(

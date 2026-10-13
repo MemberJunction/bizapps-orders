@@ -5,7 +5,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BasePaymentProvider, GatewayCharge, GatewayChargeItem, ListChargeItemsResult, PaymentProviderConfig } from '../BasePaymentProvider.js';
 import type { ChargeMismatch } from '../ChargeReconciliation.js';
-import { BuyerFromCharge, ChooseProductForCharge, PriceMapLookup, SplitBuyerName } from '../UnmatchedChargeRules.js';
+import { BuyerFromCharge, ChooseProductForCharge, PriceMapLookup, SplitBuyerName, UnitPriceForCharge } from '../UnmatchedChargeRules.js';
 
 const mocks = vi.hoisted(() => ({
     createOrder: vi.fn(),
@@ -47,7 +47,16 @@ const map = PriceMapLookup([
 
 describe('choosing the product', () => {
     it('takes the one product every checkout line maps to', () => {
-        expect(ChooseProductForCharge('ch', [item('price_a'), item('price_a2')], map)).toEqual({ ProductID: PRODUCT_A });
+        expect(ChooseProductForCharge('ch', [item('price_a'), item('price_a2')], map)).toEqual({ ProductID: PRODUCT_A, Quantity: 2 });
+    });
+
+    it('carries the units the checkout bought', () => {
+        expect(ChooseProductForCharge('ch', [item('price_a', { Quantity: 3, Amount: 150 })], map)).toEqual({ ProductID: PRODUCT_A, Quantity: 3 });
+    });
+
+    it('leaves a line whose quantity is not a whole number of units to a person', () => {
+        expect(ChooseProductForCharge('ch', [item('price_a', { Quantity: 0 })], map)).toMatchObject({ Code: 'BadItemQuantity' });
+        expect(ChooseProductForCharge('ch', [item('price_a', { Quantity: 1.5 })], map)).toMatchObject({ Code: 'BadItemQuantity' });
     });
 
     it('leaves a charge with no checkout lines to a person', () => {
@@ -62,6 +71,18 @@ describe('choosing the product', () => {
 
     it('leaves a checkout of two products to a person', () => {
         expect(ChooseProductForCharge('ch', [item('price_a'), item('price_b')], map)).toMatchObject({ Code: 'SeveralProducts' });
+    });
+});
+
+describe('the unit price', () => {
+    it('is the charge divided by the units', () => {
+        expect(UnitPriceForCharge('ch', 150, 3)).toEqual({ UnitPrice: 50 });
+        expect(UnitPriceForCharge('ch', 250, 1)).toEqual({ UnitPrice: 250 });
+        expect(UnitPriceForCharge('ch', 10, 8)).toEqual({ UnitPrice: 1.25 });
+    });
+
+    it('leaves a charge that does not divide into a unit price to a person', () => {
+        expect(UnitPriceForCharge('ch', 100, 3)).toMatchObject({ Code: 'QuantityDoesNotDivide' });
     });
 });
 
@@ -162,6 +183,20 @@ describe('creating the order for one charge', () => {
         const outcome = await run(driverWith({ Success: true, Items: [item('price_a')] }), charge({ BuyerName: null }));
         expect(outcome).toMatchObject({ Created: false, Code: 'NoBuyerName' });
         expect(mocks.savedPeople).toEqual([]);
+        expect(mocks.createOrder).not.toHaveBeenCalled();
+    });
+
+    it('books the units the checkout bought, not one', async () => {
+        mocks.resolvePerson.mockResolvedValue({ Success: true, PersonID: PERSON_ID, MatchCount: 1 });
+        await run(driverWith({ Success: true, Items: [item('price_a', { Quantity: 3, Amount: 150 })] }), charge({ Amount: 150 }));
+        expect(mocks.createOrder).toHaveBeenCalledWith(expect.objectContaining({ ProductID: PRODUCT_A, Quantity: 3 }), provider, {});
+    });
+
+    it('creates no Person, and no order, when the charge does not divide by the units', async () => {
+        mocks.resolvePerson.mockResolvedValue({ Success: true, PersonID: null, MatchCount: 0 });
+        const outcome = await run(driverWith({ Success: true, Items: [item('price_a', { Quantity: 3, Amount: 100 })] }), charge({ Amount: 100 }));
+        expect(outcome).toMatchObject({ Created: false, Code: 'QuantityDoesNotDivide' });
+        expect(mocks.resolvePerson).not.toHaveBeenCalled();
         expect(mocks.createOrder).not.toHaveBeenCalled();
     });
 

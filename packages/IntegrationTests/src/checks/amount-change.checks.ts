@@ -18,6 +18,8 @@
  *   AC8   billed as a whole: all of it is a credit memo on the order, whose balance falls by it
  *   AC9   a refund of a paid invoice's credit: recorded on that invoice, then paid with Orders.RefundPayment
  *   AC10  two lines on one schedule, one lowered: the later instalments bill each line what it has left (#681)
+ *   AC11  billed as a whole and partly paid, with a refund asked for: the applied change refunds what the preview
+ *         said, not the open balance as well
  *
  * AC7–AC9 also render the customer's credit memo from what the approval recorded, and the invoices it credited
  * re-rendered with the credit (#684).
@@ -463,6 +465,37 @@ export const AmountChangeChecks: NamedCheck[] = [
         rows = await scheduleOf(ctx, OrderID);
         AssertEqual(Number(rows[0].Balance), 0, "once refunded, the invoice is settled");
         AssertEqual(await orderBalance(ctx, OrderID), balanceBefore, "and the order is back where the payment left it");
+      }),
+  },
+  {
+    Id: "amount-change.AC11",
+    Name: "AC11: billed as a whole and partly paid, a refunded reduction refunds what the preview said",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
+        const { OrderID, Term } = await bookWhole(ctx);
+        await grantAuthority(ctx, 100_000, 1);
+        // Leave 100 open, so the reduction is part applied to the order and part refunded.
+        const owed = await orderBalance(ctx, OrderID);
+        const paid = await pay(ctx, OrderID, money(owed - 100));
+        Assert(paid.Saved, `the part payment failed: ${paid.Message}`);
+        const input = { SubscriptionTermID: Term.ID, NewAmount: 750, RefundRequested: true, ...REASON };
+
+        const preview = await amend(ctx, { ...input, Preview: true });
+        Assert(preview.Success, `the preview failed: ${preview.Message}`);
+        const gross = Number(preview.GrossReduction);
+        AssertEqual(money((preview.CreditApplied ?? []).reduce((s, a) => s + a.Amount, 0)), 100, "the preview applies the open 100 to the order");
+        AssertEqual(preview.Refund, money(gross - 100), "and refunds the rest");
+
+        const out = await amend(ctx, input);
+        Assert(out.Success, `recording failed: ${out.Message}`);
+        AssertEqual(out.Status, "Approved", "inside authority, approved on save");
+        const task = await acknowledgmentOf(ctx, out.OrderConcessionID!);
+        const refund = /Refund owed: ([0-9.]+)/.exec(String(task.Task.Description ?? ""));
+        Assert(refund != null, "the acknowledgment task tells finance to refund");
+        AssertEqual(Number(refund![1]), preview.Refund, "the refund finance is told to pay is the preview's, not the open balance as well");
+        AssertEqual(await orderBalance(ctx, OrderID), money(100 - gross), "the order is overpaid by the refund owed");
       }),
   },
   {

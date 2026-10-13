@@ -30,7 +30,8 @@
  * published HubSpot connector has no call that reads one record's associations. Until it does, every
  * HubSpot-collected payment that succeeded is recorded `Unmatched`, with its gross, fee and buyer,
  * for a person to apply or turn into an order. It is still booked-visible before the payout lands,
- * which is what the poll is for.
+ * which is what the poll is for. Because every one of them is Unmatched by design, they do not fail
+ * the poll run on their own; the run's message counts them.
  *
  * NO SANDBOX CHECK. Unlike Bill.com, a HubSpot portal's credential carries no sandbox or production
  * flag: a test portal is simply another portal. The provider row's Company Integration is what decides

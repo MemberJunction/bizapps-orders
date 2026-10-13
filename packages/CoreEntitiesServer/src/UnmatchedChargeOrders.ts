@@ -31,6 +31,7 @@ import {
     ChooseProductForCharge,
     NoBuyerNameUnresolved,
     PriceMapLookup,
+    UnitPriceForCharge,
     type ChargeBuyer,
     type ProviderPriceMapRow,
 } from './UnmatchedChargeRules.js';
@@ -91,6 +92,9 @@ export async function CreateOrderForUnmatchedCharge(
         }
         const product = ChooseProductForCharge(charge.ProviderChargeID, items.Items ?? [], args.PriceMap);
         if ('Code' in product) return { Created: false, Code: product.Code, Message: product.Message };
+        // Checked before a Person is created, so a charge left to finance creates nothing.
+        const unitPrice = UnitPriceForCharge(charge.ProviderChargeID, charge.Amount, product.Quantity);
+        if ('Code' in unitPrice) return { Created: false, Code: unitPrice.Code, Message: unitPrice.Message };
         const buyer = BuyerFromCharge(charge, items);
         if ('Code' in buyer) return { Created: false, Code: buyer.Code, Message: buyer.Message };
 
@@ -102,6 +106,7 @@ export async function CreateOrderForUnmatchedCharge(
                 PaymentProviderID: args.PaymentProviderID,
                 ProviderChargeID: charge.ProviderChargeID,
                 ProductID: product.ProductID,
+                Quantity: product.Quantity,
                 BillToPersonID: person.PersonID,
                 BillToOrganizationID: null,
                 Charge: charge,

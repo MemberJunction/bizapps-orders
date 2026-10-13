@@ -51,7 +51,7 @@ import {
 } from './ChargeExceptionResolution.js';
 import { CreateOrderFromProviderPaymentOperation } from './CreateOrderFromProviderPaymentOperation.js';
 import { PROVIDER_CHARGE_MISMATCH_TYPE_CODE } from './ReconcilePaymentProviderChargesOperation.js';
-import { RequireUUID } from './sql-guards.js';
+import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const FINANCE_EXCEPTION_ENTITY = 'MJ_BizApps_Accounting: Finance Exceptions';
 const FINANCE_EXCEPTION_TYPE_ENTITY = 'MJ_BizApps_Accounting: Finance Exception Types';
@@ -216,6 +216,41 @@ async function loadException(id: string, provider: IMetadataProvider, user: User
         SourceRecordID: row.SourceRecordID,
         DedupeKey: row.DedupeKey,
     };
+}
+
+/**
+ * Clear the open exceptions an earlier reconciliation raised for a charge a later run has now booked as an order
+ * itself, so finance is not left an exception whose order already exists. Matched by the dedupe key the
+ * reconciliation raised it under, against the provider. Returns why any could not be cleared, or null.
+ */
+export async function ClearChargeExceptionsForBookedOrder(
+    paymentProviderID: string,
+    dedupeKey: string,
+    booked: { ProviderChargeID: string; OrderNumber?: string | null; OrderHeaderID?: string | null; PaymentNumber?: string | null },
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const rows = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: FINANCE_EXCEPTION_ENTITY,
+            ExtraFilter:
+                `Status = 'Open' AND DedupeKey = '${EscapeText(dedupeKey)}' ` +
+                `AND SourceRecordID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!rows.Success) return `Could not look for the open exception of charge ${booked.ProviderChargeID}: ${rows.ErrorMessage}`;
+    const note = ChargeExceptionResolutionNote(booked.ProviderChargeID, booked);
+    const refused: string[] = [];
+    for (const row of rows.Results ?? []) {
+        const why = await clearException(row.ID, note, provider, user);
+        if (why) refused.push(`${row.ID}: ${why}`);
+    }
+    return refused.length ? `Order ${booked.OrderNumber ?? booked.OrderHeaderID} is booked, but its open exception could not be cleared (${refused.join('; ')}).` : null;
 }
 
 /** Clears the exception as Corrected. Null when cleared, otherwise why not. */

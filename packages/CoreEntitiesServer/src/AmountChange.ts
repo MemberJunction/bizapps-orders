@@ -206,6 +206,10 @@ export async function CheckAmountChange(request: AmountChangeRequest, ctx: Appro
         })
     )[0];
     if (!order) return `The order that bought term ${term.TermNumber} was not found.`;
+    // The balance the plan splits is the order's before this change. Once the concession is saved as Approved the
+    // rollup has already taken its own reduction off the balance, so applying it would re-split its memo against a
+    // balance the memo lowered and report the open part as a refund or credit. Its own reduction is added back.
+    const orderBalance = money(Number(order.Balance ?? 0) + (await ownReductionInBalance(request.OrderConcessionID, ctx)));
 
     const product = (
         await view<{ Name: string }>(ctx, {
@@ -275,7 +279,7 @@ export async function CheckAmountChange(request: AmountChangeRequest, ctx: Appro
             Status: i.Status,
             DocumentNumber: i.DocumentNumber,
         })),
-        OrderBalance: Number(order.Balance ?? 0),
+        OrderBalance: orderBalance,
         AppliesToInvoiceID: appliesTo,
         RefundRequested: request.RefundRequested === true,
     });
@@ -716,6 +720,23 @@ export async function AppliedAmountChanges(orderHeaderID: string, ctx: ApprovalT
         const share = ScheduleShare(Number(c.ScheduleReduction ?? 0), Number(c.CreditMemoAmount ?? 0), reduced);
         return { OrderConcessionID: c.ID, OrderLineID: line.ID, CompanyID: line.CompanyID, Net: share.Net, Tax: share.Tax, Gross: share.Gross, ReducedNet: reduced };
     });
+}
+
+/**
+ * What the order's balance already takes off for this concession: its schedule reduction and credit memo once it is
+ * saved as Approved, which is when the rollup counts them. Zero before that, and for no concession.
+ */
+async function ownReductionInBalance(orderConcessionID: string | null | undefined, ctx: ApprovalTaskContext): Promise<number> {
+    if (!orderConcessionID) return 0;
+    const own = (
+        await view<{ ScheduleReduction: number | null; CreditMemoAmount: number | null }>(ctx, {
+            EntityName: ORDER_CONCESSION_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(orderConcessionID, 'OrderConcessionID')}' AND Status = 'Approved'`,
+            Fields: ['ScheduleReduction', 'CreditMemoAmount'],
+            ResultType: 'simple',
+        })
+    )[0];
+    return own ? money(Number(own.ScheduleReduction ?? 0) + Number(own.CreditMemoAmount ?? 0)) : 0;
 }
 
 interface ScheduleRow {

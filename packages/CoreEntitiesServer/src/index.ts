@@ -613,6 +613,7 @@ export {
     ChooseProductForCharge,
     PriceMapLookup,
     SplitBuyerName,
+    UnitPriceForCharge,
 } from './UnmatchedChargeRules.js';
 export type { ChargeBuyer, ProviderPriceMapRow, UnmatchedChargeUnresolved, UnmatchedChargeUnresolvedCode } from './UnmatchedChargeRules.js';
 export {
@@ -904,7 +905,7 @@ export type {
     LadderRow,
 } from './InvoiceBehavior.js';
 
-export { BuildCreditMemoDocuments, BuildInvoiceDocuments, OrderCredits } from './InvoiceBuilder.js';
+export { BuildCreditMemoDocuments, BuildInvoiceDocuments, OrderCredits, ReturnScheduleCredits } from './InvoiceBuilder.js';
 export type { InvoiceBuildResult } from './InvoiceBuilder.js';
 
 export { DecorateInvoice, DuePhrase, FormatDate, FormatMoney, FormatQuantity } from './InvoiceDisplay.js';

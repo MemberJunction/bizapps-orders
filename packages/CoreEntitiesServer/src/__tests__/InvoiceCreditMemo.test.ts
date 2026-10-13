@@ -12,7 +12,7 @@ import {
     type InvoiceLineFacts,
     type InvoiceOrderFacts,
 } from '../InvoiceBehavior.js';
-import { OrderCredits } from '../InvoiceBuilder.js';
+import { OrderCredits, ReturnScheduleCredits } from '../InvoiceBuilder.js';
 
 const CO_A = '00000000-0000-0000-0000-00000000000a';
 
@@ -179,5 +179,23 @@ describe('invoices after an amount change', () => {
         const [doc] = build();
         expect(doc.AmountDue).toBe(1100);
         expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Tax', 'Total', 'Due']);
+    });
+});
+
+describe('a return against an instalment-billed order', () => {
+    it('credits only the memo: the rest came off the origin\'s instalments not yet invoiced', () => {
+        const credits = ReturnScheduleCredits(
+            [
+                { ReversesOrderLineID: 'origin-line', LineTotalGross: -600, CreditMemoAmount: 0 },
+                { ReversesOrderLineID: 'origin-line-2', LineTotalGross: -330, CreditMemoAmount: 110 },
+            ],
+            'ORD-1005',
+        );
+        expect(credits).toEqual([{ Label: 'Taken off the instalments of ORD-1005 not yet invoiced', Amount: -820 }]);
+    });
+
+    it('adds nothing for a return whose lines booked no memo split', () => {
+        expect(ReturnScheduleCredits([{ ReversesOrderLineID: 'origin-line', LineTotalGross: -600, CreditMemoAmount: null }], 'ORD-1005')).toEqual([]);
+        expect(ReturnScheduleCredits([{ ReversesOrderLineID: null, LineTotalGross: 600, CreditMemoAmount: null }], null)).toEqual([]);
     });
 });
