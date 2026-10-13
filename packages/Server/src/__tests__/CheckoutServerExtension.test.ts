@@ -558,6 +558,22 @@ describe('CheckoutServerExtension', () => {
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], null, user, { Attribution: attribution, Answers: undefined });
     });
 
+    it('passes the draft body tracking through to UpdateDraft', async () => {
+        const user = { ID: 'svc-1', Email: 'svc@example.com' };
+        mockGetSystemUser.mockReturnValue(user);
+        vi.mocked(CheckoutSessionService.UpdateDraft).mockResolvedValue({
+            Success: true, SessionID: 'sess-1', Subtotal: 0, Tax: 0, Adjustments: 0, TotalGross: 0, RequiresPayment: false, Lines: [],
+        });
+        const ext = new CheckoutServerExtension();
+        const res = mockRes();
+        const tracking = { pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } };
+        await (ext as unknown as { handleDraft(req: Request, res: Response): Promise<void> }).handleDraft(
+            { body: { sessionId: 'sess-1', clientSessionKey: 'k', email: 'a@b.com', lines: [], tracking } } as unknown as Request,
+            res as unknown as Response
+        );
+        expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('sess-1', 'k', 'a@b.com', [], null, user, expect.objectContaining({ Tracking: tracking }));
+    });
+
     it('passes the buyer answers from the draft body to UpdateDraft (#322)', async () => {
         const user = { ID: 'svc-1', Email: 'svc@example.com' };
         mockGetSystemUser.mockReturnValue(user);

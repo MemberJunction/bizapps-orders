@@ -128,6 +128,7 @@ export * from './overdue';
 export * from './configuration-types';
 export * from './checkout-questions';
 export * from './checkout-attribution';
+export * from './checkout-tracking';
 export * from './checkout-choices';
 export * from './base-entity-augmentation';
 

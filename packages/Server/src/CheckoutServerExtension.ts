@@ -600,13 +600,14 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const billingAddress = rawAddress && typeof rawAddress === 'object' && !Array.isArray(rawAddress)
             ? (rawAddress as CheckoutBillingAddressInput)
             : null;
-        // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
+        // Passed through unchecked: UpdateDraft keeps the attribution and tracking only when they read, and
         // judges the answers and choices against the widget's own questions and choice groups. The
         // member token is verified server-side by the widget's registered resolver and never stored (#324).
         // Promotion codes are passed as sent; the service normalises and bounds them
         // (NormalizeCheckoutPromotionCodes).
         const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user, {
             Attribution: req.body?.attribution,
+            Tracking: req.body?.tracking,
             Answers: req.body?.answers as CheckoutAnswersInput | undefined,
             Choices: req.body?.choices as CheckoutChoicesInput | undefined,
             PromotionCodes: req.body?.promotionCodes,
