@@ -68,6 +68,8 @@ import {
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
 import { PostWithTurnstile, TurnstileError, TurnstileWidget, type TurnstileState } from './checkout-turnstile';
+// Deep import on purpose: a dependency-free module the server also runs (see checkout-widget.component.ts).
+import { ParseCaptureCookieNames, ReadNamedCookies } from '@mj-biz-apps/orders-entities/dist/checkout-tracking.js';
 
 export { buildCheckoutDraftLine } from './checkout-draft-line';
 
@@ -190,6 +192,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public prefillEmail: string | null = null;
     private attributionSource: string | null = null;
     private attributionReference: string | null = null;
+    /** Cookies the host asked to capture with `capture-cookies`, read at each draft. */
+    private captureCookieNames: string[] = [];
     private readonly onResetRequested = (): void => this.resetRequested();
 
     public get isFree(): boolean {
@@ -288,6 +292,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 ...(this.attributionSource
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
                     : {}),
+                tracking: this.readTracking(),
                 ...(this.memberToken ? { memberToken: this.memberToken } : {}),
                 promotionCodes: [event.promotionCode],
             });
@@ -357,8 +362,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
      *
      * A reset always starts a new session, before a sale as well as after one: the server matches
      * the buyer's person record once per session, so a kept session would carry the previous
-     * conversation's buyer into the next. The e-mail and attribution are read again, so a host
-     * starting a new conversation sets them on the element before it dispatches the reset.
+     * conversation's buyer into the next. The e-mail, attribution and cookie list are read again, so
+     * a host starting a new conversation sets them on the element before it dispatches the reset.
      */
     private resetRequested(): void {
         if (this.processing || this.accountUnsettled) {
@@ -432,6 +437,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 ...(this.attributionSource
                     ? { attribution: { source: this.attributionSource, reference: this.attributionReference } }
                     : {}),
+                tracking: this.readTracking(),
                 choices: event.choices,
                 ...(this.memberToken ? { memberToken: this.memberToken } : {}),
                 promotionCodes: event.promotionCode ? [event.promotionCode] : [],
@@ -836,6 +842,25 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.prefillEmail = el.getAttribute('email') || el.getAttribute('data-email') || null;
         this.attributionSource = el.getAttribute('source') || el.getAttribute('data-source') || null;
         this.attributionReference = el.getAttribute('source-ref') || el.getAttribute('data-source-ref') || null;
+        this.captureCookieNames = ParseCaptureCookieNames(el.getAttribute('capture-cookies') || el.getAttribute('data-capture-cookies'));
+    }
+
+    /**
+     * The page the checkout is embedded on and the cookies the host named. Read at each draft rather
+     * than once at start, because a tracker on the page can set its cookie after the element loads.
+     */
+    private readTracking(): { pageUrl: string | null; cookies: Record<string, string> } {
+        let pageUrl: string | null = null;
+        let cookies: Record<string, string> = {};
+        try {
+            pageUrl = window.location.href;
+            if (this.captureCookieNames.length > 0) {
+                cookies = ReadNamedCookies(document.cookie, this.captureCookieNames);
+            }
+        } catch {
+            /* no window (server render) or cookies blocked */
+        }
+        return { pageUrl, cookies };
     }
 
     private forgetClientKey(): void {

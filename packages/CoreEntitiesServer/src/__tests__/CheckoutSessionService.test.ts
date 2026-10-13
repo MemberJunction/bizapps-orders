@@ -1267,6 +1267,31 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('UpdateDraft — tracking', () => {
+        const draft = (tracking?: unknown) =>
+            CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, undefined, { Tracking: tracking });
+        const stored = () => JSON.parse(mocks.mockSessionInstance.MetadataJSON ?? '{}').Tracking;
+
+        it('keeps the page URL and captured cookies with the draft', async () => {
+            const res = await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
+            expect(res.Success).toBe(true);
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' } });
+        });
+
+        it('merges a cookie set after the first draft with what that draft stored', async () => {
+            await draft({ pageUrl: 'https://example.com/pricing', cookies: {} });
+            await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
+            await draft(undefined);
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' } });
+        });
+
+        it('drops tracking it cannot read rather than refusing the checkout', async () => {
+            const res = await draft({ pageUrl: 'javascript:void(0)', cookies: { 'bad name': 'x' } });
+            expect(res.Success).toBe(true);
+            expect(stored()).toBeUndefined();
+        });
+    });
+
     describe('OpenPaymentIntentForSession', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', 'wrong-key', testUser);
