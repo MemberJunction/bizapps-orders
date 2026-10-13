@@ -16,7 +16,14 @@
  */
 import { describe, it, expect } from 'vitest';
 import { NetAfterDiscount } from '@mj-biz-apps/orders-entities';
-import { RemainingReturnable, ValidateReversal, InheritedTerms, MirroredTaxCharges } from '../ReversalBehavior.js';
+import {
+    RemainingReturnable,
+    ValidateReversal,
+    InheritedTerms,
+    MirroredTaxCharges,
+    OriginExactAmount,
+    RefreshedDiscountAmount,
+} from '../ReversalBehavior.js';
 
 const origin = (over: Partial<Parameters<typeof ValidateReversal>[1]> = {}) => ({
     ID: 'origin-1',
@@ -193,6 +200,7 @@ describe('InheritedTerms — a return refunds what was PAID', () => {
             UnitPrice: 80,
             DiscountPct: 0,
             DiscountAmount: 0,
+            ExtendedAmount: null,
         });
     });
 
@@ -237,6 +245,109 @@ describe('InheritedTerms — a return refunds what was PAID', () => {
         const terms = InheritedTerms(timed, -1);
         expect(terms.ServicePeriodStart).toEqual(start);
         expect(terms.ServicePeriodEnd).toEqual(end);
+    });
+});
+
+describe('InheritedTerms — a Flat price returns the amount booked, not quantity × unit price (#651)', () => {
+    // Flat 100.00 at quantity 3 stores a unit price of 33.33; the rule's 100.00 is ExtendedAmount.
+    const flat3 = origin({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100 });
+    const flat7 = origin({ Quantity: 7, UnitPrice: 14.29, ExtendedAmount: 100 });
+
+    it('a full return credits the whole amount, where 3 × 33.33 would credit 99.99', () => {
+        expect(InheritedTerms(flat3, -3).ExtendedAmount).toBe(-100);
+    });
+
+    it('and where 7 × 14.29 would credit 100.03', () => {
+        expect(InheritedTerms(flat7, -7).ExtendedAmount).toBe(-100);
+    });
+
+    it('three single-unit returns credit exactly what was booked', () => {
+        const slices = [0, 1, 2].map((before) => InheritedTerms(flat3, -1, before).ExtendedAmount as number);
+        expect(slices).toEqual([-33.33, -33.34, -33.33]);
+        expect(Math.round(slices.reduce((a, b) => a + b, 0) * 100) / 100).toBe(-100);
+    });
+
+    it('a series of uneven returns at quantity 7 sums to the amount', () => {
+        const a = InheritedTerms(flat7, -2, 0).ExtendedAmount as number;
+        const b = InheritedTerms(flat7, -4, 2).ExtendedAmount as number;
+        const c = InheritedTerms(flat7, -1, 6).ExtendedAmount as number;
+        expect(Math.round((a + b + c) * 100) / 100).toBe(-100);
+    });
+
+    it('a stated-price origin carries no amount, and the line stays quantity × unit price', () => {
+        expect(InheritedTerms(origin({ Quantity: 3, UnitPrice: 30, LineTotalNet: 90 }), -1).ExtendedAmount).toBeNull();
+    });
+
+    it('the allocated discount is split cumulatively too', () => {
+        const promoted = origin({ Quantity: 3, UnitPrice: 100, DiscountAmount: 10 });
+        const slices = [0, 1, 2].map((before) => InheritedTerms(promoted, -1, before).DiscountAmount);
+        expect(slices).toEqual([3.33, 3.34, 3.33]);
+    });
+});
+
+describe('RefreshedDiscountAmount — a draft return re-shares the discount when its quantity changes (#668)', () => {
+    // A line sold 4 × 100 less a 50 order-level promotion: 12.50 of discount per unit.
+    const promoted = origin({ Quantity: 4, UnitPrice: 100, DiscountAmount: 50 });
+    const share = (quantity: number): number => InheritedTerms(promoted, quantity).DiscountAmount;
+    const base = { SetThisSave: false, MoneyLocked: false };
+
+    it('fills a blank line with its share', () => {
+        expect(RefreshedDiscountAmount({ ...base, Stored: 0, PreviousShare: null, CurrentShare: share(-4) })).toBe(50);
+        expect(RefreshedDiscountAmount({ ...base, Stored: null, PreviousShare: null, CurrentShare: share(-4) })).toBe(50);
+    });
+
+    it('re-shares an inherited discount when the quantity drops from 4 to 2', () => {
+        expect(RefreshedDiscountAmount({ ...base, Stored: 50, PreviousShare: share(-4), CurrentShare: share(-2) })).toBe(25);
+    });
+
+    it('re-shares when cumulative rounding moved the previous share by a cent', () => {
+        // 10.00 over 3 units: the middle unit takes 3.34, the others 3.33.
+        const thirds = origin({ Quantity: 3, UnitPrice: 100, DiscountAmount: 10 });
+        const stored = InheritedTerms(thirds, -1, 1).DiscountAmount;
+        const previous = InheritedTerms(thirds, -1, 0).DiscountAmount;
+        expect(stored).toBe(3.34);
+        expect(previous).toBe(3.33);
+        expect(RefreshedDiscountAmount({ ...base, Stored: stored, PreviousShare: previous, CurrentShare: 6.67 })).toBe(6.67);
+    });
+
+    it('keeps a discount the caller set in an earlier save after the quantity changes', () => {
+        expect(RefreshedDiscountAmount({ ...base, Stored: 30, PreviousShare: share(-4), CurrentShare: share(-2) })).toBe(30);
+    });
+
+    it('keeps a discount the caller set in this save', () => {
+        expect(
+            RefreshedDiscountAmount({ ...base, SetThisSave: true, Stored: 30, PreviousShare: share(-4), CurrentShare: share(-2) }),
+        ).toBe(30);
+    });
+
+    it('does not re-share once the money is locked', () => {
+        expect(
+            RefreshedDiscountAmount({ ...base, MoneyLocked: true, Stored: 50, PreviousShare: share(-4), CurrentShare: share(-2) }),
+        ).toBe(50);
+    });
+});
+
+describe('OriginExactAmount — lines booked before ExtendedAmount was stored', () => {
+    it('reads the stored amount when there is one', () => {
+        expect(OriginExactAmount(origin({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100 }))).toBe(100);
+    });
+
+    it('takes an undiscounted net within rounding of quantity × unit price as the amount', () => {
+        expect(OriginExactAmount(origin({ Quantity: 3, UnitPrice: 33.33, LineTotalNet: 100 }))).toBe(100);
+        expect(OriginExactAmount(origin({ Quantity: 7, UnitPrice: 14.29, LineTotalNet: 100 }))).toBe(100);
+    });
+
+    it('a larger gap is not rounding', () => {
+        expect(OriginExactAmount(origin({ Quantity: 3, UnitPrice: 33.33, LineTotalNet: 95 }))).toBeNull();
+    });
+
+    it('a discounted line is not read from its net', () => {
+        expect(OriginExactAmount(origin({ Quantity: 3, UnitPrice: 33.33, DiscountAmount: 0.01, LineTotalNet: 99.99 }))).toBeNull();
+        expect(OriginExactAmount(origin({ Quantity: 3, UnitPrice: 33.33, DiscountPct: 0.1, LineTotalNet: 90 }))).toBeNull();
+    });
+
+    it('no gap means quantity × unit price already is the amount', () => {
+        expect(OriginExactAmount(origin({ Quantity: 3, UnitPrice: 30, LineTotalNet: 90 }))).toBeNull();
     });
 });
 

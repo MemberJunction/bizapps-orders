@@ -419,3 +419,113 @@ export function ReduceLineAmounts<T extends SlicedLineAmounts>(line: T, reductio
         ChargeCredits: credits.filter((c) => c.Amount !== 0),
     };
 }
+
+// ─── The credit memo (#662) ─────────────────────────────────────────────────
+
+/** A credit memo's gross divided into the reduction's net and its tax. */
+export interface CreditMemoSplit {
+    Gross: number;
+    Net: number;
+    Tax: number;
+}
+
+/**
+ * The part of a reduction a credit memo carries, as net and tax. The memo is the reduction's gross less what the
+ * uninvoiced instalments took, so it holds net and tax in the reduction's own proportion. Zero when no memo is needed.
+ */
+export function SplitCreditMemo(memo: number, reductionNet: number, reductionGross: number): CreditMemoSplit {
+    const gross = money(memo);
+    if (!(gross > 0) || !(reductionGross > 0)) return { Gross: 0, Net: 0, Tax: 0 };
+    if (gross > money(reductionGross)) {
+        throw new Error(`A credit memo of ${gross.toFixed(2)} is more than the ${money(reductionGross).toFixed(2)} reduction it comes from.`);
+    }
+    const net = gross === money(reductionGross) ? money(reductionNet) : money((reductionNet * gross) / reductionGross);
+    return { Gross: gross, Net: net, Tax: money(gross - net) };
+}
+
+/** What an approved amount change took off its line's instalment billing: the schedule reduction, as net and tax. */
+export function ScheduleShare(scheduleReduction: number, creditMemo: number, reductionNet: number): { Net: number; Tax: number; Gross: number } {
+    const gross = money(scheduleReduction);
+    const memo = SplitCreditMemo(creditMemo, reductionNet, money(scheduleReduction + creditMemo));
+    const net = money(reductionNet - memo.Net);
+    return { Net: net, Tax: money(gross - net), Gross: gross };
+}
+
+export interface CreditMemoEntryInput {
+    Split: CreditMemoSplit;
+    /** `YYYY-MM-DD`: the day the memo is issued. A posted period is never reopened. */
+    EffectiveDate: string;
+    EntryType: string;
+    DocumentNumber: string;
+    /** Names the act, e.g. "term 1 of SUB-000004 reduced to 900.00". */
+    Label: string;
+    ProductName: string;
+    LinkedEntityID: string;
+    LinkedRecordID: string;
+    Accounts: { AR: string; Deferred: string };
+    /** The line's tax credits, as its invoices posted them. Every charge on the line is tax here. */
+    TaxCredits: Array<{ GLAccountID: string; Amount: number; Label: string }>;
+    Dimensions: Array<{ DimensionID: string; DimensionValueID: string }>;
+}
+
+/**
+ * The credit memo's entry: deferred revenue debited for its net, each tax account for its share of its tax, and the
+ * customer's receivable credited for the whole. Revenue is not touched here: the amount change's catch-up and re-cut
+ * already lower what is recognised, so the memo gives back only what was billed and will now never be earned.
+ *
+ * The tax is taken off the tax accounts in proportion to what the line credited to each, with cumulative rounding so
+ * the pieces sum to exactly the memo's tax. Refused when the memo carries tax and the line credited none.
+ */
+export function CreditMemoEntry(input: CreditMemoEntryInput): JEDraft | string {
+    const { Split: split } = input;
+    if (!(split.Gross > 0)) return 'There is no credit memo to post.';
+    const credited = cents(input.TaxCredits.reduce((s, c) => s + c.Amount, 0));
+    const taxCents = cents(split.Tax);
+    if (taxCents > 0 && credited === 0) {
+        return (
+            `The credit memo carries ${split.Tax.toFixed(2)} of tax, but the line credited its tax to no account, so there ` +
+            `is no account to take it back from.`
+        );
+    }
+    let through = 0;
+    let given = 0;
+    const taxLines: JELineDraft[] = [];
+    for (const credit of input.TaxCredits) {
+        through += cents(credit.Amount);
+        const upTo = credited === 0 ? 0 : Math.round((taxCents * through) / credited);
+        const piece = upTo - given;
+        given = upTo;
+        if (piece === 0) continue;
+        taxLines.push({
+            GLAccountID: credit.GLAccountID,
+            DebitAmount: piece / 100,
+            Description: `${credit.Label} — credit memo ${input.DocumentNumber}`,
+            ...(input.Dimensions.length ? { Dimensions: input.Dimensions } : {}),
+        });
+    }
+    const dims = input.Dimensions.length ? { Dimensions: input.Dimensions } : {};
+    return {
+        EffectiveDate: input.EffectiveDate,
+        EntryType: input.EntryType,
+        Description: `Credit memo ${input.DocumentNumber}: ${input.Label}`,
+        LinkedEntityID: input.LinkedEntityID,
+        LinkedRecordID: input.LinkedRecordID,
+        Lines: [
+            ...(split.Net > 0
+                ? [{ GLAccountID: input.Accounts.Deferred, DebitAmount: split.Net, Description: `Deferred revenue — credit memo ${input.DocumentNumber}, ${input.ProductName}`, ...dims }]
+                : []),
+            ...taxLines,
+            { GLAccountID: input.Accounts.AR, CreditAmount: split.Gross, Description: `AR — credit memo ${input.DocumentNumber}, ${input.ProductName}`, ...dims },
+        ],
+    };
+}
+
+/** The document number of an order's next credit memo: the order number, then CM and the memo's sequence on it. */
+export function CreditMemoNumber(orderNumber: string, existing: Array<string | null | undefined>): string {
+    const prefix = `${orderNumber}-CM`;
+    const used = existing
+        .filter((n): n is string => !!n && n.startsWith(prefix))
+        .map((n) => Number(n.slice(prefix.length)))
+        .filter((n) => Number.isInteger(n) && n > 0);
+    return `${prefix}${(used.length ? Math.max(...used) : 0) + 1}`;
+}

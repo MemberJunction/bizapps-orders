@@ -146,10 +146,15 @@ export function RenewalScheduleRows(
  * The terms are the ones `resolveDueDate` already settled for the order, read back as the gap
  * between its `OrderDate` and `DueDate`, so there is one terms lookup, not two. Capping at the order
  * date keeps the row due on or before it, which is what makes confirm issue it (D92).
+ *
+ * A subscription with a RENEWAL CARD (`hasRenewalCard`, #289) is charged on the new term's first day,
+ * so its row is due on the order date itself: the past-due count, and the access cutoff with it,
+ * starts from the day the card is first charged, not from an invoice day weeks earlier.
  */
-export function RenewalDueDate(invoiceDay: string, orderDate: DateCell, orderDueDate: DateCell): string {
+export function RenewalDueDate(invoiceDay: string, orderDate: DateCell, orderDueDate: DateCell, hasRenewalCard = false): string {
     const orderDay = ToISODate(orderDate);
     const termsDue = ToISODate(orderDueDate);
+    if (hasRenewalCard && orderDay) return orderDay;
     if (!orderDay || !termsDue) {
         throw new Error(`A renewal needs its order date and resolved due date to date its instalment (got ${orderDay}, ${termsDue}).`);
     }
@@ -242,6 +247,7 @@ export interface SliceableScheduleRow extends ScheduleRowFacts {
     ID: string;
     InstallmentNumber?: number;
     AmountPaid?: number;
+    AmountCredited?: number;
 }
 
 /**
@@ -263,7 +269,7 @@ export interface SliceableScheduleRow extends ScheduleRowFacts {
  *
  * Where the rows cover one company, which is nearly every order, the copies are the rows with that
  * company stamped and the amounts unchanged. Cancelled rows and a product company's own rows pass
- * through as they are. `AmountPaid` is divided in proportion to the row's pieces.
+ * through as they are. `AmountPaid` and `AmountCredited` are divided in proportion to the row's pieces.
  */
 export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: ScheduleLineFacts[], orderCompanyID: string): T[] {
     const live = rows.filter((r) => LIVE_STATUSES.has(r.Status));
@@ -308,8 +314,18 @@ export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: 
             out.push({ ...row, CompanyID: parts[0].CompanyID });
             continue;
         }
-        const paid = row.AmountPaid == null ? null : SplitExactly(Number(row.AmountPaid), parts.map((p) => Math.max(0, p.Amount)));
-        parts.forEach((p, j) => out.push({ ...row, CompanyID: p.CompanyID, Amount: p.Amount, ...(paid ? { AmountPaid: paid[j] } : {}) }));
+        const weights = parts.map((p) => Math.max(0, p.Amount));
+        const paid = row.AmountPaid == null ? null : SplitExactly(Number(row.AmountPaid), weights);
+        const credited = row.AmountCredited == null ? null : SplitExactly(Number(row.AmountCredited), weights);
+        parts.forEach((p, j) =>
+            out.push({
+                ...row,
+                CompanyID: p.CompanyID,
+                Amount: p.Amount,
+                ...(paid ? { AmountPaid: paid[j] } : {}),
+                ...(credited ? { AmountCredited: credited[j] } : {}),
+            }),
+        );
     }
     return out;
 }
@@ -411,6 +427,8 @@ export interface InstalmentCashFacts {
     /** As of BEFORE the payment being booked. The rollup has already moved it by the time the
      *  allocation books, so the caller must read these rows before it saves the payment line. */
     AmountPaid: number;
+    /** What credit memos credited on the row's invoice (#662). It lowers what cash can settle there. */
+    AmountCredited?: number;
     /** Frozen at invoicing and never cleared, so it — not `Status` — is the record of being billed. */
     DocumentNumber: string | null;
 }
@@ -427,10 +445,13 @@ export interface CashSplit {
 
 const LIVE_FOR_CASH = (r: InstalmentCashFacts): boolean => r.Status !== 'Canceled';
 
-/** What a row can still absorb against an invoice the customer holds. Zero for a row never billed. */
+/**
+ * What a row can still absorb against an invoice the customer holds: its amount less what a credit memo credited and
+ * what is already paid, as the database cascade counts it. Zero for a row never billed.
+ */
 function billedUnpaid(row: InstalmentCashFacts): number {
     if (!row.DocumentNumber) return 0;
-    return Math.max(0, Money(Number(row.Amount) - Number(row.AmountPaid)));
+    return Math.max(0, Money(Number(row.Amount) - Number(row.AmountCredited ?? 0) - Number(row.AmountPaid)));
 }
 
 /** What an unbilled row can still hold as a deposit: its unpaid amount. Zero for a billed row. */
@@ -555,7 +576,9 @@ export function ConsumeDeposit(
  * The customer deposits a company's rows hold: cash on a row beyond what that row has billed.
  *
  * An unbilled row's whole `AmountPaid` is a deposit, since nothing was invoiced for it; a billed row
- * holds a deposit only where it has been overpaid. This is the schedule's side of the Customer
+ * holds a deposit only where it has been overpaid. Overpaid against its AMOUNT, not its amount less a credit
+ * memo: a credit memo credits the receivable, so cash it leaves on a paid invoice is the customer's credit in AR,
+ * which a refund then debits back, and never a deposit (#662). This is the schedule's side of the Customer
  * Deposits balance, and every entry that moves that balance is sized from how this figure moved.
  */
 export function HeldDeposit(rows: InstalmentCashFacts[], companyID: string): number {

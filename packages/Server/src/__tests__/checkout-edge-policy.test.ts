@@ -27,9 +27,9 @@ describe('isValidCheckoutSlug', () => {
         expect(isValidCheckoutSlug('a'.repeat(129))).toBe(false);
     });
 
-    it('reserved set covers every POST suffix on the edge', () => {
+    it('reserved set covers every POST suffix on the edge, and the update-card path (#289)', () => {
         expect([...CHECKOUT_RESERVED_SLUGS].sort()).toEqual(
-            ['complete', 'draft', 'initialize', 'payment-intent'].sort()
+            ['complete', 'draft', 'initialize', 'payment-intent', 'renew'].sort()
         );
     });
 });

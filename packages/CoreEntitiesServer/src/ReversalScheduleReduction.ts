@@ -122,8 +122,11 @@ export function SplitReturnReduction(gross: number, origin: { Net: number; Tax: 
     return { Net: money(money(gross) - tax), Tax: tax };
 }
 
+/** What a schedule reduction took off one line's instalment billing: an amount change's or a return's. */
+export type AppliedScheduleReduction = Pick<AppliedAmountChange, 'OrderLineID' | 'CompanyID' | 'Net' | 'Tax' | 'Gross'>;
+
 /** The reductions returns have taken off an order's lines, as amount changes read. */
-export async function AppliedReturnReductions(orderHeaderID: string, ctx: ApprovalTaskContext): Promise<AppliedAmountChange[]> {
+export async function AppliedReturnReductions(orderHeaderID: string, ctx: ApprovalTaskContext): Promise<AppliedScheduleReduction[]> {
     const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
     const returns = await view<{ ReversesOrderLineID: string; ScheduleReduction: number }>(ctx, {
         EntityName: ORDER_LINE_ENTITY,
@@ -150,7 +153,7 @@ export async function AppliedReturnReductions(orderHeaderID: string, ctx: Approv
 }
 
 /** Everything taken off an order's lines that its instalments no longer bill: approved amount changes and returns. */
-export async function AppliedScheduleReductions(orderHeaderID: string, ctx: ApprovalTaskContext): Promise<AppliedAmountChange[]> {
+export async function AppliedScheduleReductions(orderHeaderID: string, ctx: ApprovalTaskContext): Promise<AppliedScheduleReduction[]> {
     const [changes, returns] = await Promise.all([AppliedAmountChanges(orderHeaderID, ctx), AppliedReturnReductions(orderHeaderID, ctx)]);
     return [...changes, ...returns];
 }

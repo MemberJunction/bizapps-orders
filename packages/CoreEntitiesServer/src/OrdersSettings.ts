@@ -68,6 +68,18 @@ export const ORDERS_SETTING = {
      * reviews every shift.
      */
     TermShiftReviewDays: 'TermShiftReviewDays',
+    /**
+     * Comma-separated days after a renewal's due day on which a declined renewal-card charge is tried
+     * again (#289). The due day itself is always the first attempt. Attempts stop at the access
+     * cutoff (`RenewalAccessCutoffDaysPastDue`) whatever this lists.
+     */
+    RenewalChargeRetryDays: 'RenewalChargeRetryDays',
+    /**
+     * The public address of the checkout edge (its `RootPath` on this host, for example
+     * `https://shop.example.org/checkout`), which the update-card link is built on (#289). Unset, no
+     * link is sent: a link to the wrong host is worse than none.
+     */
+    RenewalPaymentLinkBaseUrl: 'RenewalPaymentLinkBaseUrl',
 } as const;
 
 /**
@@ -81,6 +93,7 @@ const DEFAULTS = {
     AutoPopulateOrganizationFromPerson: true,
     OrganizationAffiliationRelationshipTypes: ['Employee'],
     RenewalAccessCutoffDaysPastDue: 14,
+    RenewalChargeRetryDays: [3, 7, 11],
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
@@ -120,6 +133,21 @@ function asList(raw: string | undefined, fallback: readonly string[]): string[] 
     // surely as the boolean does. That is a legitimate way to configure it, so it is honoured
     // rather than being treated as "unset" and silently replaced by the default.
     return parts;
+}
+
+/**
+ * Whole positive day offsets, ascending and without repeats. An empty value means no retries. Any
+ * entry that is not a whole number of 1 or more takes the default for the whole list: a typo must not
+ * turn three retries into one.
+ */
+function asDayOffsets(raw: string | undefined, fallback: readonly number[]): number[] {
+    if (raw == null) return [...fallback];
+    const parts = raw
+        .split(',')
+        .map((p) => p.trim())
+        .filter((p) => p.length > 0);
+    if (parts.some((p) => !/^\d+$/.test(p) || Number(p) < 1)) return [...fallback];
+    return [...new Set(parts.map(Number))].sort((a, b) => a - b);
 }
 
 const OVERRIDES_STORE_KEY = '__orders_settings_overrides__';
@@ -219,6 +247,17 @@ export class OrdersSettings {
     public static get AccessOverrideFallbackApproverRole(): string | null {
         const value = this.raw(ORDERS_SETTING.AccessOverrideFallbackApproverRole)?.trim();
         return value ? value : null;
+    }
+
+    /** Days after the due day on which a declined renewal-card charge is retried, ascending (#289). */
+    public static get RenewalChargeRetryDays(): number[] {
+        return asDayOffsets(this.raw(ORDERS_SETTING.RenewalChargeRetryDays), DEFAULTS.RenewalChargeRetryDays);
+    }
+
+    /** The checkout edge's public address the update-card link is built on, or `null` when unset (#289). */
+    public static get RenewalPaymentLinkBaseUrl(): string | null {
+        const value = this.raw(ORDERS_SETTING.RenewalPaymentLinkBaseUrl)?.trim();
+        return value && /^https?:\/\/\S+$/i.test(value) ? value.replace(/\/+$/, '') : null;
     }
 
     /** Days past due at which a renewal loses access, or `null` when the cutoff is switched off. */

@@ -187,3 +187,62 @@ describe('SnapshotSellsSubscription', () => {
         expect(state.filters).toHaveLength(0);
     });
 });
+
+describe('SaveCheckoutInstrumentForRenewals — replacing the renewal card (#289)', () => {
+    const OLD_WALLET = 'aaaaaaaa-0000-0000-0000-0000000000f1';
+    const SUB = 'aaaaaaaa-0000-0000-0000-0000000000f2';
+    const ORG = 'aaaaaaaa-0000-0000-0000-0000000000f3';
+
+    it('puts the new card on the named subscriptions even though they already have one', async () => {
+        const sub = subscription(SUB);
+        sub.DefaultCustomerPaymentMethodID = OLD_WALLET;
+        state.views['MJ_BizApps_Orders: Subscriptions'] = [sub];
+
+        const result = await SaveCheckoutInstrumentForRenewals({ ...input, ReplaceCardOnSubscriptionIDs: [SUB] }, provider, user);
+
+        expect(result.Saved).toBe(true);
+        const wallet = state.saved.find((s) => s.entity === 'MJ_BizApps_Orders: Customer Payment Methods')!.row;
+        expect(sub.DefaultCustomerPaymentMethodID).toBe(wallet.ID);
+        expect(sub.DefaultCustomerPaymentMethodID).not.toBe(OLD_WALLET);
+        const subFilter = state.filters.find((f) => f.EntityName === 'MJ_BizApps_Orders: Subscriptions')!.ExtraFilter!;
+        expect(subFilter).toContain(SUB);
+        expect(subFilter).not.toContain('DefaultCustomerPaymentMethodID IS NULL');
+        // The order's own lines are not consulted: a renewal order created no subscription.
+        expect(state.filters.some((f) => f.EntityName === 'MJ_BizApps_Orders: Order Lines')).toBe(false);
+    });
+
+    it('files the card under the organization when the renewal has no bill-to person', async () => {
+        const sub = subscription(SUB);
+        state.views['MJ_BizApps_Orders: Subscriptions'] = [sub];
+
+        const result = await SaveCheckoutInstrumentForRenewals(
+            { ...input, OwnerPersonID: null, OwnerOrganizationID: ORG, ReplaceCardOnSubscriptionIDs: [SUB] },
+            provider,
+            user,
+        );
+
+        expect(result.Saved).toBe(true);
+        const wallet = state.saved.find((s) => s.entity === 'MJ_BizApps_Orders: Customer Payment Methods')!.row;
+        expect(wallet.OwnerOrganizationID).toBe(ORG);
+        expect(wallet.OwnerPersonID).toBeUndefined();
+    });
+
+    it('a replay that finds the new card already set writes nothing to the subscription', async () => {
+        const sub = subscription(SUB);
+        sub.DefaultCustomerPaymentMethodID = 'aaaaaaaa-0000-0000-0000-00000000000e';
+        state.views['MJ_BizApps_Orders: Subscriptions'] = [sub];
+        state.views['MJ_BizApps_Orders: Payment Details'] = [{ ID: 'aaaaaaaa-0000-0000-0000-00000000000d' }];
+        state.views['MJ_BizApps_Orders: Customer Payment Methods'] = [{ ID: 'aaaaaaaa-0000-0000-0000-00000000000e' }];
+
+        const result = await SaveCheckoutInstrumentForRenewals({ ...input, ReplaceCardOnSubscriptionIDs: [SUB] }, provider, user);
+
+        expect(result.SubscriptionIDs).toEqual([SUB]);
+        expect(state.saved).toHaveLength(0);
+    });
+
+    it('an organization owner is refused for a first purchase, which needs a person', async () => {
+        const result = await SaveCheckoutInstrumentForRenewals({ ...input, OwnerPersonID: null, OwnerOrganizationID: ORG }, provider, user);
+        expect(result.Saved).toBe(false);
+    });
+});
+
