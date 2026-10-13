@@ -31,7 +31,7 @@
  *        refunds no tax, because the tax reaches the ledger one instalment at a time (#266)
  *   RV11 a partial return lowers the uninvoiced instalments by the returned units' share of what
  *        they still bill, records it on the returning line, and every later instalment still
- *        invoices; the origin's balance is what its instalments bill (#661)
+ *        invoices; the origin's balance is what its instalments bill, and the return's is its memo (#661)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -442,6 +442,8 @@ export const ContractReversalChecks: NamedCheck[] = [
                 Assert(back.Saved, `the reversal must confirm: ${back.Message}`);
                 AssertEqual((await valueLines(ctx, back.Order.ID as string)).length, 0, 'no memo and no refund of 300');
                 AssertEqual((await schedule(ctx, sale.orderID))[0].Status, 'Invoiced', 'the invoice stands');
+                const balance = await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${back.Order.ID}'`);
+                AssertEqual(Number(balance!.Balance), 0, 'and the return owes the customer nothing, not 300 (#661)');
             }),
     },
     {
@@ -709,6 +711,14 @@ export const ContractReversalChecks: NamedCheck[] = [
                     TxOne<{ TotalGross: number; Balance: number }>(ctx, `SELECT TotalGross, Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`);
                 AssertEqual(Number((await header())!.TotalGross), 10800, 'the origin keeps its booked lines');
                 AssertEqual(Number((await header())!.Balance), 8640, 'and owes what its instalments bill: 10,800 less 2,160');
+                const returnBalance = await TxOne<{ CreditMemoAmount: number; Balance: number }>(
+                    ctx,
+                    `SELECT ol.CreditMemoAmount, oh.Balance
+                       FROM ${ORDERS_SCHEMA}.OrderHeader oh JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.OrderHeaderID = oh.ID
+                      WHERE oh.ID='${back.Order.ID}'`,
+                );
+                AssertEqual(Number(returnBalance!.CreditMemoAmount), 360, 'the returning line records the memo it booked');
+                AssertEqual(Number(returnBalance!.Balance), -360, 'and the return owes back the memo, not the 4,320 its line is worth');
 
                 const third = await issue(ctx, ids[2]);
                 Assert(third.Success, `instalment 3 must invoice against the lowered schedule: ${third.Message ?? ''}`);

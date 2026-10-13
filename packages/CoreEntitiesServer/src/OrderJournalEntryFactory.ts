@@ -379,6 +379,19 @@ export class OrderJournalEntryFactory {
         return out;
     }
 
+    /**
+     * The credit memo each reversing line of a scheduled origin booked, zero when it credited nothing,
+     * keyed by the REVERSING line's id (#661). The return order's balance is this, not its lines' value.
+     */
+    private readonly _creditMemoByLine = new Map<string, number>();
+
+    /** Take the credit memos this build booked, per reversing line, and clear them. */
+    public DrainCreditMemos(): Map<string, number> {
+        const out = new Map(this._creditMemoByLine);
+        this._creditMemoByLine.clear();
+        return out;
+    }
+
     constructor(
         private readonly _resolver: GLAccountResolver,
         private readonly _orderLineEntityID: string,
@@ -751,6 +764,7 @@ export class OrderJournalEntryFactory {
         // moved by the memo alone — and the origin's BilledToDate falls by it, so the next partial
         // reversal prorates what is actually left and the totals still sum to the ledger.
         if (scheduledOrigin) {
+            this._creditMemoByLine.set(line.ID, memo);
             if (memo > 0) {
                 const origin = scheduledOrigin.OriginLineID;
                 this._billedByLine.set(origin, money((this._billedByLine.get(origin) ?? 0) - memo));
