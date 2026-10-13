@@ -18,11 +18,12 @@
 -- Hand-written DDL here is PLAIN: no existence guards. Migrations run once, in order.
 --
 -- CodeGen output for this app is folded below the banner at the end of this file. It regenerates
--- vwOrderHeadersGenerated, which CodeGen now builds with the Address geo embed joins
--- (__mj_Latitude_/__mj_Longitude_ for BillToAddressID and ShipToAddressID), so the tail also
--- carries those four virtual EntityField rows. Without them a database built from migrations
--- would return view columns its entity metadata does not list, and every Order Header save would
--- fail (MemberJunction/bizapps-orders#491).
+-- vwOrderHeadersGenerated with the Address geo embed joins (__mj_Latitude_/__mj_Longitude_ for
+-- BillToAddressID and ShipToAddressID). The four virtual EntityField rows for those columns are
+-- created earlier, by V202610121610's CodeGen output: in the combined PR (bizapps-orders#645)
+-- that was the first migration whose CodeGen run met the geo-embed view. Without them a database
+-- built from migrations would return view columns its entity metadata does not list, and every
+-- Order Header save would fail (MemberJunction/bizapps-orders#491).
 -- =============================================================================
 
 ALTER TABLE [${flyway:defaultSchema}].[OrderHeader]
@@ -99,14 +100,16 @@ GO
 
 -- =============================================================================
 -- CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE. DO NOT EDIT BY HAND.
--- This app's own CodeGen SQL (the two OrderHeader fields and the Order Header views and
--- CRUD procs) is folded here by scripts/append-codegen.sh.
+-- This app's own CodeGen SQL, regenerated for the combined PR (bizapps-orders#645) against a
+-- database built from its migrations: the two OrderHeader fields and their categories, and the
+-- Order Header views, CRUD procs, FK indexes and grants. Left out: validators the run
+-- regenerated for other entities; they are not this change's.
 -- =============================================================================
 
 
 /* SQL text to insert 2 new entity field(s) */
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '4dfe9625-8247-45e5-8e1f-a8172f9ed7f5' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'IPCountry')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b943953a-7718-40d4-bfbb-fd00f0f220f8' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'IPCountry')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -139,7 +142,7 @@ GO
          )
          VALUES
          (
-            '4dfe9625-8247-45e5-8e1f-a8172f9ed7f5',
+            'b943953a-7718-40d4-bfbb-fd00f0f220f8',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
             'IPCountry',
@@ -169,7 +172,7 @@ GO
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'c386a567-8026-40f2-acd4-7d980a062c1d' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'CardIssuingCountry')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '1f88b4f6-aa95-414e-bd1c-11e87be33284' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'CardIssuingCountry')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -202,7 +205,7 @@ GO
          )
          VALUES
          (
-            'c386a567-8026-40f2-acd4-7d980a062c1d',
+            '1f88b4f6-aa95-414e-bd1c-11e87be33284',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
             'CardIssuingCountry',
@@ -217,260 +220,6 @@ GO
             0,
             1,
             0,
-            0,
-            NULL,
-            NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            'Search',
-            GETUTCDATE(),
-            GETUTCDATE()
-         )
-      END;
-
-/* SQL text to insert 4 new entity field(s) */
-
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'cc2e9d1b-19cd-451e-9c11-09c7ca70b00b' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = '${mjSchema}_Latitude_BillToAddressID')) BEGIN
-         INSERT INTO [${mjSchema}].[EntityField]
-         (
-            [ID],
-            [EntityID],
-            [Sequence],
-            [Name],
-            [DisplayName],
-            [Description],
-            [Type],
-            [Length],
-            [Precision],
-            [Scale],
-            [AllowsNull],
-            [DefaultValue],
-            [AutoIncrement],
-            [AllowUpdateAPI],
-            [IsVirtual],
-            [IsComputed],
-            [RelatedEntityID],
-            [RelatedEntityFieldName],
-            [IsNameField],
-            [IncludeInUserSearchAPI],
-            [IncludeRelatedEntityNameFieldInBaseView],
-            [DefaultInView],
-            [IsPrimaryKey],
-            [IsUnique],
-            [RelatedEntityDisplayType],
-            [__mj_CreatedAt],
-            [__mj_UpdatedAt]
-         )
-         VALUES
-         (
-            'cc2e9d1b-19cd-451e-9c11-09c7ca70b00b',
-            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
-            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
-            '${mjSchema}_Latitude_BillToAddressID',
-            'Mj Latitude Bill To Address ID',
-            NULL,
-            'decimal',
-            5,
-            9,
-            6,
-            1,
-            NULL,
-            0,
-            0,
-            1,
-            0,
-            NULL,
-            NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            'Search',
-            GETUTCDATE(),
-            GETUTCDATE()
-         )
-      END;
-
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'd780352d-3458-4c14-bf92-dad8d402b1da' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = '${mjSchema}_Longitude_BillToAddressID')) BEGIN
-         INSERT INTO [${mjSchema}].[EntityField]
-         (
-            [ID],
-            [EntityID],
-            [Sequence],
-            [Name],
-            [DisplayName],
-            [Description],
-            [Type],
-            [Length],
-            [Precision],
-            [Scale],
-            [AllowsNull],
-            [DefaultValue],
-            [AutoIncrement],
-            [AllowUpdateAPI],
-            [IsVirtual],
-            [IsComputed],
-            [RelatedEntityID],
-            [RelatedEntityFieldName],
-            [IsNameField],
-            [IncludeInUserSearchAPI],
-            [IncludeRelatedEntityNameFieldInBaseView],
-            [DefaultInView],
-            [IsPrimaryKey],
-            [IsUnique],
-            [RelatedEntityDisplayType],
-            [__mj_CreatedAt],
-            [__mj_UpdatedAt]
-         )
-         VALUES
-         (
-            'd780352d-3458-4c14-bf92-dad8d402b1da',
-            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
-            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
-            '${mjSchema}_Longitude_BillToAddressID',
-            'Mj Longitude Bill To Address ID',
-            NULL,
-            'decimal',
-            5,
-            9,
-            6,
-            1,
-            NULL,
-            0,
-            0,
-            1,
-            0,
-            NULL,
-            NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            'Search',
-            GETUTCDATE(),
-            GETUTCDATE()
-         )
-      END;
-
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'cf866826-1fc3-4c88-b56b-8fb24f45a377' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = '${mjSchema}_Latitude_ShipToAddressID')) BEGIN
-         INSERT INTO [${mjSchema}].[EntityField]
-         (
-            [ID],
-            [EntityID],
-            [Sequence],
-            [Name],
-            [DisplayName],
-            [Description],
-            [Type],
-            [Length],
-            [Precision],
-            [Scale],
-            [AllowsNull],
-            [DefaultValue],
-            [AutoIncrement],
-            [AllowUpdateAPI],
-            [IsVirtual],
-            [IsComputed],
-            [RelatedEntityID],
-            [RelatedEntityFieldName],
-            [IsNameField],
-            [IncludeInUserSearchAPI],
-            [IncludeRelatedEntityNameFieldInBaseView],
-            [DefaultInView],
-            [IsPrimaryKey],
-            [IsUnique],
-            [RelatedEntityDisplayType],
-            [__mj_CreatedAt],
-            [__mj_UpdatedAt]
-         )
-         VALUES
-         (
-            'cf866826-1fc3-4c88-b56b-8fb24f45a377',
-            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
-            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
-            '${mjSchema}_Latitude_ShipToAddressID',
-            'Mj Latitude Ship To Address ID',
-            NULL,
-            'decimal',
-            5,
-            9,
-            6,
-            1,
-            NULL,
-            0,
-            0,
-            1,
-            0,
-            NULL,
-            NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            'Search',
-            GETUTCDATE(),
-            GETUTCDATE()
-         )
-      END;
-
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '1e976d99-6650-4a12-8221-2f670c487f7d' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = '${mjSchema}_Longitude_ShipToAddressID')) BEGIN
-         INSERT INTO [${mjSchema}].[EntityField]
-         (
-            [ID],
-            [EntityID],
-            [Sequence],
-            [Name],
-            [DisplayName],
-            [Description],
-            [Type],
-            [Length],
-            [Precision],
-            [Scale],
-            [AllowsNull],
-            [DefaultValue],
-            [AutoIncrement],
-            [AllowUpdateAPI],
-            [IsVirtual],
-            [IsComputed],
-            [RelatedEntityID],
-            [RelatedEntityFieldName],
-            [IsNameField],
-            [IncludeInUserSearchAPI],
-            [IncludeRelatedEntityNameFieldInBaseView],
-            [DefaultInView],
-            [IsPrimaryKey],
-            [IsUnique],
-            [RelatedEntityDisplayType],
-            [__mj_CreatedAt],
-            [__mj_UpdatedAt]
-         )
-         VALUES
-         (
-            '1e976d99-6650-4a12-8221-2f670c487f7d',
-            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
-            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
-            '${mjSchema}_Longitude_ShipToAddressID',
-            'Mj Longitude Ship To Address ID',
-            NULL,
-            'decimal',
-            5,
-            9,
-            6,
-            1,
-            NULL,
-            0,
-            0,
-            1,
             0,
             NULL,
             NULL,
@@ -1271,15 +1020,35 @@ BEGIN
         SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
 END
 GO
-REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Integration]
 REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Developer]
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Integration]
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] TO [cdp_Developer], [cdp_Integration];
 
 /* spDelete Permissions for MJ_BizApps_Orders: Order Headers */
 
-REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Integration]
 REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Developer]
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Integration]
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* Set categories for 2 fields */
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Headers.IPCountry 
+UPDATE [${mjSchema}].[EntityField]
+SET 
+   Category = 'Accounting and Audit',
+   GeneratedFormSection = 'Category',
+   ExtendedType = 'GeoCountry'
+WHERE 
+   ID = 'B943953A-7718-40D4-BFBB-FD00F0F220F8';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Headers.CardIssuingCountry 
+UPDATE [${mjSchema}].[EntityField]
+SET 
+   Category = 'Accounting and Audit',
+   GeneratedFormSection = 'Category',
+   ExtendedType = 'GeoCountry'
+WHERE 
+   ID = '1F88B4F6-AA95-414E-BD1C-11E87BE33284';
 
 /* Refresh custom base views for modified entities so schema changes are picked up */
 EXEC sp_refreshview '${flyway:defaultSchema}.vwOrderHeadersGenerated';

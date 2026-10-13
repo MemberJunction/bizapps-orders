@@ -2833,6 +2833,9 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field(() => Boolean, {nullable: true}) 
     AcknowledgesCoverageOverlap?: boolean;
         
+    @Field(() => Float, {nullable: true}) 
+    ExtendedAmount?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(1000)
     CoverageOverlapReason?: string;
@@ -2840,9 +2843,6 @@ export class mjBizAppsOrdersEventOrderLine_ {
     @Field({nullable: true}) 
     @MaxLength(201)
     Person?: string;
-        
-    @Field(() => Float, {nullable: true}) 
-    ExtendedAmount?: number;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
