@@ -3804,5 +3804,96 @@
       "lastModified": "2026-10-12T23:47:34.066Z",
       "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
     }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=OrderHeaderPaymentScheduleID"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.192Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Instalment",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=OrderLineID"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.223Z",
+      "checksum": "779e0f4e5584378c83563611ba57ff0d1e82b5075246cfd69c127a4f89856b61"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billed Amount",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=Part"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.253Z",
+      "checksum": "fd477280b3a35225f949e7aad016eec9047a34399673e6fabc57d97cc4771f47"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billed Amount",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=ChargeTypeID"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.280Z",
+      "checksum": "fd477280b3a35225f949e7aad016eec9047a34399673e6fabc57d97cc4771f47"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billed Amount",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=Amount"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.309Z",
+      "checksum": "fd477280b3a35225f949e7aad016eec9047a34399673e6fabc57d97cc4771f47"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.335Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Instalment Line Billings&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-13T05:50:52.364Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
   }
 ]

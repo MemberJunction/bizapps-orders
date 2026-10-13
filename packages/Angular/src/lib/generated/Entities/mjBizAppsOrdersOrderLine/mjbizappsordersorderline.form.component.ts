@@ -36,7 +36,8 @@ export class mjBizAppsOrdersOrderLineFormComponent extends BaseFormComponent {
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderLineProgressMeasurements', sectionName: 'Order Line Progress Measurements', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderLineChoices', sectionName: 'Order Line Choices', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderLineChoices', sectionName: 'Order Line Choices', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersInstalmentLineBillings', sectionName: 'Instalment Line Billings', isExpanded: false }
         ]);
     }
 }

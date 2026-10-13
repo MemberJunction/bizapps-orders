@@ -1754,6 +1754,66 @@ export const mjBizAppsOrdersExternalPaymentSchema = z.object({
 export type mjBizAppsOrdersExternalPaymentEntityType = z.infer<typeof mjBizAppsOrdersExternalPaymentSchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Instalment Line Billings
+ */
+export const mjBizAppsOrdersInstalmentLineBillingSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    OrderHeaderPaymentScheduleID: z.string().describe(`
+        * * Field Name: OrderHeaderPaymentScheduleID
+        * * Display Name: Order Header Payment Schedule ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+        * * Description: The invoiced instalment.`),
+    OrderLineID: z.string().describe(`
+        * * Field Name: OrderLineID
+        * * Display Name: Order Line ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+        * * Description: The line the instalment billed.`),
+    Part: z.union([z.literal('Charge'), z.literal('Net'), z.literal('Unallocated')]).describe(`
+        * * Field Name: Part
+        * * Display Name: Part
+        * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Charge
+    *   * Net
+    *   * Unallocated
+        * * Description: Which amount of the line: Net (before tax and charges), Unallocated (tax and charges no charge allocation covers) or Charge (one allocated charge type, named by ChargeTypeID). An instalment has at most one row per line and part.`),
+    ChargeTypeID: z.string().nullable().describe(`
+        * * Field Name: ChargeTypeID
+        * * Display Name: Charge Type ID
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Charge Types (vwChargeTypes.ID)
+        * * Description: For a Charge part, the charge type billed. NULL for Net and Unallocated.`),
+    Amount: z.number().describe(`
+        * * Field Name: Amount
+        * * Display Name: Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: What the instalment billed for this part, signed as the line is: negative on a line that reverses another.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    ChargeType: z.string().nullable().describe(`
+        * * Field Name: ChargeType
+        * * Display Name: Charge Type
+        * * SQL Data Type: nvarchar(200)`),
+});
+
+export type mjBizAppsOrdersInstalmentLineBillingEntityType = z.infer<typeof mjBizAppsOrdersInstalmentLineBillingSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Order Adjustment Allocations
  */
 export const mjBizAppsOrdersOrderAdjustmentAllocationSchema = z.object({
@@ -12157,6 +12217,153 @@ export class mjBizAppsOrdersExternalPaymentEntity extends BaseEntity<mjBizAppsOr
     */
     get PaymentHeader(): string | null {
         return this.Get('PaymentHeader');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Instalment Line Billings - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: InstalmentLineBilling
+ * * Base View: vwInstalmentLineBillings
+ * * @description What one instalment invoice billed one order line, part by part: the line's net, the tax and charges no charge allocation covers, and each allocated charge type. Written by the server when the instalment is invoiced, in the same transaction as its journal entry and the line's BilledToDate, and never changed afterwards. Later invoices on the order read these rows as billed instead of slicing earlier instalments again.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Instalment Line Billings')
+export class mjBizAppsOrdersInstalmentLineBillingEntity extends BaseEntity<mjBizAppsOrdersInstalmentLineBillingEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Instalment Line Billings record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Instalment Line Billings record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersInstalmentLineBillingEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: OrderHeaderPaymentScheduleID
+    * * Display Name: Order Header Payment Schedule ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Header Payment Schedules (vwOrderHeaderPaymentSchedules.ID)
+    * * Description: The invoiced instalment.
+    */
+    get OrderHeaderPaymentScheduleID(): string {
+        return this.Get('OrderHeaderPaymentScheduleID');
+    }
+    set OrderHeaderPaymentScheduleID(value: string) {
+        this.Set('OrderHeaderPaymentScheduleID', value);
+    }
+
+    /**
+    * * Field Name: OrderLineID
+    * * Display Name: Order Line ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Lines (vwOrderLines.ID)
+    * * Description: The line the instalment billed.
+    */
+    get OrderLineID(): string {
+        return this.Get('OrderLineID');
+    }
+    set OrderLineID(value: string) {
+        this.Set('OrderLineID', value);
+    }
+
+    /**
+    * * Field Name: Part
+    * * Display Name: Part
+    * * SQL Data Type: nvarchar(20)
+    * * Value List Type: List
+    * * Possible Values 
+    *   * Charge
+    *   * Net
+    *   * Unallocated
+    * * Description: Which amount of the line: Net (before tax and charges), Unallocated (tax and charges no charge allocation covers) or Charge (one allocated charge type, named by ChargeTypeID). An instalment has at most one row per line and part.
+    */
+    get Part(): 'Charge' | 'Net' | 'Unallocated' {
+        return this.Get('Part');
+    }
+    set Part(value: 'Charge' | 'Net' | 'Unallocated') {
+        this.Set('Part', value);
+    }
+
+    /**
+    * * Field Name: ChargeTypeID
+    * * Display Name: Charge Type ID
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Charge Types (vwChargeTypes.ID)
+    * * Description: For a Charge part, the charge type billed. NULL for Net and Unallocated.
+    */
+    get ChargeTypeID(): string | null {
+        return this.Get('ChargeTypeID');
+    }
+    set ChargeTypeID(value: string | null) {
+        this.Set('ChargeTypeID', value);
+    }
+
+    /**
+    * * Field Name: Amount
+    * * Display Name: Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: What the instalment billed for this part, signed as the line is: negative on a line that reverses another.
+    */
+    get Amount(): number {
+        return this.Get('Amount');
+    }
+    set Amount(value: number) {
+        this.Set('Amount', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: ChargeType
+    * * Display Name: Charge Type
+    * * SQL Data Type: nvarchar(200)
+    */
+    get ChargeType(): string | null {
+        return this.Get('ChargeType');
     }
 }
 
