@@ -68,11 +68,12 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
+import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
-import { InheritedTerms, MirroredTaxCharges, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
+import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
@@ -1732,6 +1733,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // midnight, without one it started at whatever instant the confirm happened to run.
                 OrderDate: await CalendarDayOrToday(this.OrderDate, provider, user),
                 Payment: payment,
+                ShipToPersonID: this.ShipToPersonID ?? null,
+                ShipToOrganizationID: this.ShipToOrganizationID ?? null,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1988,6 +1991,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             {
                 ID: this.ID,
                 IssuingCompanyID: this.CompanyID,
+                ShipToPersonID: this.ShipToPersonID ?? null,
+                ShipToOrganizationID: this.ShipToOrganizationID ?? null,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -2443,10 +2448,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
         // stated value is a decision, and resolution only ever fills a blank.
-        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0));
+        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0), context.AlreadyReversed + siblingsBefore);
         const priceField = line.GetFieldByName('UnitPrice');
         if (!(priceField?.Dirty === true || (line.UnitPrice ?? 0) > 0)) {
             line.UnitPrice = terms.UnitPrice;
+        }
+        // THE ORIGIN'S EXACT AMOUNT, while the line is at the origin's unit price (#651). Without it
+        // a Flat 100.00 line at quantity 3 is returned as 3 × 33.33 = 99.99. A unit price the caller
+        // set differently is a negotiated settlement and is priced as stated; so is an amount the
+        // caller set. Recomputed on every save until booking, so a changed quantity or a return
+        // confirmed meanwhile is reflected; never after, when the line's money is frozen.
+        const exactField = line.GetFieldByName('ExtendedAmount');
+        if (!this.MoneyLocked && exactField?.Dirty !== true && Number(line.UnitPrice) === Number(terms.UnitPrice)) {
+            line.ExtendedAmount = terms.ExtendedAmount;
         }
         const discountField = line.GetFieldByName('DiscountPct');
         if (!(discountField?.Dirty === true || (line.DiscountPct ?? 0) > 0)) {
@@ -2456,10 +2470,23 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // order-level promotion — 350 actually paid — refunds 400, and the difference is simply given
         // away against a perfectly balanced journal entry. `DiscountPct` was carried through from the
         // start and this was not, which is why RT7 passed while the defect was live.
+        //
+        // Recomputed on each save until booking, so a draft return whose quantity changes carries
+        // the new quantity's share, while a discount the caller set is kept (#668) — see
+        // `RefreshedDiscountAmount`.
         const amountField = line.GetFieldByName('DiscountAmount');
-        if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
-            line.DiscountAmount = terms.DiscountAmount;
-        }
+        const previousQuantity = line.GetFieldByName('Quantity')?.OldValue;
+        const discount = RefreshedDiscountAmount({
+            Stored: line.DiscountAmount,
+            SetThisSave: amountField?.Dirty === true,
+            MoneyLocked: this.MoneyLocked,
+            PreviousShare:
+                previousQuantity === null || previousQuantity === undefined
+                    ? null
+                    : InheritedTerms(context.Origin, Number(previousQuantity), context.AlreadyReversed + siblingsBefore).DiscountAmount,
+            CurrentShare: terms.DiscountAmount,
+        });
+        if (discount !== line.DiscountAmount) line.DiscountAmount = discount as number;
 
         // THE COVERAGE WINDOW, for the same reason as the price: only the origin knows it.
         //
@@ -3581,11 +3608,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * under the order's customer organization) and still inherit that organization from the header.
      */
     private resolveSubscriber(line: mjBizAppsOrdersOrderLineEntity): SubscriberIdentity {
-        return {
-            OrganizationID:
-                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.BillToOrganizationID ?? null,
-            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.BillToPersonID ?? null,
-        };
+        // The same fallback entitlement grants and gift cards use, so all three name one party (#622).
+        return ResolveLineParty(line, this);
     }
 
     /**

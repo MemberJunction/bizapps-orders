@@ -104,12 +104,29 @@ export interface CreateIntentRequest {
 export interface CreateIntentResult {
     Success: boolean;
     Reason?: string;
+    /**
+     * The gateway's intent id. Also set on a REFUSAL when the gateway created the intent before
+     * declining it: a saved instrument charged at create time (#289) comes back declined with the
+     * intent it opened, and that attempt is recorded as a Failed intent rather than lost.
+     */
     ProviderIntentID?: string;
     Status?: IntentStatus;
     /** For a client-side confirmation flow. Never logged. */
     ClientSecret?: string;
     /** For a hosted-checkout flow — where to send the customer. */
     HostedUrl?: string;
+    /**
+     * The gateway's code for why a saved-instrument charge was refused (`card_declined`,
+     * `insufficient_funds`, `authentication_required`, ...). Set only on a refusal.
+     */
+    FailureCode?: string;
+    /**
+     * True when charging a saved instrument needs the customer to authenticate (an SCA demand). The
+     * customer is not present, so the charge cannot complete; callers treat it as a failure (#289).
+     */
+    RequiresAuthentication?: boolean;
+    /** When the gateway took the money, for a saved-instrument charge that succeeded at create time. */
+    CapturedAt?: Date;
 }
 
 /**

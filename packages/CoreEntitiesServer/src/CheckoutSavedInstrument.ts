@@ -122,6 +122,17 @@ export interface SaveCheckoutInstrumentInput {
     OrderHeaderID: string;
     CompanyID: string;
     OwnerPersonID: string | null;
+    /**
+     * The organization that owns the card when no person does — a renewal of an organization-held
+     * subscription paid through the update-card link (#289). Ignored when `OwnerPersonID` is set.
+     */
+    OwnerOrganizationID?: string | null;
+    /**
+     * Make the card the renewal card of THESE subscriptions, replacing whatever card they had: the
+     * update-card link paying a renewal order (#289). Without it, the card goes on the order's own new
+     * subscriptions that have no renewal card yet.
+     */
+    ReplaceCardOnSubscriptionIDs?: string[];
     PaymentProviderID: string;
     /** The gateway's intent id, read back to learn which card paid. */
     ProviderIntentID: string;
@@ -149,11 +160,15 @@ export async function SaveCheckoutInstrumentForRenewals(
     user: UserInfo,
 ): Promise<SaveCheckoutInstrumentResult> {
     try {
-        if (!input.OwnerPersonID) {
+        const replacing = (input.ReplaceCardOnSubscriptionIDs ?? []).length > 0;
+        const ownerOrganizationID = input.OwnerPersonID ? null : replacing ? (input.OwnerOrganizationID ?? null) : null;
+        if (!input.OwnerPersonID && !ownerOrganizationID) {
             return { Saved: false, Reason: 'the order has no bill-to person to own a saved card' };
         }
 
-        const subscriptions = await subscriptionsNeedingRenewalCard(input.OrderHeaderID, user);
+        const subscriptions = replacing
+            ? await subscriptionsToReplaceCardOn(input.ReplaceCardOnSubscriptionIDs ?? [], user)
+            : await subscriptionsNeedingRenewalCard(input.OrderHeaderID, user);
         if (subscriptions.length === 0) {
             return { Saved: false, Reason: 'the order created no subscription that needs a renewal card' };
         }
@@ -172,12 +187,18 @@ export async function SaveCheckoutInstrumentForRenewals(
             return { Saved: false, Reason: 'the gateway kept no card for this payment' };
         }
 
+        const owner: WalletOwner = input.OwnerPersonID ? { PersonID: input.OwnerPersonID } : { OrganizationID: ownerOrganizationID! };
         const walletID =
-            (await findWalletEntryForInstrument(input.OwnerPersonID, input.PaymentProviderID, instrument.ProviderInstrumentRef, user)) ??
-            (await createWalletEntry(input, instrument, provider, user));
+            (await findWalletEntryForInstrument(owner, input.PaymentProviderID, instrument.ProviderInstrumentRef, user)) ??
+            (await createWalletEntry(input, owner, instrument, provider, user));
 
         const updated: string[] = [];
         for (const subscription of subscriptions) {
+            // A replay finds the card already set; nothing to write.
+            if ((subscription.DefaultCustomerPaymentMethodID ?? '').toLowerCase() === walletID.toLowerCase()) {
+                updated.push(subscription.ID);
+                continue;
+            }
             subscription.DefaultCustomerPaymentMethodID = walletID;
             if (await subscription.Save()) {
                 updated.push(subscription.ID);
@@ -228,9 +249,27 @@ async function subscriptionsNeedingRenewalCard(
     return found.Results ?? [];
 }
 
-/** The wallet entry already holding this gateway instrument for this person, if a prior call wrote it. */
+/** Who owns a wallet entry: a person, or an organization when no person does. */
+type WalletOwner = { PersonID: string; OrganizationID?: undefined } | { OrganizationID: string; PersonID?: undefined };
+
+/** The auto-renewing subscriptions whose renewal card the update-card link replaces. */
+async function subscriptionsToReplaceCardOn(subscriptionIDs: string[], user: UserInfo): Promise<mjBizAppsOrdersSubscriptionEntity[]> {
+    if (!subscriptionIDs.length) return [];
+    const rv = new RunView();
+    const found = await rv.RunView<mjBizAppsOrdersSubscriptionEntity>(
+        {
+            EntityName: SUBSCRIPTION_ENTITY,
+            ExtraFilter: `ID IN (${RequireUUIDs(subscriptionIDs, 'SubscriptionID').map((id) => `'${id}'`).join(',')}) AND AutoRenew = 1`,
+            ResultType: 'entity_object',
+        },
+        user,
+    );
+    return found.Results ?? [];
+}
+
+/** The wallet entry already holding this gateway instrument for this owner, if a prior call wrote it. */
 async function findWalletEntryForInstrument(
-    personID: string,
+    owner: WalletOwner,
     paymentProviderID: string,
     instrumentRef: string,
     user: UserInfo,
@@ -250,11 +289,14 @@ async function findWalletEntryForInstrument(
     const detailIDs = (details.Results ?? []).map((d) => d.ID);
     if (detailIDs.length === 0) return null;
 
+    const ownerFilter = owner.PersonID
+        ? `OwnerPersonID = '${RequireUUID(owner.PersonID, 'OwnerPersonID')}'`
+        : `OwnerOrganizationID = '${RequireUUID(owner.OrganizationID!, 'OwnerOrganizationID')}' AND OwnerPersonID IS NULL`;
     const wallet = await rv.RunView<{ ID: string }>(
         {
             EntityName: CUSTOMER_PAYMENT_METHOD_ENTITY,
             ExtraFilter:
-                `OwnerPersonID = '${RequireUUID(personID, 'OwnerPersonID')}' AND IsActive = 1 ` +
+                `${ownerFilter} AND IsActive = 1 ` +
                 `AND PaymentDetailID IN (${RequireUUIDs(detailIDs, 'PaymentDetailID').map((id) => `'${id}'`).join(',')})`,
             Fields: ['ID'],
             MaxRows: 1,
@@ -268,6 +310,7 @@ async function findWalletEntryForInstrument(
 /** Write the instrument snapshot and the wallet entry over it; the new entry becomes the default. */
 async function createWalletEntry(
     input: SaveCheckoutInstrumentInput,
+    owner: WalletOwner,
     instrument: RetrievedInstrument,
     provider: IMetadataProvider,
     user: UserInfo,
@@ -292,7 +335,8 @@ async function createWalletEntry(
 
     const wallet = await provider.GetEntityObject<mjBizAppsOrdersCustomerPaymentMethodEntity>(CUSTOMER_PAYMENT_METHOD_ENTITY, user);
     wallet.NewRecord();
-    wallet.OwnerPersonID = input.OwnerPersonID;
+    if (owner.PersonID) wallet.OwnerPersonID = owner.PersonID;
+    else wallet.OwnerOrganizationID = owner.OrganizationID!;
     wallet.PaymentDetailID = detail.ID;
     wallet.IsDefault = true;
     wallet.IsActive = true;

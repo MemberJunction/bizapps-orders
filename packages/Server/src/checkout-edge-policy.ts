@@ -9,6 +9,7 @@ export const CHECKOUT_RESERVED_SLUGS: ReadonlySet<string> = new Set([
     'draft',
     'payment-intent',
     'complete',
+    'renew',
 ]);
 
 const SLUG_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;

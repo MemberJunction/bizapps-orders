@@ -21,8 +21,8 @@ export interface AmendArrangementInput {
     NewPaymentTermsTypeID?: string;
     /**
      * The term's new amount, net of discount and before tax. Lower than the current amount and more than zero.
-     * Given with `SubscriptionTermID` and without `NewEndDate`. Recorded only when the instalments not yet invoiced
-     * absorb the whole reduction and its tax; one that needs a credit memo can be previewed but not recorded yet.
+     * Given with `SubscriptionTermID` and without `NewEndDate`. The reduction and its tax come off the instalments not
+     * yet invoiced; what they cannot absorb is credited on a credit memo the approved change carries.
      */
     NewAmount?: number;
     /**
@@ -32,7 +32,7 @@ export interface AmendArrangementInput {
     AppliesToInvoiceID?: string;
     /**
      * With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment.
-     * Previewed only: a refund needs a credit memo, which cannot be recorded yet.
+     * The approval credits that invoice on the credit memo; finance pays the refund with `Orders.RefundPayment`.
      */
     RefundRequested?: boolean;
     /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */

@@ -1755,6 +1755,15 @@
   },
   {
     "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=RefundRequested"
+    }
+  },
+  {
+    "fields": {
       "Category": "Value and Limits",
       "GeneratedFormSection": "Category"
     },
@@ -1803,6 +1812,24 @@
     "sync": {
       "lastModified": "2026-10-12T22:51:27.822Z",
       "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=CreditMemoAmount"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=CreditMemoNumber"
     }
   },
   {
@@ -2232,6 +2259,15 @@
     "sync": {
       "lastModified": "2026-10-08T21:17:23.359Z",
       "checksum": "12237a3a99065b42f7192e9c2f419d84ca85fda3035bf5744b798a36f1ccbeb0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Payment Status",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=AmountCredited"
     }
   },
   {

@@ -1,0 +1,41 @@
+[
+  {
+    "_comments": [
+      "THE DAILY RENEWAL CHARGE PASS (#289).",
+      "",
+      "IT SHIPS DISABLED AND SET TO PREVIEW, the same two-step gate as the renewal and access jobs:",
+      "  · Status Disabled keeps a lower environment from charging cards the moment this lands.",
+      "  · Preview true means an enabled job reports what it would charge and charges nothing.",
+      "Enable it, read the run's Attempts output, then set Preview to false.",
+      "",
+      "03:15 UTC: after the 03:00 renewal pass and before the 03:30 access pass, so a card charged tonight",
+      "keeps its renewal from being suspended tonight. Daily because the charge days are days. ConcurrencyMode",
+      "Skip: two passes racing on one order could both see no attempt today. MissedRunPolicy RunOnce: a",
+      "catch-up is one run on the day it runs; a missed charge day is not charged late, the next retry day is.",
+      "RunImmediatelyIfNeverRun false: a first deployment must not charge anybody before somebody has read the",
+      "preview.",
+      "",
+      "OwnerUserID / NotifyUserID are unset: they name people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Charge Renewals (daily)",
+      "Description": "Charges the renewal card of renewal orders due a charge today, with retries on the RenewalChargeRetryDays setting until the access cutoff. Ships disabled and set to Preview: enable it, confirm the Attempts list on the run, then set Preview to false.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 15 3 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\":\"6FCFE3A6-7591-432F-8311-A5DF4EB12FB7\",\"Params\":[{\"ActionParamID\":\"8076E4BA-0E36-4B54-B000-1DC353004A4E\",\"ValueType\":\"Static\",\"Value\":\"true\"}]}"
+    },
+    "primaryKey": {
+      "ID": "277BE2CD-3B9F-44C2-8995-7F623DF421B1"
+    }
+  }
+]

@@ -237,18 +237,19 @@ GO
 
 -- =============================================================================
 -- CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE. DO NOT EDIT BY HAND.
--- This app's own CodeGen SQL for the change above: the three new Order Concessions
--- fields, the Dispute and AmountChanged value-list values, the Order Header Payment
--- Schedules relationship, FK indexes, vwOrderConcessions, CRUD procs and
--- permissions. Carved from the run: the External Invoices Status and External
--- Payments Disposition value lists and an Event Order Lines resequence, which a
--- database built from migrations lacks whatever this change does, were dropped.
+-- This app's own CodeGen SQL for the change above, regenerated for the combined PR
+-- (bizapps-orders#645) against a database built from its migrations: the three new
+-- Order Concessions fields, the Dispute and AmountChanged value-list values, the
+-- Order Header Payment Schedules relationship, FK indexes, vwOrderConcessions, CRUD
+-- procs (with the referral, signed-amendment and term-date columns earlier migrations
+-- added), permissions and Order Concessions' validators. Left out: validators the run
+-- regenerated for other entities; they are not this change's.
 -- =============================================================================
 
 
 /* SQL text to insert 3 new entity field(s) */
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '86345626-c4b8-422b-842f-fe05e2299a8f' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'NewAmount')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '9cf7d91a-59ca-44e0-912c-98081b2b2089' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'NewAmount')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -281,7 +282,7 @@ GO
          )
          VALUES
          (
-            '86345626-c4b8-422b-842f-fe05e2299a8f',
+            '9cf7d91a-59ca-44e0-912c-98081b2b2089',
             '0E13E45B-0FF1-4B09-8919-CE576829E178', -- Entity: MJ_BizApps_Orders: Order Concessions
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
             'NewAmount',
@@ -311,7 +312,7 @@ GO
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '2a9aba4e-9902-4f57-a677-104c7857e5e0' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'AppliesToPaymentScheduleID')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '6b3f6ea7-3fbf-4150-888c-ed33252c9927' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'AppliesToPaymentScheduleID')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -344,7 +345,7 @@ GO
          )
          VALUES
          (
-            '2a9aba4e-9902-4f57-a677-104c7857e5e0',
+            '6b3f6ea7-3fbf-4150-888c-ed33252c9927',
             '0E13E45B-0FF1-4B09-8919-CE576829E178', -- Entity: MJ_BizApps_Orders: Order Concessions
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
             'AppliesToPaymentScheduleID',
@@ -374,7 +375,7 @@ GO
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'b2c37770-79cd-4b36-b8b8-24b1afa2f6aa' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'ScheduleReduction')) BEGIN
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '70b2f621-69a2-49f5-9fcc-3f3e04d189b7' OR (EntityID = '0E13E45B-0FF1-4B09-8919-CE576829E178' AND Name = 'ScheduleReduction')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -407,7 +408,7 @@ GO
          )
          VALUES
          (
-            'b2c37770-79cd-4b36-b8b8-24b1afa2f6aa',
+            '70b2f621-69a2-49f5-9fcc-3f3e04d189b7',
             '0E13E45B-0FF1-4B09-8919-CE576829E178', -- Entity: MJ_BizApps_Orders: Order Concessions
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '0E13E45B-0FF1-4B09-8919-CE576829E178'),
             'ScheduleReduction',
@@ -437,12 +438,11 @@ GO
          )
       END;
 
-
-/* SQL text to insert entity field value with ID badb07c0-a883-411c-a967-521aab420955 */
+/* SQL text to insert entity field value with ID 15a49ff3-554f-4a1a-9baf-18e8fe7453b4 */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('badb07c0-a883-411c-a967-521aab420955', '44330A58-EAC2-4B6B-A834-F5C3E33BC8F2', 1, 'Dispute', 'Dispute', GETUTCDATE(), GETUTCDATE());
+                                       ('15a49ff3-554f-4a1a-9baf-18e8fe7453b4', '44330A58-EAC2-4B6B-A834-F5C3E33BC8F2', 1, 'Dispute', 'Dispute', GETUTCDATE(), GETUTCDATE());
 
 /* SQL text to update entity field value sequence */
 UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=2 WHERE ID='078F1818-DDAC-4B38-990E-C07589AC37FE';
@@ -453,11 +453,11 @@ UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=3 WHERE ID='2AAA6755-5100-4
 /* SQL text to update entity field value sequence */
 UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=4 WHERE ID='6CBB848E-A1B2-4D67-8947-32EB7ADC9205';
 
-/* SQL text to insert entity field value with ID b9d55179-b0c2-4317-a02b-f98e19d771ec */
+/* SQL text to insert entity field value with ID ad091492-029b-4138-90bd-4bd8b67cc6c0 */
 INSERT INTO [${mjSchema}].[EntityFieldValue]
                                        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
                                     VALUES
-                                       ('b9d55179-b0c2-4317-a02b-f98e19d771ec', 'E2EDA043-B7D5-45C9-8606-AF585833EB10', 2, 'AmountChanged', 'AmountChanged', GETUTCDATE(), GETUTCDATE());
+                                       ('ad091492-029b-4138-90bd-4bd8b67cc6c0', 'E2EDA043-B7D5-45C9-8606-AF585833EB10', 2, 'AmountChanged', 'AmountChanged', GETUTCDATE(), GETUTCDATE());
 
 /* SQL text to update entity field value sequence */
 UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=3 WHERE ID='AAFE86AB-C59F-4DBF-80C3-EBAA173FD6B7';
@@ -487,22 +487,28 @@ UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=10 WHERE ID='93F6F9C3-CCA0-
 UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=11 WHERE ID='56C03837-0A43-45A7-9061-F405D7D06374';
 
 /* SQL text to update entity field value sequence */
-UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=12 WHERE ID='F51C8686-A10E-4655-A06C-466B469B89E6';
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=12 WHERE ID='673968EA-DBE8-47D4-BFC1-92C3BF7F5238';
 
 /* SQL text to update entity field value sequence */
-UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=13 WHERE ID='D9945CF3-A591-4C90-9384-287538F38E14';
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=13 WHERE ID='F51C8686-A10E-4655-A06C-466B469B89E6';
 
 /* SQL text to update entity field value sequence */
-UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=14 WHERE ID='8079E095-2576-49E6-8718-49D0AEC04981';
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=14 WHERE ID='706BBA1B-51E8-4664-A471-7A99E3FC9808';
+
+/* SQL text to update entity field value sequence */
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=15 WHERE ID='D9945CF3-A591-4C90-9384-287538F38E14';
+
+/* SQL text to update entity field value sequence */
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=16 WHERE ID='8079E095-2576-49E6-8718-49D0AEC04981';
 
 
 /* Create Entity Relationship: MJ_BizApps_Orders: Order Header Payment Schedules -> MJ_BizApps_Orders: Order Concessions (One To Many via AppliesToPaymentScheduleID) */
    IF NOT EXISTS (
-      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = 'fde0e258-17a5-4f95-b4d9-f2d94b1012a1'
+      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = 'f8eb3ef8-738d-4ece-ac3a-699a6ac1e54d'
    )
    BEGIN
       INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('fde0e258-17a5-4f95-b4d9-f2d94b1012a1', 'EBFF8EAF-1EDE-4988-B32D-92CDE85E5560', '0E13E45B-0FF1-4B09-8919-CE576829E178', 'AppliesToPaymentScheduleID', 'One To Many', 1, 1, 3, GETUTCDATE(), GETUTCDATE())
+                    VALUES ('f8eb3ef8-738d-4ece-ac3a-699a6ac1e54d', 'EBFF8EAF-1EDE-4988-B32D-92CDE85E5560', '0E13E45B-0FF1-4B09-8919-CE576829E178', 'AppliesToPaymentScheduleID', 'One To Many', 1, 1, 3, GETUTCDATE(), GETUTCDATE())
    END;
 
 /* Index for Foreign Keys for OrderConcession */
@@ -595,6 +601,15 @@ IF NOT EXISTS (
 )
 CREATE INDEX IDX_AUTO_MJ_FKEY_OrderConcession_NewPaymentTermsTypeID ON [${flyway:defaultSchema}].[OrderConcession] ([NewPaymentTermsTypeID]);
 
+-- Index for foreign key ReferralProgramID in table OrderConcession
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderConcession_ReferralProgramID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderConcession]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderConcession_ReferralProgramID ON [${flyway:defaultSchema}].[OrderConcession] ([ReferralProgramID]);
+
 -- Index for foreign key AppliesToPaymentScheduleID in table OrderConcession
 IF NOT EXISTS (
     SELECT 1
@@ -633,7 +648,8 @@ SELECT
     mjBizAppsOrdersSalesRule_SalesRuleID.[Name] AS [SalesRule],
     MJUser_DecidedByUserID.[Name] AS [DecidedByUser],
     mjBizAppsOrdersPaymentTermsType_PriorPaymentTermsTypeID.[Name] AS [PriorPaymentTermsType],
-    mjBizAppsOrdersPaymentTermsType_NewPaymentTermsTypeID.[Name] AS [NewPaymentTermsType]
+    mjBizAppsOrdersPaymentTermsType_NewPaymentTermsTypeID.[Name] AS [NewPaymentTermsType],
+    mjBizAppsOrdersReferralProgram_ReferralProgramID.[Name] AS [ReferralProgram]
 FROM
     [${flyway:defaultSchema}].[OrderConcession] AS o
 INNER JOIN
@@ -660,6 +676,10 @@ LEFT OUTER JOIN
     [${flyway:defaultSchema}].[PaymentTermsType] AS mjBizAppsOrdersPaymentTermsType_NewPaymentTermsTypeID
   ON
     [o].[NewPaymentTermsTypeID] = mjBizAppsOrdersPaymentTermsType_NewPaymentTermsTypeID.[ID]
+LEFT OUTER JOIN
+    [${flyway:defaultSchema}].[ReferralProgram] AS mjBizAppsOrdersReferralProgram_ReferralProgramID
+  ON
+    [o].[ReferralProgramID] = mjBizAppsOrdersReferralProgram_ReferralProgramID.[ID]
 GO
 REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderConcessions] FROM [cdp_Developer]
 REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderConcessions] FROM [cdp_Integration]
@@ -733,6 +753,18 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderConcession]
     @PriorPaymentTermsTypeID uniqueidentifier = NULL,
     @NewPaymentTermsTypeID_Clear bit = 0,
     @NewPaymentTermsTypeID uniqueidentifier = NULL,
+    @SignedAmendmentReference_Clear bit = 0,
+    @SignedAmendmentReference nvarchar(500) = NULL,
+    @ReferralProgramID_Clear bit = 0,
+    @ReferralProgramID uniqueidentifier = NULL,
+    @PriorStartDate_Clear bit = 0,
+    @PriorStartDate date = NULL,
+    @PriorEndDate_Clear bit = 0,
+    @PriorEndDate date = NULL,
+    @NewStartDate_Clear bit = 0,
+    @NewStartDate date = NULL,
+    @NewEndDate_Clear bit = 0,
+    @NewEndDate date = NULL,
     @NewAmount_Clear bit = 0,
     @NewAmount decimal(18, 2) = NULL,
     @AppliesToPaymentScheduleID_Clear bit = 0,
@@ -770,6 +802,12 @@ BEGIN
                 [DecisionNotes],
                 [PriorPaymentTermsTypeID],
                 [NewPaymentTermsTypeID],
+                [SignedAmendmentReference],
+                [ReferralProgramID],
+                [PriorStartDate],
+                [PriorEndDate],
+                [NewStartDate],
+                [NewEndDate],
                 [NewAmount],
                 [AppliesToPaymentScheduleID],
                 [ScheduleReduction]
@@ -798,6 +836,12 @@ BEGIN
                 CASE WHEN @DecisionNotes_Clear = 1 THEN NULL ELSE ISNULL(@DecisionNotes, NULL) END,
                 CASE WHEN @PriorPaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@PriorPaymentTermsTypeID, NULL) END,
                 CASE WHEN @NewPaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@NewPaymentTermsTypeID, NULL) END,
+                CASE WHEN @SignedAmendmentReference_Clear = 1 THEN NULL ELSE ISNULL(@SignedAmendmentReference, NULL) END,
+                CASE WHEN @ReferralProgramID_Clear = 1 THEN NULL ELSE ISNULL(@ReferralProgramID, NULL) END,
+                CASE WHEN @PriorStartDate_Clear = 1 THEN NULL ELSE ISNULL(@PriorStartDate, NULL) END,
+                CASE WHEN @PriorEndDate_Clear = 1 THEN NULL ELSE ISNULL(@PriorEndDate, NULL) END,
+                CASE WHEN @NewStartDate_Clear = 1 THEN NULL ELSE ISNULL(@NewStartDate, NULL) END,
+                CASE WHEN @NewEndDate_Clear = 1 THEN NULL ELSE ISNULL(@NewEndDate, NULL) END,
                 CASE WHEN @NewAmount_Clear = 1 THEN NULL ELSE ISNULL(@NewAmount, NULL) END,
                 CASE WHEN @AppliesToPaymentScheduleID_Clear = 1 THEN NULL ELSE ISNULL(@AppliesToPaymentScheduleID, NULL) END,
                 CASE WHEN @ScheduleReduction_Clear = 1 THEN NULL ELSE ISNULL(@ScheduleReduction, NULL) END
@@ -828,6 +872,12 @@ BEGIN
                 [DecisionNotes],
                 [PriorPaymentTermsTypeID],
                 [NewPaymentTermsTypeID],
+                [SignedAmendmentReference],
+                [ReferralProgramID],
+                [PriorStartDate],
+                [PriorEndDate],
+                [NewStartDate],
+                [NewEndDate],
                 [NewAmount],
                 [AppliesToPaymentScheduleID],
                 [ScheduleReduction]
@@ -855,6 +905,12 @@ BEGIN
                 CASE WHEN @DecisionNotes_Clear = 1 THEN NULL ELSE ISNULL(@DecisionNotes, NULL) END,
                 CASE WHEN @PriorPaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@PriorPaymentTermsTypeID, NULL) END,
                 CASE WHEN @NewPaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@NewPaymentTermsTypeID, NULL) END,
+                CASE WHEN @SignedAmendmentReference_Clear = 1 THEN NULL ELSE ISNULL(@SignedAmendmentReference, NULL) END,
+                CASE WHEN @ReferralProgramID_Clear = 1 THEN NULL ELSE ISNULL(@ReferralProgramID, NULL) END,
+                CASE WHEN @PriorStartDate_Clear = 1 THEN NULL ELSE ISNULL(@PriorStartDate, NULL) END,
+                CASE WHEN @PriorEndDate_Clear = 1 THEN NULL ELSE ISNULL(@PriorEndDate, NULL) END,
+                CASE WHEN @NewStartDate_Clear = 1 THEN NULL ELSE ISNULL(@NewStartDate, NULL) END,
+                CASE WHEN @NewEndDate_Clear = 1 THEN NULL ELSE ISNULL(@NewEndDate, NULL) END,
                 CASE WHEN @NewAmount_Clear = 1 THEN NULL ELSE ISNULL(@NewAmount, NULL) END,
                 CASE WHEN @AppliesToPaymentScheduleID_Clear = 1 THEN NULL ELSE ISNULL(@AppliesToPaymentScheduleID, NULL) END,
                 CASE WHEN @ScheduleReduction_Clear = 1 THEN NULL ELSE ISNULL(@ScheduleReduction, NULL) END
@@ -926,6 +982,18 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderConcession]
     @PriorPaymentTermsTypeID uniqueidentifier = NULL,
     @NewPaymentTermsTypeID_Clear bit = 0,
     @NewPaymentTermsTypeID uniqueidentifier = NULL,
+    @SignedAmendmentReference_Clear bit = 0,
+    @SignedAmendmentReference nvarchar(500) = NULL,
+    @ReferralProgramID_Clear bit = 0,
+    @ReferralProgramID uniqueidentifier = NULL,
+    @PriorStartDate_Clear bit = 0,
+    @PriorStartDate date = NULL,
+    @PriorEndDate_Clear bit = 0,
+    @PriorEndDate date = NULL,
+    @NewStartDate_Clear bit = 0,
+    @NewStartDate date = NULL,
+    @NewEndDate_Clear bit = 0,
+    @NewEndDate date = NULL,
     @NewAmount_Clear bit = 0,
     @NewAmount decimal(18, 2) = NULL,
     @AppliesToPaymentScheduleID_Clear bit = 0,
@@ -958,6 +1026,12 @@ BEGIN
         [DecisionNotes] = CASE WHEN @DecisionNotes_Clear = 1 THEN NULL ELSE ISNULL(@DecisionNotes, [DecisionNotes]) END,
         [PriorPaymentTermsTypeID] = CASE WHEN @PriorPaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@PriorPaymentTermsTypeID, [PriorPaymentTermsTypeID]) END,
         [NewPaymentTermsTypeID] = CASE WHEN @NewPaymentTermsTypeID_Clear = 1 THEN NULL ELSE ISNULL(@NewPaymentTermsTypeID, [NewPaymentTermsTypeID]) END,
+        [SignedAmendmentReference] = CASE WHEN @SignedAmendmentReference_Clear = 1 THEN NULL ELSE ISNULL(@SignedAmendmentReference, [SignedAmendmentReference]) END,
+        [ReferralProgramID] = CASE WHEN @ReferralProgramID_Clear = 1 THEN NULL ELSE ISNULL(@ReferralProgramID, [ReferralProgramID]) END,
+        [PriorStartDate] = CASE WHEN @PriorStartDate_Clear = 1 THEN NULL ELSE ISNULL(@PriorStartDate, [PriorStartDate]) END,
+        [PriorEndDate] = CASE WHEN @PriorEndDate_Clear = 1 THEN NULL ELSE ISNULL(@PriorEndDate, [PriorEndDate]) END,
+        [NewStartDate] = CASE WHEN @NewStartDate_Clear = 1 THEN NULL ELSE ISNULL(@NewStartDate, [NewStartDate]) END,
+        [NewEndDate] = CASE WHEN @NewEndDate_Clear = 1 THEN NULL ELSE ISNULL(@NewEndDate, [NewEndDate]) END,
         [NewAmount] = CASE WHEN @NewAmount_Clear = 1 THEN NULL ELSE ISNULL(@NewAmount, [NewAmount]) END,
         [AppliesToPaymentScheduleID] = CASE WHEN @AppliesToPaymentScheduleID_Clear = 1 THEN NULL ELSE ISNULL(@AppliesToPaymentScheduleID, [AppliesToPaymentScheduleID]) END,
         [ScheduleReduction] = CASE WHEN @ScheduleReduction_Clear = 1 THEN NULL ELSE ISNULL(@ScheduleReduction, [ScheduleReduction]) END
@@ -1060,5 +1134,347 @@ GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderConcession] TO [cdp_Dev
 REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderConcession] FROM [cdp_Developer]
 REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderConcession] FROM [cdp_Integration]
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderConcession] TO [cdp_Developer], [cdp_Integration];
+
+/* Set categories for 3 fields */
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Concessions.NewAmount 
+UPDATE [${mjSchema}].[EntityField]
+SET 
+   Category = 'Concession Details',
+   GeneratedFormSection = 'Category'
+WHERE 
+   ID = '9CF7D91A-59CA-44E0-912C-98081B2B2089';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Concessions.AppliesToPaymentScheduleID 
+UPDATE [${mjSchema}].[EntityField]
+SET 
+   Category = 'Concession Details',
+   GeneratedFormSection = 'Category',
+   DisplayName = 'Applies To Payment Schedule'
+WHERE 
+   ID = '6B3F6EA7-3FBF-4150-888C-ED33252C9927';
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Concessions.ScheduleReduction 
+UPDATE [${mjSchema}].[EntityField]
+SET 
+   Category = 'Value and Limits',
+   GeneratedFormSection = 'Category'
+WHERE 
+   ID = '70B2F621-69A2-49F5-9FCC-3F3E04D189B7';
+
+/* Generated Validation Functions for MJ_BizApps_Orders: Order Concessions */
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('50f4dde8-f816-4e5a-a7e1-b3d88431e203', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '(NOT ([DeliveryForm]=''Shorten'' OR [DeliveryForm]=''Shift'') AND [PriorStartDate] IS NULL AND [PriorEndDate] IS NULL AND [NewStartDate] IS NULL AND [NewEndDate] IS NULL OR ([DeliveryForm]=''Shorten'' OR [DeliveryForm]=''Shift'') AND [SubscriptionTermID] IS NOT NULL AND [PriorStartDate] IS NOT NULL AND [PriorEndDate] IS NOT NULL AND [NewStartDate] IS NOT NULL AND [NewEndDate] IS NOT NULL AND [NewEndDate]>=[NewStartDate] AND [AddedQuantity] IS NULL AND [PriorPaymentTermsTypeID] IS NULL AND [NewPaymentTermsTypeID] IS NULL AND ([DeliveryForm]=''Shift'' AND datediff(day,[PriorStartDate],[NewStartDate])=datediff(day,[PriorEndDate],[NewEndDate]) AND [NewStartDate]<>[PriorStartDate] OR [DeliveryForm]=''Shorten'' AND [NewStartDate]>=[PriorStartDate] AND [NewEndDate]<=[PriorEndDate] AND ([NewStartDate]<>[PriorStartDate] OR [NewEndDate]<>[PriorEndDate])))', 'public ValidateDeliveryFormDateAndTermConstraints(result: ValidationResult) {
+	const isShiftOrShorten = this.DeliveryForm === "Shorten" || this.DeliveryForm === "Shift";
+
+	if (!isShiftOrShorten) {
+		if (this.PriorStartDate != null || this.PriorEndDate != null || this.NewStartDate != null || this.NewEndDate != null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"DeliveryForm",
+				"Prior and New Start/End dates must be empty when Delivery Form is not ''Shorten'' or ''Shift''.",
+				this.DeliveryForm,
+				ValidationErrorType.Failure
+			));
+		}
+	} else {
+		if (this.SubscriptionTermID == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"SubscriptionTermID",
+				"Subscription Term is required when Delivery Form is ''Shorten'' or ''Shift''.",
+				this.SubscriptionTermID,
+				ValidationErrorType.Failure
+			));
+		}
+
+		if (this.PriorStartDate == null || this.PriorEndDate == null || this.NewStartDate == null || this.NewEndDate == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"DeliveryForm",
+				"Prior and New Start/End dates are required when Delivery Form is ''Shorten'' or ''Shift''.",
+				this.DeliveryForm,
+				ValidationErrorType.Failure
+			));
+		} else {
+			const priorStart = new Date(this.PriorStartDate).getTime();
+			const priorEnd = new Date(this.PriorEndDate).getTime();
+			const newStart = new Date(this.NewStartDate).getTime();
+			const newEnd = new Date(this.NewEndDate).getTime();
+
+			if (newEnd < newStart) {
+				result.Errors.push(new ValidationErrorInfo(
+					"NewEndDate",
+					"New End Date must be greater than or equal to New Start Date.",
+					this.NewEndDate,
+					ValidationErrorType.Failure
+				));
+			}
+
+			if (this.DeliveryForm === "Shift") {
+				const startShiftDays = Math.round((newStart - priorStart) / (1000 * 60 * 60 * 24));
+				const endShiftDays = Math.round((newEnd - priorEnd) / (1000 * 60 * 60 * 24));
+
+				if (startShiftDays !== endShiftDays || newStart === priorStart) {
+					result.Errors.push(new ValidationErrorInfo(
+						"DeliveryForm",
+						"When shifting delivery dates, the start and end dates must shift by the exact same number of days and cannot equal the prior start date.",
+						this.DeliveryForm,
+						ValidationErrorType.Failure
+					));
+				}
+			} else if (this.DeliveryForm === "Shorten") {
+				const isWithinPriorRange = newStart >= priorStart && newEnd <= priorEnd;
+				const isShortened = newStart !== priorStart || newEnd !== priorEnd;
+
+				if (!isWithinPriorRange || !isShortened) {
+					result.Errors.push(new ValidationErrorInfo(
+						"DeliveryForm",
+						"When shortening delivery dates, the new dates must fall within the prior date range and must shorten either the start or end date.",
+						this.DeliveryForm,
+						ValidationErrorType.Failure
+					));
+				}
+			}
+		}
+
+		if (this.AddedQuantity != null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"AddedQuantity",
+				"Added Quantity must be empty when Delivery Form is ''Shorten'' or ''Shift''.",
+				this.AddedQuantity,
+				ValidationErrorType.Failure
+			));
+		}
+
+		if (this.PriorPaymentTermsTypeID != null || this.NewPaymentTermsTypeID != null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"DeliveryForm",
+				"Prior and New Payment Terms Types must be empty when Delivery Form is ''Shorten'' or ''Shift''.",
+				this.DeliveryForm,
+				ValidationErrorType.Failure
+			));
+		}
+	}
+}', 'Ensures that when a delivery form is set to ''Shorten'' or ''Shift'', required subscription terms and adjusted date ranges are specified properly—with shifts shifting both dates equally and shortenings reducing the schedule within existing boundaries—while prohibiting dates and payment term overrides for other delivery forms.', 'ValidateDeliveryFormDateAndTermConstraints', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('f3feb274-de9e-40c8-89f9-a7cc94885ff7', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([DeliveryForm]<>''Duration'' OR [SubscriptionTermID] IS NOT NULL AND [AddedDays]>(0))', 'public ValidateDeliveryFormDurationRequirements(result: ValidationResult): void {
+	if (this.DeliveryForm === ''Duration'') {
+		if (this.SubscriptionTermID == null || this.AddedDays == null || this.AddedDays <= 0) {
+			result.Errors.push(new ValidationErrorInfo(
+				"DeliveryForm",
+				"When the delivery form is set to ''Duration'', a valid subscription term must be selected and added days must be greater than 0.",
+				this.DeliveryForm,
+				ValidationErrorType.Failure
+			));
+		}
+	}
+}', 'When the delivery form is set to ''Duration'', a subscription term must be associated and the number of added days must be greater than zero.', 'ValidateDeliveryFormDurationRequirements', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('96316748-a9a3-46ee-a169-f2240c30d1c3', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([DeliveryForm]<>''Terms'' OR [NewPaymentTermsTypeID] IS NOT NULL AND ([PriorPaymentTermsTypeID] IS NULL OR [PriorPaymentTermsTypeID]<>[NewPaymentTermsTypeID]) AND [AddedDays] IS NOT NULL AND [OrderLineID] IS NULL AND [SubscriptionTermID] IS NULL AND [AddedQuantity] IS NULL)', 'public ValidateDeliveryFormTermsRequirements(result: ValidationResult): void {
+	if (this.DeliveryForm === "Terms") {
+		if (this.NewPaymentTermsTypeID == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"NewPaymentTermsTypeID",
+				"New payment terms type is required when delivery form is Terms.",
+				this.NewPaymentTermsTypeID,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.PriorPaymentTermsTypeID != null && this.NewPaymentTermsTypeID != null && this.PriorPaymentTermsTypeID === this.NewPaymentTermsTypeID) {
+			result.Errors.push(new ValidationErrorInfo(
+				"NewPaymentTermsTypeID",
+				"New payment terms type must be different from prior payment terms type.",
+				this.NewPaymentTermsTypeID,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.AddedDays == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"AddedDays",
+				"Added days is required when delivery form is Terms.",
+				this.AddedDays,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.OrderLineID != null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"OrderLineID",
+				"Order line ID must be empty when delivery form is Terms.",
+				this.OrderLineID,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.SubscriptionTermID != null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"SubscriptionTermID",
+				"Subscription term ID must be empty when delivery form is Terms.",
+				this.SubscriptionTermID,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.AddedQuantity != null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"AddedQuantity",
+				"Added quantity must be empty when delivery form is Terms.",
+				this.AddedQuantity,
+				ValidationErrorType.Failure
+			));
+		}
+	}
+}', 'When the delivery form is set to ''Terms'', a new payment terms type and added days must be specified, the new payment terms must differ from prior payment terms, and order line, subscription term, and added quantity must be empty.', 'ValidateDeliveryFormTermsRequirements', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('d48d314b-0d54-4973-9e48-5628b776d6e4', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([NewAmount] IS NULL OR [DeliveryForm]=''Price'' AND [SubscriptionTermID] IS NOT NULL AND [OrderLineID] IS NOT NULL AND [NewAmount]>(0))', 'public ValidateNewAmountPriceRequirements(result: ValidationResult) {
+	if (this.NewAmount != null) {
+		if (this.NewAmount <= 0) {
+			result.Errors.push(new ValidationErrorInfo(
+				"NewAmount",
+				"New amount must be greater than zero when provided.",
+				this.NewAmount,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.DeliveryForm !== "Price") {
+			result.Errors.push(new ValidationErrorInfo(
+				"DeliveryForm",
+				"Delivery form must be ''Price'' when a new amount is provided.",
+				this.DeliveryForm,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.SubscriptionTermID == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"SubscriptionTermID",
+				"Subscription term is required when a new amount is provided.",
+				this.SubscriptionTermID,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.OrderLineID == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"OrderLineID",
+				"Order line is required when a new amount is provided.",
+				this.OrderLineID,
+				ValidationErrorType.Failure
+			));
+		}
+	}
+}', 'If a new amount is specified, it must be greater than zero, the delivery form must be ''Price'', and both a subscription term and an order line must be associated.', 'ValidateNewAmountPriceRequirements', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('6159e726-90c4-4489-86e7-205f580f9300', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([NewAmount] IS NOT NULL OR [AppliesToPaymentScheduleID] IS NULL AND [ScheduleReduction] IS NULL)', 'public ValidateNewAmountRequirementForScheduleAdjustments(result: ValidationResult) {
+	if (this.NewAmount == null && (this.AppliesToPaymentScheduleID != null || this.ScheduleReduction != null)) {
+		result.Errors.push(new ValidationErrorInfo(
+			"NewAmount",
+			"A New Amount is required when specifying Applies To Payment Schedule or Schedule Reduction.",
+			this.NewAmount,
+			ValidationErrorType.Failure
+		));
+	}
+}', 'When specifying payment schedule adjustments (Applies To Payment Schedule or Schedule Reduction), a New Amount must be provided.', 'ValidateNewAmountRequirementForScheduleAdjustments', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('6794f43e-cb3c-4a41-815c-a0cdcf8e0415', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '(NOT ([DeliveryForm]=''Scope'' OR [DeliveryForm]=''Price'') OR [OrderLineID] IS NOT NULL)', 'public ValidateOrderLineIDForDeliveryForm(result: ValidationResult) {
+	if ((this.DeliveryForm === ''Scope'' || this.DeliveryForm === ''Price'') && this.OrderLineID == null) {
+		result.Errors.push(new ValidationErrorInfo(
+			"OrderLineID",
+			"An Order Line is required when Delivery Form is set to ''Scope'' or ''Price''.",
+			this.OrderLineID,
+			ValidationErrorType.Failure
+		));
+	}
+}', 'If the delivery form is ''Scope'' or ''Price'', an order line must be specified to maintain proper order tracking.', 'ValidateOrderLineIDForDeliveryForm', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('f29e9626-cc70-4ce9-9383-969c8ee6e594', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([DeliveryForm]=''Terms'' OR [PriorPaymentTermsTypeID] IS NULL AND [NewPaymentTermsTypeID] IS NULL)', 'public ValidatePaymentTermsTypeFieldsForDeliveryForm(result: ValidationResult) {
+	if (this.DeliveryForm !== ''Terms'' && (this.PriorPaymentTermsTypeID != null || this.NewPaymentTermsTypeID != null)) {
+		result.Errors.push(new ValidationErrorInfo(
+			"DeliveryForm",
+			"Prior and New Payment Terms Types can only be specified when DeliveryForm is set to ''Terms''.",
+			this.DeliveryForm,
+			ValidationErrorType.Failure
+		));
+	}
+}', 'Payment terms types can only be specified when the delivery form is ''Terms''. For all other delivery forms, prior and new payment terms must be left blank.', 'ValidatePaymentTermsTypeFieldsForDeliveryForm', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('0ee93519-7c19-4631-85f6-8376e0557d3a', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([ScheduleReduction] IS NULL OR [ScheduleReduction]>(0) AND [Status]=''Approved'')', '	public ValidateScheduleReductionRequirement(result: ValidationResult) {
+		if (this.ScheduleReduction != null && (this.ScheduleReduction <= 0 || this.Status !== ''Approved'')) {
+			result.Errors.push(new ValidationErrorInfo(
+				"ScheduleReduction",
+				"A schedule reduction must be greater than zero and requires the status to be Approved.",
+				this.ScheduleReduction,
+				ValidationErrorType.Failure
+			));
+		}
+	}', 'If a schedule reduction is specified, it must be greater than zero and can only be applied when the status is Approved.', 'ValidateScheduleReductionRequirement', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
+
+-- CHECK constraint for MJ_BizApps_Orders: Order Concessions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
+IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = '0E13E45B-0FF1-4B09-8919-CE576829E178'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
+VALUES ('f1ad9409-1fd2-4fe5-b9fe-c822ffd37360', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([DeliveryForm]<>''Seats'' OR [OrderLineID] IS NOT NULL AND [AddedQuantity]>(0))', 'public ValidateSeatsDeliveryFormRequirements(result: ValidationResult) {
+	if (this.DeliveryForm === ''Seats'') {
+		if (this.OrderLineID == null || this.AddedQuantity == null || this.AddedQuantity <= 0) {
+			result.Errors.push(new ValidationErrorInfo(
+				"DeliveryForm",
+				"When delivery form is ''Seats'', an order line must be specified and added quantity must be greater than zero.",
+				this.DeliveryForm,
+				ValidationErrorType.Failure
+			));
+		}
+	}
+}', 'When the delivery form is set to ''Seats'', an associated order line must be specified and the added quantity must be greater than zero.', 'ValidateSeatsDeliveryFormRequirements', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', '0E13E45B-0FF1-4B09-8919-CE576829E178')
+   END;
 
 

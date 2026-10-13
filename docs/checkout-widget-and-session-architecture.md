@@ -466,6 +466,18 @@ After `Confirm()` commits, `CompleteCheckout` marks the session `Confirmed` with
 
 A failure at any step rolls the whole booking back. Payment is not checked inside `Confirm()`: `CompleteCheckout` verified it first.
 
+#### Paying a renewal through the checkout (the update-card link)
+When the renewal card is declined, or the bank asks the absent buyer to authenticate (SCA), the first failed charge e-mails the subscription's bill-to person a link (#289). The e-mail is two MJ Templates shipped as metadata, `Orders: Renewal Payment Link` (HTML body) and `Orders: Renewal Payment Link Subject`, sent through the registered `Email` delivery channel (MJ `CommunicationEngine`).
+
+- **The link** is `<RenewalPaymentLinkBaseUrl>/renew/<token>`. The token is the renewal order id, the subscription id and an expiry, signed with HMAC-SHA256 (`CheckoutRenewalPayment.ts`). It names no person. It expires at the end of the day `RENEWAL_LINK_GRACE_DAYS` (7) after the access cutoff, counted from the due day, or 30 days after the due day when the cutoff is off.
+- **The secret** is read by the server bootstrap from the `ORDERS_RENEWAL_LINK_SECRET` environment variable, at least 32 characters. Without it no link is signed or accepted. The link address is the `RenewalPaymentLinkBaseUrl` application setting: this host's public checkout root, for example `https://shop.example.org/checkout`.
+- **The page** is the checkout widget that sold the subscription, in its pay-renewal mode: the order, the amount due and a card field. `InitializeRenewalPaymentSession` checks the token, then opens a session whose `DraftOrderID` is the renewal order. That order having a renewal line is what puts the session in this mode; a checkout never writes one. The edge's origin, rate-limit and Turnstile gates apply as on any checkout call.
+- **Paying** opens an intent for the order's open balance (`OpenPaymentIntentForSession`), keeping the card under the old renewal card's gateway customer when it is the same provider. `UpdateDraft` refuses the session, so the order is never re-priced. `CompleteCheckout` books the payment through the ordinary checkout capture, so `ReconcilePaymentGatedGrants` restores suspended access, and `SaveCheckoutInstrumentForRenewals` makes the new card the subscription's renewal card (`ReplaceCardOnSubscriptionIDs`).
+- **Single use in effect**: the link is refused once the order is paid, or once a session for it has confirmed.
+
+#### Keeping the card for renewals
+When the draft sells a product with a subscription type, the intent is opened with a gateway customer and a request to keep the card. After the capture books, `SaveCheckoutInstrumentForRenewals` (`CheckoutSavedInstrument.ts`) files the card in the buyer's wallet and sets it as `Subscription.DefaultCustomerPaymentMethodID` on each new auto-renewing subscription. That subscription's renewal order is then due on the new term's first day, and the daily `Orders.ChargeRenewals` job charges the card off-session on that day, retrying on the `RenewalChargeRetryDays` setting (default 3, 7 and 11 days after) until the access cutoff (`RenewalCharging.ts`, #289).
+
 ---
 
 ## Pre-Purchase Checks
@@ -716,7 +728,8 @@ el.dispatchEvent(new CustomEvent('checkout-reset'));
 The app ships its own public REST edge: **`CheckoutServerExtension`** (`@mj-biz-apps/orders-server`, DriverClass `OrdersCheckoutEdge`), mounted pre-auth via Open App `MJ_SERVER_EXTENSIONS` (host `serverExtensions[]` overlays). Default root path `/checkout`:
 
 1. `GET /checkout/:slug` — first-party HTML host page for the distribution (404 if the slug is reserved or not an Active distribution)
-2. `POST /checkout/initialize` — body `{ slug, clientSessionKey, turnstileToken? }`
+   - `GET /checkout/renew/:token` — the update-card link's page ([Paying a renewal through the checkout](#paying-a-renewal-through-the-checkout-the-update-card-link)): the same host page in the pay-renewal mode
+2. `POST /checkout/initialize` — body `{ slug, clientSessionKey, turnstileToken?, renewalToken? }`
 3. `POST /checkout/draft` — body `{ sessionId, clientSessionKey, email, lines, billingAddress, attribution?, answers?, choices?, promotionCodes?, memberToken? }`
 4. `POST /checkout/payment-intent` — body `{ sessionId, clientSessionKey, autoRenewConsent? }` → returns the gateway `ClientSecret` for Stripe.js confirmation
 5. `POST /checkout/complete` — body `{ sessionId, clientSessionKey, turnstileToken? }` → the confirmation, with `AccountStep: true` when a host registered an account step

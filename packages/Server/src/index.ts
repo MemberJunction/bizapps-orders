@@ -19,6 +19,7 @@ import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
+import { LoadChargeRenewalsAction } from './custom/charge-renewals.action.js';
 import { LoadDispatchOutboundEventsAction } from './custom/dispatch-outbound-events.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
@@ -95,7 +96,9 @@ import {
     LoadListEntitlementsOperation,
     LoadAccessOverrideOperations,
     LoadEntitlementAccessOverrideEntityServer,
+    ConfigureRenewalPaymentLinks,
 } from '@mj-biz-apps/orders-core-entities-server';
+import { RENEWAL_LINK_SECRET_ENV_VAR } from './services/renewal-payment-link.js';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
 // because it must be installed before MJServer's auth middleware — see the file for why.
@@ -138,6 +141,9 @@ export const RESOLVER_PATHS = [
  * startupExport entry point.
  */
 export function LoadBizAppsOrdersServer(): void {
+    // The update-card link's signing secret (#289), from the environment and never from the
+    // database or the repo. Unset or shorter than 32 characters, no link is signed or accepted.
+    ConfigureRenewalPaymentLinks({ Secret: process.env[RENEWAL_LINK_SECRET_ENV_VAR] });
     // Static imports above ensure all classes are registered; these anchor the server-only
     // subclasses against tree-shaking (booking lives in OrderEntityServer.Save).
     LoadOrderEntityServer();
@@ -211,6 +217,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
     LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
+    LoadChargeRenewalsAction();        // 'Orders.ChargeRenewals' — daily charge of renewal cards, with retries (#289)
     LoadDispatchOutboundEventsAction(); // 'Orders.DispatchOutboundEvents' — sends recorded outbound events (#293)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
