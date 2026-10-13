@@ -38,7 +38,7 @@ function componentFor(record: Partial<mjBizAppsOrdersSubscriptionEntity>, canUpd
         Open: false,
         Busy: false,
         Error: null,
-        Timing: 'EndOfTerm',
+        Timing: 'Type',
         Reason: '',
         Preview: null,
     });
@@ -70,13 +70,14 @@ describe('Cancel subscription', () => {
         expect(componentFor({}, false).CanCancel).toBe(false);
     });
 
-    it('defaults to end of term and previews through the operation without writing', async () => {
+    it('defaults to the type\'s own rule, sending no timing, and previews without writing', async () => {
         const c = componentFor({});
         c.Start();
         await c.RunPreview();
 
+        expect(c.Timing).toBe('Type');
         expect(mocks.calls).toHaveLength(1);
-        expect(mocks.calls[0].input).toEqual({ SubscriptionID: SUB, Timing: 'EndOfTerm', Reason: undefined, Preview: true });
+        expect(mocks.calls[0].input).toEqual({ SubscriptionID: SUB, Timing: undefined, Reason: undefined, Preview: true });
         expect(mocks.calls[0].options.provider).toBe(c.Provider);
         expect(c.Preview).toBe(PREVIEW);
     });
@@ -92,6 +93,15 @@ describe('Cancel subscription', () => {
         expect(mocks.calls[1].input).toEqual({ SubscriptionID: SUB, Timing: 'Immediate', Reason: 'Moved to another plan', Preview: false });
         expect(c.Canceled.emit).toHaveBeenCalledOnce();
         expect(c.Open).toBe(false);
+    });
+
+    it('sends end of term when the person overrides the type with it', async () => {
+        const c = componentFor({});
+        c.Start();
+        c.Timing = 'EndOfTerm';
+        await c.RunPreview();
+
+        expect(mocks.calls[0].input).toEqual({ SubscriptionID: SUB, Timing: 'EndOfTerm', Reason: undefined, Preview: true });
     });
 
     it('drops the preview when the choice changes, so a stale preview cannot be confirmed', async () => {

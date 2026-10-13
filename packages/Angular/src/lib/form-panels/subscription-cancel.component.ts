@@ -8,8 +8,11 @@ import {
     type mjBizAppsOrdersSubscriptionEntity,
 } from '@mj-biz-apps/orders-entities';
 
-/** The two timings a person cancelling can choose; the subscription type's grace applies to end of term only. */
-export type MJOCancelTiming = NonNullable<CancelSubscriptionInput['Timing']>;
+/**
+ * What the person cancelling picks: the subscription type's own rule (`Type`, which sends no timing),
+ * or one of the two timings that override it. The type's grace applies to end of term only.
+ */
+export type MJOCancelTiming = 'Type' | NonNullable<CancelSubscriptionInput['Timing']>;
 
 /** Statuses a subscription can be cancelled from. The operation refuses `Canceled` itself. */
 const CANCELLABLE_STATUSES = new Set(['Active', 'Trialing', 'Paused']);
@@ -48,8 +51,11 @@ export class MJOSubscriptionCancelComponent {
     public Open = false;
     public Busy = false;
     public Error: string | null = null;
-    /** End of term by default: access runs to the end of what was paid for. */
-    public Timing: MJOCancelTiming = 'EndOfTerm';
+    /**
+     * The type's own rule by default, so cancelling from here means what the type says it means; an
+     * `EndOfBillingPeriod` type ends at its billing period, not the term. A timing is an override.
+     */
+    public Timing: MJOCancelTiming = 'Type';
     public Reason = '';
     public Preview: CancelSubscriptionOutput | null = null;
 
@@ -59,13 +65,18 @@ export class MJOSubscriptionCancelComponent {
         return !!user && this.Record.EntityInfo.GetUserPermisions(user).CanUpdate;
     }
 
+    /** The type's name for the default option, from the subscription's own view field. */
+    public get TypeName(): string {
+        return this.Record?.SubscriptionType || 'the subscription type';
+    }
+
     public Day(value: string | null | undefined): string {
         return ToISODate(value) ?? '—';
     }
 
     public Start(): void {
         this.Open = true;
-        this.Timing = 'EndOfTerm';
+        this.Timing = 'Type';
         this.Reason = '';
         this.Preview = null;
         this.Error = null;
@@ -102,7 +113,7 @@ export class MJOSubscriptionCancelComponent {
         try {
             const result = await new OrdersCancelSubscriptionOperation().Execute({
                 SubscriptionID: this.Record.ID,
-                Timing: this.Timing,
+                Timing: this.Timing === 'Type' ? undefined : this.Timing,
                 Reason: this.Reason.trim() || undefined,
                 Preview: preview,
             }, { provider: this.Provider });

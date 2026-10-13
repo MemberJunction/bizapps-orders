@@ -11,16 +11,23 @@
         <fieldset class="mjo-sc__timing" [disabled]="Busy">
             <legend>When does access end?</legend>
             <label class="mjo-sc__option">
+                <input type="radio" name="timing" value="Type" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>As the subscription type sets it</strong>
+                    <span class="mjo-sc__hint">{{ TypeName }}'s cancellation rule and grace period decide when coverage and access end. Preview shows the dates.</span>
+                </span>
+            </label>
+            <label class="mjo-sc__option">
                 <input type="radio" name="timing" value="EndOfTerm" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
                 <span>
-                    <strong>At the end of the term</strong>
+                    <strong>At the end of the term instead</strong>
                     <span class="mjo-sc__hint">Access runs to the end of what was paid for, plus the subscription type's grace period. It does not renew.</span>
                 </span>
             </label>
             <label class="mjo-sc__option">
                 <input type="radio" name="timing" value="Immediate" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
                 <span>
-                    <strong>Immediately</strong>
+                    <strong>Immediately instead</strong>
                     <span class="mjo-sc__hint">Coverage and access end today. Any refund follows the subscription type's refund rule; give other money back from the payment's Refund page.</span>
                 </span>
             </label>
