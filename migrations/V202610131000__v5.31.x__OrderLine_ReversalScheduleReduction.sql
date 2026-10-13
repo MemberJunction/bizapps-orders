@@ -50,7 +50,8 @@ EXEC sp_addextendedproperty
 GO
 
 -- -----------------------------------------------------------------------------
--- 2. spRecalcOrderHeaderTotals — as V202610121630 left it, with
+-- 2. spRecalcOrderHeaderTotals — as V202610122000 left it (approved amount changes'
+--    schedule reductions and credit memos), with
 --    - the balance net of what returns took off this order's instalments, and
 --    - each returning line that booked a credit memo counted at that memo.
 -- -----------------------------------------------------------------------------
@@ -84,9 +85,11 @@ BEGIN
         FROM [${flyway:defaultSchema}].[OrderLine] ol WHERE ol.OrderHeaderID = o.ID
     ) l
     OUTER APPLY (
-        SELECT SUM(c.ScheduleReduction) AS Reduced
+        SELECT SUM(ISNULL(c.ScheduleReduction, 0) + ISNULL(c.CreditMemoAmount, 0)) AS Reduced
         FROM [${flyway:defaultSchema}].[OrderConcession] c
-        WHERE c.OrderHeaderID = o.ID AND c.Status = 'Approved' AND c.ScheduleReduction IS NOT NULL
+        WHERE c.OrderHeaderID = o.ID
+          AND c.Status = 'Approved'
+          AND (c.ScheduleReduction IS NOT NULL OR c.CreditMemoAmount IS NOT NULL)
     ) r
     OUTER APPLY (
         SELECT SUM(rl.ScheduleReduction) AS Reduced
