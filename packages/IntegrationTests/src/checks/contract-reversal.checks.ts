@@ -739,13 +739,14 @@ export const ContractReversalChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                // #681. Two 600 lines in four 300 instalments, two invoiced (300 of each line), then half of
-                // line A returned: its instalments lose 150, so 3 and 4 fall to 225. Slicing the invoiced
-                // instalments again against A's lowered 450 billed A 192.86 and B 257.14 of the 450 left;
-                // A has 150 left to bill and B 300.
+                // #681. Two 4,800 lines in four 2,400 instalments, two invoiced (2,400 of each line), then half
+                // of line A returned: its instalments lose 1,200, so 3 and 4 fall to 1,800. Slicing the invoiced
+                // instalments again against A's lowered 3,600 billed A 1,542.86 and B 2,057.14 of the 3,600 left;
+                // A has 1,200 left to bill and B 2,400. Priced at DeferredA's engine price, 480 a unit, so the
+                // confirm needs no concession.
                 const f = Fx();
                 const servicePeriod = { Start: '2026-07-01', End: '2027-06-30' };
-                const line = { ProductID: f.Products.DeferredA, Quantity: 10, UnitPrice: 60, ServicePeriodStart: servicePeriod.Start, ServicePeriodEnd: servicePeriod.End };
+                const line = { ProductID: f.Products.DeferredA, Quantity: 10, UnitPrice: 480, ServicePeriodStart: servicePeriod.Start, ServicePeriodEnd: servicePeriod.End };
                 const draft = await BuildOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     BillToOrganizationID: f.Customers.OrganizationID,
@@ -762,7 +763,7 @@ export const ContractReversalChecks: NamedCheck[] = [
                             CompanyID: f.CoA.ID,
                             InstallmentNumber: n + 1,
                             DueDate: new Date(`${due}T00:00:00Z`),
-                            Amount: 300,
+                            Amount: 2400,
                         }),
                     );
                 }
@@ -772,7 +773,7 @@ export const ContractReversalChecks: NamedCheck[] = [
                 Assert(await order.Save(), `confirm: ${order.LatestResult?.CompleteMessage ?? ''}`);
                 Assert((await issue(ctx, ids[1])).Success, 'issue instalment 2');
                 const [lineA, lineB] = await lineTotals(ctx, orderID);
-                AssertEqual(`${Number(lineA.BilledToDate)}/${Number(lineB.BilledToDate)}`, '300/300', 'two instalments billed each line 300');
+                AssertEqual(`${Number(lineA.BilledToDate)}/${Number(lineB.BilledToDate)}`, '2400/2400', 'two instalments billed each line 2,400');
 
                 const back = await reverse(ctx, lineA.ID, f.Products.DeferredA, { orderDate: MONTH_FIVE, servicePeriod, quantity: 5 });
                 Assert(back.Saved, `the return must confirm: ${back.Message}`);
@@ -780,7 +781,7 @@ export const ContractReversalChecks: NamedCheck[] = [
                     ctx,
                     `SELECT ScheduleReduction, CreditMemoAmount FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${back.Order.ID}'`,
                 );
-                AssertEqual(Number(returning!.ScheduleReduction), 150, 'half of the 300 line A still had to bill comes off');
+                AssertEqual(Number(returning!.ScheduleReduction), 1200, 'half of the 2,400 line A still had to bill comes off');
                 const memo = Number(returning!.CreditMemoAmount ?? 0);
 
                 for (const id of ids.slice(2)) {
@@ -788,8 +789,8 @@ export const ContractReversalChecks: NamedCheck[] = [
                     Assert(out.Success, `the lowered instalment must invoice: ${out.Message ?? ''}`);
                 }
                 const [a, b] = await lineTotals(ctx, orderID);
-                AssertEqual(Number(a.BilledToDate), cents(300 - memo + 150), 'line A: 300 billed, less its memo, plus the 150 it had left');
-                AssertEqual(Number(b.BilledToDate), 600, 'line B: billed its whole 600, no more and no less');
+                AssertEqual(Number(a.BilledToDate), cents(2400 - memo + 1200), 'line A: 2,400 billed, less its memo, plus the 1,200 it had left');
+                AssertEqual(Number(b.BilledToDate), 4800, 'line B: billed its whole 4,800, no more and no less');
 
                 const recorded = await TxQuery<{ OrderLineID: string; Amount: number }>(
                     ctx,
@@ -798,8 +799,8 @@ export const ContractReversalChecks: NamedCheck[] = [
                       WHERE s.OrderHeaderID = '${orderID}' AND b.Part = 'Net'`,
                 );
                 const byLine = (id: string) => sum(recorded.filter((r) => r.OrderLineID.toLowerCase() === id.toLowerCase()));
-                AssertEqual(byLine(lineA.ID), 450, 'the four invoices recorded line A at its 600 less the 150 returned');
-                AssertEqual(byLine(lineB.ID), 600, 'and line B at its 600');
+                AssertEqual(byLine(lineA.ID), 3600, 'the four invoices recorded line A at its 4,800 less the 1,200 returned');
+                AssertEqual(byLine(lineB.ID), 4800, 'and line B at its 4,800');
             }),
     },
 ];

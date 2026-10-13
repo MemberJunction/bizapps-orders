@@ -118,7 +118,14 @@ async function bookByInstalment(ctx: IntegrationCheckContext, prices: number[] =
     CompanyID: f.CoA.ID,
     BillToOrganizationID: f.Customers.OrganizationID,
     OrderDate: new Date(`${iso(orderDate)}T00:00:00Z`),
-    Lines: prices.map((UnitPrice) => ({ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice })),
+    // A second line names another holder: two lines of one ExtendExisting product for one holder make one
+    // subscription, and the second line's term would then read as the first term's renewal already placed.
+    Lines: prices.map((UnitPrice, i) => ({
+      ProductID: f.Products.SubRolling,
+      Quantity: 1,
+      UnitPrice,
+      ...(i === 1 ? { ShipToOrganizationID: f.Customers.SecondOrganizationID } : {}),
+    })),
   });
   Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ""}`);
   const orderID = draft.Order.ID as string;
