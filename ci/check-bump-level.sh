@@ -18,7 +18,9 @@
 # baseline — a migration file rewritten without shipping anything new — and under this
 # pipeline over-bumping is close to free, because a version number is minted and published
 # in the same breath and skipping one is structurally impossible. Taking the minor is the
-# cheaper answer than an escape hatch people have to reason about.
+# cheaper answer than an escape hatch people have to reason about. The door's
+# `migration-changeset-exempt` label (a revert of unreleased work) deliberately does not reach
+# here: this check compares the last tag with HEAD, so a full revert already nets to nothing.
 set -euo pipefail
 
 # The "what changed that matters" logic is shared with the door check — see the header there.

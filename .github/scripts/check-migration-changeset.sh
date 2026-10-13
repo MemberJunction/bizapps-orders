@@ -10,6 +10,14 @@
 # Usage:  check-migration-changeset.sh <base-ref> <head-ref>
 #         check-migration-changeset.sh --self-test
 #
+# MIGRATION_CHANGESET_EXEMPT=true (the `migration-changeset-exempt` label) skips the minor
+# requirement for one PR. It exists for the case this per-PR rule gets wrong: a PR that reverts
+# unreleased migration or metadata work, so its own diff touches migrations/ and metadata/ while
+# nothing differs from the last release. Without it the revert has to carry a minor changeset,
+# and the release goes out as a minor with nothing in it. The label reaches this door check
+# only: rr: minor bump and rr: metadata shipped still judge the net change since the last tag,
+# with no label, so a mislabelled PR that really changes the schema is caught at the release.
+#
 set -euo pipefail
 
 # `changeset add` writes the package line as either quote style, and has over this repo's
@@ -99,10 +107,33 @@ if [ -z "$SURFACE" ]; then
   exit 0
 fi
 
-CHANGESETS=$(git diff --name-only "$BASE" "$HEAD_REF" | grep -E '^\.changeset/.*\.md$' | grep -v 'README.md' || true)
+CHANGED=$(printf '%s\n%s\n' "$MIGRATIONS" "$METADATA" | sed '/^$/d')
+
+if [ "${MIGRATION_CHANGESET_EXEMPT:-false}" = "true" ]; then
+  echo "::warning::migration changeset OVERRIDDEN by the 'migration-changeset-exempt' label. This PR changes $SURFACE and needs no minor changeset only if nothing it touches differs from the last release (a revert of unreleased work). rr: minor bump re-checks that at release. Changed:"
+  echo "$CHANGED" | sed 's/^/  /'
+  if [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+    {
+      echo "### migration changeset: overridden by label"
+      echo
+      echo "\`migration-changeset-exempt\` was applied. This PR changes $SURFACE without a minor changeset:"
+      echo
+      echo "$CHANGED" | sed 's/^/- `/; s/$/`/'
+      echo
+      echo "rr: minor bump still judges the net change since the last release."
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
+  exit 0
+fi
+
+REVERT_HINT="If this PR only reverts unreleased migration or metadata work, so nothing differs from the last release, add the 'migration-changeset-exempt' label instead."
+
+# --diff-filter=d: a changeset this PR DELETES (a revert removes the original's) is not one it
+# carries. Counting it made the error below claim the PR's changeset "only requests a patch".
+CHANGESETS=$(git diff --name-only --diff-filter=d "$BASE" "$HEAD_REF" | grep -E '^\.changeset/.*\.md$' | grep -v 'README.md' || true)
 if [ -z "$CHANGESETS" ]; then
-  echo "::error::This PR changes $SURFACE but carries no changeset. A schema or seeded-metadata change is a feature: run 'pnpm exec changeset' and pick minor. Changed:"
-  echo "$MIGRATIONS" | sed 's/^/  /'
+  echo "::error::This PR changes $SURFACE but carries no changeset. A schema or seeded-metadata change is a feature: run 'pnpm exec changeset' and pick minor. $REVERT_HINT Changed:"
+  echo "$CHANGED" | sed 's/^/  /'
   exit 1
 fi
 
@@ -113,6 +144,6 @@ for f in $CHANGESETS; do
   fi
 done
 
-echo "::error::This PR changes $SURFACE, and its changeset(s) only request a patch. A consumer upgrading on a patch would not expect the schema or seeded metadata to change — raise one to minor. Changesets in this PR:"
+echo "::error::This PR changes $SURFACE, and its changeset(s) only request a patch. A consumer upgrading on a patch would not expect the schema or seeded metadata to change — raise one to minor. $REVERT_HINT Changesets in this PR:"
 echo "$CHANGESETS" | sed 's/^/  /'
 exit 1

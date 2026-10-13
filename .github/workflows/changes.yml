@@ -18,9 +18,10 @@ on:
     # `ready_for_review` is NOT in the default type set (opened/synchronize/reopened), and the
     # jobs below skip while the PR is a draft — without it, marking a PR ready would not
     # re-trigger anything and the checks would never report.
-    # `labeled`/`unlabeled` matter because `migration immutability` honours a label: without
-    # them, adding `migration-immutability-exempt` to a red PR re-triggers nothing (you have to
-    # push a no-op commit), and REMOVING it leaves the stale green standing.
+    # `labeled`/`unlabeled` matter because `migration immutability` and `migration changeset`
+    # each honour a label: without them, adding `migration-immutability-exempt` or
+    # `migration-changeset-exempt` to a red PR re-triggers nothing (you have to push a no-op
+    # commit), and REMOVING one leaves the stale green standing.
     types: [opened, synchronize, reopened, ready_for_review, labeled, unlabeled]
     branches: [next]
 
@@ -144,9 +145,15 @@ jobs:
   # nobody. Both are wired up on purpose: this is the first net, rr: minor bump is the second.
   #
   # The cost is the case it over-fires on: a comment fix inside a migration, or a second
-  # migration in a window a minor already covers. Both now simply take the minor. There is no
-  # exemption label: under this pipeline a version number is minted and published in the same
-  # breath, so over-bumping is close to free and cheaper than a hatch people must reason about.
+  # migration in a window a minor already covers. Both now simply take the minor: under this
+  # pipeline a version number is minted and published in the same breath, so over-bumping is
+  # close to free.
+  #
+  # One case is not an over-bump but a wrong answer: a PR that REVERTS unreleased migration or
+  # metadata work. Its own diff touches migrations/, yet nothing differs from the last release,
+  # so a minor here would ship a minor release with nothing in it. `migration-changeset-exempt`
+  # covers that, and only at this door: rr: minor bump and rr: metadata shipped judge the net
+  # change since the last tag and read no label, so a mislabelled real change is still caught.
   migration-changeset:
     name: 'migration changeset'
     if: github.event.pull_request.draft == false
@@ -167,6 +174,8 @@ jobs:
       # self-test is what makes a green run mean something. It also pins the quote-style cases
       # that the previous inline regex got wrong.
       - name: Migrations require a minor or major changeset
+        env:
+          MIGRATION_CHANGESET_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'migration-changeset-exempt') }}
         run: |
           ./.github/scripts/check-migration-changeset.sh --self-test
           ./.github/scripts/check-migration-changeset.sh ${{ steps.mb.outputs.sha }} HEAD
