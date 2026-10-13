@@ -2443,10 +2443,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
         // stated value is a decision, and resolution only ever fills a blank.
-        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0));
+        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0), context.AlreadyReversed + siblingsBefore);
         const priceField = line.GetFieldByName('UnitPrice');
         if (!(priceField?.Dirty === true || (line.UnitPrice ?? 0) > 0)) {
             line.UnitPrice = terms.UnitPrice;
+        }
+        // THE ORIGIN'S EXACT AMOUNT, while the line is at the origin's unit price (#651). Without it
+        // a Flat 100.00 line at quantity 3 is returned as 3 × 33.33 = 99.99. A unit price the caller
+        // set differently is a negotiated settlement and is priced as stated; so is an amount the
+        // caller set. Recomputed on every save until booking, so a changed quantity or a return
+        // confirmed meanwhile is reflected; never after, when the line's money is frozen.
+        const exactField = line.GetFieldByName('ExtendedAmount');
+        if (!this.MoneyLocked && exactField?.Dirty !== true && Number(line.UnitPrice) === Number(terms.UnitPrice)) {
+            line.ExtendedAmount = terms.ExtendedAmount;
         }
         const discountField = line.GetFieldByName('DiscountPct');
         if (!(discountField?.Dirty === true || (line.DiscountPct ?? 0) > 0)) {

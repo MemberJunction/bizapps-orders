@@ -274,6 +274,21 @@ const extendedOf = (ctx: IntegrationCheckContext, orderID: string) =>
     `SELECT TOP 1 ExtendedAmount, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
   );
 
+/** Send `quantity` units of an order's only line back, through the ordinary confirm path. */
+async function returnFlat(ctx: IntegrationCheckContext, saleOrderID: string, productID: string, quantity: number) {
+  const f = Fx();
+  const origin = await TxOne<{ ID: string }>(
+    ctx,
+    `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${saleOrderID}'`,
+  );
+  return ConfirmOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    OrderType: "Return",
+    BillToOrganizationID: f.Customers.OrganizationID,
+    Lines: [{ ProductID: productID, Quantity: -Math.abs(quantity), ReversesOrderLineID: origin.ID }],
+  });
+}
+
 async function preview(
   ctx: IntegrationCheckContext,
   input: Record<string, unknown>,
@@ -738,6 +753,49 @@ export const PricingChecks: NamedCheck[] = [
         const line = await extendedOf(ctx, orderID);
         AssertEqual(Number(line.ExtendedAmount), 100, "the figure survived the reload");
         AssertEqual(Number(line.LineTotalNet), 100, "the confirmed line still totals 100.00, not 99.99");
+      }),
+  },
+  {
+    Id: "pricing.PC22",
+    Name: "PC22: a full return of a Flat-priced line credits the flat amount, not quantity × unit price",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // The return copies the unit price, 33.33 at qty 3 and 14.29 at qty 7; without the origin's
+        // exact amount it credited −99.99 and −100.03 (#651).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        for (const qty of [3, 7]) {
+          const sale = await confirmUnpriced(ctx, f.Products.WidgetA, qty);
+          Assert(sale.Saved, `the sale did not confirm at qty ${qty}: ${sale.Message}`);
+          const back = await returnFlat(ctx, sale.Order.ID as string, f.Products.WidgetA, qty);
+          Assert(back.Saved, `the return did not confirm at qty ${qty}: ${back.Message}`);
+          const line = await extendedOf(ctx, back.Order.ID as string);
+          AssertEqual(Number(line.ExtendedAmount), -100, `the return carries the exact amount at qty ${qty}`);
+          AssertEqual(Number(line.LineTotalNet), -100, `the return credits −100.00 at qty ${qty}`);
+        }
+      }),
+  },
+  {
+    Id: "pricing.PC23",
+    Name: "PC23: partial returns of a Flat-priced line credit exactly the flat amount between them",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Each return takes its rounded share through its end less the share before it, as returned
+        // tax does: 33.33, 33.34, 33.33. Three × 33.33 would leave a cent unreturned (#651).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        const sale = await confirmUnpriced(ctx, f.Products.WidgetA, 3);
+        Assert(sale.Saved, `the sale did not confirm: ${sale.Message}`);
+        const credited: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const back = await returnFlat(ctx, sale.Order.ID as string, f.Products.WidgetA, 1);
+          Assert(back.Saved, `return ${i + 1} did not confirm: ${back.Message}`);
+          credited.push(Number((await extendedOf(ctx, back.Order.ID as string)).LineTotalNet));
+        }
+        AssertEqual(credited.join(","), "-33.33,-33.34,-33.33", "each return's share");
+        AssertEqual(Math.round(credited.reduce((a, b) => a + b, 0) * 100) / 100, -100, "the returns credit the whole amount");
       }),
   },
 ];

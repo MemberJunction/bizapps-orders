@@ -106,6 +106,7 @@ export async function LoadReversalContext(
         UnitPrice: number;
         DiscountPct: number;
         DiscountAmount: number;
+        ExtendedAmount?: number | null;
         ServicePeriodStart?: Date | string | null;
         ServicePeriodEnd?: Date | string | null;
         SubscriptionID?: string | null;
@@ -210,6 +211,7 @@ export async function LoadReversalContext(
             UnitPrice: Number(origin.UnitPrice ?? 0),
             DiscountPct: Number(origin.DiscountPct ?? 0),
             DiscountAmount: Number(origin.DiscountAmount ?? 0),
+            ExtendedAmount: origin.ExtendedAmount === null || origin.ExtendedAmount === undefined ? null : Number(origin.ExtendedAmount),
             OrderNumber: numberByOrder.get(String(origin.OrderHeaderID).toLowerCase()) ?? null,
             ShipToAddressID: origin.ShipToAddressID ?? null,
             ShipToAddressSnapshot: origin.ShipToAddressSnapshot ?? null,

@@ -151,8 +151,6 @@ interface OrderLineRow {
     OrderHeaderID: string;
     ProductID: string;
     Quantity: number;
-    UnitPrice: number;
-    DiscountPct: number | null;
 }
 
 /** The decision as it crosses the transport: dates as ISO strings, the form JSON gives a `Date`. */
@@ -533,8 +531,10 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             );
         }
         line.Quantity = -reversalQuantity;
-        line.UnitPrice = original.UnitPrice;
-        line.DiscountPct = original.DiscountPct ?? 0;
+        // NO PRICE SET HERE. The order save settles a reversal line's money from its origin, as it
+        // does for any return: unit price, discount rate, the allocated discount and the exact
+        // amount a Flat price booked (#651). Copying the unit price here left the exact amount
+        // behind, and the cancellation credited quantity × unit price.
         line.ReversesOrderLineID = original.ID;
         line.ServicePeriodStart = decision.EffectiveDate;
         line.ServicePeriodEnd = new Date(term.EndDate);
@@ -551,7 +551,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             {
                 EntityName: ORDER_LINE_ENTITY,
                 ExtraFilter: `ID='${orderLineID}'`,
-                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity', 'UnitPrice', 'DiscountPct'],
+                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
