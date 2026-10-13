@@ -38,6 +38,7 @@ import {
     type ApplyPromotionsResult,
     type PromotionRejection,
     type PromotionRule,
+    type RejectedPromotion,
     type PromotionValueKind,
     type StackingMode,
 } from './PromotionBehavior.js';
@@ -371,6 +372,28 @@ const LIMIT_REASONS: Partial<Record<PromotionRejection, string>> = {
     CustomerRedemptionLimitReached: 'this customer has reached the redemption limit for this code',
 };
 
+/** What the customer is told when a typed code was screened against nothing it could discount. */
+const NOT_APPLICABLE_REASON = 'the code does not apply to anything on this order';
+
+/**
+ * What the customer is told when a typed code was rejected for something other than a limit (#686).
+ * A promotion offered at a level it does not apply at is not a reason: it has its turn at the other.
+ */
+function missReason(r: RejectedPromotion): string | null {
+    switch (r.Reason) {
+        case 'BelowMinimumOrderAmount':
+            return `the amount is below this promotion's minimum of ${Number(r.Promotion.MinimumOrderAmount).toFixed(2)}`;
+        case 'BelowMinimumQuantity':
+            return `the quantity is below this promotion's minimum of ${Number(r.Promotion.MinimumQuantity)}`;
+        case 'LostExclusiveCollision':
+            return `a better offer, ${r.LostToName ?? r.LostTo ?? 'another promotion'}, applies instead`;
+        case 'StackingNotPermitted':
+            return `promotions cannot be combined on this order, and ${r.LostToName ?? r.LostTo ?? 'another promotion'} is worth more`;
+        default:
+            return null;
+    }
+}
+
 /** The category chain for a product, so a category-targeted promotion reaches descendants. */
 async function categoryChain(
     categoryID: string | null,
@@ -498,11 +521,21 @@ export async function RunPromotions(
 
     // A promotion stopped by a limit is reported once, however many lines it was screened against.
     const reported = new Set<string>();
+    // Any other rejection is only a candidate: a code can miss its minimum on one line and apply on
+    // the next, so it is reported after both passes, and only if the code applied nowhere.
+    const applied = new Set<string>();
+    const missed = new Map<string, string>();
     const reportLimits = (outcome: ApplyPromotionsResult): void => {
+        for (const a of outcome.Applied) applied.add(uuidKey(a.Promotion.ID));
         for (const r of outcome.Rejected) {
-            const reason = LIMIT_REASONS[r.Reason];
             const key = uuidKey(r.Promotion.ID);
-            if (!reason || reported.has(key)) continue;
+            const reason = LIMIT_REASONS[r.Reason];
+            if (!reason) {
+                const why = missReason(r);
+                if (why && !missed.has(key)) missed.set(key, why);
+                continue;
+            }
+            if (reported.has(key)) continue;
             reported.add(key);
             unusable.push({ Code: typedFor.get(key) ?? r.Promotion.Code, Reason: reason });
         }
@@ -605,6 +638,15 @@ export async function RunPromotions(
                 remainingByLine.set(uuidKey(l.ID), Money((remainingByLine.get(uuidKey(l.ID)) ?? 0) - parts[i]));
             });
         }
+    }
+
+    // A code the customer typed that applied nowhere is told why. Promotions applied automatically
+    // are not: the customer never asked for them.
+    for (const p of usable) {
+        const key = uuidKey(p.ID);
+        const typed = typedFor.get(key);
+        if (!typed || applied.has(key) || reported.has(key)) continue;
+        unusable.push({ Code: typed, Reason: missed.get(key) ?? NOT_APPLICABLE_REASON });
     }
 
     return { Applications: applications, PerLine: perLine, Unusable: unusable };

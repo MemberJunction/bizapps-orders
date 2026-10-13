@@ -152,7 +152,7 @@ A fully-comped order can produce **no** JEs. Accounting refuses an empty draft s
 `OrderPricingService` (shared package) is the one walk. Confirm and `Orders.PriceOrder` call the same service.
 
 1. **Resolve price** — price list / assignment / tier, or stated `UnitPrice` (direct entry wins).
-2. **Promotions** — codes and targets, stacking rules, authorized manual discounts. A promotion flagged `AppliesToRenewals` is presented again on automatic renewals (§8).
+2. **Promotions** — codes and targets, stacking rules, authorized manual discounts. A typed code that applied nowhere comes back in `UnusablePromotionCodes` with the reason: unknown, inactive or out of dates, a spent limit, below a minimum, beaten by a better offer (named), blocked by the company's no-stacking policy, or aimed at nothing on the order. A promotion flagged `AppliesToRenewals` is presented again on automatic renewals (§8).
 3. **Charges** — shipping, handling, and tax as one mechanism (`ChargeType` + `GLAccountLink`).
 4. **Tax** — address + nexus + taxability + exemptions. Snapshot onto the line; we are not a tax engine.
 

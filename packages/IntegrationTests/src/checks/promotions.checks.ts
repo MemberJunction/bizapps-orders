@@ -316,6 +316,13 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(order.Saved, `confirm failed: ${order.Message}`);
         const t = await totals(ctx, order.Order.ID as string);
         AssertEqual(Number(t.Discount), 200, "only the 20% applied — the customer gets the better one");
+
+        // The code that lost is told why, naming the offer that won (#686).
+        const unusable = order.Order.UnusablePromotionCodes;
+        Assert(
+          unusable.length === 1 && unusable[0].Code === small.Code && unusable[0].Reason.includes(`${big.Code} promotion`),
+          `expected one reason for ${small.Code} naming ${big.Code}'s promotion, got: ${JSON.stringify(unusable)}`,
+        );
       }),
   },
   {
@@ -417,10 +424,14 @@ export const PromotionChecks: NamedCheck[] = [
         const tooSmall = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 2 }], codes: [Code] });
         Assert(tooSmall.Saved, `confirm failed: ${tooSmall.Message}`);
         AssertEqual(Number((await totals(ctx, tooSmall.Order.ID as string)).Discount), 0, "100 does not reach the 500 minimum");
+        const unusable = tooSmall.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && /minimum of 500\.00/.test(unusable[0].Reason),
+          `expected a 'minimum of 500.00' reason, got: ${JSON.stringify(unusable)}`);
 
         const bigEnough = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 20 }], codes: [Code] });
         Assert(bigEnough.Saved, `confirm failed: ${bigEnough.Message}`);
         AssertEqual(Number((await totals(ctx, bigEnough.Order.ID as string)).Discount), 200, "1000 qualifies");
+        AssertEqual(bigEnough.Order.UnusablePromotionCodes.length, 0, "a code that applied is not reported");
       }),
   },
   {
