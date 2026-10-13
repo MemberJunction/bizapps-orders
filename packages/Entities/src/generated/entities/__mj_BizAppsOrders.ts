@@ -5899,6 +5899,12 @@ export const mjBizAppsOrdersPromotionSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    AppliesToRenewals: z.boolean().describe(`
+        * * Field Name: AppliesToRenewals
+        * * Display Name: Applies To Renewals
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: When set, the automatic renewal of a subscription bought with this promotion's code carries the code onto the renewal order, and the pricing engine applies it again if it still qualifies. Off: the promotion discounts the first term only.`),
     PromotionType: z.string().describe(`
         * * Field Name: PromotionType
         * * Display Name: Promotion Type Name
@@ -24573,6 +24579,20 @@ export class mjBizAppsOrdersPromotionEntity extends BaseEntity<mjBizAppsOrdersPr
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: AppliesToRenewals
+    * * Display Name: Applies To Renewals
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: When set, the automatic renewal of a subscription bought with this promotion's code carries the code onto the renewal order, and the pricing engine applies it again if it still qualifies. Off: the promotion discounts the first term only.
+    */
+    get AppliesToRenewals(): boolean {
+        return this.Get('AppliesToRenewals');
+    }
+    set AppliesToRenewals(value: boolean) {
+        this.Set('AppliesToRenewals', value);
     }
 
     /**

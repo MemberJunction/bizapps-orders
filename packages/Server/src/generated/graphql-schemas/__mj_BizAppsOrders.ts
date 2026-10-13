@@ -15020,6 +15020,9 @@ export class mjBizAppsOrdersPromotion_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Boolean, {nullable: true, description: `When set, the automatic renewal of a subscription bought with this promotion's code carries the code onto the renewal order, and the pricing engine applies it again if it still qualifies. Off: the promotion discounts the first term only.`}) 
+    AppliesToRenewals?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     PromotionType?: string;
@@ -15104,6 +15107,9 @@ export class CreatemjBizAppsOrdersPromotionInput {
     @Field({ nullable: true })
     Status?: string;
 
+    @Field(() => Boolean, { nullable: true })
+    AppliesToRenewals?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -15179,6 +15185,9 @@ export class UpdatemjBizAppsOrdersPromotionInput {
 
     @Field({ nullable: true })
     Status?: string;
+
+    @Field(() => Boolean, { nullable: true })
+    AppliesToRenewals?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
