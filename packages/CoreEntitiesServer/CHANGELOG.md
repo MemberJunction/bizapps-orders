@@ -1,5 +1,35 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.31.0
+
+### Minor Changes
+
+- 1f5d3f6: `Orders.CapturePayment` now returns each order effect's `PaymentStatus` (`Unpaid`, `PartiallyPaid` or `Paid`), derived from the order's totals. It was read from a column the order no longer has, so it was always missing. The invoice builder no longer carries the same dead field.
+
+### Patch Changes
+
+- 8f105ee: `Orders.PollExternalPayments` follows the scheduled poll job's state on every run that would write, whoever calls it (#583): with no job installed or the job not Active it refuses and records nothing; with the job in Preview it runs as a preview and says so; only an Active job out of Preview records cash. The rule moved from the Bill.com webhook into `orders-entities` (`ClassifyPollJob`, `ClassifyPollJobs`, `LoadPollJobState`), and the webhook reads it from there. On the External Invoicing queue page, "Check for payments now" is disabled while the job is off, runs as a labelled preview while the job previews, and asks for confirmation before a live run.
+- 0ef01d0: Checkout completion creates a new payer's and new attendees' Person records only after the payment checks out, so a refused payment leaves none behind; existing Persons are still resolved first and priced with. A per-unit product line whose quantity differs from the number of unit-detail sets sent is refused at draft and completion instead of booking a different number of units (#583 items 13, 14).
+- 98ba1d8: Checkout field discovery sends a value-list field its values as `options`, so the widget's select has choices; a NOT NULL field with a database default is no longer required; NVARCHAR(MAX) (stored as Length -1) maps to a textarea, and the 255 threshold is read in characters. The `checkout-complete` event carries the applied promotion code as `coupon` (#583 items 9, 10, 11).
+- 1ea0ecf: The peer ranges for `@mj-biz-apps/common-entities` and `@mj-biz-apps/common-ng` start at 5.52.0 instead of 5.49.0. `@mj-biz-apps/common-server` 5.52.0, which accounting's server package needs, pins `common-entities` 5.52.0 exactly, so a host that resolved orders' floor got a second copy of the common entity classes. With the floor at 5.52.0 the workspace resolves one copy.
+- aa84d29: Checkout mints GuestOrder claims through MJ's `IdentityClaimEngineServer` (`@memberjunction/core-entities-server`), with claim e-mails off until a template and the portal base URL are configured. The claim drivers register against MJ's `BaseIdentityClaimDriver` (`@memberjunction/core-entities`); the local stand-in is removed. Redeeming a GuestOrder claim now finds the order's entitlement grants through `OrderHeaderID` (it filtered on a column the view does not have), and reports a failure when they cannot be read instead of skipping them (#583 items 7, 8).
+- 0feb8d2: The payment poll gate is per provider (#608). A scheduled poll job that sets `PaymentProviderID` governs only that provider; jobs that set none govern every provider without a job of its own. `Orders.PollExternalPayments` gates each provider in the run separately: a provider whose job is off is skipped, one in Preview runs as a preview, and the run fails only when every provider was skipped. The Bill.com webhook checks the notified provider's jobs. Adds `ClassifyPollJobsFor`, `ClassifyPollJobGroups`, `PollJobProviderID` and `LoadPollJobs` to `orders-entities`; `LoadPollJobState` takes an optional provider ID.
+- 6f8bcf7: Bill.com payment poll: the refresh after a capture now fetches each invoice row by its own BILL invoice ref, so a payment that covers several invoices no longer writes one invoice's status and due amount onto another's row.
+- 8073f27: The server bootstrap now calls `LoadProductPriceEntityServer()`, so the price-rule collision check survives tree-shaking like its neighbours (#583). `orders-ng` drops the unregistered PriceList, Promotion, Subscription and SubscriptionTerm form components and `BizAppsProductFormComponent` (none rendered as an entity's form), and the parked `transfer-pending/` workspace-tabs copy, which `@memberjunction/ng-ui-components` 6.1.5 now exports.
+- Updated dependencies [8f105ee]
+- Updated dependencies [1f5d3f6]
+- Updated dependencies [1ea0ecf]
+- Updated dependencies [52e3762]
+- Updated dependencies [f8b53d9]
+- Updated dependencies [bcdb1dc]
+- Updated dependencies [e98b880]
+- Updated dependencies [50de8dc]
+- Updated dependencies [0feb8d2]
+- Updated dependencies [d462e77]
+- Updated dependencies [cb861ae]
+- Updated dependencies [06ee0ac]
+  - @mj-biz-apps/orders-entities@5.31.0
+
 ## 5.30.0
 
 ### Minor Changes
@@ -734,8 +764,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                    "FK_EntityFieldValue_EntityField"
+                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
