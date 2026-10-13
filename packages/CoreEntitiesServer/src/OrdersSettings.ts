@@ -74,6 +74,12 @@ export const ORDERS_SETTING = {
      * cutoff (`RenewalAccessCutoffDaysPastDue`) whatever this lists.
      */
     RenewalChargeRetryDays: 'RenewalChargeRetryDays',
+    /**
+     * The public address of the checkout edge (its `RootPath` on this host, for example
+     * `https://shop.example.org/checkout`), which the update-card link is built on (#289). Unset, no
+     * link is sent: a link to the wrong host is worse than none.
+     */
+    RenewalPaymentLinkBaseUrl: 'RenewalPaymentLinkBaseUrl',
 } as const;
 
 /**
@@ -246,6 +252,12 @@ export class OrdersSettings {
     /** Days after the due day on which a declined renewal-card charge is retried, ascending (#289). */
     public static get RenewalChargeRetryDays(): number[] {
         return asDayOffsets(this.raw(ORDERS_SETTING.RenewalChargeRetryDays), DEFAULTS.RenewalChargeRetryDays);
+    }
+
+    /** The checkout edge's public address the update-card link is built on, or `null` when unset (#289). */
+    public static get RenewalPaymentLinkBaseUrl(): string | null {
+        const value = this.raw(ORDERS_SETTING.RenewalPaymentLinkBaseUrl)?.trim();
+        return value && /^https?:\/\/\S+$/i.test(value) ? value.replace(/\/+$/, '') : null;
     }
 
     /** Days past due at which a renewal loses access, or `null` when the cutoff is switched off. */

@@ -244,6 +244,24 @@ export interface RenewalChargeAttempt {
     PaymentDate?: string;
     /** After a failure, the next day the card will be tried; null when no attempt is left. */
     NextAttemptDay?: string | null;
+    /** True on the order's first failed charge, the one that sends the update-card link (#289). */
+    FirstFailure?: boolean;
+    /** Whether the update-card link went out, after a first failure. */
+    PaymentLinkSent?: boolean;
+    /** Why the link did not go out. */
+    PaymentLinkReason?: string;
+}
+
+/**
+ * What the caller does around the pass. The server supplies the update-card e-mail here: this
+ * package renders no templates and holds no link secret of its own.
+ */
+export interface ChargeRenewalsHooks {
+    /**
+     * Called after an order's FIRST failed charge — a decline or an SCA demand — to send the buyer
+     * the update-card link. Its failure is reported on the attempt and never stops the pass.
+     */
+    OnFirstFailure?: (attempt: RenewalChargeAttempt) => Promise<{ Sent: boolean; Reason?: string }>;
 }
 
 export interface ChargeRenewalsOutput {
@@ -283,13 +301,22 @@ interface ChargeCandidate {
 
 interface OrderIntentState {
     AttemptDays: string[];
+    /** True when an earlier attempt on the order already failed, so its link has gone out. */
+    HadFailure: boolean;
     InFlight: boolean;
     SettledUncaptured: { ID: string; Amount: number; LastEventAt: Date | null; EventID: string | null } | null;
     HoldReason: string | null;
     CheckoutOpen: boolean;
 }
 
-const emptyState = (): OrderIntentState => ({ AttemptDays: [], InFlight: false, SettledUncaptured: null, HoldReason: null, CheckoutOpen: false });
+const emptyState = (): OrderIntentState => ({
+    AttemptDays: [],
+    HadFailure: false,
+    InFlight: false,
+    SettledUncaptured: null,
+    HoldReason: null,
+    CheckoutOpen: false,
+});
 
 /**
  * Charge the renewal card of every renewal order due a charge today. See the header for the rules.
@@ -298,6 +325,7 @@ export async function ChargeRenewals(
     input: ChargeRenewalsInput,
     provider: IMetadataProvider,
     user: UserInfo,
+    hooks: ChargeRenewalsHooks = {},
 ): Promise<ChargeRenewalsOutput> {
     RequireOptionalUUID(input.SubscriptionID, 'SubscriptionID');
     RequireOptionalDay(input.AsOfDate, 'AsOfDate');
@@ -395,7 +423,13 @@ export async function ChargeRenewals(
             attempt.Attempt = decision.Attempt;
             await chargeOnce(candidate, attempt, decision, asOf, provider, user);
             if (attempt.Outcome === 'Charged') out.Charged++;
-            else if (attempt.Outcome === 'Declined' || attempt.Outcome === 'AuthenticationRequired') out.Failed++;
+            else if (attempt.Outcome === 'Declined' || attempt.Outcome === 'AuthenticationRequired') {
+                out.Failed++;
+                if (!state.HadFailure) {
+                    attempt.FirstFailure = true;
+                    await notifyFirstFailure(attempt, hooks);
+                }
+            }
             else if (attempt.Outcome === 'Error') out.Failures.push({ OrderID: candidate.OrderID, Error: attempt.Reason ?? 'unknown error' });
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
@@ -414,6 +448,20 @@ export async function ChargeRenewals(
         (out.Failures.length ? `, ${out.Failures.length} failed` : '') +
         '.';
     return out;
+}
+
+/** Send the update-card link after a first failure. Never throws: the charge outcome stands either way. */
+async function notifyFirstFailure(attempt: RenewalChargeAttempt, hooks: ChargeRenewalsHooks): Promise<void> {
+    if (!hooks.OnFirstFailure) return;
+    try {
+        const sent = await hooks.OnFirstFailure(attempt);
+        attempt.PaymentLinkSent = sent.Sent;
+        if (sent.Reason) attempt.PaymentLinkReason = sent.Reason;
+    } catch (err) {
+        attempt.PaymentLinkSent = false;
+        attempt.PaymentLinkReason = err instanceof Error ? err.message : String(err);
+        LogError(`Orders.ChargeRenewals: the update-card link for order ${attempt.OrderNumber} was not sent: ${attempt.PaymentLinkReason}`);
+    }
 }
 
 /** One off-session charge, then its capture or its failure record. Faults throw to the caller. */
@@ -751,6 +799,7 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
                 `the outcome of the charge on ${String(data.AttemptDay)} is unknown; reconcile the order with the gateway ` +
                 `(idempotency key ${String(data.IdempotencyKey)}) before the card is charged again`;
         }
+        if (e.EventType === 'PaymentFailed' && data.OutcomeUnknown !== true) state(e.RelatedOrderHeaderID).HadFailure = true;
         if (e.EventType === 'PaymentSucceeded' && typeof data.PaymentIntentID === 'string') {
             ownSuccesses.set(data.PaymentIntentID.toLowerCase(), e.ID);
         }

@@ -26,8 +26,18 @@ vi.mock('@memberjunction/global', () => ({
     RegisterClass: () => (cls: unknown) => cls,
 }));
 
+const renewalEdge = vi.hoisted(() => ({
+    verify: vi.fn(),
+    loadOrder: vi.fn(),
+}));
+
 vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
+    VerifyRenewalPaymentToken: (...args: unknown[]) => renewalEdge.verify(...args),
+    LoadRenewalPaymentOrder: (...args: unknown[]) => renewalEdge.loadOrder(...args),
+    RenewalPaymentLinkSecret: () => 'secret',
+    RenewalPaymentTokenMessage: (reason: string) => (reason === 'expired' ? 'This payment link has expired. Contact us to renew.' : 'This payment link is not valid.'),
     CheckoutSessionService: {
+        InitializeRenewalPaymentSession: vi.fn(),
         InitializeSession: vi.fn(),
         UpdateDraft: vi.fn(),
         OpenPaymentIntentForSession: vi.fn(),
@@ -166,7 +176,7 @@ describe('CheckoutServerExtension', () => {
             '/checkout/initialize',
             '/checkout/payment-intent',
         ]);
-        expect(Object.keys(routes.get).sort()).toEqual(['/checkout/:slug', '/checkout/element/main.js'].sort());
+        expect(Object.keys(routes.get).sort()).toEqual(['/checkout/:slug', '/checkout/element/main.js', '/checkout/renew/:token'].sort());
         expect(routes.get['/checkout/element/main.js.map']).toBeUndefined();
         expect(result.RegisteredRoutes).toEqual([
             'POST /checkout/initialize',
@@ -176,6 +186,7 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/account',
             'POST /checkout/account/password',
             'POST /checkout/access-status',
+            'GET /checkout/renew/:token',
             'GET /checkout/:slug',
         ]);
     });
@@ -202,6 +213,65 @@ describe('CheckoutServerExtension', () => {
         } finally {
             delete process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP;
         }
+    });
+
+    describe('the update-card link (#289)', () => {
+        const init = async () => {
+            const { app, routes } = mockApp();
+            const ext = new CheckoutServerExtension();
+            await ext.Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+            return { ext, routes };
+        };
+        const get = async (routes: RouteMap, token: string) => {
+            const res = mockRes();
+            await routes.get['/checkout/renew/:token'](
+                { params: { token }, headers: {}, socket: { remoteAddress: '127.0.0.9' } } as unknown as Request,
+                res as unknown as Response
+            );
+            return res;
+        };
+
+        it('answers a forged or expired link with a page that says only that, and reads no order', async () => {
+            const { routes } = await init();
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: false, Reason: 'signature' });
+            const forged = await get(routes, 'p.s');
+            expect(forged.statusCode).toBe(404);
+            expect(forged.body).toContain('This payment link is not valid.');
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: false, Reason: 'expired' });
+            const expired = await get(routes, 'p.s');
+            expect(expired.body).toContain('expired');
+            expect(renewalEdge.loadOrder).not.toHaveBeenCalled();
+        });
+
+        it('hosts the element in pay-renewal mode inside the selling widget’s distribution, with no referrer', async () => {
+            const { routes } = await init();
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: true, OrderID: 'aaaaaaaa-0000-4000-8000-000000000001', SubscriptionID: 's', ExpiresAt: new Date() });
+            renewalEdge.loadOrder.mockResolvedValueOnce({ SourceCheckoutWidgetID: 'widget-1' });
+            mockRunView.mockResolvedValueOnce({ Success: true, Results: [{ Slug: 'annual-plan' }] });
+            const res = await get(routes, 'payload.signature');
+            // Without a built element bundle the page cannot host the mode, and says so.
+            if (res.statusCode === 503) {
+                expect(res.body).toContain('not available on this server');
+                return;
+            }
+            expect(res.statusCode).toBe(200);
+            expect(res.body).toContain('slug="annual-plan"');
+            expect(res.body).toContain('renewal-token="payload.signature"');
+            expect(res.headers['referrer-policy']).toBe('no-referrer');
+        });
+
+        it('initialize with a renewal token opens the pay-renewal session, not a sale', async () => {
+            const { ext } = await init();
+            vi.mocked(CheckoutSessionService.InitializeRenewalPaymentSession).mockResolvedValue({ Success: true, SessionID: 'sess-r' } as never);
+            const res = mockRes();
+            await (ext as unknown as { handleInitialize(req: Request, res: Response): Promise<void> }).handleInitialize(
+                { body: { slug: 'annual-plan', clientSessionKey: 'k', renewalToken: ' t.s ' }, headers: {}, socket: {} } as unknown as Request,
+                res as unknown as Response
+            );
+            expect(CheckoutSessionService.InitializeRenewalPaymentSession).toHaveBeenCalledWith('t.s', 'k', expect.anything());
+            expect(CheckoutSessionService.InitializeSession).not.toHaveBeenCalled();
+            expect(res.statusCode).toBe(200);
+        });
     });
 
     it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {

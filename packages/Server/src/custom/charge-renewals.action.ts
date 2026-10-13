@@ -8,6 +8,10 @@
  * capture and the attempt log are all in `RenewalCharging.ts`; this reads parameters, calls it, and
  * reports what came back.
  *
+ * THE UPDATE-CARD LINK. An order's first failed charge (a decline or an SCA demand) e-mails the buyer
+ * a signed link that pays the renewal with a new card: `services/renewal-payment-link.ts`, passed to
+ * `ChargeRenewals` as its first-failure hook.
+ *
  * PREVIEW IS A PARAMETER. The scheduled job ships disabled and set to Preview, so the first enabled
  * runs report what they would charge and charge nothing. Setting Preview to false is the act that
  * starts charging cards.
@@ -20,6 +24,7 @@ import type { ActionParam, ActionResultSimple, RunActionParams } from '@memberju
 import { Metadata, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { ChargeRenewals, type ChargeRenewalsInput } from '@mj-biz-apps/orders-core-entities-server';
+import { SendRenewalPaymentLink } from '../services/renewal-payment-link.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -100,7 +105,10 @@ export class ChargeRenewalsAction extends BaseAction {
         }
 
         const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;
-        const output = await ChargeRenewals(input, provider, user);
+        // An order's first failed charge e-mails the buyer the update-card link (#289).
+        const output = await ChargeRenewals(input, provider, user, {
+            OnFirstFailure: (attempt) => SendRenewalPaymentLink(attempt, provider, user),
+        });
 
         setOutput(params, 'Charged', output.Charged);
         setOutput(params, 'Failed', output.Failed);

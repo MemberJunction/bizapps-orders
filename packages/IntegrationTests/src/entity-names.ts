@@ -69,6 +69,8 @@ export const PAYMENT_PROVIDER_PRICE_ENTITY = 'MJ_BizApps_Orders: Payment Provide
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
+export const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
+export const CHECKOUT_WIDGET_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
 
 // ── Orders: external invoice rails (Bill.com) ─────────────────────────────────────────────────────
 export const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
@@ -162,6 +164,8 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     EXTERNAL_CUSTOMER_ENTITY,
     EXTERNAL_PAYMENT_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
+    CHECKOUT_WIDGET_ENTITY,
+    CHECKOUT_WIDGET_DISTRIBUTION_ENTITY,
     GL_ACCOUNT_ENTITY,
     GL_ACCOUNT_ROLE_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,

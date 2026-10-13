@@ -96,7 +96,9 @@ import {
     LoadListEntitlementsOperation,
     LoadAccessOverrideOperations,
     LoadEntitlementAccessOverrideEntityServer,
+    ConfigureRenewalPaymentLinks,
 } from '@mj-biz-apps/orders-core-entities-server';
+import { RENEWAL_LINK_SECRET_ENV_VAR } from './services/renewal-payment-link.js';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
 // because it must be installed before MJServer's auth middleware — see the file for why.
@@ -139,6 +141,9 @@ export const RESOLVER_PATHS = [
  * startupExport entry point.
  */
 export function LoadBizAppsOrdersServer(): void {
+    // The update-card link's signing secret (#289), from the environment and never from the
+    // database or the repo. Unset or shorter than 32 characters, no link is signed or accepted.
+    ConfigureRenewalPaymentLinks({ Secret: process.env[RENEWAL_LINK_SECRET_ENV_VAR] });
     // Static imports above ensure all classes are registered; these anchor the server-only
     // subclasses against tree-shaking (booking lives in OrderEntityServer.Save).
     LoadOrderEntityServer();
