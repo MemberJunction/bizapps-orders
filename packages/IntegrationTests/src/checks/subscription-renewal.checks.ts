@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR48).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR50).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -79,6 +79,12 @@
  *         cleared through the ordinary capture, and the session confirmed on the renewal order
  *   SR47  the link is refused once the renewal is paid, and a tampered link is refused outright
  *   SR48  a pay-renewal session cannot be drafted, so the renewal is never re-priced
+ *
+ *   Edge cases of the charge pass (#683):
+ *   SR49  money the gateway took but no payment booked is booked after the last retry day, with
+ *         automatic renewal off, and the card is not charged again
+ *   SR50  the update-card link goes out only once the failed charge is recorded, so a rerun the same
+ *         day never sends it twice
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -1740,6 +1746,70 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     AssertEqual(Number(line.UnitPrice), 1200, 'and the renewal keeps its price');
                 }),
             ),
+    },
+
+    // ─── Edge cases of the charge pass (#683) ─────────────────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR49',
+        Name: 'SR49: money taken but not booked is booked after the last retry day, with automatic renewal off',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const r = await renewWithCard(ctx, 'pm_card_visa');
+                // The gateway took the money and the capture never booked it.
+                await createViaEntity(ctx, PAYMENT_INTENT_ENTITY, {
+                    PaymentProviderID: r.ProviderID,
+                    ProviderIntentID: `pi_it_unbooked_${r.OrderID.slice(0, 8)}`,
+                    Status: 'Succeeded',
+                    Amount: 1200,
+                    OrderHeaderID: r.OrderID,
+                });
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, r.SubscriptionID, { AutoRenew: false });
+
+                const out = await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: daysBefore(r.TermStart, -20) });
+                const attempt = out.Attempts.find((a) => SameID(a.OrderID, r.OrderID));
+                AssertEqual(attempt?.Outcome, 'Captured', `day 20, automatic renewal off: the money is booked: ${JSON.stringify(attempt)}`);
+                AssertEqual((await intentsOf(ctx, r.OrderID)).length, 1, 'and the card is not charged again');
+                const payments = await paymentsFor(ctx, r.OrderID);
+                AssertEqual(payments.length, 1, 'one payment');
+                AssertEqual(Number(payments[0].Amount), 1200, 'for the renewal');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR50',
+        Name: 'SR50: the update-card link waits until the failed charge is recorded, so a rerun never sends it twice',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                const sent: string[] = [];
+                const hooks = {
+                    OnFirstFailure: async (a: { OrderID: string }) => {
+                        sent.push(a.OrderID);
+                        return { Sent: true };
+                    },
+                };
+                // The failure event cannot be saved. Rolled back with the check.
+                await TxQuery(
+                    ctx,
+                    `ALTER TABLE ${ORDERS_SCHEMA}.SubscriptionEvent WITH NOCHECK ADD CONSTRAINT CK_IT_SR50_NoPaymentFailed CHECK (EventType <> 'PaymentFailed')`,
+                );
+                const first = await ChargeRenewals({ SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart }, ctx.Provider, ctx.User, hooks);
+                const a1 = first.Attempts.find((a) => SameID(a.OrderID, r.OrderID));
+                AssertEqual(a1?.Outcome, 'Declined', `the card was declined: ${JSON.stringify(a1)}`);
+                AssertEqual(sent.length, 0, 'no link while the failure is unrecorded');
+                AssertEqual(a1?.PaymentLinkSent, false, 'reported as not sent');
+                Assert(first.Failures.some((f) => SameID(f.OrderID, r.OrderID)), 'and the run reports the order');
+
+                await TxQuery(ctx, `ALTER TABLE ${ORDERS_SCHEMA}.SubscriptionEvent DROP CONSTRAINT CK_IT_SR50_NoPaymentFailed`);
+                const rerun = await ChargeRenewals({ SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart }, ctx.Provider, ctx.User, hooks);
+                AssertEqual(rerun.Attempts.find((a) => SameID(a.OrderID, r.OrderID))?.Outcome, 'Declined', 'the rerun records the decline');
+                AssertEqual(sent.length, 1, 'and sends the link once');
+
+                const third = await ChargeRenewals({ SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart }, ctx.Provider, ctx.User, hooks);
+                AssertEqual(third.Attempts.find((a) => SameID(a.OrderID, r.OrderID))?.Outcome, 'Skipped', 'a third run that day skips the order');
+                AssertEqual(sent.length, 1, 'and sends nothing');
+            }),
     },
 
 ];

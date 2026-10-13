@@ -30,7 +30,10 @@
  *
  * MONEY TAKEN BUT NOT BOOKED. A Succeeded intent on the order with no payment means the gateway has
  * the money: a capture failed, or a charge that came back Processing has since succeeded. The next
- * pass captures it before anything else, on any day, and charges nothing new. The exception is an
+ * pass captures it before anything else, on any day, and charges nothing new. Such an order is
+ * selected whatever its due day and whether or not automatic renewal is still on or the card still
+ * active (`CaptureOnly`): those conditions stop the card being charged, not the money already taken
+ * from being booked. The exception is an
  * intent a checkout session opened (the update-card page): checkout books it, so the pass holds the
  * order and reports it rather than booking it twice or charging the old card on top of it.
  *
@@ -45,6 +48,11 @@
  *
  * DATED ON THE GATEWAY'S DAY. The payment is dated the business day the gateway took the money,
  * which is not the run's day when the two differ (a run near midnight, a rerun with an as-of day).
+ *
+ * THE LINK FOLLOWS THE RECORD. The update-card link goes out only once the failed attempt's
+ * 'PaymentFailed' event is saved. That event is what tells a later pass the first failure has
+ * happened; without it a rerun would send the link again. When it cannot be saved the order is
+ * reported in `Failures` and the link waits for the pass that records the failure.
  *
  * ONE ORDER'S FAILURE DOES NOT STOP THE BATCH. Each order is attempted on its own and a fault is
  * reported in `Failures`.
@@ -111,6 +119,11 @@ export interface RenewalChargeFacts {
     HoldReason?: string | null;
     /** True while an unexpired checkout session on the order holds an intent (the update-card page). */
     CheckoutOpen?: boolean;
+    /**
+     * True when the order was selected only for money already taken: it is outside the charge
+     * window, automatic renewal is off, or the card is inactive. It may be captured, never charged.
+     */
+    CaptureOnly?: boolean;
 }
 
 export type RenewalChargeDecision =
@@ -145,6 +158,9 @@ export function DecideRenewalCharge(facts: RenewalChargeFacts): RenewalChargeDec
     if (facts.SettledUncapturedIntentID) return { Action: 'Capture', PaymentIntentID: facts.SettledUncapturedIntentID };
     if (facts.InFlight) return { Action: 'Skip', Reason: 'an earlier charge is still processing at the gateway' };
     if (facts.CheckoutOpen) return { Action: 'Skip', Reason: 'a checkout session on the order holds a payment in progress' };
+    if (facts.CaptureOnly) {
+        return { Action: 'Skip', Reason: 'outside the charge window, or automatic renewal is off or the card inactive; only money already taken is booked' };
+    }
 
     const daysSinceDue = DaysBetween(facts.DueDay, facts.AsOfDay);
     if (daysSinceDue < 0) return { Action: 'Skip', Reason: `not due until ${facts.DueDay}` };
@@ -298,6 +314,8 @@ interface ChargeCandidate {
     ProviderCustomerRef: string | null;
     ProviderInstrumentRef: string;
     TenderCode: string;
+    /** 1 when the order is selected only for a Succeeded intent with no payment. See `RenewalChargeFacts.CaptureOnly`. */
+    CaptureOnly: number | boolean;
 }
 
 interface OrderIntentState {
@@ -381,6 +399,7 @@ export async function ChargeRenewals(
             SettledUncapturedIntentID: state.SettledUncaptured?.ID ?? null,
             HoldReason: state.HoldReason,
             CheckoutOpen: state.CheckoutOpen,
+            CaptureOnly: !!candidate.CaptureOnly,
         });
         if (decision.Action === 'Hold') {
             // Reported as a failure so the run is not green: it needs a person, not another pass.
@@ -422,13 +441,19 @@ export async function ChargeRenewals(
                 continue;
             }
             attempt.Attempt = decision.Attempt;
-            await chargeOnce(candidate, attempt, decision, asOf, provider, user);
+            const failureLogged = await chargeOnce(candidate, attempt, decision, asOf, provider, user);
             if (attempt.Outcome === 'Charged') out.Charged++;
             else if (attempt.Outcome === 'Declined' || attempt.Outcome === 'AuthenticationRequired') {
                 out.Failed++;
                 if (!state.HadFailure) {
                     attempt.FirstFailure = true;
-                    await notifyFirstFailure(attempt, hooks);
+                    if (failureLogged) await notifyFirstFailure(attempt, hooks);
+                    else {
+                        // Without the event a rerun cannot tell the link went out, and would send it again.
+                        attempt.PaymentLinkSent = false;
+                        attempt.PaymentLinkReason = 'the failed charge could not be recorded; the link goes out with the pass that records it';
+                        out.Failures.push({ OrderID: candidate.OrderID, Error: attempt.PaymentLinkReason });
+                    }
                 }
             }
             else if (attempt.Outcome === 'Error') out.Failures.push({ OrderID: candidate.OrderID, Error: attempt.Reason ?? 'unknown error' });
@@ -465,7 +490,11 @@ async function notifyFirstFailure(attempt: RenewalChargeAttempt, hooks: ChargeRe
     }
 }
 
-/** One off-session charge, then its capture or its failure record. Faults throw to the caller. */
+/**
+ * One off-session charge, then its capture or its failure record. Faults throw to the caller.
+ * Returns whether a decline or SCA demand was recorded as a 'PaymentFailed' event; false for any
+ * other outcome.
+ */
 async function chargeOnce(
     candidate: ChargeCandidate,
     attempt: RenewalChargeAttempt,
@@ -473,7 +502,7 @@ async function chargeOnce(
     asOf: string,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<void> {
+): Promise<boolean> {
     const idempotencyKey = RenewalChargeIdempotencyKey(candidate.OrderID, asOf);
     let opened: OpenIntentResult;
     try {
@@ -532,12 +561,12 @@ async function chargeOnce(
         // payment, so nobody is told their card failed; a rerun sends the same idempotency key.
         attempt.Outcome = 'Error';
         attempt.Reason = opened.Reason ?? 'the gateway did not open an intent';
-        return;
+        return false;
     }
     if (kind === 'InFlight') {
         attempt.Outcome = 'Processing';
         attempt.Reason = 'the gateway is still processing the charge; a later pass books it once it succeeds';
-        return;
+        return false;
     }
     if (kind === 'Succeeded') {
         const day = RenewalCaptureDay(opened.CapturedAt, await businessToday(provider, user));
@@ -560,7 +589,7 @@ async function chargeOnce(
         );
         await capture(candidate, attempt, opened.PaymentIntentID!, Number(candidate.Balance), day, eventID, provider, user);
         attempt.Outcome = 'Charged';
-        return;
+        return false;
     }
 
     // Declined, or the card wants the absent customer to authenticate.
@@ -568,7 +597,7 @@ async function chargeOnce(
     attempt.Outcome = kind;
     attempt.Reason = opened.Reason ?? (kind === 'AuthenticationRequired' ? 'the card requires authentication' : 'the card was declined');
     attempt.NextAttemptDay = decision.NextAttemptDay;
-    await logEvent(
+    const eventID = await logEvent(
         candidate,
         'PaymentFailed',
         {
@@ -586,6 +615,7 @@ async function chargeOnce(
         provider,
         user,
     );
+    return eventID != null;
 }
 
 /** Book the gateway's money against the renewal order, and name the payment on the success event. */
@@ -663,7 +693,8 @@ async function markIntentFailed(paymentIntentID: string, provider: IMetadataProv
 /**
  * Log an attempt on the subscription. Fail-soft: by now the gateway has answered and the payment, if
  * any, is booked; a missing event must not turn that into a fault. It does cost the same-day guard
- * for this order, which the gateway idempotency key still covers.
+ * for this order, which the gateway idempotency key still covers, and a missing 'PaymentFailed'
+ * event holds back the update-card link (see the header).
  */
 async function logEvent(
     candidate: ChargeCandidate,
@@ -699,7 +730,12 @@ async function businessToday(provider: IMetadataProvider, user: UserInfo): Promi
 }
 
 /**
- * Renewal orders with an active renewal card that still owe money, due within the charge window.
+ * Renewal orders with a renewal card that still owe money, in one of two sets:
+ *   · due within the charge window, with automatic renewal on and the card active — these may be
+ *     charged;
+ *   · holding a Succeeded intent with no payment that no checkout session opened, whatever the due
+ *     day, automatic renewal or the card — these may only be captured (`CaptureOnly`). Without this
+ *     set, money taken on day 11 whose capture failed would never be booked once the window closed.
  *
  * Raw SQL for the same reason as `SpawnRenewals.findDue`: one statement over five tables. The order's
  * card is the renewal card of the subscription its first renewal line renews. `NextDueDate` and
@@ -714,6 +750,14 @@ async function findCandidates(
     const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
     const owing = NON_OWING_STATUSES.map((s) => `'${s}'`).join(',');
     const only = subscriptionID ? `AND s.ID = '${subscriptionID}'` : '';
+    // Turning automatic renewal off withdraws the consent to charge the card.
+    const chargeable = `(oh.NextDueDate >= DATEADD(DAY, -${Math.max(0, Math.floor(windowDays))}, '${asOf}') AND s.AutoRenew = 1 AND cpm.IsActive = 1)`;
+    // The same test loadIntentStates applies, so a checkout session's intent is held there, not captured.
+    const settledUnbooked = `EXISTS (
+            SELECT 1 FROM __mj_BizAppsOrders.PaymentIntent pi
+            WHERE pi.OrderHeaderID = oh.ID AND pi.Status = 'Succeeded'
+              AND NOT EXISTS (SELECT 1 FROM __mj_BizAppsOrders.PaymentHeader ph WHERE ph.PaymentIntentID = pi.ID AND ph.Status <> 'Failed')
+              AND NOT EXISTS (SELECT 1 FROM __mj_BizAppsOrders.CheckoutSession cs WHERE cs.PaymentIntentID = pi.ID))`;
     const rows = (await db.ExecuteSQL(`
         WITH renewalLine AS (
             SELECT ol.OrderHeaderID, ol.RenewsSubscriptionID,
@@ -735,7 +779,8 @@ async function findCandidates(
             pd.PaymentProviderID,
             pd.ProviderCustomerRef,
             pd.ProviderInstrumentRef,
-            pt.Code              AS TenderCode
+            pt.Code              AS TenderCode,
+            CASE WHEN ${chargeable} THEN 0 ELSE 1 END AS CaptureOnly
         FROM __mj_BizAppsOrders.vwOrderHeaders oh
         JOIN renewalLine rl ON rl.OrderHeaderID = oh.ID AND rl.rn = 1
         JOIN __mj_BizAppsOrders.Subscription s ON s.ID = rl.RenewsSubscriptionID
@@ -746,10 +791,7 @@ async function findCandidates(
           AND oh.Balance > 0
           AND oh.NextDueDate IS NOT NULL
           AND oh.NextDueDate <= '${asOf}'
-          AND oh.NextDueDate >= DATEADD(DAY, -${Math.max(0, Math.floor(windowDays))}, '${asOf}')
-          -- Turning automatic renewal off withdraws the consent to charge the card.
-          AND s.AutoRenew = 1
-          AND cpm.IsActive = 1
+          AND (${chargeable} OR ${settledUnbooked})
           AND pd.PaymentProviderID IS NOT NULL
           AND pd.ProviderInstrumentRef IS NOT NULL
           ${only}

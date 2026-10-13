@@ -258,3 +258,21 @@ describe('DecideRenewalCharge — orders a person must look at', () => {
         expect(DecideRenewalCharge(facts({ CheckoutOpen: true, SettledUncapturedIntentID: 'intent-1' }))).toEqual({ Action: 'Capture', PaymentIntentID: 'intent-1' });
     });
 });
+
+describe('DecideRenewalCharge — an order selected only for money already taken', () => {
+    it('is captured past the last retry day and past the cutoff', () => {
+        for (const offset of [12, 20, 60]) {
+            expect(DecideRenewalCharge(facts({ AsOfDay: day(offset), CaptureOnly: true, SettledUncapturedIntentID: 'intent-1' }))).toEqual({
+                Action: 'Capture',
+                PaymentIntentID: 'intent-1',
+            });
+        }
+    });
+
+    it('is never charged, even on a charge day: automatic renewal is off or the card inactive', () => {
+        expect(DecideRenewalCharge(facts({ AsOfDay: day(3), CaptureOnly: true }))).toEqual({
+            Action: 'Skip',
+            Reason: 'outside the charge window, or automatic renewal is off or the card inactive; only money already taken is booked',
+        });
+    });
+});
