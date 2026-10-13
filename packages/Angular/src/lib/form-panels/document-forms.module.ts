@@ -10,6 +10,8 @@ import { ExternalInvoicesPanel } from './external-invoices.panel';
 import { PaymentHeaderPanel } from './payment-header.panel';
 import { PaymentJournalsPanel } from './payment-journals.panel';
 import { SubscriptionHeaderPanel } from './subscription-header.panel';
+import { MJOSubscriptionCancelComponent } from './subscription-cancel.component';
+import { MJOMoneyPipe } from '../panels/money-format';
 import { SubscriptionTermsPanel } from './subscription-terms.panel';
 import { SubscriptionRevRecPanel } from './subscription-revrec.panel';
 import { SubscriptionTermHeaderPanel } from './subscription-term-header.panel';
@@ -67,6 +69,7 @@ const PANELS = [
     PaymentHeaderPanel,
     PaymentJournalsPanel,
     SubscriptionHeaderPanel,
+    MJOSubscriptionCancelComponent,
     SubscriptionTermsPanel,
     SubscriptionRevRecPanel,
     SubscriptionTermHeaderPanel,
@@ -120,6 +123,7 @@ const PANELS = [
         BaseFormsModule,
         MJAlertComponent,
         MJButtonDirective,
+        MJOMoneyPipe,
         RelatedChipsComponent,
         DeferredRevenueWaterfallModule,
         CustomFormsModule,

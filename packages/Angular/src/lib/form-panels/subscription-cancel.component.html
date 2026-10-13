@@ -1,0 +1,58 @@
+@if (CanCancel && !Open) {
+    <div class="mjo-sc-toolbar">
+        <button type="button" mjButton variant="outline" size="sm" (click)="Start()">
+            <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel subscription
+        </button>
+    </div>
+}
+@if (Open) {
+    <section class="mjo-sc" aria-labelledby="mjo-sc-title">
+        <h2 id="mjo-sc-title" class="mjo-sc__title">Cancel subscription</h2>
+        <fieldset class="mjo-sc__timing" [disabled]="Busy">
+            <legend>When does access end?</legend>
+            <label class="mjo-sc__option">
+                <input type="radio" name="timing" value="EndOfTerm" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>At the end of the term</strong>
+                    <span class="mjo-sc__hint">Access runs to the end of what was paid for, plus the subscription type's grace period. It does not renew.</span>
+                </span>
+            </label>
+            <label class="mjo-sc__option">
+                <input type="radio" name="timing" value="Immediate" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>Immediately</strong>
+                    <span class="mjo-sc__hint">Coverage and access end today. Any refund follows the subscription type's refund rule; give other money back from the payment's Refund page.</span>
+                </span>
+            </label>
+        </fieldset>
+        <label class="mjo-sc__field">
+            <span>Reason</span>
+            <textarea name="reason" rows="2" maxlength="1000" [(ngModel)]="Reason" (ngModelChange)="Changed()" [disabled]="Busy"></textarea>
+        </label>
+
+        @if (Preview?.Decision; as d) {
+            <dl class="mjo-sc__preview" aria-live="polite">
+                <div><dt>Coverage ends</dt><dd>{{ Day(d.EffectiveDate) }}</dd></div>
+                <div><dt>Access ends</dt><dd>{{ Day(d.AccessThroughDate) }}</dd></div>
+                <div><dt>Refund</dt><dd>{{ Preview?.TotalRefundAmount ?? d.RefundAmount | mjoMoney: { Zero: 'None' } }}</dd></div>
+                @if (Preview?.LaterTerms?.length) {
+                    <div><dt>Later terms canceled</dt><dd>{{ Preview?.LaterTerms?.length }}</dd></div>
+                }
+            </dl>
+            <p class="mjo-sc__explain">{{ Preview?.Message || d.Explanation }}</p>
+        }
+
+        @if (Error) {
+            <p class="mjo-sc__error" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ Error }}</p>
+        }
+
+        <div class="mjo-sc__actions">
+            <button type="button" mjButton variant="flat" size="sm" (click)="Close()" [disabled]="Busy">Keep subscription</button>
+            @if (Preview) {
+                <button type="button" mjButton variant="danger" size="sm" (click)="Confirm()" [disabled]="Busy">Confirm cancellation</button>
+            } @else {
+                <button type="button" mjButton variant="primary" size="sm" (click)="RunPreview()" [disabled]="Busy">Preview</button>
+            }
+        </div>
+    </section>
+}

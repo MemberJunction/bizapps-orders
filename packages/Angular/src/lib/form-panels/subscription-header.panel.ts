@@ -57,6 +57,12 @@ export class SubscriptionHeaderPanel extends BaseFormPanel<mjBizAppsOrdersSubscr
         return FormatCoverageWindow(this.Record.StartDate, this.Record.EndDate);
     }
 
+    /** A confirmed cancellation rewrote the status, end date and auto-renew; show them. */
+    public async OnCanceled(): Promise<void> {
+        await this.Record.Refresh();
+        this.FormComponent.cdr.detectChanges();
+    }
+
     public get Holder(): string {
         return this.Record.HolderOrganization || '—';
     }
