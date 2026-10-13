@@ -32,17 +32,23 @@ import {
 } from '@memberjunction/core';
 import { LoadOrdersEngine, OrdersEngine, mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import {
+    InheritedFields,
+    PickRenewalComponent,
     PlanBundleExpansion,
+    PlanInheritanceRefresh,
     type BundleComponent,
     type BundleLineFacts,
+    type InheritableLineFields,
     type PlannedBundleChild,
 } from './BundleBehavior.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
+import { RequireUUID } from './sql-guards.js';
 
 const PRODUCT_BUNDLE_ITEM_ENTITY = 'MJ_BizApps_Orders: Product Bundle Items';
 
 const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
@@ -135,6 +141,15 @@ export async function ExpandBundleLines(
     // Snapshot the collection: children are appended as we go and must not themselves be scanned.
     const originals = [...lines];
 
+    // THE PRODUCT EACH RENEWAL TARGET IS FOR, so the renewal reaches the component that sells it.
+    // Both the bundle line's current target and its last-saved one: a changed target has to leave
+    // the old component and reach the new one.
+    const targetIDs = originals
+        .filter((l) => componentsByBundle.has(key(l.ProductID)))
+        .flatMap((l) => [l.RenewsSubscriptionID, savedValue(l, 'RenewsSubscriptionID') as string | null])
+        .filter((id): id is string => !!id);
+    const targetProduct = await loadTargetProducts(targetIDs, rv, user);
+
     for (const line of originals) {
         const components = componentsByBundle.get(key(line.ProductID));
         if (!components?.length) continue;
@@ -189,11 +204,12 @@ export async function ExpandBundleLines(
         // it: the set was fixed when it was first expanded (see SNAPSHOT above).
         const existing = originals.filter((l) => key(l.ParentOrderLineID) === key(line.ID));
         if (existing.length) {
-            refreshChildren(line, existing, plan.Children);
+            refreshChildren(line, existing, plan.Children, targetProduct);
             continue;
         }
 
-        for (const child of plan.Children) {
+        const renewing = renewalComponent(line, line.RenewsSubscriptionID, plan.Children.map((c) => c.ComponentProductID), targetProduct);
+        for (const [i, child] of plan.Children.entries()) {
             const row = await makeLine();
             row.ProductID = child.ComponentProductID;
             row.Quantity = child.Quantity;
@@ -206,6 +222,8 @@ export async function ExpandBundleLines(
             // The overlap acknowledgment is made on the line the rep entered, which for a band sold
             // inside a bundle is the bundle line. The band's own line does not exist until now.
             row.AcknowledgesCoverageOverlap = !!line.AcknowledgesCoverageOverlap;
+            row.CoverageOverlapReason = line.CoverageOverlapReason ?? null;
+            applyFields(row, InheritedFields(currentFields(line), inheriting(child.ComponentProductID, i === renewing)));
             lines.push(row);
             out.ChildrenCreated++;
         }
@@ -229,9 +247,31 @@ export async function ExpandBundleLines(
  * Bring a bundle line's existing children in line with its current plan.
  *
  * The parent's quantity or price may have changed since the last save. A child whose quantity or
- * price was set by hand keeps it. An acknowledgment made on the bundle line reaches every child.
+ * price was set by hand keeps it. An acknowledgment made on the bundle line, and its reason, reach
+ * every child. So does a changed ship-to, start, subscription action or renewal target, to each child
+ * still holding what the bundle line gave it before (see `PlanInheritanceRefresh`).
  */
-function refreshChildren(parent: ExpandableLine, existing: ExpandableLine[], planned: PlannedBundleChild[]): void {
+function refreshChildren(
+    parent: ExpandableLine,
+    existing: ExpandableLine[],
+    planned: PlannedBundleChild[],
+    targetProduct: Map<string, string>,
+): void {
+    const products = existing.map((e) => e.ProductID);
+    const before = savedFields(parent);
+    const renewedBefore = before.RenewsSubscriptionID
+        ? renewalComponent(parent, before.RenewsSubscriptionID, products, targetProduct)
+        : -1;
+    const renewingNow = renewalComponent(parent, parent.RenewsSubscriptionID, products, targetProduct);
+    for (const [i, row] of existing.entries()) {
+        const changes = PlanInheritanceRefresh(
+            currentFields(row),
+            InheritedFields(before, inheriting(row.ProductID, i === renewedBefore)),
+            InheritedFields(currentFields(parent), inheriting(row.ProductID, i === renewingNow)),
+        );
+        applyFields(row, changes);
+    }
+
     const unmatched = [...existing];
     for (const child of planned) {
         const i = unmatched.findIndex((e) => key(e.ProductID) === key(child.ComponentProductID));
@@ -241,7 +281,10 @@ function refreshChildren(parent: ExpandableLine, existing: ExpandableLine[], pla
         if (!row.PriceOverridden) row.UnitPrice = child.UnitPrice;
     }
     if (parent.AcknowledgesCoverageOverlap) {
-        for (const row of existing) row.AcknowledgesCoverageOverlap = true;
+        for (const row of existing) {
+            row.AcknowledgesCoverageOverlap = true;
+            row.CoverageOverlapReason = parent.CoverageOverlapReason ?? null;
+        }
     }
 }
 
@@ -318,4 +361,93 @@ export async function RippleBundleQuantity(
         changed++;
     }
     return changed;
+}
+
+/** The inheritable fields as the line holds them now. */
+function currentFields(line: ExpandableLine): InheritableLineFields {
+    return {
+        ShipToOrganizationID: line.ShipToOrganizationID ?? null,
+        ShipToPersonID: line.ShipToPersonID ?? null,
+        ShipToAddressID: line.ShipToAddressID ?? null,
+        ServicePeriodStart: line.ServicePeriodStart ?? null,
+        SubscriptionAction: line.SubscriptionAction ?? null,
+        RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+    };
+}
+
+/** A field as the line was last saved — what its children were last given. */
+function savedValue(line: ExpandableLine, field: keyof InheritableLineFields): Date | string | null {
+    const f = line.GetFieldByName(field);
+    return (f?.Dirty ? f.OldValue : line.Get(field)) ?? null;
+}
+
+/** The inheritable fields as the line was last saved. */
+function savedFields(line: ExpandableLine): InheritableLineFields {
+    return {
+        ShipToOrganizationID: savedValue(line, 'ShipToOrganizationID') as string | null,
+        ShipToPersonID: savedValue(line, 'ShipToPersonID') as string | null,
+        ShipToAddressID: savedValue(line, 'ShipToAddressID') as string | null,
+        ServicePeriodStart: savedValue(line, 'ServicePeriodStart'),
+        SubscriptionAction: savedValue(line, 'SubscriptionAction') as string | null,
+        RenewsSubscriptionID: savedValue(line, 'RenewsSubscriptionID') as string | null,
+    };
+}
+
+/** Write inherited values onto a child line. */
+function applyFields(row: ExpandableLine, fields: Partial<InheritableLineFields>): void {
+    for (const [field, value] of Object.entries(fields)) row.Set(field, value);
+}
+
+/** What a component is, for deciding what it inherits. */
+function inheriting(productID: string, isRenewalTarget: boolean) {
+    return {
+        IsSubscription: !!OrdersEngine.Instance.ProductByID(productID)?.SubscriptionTypeID,
+        IsRenewalTarget: isRenewalTarget,
+    };
+}
+
+/**
+ * The index of the component a renewal target belongs to, or -1 when the line renews nothing.
+ *
+ * Throws when the target cannot be placed: dropping it would start a second subscription instead
+ * of renewing the first, and bill for both.
+ */
+function renewalComponent(
+    line: ExpandableLine,
+    subscriptionID: string | null,
+    componentProductIDs: string[],
+    targetProduct: Map<string, string>,
+): number {
+    if (!subscriptionID) return -1;
+    const productID = targetProduct.get(key(subscriptionID));
+    if (!productID) {
+        throw new Error(`Order line ${line.ID} renews subscription ${subscriptionID}, which was not found.`);
+    }
+    const pick = PickRenewalComponent(productID, componentProductIDs);
+    if ('Index' in pick) return pick.Index;
+    throw new Error(
+        pick.Refusal === 'NoComponentSellsTarget'
+            ? `Order line ${line.ID} is a bundle renewing subscription ${subscriptionID}, but none of the ` +
+                  `bundle's components sells that subscription's product. Renew it on its own line.`
+            : `Order line ${line.ID} is a bundle renewing subscription ${subscriptionID}, and more than one ` +
+                  `of the bundle's components sells that subscription's product, so the renewal cannot ` +
+                  `say which it continues. Renew it on its own line.`,
+    );
+}
+
+/** The product of each named subscription, keyed by lowercased subscription ID. One query. */
+async function loadTargetProducts(ids: string[], rv: RunView, user: UserInfo): Promise<Map<string, string>> {
+    const out = new Map<string, string>();
+    if (!ids.length) return out;
+    const res = await rv.RunView<{ ID: string; ProductID: string }>(
+        {
+            EntityName: SUBSCRIPTION_ENTITY,
+            ExtraFilter: `ID IN (${quote(ids.map((id) => RequireUUID(id, 'RenewsSubscriptionID')))})`,
+            Fields: ['ID', 'ProductID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    for (const row of res.Results ?? []) out.set(key(row.ID), row.ProductID);
+    return out;
 }

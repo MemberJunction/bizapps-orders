@@ -55,6 +55,11 @@ describe('SplitCashForCompany', () => {
         expect(SplitCashForCompany(150, CO_A, rows)).toEqual({ Receivable: 60, Deposit: 90 });
     });
 
+    it('counts what a credit memo credited as no longer owed on the invoice (#662)', () => {
+        const rows = [{ ...invoiced('1', 100), AmountCredited: 30 }, row({ ID: '2', Amount: 200 })];
+        expect(SplitCashForCompany(100, CO_A, rows)).toEqual({ Receivable: 70, Deposit: 30 });
+    });
+
     it('a fully paid schedule has no room, so unnamed cash is a customer credit in AR (Jeremy, #234)', () => {
         expect(SplitCashForCompany(50, CO_A, [invoiced('1', 100, 100)])).toEqual({ Receivable: 50, Deposit: 0 });
     });
@@ -149,6 +154,10 @@ describe('HeldDeposit', () => {
     it('ignores other companies and canceled rows', () => {
         const rows = [row({ ID: '1', AmountPaid: 40, CompanyID: CO_B }), row({ ID: '2', AmountPaid: 40, Status: 'Canceled' })];
         expect(HeldDeposit(rows, CO_A)).toBe(0);
+    });
+
+    it('holds no deposit on a paid invoice a credit memo credited: that credit is in AR (#662)', () => {
+        expect(HeldDeposit([{ ...invoiced('1', 100, 100), AmountCredited: 30 }], CO_A)).toBe(0);
     });
 });
 

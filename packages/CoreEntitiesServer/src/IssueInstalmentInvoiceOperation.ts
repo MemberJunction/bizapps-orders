@@ -46,6 +46,7 @@ import {
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
 } from '@mj-biz-apps/orders-entities';
 
+import { ReduceLineAmounts } from './AmountChangePlan.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { EmitInstalmentInvoiceEntry, type InstalmentLineFacts, type InstalmentSibling } from './InstalmentInvoiceEntry.js';
@@ -56,6 +57,7 @@ import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
+import { AppliedScheduleReductions } from './ReversalScheduleReduction.js';
 import { RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 
@@ -171,7 +173,15 @@ export async function IssueInstalment(
         if (!lines.Success || !siblings.Success) {
             return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
         }
-        const shortfalls = ScheduleShortfalls(siblings.Results ?? [], lines.Results ?? [], order.CompanyID);
+        // An approved amount change (#506) or a return (#661) lowered the instalments, not the lines: the lines are
+        // read less what each took off them, so the lowered schedule still ties and each instalment bills the
+        // lowered line.
+        const reductions = await AppliedScheduleReductions(order.ID, { Provider: provider, User: user });
+        const billedLines = [
+            ...(lines.Results ?? []),
+            ...reductions.map((c) => ({ CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
+        ];
+        const shortfalls = ScheduleShortfalls(siblings.Results ?? [], billedLines, order.CompanyID);
         if (shortfalls.length) {
             const names = new Map((siblings.Results ?? []).map((s) => [String(s.CompanyID).toLowerCase(), s.Company ?? s.CompanyID]));
             return refuse(ExplainShortfalls(order.OrderNumber, shortfalls, (id) => String(names.get(id) ?? id)), echo);
@@ -250,7 +260,7 @@ export async function IssueInstalment(
         // order, so every instalment's pieces of a line sum to that line's full amount. A cancelled
         // instalment bills nothing and takes no share of any line.
         const liveRows = (siblings.Results ?? []).filter((s) => s.Status !== 'Canceled');
-        const slices = CompanySlices(liveRows, lines.Results ?? [], order.CompanyID);
+        const slices = CompanySlices(liveRows, billedLines, order.CompanyID);
         const pieces = slices
             .filter((s) => String(s.ID).toLowerCase() === String(row.ID).toLowerCase() && Number(s.Amount) !== 0)
             .sort((a, b) => companyOrder(a.CompanyID, orderCompany) - companyOrder(b.CompanyID, orderCompany) || a.CompanyID.localeCompare(b.CompanyID));
@@ -258,7 +268,9 @@ export async function IssueInstalment(
         try {
             for (const piece of pieces) {
                 const company = String(piece.CompanyID);
-                const companyLines = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], company, invoiceDay);
+                const companyLines = (await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], company, invoiceDay)).map((l) =>
+                    ReduceLineAmounts(l, reductions),
+                );
                 if (!companyLines.length) continue;
                 billings.push({
                     CompanyID: company,

@@ -13,12 +13,14 @@ const approval = vi.hoisted(() => ({
     UnlinkConcession: vi.fn(),
 }));
 vi.mock('../ConcessionApprovalTask.js', () => approval);
+const acknowledgment = vi.hoisted(() => ({ RaiseConcessionAcknowledgment: vi.fn() }));
+vi.mock('../ConcessionAcknowledgment.js', () => acknowledgment);
 
 const terms = vi.hoisted(() => ({ ApplyTermsChange: vi.fn(), CheckTermsChange: vi.fn() }));
 vi.mock('../PaymentTermsChange.js', () => terms);
 
 const gate = vi.hoisted(() => ({
-    FindConcessionLimitRule: vi.fn(),
+    FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
     LoadConcessionAuthority: vi.fn(),
 }));
@@ -27,6 +29,18 @@ vi.mock('../ConcessionGate.js', () => gate);
 const { OrderConcessionEntityServer } = await import('../OrderConcessionEntityServer.js');
 
 const REQUESTER = { ID: 'requester-1' };
+
+/** A single untiered ConcessionLimit rule, as every installation had before tiers. */
+const tierRule = () => ({
+    ID: 'rule-1',
+    Name: 'Concession approval',
+    ApprovalRequiredRoleID: 'role-1',
+    ConcessionTier: null,
+    MinConcessionValue: null,
+    MinConcessionPctOfContract: null,
+    MinTermExtensionDays: null,
+    RequiresDecisionWithinAuthority: false,
+});
 const APPROVER = { ID: 'approver-1' };
 const ORDER_ID = 'order-1';
 
@@ -54,11 +68,17 @@ function termsConcession(opts: {
         PriorPaymentTermsTypeID: 'net30',
         NewPaymentTermsTypeID: 'net60',
         AddedDays: 30,
+        AddedQuantity: null,
         ComputedValue: 0,
         RequestedByUserID: REQUESTER.ID,
         SalesRuleID: null,
         DecidedByUserID: null,
         DecidedAt: null,
+        ReasonCategory: 'Retention',
+        Reason: 'cash-flow relief',
+        CumulativeShare: null,
+        AddedQuantity: null,
+        AuthorizedBySalesAuthorityID: null,
     };
     for (const name of Object.keys(values)) {
         Object.defineProperty(row, name, { get: () => values[name], set: (v) => (values[name] = v) });
@@ -84,7 +104,7 @@ afterEach(() => {
 
 describe('recording a Terms concession', () => {
     it('is Pending under the ConcessionLimit rule, whatever the requester holds', async () => {
-        gate.FindConcessionLimitRule.mockResolvedValue({ ID: 'rule-1', ApprovalRequiredRoleID: 'role-1' });
+        gate.FindConcessionTier.mockResolvedValue({ Rule: tierRule(), Conflict: null });
         approval.ActiveRoleHolderIDs.mockResolvedValue([REQUESTER.ID, APPROVER.ID]);
         const { row, values } = termsConcession({ saved: false, status: 'Pending', user: REQUESTER });
 
@@ -96,7 +116,7 @@ describe('recording a Terms concession', () => {
     });
 
     it('is refused when only the requester holds the approving role', async () => {
-        gate.FindConcessionLimitRule.mockResolvedValue({ ID: 'rule-1', ApprovalRequiredRoleID: 'role-1' });
+        gate.FindConcessionTier.mockResolvedValue({ Rule: tierRule(), Conflict: null });
         approval.ActiveRoleHolderIDs.mockResolvedValue([REQUESTER.ID]);
         const { row } = termsConcession({ saved: false, status: 'Pending', user: REQUESTER });
 
@@ -105,7 +125,7 @@ describe('recording a Terms concession', () => {
     });
 
     it('is refused when no ConcessionLimit rule names a role', async () => {
-        gate.FindConcessionLimitRule.mockResolvedValue(null);
+        gate.FindConcessionTier.mockResolvedValue({ Rule: null, Conflict: null });
         const { row } = termsConcession({ saved: false, status: 'Pending', user: REQUESTER });
 
         const problem = await (row as unknown as { escalate(u: unknown): Promise<string | null> }).escalate(REQUESTER);
