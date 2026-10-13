@@ -28,11 +28,20 @@
  *     settle late, and `BookSettledCheckoutPaymentIfNeeded` books only intents a checkout session
  *     opened.
  *
- * MONEY TAKEN BUT NOT BOOKED. When the gateway took the money and the capture failed, the intent
- * stays Succeeded with no payment and its 'PaymentSucceeded' event names no payment. The next pass
- * captures it before anything else, on any day, and charges nothing new. Only intents this pass's own
- * events name are captured: an intent opened by a person or by a checkout session is booked by
- * whoever opened it, and booking it here as well would book the money twice.
+ * MONEY TAKEN BUT NOT BOOKED. A Succeeded intent on the order with no payment means the gateway has
+ * the money: a capture failed, or a charge that came back Processing has since succeeded. The next
+ * pass captures it before anything else, on any day, and charges nothing new. The exception is an
+ * intent a checkout session opened (the update-card page): checkout books it, so the pass holds the
+ * order and reports it rather than booking it twice or charging the old card on top of it.
+ *
+ * AN UNKNOWN OUTCOME STOPS THE CARD. When the gateway cannot be reached, or answers with a server
+ * error, the charge may or may not have happened. The attempt is logged as a 'PaymentFailed' event
+ * marked `OutcomeUnknown`, and the order is held from then on: the next retry day carries a new
+ * idempotency key, so charging again could take the money twice. A person reconciles the order with
+ * the gateway.
+ *
+ * AN OPEN UPDATE-CARD PAGE HOLDS THE RETRY. While an unexpired checkout session on the order holds an
+ * intent, the buyer may be paying with a new card, so the old card is not charged that day.
  *
  * DATED ON THE GATEWAY'S DAY. The payment is dated the business day the gateway took the money,
  * which is not the run's day when the two differ (a run near midnight, a rerun with an as-of day).
@@ -68,6 +77,7 @@ import { RequireOptionalDay, RequireOptionalUUID, RequireUUIDs } from './sql-gua
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 
 /** Written into every event this pass logs, so its attempts can be told from other payment events. */
 export const RENEWAL_CHARGE_SOURCE = 'RenewalCharge';
@@ -94,13 +104,18 @@ export interface RenewalChargeFacts {
     AttemptDays: readonly string[];
     /** True while an intent on the order is still Processing at the gateway. */
     InFlight: boolean;
-    /** An intent this pass opened that the gateway took the money for and that has no payment yet. */
+    /** A Succeeded intent on the order, not opened by a checkout session, that has no payment yet. */
     SettledUncapturedIntentID: string | null;
+    /** Why the order must not be charged or captured until a person looks at it; null when it may. */
+    HoldReason?: string | null;
+    /** True while an unexpired checkout session on the order holds an intent (the update-card page). */
+    CheckoutOpen?: boolean;
 }
 
 export type RenewalChargeDecision =
     | { Action: 'Capture'; PaymentIntentID: string }
     | { Action: 'Charge'; Attempt: number; NextAttemptDay: string | null }
+    | { Action: 'Hold'; Reason: string }
     | { Action: 'Skip'; Reason: string };
 
 /**
@@ -125,8 +140,10 @@ export function NextRenewalChargeDay(
  * been attempted yet.
  */
 export function DecideRenewalCharge(facts: RenewalChargeFacts): RenewalChargeDecision {
+    if (facts.HoldReason) return { Action: 'Hold', Reason: facts.HoldReason };
     if (facts.SettledUncapturedIntentID) return { Action: 'Capture', PaymentIntentID: facts.SettledUncapturedIntentID };
     if (facts.InFlight) return { Action: 'Skip', Reason: 'an earlier charge is still processing at the gateway' };
+    if (facts.CheckoutOpen) return { Action: 'Skip', Reason: 'a checkout session on the order holds a payment in progress' };
 
     const daysSinceDue = DaysBetween(facts.DueDay, facts.AsOfDay);
     if (daysSinceDue < 0) return { Action: 'Skip', Reason: `not due until ${facts.DueDay}` };
@@ -267,8 +284,12 @@ interface ChargeCandidate {
 interface OrderIntentState {
     AttemptDays: string[];
     InFlight: boolean;
-    SettledUncaptured: { ID: string; Amount: number; LastEventAt: Date | null; EventID: string } | null;
+    SettledUncaptured: { ID: string; Amount: number; LastEventAt: Date | null; EventID: string | null } | null;
+    HoldReason: string | null;
+    CheckoutOpen: boolean;
 }
+
+const emptyState = (): OrderIntentState => ({ AttemptDays: [], InFlight: false, SettledUncaptured: null, HoldReason: null, CheckoutOpen: false });
 
 /**
  * Charge the renewal card of every renewal order due a charge today. See the header for the rules.
@@ -308,7 +329,7 @@ export async function ChargeRenewals(
 
     for (const candidate of candidates) {
         const dueDay = ToISODate(candidate.NextDueDate) as string;
-        const state = states.get(candidate.OrderID.toLowerCase()) ?? { AttemptDays: [], InFlight: false, SettledUncaptured: null };
+        const state = states.get(candidate.OrderID.toLowerCase()) ?? emptyState();
         const attempt: RenewalChargeAttempt = {
             OrderID: candidate.OrderID,
             OrderNumber: candidate.OrderNumber,
@@ -329,7 +350,17 @@ export async function ChargeRenewals(
             AttemptDays: state.AttemptDays,
             InFlight: state.InFlight,
             SettledUncapturedIntentID: state.SettledUncaptured?.ID ?? null,
+            HoldReason: state.HoldReason,
+            CheckoutOpen: state.CheckoutOpen,
         });
+        if (decision.Action === 'Hold') {
+            // Reported as a failure so the run is not green: it needs a person, not another pass.
+            LogError(`Orders.ChargeRenewals: order ${candidate.OrderNumber} held: ${decision.Reason}`);
+            attempt.Outcome = 'Error';
+            attempt.Reason = decision.Reason;
+            out.Failures.push({ OrderID: candidate.OrderID, Error: decision.Reason });
+            continue;
+        }
         if (decision.Action === 'Skip') {
             attempt.Reason = decision.Reason;
             out.Skipped++;
@@ -394,26 +425,52 @@ async function chargeOnce(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<void> {
-    const opened = await OpenPaymentIntent(
-        {
-            PaymentProviderID: candidate.PaymentProviderID,
-            Amount: Number(candidate.Balance),
-            CurrencyCode: SUPPORTED_PAYMENT_CURRENCY,
-            OrderHeaderID: candidate.OrderID,
-            BillToPersonID: candidate.OwnerPersonID,
-            BillToOrganizationID: candidate.OwnerPersonID ? null : candidate.OwnerOrganizationID,
-            ProviderCustomerRef: candidate.ProviderCustomerRef,
-            ProviderInstrumentRef: candidate.ProviderInstrumentRef,
-            IdempotencyKey: RenewalChargeIdempotencyKey(candidate.OrderID, asOf),
-            Metadata: {
-                Purpose: RENEWAL_CHARGE_SOURCE,
-                SubscriptionID: candidate.SubscriptionID,
-                Attempt: String(decision.Attempt),
+    const idempotencyKey = RenewalChargeIdempotencyKey(candidate.OrderID, asOf);
+    let opened: OpenIntentResult;
+    try {
+        opened = await OpenPaymentIntent(
+            {
+                PaymentProviderID: candidate.PaymentProviderID,
+                Amount: Number(candidate.Balance),
+                CurrencyCode: SUPPORTED_PAYMENT_CURRENCY,
+                OrderHeaderID: candidate.OrderID,
+                BillToPersonID: candidate.OwnerPersonID,
+                BillToOrganizationID: candidate.OwnerPersonID ? null : candidate.OwnerOrganizationID,
+                ProviderCustomerRef: candidate.ProviderCustomerRef,
+                ProviderInstrumentRef: candidate.ProviderInstrumentRef,
+                IdempotencyKey: idempotencyKey,
+                Metadata: {
+                    Purpose: RENEWAL_CHARGE_SOURCE,
+                    SubscriptionID: candidate.SubscriptionID,
+                    Attempt: String(decision.Attempt),
+                },
             },
-        },
-        provider,
-        user,
-    );
+            provider,
+            user,
+        );
+    } catch (err) {
+        // The gateway may have charged the card: unreachable, a server error, or our row not written
+        // after it answered. Recorded so later passes hold the order instead of charging it again
+        // under the next day's key.
+        const reason = err instanceof Error ? err.message : String(err);
+        await logEvent(
+            candidate,
+            'PaymentFailed',
+            {
+                Source: RENEWAL_CHARGE_SOURCE,
+                Attempt: decision.Attempt,
+                AttemptDay: asOf,
+                Amount: Number(candidate.Balance),
+                OutcomeUnknown: true,
+                IdempotencyKey: idempotencyKey,
+                Reason: reason,
+            },
+            null,
+            provider,
+            user,
+        );
+        throw err;
+    }
     attempt.PaymentIntentID = opened.PaymentIntentID;
 
     const kind = ClassifyRenewalCharge(opened);
@@ -649,13 +706,12 @@ async function findCandidates(
 }
 
 /**
- * For each order: the days this pass already attempted it, whether an intent is still Processing, and
- * a Succeeded intent this pass opened that has no payment.
+ * For each order: the days this pass already attempted it, whether an intent is still Processing, a
+ * Succeeded intent with no payment, and whether anything holds the order for a person.
  *
- * "This pass opened" means one of its own events names the intent. Any other intent on the order —
- * a person's, or a checkout session's — is booked by whoever opened it, and is never captured here.
- * Any Processing intent holds the order off, whoever opened it: charging the card while another
- * payment is in flight could take the money twice.
+ * A Succeeded intent with no payment is captured here unless a checkout session opened it: checkout
+ * books its own, so that one holds the order instead. Any Processing intent holds the order off,
+ * whoever opened it: charging the card while another payment is in flight could take the money twice.
  */
 async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, OrderIntentState>> {
     const out = new Map<string, OrderIntentState>();
@@ -666,7 +722,7 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
         const k = orderID.toLowerCase();
         let s = out.get(k);
         if (!s) {
-            s = { AttemptDays: [], InFlight: false, SettledUncaptured: null };
+            s = emptyState();
             out.set(k, s);
         }
         return s;
@@ -690,6 +746,11 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
         const data = parseEventData(e.EventData);
         if (data?.Source !== RENEWAL_CHARGE_SOURCE) continue;
         if (typeof data.AttemptDay === 'string') state(e.RelatedOrderHeaderID).AttemptDays.push(data.AttemptDay);
+        if (data.OutcomeUnknown === true && !state(e.RelatedOrderHeaderID).HoldReason) {
+            state(e.RelatedOrderHeaderID).HoldReason =
+                `the outcome of the charge on ${String(data.AttemptDay)} is unknown; reconcile the order with the gateway ` +
+                `(idempotency key ${String(data.IdempotencyKey)}) before the card is charged again`;
+        }
         if (e.EventType === 'PaymentSucceeded' && typeof data.PaymentIntentID === 'string') {
             ownSuccesses.set(data.PaymentIntentID.toLowerCase(), e.ID);
         }
@@ -707,6 +768,28 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
         user,
     );
     if (!intents.Success) throw new Error(`Could not read renewal payment intents: ${intents.ErrorMessage}`);
+
+    // Checkout sessions on these orders (the update-card page): an unexpired one holding an intent
+    // holds the retry, and an intent a session opened is booked by checkout, never here.
+    const sessions = await rv.RunView<{ DraftOrderID: string; PaymentIntentID: string | null; Status: string; ExpiresAt: Date | null }>(
+        {
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            ExtraFilter: `DraftOrderID IN (${ids}) AND PaymentIntentID IS NOT NULL`,
+            Fields: ['DraftOrderID', 'PaymentIntentID', 'Status', 'ExpiresAt'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!sessions.Success) throw new Error(`Could not read checkout sessions on renewal orders: ${sessions.ErrorMessage}`);
+    const sessionIntents = new Set<string>();
+    const now = Date.now();
+    for (const session of sessions.Results ?? []) {
+        if (session.PaymentIntentID) sessionIntents.add(session.PaymentIntentID.toLowerCase());
+        const expires = session.ExpiresAt ? new Date(session.ExpiresAt).getTime() : null;
+        if (session.Status === 'Open' && (expires == null || expires > now)) state(session.DraftOrderID).CheckoutOpen = true;
+    }
+
     const open = intents.Results ?? [];
     if (!open.length) return out;
 
@@ -726,11 +809,19 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
 
     for (const intent of open) {
         const s = state(intent.OrderHeaderID);
-        const eventID = ownSuccesses.get(intent.ID.toLowerCase());
+        const key = intent.ID.toLowerCase();
         if (intent.Status === 'Processing') {
             s.InFlight = true;
-        } else if (eventID && !paid.has(intent.ID.toLowerCase()) && !s.SettledUncaptured) {
-            s.SettledUncaptured = { ID: intent.ID, Amount: Number(intent.Amount), LastEventAt: intent.LastEventAt, EventID: eventID };
+        } else if (!paid.has(key)) {
+            if (sessionIntents.has(key)) {
+                s.HoldReason ??=
+                    `payment intent ${intent.ID} from checkout took the money but no payment is booked; ` +
+                    `book it through checkout before the card is charged again`;
+            } else if (!s.SettledUncaptured) {
+                // This pass's own (a capture that failed, or a charge that came back Processing and has
+                // since succeeded), or one a person opened: either way the money is the order's.
+                s.SettledUncaptured = { ID: intent.ID, Amount: Number(intent.Amount), LastEventAt: intent.LastEventAt, EventID: ownSuccesses.get(key) ?? null };
+            }
         }
     }
     return out;
@@ -740,6 +831,8 @@ interface ChargeEventData {
     Source?: unknown;
     AttemptDay?: unknown;
     PaymentIntentID?: unknown;
+    OutcomeUnknown?: unknown;
+    IdempotencyKey?: unknown;
     [key: string]: unknown;
 }
 

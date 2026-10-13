@@ -237,3 +237,24 @@ describe('OrdersSettings.RenewalChargeRetryDays', () => {
         }
     });
 });
+
+describe('DecideRenewalCharge — orders a person must look at', () => {
+    it('holds an order whose earlier charge had an unknown outcome, on every day, ahead of a capture', () => {
+        const HoldReason = 'the outcome of the charge on 2027-01-01 is unknown';
+        for (const offset of [0, 3, 7]) {
+            expect(DecideRenewalCharge(facts({ AsOfDay: day(offset), HoldReason }))).toEqual({ Action: 'Hold', Reason: HoldReason });
+        }
+        expect(DecideRenewalCharge(facts({ HoldReason, SettledUncapturedIntentID: 'intent-1' }))).toEqual({ Action: 'Hold', Reason: HoldReason });
+    });
+
+    it('skips a charge day while a checkout session on the order holds a payment in progress', () => {
+        expect(DecideRenewalCharge(facts({ AsOfDay: day(3), CheckoutOpen: true }))).toEqual({
+            Action: 'Skip',
+            Reason: 'a checkout session on the order holds a payment in progress',
+        });
+    });
+
+    it('still books money already taken while a checkout session is open', () => {
+        expect(DecideRenewalCharge(facts({ CheckoutOpen: true, SettledUncapturedIntentID: 'intent-1' }))).toEqual({ Action: 'Capture', PaymentIntentID: 'intent-1' });
+    });
+});
