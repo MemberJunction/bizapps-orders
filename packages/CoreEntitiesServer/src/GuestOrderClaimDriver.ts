@@ -8,9 +8,8 @@
  * @module @mj-biz-apps/orders-core-entities-server/GuestOrderClaimDriver
  */
 
-import { RegisterClass } from '@memberjunction/global';
-// Local fallback — see sql-guards.ts. Restore to '@memberjunction/global' once published.
-import { EscapeSQLString, RequireUUID } from './sql-guards.js';
+import { EscapeSQLString, RegisterClass } from '@memberjunction/global';
+import { RequireUUID } from './sql-guards.js';
 import { LogError, Metadata, RunView, UserInfo, IRunViewProvider } from '@memberjunction/core';
 import {
     BaseIdentityClaimDriver,

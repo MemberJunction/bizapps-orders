@@ -24,7 +24,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => ({
     },
 }));
 
-vi.mock('@mj-biz-apps/orders-entities', () => ({
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => ({
+    // The UUID guards live in orders-entities (sql-guards re-exports them), so they stay real.
+    ...(await importOriginal<typeof import('@mj-biz-apps/orders-entities')>()),
     LoadOrdersEngine: async () => undefined,
     OrdersEngine: {
         Instance: {
