@@ -150,7 +150,7 @@ A fully-comped order can produce **no** JEs. Accounting refuses an empty draft s
 `OrderPricingService` (shared package) is the one walk. Confirm and `Orders.PriceOrder` call the same service.
 
 1. **Resolve price** — price list / assignment / tier, or stated `UnitPrice` (direct entry wins).
-2. **Promotions** — codes and targets, stacking rules, authorized manual discounts.
+2. **Promotions** — codes and targets, stacking rules, authorized manual discounts. A promotion flagged `AppliesToRenewals` is presented again on automatic renewals (§8).
 3. **Charges** — shipping, handling, and tax as one mechanism (`ChargeType` + `GLAccountLink`).
 4. **Tax** — address + nexus + taxability + exemptions. Snapshot onto the line; we are not a tax engine.
 
@@ -177,6 +177,8 @@ Results persist as line price-component / charge / adjustment children so the bo
 - **Seats**: a subscription line's quantity is a seat count, recorded on the term as `SubscriptionTerm.Quantity` before proration scales the line's quantity to price a short first period. Entitlement grants and renewals read the term's count, never the line's. The quantity must be a whole number of at least 1, for every `BenefitModel`; ten staff can still be ten lines, each naming its person.
 - Annual billed annually = one order, deferred, recognized ratably (forward-dated JEs at booking).
 - Monthly billed monthly = one renewal Order Header per cycle (`Orders.SpawnRenewals` places Drafts at lead time; a human confirms).
+- **Renewal pricing** (`Orders.SpawnRenewals`): the prior term's undiscounted unit price, or a successor product's list price, plus any `RenewalIncreasePercent` when the new term crosses an anniversary. A first-term discount lapses unless `Subscription.CarryDiscountOnRenewal` is set.
+- **Promotions on renewal**: a promotion with `AppliesToRenewals` set carries into automatic renewals. The pass reads the codes recorded on the line that bought the expiring term and presents the flagged ones on the renewal order, where the ordinary promotion engine decides: the promotion must be Active, inside its `EffectiveFrom`/`EffectiveTo` dates on the renewal's order date, and pass its targets, minimums, limits and qualifier. A code that no longer applies is reported on the candidate (`UnusableRenewalPromotionCodes`), in the order notes and on the `RenewalOrderSpawned` event, and the renewal is placed at the undiscounted price. Preview runs the same engine without saving. Unflagged promotions apply to the purchase only.
 - Cancel is `Orders.CancelSubscription` (policy → reversal).
 - **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee, one per line. When `EventProduct.RequiresAttendeeInfo` is set, the order refuses to book unless each line of that event is quantity 1 with an attendee row, and checkout refuses to open a payment intent until each ticket has an attendee with an e-mail (`AttendeeRequirement.ts`). Reversals and bundle components are exempt. Capacity is **not** enforced on confirm.
 

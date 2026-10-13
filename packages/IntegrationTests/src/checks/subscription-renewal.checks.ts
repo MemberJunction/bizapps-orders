@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR31).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR34).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -52,6 +52,12 @@
  *   SR30  a monthly term that crosses no anniversary renews with no increase
  *
  *   SR31  a prorated 10-seat first term renews at 10 seats, not the line's prorated quantity (#589)
+ *   Promotions that carry into renewals (#289):
+ *   SR32  a promotion with AppliesToRenewals set discounts the renewal, at the renewal price the pass
+ *         wrote and without a concession hold; the preview, notes and event report it
+ *   SR33  a promotion without the flag does not carry: the renewal is at full price
+ *   SR34  a flagged promotion that is paused, or past its EffectiveTo, is reported unusable with the
+ *         reason, and the renewal is placed at full price
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -72,6 +78,7 @@ import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
     CreateProductPrice,
+    CreatePromotion,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -87,6 +94,7 @@ import {
     ORDER_COMPANY_POLICY_ENTITY,
     PRODUCT_CATEGORY_ENTITY,
     PRODUCT_ENTITY,
+    PROMOTION_ENTITY,
     SUBSCRIPTION_ENTITY,
 } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
@@ -118,6 +126,8 @@ interface RenewalOutput {
         IncreaseSource?: string;
         UnitPrice?: number;
         DiscountPct?: number;
+        RenewalPromotionCodes?: string[];
+        UnusableRenewalPromotionCodes?: Array<{ Code: string; Reason: string }>;
     }>;
     Placed: number;
     Skipped: number;
@@ -142,13 +152,20 @@ async function spawnRenewals(
 }
 
 /** Buy a subscription on Jan 1 and return its ID and first term. */
-async function buySubscription(ctx: IntegrationCheckContext, productKey: string, price: number, discountPct?: number) {
+async function buySubscription(
+    ctx: IntegrationCheckContext,
+    productKey: string,
+    price: number,
+    discountPct?: number,
+    promotionCodes?: string[],
+) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JAN_1,
         BillToOrganizationID: f.Customers.OrganizationID,
         Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct }],
+        PromotionCodes: promotionCodes,
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
 
@@ -1176,7 +1193,158 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(Number(renewed.Quantity), 10, 'term 2 records 10 seats');
             }),
     },
+    // ─── Promotions that carry into renewals (#289) ─────────────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR32',
+        Name: 'SR32: a promotion flagged AppliesToRenewals discounts the renewal',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const code = await renewalPromotion(ctx, { AppliesToRenewals: true });
+                const { OrderID, SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200, undefined, [code]);
+                AssertEqual(await lineDiscount(ctx, OrderID), 240, 'precondition: 20% off at purchase');
+                const asOf = daysBefore(Term.EndDate, 10);
+
+                const preview = (await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf, Preview: true })).Candidates[0];
+                AssertEqual(JSON.stringify(preview.RenewalPromotionCodes), JSON.stringify([code]), 'the preview reports it carries');
+                AssertEqual(preview.UnusableRenewalPromotionCodes?.length ?? 0, 0, 'the preview reports nothing unusable');
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Candidates[0]?.SkippedReason ?? out.Message}`);
+                const c = out.Candidates[0];
+                AssertEqual(JSON.stringify(c.RenewalPromotionCodes), JSON.stringify([code]), 'the candidate reports it carried');
+                AssertEqual(Number(c.UnitPrice), 1200, 'the renewal price is unchanged; the promotion is a discount on it');
+
+                const orderID = c.OrderID!;
+                const order = await TxOne<{ Status: string; Notes: string }>(
+                    ctx,
+                    `SELECT Status, Notes FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`,
+                );
+                AssertEqual(order.Status, 'Confirmed', 'confirmed, not held for a concession');
+                Assert(order.Notes.includes(`Promotion ${code} carried into this renewal.`), `the notes name it, got: ${order.Notes}`);
+
+                const line = await renewalLine(ctx, orderID);
+                AssertEqual(Number(line.UnitPrice), 1200, 'the line keeps the price the pass wrote');
+                AssertEqual(await lineDiscount(ctx, orderID), 240, '20% of 1200 off the renewal');
+                AssertEqual(Number((await termsOf(ctx, SubscriptionID))[1].Amount), 960, 'term 2 at the discounted price');
+
+                const adjustments = await TxQuery<{ Code: string }>(
+                    ctx,
+                    `SELECT pc.Code FROM ${ORDERS_SCHEMA}.OrderAdjustment oa
+                     JOIN ${ORDERS_SCHEMA}.PromotionCode pc ON pc.ID = oa.PromotionCodeID
+                     WHERE oa.OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(adjustments.length, 1, 'one adjustment, the confirm replacing the draft row rather than adding one');
+                AssertEqual(adjustments[0].Code, code, 'recorded against the code');
+
+                const event = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent
+                     WHERE SubscriptionID = '${SubscriptionID}' AND EventType = 'RenewalOrderSpawned'`,
+                );
+                const data = JSON.parse(event.EventData);
+                AssertEqual(JSON.stringify(data.RenewalPromotionCodes), JSON.stringify([code]), 'event: the code carried');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR33',
+        Name: 'SR33: a promotion without AppliesToRenewals does not carry into the renewal',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const code = await renewalPromotion(ctx, { AppliesToRenewals: false });
+                const { OrderID, SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200, undefined, [code]);
+                AssertEqual(await lineDiscount(ctx, OrderID), 240, 'precondition: 20% off at purchase');
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `expected one renewal: ${out.Candidates[0]?.SkippedReason ?? out.Message}`);
+                const c = out.Candidates[0];
+                AssertEqual(c.RenewalPromotionCodes, undefined, 'no code presented');
+                AssertEqual(c.UnusableRenewalPromotionCodes, undefined, 'nothing to report');
+
+                AssertEqual(await lineDiscount(ctx, c.OrderID!), 0, 'no discount on the renewal');
+                AssertEqual(Number((await termsOf(ctx, SubscriptionID))[1].Amount), 1200, 'term 2 at full price');
+                const adjustments = await TxQuery(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID = '${c.OrderID}'`);
+                AssertEqual(adjustments.length, 0, 'no adjustment on the renewal');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR34',
+        Name: 'SR34: a flagged promotion that is paused or out of its dates is reported, and the renewal is at full price',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const paused = await renewalPromotion(ctx, { AppliesToRenewals: true });
+                const expired = await renewalPromotion(ctx, { AppliesToRenewals: true });
+                const a = await buySubscription(ctx, 'SubRolling', 1200, undefined, [paused]);
+                const b = await buySubscription(ctx, 'SubRolling', 1200, undefined, [expired]);
+                AssertEqual(await lineDiscount(ctx, a.OrderID), 240, 'precondition: the paused one applied at purchase');
+                AssertEqual(await lineDiscount(ctx, b.OrderID), 240, 'precondition: the expired one applied at purchase');
+
+                // After the purchase: one promotion is paused, the other's window closes mid-term.
+                await upsertViaEntity(ctx, PROMOTION_ENTITY, await promotionIDFor(ctx, paused), { Status: 'Paused' });
+                await upsertViaEntity(ctx, PROMOTION_ENTITY, await promotionIDFor(ctx, expired), {
+                    EffectiveTo: new Date('2026-06-30T00:00:00Z'),
+                });
+
+                for (const [sub, code] of [
+                    [a, paused],
+                    [b, expired],
+                ] as const) {
+                    const asOf = daysBefore(sub.Term.EndDate, 10);
+                    const preview = (await spawnRenewals(ctx, { SubscriptionID: sub.SubscriptionID, AsOfDate: asOf, Preview: true })).Candidates[0];
+                    AssertEqual(preview.RenewalPromotionCodes?.length ?? 0, 0, `${code}: the preview says it does not carry`);
+                    AssertEqual(preview.UnusableRenewalPromotionCodes?.[0]?.Code, code, `${code}: the preview reports it unusable`);
+
+                    const out = await spawnRenewals(ctx, { SubscriptionID: sub.SubscriptionID, AsOfDate: asOf });
+                    AssertEqual(out.Placed, 1, `${code}: the renewal is still placed: ${out.Candidates[0]?.SkippedReason ?? out.Message}`);
+                    const c = out.Candidates[0];
+                    AssertEqual(c.RenewalPromotionCodes?.length ?? 0, 0, `${code}: nothing carried`);
+                    const unusable = c.UnusableRenewalPromotionCodes ?? [];
+                    AssertEqual(unusable.length, 1, `${code}: one code reported`);
+                    AssertEqual(unusable[0].Code, code, `${code}: the code is named`);
+                    AssertEqual(unusable[0].Reason, 'the promotion is not currently running', `${code}: with the engine's reason`);
+
+                    AssertEqual(await lineDiscount(ctx, c.OrderID!), 0, `${code}: no discount`);
+                    AssertEqual(Number((await termsOf(ctx, sub.SubscriptionID))[1].Amount), 1200, `${code}: term 2 at full price`);
+
+                    const notes = (await TxOne<{ Notes: string }>(ctx, `SELECT Notes FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${c.OrderID}'`)).Notes;
+                    Assert(notes.includes(`Promotion ${code} not applied: the promotion is not currently running.`), `${code}: the notes say why, got: ${notes}`);
+                    const event = await TxOne<{ EventData: string }>(
+                        ctx,
+                        `SELECT EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent
+                         WHERE SubscriptionID = '${sub.SubscriptionID}' AND EventType = 'RenewalOrderSpawned'`,
+                    );
+                    AssertEqual(JSON.parse(event.EventData).UnusableRenewalPromotionCodes?.[0]?.Code, code, `${code}: the event logs it`);
+                }
+            }),
+    },
 ];
+
+/** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
+async function renewalPromotion(ctx: IntegrationCheckContext, opts: { AppliesToRenewals: boolean }): Promise<string> {
+    const code = await CreatePromotion(ctx, { Value: 0.2 });
+    await upsertViaEntity(ctx, PROMOTION_ENTITY, await promotionIDFor(ctx, code), { AppliesToRenewals: opts.AppliesToRenewals });
+    return code;
+}
+
+/** The promotion a code belongs to. */
+async function promotionIDFor(ctx: IntegrationCheckContext, code: string): Promise<string> {
+    const row = await TxOne<{ PromotionID: string }>(
+        ctx,
+        `SELECT PromotionID FROM ${ORDERS_SCHEMA}.PromotionCode WHERE Code = '${code.replace(/[^A-Za-z0-9-]/g, '')}'`,
+    );
+    return row.PromotionID;
+}
+
+/** The total discount amount stamped on an order's lines. */
+async function lineDiscount(ctx: IntegrationCheckContext, orderID: string): Promise<number> {
+    const row = await TxOne<{ Discount: number }>(
+        ctx,
+        `SELECT ISNULL(SUM(DiscountAmount), 0) AS Discount FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`,
+    );
+    return Number(row.Discount);
+}
 
 /** Give the fixture's selling company a default terms row by code (rolled back with the check). */
 async function setCompanyDefaultTerms(ctx: IntegrationCheckContext, code: string): Promise<void> {
