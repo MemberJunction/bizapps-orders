@@ -64,3 +64,6 @@ export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 /** Subscription families — the bands of one subscription offering, per company (golive #276). */
 export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';
+
+/** What each instalment invoice billed each line, part by part (#681). */
+export const INSTALMENT_LINE_BILLING_ENTITY = 'MJ_BizApps_Orders: Instalment Line Billings';

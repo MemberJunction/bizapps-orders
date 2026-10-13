@@ -49,7 +49,8 @@ import {
 import { ReduceLineAmounts } from './AmountChangePlan.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
-import { EmitInstalmentInvoiceEntry, type InstalmentLineFacts, type InstalmentSibling } from './InstalmentInvoiceEntry.js';
+import { EmitInstalmentInvoiceEntry, type InstalmentBilledPart, type InstalmentLineFacts, type InstalmentSibling } from './InstalmentInvoiceEntry.js';
+import { BilledSoFar, ReadInstalmentLineBillings, RecordInstalmentLineBillings } from './InstalmentBilledSoFar.js';
 import { BeginInstalmentIssue, EndInstalmentIssue } from './instalmentIssueGuard.js';
 import { LoadInstalmentCashFacts } from './PaymentAllocationInputs.js';
 import { CompanySlices, DepositReleasedByCompany } from './PaymentScheduleBehavior.js';
@@ -264,22 +265,37 @@ export async function IssueInstalment(
         const pieces = slices
             .filter((s) => String(s.ID).toLowerCase() === String(row.ID).toLowerCase() && Number(s.Amount) !== 0)
             .sort((a, b) => companyOrder(a.CompanyID, orderCompany) - companyOrder(b.CompanyID, orderCompany) || a.CompanyID.localeCompare(b.CompanyID));
-        const billings: Array<{ CompanyID: string; Amount: number; Siblings: InstalmentSibling[]; Lines: InstalmentLineFacts[] }> = [];
+        const billings: Array<{
+            CompanyID: string;
+            Amount: number;
+            Siblings: InstalmentSibling[];
+            Lines: InstalmentLineFacts[];
+            BilledSoFar: number[];
+        }> = [];
         try {
+            // What the invoiced rows already billed (#681): this instalment slices what each line has left.
+            const recorded = await ReadInstalmentLineBillings(order.ID, provider, user);
             for (const piece of pieces) {
                 const company = String(piece.CompanyID);
-                const companyLines = (await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], company, invoiceDay)).map((l) =>
-                    ReduceLineAmounts(l, reductions),
-                );
+                const booked = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], company, invoiceDay);
+                const companyLines = booked.map((l) => ReduceLineAmounts(l, reductions));
                 if (!companyLines.length) continue;
+                const siblings = slices
+                    .filter((s) => String(s.CompanyID).toLowerCase() === company.toLowerCase())
+                    .sort((a, b) => Number(a.InstallmentNumber) - Number(b.InstallmentNumber))
+                    .map((r) => ({
+                        ID: r.ID,
+                        InstallmentNumber: Number(r.InstallmentNumber),
+                        Amount: Number(r.Amount),
+                        Status: r.Status,
+                        DocumentNumber: r.DocumentNumber,
+                    }));
                 billings.push({
                     CompanyID: company,
                     Amount: Number(piece.Amount),
-                    Siblings: slices
-                        .filter((s) => String(s.CompanyID).toLowerCase() === company.toLowerCase())
-                        .sort((a, b) => Number(a.InstallmentNumber) - Number(b.InstallmentNumber))
-                        .map((r) => ({ ID: r.ID, InstallmentNumber: Number(r.InstallmentNumber), Amount: Number(r.Amount), Status: r.Status })),
+                    Siblings: siblings,
                     Lines: companyLines,
+                    BilledSoFar: BilledSoFar(companyLines, booked, siblings, recorded),
                 });
             }
         } catch (err) {
@@ -319,6 +335,7 @@ export async function IssueInstalment(
             // (LinkedRecordID), so the others are found from it.
             let journalEntryID: string | null = null;
             const billedByLine = new Map<string, number>();
+            const billedParts: InstalmentBilledPart[] = [];
             for (const billing of billings) {
                 const result = await EmitInstalmentInvoiceEntry(
                     {
@@ -333,13 +350,17 @@ export async function IssueInstalment(
                         DepositApplied: released.get(billing.CompanyID.toLowerCase()) ?? 0,
                         Siblings: billing.Siblings,
                         Lines: billing.Lines,
+                        BilledSoFar: billing.BilledSoFar,
                     },
                     provider,
                     user,
                 );
                 journalEntryID = journalEntryID ?? result.JournalEntryID;
                 for (const [lineID, billed] of result.BilledByLine) billedByLine.set(lineID, billed);
+                billedParts.push(...result.BilledParts);
             }
+            // What this instalment billed, part by part, in the same transaction as the entry (#681).
+            await RecordInstalmentLineBillings(row.ID, billedParts, provider, user);
             if (journalEntryID) {
                 // Reloaded first: the rollup rewrote AmountPaid and Status when the row became
                 // billed (a fully prepaid row is Paid by now), and saving the stale copy would write

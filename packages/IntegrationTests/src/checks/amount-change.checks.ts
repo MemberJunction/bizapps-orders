@@ -17,6 +17,7 @@
  *   AC7   a credit on an invoice already sent: the credit memo credits it, posts its entry and un-bills the line
  *   AC8   billed as a whole: all of it is a credit memo on the order, whose balance falls by it
  *   AC9   a refund of a paid invoice's credit: recorded on that invoice, then paid with Orders.RefundPayment
+ *   AC10  two lines on one schedule, one lowered: the later instalments bill each line what it has left (#681)
  *
  * The checks run on today's date, so how much is already earned depends on the day: they assert the plan's
  * arithmetic against the term's own staged entries rather than fixed figures.
@@ -86,11 +87,22 @@ async function bookWhole(ctx: IntegrationCheckContext) {
   return { OrderID: orderID, Term: await termOf(ctx, orderID) };
 }
 
+/** Every term the order's lines bought, in line order. */
+async function termsOf(ctx: IntegrationCheckContext, orderID: string): Promise<Term[]> {
+  return TxQuery<Term>(ctx,
+    `SELECT st.ID, st.SubscriptionID, st.OrderLineID, st.StartDate, st.EndDate, st.Amount
+       FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+       JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+      WHERE ol.OrderHeaderID = '${orderID}'
+      ORDER BY ol.LineNumber`);
+}
+
 /**
  * A 1,200 annual membership dated 100 days ago and billed in four instalments of 300: the first due on the order
- * date, so confirm invoices it, and the other three still to come.
+ * date, so confirm invoices it, and the other three still to come. `prices` gives one membership line per price,
+ * billed together in four equal instalments.
  */
-async function bookByInstalment(ctx: IntegrationCheckContext) {
+async function bookByInstalment(ctx: IntegrationCheckContext, prices: number[] = [1200]) {
   const f = Fx();
   const orderDate = new Date(Date.now() - 100 * DAY);
   const due = (months: number) => {
@@ -101,7 +113,7 @@ async function bookByInstalment(ctx: IntegrationCheckContext) {
     CompanyID: f.CoA.ID,
     BillToOrganizationID: f.Customers.OrganizationID,
     OrderDate: new Date(`${iso(orderDate)}T00:00:00Z`),
-    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+    Lines: prices.map((UnitPrice) => ({ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice })),
   });
   Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ""}`);
   const orderID = draft.Order.ID as string;
@@ -112,7 +124,7 @@ async function bookByInstalment(ctx: IntegrationCheckContext) {
       CompanyID: f.CoA.ID,
       InstallmentNumber: n,
       DueDate: new Date(`${iso(due((n - 1) * 3))}T00:00:00Z`),
-      Amount: 300,
+      Amount: money(prices.reduce((t, p) => t + p, 0) / 4),
     }));
   }
   const order = await new Metadata().GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
@@ -124,7 +136,8 @@ async function bookByInstalment(ctx: IntegrationCheckContext) {
       WHERE OrderHeaderID = '${orderID}' ORDER BY InstallmentNumber`);
   Assert(rows[0].DocumentNumber != null, "instalment 1 fell due on the order date, so confirm invoiced it");
   Assert(rows.slice(1).every((r) => r.Status === "Scheduled"), "instalments 2 to 4 are still to come");
-  return { OrderID: orderID, Term: await termOf(ctx, orderID), InstalmentIDs: ids };
+  const terms = await termsOf(ctx, orderID);
+  return { OrderID: orderID, Term: terms[0], Terms: terms, InstalmentIDs: ids };
 }
 
 /** Every recognition entry linked to the term, with what it recognises (positive) and its date. */
@@ -424,6 +437,34 @@ export const AmountChangeChecks: NamedCheck[] = [
         rows = await scheduleOf(ctx, OrderID);
         AssertEqual(Number(rows[0].Balance), 0, "once refunded, the invoice is settled");
         AssertEqual(await orderBalance(ctx, OrderID), balanceBefore, "and the order is back where the payment left it");
+      }),
+  },
+  {
+    Id: "amount-change.AC10",
+    Name: "AC10: two lines on one schedule, one lowered: the later instalments bill each line what it has left",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // #681. Two 600 memberships in four 300 instalments; instalment 1 billed 150 of each. Line A lowered
+        // to 375 takes 225 off instalments 2 to 4. Slicing instalment 1 again against A's lowered 375 billed A
+        // 259.62 and B 415.38 of the rest, so A ended at 409.62 and B at 565.38.
+        await AcknowledgeAmendmentsWith(ctx);
+        const { Terms, InstalmentIDs } = await bookByInstalment(ctx, [600, 600]);
+        await grantAuthority(ctx, 100_000, 1);
+        const [lineA, lineB] = Terms.map((t) => t.OrderLineID);
+        AssertEqual(`${await billedToDate(ctx, lineA)}/${await billedToDate(ctx, lineB)}`, "150/150", "instalment 1 billed each line half its row");
+
+        const out = await amend(ctx, { SubscriptionTermID: Terms[0].ID, NewAmount: 375, ...REASON, ReasonCategory: "Dispute" });
+        Assert(out.Success, `recording failed: ${out.Message}`);
+        AssertEqual(out.Status, "Approved", "inside authority, approved on save");
+        AssertEqual(out.GrossReduction, 225, "the whole reduction comes off the instalments not yet invoiced");
+
+        for (const id of InstalmentIDs.slice(1)) {
+          const issued = await issue(ctx, id);
+          Assert(issued.Success, `the lowered instalment must invoice: ${issued.Message}`);
+        }
+        AssertEqual(await billedToDate(ctx, lineA), 375, "line A ends billed its lowered 375");
+        AssertEqual(await billedToDate(ctx, lineB), 600, "line B ends billed its 600");
       }),
   },
 ];

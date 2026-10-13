@@ -1,5 +1,5 @@
 /**
- * contract-reversal.checks.ts — the `contract-reversal` bundle (RV1–RV11).
+ * contract-reversal.checks.ts — the `contract-reversal` bundle (RV1–RV12).
  *
  * REVERSING A SCHEDULED ORDER IS NOT MIRRORING ITS BOOKING ENTRY (D92 §6). A company billed by
  * instalment never posted one — its value reaches the ledger an instalment at a time — so a
@@ -32,6 +32,8 @@
  *   RV11 a partial return lowers the uninvoiced instalments by the returned units' share of what
  *        they still bill, records it on the returning line, and every later instalment still
  *        invoices; the origin's balance is what its instalments bill, and the return's is its memo (#661)
+ *   RV12 two lines on one schedule, half of one returned: the later instalments bill each line what
+ *        it has left, not a re-split of the instalments already invoiced (#681)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -729,6 +731,75 @@ export const ContractReversalChecks: NamedCheck[] = [
                     8280,
                     '5,040 after the memo, plus the two lowered instalments',
                 );
+            }),
+    },
+    {
+        Id: 'contract-reversal.RV12',
+        Name: 'RV12: two lines, half of one returned: the later instalments bill each line what it has left',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // #681. Two 600 lines in four 300 instalments, two invoiced (300 of each line), then half of
+                // line A returned: its instalments lose 150, so 3 and 4 fall to 225. Slicing the invoiced
+                // instalments again against A's lowered 450 billed A 192.86 and B 257.14 of the 450 left;
+                // A has 150 left to bill and B 300.
+                const f = Fx();
+                const servicePeriod = { Start: '2026-07-01', End: '2027-06-30' };
+                const line = { ProductID: f.Products.DeferredA, Quantity: 10, UnitPrice: 60, ServicePeriodStart: servicePeriod.Start, ServicePeriodEnd: servicePeriod.End };
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    OrderDate: new Date(`${ORDER_DATE}T00:00:00Z`),
+                    Lines: [line, line],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const orderID = draft.Order.ID as string;
+                const ids: string[] = [];
+                for (const [n, due] of ['2026-07-01', '2026-10-01', '2027-01-01', '2027-04-01'].entries()) {
+                    ids.push(
+                        await createViaEntity(ctx, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, {
+                            OrderHeaderID: orderID,
+                            CompanyID: f.CoA.ID,
+                            InstallmentNumber: n + 1,
+                            DueDate: new Date(`${due}T00:00:00Z`),
+                            Amount: 300,
+                        }),
+                    );
+                }
+                const order = await new Metadata().GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+                Assert(await order.Load(orderID), 'header reload must succeed');
+                order.Status = 'Confirmed';
+                Assert(await order.Save(), `confirm: ${order.LatestResult?.CompleteMessage ?? ''}`);
+                Assert((await issue(ctx, ids[1])).Success, 'issue instalment 2');
+                const [lineA, lineB] = await lineTotals(ctx, orderID);
+                AssertEqual(`${Number(lineA.BilledToDate)}/${Number(lineB.BilledToDate)}`, '300/300', 'two instalments billed each line 300');
+
+                const back = await reverse(ctx, lineA.ID, f.Products.DeferredA, { orderDate: MONTH_FIVE, servicePeriod, quantity: 5 });
+                Assert(back.Saved, `the return must confirm: ${back.Message}`);
+                const returning = await TxOne<{ ScheduleReduction: number; CreditMemoAmount: number | null }>(
+                    ctx,
+                    `SELECT ScheduleReduction, CreditMemoAmount FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${back.Order.ID}'`,
+                );
+                AssertEqual(Number(returning!.ScheduleReduction), 150, 'half of the 300 line A still had to bill comes off');
+                const memo = Number(returning!.CreditMemoAmount ?? 0);
+
+                for (const id of ids.slice(2)) {
+                    const out = await issue(ctx, id);
+                    Assert(out.Success, `the lowered instalment must invoice: ${out.Message ?? ''}`);
+                }
+                const [a, b] = await lineTotals(ctx, orderID);
+                AssertEqual(Number(a.BilledToDate), cents(300 - memo + 150), 'line A: 300 billed, less its memo, plus the 150 it had left');
+                AssertEqual(Number(b.BilledToDate), 600, 'line B: billed its whole 600, no more and no less');
+
+                const recorded = await TxQuery<{ OrderLineID: string; Amount: number }>(
+                    ctx,
+                    `SELECT b.OrderLineID, b.Amount FROM ${ORDERS_SCHEMA}.InstalmentLineBilling b
+                       JOIN ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule s ON s.ID = b.OrderHeaderPaymentScheduleID
+                      WHERE s.OrderHeaderID = '${orderID}' AND b.Part = 'Net'`,
+                );
+                const byLine = (id: string) => sum(recorded.filter((r) => r.OrderLineID.toLowerCase() === id.toLowerCase()));
+                AssertEqual(byLine(lineA.ID), 450, 'the four invoices recorded line A at its 600 less the 150 returned');
+                AssertEqual(byLine(lineB.ID), 600, 'and line B at its 600');
             }),
     },
 ];
