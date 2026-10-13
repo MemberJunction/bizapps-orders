@@ -16,7 +16,14 @@
  */
 import { describe, it, expect } from 'vitest';
 import { NetAfterDiscount } from '@mj-biz-apps/orders-entities';
-import { RemainingReturnable, ValidateReversal, InheritedTerms, MirroredTaxCharges, OriginExactAmount } from '../ReversalBehavior.js';
+import {
+    RemainingReturnable,
+    ValidateReversal,
+    InheritedTerms,
+    MirroredTaxCharges,
+    OriginExactAmount,
+    RefreshedDiscountAmount,
+} from '../ReversalBehavior.js';
 
 const origin = (over: Partial<Parameters<typeof ValidateReversal>[1]> = {}) => ({
     ID: 'origin-1',
@@ -275,6 +282,48 @@ describe('InheritedTerms — a Flat price returns the amount booked, not quantit
         const promoted = origin({ Quantity: 3, UnitPrice: 100, DiscountAmount: 10 });
         const slices = [0, 1, 2].map((before) => InheritedTerms(promoted, -1, before).DiscountAmount);
         expect(slices).toEqual([3.33, 3.34, 3.33]);
+    });
+});
+
+describe('RefreshedDiscountAmount — a draft return re-shares the discount when its quantity changes (#668)', () => {
+    // A line sold 4 × 100 less a 50 order-level promotion: 12.50 of discount per unit.
+    const promoted = origin({ Quantity: 4, UnitPrice: 100, DiscountAmount: 50 });
+    const share = (quantity: number): number => InheritedTerms(promoted, quantity).DiscountAmount;
+    const base = { SetThisSave: false, MoneyLocked: false };
+
+    it('fills a blank line with its share', () => {
+        expect(RefreshedDiscountAmount({ ...base, Stored: 0, PreviousShare: null, CurrentShare: share(-4) })).toBe(50);
+        expect(RefreshedDiscountAmount({ ...base, Stored: null, PreviousShare: null, CurrentShare: share(-4) })).toBe(50);
+    });
+
+    it('re-shares an inherited discount when the quantity drops from 4 to 2', () => {
+        expect(RefreshedDiscountAmount({ ...base, Stored: 50, PreviousShare: share(-4), CurrentShare: share(-2) })).toBe(25);
+    });
+
+    it('re-shares when cumulative rounding moved the previous share by a cent', () => {
+        // 10.00 over 3 units: the middle unit takes 3.34, the others 3.33.
+        const thirds = origin({ Quantity: 3, UnitPrice: 100, DiscountAmount: 10 });
+        const stored = InheritedTerms(thirds, -1, 1).DiscountAmount;
+        const previous = InheritedTerms(thirds, -1, 0).DiscountAmount;
+        expect(stored).toBe(3.34);
+        expect(previous).toBe(3.33);
+        expect(RefreshedDiscountAmount({ ...base, Stored: stored, PreviousShare: previous, CurrentShare: 6.67 })).toBe(6.67);
+    });
+
+    it('keeps a discount the caller set in an earlier save after the quantity changes', () => {
+        expect(RefreshedDiscountAmount({ ...base, Stored: 30, PreviousShare: share(-4), CurrentShare: share(-2) })).toBe(30);
+    });
+
+    it('keeps a discount the caller set in this save', () => {
+        expect(
+            RefreshedDiscountAmount({ ...base, SetThisSave: true, Stored: 30, PreviousShare: share(-4), CurrentShare: share(-2) }),
+        ).toBe(30);
+    });
+
+    it('does not re-share once the money is locked', () => {
+        expect(
+            RefreshedDiscountAmount({ ...base, MoneyLocked: true, Stored: 50, PreviousShare: share(-4), CurrentShare: share(-2) }),
+        ).toBe(50);
     });
 });
 
