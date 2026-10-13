@@ -73,6 +73,11 @@
  *   CS33      a tier that requires sign-off holds a concession within the requester's authority Pending, for
  *             someone other than the requester
  *
+ * An approved Seats concession adds its seats to the term (#686):
+ *
+ *   CS35      approved on a booked term, the term's seat count rises by the added seats; approved on a draft's line,
+ *             confirm counts them with the seats bought
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -1563,6 +1568,43 @@ export const ConcessionChecks: NamedCheck[] = [
         const started = await amend({ ...referral, SubscriptionTermID: renewed.ID, NewEndDate: daysAfter(overEnd, 30), Preview: true });
         Assert(!started.Success && /a renewed term that has not started/.test(started.Message ?? ""),
           `a referral's time must not extend a renewed term the customer is already in: ${started.Message}`);
+      }),
+  },
+  {
+    Id: "concessions.CS35",
+    Name: "CS35: an approved Seats concession adds its seats to the term, booked or not yet booked",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+        await grantAuthority(ctx, { maxValue: 100000 });
+        const seatsOf = async (lineID: string) =>
+          Number((await TxOne<{ Quantity: number }>(ctx,
+            `SELECT Quantity FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE OrderLineID = '${lineID}'`)).Quantity);
+
+        // Booked: the term already exists, and the approval raises it.
+        const booked = await bookTerm(ctx, 1200);
+        const bookedLine = await TxOne<{ OrderLineID: string }>(ctx,
+          `SELECT OrderLineID FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID = '${booked.Term.ID}'`);
+        AssertEqual(await seatsOf(bookedLine.OrderLineID), 1, "the term starts with the seat bought");
+        const onBooked = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: bookedLine.OrderLineID, AddedQuantity: 2 });
+        Assert(onBooked.Saved, `recording failed: ${onBooked.Message}`);
+        AssertEqual(onBooked.Entity.Status, "Approved", "within authority it is Approved on save");
+        AssertEqual(await seatsOf(bookedLine.OrderLineID), 3, "the term counts the added seats");
+
+        // Draft: no term yet; confirm counts the approved seats with the ones bought.
+        const f = Fx();
+        const draft = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 2, UnitPrice: 1200 }],
+        });
+        Assert(await draft.Order.Save(), `the draft did not save: ${draft.Order.LatestResult?.CompleteMessage}`);
+        const onDraft = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: draft.Lines[0].ID, AddedQuantity: 1 });
+        Assert(onDraft.Saved && onDraft.Entity.Status === "Approved", `recording failed: ${onDraft.Message}`);
+        draft.Order.Status = "Confirmed";
+        Assert(await draft.Order.Save(), `the confirm failed: ${draft.Order.LatestResult?.CompleteMessage}`);
+        AssertEqual(await seatsOf(draft.Lines[0].ID), 3, "two bought and one conceded");
       }),
   },
 ];

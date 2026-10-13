@@ -30,6 +30,10 @@
  * are `CreditMemoAmount` and `CreditMemoNumber` when the instalments cannot absorb the whole reduction (#662): the
  * approved change is that credit memo, and the order's balance subtracts it too.
  *
+ * AN APPROVED SEATS CONCESSION ADDS ITS SEATS TO THE TERM (#686). The line's term counts them from the approval, its
+ * PerUnit grants follow, and the renewal buys them at the full price (./SeatAddition.ts). A line on a draft order has
+ * no term yet; confirm counts its approved Seats concessions when it creates the term.
+ *
  * AN APPROVED TERMS CONCESSION CHANGES A CONFIRMED ORDER'S PAYMENT TERMS (#309). It records the prior and new
  * terms, and its value is the change in days to payment rather than a currency figure. It always goes to
  * approval, whatever the requester's authority, and the requester cannot decide it even when they hold the
@@ -77,6 +81,7 @@
  *   READS:  ./ConcessionGate.ts (authority, rule, line price) · Subscription Terms · Order Lines
  *   TASKS:  ./ConcessionApprovalTask.ts (raise, close) · ./ConcessionApprovalListener.ts (decide from task)
  *   APPLY:  ./TermExtension.ts (a Duration concession reaching Approved)
+ *           ./SeatAddition.ts (a Seats concession reaching Approved)
  *           ./AmountChange.ts (a Price concession with NewAmount reaching Approved)
  *           ./PaymentTermsChange.ts (a Terms concession reaching Approved)
  *           ./TermShift.ts (a Shift concession reaching Approved)
@@ -137,6 +142,7 @@ import { OrdersSettings } from './OrdersSettings.js';
 import { RequireUUID } from './sql-guards.js';
 import { ApplyTermExtension, AsDay, CheckTermExtension, IsoDay, type ApprovedDurationConcession, type CheckedTermExtension } from './TermExtension.js';
 import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftConcession } from './TermShift.js';
+import { ApplySeatAddition, CheckSeatAddition } from './SeatAddition.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
@@ -227,6 +233,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const changingTerms = this.DeliveryForm === 'Terms' && this.Status === 'Approved' && deciding;
         // An approved Shift concession moves its term the same way (#507).
         const shifting = this.DeliveryForm === 'Shift' && this.Status === 'Approved' && (recording || deciding);
+        // An approved Seats concession adds its seats to the line's term the same way (#686).
+        const addingSeats = this.DeliveryForm === 'Seats' && this.Status === 'Approved' && (recording || deciding);
         // An approved amount change lowers its term in the same transaction (#506).
         const changingAmount = this.IsAmountChange && this.Status === 'Approved' && (recording || deciding);
         // A decision made through the task leaves the task to the tasks app, which closes it itself.
@@ -247,13 +255,14 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 return false;
             }
         }
-        if (extending || changingTerms || shifting || changingAmount || closing || acknowledging) {
+        if (extending || changingTerms || shifting || addingSeats || changingAmount || closing || acknowledging) {
             return this.withApprovalTask(recording ? 'create' : 'update', () => super.Save(options), async (ctx) => {
                 // Closed first: closing completes every open task linked to the concession, and the acknowledgment
                 // raised below must stay open.
                 if (closing) await CloseConcessionTasks(this.ID, this.OrderHeaderID, closing, ctx);
                 if (extending) await ApplyTermExtension(this.asApprovedExtension(), ctx);
                 if (shifting) await ApplyTermShift(this.asApprovedShift(), ctx);
+                if (addingSeats) await ApplySeatAddition({ OrderLineID: this.OrderLineID!, AddedQuantity: Number(this.AddedQuantity) }, ctx);
                 if (acknowledging) await RaiseConcessionAcknowledgment(this.asApprovedFacts(), ctx);
                 if (changingAmount) {
                     const applied = await ApplyAmountChange(this.asApprovedAmountChange(), ctx);
@@ -832,10 +841,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
     private async valueSeats(user: UserInfo): Promise<ConcessionValuation | string> {
         const added = Number(this.AddedQuantity ?? 0);
-        if (!(added > 0)) return 'A Seats concession must add a positive quantity.';
+        // Whole seats, as confirm counts them: the added seats join the term's count (#686).
+        if (!Number.isInteger(added) || added <= 0) return 'A Seats concession must add a whole, positive number of seats.';
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
         this.OrderHeaderID = line.OrderHeaderID;
+        const blocked = await CheckSeatAddition({ OrderLineID: line.ID, AddedQuantity: added }, { Provider: this.provider(), User: user });
+        if (blocked) return blocked;
         return ConcessionValue({ Form: 'Seats', UnitPrice: Number(line.UnitPrice), AddedQuantity: added });
     }
 

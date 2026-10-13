@@ -106,7 +106,12 @@ import { LowerInstalments } from './AmountChange.js';
 import { PlanReduction } from './AmountChangePlan.js';
 import { OrderStillToBill, ReturnScheduleReduction } from './ReversalScheduleReduction.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, SUBSCRIPTION_FAMILY_ENTITY } from './entity-names.js';
+import {
+    ORDER_CONCESSION_ENTITY,
+    ORDER_HEADER_ENTITY,
+    ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+    SUBSCRIPTION_FAMILY_ENTITY,
+} from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
 import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ReadStatedTaxCharges, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
@@ -3658,6 +3663,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser as UserInfo,
         );
 
+        // Seats a concession added at no charge while the order was a draft (#686). The term counts
+        // them with the seats bought, so grants and renewals do too.
+        const conceded = await this.approvedSeatAdditions(subLines.map((s) => s.line.ID));
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
             // Before anything else reads the quantity: `prepareLines` prorates it after this pass,
@@ -3832,8 +3841,33 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
                 RequestedStart: requestedStart,
-                Seats: seats.Seats,
+                Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
+        }
+        return out;
+    }
+
+    /** Per line, the seats its approved Seats concessions added. A line not yet saved has none. */
+    private async approvedSeatAdditions(lineIDs: Array<string | null | undefined>): Promise<Map<string, number>> {
+        const out = new Map<string, number>();
+        const ids = lineIDs.filter((id): id is string => !!id);
+        if (!ids.length) return out;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ OrderLineID: string; AddedQuantity: number | null }>(
+            {
+                EntityName: ORDER_CONCESSION_ENTITY,
+                ExtraFilter:
+                    `OrderLineID IN (${RequireUUIDs(ids, 'OrderLineID').map((id) => `'${id}'`).join(',')}) ` +
+                    `AND DeliveryForm = 'Seats' AND Status = 'Approved'`,
+                Fields: ['OrderLineID', 'AddedQuantity'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        for (const c of res?.Results ?? []) {
+            const key = c.OrderLineID.toLowerCase();
+            out.set(key, (out.get(key) ?? 0) + Number(c.AddedQuantity ?? 0));
         }
         return out;
     }
