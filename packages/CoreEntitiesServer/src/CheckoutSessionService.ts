@@ -94,6 +94,7 @@ const CHECKOUT_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distrib
 const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
+const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
@@ -3042,7 +3043,25 @@ export class CheckoutSessionService {
             return { Attempted: false, Booked: false };
         }
         const due = Math.round((total - Number(order.AmountPaid ?? 0)) * 100) / 100;
+        // A renewal order paid through the update-card link (#289). Null for a checkout's own order.
+        const renewal = await this.renewalOrderFor(session, contextUser);
         if (!(due > 0.005)) {
+            // A link payment can land on a renewal another payment already settled: a retry charge
+            // on the old card, or the same link paid from a second tab. The gateway has the money and
+            // nothing books it, so a person must refund it or apply it.
+            if (renewal && contextUser) {
+                const unbooked = await this.unbookedSettledIntentAmount(session.PaymentIntentID, contextUser);
+                if (unbooked > 0.005) {
+                    return this.captureFailed(
+                        order.ID,
+                        `the gateway took ${unbooked.toFixed(2)} through the update-card link, but renewal ${order.OrderNumber} was already paid; refund it or apply it as credit`,
+                        false,
+                        contextUser,
+                        session.ID,
+                        null,
+                    );
+                }
+            }
             // Paid, possibly by another path after an earlier capture attempt failed. A record
             // left Failed or Running would keep the session in the review queue.
             await CheckoutStepLog.CloseIfOpen(session.ID, 'Capture', contextUser);
@@ -3114,8 +3133,11 @@ export class CheckoutSessionService {
                     PaymentIntentID: intent.ID,
                     Amount: due,
                     ReceivingCompanyID: order.CompanyID,
+                    // A renewal order names its subscription's holder organization and beneficiary
+                    // person both, and a capture with two payers is refused as ambiguous. The person
+                    // paid through the link, so the payment is theirs, as the renewal charge does.
                     BillToPersonID: order.BillToPersonID ?? null,
-                    BillToOrganizationID: order.BillToOrganizationID ?? null,
+                    BillToOrganizationID: renewal && order.BillToPersonID ? null : order.BillToOrganizationID ?? null,
                     TenderCode: tenderCode,
                     Allocations: [{ OrderHeaderID: order.ID, Amount: due }],
                     PaymentDetail: intent.PaymentProviderID
@@ -3139,13 +3161,23 @@ export class CheckoutSessionService {
                 return this.captureFailed(order.ID, detail, isCaptureRefusalRetryable(codes), contextUser, session.ID, step);
             }
             await CheckoutStepLog.Succeed(step);
+            // A link payment opened for more than is now owed (part-paid since): the excess has
+            // moved too, and only a person can refund or apply it.
+            const excess = Math.round((Number(intent.Amount ?? 0) - due) * 100) / 100;
+            if (renewal && excess > 0.005) {
+                void raiseCheckoutCaptureTerminalAlert(
+                    order.ID,
+                    session.ID,
+                    `the update-card link took ${excess.toFixed(2)} more than renewal ${order.OrderNumber} owed; refund it or apply it as credit`,
+                    contextUser,
+                );
+            }
             // The money has moved; now keep the card for any subscription that renews on its own.
             // Fail-soft by contract, so this cannot turn a booked capture into a failed one.
             if (intent.PaymentProviderID && intent.ProviderIntentID) {
                 // A renewal order paid through the update-card link replaces the subscription's
                 // renewal card with the one just used (#289); a checkout's own order fills new
                 // subscriptions that have none.
-                const renewal = await this.renewalOrderFor(session, contextUser);
                 await SaveCheckoutInstrumentForRenewals(
                     {
                         OrderHeaderID: order.ID,
@@ -3166,6 +3198,30 @@ export class CheckoutSessionService {
             const msg = err instanceof Error ? err.message : String(err);
             return this.captureFailed(order.ID, msg, true, contextUser, session.ID, step);
         }
+    }
+
+    /**
+     * The amount of a settled intent no payment books, or 0. Read when a renewal order is already
+     * paid, to tell money the link took twice from a replay of a payment already booked.
+     */
+    private static async unbookedSettledIntentAmount(paymentIntentID: string, contextUser: UserInfo): Promise<number> {
+        const md = new Metadata();
+        const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
+        if (!(await intent.Load(paymentIntentID))) return 0;
+        if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) await this.refreshIntentFromGateway(intent, contextUser);
+        if (intent.Status !== 'Succeeded') return 0;
+        const payments = await new RunView().RunView<{ ID: string }>(
+            {
+                EntityName: PAYMENT_HEADER_ENTITY,
+                ExtraFilter: `PaymentIntentID = '${RequireUUID(intent.ID, 'PaymentIntentID')}' AND Status <> 'Failed'`,
+                Fields: ['ID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            contextUser,
+        );
+        if (!payments.Success) throw new Error(`Could not read the payments of intent ${intent.ID}: ${payments.ErrorMessage}`);
+        return (payments.Results ?? []).length ? 0 : Number(intent.Amount ?? 0);
     }
 
     private static async captureFailed(
