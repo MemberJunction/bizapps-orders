@@ -93,7 +93,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
     'order-booking': 30,
     'revenue-recognition': 8,
-    subscriptions: 32,
+    subscriptions: 33,
     'subscription-cancellation': 11,
     'subscription-renewal': 48,
     'payments-rollups': 9,

@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB32).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB33).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -37,8 +37,10 @@
  *   SB27  two lines of one ExtendExisting product on ONE order make one subscription with contiguous terms
  *   SB28  two lines of one RejectDuplicate product on ONE order refuse the whole confirm
  *   SB29  two such lines on an order after two earlier extensions take the next two term numbers, in sequence
- *   SB30  a subscription bought at quantity 10 records 10 seats on its term, prorated or not (#589)
- *   SB31  a fractional quantity is refused; a one-person type records more than one seat on its term
+ *   SB30  running a band alongside needs a reason; the reason reaches a band inside a bundle (#511)
+ *   SB31  a subscription bought at quantity 10 records 10 seats on its term, prorated or not (#589)
+ *   SB32  a fractional quantity is refused; a one-person type records more than one seat on its term
+ *   SB33  a confirmed subscription line keeps its subscription link and its term's service period
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -1281,6 +1283,57 @@ export const SubscriptionChecks: NamedCheck[] = [
                 Assert(seats.Saved, `two seats on one line of a one-person type confirm: ${seats.Message}`);
                 const [seatTerm] = await termsForOrder(ctx, seats.Order.ID as string);
                 AssertEqual(Number(seatTerm.Quantity), 2, 'the term records both seats');
+            }),
+    },
+    {
+        // Booking writes the line again after the subscription step has linked it: the journal entry
+        // stamp and the running totals. Both used to save a copy loaded before the link existed, and
+        // the full-row update put SubscriptionID and the service period back as they were.
+        Id: 'subscriptions.SB33',
+        Name: "SB33: a confirmed subscription line keeps its subscription link and its term's service period",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const line = { ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 };
+                const result = await buySubscription(ctx, 'SubRolling', 1200, { Lines: [line, { ...line }] });
+                Assert(result.Saved, `confirm failed: ${result.Message}`);
+
+                const rows = await TxQuery<{
+                    ID: string;
+                    SubscriptionID: string | null;
+                    ServicePeriodStart: string | null;
+                    ServicePeriodEnd: string | null;
+                    JournalEntryID: string | null;
+                    TermSubscriptionID: string;
+                    TermStart: string;
+                    TermEnd: string;
+                }>(
+                    ctx,
+                    `SELECT ol.ID, ol.SubscriptionID, ol.ServicePeriodStart, ol.ServicePeriodEnd, ol.JournalEntryID,
+                            st.SubscriptionID AS TermSubscriptionID, st.StartDate AS TermStart, st.EndDate AS TermEnd
+                     FROM ${ORDERS_SCHEMA}.OrderLine ol
+                     JOIN ${ORDERS_SCHEMA}.SubscriptionTerm st ON st.OrderLineID = ol.ID
+                     WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                AssertEqual(rows.length, 2, 'one term per line');
+                for (const r of rows) {
+                    Assert(r.JournalEntryID != null, 'the line was stamped with its booking entry');
+                    Assert(
+                        SameID(r.SubscriptionID, r.TermSubscriptionID),
+                        `the line links to its term's subscription, got ${r.SubscriptionID}`,
+                    );
+                    Assert(r.ServicePeriodStart != null && r.ServicePeriodEnd != null, 'the line carries a service period');
+                    AssertEqual(isoDate(r.ServicePeriodStart!), isoDate(r.TermStart), "the line's period starts with its term");
+                    AssertEqual(isoDate(r.ServicePeriodEnd!), isoDate(r.TermEnd), "the line's period ends with its term");
+
+                    // The order the caller still holds says the same, and has nothing left to write.
+                    const held = result.Order.Lines.Items.find((l) => SameID(l.ID, r.ID));
+                    Assert(held != null, 'the confirmed line is in the order the caller holds');
+                    Assert(SameID(held!.SubscriptionID, r.SubscriptionID), 'the held line carries the subscription link');
+                    Assert(SameID(held!.JournalEntryID, r.JournalEntryID), 'the held line carries the booking entry');
+                    Assert(!held!.Dirty, 'the held line is not dirty after the confirm');
+                }
             }),
     },
 ];

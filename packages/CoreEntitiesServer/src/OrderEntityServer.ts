@@ -875,6 +875,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 const reversals = await this.loadReversalContexts(lines);
                 const subs = await this.materializeSubscriptions(lines, decisions, reversals, options);
                 await this.bookLines(lines, options, subs, scheduleRows, reversals);
+                this.adoptBookedLineState(lines);
 
                 // ISSUE WHAT IS ALREADY DUE (D92). A company billed by instalment books no value at
                 // confirm — except the instalments whose due date has already arrived, usually the
@@ -907,6 +908,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // (#661). Before the cancel below, which withdraws them all on a whole-order return:
                 // the reductions are measured against the instalments as they stand.
                 await this.reduceOriginSchedules(lines, reversals, options);
+                this.adoptBookedLineState(lines);
 
                 // A reversed order stops billing (D92 §6). Inside, for the same reason as the two
                 // above: an order that credits the customer back and keeps invoicing them every
@@ -2258,25 +2260,32 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * own negative value: the customer was credited the memo, and what the returned units had not yet
      * been invoiced for comes off the origin's instalments instead.
      */
-    private async stampCreditMemos(memos: Map<string, number>, options?: EntitySaveOptions): Promise<void> {
+    private async stampCreditMemos(
+        memos: Map<string, number>,
+        /** The lines booking read, as `stampJournalEntryIDs` left them. */
+        booked: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         for (const [lineID, memo] of memos) {
-            await this.stampReturnLine(lineID, (line) => (line.CreditMemoAmount = memo), 'the credit memo it booked', provider, options);
+            await this.stampReturnLine(lineID, booked, (line) => (line.CreditMemoAmount = memo), 'the credit memo it booked', provider, options);
         }
     }
 
     /**
-     * Write one returning line of this order, on the copy booking stamped its journal entry on: this.Lines
-     * when it holds the line, else a fresh load. Writing any other copy would send its stale JournalEntryID back.
+     * Write one returning line of this order, on the copy booking read and stamped its journal entry and
+     * subscription link on (`booked`), else a fresh load. MJ's update writes every column, so writing any
+     * other copy, including the one in `this.Lines`, would send its stale JournalEntryID and SubscriptionID back.
      */
     private async stampReturnLine(
         lineID: string,
+        booked: mjBizAppsOrdersOrderLineEntity[],
         set: (line: mjBizAppsOrdersOrderLineEntity) => void,
         what: string,
         provider: IMetadataProvider,
         options?: EntitySaveOptions,
     ): Promise<void> {
-        let current = this.Lines.Items.find((l) => UUIDsEqual(l.ID, lineID));
+        let current = booked.find((l) => UUIDsEqual(l.ID, lineID));
         if (!current) {
             current = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, this.ContextCurrentUser as UserInfo);
             if (!(await current.Load(lineID))) throw new Error(`Return line ${lineID} could not be reloaded to record ${what}.`);
@@ -2345,7 +2354,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             for (const { line, gross } of reductions) {
-                await this.stampReturnLine(line.ID, (l) => (l.ScheduleReduction = gross), "what it took off its origin's instalments", provider, options);
+                await this.stampReturnLine(line.ID, lines, (l) => (l.ScheduleReduction = gross), "what it took off its origin's instalments", provider, options);
             }
         }
     }
@@ -3176,7 +3185,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // skipped rather than the order being refused for having no ledger impact. A return that
         // credits nothing still records that it credited nothing.
         if (drafts.length === 0) {
-            await this.stampCreditMemos(creditMemos, options);
+            await this.stampCreditMemos(creditMemos, lines, options);
             return;
         }
         const result = await this.submitDrafts(drafts, provider, user);
@@ -3197,8 +3206,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
         }
 
-        await this.stampJournalEntryIDs(drafts, result, options);
-        await this.stampCreditMemos(creditMemos, options);
+        await this.stampJournalEntryIDs(lines, drafts, result, options);
+        await this.stampCreditMemos(creditMemos, lines, options);
 
         // ADVANCE BOTH TOTALS IN THIS TRANSACTION (D92) — the totals are the ledger's summary of
         // itself, and a separate writer is how they drift from the journal lines they summarise.
@@ -3214,7 +3223,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const billed = billedAtBooking.get(orderLineID) ?? 0;
             const recognized = recognizedAtBooking.get(orderLineID) ?? 0;
             if (billed === 0 && recognized === 0) continue;
-            const line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, orderLineID));
+            // The copy booking read and the subscription step saved, never `this.Lines`: that copy
+            // predates both, and a full-row save of it writes their columns back as they were.
+            const line = lines.find((l) => UUIDsEqual(l.ID, orderLineID));
             const target = line ?? (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user));
             // Not on this order: a reversal's credit memo un-bills the ORIGIN line (D92 §6).
             if (!line) MarkAsOrdersOwnWrite(target);
@@ -3274,6 +3285,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * schedule, not to the line's booking pointer, so they are skipped here.
      */
     private async stampJournalEntryIDs(
+        /** The lines booking read, as `materializeSubscriptions` left them. */
+        lines: mjBizAppsOrdersOrderLineEntity[],
         drafts: OrderLineDraft[],
         result: CreateJournalEntriesResult,
         options?: EntitySaveOptions,
@@ -3290,9 +3303,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
-            // Prefer the in-memory line from this.Lines (already an instantiated IS-A subclass if applicable),
-            // falling back to loading through the entity's OWN provider to see uncommitted transactions.
-            let line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, drafts[i].OrderLineID));
+            // THE COPY BOOKING READ, not the one in `this.Lines`. `materializeSubscriptions` set the
+            // subscription link and the term's service period on this copy and saved it; the copy in
+            // `this.Lines` was loaded before that and carries neither. MJ's update writes every
+            // column, so saving that copy here put the link back to NULL on every subscription line.
+            // Falls back to loading through the entity's OWN provider to see uncommitted transactions.
+            let line = lines.find((l) => UUIDsEqual(l.ID, drafts[i].OrderLineID));
             if (!line) {
                 const loadedLine = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
                     ORDER_LINE_ENTITY,
@@ -3340,6 +3356,36 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 throw new Error(
                     `Failed to stamp JournalEntryID on order line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`,
                 );
+            }
+        }
+    }
+
+    /**
+     * Bring the in-memory lines up to what booking wrote, without marking them dirty.
+     *
+     * Booking writes through the copies it read (`loadLinesForBooking`), so the lines in `this.Lines`
+     * miss the subscription link, the term's service period, the booking entry and the running
+     * totals. The caller keeps this object after the confirm; a line left stale there reads as
+     * unbooked, and one left dirty would write the stale values back on the next save.
+     */
+    private adoptBookedLineState(booked: mjBizAppsOrdersOrderLineEntity[]): void {
+        const fields = [
+            'SubscriptionID',
+            'ServicePeriodStart',
+            'ServicePeriodEnd',
+            'JournalEntryID',
+            'BilledToDate',
+            'RecognizedToDate',
+            'CreditMemoAmount',
+            'ScheduleReduction',
+        ] as const;
+        for (const line of this.Lines.Items) {
+            const persisted = booked.find((b) => UUIDsEqual(b.ID, line.ID));
+            if (!persisted) continue;
+            for (const name of fields) {
+                line.Set(name, persisted.Get(name));
+                // `Set` routes an inherited field to the IS-A parent, so both copies take the new baseline.
+                for (let e: BaseEntity | null = line; e; e = e.ISAParent) e.GetFieldByName(name)?.ResetOldValue();
             }
         }
     }
