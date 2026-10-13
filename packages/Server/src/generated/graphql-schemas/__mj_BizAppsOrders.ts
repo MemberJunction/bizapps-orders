@@ -5894,6 +5894,16 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Float, {nullable: true, description: `For an approved amount change, the reduction and its tax taken off the order's instalments not yet invoiced. The order's balance and its schedule check subtract it from the booked lines. Set by the server when the change is applied.`}) 
     ScheduleReduction?: number;
         
+    @Field(() => Float, {nullable: true, description: `For an approved amount change, the reduction and its tax credited on a credit memo: the part the instalments not yet invoiced could not absorb. The order's balance subtracts it. Set by the server when the change is approved.`}) 
+    CreditMemoAmount?: number;
+        
+    @Field({nullable: true, description: `The credit memo's document number: the order number, then CM and the memo's sequence on that order. Set with CreditMemoAmount and never reused.`}) 
+    @MaxLength(50)
+    CreditMemoNumber?: string;
+        
+    @Field(() => Boolean, {nullable: true, description: `For an amount change about a paid invoice: the customer asked for the credit back rather than off the next instalment. The approval records the credit; finance refunds it from the order's payments.`}) 
+    RefundRequested?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -6022,6 +6032,15 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field(() => Float, { nullable: true })
     ScheduleReduction: number | null;
 
+    @Field(() => Float, { nullable: true })
+    CreditMemoAmount: number | null;
+
+    @Field({ nullable: true })
+    CreditMemoNumber: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RefundRequested?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6121,6 +6140,15 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field(() => Float, { nullable: true })
     ScheduleReduction?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    CreditMemoAmount?: number | null;
+
+    @Field({ nullable: true })
+    CreditMemoNumber?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    RefundRequested?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -6274,7 +6302,7 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
     @Field(() => Float, {nullable: true, description: `Trigger-maintained: payments named to this row plus the oldest-due-first share of payments applied to the order as a whole. Never authored.`}) 
     AmountPaid?: number;
         
-    @Field(() => Float, {nullable: true, description: `Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.`}) 
+    @Field(() => Float, {nullable: true, description: `Trigger-maintained: Amount - AmountCredited - AmountPaid, computed in the same statement as AmountPaid. Never authored.`}) 
     Balance?: number;
         
     @Field({nullable: true, description: `What this instalment is for, as it should print on the invoice (e.g. "Year 2 of 3").`}) 
@@ -6289,6 +6317,9 @@ export class mjBizAppsOrdersOrderHeaderPaymentSchedule_ {
         
     @Field() 
     _mj__UpdatedAt: Date;
+        
+    @Field(() => Float, {nullable: true, description: `What credit memos have credited on this instalment's invoice. Balance is Amount less AmountCredited less AmountPaid.`}) 
+    AmountCredited?: number;
         
     @Field({nullable: true}) 
     @MaxLength(40)
@@ -6366,6 +6397,9 @@ export class CreatemjBizAppsOrdersOrderHeaderPaymentScheduleInput {
     @Field({ nullable: true })
     Notes: string | null;
 
+    @Field(() => Float, { nullable: true })
+    AmountCredited?: number;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6429,6 +6463,9 @@ export class UpdatemjBizAppsOrdersOrderHeaderPaymentScheduleInput {
 
     @Field({ nullable: true })
     Notes?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    AmountCredited?: number;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

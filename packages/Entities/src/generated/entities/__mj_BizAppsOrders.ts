@@ -2332,6 +2332,22 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Schedule Reduction
         * * SQL Data Type: decimal(18, 2)
         * * Description: For an approved amount change, the reduction and its tax taken off the order's instalments not yet invoiced. The order's balance and its schedule check subtract it from the booked lines. Set by the server when the change is applied.`),
+    CreditMemoAmount: z.number().nullable().describe(`
+        * * Field Name: CreditMemoAmount
+        * * Display Name: Credit Memo Amount
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: For an approved amount change, the reduction and its tax credited on a credit memo: the part the instalments not yet invoiced could not absorb. The order's balance subtracts it. Set by the server when the change is approved.`),
+    CreditMemoNumber: z.string().nullable().describe(`
+        * * Field Name: CreditMemoNumber
+        * * Display Name: Credit Memo Number
+        * * SQL Data Type: nvarchar(50)
+        * * Description: The credit memo's document number: the order number, then CM and the memo's sequence on that order. Set with CreditMemoAmount and never reused.`),
+    RefundRequested: z.boolean().describe(`
+        * * Field Name: RefundRequested
+        * * Display Name: Refund Requested
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: For an amount change about a paid invoice: the customer asked for the credit back rather than off the next instalment. The approval records the credit; finance refunds it from the order's payments.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -2458,7 +2474,7 @@ export const mjBizAppsOrdersOrderHeaderPaymentScheduleSchema = z.object({
         * * Field Name: Balance
         * * Display Name: Balance
         * * SQL Data Type: decimal(18, 2)
-        * * Description: Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.`),
+        * * Description: Trigger-maintained: Amount - AmountCredited - AmountPaid, computed in the same statement as AmountPaid. Never authored.`),
     Description: z.string().nullable().describe(`
         * * Field Name: Description
         * * Display Name: Description
@@ -2479,6 +2495,12 @@ export const mjBizAppsOrdersOrderHeaderPaymentScheduleSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    AmountCredited: z.number().describe(`
+        * * Field Name: AmountCredited
+        * * Display Name: Amount Credited
+        * * SQL Data Type: decimal(18, 2)
+        * * Default Value: 0
+        * * Description: What credit memos have credited on this instalment's invoice. Balance is Amount less AmountCredited less AmountPaid.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -14064,6 +14086,46 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: CreditMemoAmount
+    * * Display Name: Credit Memo Amount
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: For an approved amount change, the reduction and its tax credited on a credit memo: the part the instalments not yet invoiced could not absorb. The order's balance subtracts it. Set by the server when the change is approved.
+    */
+    get CreditMemoAmount(): number | null {
+        return this.Get('CreditMemoAmount');
+    }
+    set CreditMemoAmount(value: number | null) {
+        this.Set('CreditMemoAmount', value);
+    }
+
+    /**
+    * * Field Name: CreditMemoNumber
+    * * Display Name: Credit Memo Number
+    * * SQL Data Type: nvarchar(50)
+    * * Description: The credit memo's document number: the order number, then CM and the memo's sequence on that order. Set with CreditMemoAmount and never reused.
+    */
+    get CreditMemoNumber(): string | null {
+        return this.Get('CreditMemoNumber');
+    }
+    set CreditMemoNumber(value: string | null) {
+        this.Set('CreditMemoNumber', value);
+    }
+
+    /**
+    * * Field Name: RefundRequested
+    * * Display Name: Refund Requested
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: For an amount change about a paid invoice: the customer asked for the credit back rather than off the next instalment. The approval records the credit; finance refunds it from the order's payments.
+    */
+    get RefundRequested(): boolean {
+        return this.Get('RefundRequested');
+    }
+    set RefundRequested(value: boolean) {
+        this.Set('RefundRequested', value);
+    }
+
+    /**
     * * Field Name: OrderHeader
     * * Display Name: Order Header
     * * SQL Data Type: nvarchar(40)
@@ -14421,7 +14483,7 @@ export class mjBizAppsOrdersOrderHeaderPaymentScheduleEntity extends BaseEntity<
     * * Field Name: Balance
     * * Display Name: Balance
     * * SQL Data Type: decimal(18, 2)
-    * * Description: Trigger-maintained: Amount - AmountPaid, computed in the same statement as AmountPaid. Never authored.
+    * * Description: Trigger-maintained: Amount - AmountCredited - AmountPaid, computed in the same statement as AmountPaid. Never authored.
     */
     get Balance(): number | null {
         return this.Get('Balance');
@@ -14474,6 +14536,20 @@ export class mjBizAppsOrdersOrderHeaderPaymentScheduleEntity extends BaseEntity<
     */
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
+    }
+
+    /**
+    * * Field Name: AmountCredited
+    * * Display Name: Amount Credited
+    * * SQL Data Type: decimal(18, 2)
+    * * Default Value: 0
+    * * Description: What credit memos have credited on this instalment's invoice. Balance is Amount less AmountCredited less AmountPaid.
+    */
+    get AmountCredited(): number {
+        return this.Get('AmountCredited');
+    }
+    set AmountCredited(value: number) {
+        this.Set('AmountCredited', value);
     }
 
     /**
