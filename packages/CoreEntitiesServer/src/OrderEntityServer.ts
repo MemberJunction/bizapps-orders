@@ -2248,6 +2248,46 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * Record on each reversing line of a scheduled origin the credit memo it booked, zero when it
+     * credited nothing (#661). The return order's balance counts the line at this rather than at its
+     * own negative value: the customer was credited the memo, and what the returned units had not yet
+     * been invoiced for comes off the origin's instalments instead.
+     */
+    private async stampCreditMemos(memos: Map<string, number>, options?: EntitySaveOptions): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        for (const [lineID, memo] of memos) {
+            await this.stampReturnLine(lineID, (line) => (line.CreditMemoAmount = memo), 'the credit memo it booked', provider, options);
+        }
+    }
+
+    /**
+     * Write one returning line of this order, on the copy booking stamped its journal entry on: this.Lines
+     * when it holds the line, else a fresh load. Writing any other copy would send its stale JournalEntryID back.
+     */
+    private async stampReturnLine(
+        lineID: string,
+        set: (line: mjBizAppsOrdersOrderLineEntity) => void,
+        what: string,
+        provider: IMetadataProvider,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        let current = this.Lines.Items.find((l) => UUIDsEqual(l.ID, lineID));
+        if (!current) {
+            current = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, this.ContextCurrentUser as UserInfo);
+            if (!(await current.Load(lineID))) throw new Error(`Return line ${lineID} could not be reloaded to record ${what}.`);
+        }
+        const stampTarget = this.resolveOrderLineForStamp(current);
+        MarkAsOrdersOwnWrite(stampTarget);
+        set(stampTarget);
+        const saveOptions = new EntitySaveOptions();
+        if (options) Object.assign(saveOptions, options);
+        saveOptions.IsParentEntitySave = true;
+        if (!(await stampTarget.Save(saveOptions))) {
+            throw new Error(`Failed to record ${what} on return line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`);
+        }
+    }
+
+    /**
      * Take what each returning line had not yet been invoiced for off its origin's instalments (#661).
      *
      * A returning line whose origin is billed by instalment records `ScheduleReduction`: the returned
@@ -2300,24 +2340,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             for (const { line, gross } of reductions) {
-                // The copy booking stamped its journal entry on: this.Lines when it holds the line, else a
-                // fresh load. Writing any other copy would send its stale JournalEntryID back.
-                let current = this.Lines.Items.find((l) => UUIDsEqual(l.ID, line.ID));
-                if (!current) {
-                    current = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
-                    if (!(await current.Load(line.ID))) throw new Error(`Return line ${line.LineNumber} could not be reloaded.`);
-                }
-                const stampTarget = this.resolveOrderLineForStamp(current);
-                MarkAsOrdersOwnWrite(stampTarget);
-                stampTarget.ScheduleReduction = gross;
-                const saveOptions = new EntitySaveOptions();
-                if (options) Object.assign(saveOptions, options);
-                saveOptions.IsParentEntitySave = true;
-                if (!(await stampTarget.Save(saveOptions))) {
-                    throw new Error(
-                        `Failed to record what return line ${stampTarget.LineNumber} took off its origin's instalments: ${ExtractEntityErrorMessage(stampTarget)}`,
-                    );
-                }
+                await this.stampReturnLine(line.ID, (l) => (l.ScheduleReduction = gross), "what it took off its origin's instalments", provider, options);
             }
         }
     }
@@ -3120,10 +3143,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const drafts = await factory.BuildDrafts(
             this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
         );
+        const creditMemos = factory.DrainCreditMemos();
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
-        // skipped rather than the order being refused for having no ledger impact.
-        if (drafts.length === 0) return;
+        // skipped rather than the order being refused for having no ledger impact. A return that
+        // credits nothing still records that it credited nothing.
+        if (drafts.length === 0) {
+            await this.stampCreditMemos(creditMemos, options);
+            return;
+        }
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
@@ -3143,6 +3171,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
 
         await this.stampJournalEntryIDs(drafts, result, options);
+        await this.stampCreditMemos(creditMemos, options);
 
         // ADVANCE BOTH TOTALS IN THIS TRANSACTION (D92) — the totals are the ledger's summary of
         // itself, and a separate writer is how they drift from the journal lines they summarise.
