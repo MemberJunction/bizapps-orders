@@ -9,6 +9,8 @@ import {
     RenewalPaymentLinkExpiresAt,
     RenewalPaymentLinkSecret,
     RenewalPaymentLinkUrl,
+    PayerOwnsRenewalCustomer,
+    RenewalPayer,
     RenewalPaymentRefusal,
     RenewalPaymentTokenMessage,
     SignRenewalPaymentToken,
@@ -104,7 +106,7 @@ describe('RenewalPaymentLinkUrl', () => {
 });
 
 describe('RenewalPaymentRefusal — single use in effect', () => {
-    const open = { Status: 'Confirmed', Balance: 1200, SubscriptionIDs: [SUB] };
+    const open = { Status: 'Confirmed', Balance: 1200, SubscriptionIDs: [SUB], Subscriptions: [{ ID: SUB, Status: 'Active', AutoRenew: true }] };
 
     it('allows an open, confirmed renewal of the named subscription', () => {
         expect(RenewalPaymentRefusal(open, SUB.toUpperCase(), false)).toBeNull();
@@ -125,6 +127,38 @@ describe('RenewalPaymentRefusal — single use in effect', () => {
 
     it('refuses once a session has paid it through the link', () => {
         expect(RenewalPaymentRefusal(open, SUB, true)).toBe('This renewal has already been paid through this link.');
+    });
+
+    it('refuses a subscription that was cancelled or no longer renews automatically (#683)', () => {
+        const refused = 'This subscription is no longer set to renew, so this renewal cannot be paid here. Contact us to renew.';
+        for (const sub of [
+            { ID: SUB, Status: 'Canceled', AutoRenew: true },
+            { ID: SUB, Status: 'Paused', AutoRenew: true },
+            { ID: SUB, Status: 'Active', AutoRenew: false },
+        ]) {
+            expect(RenewalPaymentRefusal({ ...open, Subscriptions: [sub] }, SUB, false)).toBe(refused);
+        }
+        expect(RenewalPaymentRefusal({ ...open, Subscriptions: [] }, SUB, false)).toBe(refused);
+    });
+});
+
+describe('RenewalPayer and PayerOwnsRenewalCustomer — who pays through the link (#683)', () => {
+    const order = { BillToPersonID: 'beneficiary', BillToOrganizationID: 'org-1', RenewalCardOwnerPersonID: null as string | null, RenewalCardOwnerOrganizationID: null as string | null };
+
+    it('is the person who owns the renewal card: on a gift, the buyer, not the beneficiary', () => {
+        expect(RenewalPayer({ ...order, RenewalCardOwnerPersonID: 'buyer' })).toEqual({ PersonID: 'buyer', OrganizationID: null });
+    });
+
+    it('falls back to the order bill-to when no person owns the card', () => {
+        expect(RenewalPayer(order)).toEqual({ PersonID: 'beneficiary', OrganizationID: null });
+        expect(RenewalPayer({ ...order, BillToPersonID: null })).toEqual({ PersonID: null, OrganizationID: 'org-1' });
+    });
+
+    it('reuses the old customer only when it is the payer\'s', () => {
+        expect(PayerOwnsRenewalCustomer({ RenewalCardOwnerPersonID: 'buyer', RenewalCardOwnerOrganizationID: null, PayerPersonID: 'BUYER', PayerOrganizationID: null })).toBe(true);
+        expect(PayerOwnsRenewalCustomer({ RenewalCardOwnerPersonID: 'buyer', RenewalCardOwnerOrganizationID: null, PayerPersonID: 'other', PayerOrganizationID: null })).toBe(false);
+        expect(PayerOwnsRenewalCustomer({ RenewalCardOwnerPersonID: null, RenewalCardOwnerOrganizationID: 'org-1', PayerPersonID: 'beneficiary', PayerOrganizationID: null })).toBe(false);
+        expect(PayerOwnsRenewalCustomer({ RenewalCardOwnerPersonID: null, RenewalCardOwnerOrganizationID: 'org-1', PayerPersonID: null, PayerOrganizationID: 'org-1' })).toBe(true);
     });
 
     it('tells the buyer only that a link is invalid, unless it expired', () => {

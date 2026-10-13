@@ -638,7 +638,14 @@ describe('CheckoutSessionService', () => {
             SourceCheckoutWidgetID: 'widget-1',
             RenewalCardProviderCustomerRef: 'cus_old',
             RenewalCardPaymentProviderID: 'pp-1',
+            RenewalCardOwnerPersonID: 'person-7',
+            RenewalCardOwnerOrganizationID: null,
+            Subscriptions: [{ ID: SUB, Status: 'Active', AutoRenew: true }],
+            PayerPersonID: 'person-7',
+            PayerOrganizationID: null,
         };
+        /** A gift: the renewal bills the beneficiary, person-7; the card is the buyer's, person-3. */
+        const GIFT = { ...RENEWAL, RenewalCardOwnerPersonID: 'person-3', PayerPersonID: 'person-3' };
         const LINK_EXPIRES = new Date(Date.now() + 30 * 60_000);
 
         beforeEach(() => {
@@ -753,6 +760,61 @@ describe('CheckoutSessionService', () => {
                 expect.anything(),
                 testUser
             );
+        });
+
+        it('refuses a cancelled subscription, or one no longer set to renew, on open and on pay (#683)', async () => {
+            const refused = 'This subscription is no longer set to renew, so this renewal cannot be paid here. Contact us to renew.';
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, Subscriptions: [{ ID: SUB, Status: 'Canceled', AutoRenew: true }] });
+            expect((await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser)).ErrorMessage).toBe(refused);
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, Subscriptions: [{ ID: SUB, Status: 'Active', AutoRenew: false }] });
+            expect(await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser)).toMatchObject({ Success: false, ErrorMessage: refused });
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('on a gift, the session, the intent and the payment are the buyer\'s, who owns the declined card (#683)', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...GIFT });
+            Object.assign(mocks.mockPersonInstance, { Load: vi.fn().mockResolvedValue(true), Email: 'gift-buyer@example.com' });
+            await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser);
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-3');
+            expect(mocks.mockSessionInstance.Email).toBe('gift-buyer@example.com');
+
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            // The old card's customer is the buyer's own, so the new card joins it.
+            expect(mocks.mockOpenPaymentIntent.mock.calls[0][0]).toMatchObject({ BillToPersonID: 'person-3', ProviderCustomerRef: 'cus_old' });
+        });
+
+        it('completing a gift renewal books the payment to the buyer and files the card in the buyer\'s wallet (#683)', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...GIFT });
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockPaymentIntentInstance.Amount = 1200;
+            mocks.mockOrderInstance.Status = 'Confirmed';
+            mocks.mockOrderInstance.TotalGross = 1200;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-7';
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(mocks.mockCaptureExecute.mock.calls[0][0]).toMatchObject({ BillToPersonID: 'person-3', BillToOrganizationID: null });
+            expect(renewalMocks.saveInstrument).toHaveBeenCalledWith(
+                expect.objectContaining({ OwnerPersonID: 'person-3', ReplaceCardOnSubscriptionIDs: [SUB] }),
+                expect.anything(),
+                testUser
+            );
+        });
+
+        it('a card the payer does not own never joins its gateway customer: the payer gets their own (#683)', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, RenewalCardOwnerPersonID: null, RenewalCardOwnerOrganizationID: 'org-1' });
+            renewalMocks.resolveProvider = async () => ({ EnsureCustomer: renewalMocks.ensureCustomer });
+            try {
+                mocks.mockSessionInstance.DraftOrderID = 'order-999';
+                await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+                expect(renewalMocks.ensureCustomer).toHaveBeenCalledWith(expect.objectContaining({ BillToPersonID: 'person-7' }));
+                expect(mocks.mockOpenPaymentIntent.mock.calls[0][0]).toMatchObject({ BillToPersonID: 'person-7', ProviderCustomerRef: 'cus_new' });
+            } finally {
+                renewalMocks.resolveProvider = null;
+            }
         });
 
         it('an ordinary checkout capture passes no card to replace', async () => {

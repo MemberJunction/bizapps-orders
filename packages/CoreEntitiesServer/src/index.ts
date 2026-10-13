@@ -367,9 +367,11 @@ export type {
 export {
     ConfigureRenewalPaymentLinks,
     LoadRenewalPaymentOrder,
+    PayerOwnsRenewalCustomer,
     RENEWAL_LINK_DAYS_WITHOUT_CUTOFF,
     RENEWAL_LINK_GRACE_DAYS,
     RENEWAL_LINK_MIN_SECRET_LENGTH,
+    RenewalPayer,
     RenewalPaymentAlreadyConfirmed,
     RenewalPaymentLinkExpiresAt,
     RenewalPaymentLinkSecret,

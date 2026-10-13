@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR50).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR52).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -85,6 +85,9 @@
  *         automatic renewal off, and the card is not charged again
  *   SR50  the update-card link goes out only once the failed charge is recorded, so a rerun the same
  *         day never sends it twice
+ *   SR51  the update-card link is refused once the subscription is cancelled
+ *   SR52  on a gift, the link's payment and new card are the buyer's who owns the declined card;
+ *         the renewal still bills the beneficiary
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -136,6 +139,7 @@ import {
     ChargeRenewals,
     CheckoutSessionService,
     ConfigureRenewalPaymentLinks,
+    LoadRenewalPaymentOrder,
     OrdersSettings,
     SignRenewalPaymentToken,
     type ChargeRenewalsOutput,
@@ -1810,6 +1814,88 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(third.Attempts.find((a) => SameID(a.OrderID, r.OrderID))?.Outcome, 'Skipped', 'a third run that day skips the order');
                 AssertEqual(sent.length, 1, 'and sends nothing');
             }),
+    },
+
+    // ─── Edge cases of the update-card link (#683) ────────────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR51',
+        Name: "SR51: the update-card link is refused once the subscription is cancelled, though its renewal order stays open",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                    await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                    await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+                    const token = await linkToken(r.OrderID, r.SubscriptionID);
+
+                    const cancelled = await cancelSubscription(ctx, { SubscriptionID: r.SubscriptionID, RequestDate: r.TermStart });
+                    Assert(cancelled.Success, `the cancel must succeed: ${cancelled.Message}`);
+                    const init = await CheckoutSessionService.InitializeRenewalPaymentSession(token, 'it-renew-cancelled', ctx.User);
+                    AssertEqual(init.Success, false, 'a cancelled subscription opens nothing');
+                    AssertEqual(
+                        init.ErrorMessage,
+                        'This subscription is no longer set to renew, so this renewal cannot be paid here. Contact us to renew.',
+                        'and says why',
+                    );
+                    const later = await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: daysBefore(r.TermStart, -3) });
+                    AssertEqual(later.Charged + later.Failed, 0, 'and the card is not tried again');
+                }),
+            ),
+    },
+    {
+        Id: 'subscription-renewal.SR52',
+        Name: "SR52: on a gift, the update-card link's payment and new card are the buyer's, and the renewal still bills the beneficiary",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const f = Fx();
+                    // The renewal bills the beneficiary; the declined card is the buyer's, filed in their wallet.
+                    const r = await renewWithCard(ctx, 'pm_card_chargeDeclined', { billToPersonID: f.Customers.PersonID });
+                    const buyerID = f.Customers.SecondPersonID;
+                    await TxQuery(
+                        ctx,
+                        `UPDATE ${ORDERS_SCHEMA}.CustomerPaymentMethod SET OwnerPersonID = '${buyerID}', OwnerOrganizationID = NULL
+                         WHERE ID = (SELECT DefaultCustomerPaymentMethodID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${r.SubscriptionID}')`,
+                    );
+                    await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                    await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+
+                    const order = await LoadRenewalPaymentOrder(r.OrderID, ctx.Provider, ctx.User);
+                    Assert(SameID(order?.BillToPersonID, f.Customers.PersonID), 'precondition: the renewal bills the beneficiary');
+                    Assert(SameID(order?.PayerPersonID, buyerID), `the payer is the buyer who owns the card: ${order?.PayerPersonID}`);
+
+                    const key = 'it-renew-gift';
+                    const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
+                    Assert(init.Success, `the link opens a session: ${init.ErrorMessage}`);
+                    const session = await TxOne<{ PersonID: string }>(ctx, `SELECT PersonID FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${init.SessionID}'`);
+                    Assert(SameID(session.PersonID, buyerID), 'the session is the buyer\'s');
+
+                    const opened = await CheckoutSessionService.OpenPaymentIntentForSession(init.SessionID!, key, ctx.User);
+                    Assert(opened.Success, `an intent opens: ${opened.ErrorMessage}`);
+                    await settleSessionIntent(ctx, init.SessionID!);
+                    const done = await CheckoutSessionService.CompleteCheckout(init.SessionID!, key, ctx.User);
+                    Assert(done.Success, `the renewal is paid: ${done.ErrorMessage}`);
+
+                    const payment = await TxOne<{ BillToPersonID: string | null }>(
+                        ctx,
+                        `SELECT ph.BillToPersonID FROM ${ORDERS_SCHEMA}.PaymentHeader ph
+                         JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID
+                         WHERE pl.OrderHeaderID = '${r.OrderID}'`,
+                    );
+                    Assert(SameID(payment.BillToPersonID, buyerID), 'the payment is booked to the buyer');
+                    const card = await TxOne<{ OwnerPersonID: string | null }>(
+                        ctx,
+                        `SELECT cpm.OwnerPersonID FROM ${ORDERS_SCHEMA}.Subscription s
+                         JOIN ${ORDERS_SCHEMA}.CustomerPaymentMethod cpm ON cpm.ID = s.DefaultCustomerPaymentMethodID
+                         WHERE s.ID = '${r.SubscriptionID}'`,
+                    );
+                    Assert(SameID(card.OwnerPersonID, buyerID), 'and the new renewal card is in the buyer\'s wallet');
+                    const billTo = await TxOne<{ BillToPersonID: string }>(ctx, `SELECT BillToPersonID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${r.OrderID}'`);
+                    Assert(SameID(billTo.BillToPersonID, f.Customers.PersonID), 'the renewal still bills the beneficiary');
+                }),
+            ),
     },
 
 ];

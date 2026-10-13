@@ -10,6 +10,18 @@
  * makes it the subscription's renewal card; the capture is the ordinary checkout capture, so
  * `ReconcilePaymentGatedGrants` restores any access the cutoff suspended.
  *
+ * WHO PAYS. The renewal card's owner, when a person owns it: the buyer whose card was declined. On a
+ * gift that is the buyer, not the beneficiary the renewal order bills (#683). The e-mail goes to
+ * them, the session is theirs, the payment is booked to them and the new card is filed in their
+ * wallet. The order's bill-to stays the beneficiary. A card an organization owns leaves the payer as
+ * the order's bill-to, as before. The old card's gateway customer is reused only when it belongs to
+ * the payer; otherwise the payer's own customer is found or made, so a card never joins someone
+ * else's.
+ *
+ * ONLY A RENEWING SUBSCRIPTION. The link pays a renewal only while the subscription it names is
+ * Active with automatic renewal on. A cancelled subscription, or one whose renewal was turned off,
+ * has withdrawn the renewal the order is for (#683).
+ *
  * THE LINK. `<base>/renew/<token>`, where the token is the renewal order id, the subscription id and
  * an expiry, signed with HMAC-SHA256. Nothing in it names a person. It expires no later than the
  * access cutoff plus `RENEWAL_LINK_GRACE_DAYS`, and it is single-use in effect: it is refused once the
@@ -185,6 +197,42 @@ export interface RenewalPaymentOrder {
     /** The renewal card's gateway customer and provider, so the new card joins the same customer. */
     RenewalCardProviderCustomerRef: string | null;
     RenewalCardPaymentProviderID: string | null;
+    /** Who owns the renewal card's wallet entry: a person, else an organization. */
+    RenewalCardOwnerPersonID: string | null;
+    RenewalCardOwnerOrganizationID: string | null;
+    /** The renewed subscriptions' state, for the refusal rule. */
+    Subscriptions: Array<{ ID: string; Status: string; AutoRenew: boolean }>;
+    /**
+     * Who pays through the link: the renewal card's owning person, else the order's bill-to. The
+     * e-mail, the session, the payment and the new card all follow this, never the beneficiary.
+     */
+    PayerPersonID: string | null;
+    /** Set only when no person pays: the order's bill-to organization. */
+    PayerOrganizationID: string | null;
+}
+
+/**
+ * Who pays a renewal through the link: the person who owns the renewal card, else the order's
+ * bill-to person, else its bill-to organization. See the header.
+ */
+export function RenewalPayer(
+    order: Pick<RenewalPaymentOrder, 'BillToPersonID' | 'BillToOrganizationID' | 'RenewalCardOwnerPersonID'>,
+): { PersonID: string | null; OrganizationID: string | null } {
+    const person = order.RenewalCardOwnerPersonID ?? order.BillToPersonID;
+    return { PersonID: person, OrganizationID: person ? null : order.BillToOrganizationID };
+}
+
+/**
+ * Whether the old renewal card's gateway customer belongs to the payer, so the new card may join it.
+ * A person's card belongs to that person; an organization's card to a payer that is the
+ * organization itself.
+ */
+export function PayerOwnsRenewalCustomer(
+    order: Pick<RenewalPaymentOrder, 'RenewalCardOwnerPersonID' | 'RenewalCardOwnerOrganizationID' | 'PayerPersonID' | 'PayerOrganizationID'>,
+): boolean {
+    const same = (a: string | null, b: string | null) => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+    if (order.RenewalCardOwnerPersonID) return same(order.RenewalCardOwnerPersonID, order.PayerPersonID);
+    return !order.PayerPersonID && same(order.RenewalCardOwnerOrganizationID, order.PayerOrganizationID);
 }
 
 /**
@@ -253,22 +301,41 @@ export async function LoadRenewalPaymentOrder(
         SourceCheckoutWidgetID: null,
         RenewalCardProviderCustomerRef: null,
         RenewalCardPaymentProviderID: null,
+        RenewalCardOwnerPersonID: null,
+        RenewalCardOwnerOrganizationID: null,
+        Subscriptions: [],
+        PayerPersonID: null,
+        PayerOrganizationID: null,
     };
-    if (!subscriptionIDs.length) return out;
+    const payer = () => {
+        const p = RenewalPayer(out);
+        out.PayerPersonID = p.PersonID;
+        out.PayerOrganizationID = p.OrganizationID;
+        return out;
+    };
+    if (!subscriptionIDs.length) return payer();
 
     // The first renewed subscription: its number, the checkout that sold it, and its renewal card.
-    const subscriptions = await rv.RunView<{ ID: string; SubscriptionNumber: string; OrderLineID: string | null; DefaultCustomerPaymentMethodID: string | null }>(
+    const subscriptions = await rv.RunView<{
+        ID: string;
+        SubscriptionNumber: string;
+        OrderLineID: string | null;
+        DefaultCustomerPaymentMethodID: string | null;
+        Status: string;
+        AutoRenew: boolean | number | null;
+    }>(
         {
             EntityName: 'MJ_BizApps_Orders: Subscriptions',
             ExtraFilter: `ID IN (${RequireUUIDs(subscriptionIDs, 'SubscriptionID').map((s) => `'${s}'`).join(',')})`,
-            Fields: ['ID', 'SubscriptionNumber', 'OrderLineID', 'DefaultCustomerPaymentMethodID'],
+            Fields: ['ID', 'SubscriptionNumber', 'OrderLineID', 'DefaultCustomerPaymentMethodID', 'Status', 'AutoRenew'],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
+    out.Subscriptions = (subscriptions.Results ?? []).map((s) => ({ ID: s.ID, Status: s.Status, AutoRenew: s.AutoRenew === true || s.AutoRenew === 1 }));
     const first = (subscriptions.Results ?? []).find((s) => s.ID.toLowerCase() === subscriptionIDs[0].toLowerCase()) ?? subscriptions.Results?.[0];
-    if (!first) return out;
+    if (!first) return payer();
     out.SubscriptionNumber = first.SubscriptionNumber;
 
     if (first.OrderLineID) {
@@ -285,6 +352,18 @@ export async function LoadRenewalPaymentOrder(
         out.SourceCheckoutWidgetID = source.Results?.[0]?.SourceCheckoutWidgetID ?? null;
     }
     if (first.DefaultCustomerPaymentMethodID) {
+        const wallet = await rv.RunView<{ OwnerPersonID: string | null; OwnerOrganizationID: string | null }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Customer Payment Methods',
+                ExtraFilter: `ID = '${RequireUUID(first.DefaultCustomerPaymentMethodID, 'CustomerPaymentMethodID')}'`,
+                Fields: ['OwnerPersonID', 'OwnerOrganizationID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        out.RenewalCardOwnerPersonID = wallet.Results?.[0]?.OwnerPersonID ?? null;
+        out.RenewalCardOwnerOrganizationID = wallet.Results?.[0]?.OwnerOrganizationID ?? null;
         const card = await rv.RunView<{ PaymentProviderID: string | null; ProviderCustomerRef: string | null }>(
             {
                 EntityName: 'MJ_BizApps_Orders: Payment Details',
@@ -298,7 +377,7 @@ export async function LoadRenewalPaymentOrder(
         out.RenewalCardPaymentProviderID = card.Results?.[0]?.PaymentProviderID ?? null;
         out.RenewalCardProviderCustomerRef = card.Results?.[0]?.ProviderCustomerRef ?? null;
     }
-    return out;
+    return payer();
 }
 
 /** True when a checkout session for this order has already confirmed — the link has been used. */
@@ -320,17 +399,22 @@ export async function RenewalPaymentAlreadyConfirmed(orderID: string, provider: 
 
 /**
  * Why a renewal order cannot be paid through the link, or null when it can. The rules, in order:
- * the order exists; it renews the subscription the link names; it is a confirmed order; it still
- * owes money; and no checkout session has already paid it through a link.
+ * the order exists; it renews the subscription the link names; that subscription is Active with
+ * automatic renewal on; it is a confirmed order; it still owes money; and no checkout session has
+ * already paid it through a link.
  */
 export function RenewalPaymentRefusal(
-    order: Pick<RenewalPaymentOrder, 'Status' | 'Balance' | 'SubscriptionIDs'> | null,
+    order: Pick<RenewalPaymentOrder, 'Status' | 'Balance' | 'SubscriptionIDs' | 'Subscriptions'> | null,
     subscriptionID: string,
     alreadyConfirmed: boolean,
 ): string | null {
     if (!order) return 'This renewal could not be found.';
     if (!order.SubscriptionIDs.some((s) => s.toLowerCase() === subscriptionID.toLowerCase())) {
         return 'This link does not match the renewal it names.';
+    }
+    const subscription = order.Subscriptions.find((s) => s.ID.toLowerCase() === subscriptionID.toLowerCase());
+    if (!subscription || subscription.Status !== 'Active' || !subscription.AutoRenew) {
+        return 'This subscription is no longer set to renew, so this renewal cannot be paid here. Contact us to renew.';
     }
     if (order.Status !== 'Confirmed') return 'This renewal can no longer be paid here.';
     if (!(order.Balance > 0.005)) return 'This renewal is already paid.';

@@ -81,6 +81,7 @@ import {
 import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
 import {
     LoadRenewalPaymentOrder,
+    PayerOwnsRenewalCustomer,
     RenewalPaymentAlreadyConfirmed,
     RenewalPaymentLinkSecret,
     RenewalPaymentRefusal,
@@ -565,10 +566,11 @@ export class CheckoutSessionService {
             session.ClientSessionKey = clientSessionKey;
             session.Status = 'Open';
             session.DraftOrderID = order.OrderID;
-            if (order.BillToPersonID) {
-                session.PersonID = order.BillToPersonID;
+            // The payer, not the beneficiary a gift renewal bills (#683).
+            if (order.PayerPersonID) {
+                session.PersonID = order.PayerPersonID;
                 const person = await md.GetEntityObject<mjBizAppsCommonPersonEntity>(PERSON_ENTITY, contextUser);
-                if ((await person.Load(order.BillToPersonID)) && person.Email?.trim()) {
+                if ((await person.Load(order.PayerPersonID)) && person.Email?.trim()) {
                     session.Email = person.Email.trim();
                 }
             }
@@ -2076,8 +2078,8 @@ export class CheckoutSessionService {
             Amount: amount,
             CurrencyCode: currencyCode ?? SUPPORTED_PAYMENT_CURRENCY,
             OrderHeaderID: order.OrderID,
-            BillToPersonID: order.BillToPersonID ?? undefined,
-            BillToOrganizationID: order.BillToPersonID ? undefined : order.BillToOrganizationID ?? undefined,
+            BillToPersonID: order.PayerPersonID ?? undefined,
+            BillToOrganizationID: order.PayerOrganizationID ?? undefined,
             ProviderCustomerRef: customer ?? undefined,
             SaveInstrumentForReuse: !!customer,
             IdempotencyKey: `renewal-pay-${session.ID}-${Math.round(amount * 100)}${keepKey}`,
@@ -2103,8 +2105,9 @@ export class CheckoutSessionService {
 
     /**
      * The gateway customer the new renewal card is kept under: the old renewal card's, when it is on
-     * the same provider; otherwise the buyer's existing customer, or a new one. Null when none can be
-     * had — logged, and the renewal is still paid, only without keeping the card.
+     * the same provider and belongs to the payer; otherwise the payer's existing customer, or a new
+     * one, so a card never joins someone else's customer (#683). Null when none can be had — logged,
+     * and the renewal is still paid, only without keeping the card.
      */
     private static async renewalPaymentCustomer(
         session: mjBizAppsOrdersCheckoutSessionEntity,
@@ -2113,20 +2116,24 @@ export class CheckoutSessionService {
         mdProvider: IMetadataProvider,
         contextUser: UserInfo
     ): Promise<string | null> {
-        if (order.RenewalCardProviderCustomerRef && this.idsEqual(order.RenewalCardPaymentProviderID, paymentProviderId)) {
+        if (
+            order.RenewalCardProviderCustomerRef &&
+            this.idsEqual(order.RenewalCardPaymentProviderID, paymentProviderId) &&
+            PayerOwnsRenewalCustomer(order)
+        ) {
             return order.RenewalCardProviderCustomerRef;
         }
         try {
             const driver = await ResolvePaymentProvider(paymentProviderId, mdProvider, contextUser);
-            const owner = order.BillToPersonID ?? order.BillToOrganizationID;
+            const owner = order.PayerPersonID ?? order.PayerOrganizationID;
             if (!owner) return null;
             const customer = await driver.EnsureCustomer({
-                ExistingProviderCustomerRef: order.BillToPersonID
-                    ? await FindReusableProviderCustomerRef(order.BillToPersonID, paymentProviderId, contextUser)
+                ExistingProviderCustomerRef: order.PayerPersonID
+                    ? await FindReusableProviderCustomerRef(order.PayerPersonID, paymentProviderId, contextUser)
                     : null,
                 Email: session.Email?.trim().toLowerCase() || null,
-                BillToPersonID: order.BillToPersonID,
-                BillToOrganizationID: order.BillToPersonID ? null : order.BillToOrganizationID,
+                BillToPersonID: order.PayerPersonID,
+                BillToOrganizationID: order.PayerOrganizationID,
                 IdempotencyKey: `customer-${owner}-${paymentProviderId}`,
             });
             return customer.Success && customer.ProviderCustomerRef ? customer.ProviderCustomerRef : null;
@@ -3097,12 +3104,15 @@ export class CheckoutSessionService {
         }
         // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
         // before the buyer changed e-mail is returned again by the gateway for the same idempotency
-        // key, still naming the person it was first opened for (#393).
-        if (order.BillToPersonID && !this.idsEqual(intent.BillToPersonID, order.BillToPersonID)) {
-            intent.BillToPersonID = order.BillToPersonID;
+        // key, still naming the person it was first opened for (#393). A renewal paid through the
+        // link is the exception: its payer is the card's owner, not the beneficiary it bills (#683).
+        const payerPersonID = renewal ? renewal.PayerPersonID : order.BillToPersonID;
+        const payerOrganizationID = renewal ? renewal.PayerOrganizationID : order.BillToOrganizationID;
+        if (payerPersonID && !this.idsEqual(intent.BillToPersonID, payerPersonID)) {
+            intent.BillToPersonID = payerPersonID;
         }
-        if (!intent.BillToOrganizationID && order.BillToOrganizationID) {
-            intent.BillToOrganizationID = order.BillToOrganizationID;
+        if (!intent.BillToOrganizationID && payerOrganizationID) {
+            intent.BillToOrganizationID = payerOrganizationID;
         }
         if (!(await intent.Save())) {
             LogError(`[CheckoutSessionService] Could not stamp OrderHeaderID on intent ${intent.ID} for order ${order.ID}: ${intent.LatestResult?.CompleteMessage ?? 'unknown error'}`);
@@ -3134,10 +3144,11 @@ export class CheckoutSessionService {
                     Amount: due,
                     ReceivingCompanyID: order.CompanyID,
                     // A renewal order names its subscription's holder organization and beneficiary
-                    // person both, and a capture with two payers is refused as ambiguous. The person
-                    // paid through the link, so the payment is theirs, as the renewal charge does.
-                    BillToPersonID: order.BillToPersonID ?? null,
-                    BillToOrganizationID: renewal && order.BillToPersonID ? null : order.BillToOrganizationID ?? null,
+                    // person both, and a capture with two payers is refused as ambiguous. The link's
+                    // payer paid — the card's owner, on a gift the buyer — so the payment is theirs,
+                    // as the renewal charge does.
+                    BillToPersonID: renewal ? renewal.PayerPersonID : order.BillToPersonID ?? null,
+                    BillToOrganizationID: renewal ? renewal.PayerOrganizationID : order.BillToOrganizationID ?? null,
                     TenderCode: tenderCode,
                     Allocations: [{ OrderHeaderID: order.ID, Amount: due }],
                     PaymentDetail: intent.PaymentProviderID
@@ -3182,8 +3193,9 @@ export class CheckoutSessionService {
                     {
                         OrderHeaderID: order.ID,
                         CompanyID: order.CompanyID,
-                        OwnerPersonID: order.BillToPersonID ?? null,
-                        OwnerOrganizationID: order.BillToOrganizationID ?? null,
+                        // The payer's wallet: on a gift, the buyer's, never the beneficiary's (#683).
+                        OwnerPersonID: renewal ? renewal.PayerPersonID : order.BillToPersonID ?? null,
+                        OwnerOrganizationID: renewal ? renewal.PayerOrganizationID : order.BillToOrganizationID ?? null,
                         PaymentProviderID: intent.PaymentProviderID,
                         ProviderIntentID: intent.ProviderIntentID,
                         TenderCode: tenderCode,
