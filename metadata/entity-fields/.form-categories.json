@@ -836,6 +836,15 @@
   },
   {
     "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=CoverageOverlapReason"
+    }
+  },
+  {
+    "fields": {
       "Category": "Event Details",
       "GeneratedFormSection": "Category"
     },
@@ -1720,6 +1729,41 @@
   },
   {
     "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=NewAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:51:27.358Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=AppliesToPaymentScheduleID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:51:27.544Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=RefundRequested"
+    }
+  },
+  {
+    "fields": {
       "Category": "Value and Limits",
       "GeneratedFormSection": "Category"
     },
@@ -1755,6 +1799,37 @@
     "sync": {
       "lastModified": "2026-10-08T21:17:22.621Z",
       "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=ScheduleReduction"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:51:27.822Z",
+      "checksum": "f34d974ea0da6f3c65d2fafd813c17042aa9aa87afcc51b0acc03ab4e75f7e3b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=CreditMemoAmount"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Value and Limits",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=CreditMemoNumber"
     }
   },
   {
@@ -2188,6 +2263,15 @@
   },
   {
     "fields": {
+      "Category": "Payment Status",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Header Payment Schedules&Name=AmountCredited"
+    }
+  },
+  {
+    "fields": {
       "Category": "System Metadata",
       "GeneratedFormSection": "Category"
     },
@@ -2301,6 +2385,15 @@
     "sync": {
       "lastModified": "2026-10-08T21:17:23.567Z",
       "checksum": "69be6db6144b44ecf8559fceb502addd8936ebf4a2e185f8cbb0115348ecc46b"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Subscription Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=CoverageOverlapReason"
     }
   },
   {
@@ -3419,6 +3512,297 @@
     "sync": {
       "lastModified": "2026-10-08T21:17:25.737Z",
       "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "_comments": [
+      "Fields added by the concession approvals work (golive #281, #268): RequiresSaleApproval sits with each form's pricing or default settings, and the signed-amendment reference with the concession's approval."
+    ],
+    "fields": {
+      "Category": "Pricing and Ordering",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:23.909Z",
+      "checksum": "ffab2c1daf707cbc68f9b03d55b38bbb9420e523430be000c978762e941cc837"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:23.939Z",
+      "checksum": "973bf067b193f4212a496b8b6645f6840ff5d4a4564b783cf399d63ca3fa015f"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Default Settings",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:23.969Z",
+      "checksum": "8cd33abfc06fbb15d591b6783f6c68a40623247bc083c15682b309032ac7ccd0"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Configuration and Extensions",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Types&Name=RequiresSaleApproval"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:24.000Z",
+      "checksum": "9fccf5cd5a2da9acbab65eb320f084e6ba91fefd69112093726d3d8466f3a4b8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Approval",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=SignedAmendmentReference"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:09:24.033Z",
+      "checksum": "d02dae4375485bc9c7b7ca3753ec15a883ae01c77816fe659668d9dea4280128"
+    }
+  },
+  {
+    "_comments": [
+      "The referral program a Duration concession names sits with the concession's other details (golive #268)."
+    ],
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=ReferralProgramID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:41:34.187Z",
+      "checksum": "ee0b5ede11f34b79824be31c13fe4e5487269ce0331899365dfa6dd74bf14db0"
+    }
+  },
+  {
+    "_comments": [
+      "Referral Programs was generated without CodeGen's AI layout pass, so its fields are grouped here (golive #268)."
+    ],
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=CompanyID"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.772Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=Name"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.808Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=Description"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.842Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=DaysPerReferral"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.875Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Program Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=IsActive"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.910Z",
+      "checksum": "908c9a3de9a20b617b319fddcc13728f404906c8d40c836171cfac7e0c1f5911"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=__mj_CreatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.939Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "System Metadata",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Referral Programs&Name=__mj_UpdatedAt"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T14:46:05.971Z",
+      "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Shipping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=IPCountry"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.817Z",
+      "checksum": "23aad8a820d87ff9684a8d9b0b6d12e0100406b746b719d982a2e88788428ab4"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Billing and Shipping",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=CardIssuingCountry"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.865Z",
+      "checksum": "23aad8a820d87ff9684a8d9b0b6d12e0100406b746b719d982a2e88788428ab4"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Identification",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=SourceCheckoutWidget"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.914Z",
+      "checksum": "edbc0cf9078421800b23982c20e28dd55811f955fb83a69b69796bf965427fcb"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Accounting and Audit",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=ConfirmedByUser"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T22:02:51.961Z",
+      "checksum": "805c369aa0ed78c7c8eb5d36b5ed4fbdc5f6e8b1ffe33079d435b96673e70e92"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=ExtendedAmount"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ScheduleReduction"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:33.978Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Pricing and Financials",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=CreditMemoAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:34.010Z",
+      "checksum": "4eda51dbc86e63680e43b89bbd8dff729a11d1f522db605fbfde383980c00dc8"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=ScheduleReduction"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:34.042Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Order Lines",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Order Lines&Name=CreditMemoAmount"
+    },
+    "sync": {
+      "lastModified": "2026-10-12T23:47:34.066Z",
+      "checksum": "b00434b9fcd7987fcac9a8a79949ec4cd4d29f9cd6f773871b6c7e456f1f6bf5"
     }
   }
 ]

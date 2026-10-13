@@ -27,6 +27,11 @@ export interface CheckoutHostPageOptions {
      * extension fields). When omitted, a vanilla fallback form is used.
      */
     elementSrc?: string;
+    /**
+     * A signed update-card link token (#289). Set, the element opens in the pay-renewal mode: it pays
+     * the renewal order the token names instead of selling the widget's product.
+     */
+    renewalToken?: string;
 }
 
 export interface CheckoutHostErrorOptions {
@@ -78,6 +83,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
     const apiRoot = escapeAttr(options.apiRoot);
     const nonceAttr = ` nonce="${escapeAttr(options.cspNonce)}"`;
     const elementSrc = options.elementSrc ? escapeAttr(options.elementSrc) : '';
+    const renewal = options.renewalToken ? ` renewal-token="${escapeAttr(options.renewalToken)}"` : '';
     if (elementSrc) {
         return `<!doctype html>
 <html lang="en">
@@ -91,7 +97,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 </head>
 <body>
   <main class="mj-co">
-    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"></mj-orders-checkout>
+    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"${renewal}></mj-orders-checkout>
   </main>
 </body>
 </html>`;

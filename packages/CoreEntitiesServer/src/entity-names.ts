@@ -15,6 +15,12 @@ export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 /** The order line entity. */
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
+/** IsA Disjoint child of Product — present only for products that ARE events. */
+export const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+/** IsA Disjoint child of OrderLine, sharing its key: the line's attendee. */
+export const EVENT_ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Event Order Lines';
+
 /** The order line's accounting dimension tags (D31). */
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 

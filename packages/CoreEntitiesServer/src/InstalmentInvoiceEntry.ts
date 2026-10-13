@@ -183,6 +183,18 @@ function rowIndex(context: InstalmentInvoiceContext): number {
 }
 
 /**
+ * Every amount an instalment invoice posts for one line, signed by the line: its net, then whatever of
+ * its tax and charges no charge credit covers (zero when the allocations are complete), then each
+ * charge credit. {@link TiedSlice} slices these, all lines together.
+ */
+export function SliceLayout(line: Pick<InstalmentLineFacts, 'Quantity' | 'Net' | 'Tax' | 'Charges' | 'ChargeCredits'>): number[] {
+    const sign = line.Quantity < 0 ? -1 : 1;
+    const credited = money(line.ChargeCredits.reduce((t, c) => t + c.Amount, 0));
+    const amounts = [line.Net, money(line.Tax + line.Charges - credited), ...line.ChargeCredits.map((c) => c.Amount)];
+    return amounts.map((a) => sign * a);
+}
+
+/**
  * This instalment's piece of every amount, TIED BOTH WAYS (#234 third review, item 1): the pieces
  * of one instalment sum to its schedule row, and each amount's pieces across all instalments sum to
  * that amount.
@@ -301,15 +313,8 @@ export async function EmitInstalmentInvoiceEntry(
     const receivables: LineReceivable[] = [];
     const lines: JELineDraft[] = [];
 
-    // Every amount the entry posts, per line and signed by the line: its net, then whatever of its
-    // tax and charges no charge credit covers (zero when the allocations are complete), then each
-    // charge credit. Sliced together so the instalment's AR debit is exactly its row.
-    const layout = context.Lines.map((line) => {
-        const sign = line.Quantity < 0 ? -1 : 1;
-        const credited = money(line.ChargeCredits.reduce((t, c) => t + c.Amount, 0));
-        const amounts = [line.Net, money(line.Tax + line.Charges - credited), ...line.ChargeCredits.map((c) => c.Amount)];
-        return amounts.map((a) => sign * a);
-    });
+    // Sliced together so the instalment's AR debit is exactly its row.
+    const layout = context.Lines.map(SliceLayout);
     const allPieces = TiedSlice(
         layout.flat(),
         context.Siblings.map((s) => money(Number(s.Amount ?? 0))),

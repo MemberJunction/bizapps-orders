@@ -30,7 +30,7 @@ import { InvalidOperationInputError } from '@mj-biz-apps/orders-entities';
 
 // The UUID guards live in `orders-entities` so its pricing engines can use them without a
 // dependency cycle; they are re-exported here so server code keeps one import site.
-export { InvalidOperationInputError, RequireOptionalUUID, RequireUUID, RequireUUIDs } from '@mj-biz-apps/orders-entities';
+export { InvalidOperationInputError, IsUUID, RequireOptionalUUID, RequireUUID, RequireUUIDs } from '@mj-biz-apps/orders-entities';
 
 // MJ publishes `EscapeSQLString` from 6.1.5, the floor this repo requires. Re-exported so
 // existing server imports keep working.

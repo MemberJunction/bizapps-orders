@@ -144,5 +144,28 @@
       "lastModified": "2026-09-21T18:40:45.953Z",
       "checksum": "9e9db2395de6fc86db752a28ffe7dcf47d0a97b6447f7f4d2ecb328177ad4ab3"
     }
+  },
+  {
+    "_comments": [
+      "HubSpot Payments — payments a company's HubSpot portal collected, read by the payment poll (#482).",
+      "NOT a checkout rail: the driver refuses CreateIntent/Capture/Refund. A company configures one row",
+      "per portal, pointing CompanyIntegrationID at that portal's MJ: Company Integrations row, so each",
+      "portal's payments land in its own company. CredentialsRef stays NULL: the connector reads the",
+      "portal's credential from the Company Integration, never Orders."
+    ],
+    "fields": {
+      "Code": "HubSpotPayments",
+      "Name": "HubSpot Payments",
+      "Description": "Payments collected through a HubSpot portal (payment links, quotes, HubSpot invoices). Read by the payment poll when they are made, ahead of the payout; payments collected through the company's own Stripe account or recorded from elsewhere are set aside. Not a checkout rail — no intents, no capture, no refunds through this type.",
+      "DriverClass": "HubSpotPaymentsProvider",
+      "SupportsTokenization": 0,
+      "SupportsRefund": 0,
+      "SupportsWebhooks": 0,
+      "Sequence": 60,
+      "IsActive": 1
+    },
+    "primaryKey": {
+      "ID": "8B4C2E10-5D93-4A6F-B7C8-1E2F3A4B5C07"
+    }
   }
 ]

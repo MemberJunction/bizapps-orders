@@ -22,6 +22,11 @@ export class InvalidOperationInputError extends Error {
     }
 }
 
+/** Whether `value` is a UUID — for input that may legitimately not be one, where `RequireUUID` would throw. */
+export function IsUUID(value: unknown): value is string {
+    return typeof value === 'string' && UUID.test(value);
+}
+
 /**
  * Require a UUID, or throw.
  *
