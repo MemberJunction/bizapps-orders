@@ -170,7 +170,7 @@ export async function LoadInstalmentCashFacts(
         {
             EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
             ExtraFilter: `OrderHeaderID='${orderID}' AND Status <> 'Canceled'`,
-            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'DocumentNumber', 'InstallmentNumber'],
+            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'AmountCredited', 'DocumentNumber', 'InstallmentNumber'],
             OrderBy: 'DueDate, InstallmentNumber',
             ResultType: 'simple',
             BypassCache: true,
@@ -183,6 +183,7 @@ export async function LoadInstalmentCashFacts(
         Status: String(r.Status),
         Amount: Number(r.Amount ?? 0),
         AmountPaid: Number(r.AmountPaid ?? 0),
+        AmountCredited: Number(r.AmountCredited ?? 0),
         DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
         InstallmentNumber: Number(r.InstallmentNumber ?? 0),
     }));

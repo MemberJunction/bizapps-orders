@@ -16,8 +16,8 @@
  * reduction is about. `Preview` returns the plan from ./AmountChange.ts: the catch-up, the staged entries offset and
  * the new schedule, the instalments reduced and any credit memo. Otherwise it records a Price `OrderConcession`
  * carrying `NewAmount`, valued as the reduction and routed for approval like any other; the change applies when that
- * concession is approved. Only a reduction the uninvoiced instalments absorb in full can be recorded for now: one
- * that needs a credit memo, or a refund, is refused.
+ * concession is approved. What the uninvoiced instalments cannot absorb is credited on a credit memo the approved
+ * concession carries (#662); `RefundRequested` asks for a paid invoice's credit back, which finance then refunds.
  *
  * A shift (#507) moves the term's start and end by the same number of days: the caller names the term and its
  * new start, and the new end follows. It records a Shift `OrderConcession`, valued at zero, which goes through
@@ -58,7 +58,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
-import { CheckAmountChange, CreditMemoRefusal } from './AmountChange.js';
+import { CheckAmountChange } from './AmountChange.js';
 import { CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram, type ReferralProgramVerdict } from './ReferralProgram.js';
 import { AsDay, CheckTermExtension, IsoDay } from './TermExtension.js';
@@ -281,17 +281,11 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
                 Message:
                     `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} would go from ${checked.CurrentAmount.toFixed(2)} to ` +
                     `${checked.NewAmount.toFixed(2)}: ${plan.CatchUp.toFixed(2)} taken back from revenue already earned, ` +
-                    `${billing.CreditMemo.toFixed(2)} credited on a credit memo.`,
+                    `${checked.ScheduleReduction.toFixed(2)} off the instalments not yet invoiced, ` +
+                    `${billing.CreditMemo.toFixed(2)} credited on a credit memo` +
+                    (billing.Refund > 0 ? `, of which ${billing.Refund.toFixed(2)} is refunded.` : '.'),
             };
         }
-        if (input.RefundRequested) {
-            return {
-                Success: false,
-                Message: 'A refund needs a credit memo, which an amount change cannot issue yet. Correct it with a correcting order.',
-            };
-        }
-        const memo = CreditMemoRefusal(checked);
-        if (memo) return { Success: false, Message: memo };
 
         const concession = await provider.GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, user);
         concession.NewRecord();
@@ -299,6 +293,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         concession.SubscriptionTermID = checked.TermID;
         concession.NewAmount = checked.NewAmount;
         concession.AppliesToPaymentScheduleID = input.AppliesToInvoiceID ?? null;
+        concession.RefundRequested = input.RefundRequested === true;
         concession.ReasonCategory = input.ReasonCategory;
         concession.Reason = (input.Reason ?? '').trim();
         if (!(await concession.Save())) {
@@ -310,7 +305,9 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             Status: concession.Status,
             Message:
                 concession.Status === 'Approved'
-                    ? `Term ${checked.TermNumber} lowered to ${checked.NewAmount.toFixed(2)}. Accounting has been asked to confirm the re-cut.`
+                    ? `Term ${checked.TermNumber} lowered to ${checked.NewAmount.toFixed(2)}` +
+                      (concession.CreditMemoNumber ? `, with credit memo ${concession.CreditMemoNumber}` : '') +
+                      `. Accounting has been asked to confirm the re-cut${billing.Refund > 0 ? ' and pay the refund' : ''}.`
                     : `Lowering term ${checked.TermNumber} to ${checked.NewAmount.toFixed(2)} is awaiting approval; it takes effect when approved.`,
         };
     }

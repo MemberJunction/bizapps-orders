@@ -4,23 +4,25 @@
  * `Orders.AmendArrangement` with `NewAmount` and `Preview` plans the change against the real ledger and schedule:
  * the share of the reduction already earned is taken back at once, the staged slices from today on are offset and
  * what is left is re-spread, and the reduction comes off the instalments not yet invoiced before any document is
- * credited. Without `Preview` it records a Price concession, applied when approved. Only a reduction the
- * uninvoiced instalments absorb in full can be recorded for now; one that needs a credit memo is refused.
+ * credited. Without `Preview` it records a Price concession, applied when approved. What the uninvoiced
+ * instalments cannot absorb is credited on a credit memo the approved concession carries (#662).
  *
  *   AC1   an order billed as a whole: the order is credited; the recognition plan foots; nothing is written
  *   AC2   an order billed by instalment: the reduction comes off the uninvoiced instalments, with no document
  *   AC3   "applies to invoice" credits that invoice first; an uninvoiced instalment is refused as the target
- *   AC4   refusals: an increase, a placed renewal, no acknowledgment role, and recording one that needs a credit memo
+ *   AC4   refusals: an increase, a placed renewal, no acknowledgment role
  *   AC5   inside authority: recorded, approved and applied — term, instalments, balance, entries, event, task;
  *         the next instalment still invoices
  *   AC6   outside authority: Pending changes nothing; approving it applies the change
- *   AC7   recording is refused for a refund and for a credit on an invoice already sent
+ *   AC7   a credit on an invoice already sent: the credit memo credits it, posts its entry and un-bills the line
+ *   AC8   billed as a whole: all of it is a credit memo on the order, whose balance falls by it
+ *   AC9   a refund of a paid invoice's credit: recorded on that invoice, then paid with Orders.RefundPayment
  *
  * The checks run on today's date, so how much is already earned depends on the day: they assert the plan's
  * arithmetic against the term's own staged entries rather than fixed figures.
  *
  * CONNECTS TO:
- *   CODE: AmendArrangementOperation · AmountChange · AmountChangePlan
+ *   CODE: AmendArrangementOperation · AmountChange · AmountChangePlan · OrderConcessionEntityServer
  */
 import {
   Assert,
@@ -47,7 +49,7 @@ import {
 } from "../fixture.js";
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from "../entity-names.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
-import { issue } from "./payment-schedule.checks.js";
+import { issue, pay } from "./payment-schedule.checks.js";
 import { acknowledgmentOf, grantAuthority, ruleDecidedBy } from "./term-extension.checks.js";
 
 const DAY = 86_400_000;
@@ -235,7 +237,7 @@ export const AmountChangeChecks: NamedCheck[] = [
   },
   {
     Id: "amount-change.AC4",
-    Name: "AC4: an increase, a placed renewal, no acknowledgment role and recording are refused",
+    Name: "AC4: an increase, a placed renewal and no acknowledgment role are refused",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
@@ -243,11 +245,8 @@ export const AmountChangeChecks: NamedCheck[] = [
         const { OrderID, Term } = await bookWhole(ctx);
         const before = await footprint(ctx, OrderID, Term.ID);
 
-        const up = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 1500, Preview: true, ...REASON });
+        const up = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 1500, ...REASON });
         Assert(!up.Success && /lower than the current/.test(up.Message ?? ""), `an increase is refused: ${up.Message}`);
-
-        const record = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 900, ...REASON });
-        Assert(!record.Success && /needs a credit memo/.test(record.Message ?? ""), `an order billed as a whole needs a credit memo: ${record.Message}`);
         AssertEqual(await footprint(ctx, OrderID, Term.ID), before, "and writes nothing");
 
         OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, "");
@@ -331,21 +330,100 @@ export const AmountChangeChecks: NamedCheck[] = [
   },
   {
     Id: "amount-change.AC7",
-    Name: "AC7: recording is refused for a refund and for a credit on an invoice already sent",
+    Name: "AC7: a credit on an invoice already sent is a credit memo: it credits the invoice, posts its entry and un-bills the line",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         await AcknowledgeAmendmentsWith(ctx);
         const { OrderID, Term, InstalmentIDs } = await bookByInstalment(ctx);
         await grantAuthority(ctx, 100_000, 1);
-        const before = await footprint(ctx, OrderID, Term.ID);
+        const balanceBefore = await orderBalance(ctx, OrderID);
+        const recognisedBefore = await recognised(ctx, Term.ID);
+        const billedBefore = await billedToDate(ctx, Term.OrderLineID);
 
-        const credited = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 1000, AppliesToInvoiceID: InstalmentIDs[0], ...REASON });
-        Assert(!credited.Success && /needs a credit memo/.test(credited.Message ?? ""), `crediting instalment 1 needs a credit memo: ${credited.Message}`);
+        const out = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 1000, AppliesToInvoiceID: InstalmentIDs[0], ...REASON });
+        Assert(out.Success, `recording failed: ${out.Message}`);
+        AssertEqual(out.Status, "Approved", "inside authority, approved on save");
+        const gross = Number(out.GrossReduction);
+        AssertEqual(out.CreditMemo, gross, "instalment 1 still owes more than the reduction, so all of it is credited there");
 
-        const refund = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 1000, AppliesToInvoiceID: InstalmentIDs[0], RefundRequested: true, ...REASON });
-        Assert(!refund.Success && /refund/i.test(refund.Message ?? ""), `a refund is refused: ${refund.Message}`);
-        AssertEqual(await footprint(ctx, OrderID, Term.ID), before, "neither writes anything");
+        const memo = await assertCreditMemo(ctx, { OrderID, Out: out, Gross: gross });
+        const rows = await scheduleOf(ctx, OrderID);
+        AssertEqual(Number(rows[0].AmountCredited), gross, "instalment 1 is credited by the memo");
+        AssertEqual(Number(rows[0].Amount), 300, "and keeps the amount on the invoice the customer holds");
+        AssertEqual(Number(rows[0].Balance), money(300 - gross), "so it owes the memo less");
+        Assert(rows.slice(1).every((r) => Number(r.Amount) === 300 && Number(r.AmountCredited) === 0), "the instalments still to come are untouched");
+        AssertEqual(await orderBalance(ctx, OrderID), money(balanceBefore - gross), "the order owes the reduction and its tax less");
+        AssertEqual(await billedToDate(ctx, Term.OrderLineID), money(billedBefore - memo.Net), "the line is billed the memo's net less");
+        AssertEqual(await recognised(ctx, Term.ID), money(recognisedBefore - 200), "the term recognises 200 less in all");
+
+        const next = await issue(ctx, InstalmentIDs[1]);
+        Assert(next.Success, `the next instalment still invoices: ${next.Message}`);
+      }),
+  },
+  {
+    Id: "amount-change.AC8",
+    Name: "AC8: billed as a whole, the reduction is a credit memo on the order and its balance falls by it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
+        const { OrderID, Term } = await bookWhole(ctx);
+        await grantAuthority(ctx, 100_000, 1);
+        const balanceBefore = await orderBalance(ctx, OrderID);
+        const recognisedBefore = await recognised(ctx, Term.ID);
+        const billedBefore = await billedToDate(ctx, Term.OrderLineID);
+
+        const out = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 900, ...REASON });
+        Assert(out.Success, `recording failed: ${out.Message}`);
+        AssertEqual(out.Status, "Approved", "inside authority, approved on save");
+        const gross = Number(out.GrossReduction);
+        const memo = await assertCreditMemo(ctx, { OrderID, Out: out, Gross: gross });
+        AssertEqual(memo.Net, 300, "the memo's net is the whole reduction");
+        AssertEqual(await orderBalance(ctx, OrderID), money(balanceBefore - gross), "the order owes the reduction and its tax less");
+        AssertEqual(await billedToDate(ctx, Term.OrderLineID), money(billedBefore - 300), "the line is billed 300 less");
+        AssertEqual(await recognised(ctx, Term.ID), money(recognisedBefore - 300), "the term recognises 300 less in all");
+        const term = await TxOne<{ Amount: number }>(ctx, `SELECT Amount FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID = '${Term.ID}'`);
+        AssertEqual(Number(term.Amount), 900, "the term's amount is lowered");
+      }),
+  },
+  {
+    Id: "amount-change.AC9",
+    Name: "AC9: a refund of a paid invoice's credit is recorded on that invoice and paid with Orders.RefundPayment",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        await AcknowledgeAmendmentsWith(ctx);
+        const { OrderID, Term, InstalmentIDs } = await bookByInstalment(ctx);
+        await grantAuthority(ctx, 100_000, 1);
+        const paid = await pay(ctx, OrderID, 300, InstalmentIDs[0]);
+        Assert(paid.Saved, `paying instalment 1 failed: ${paid.Message}`);
+        const balanceBefore = await orderBalance(ctx, OrderID);
+
+        const out = await amend(ctx, { SubscriptionTermID: Term.ID, NewAmount: 1000, AppliesToInvoiceID: InstalmentIDs[0], RefundRequested: true, ...REASON });
+        Assert(out.Success, `recording failed: ${out.Message}`);
+        AssertEqual(out.Status, "Approved", "inside authority, approved on save");
+        const gross = Number(out.GrossReduction);
+        AssertEqual(out.Refund, gross, "all of it is refunded");
+        AssertEqual(out.Instalments?.length ?? 0, 0, "and nothing comes off the next instalment");
+        await assertCreditMemo(ctx, { OrderID, Out: out, Gross: gross });
+        let rows = await scheduleOf(ctx, OrderID);
+        AssertEqual(Number(rows[0].AmountCredited), gross, "the paid invoice is credited");
+        AssertEqual(Number(rows[0].Balance), money(-gross), "so it is overpaid by the refund owed");
+        AssertEqual(await orderBalance(ctx, OrderID), money(balanceBefore - gross), "and the order owes that much less");
+
+        const task = await acknowledgmentOf(ctx, out.OrderConcessionID!);
+        Assert(/Orders\.RefundPayment/.test(String(task.Task.Description ?? "")), "the acknowledgment task tells finance to pay the refund");
+
+        const refunded = await run<{ Success: boolean; Message?: string }>(ctx, "Orders.RefundPayment", {
+          PaymentHeaderID: paid.Payment.ID,
+          Amount: gross,
+          Reason: "amount change refund",
+        });
+        Assert(refunded.Success, `the refund failed: ${refunded.Message}`);
+        rows = await scheduleOf(ctx, OrderID);
+        AssertEqual(Number(rows[0].Balance), 0, "once refunded, the invoice is settled");
+        AssertEqual(await orderBalance(ctx, OrderID), balanceBefore, "and the order is back where the payment left it");
       }),
   },
 ];
@@ -393,6 +471,41 @@ async function assertAmountApplied(
   const event = await TxQuery<{ ID: string }>(ctx,
     `SELECT ID FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID = '${a.Term.SubscriptionID}' AND EventType = 'AmountChanged'`);
   AssertEqual(event.length, 1, "the change is logged on the subscription");
+}
+
+/** The line's BilledToDate. */
+async function billedToDate(ctx: IntegrationCheckContext, lineID: string): Promise<number> {
+  const row = await TxOne<{ BilledToDate: number | null }>(ctx, `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`);
+  return money(Number(row.BilledToDate ?? 0));
+}
+
+async function scheduleOf(ctx: IntegrationCheckContext, orderID: string) {
+  return TxQuery<{ ID: string; Amount: number; AmountCredited: number; AmountPaid: number; Balance: number; Status: string }>(ctx,
+    `SELECT ID, Amount, AmountCredited, AmountPaid, Balance, Status FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule
+      WHERE OrderHeaderID = '${orderID}' ORDER BY InstallmentNumber`);
+}
+
+/** The concession carries the memo and its number, and the memo's entry balances: deferred and tax against AR. */
+async function assertCreditMemo(ctx: IntegrationCheckContext, a: { OrderID: string; Out: AmendOutput; Gross: number }) {
+  const concession = await TxOne<{ CreditMemoAmount: number; CreditMemoNumber: string; ScheduleReduction: number | null; OrderNumber: string }>(ctx,
+    `SELECT c.CreditMemoAmount, c.CreditMemoNumber, c.ScheduleReduction, o.OrderNumber
+       FROM ${ORDERS_SCHEMA}.OrderConcession c JOIN ${ORDERS_SCHEMA}.OrderHeader o ON o.ID = c.OrderHeaderID
+      WHERE c.ID = '${a.Out.OrderConcessionID}'`);
+  AssertEqual(Number(concession.CreditMemoAmount), a.Gross, "the concession carries the credit memo");
+  AssertEqual(concession.CreditMemoNumber, `${concession.OrderNumber}-CM1`, "numbered after its order");
+  AssertEqual(concession.ScheduleReduction, null, "nothing came off the instalments");
+  const lines = await TxQuery<{ Account: string; Debit: number; Credit: number }>(ctx,
+    `SELECT a.Name AS Account, ISNULL(l.DebitAmount, 0) AS Debit, ISNULL(l.CreditAmount, 0) AS Credit
+       FROM ${ACCT_SCHEMA}.JournalEntry je
+       JOIN ${ACCT_SCHEMA}.JournalEntryLine l ON l.JournalEntryID = je.ID
+       JOIN ${ACCT_SCHEMA}.GLAccount a ON a.ID = l.GLAccountID
+      WHERE je.Description LIKE 'Credit memo ${concession.CreditMemoNumber}:%'`);
+  Assert(lines.length >= 2, `the memo's entry was posted: ${lines.length} lines`);
+  AssertEqual(money(lines.reduce((s, l) => s + Number(l.Debit), 0)), a.Gross, "its debits are the memo");
+  AssertEqual(money(lines.reduce((s, l) => s + Number(l.Credit), 0)), a.Gross, "and so are its credits");
+  const deferred = money(lines.filter((l) => /Deferred/.test(l.Account)).reduce((s, l) => s + Number(l.Debit), 0));
+  Assert(deferred > 0, "deferred revenue is debited");
+  return { Net: deferred };
 }
 
 interface AmendOutput {
