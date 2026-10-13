@@ -1,12 +1,13 @@
 /**
- * contract-reversal.checks.ts — the `contract-reversal` bundle (RV1–RV9).
+ * contract-reversal.checks.ts — the `contract-reversal` bundle (RV1–RV11).
  *
  * REVERSING A SCHEDULED ORDER IS NOT MIRRORING ITS BOOKING ENTRY (D92 §6). A company billed by
  * instalment never posted one — its value reaches the ledger an instalment at a time — so a
  * reversal that mirrored booking would credit the customer for invoices they never received.
  * Three rules replace it, and the order they apply in is the design:
  *
- *   withdraw  the instalments nobody has been billed for, once the whole order is reversed; no entry
+ *   withdraw  the instalments nobody has been billed for, once the whole order is reversed; no entry.
+ *             A partial reversal lowers them by the returned units' share instead (#661)
  *   credit    what WAS billed and not yet earned, as `Dr Deferred / Cr AR`, prorated by quantity
  *   refuse    what was earned and not yet billed, rather than stranding it in Unbilled Receivable
  *
@@ -19,14 +20,18 @@
  *   RV4  cancelled before the first invoice: four instalments withdrawn and NO entry — nothing to credit
  *   RV5  fully delivered and fully billed: no memo and no entry — nothing is owed back
  *   RV6  4 of 10 then the other 6: memos of 360 and 540, the schedule withdrawn only by the second
- *   RV7  the same two reversals on different dates, with instalment 3 issued between: the second
- *        memo is 1,620, because the months the first one already mirrored back are not earned twice
+ *   RV7  the same two reversals on different dates, with instalment 3 issued between: the first
+ *        lowers instalments 3 and 4 to 1,620, and the second memo is 540, because the months the
+ *        first one already mirrored back are not earned twice
  *   RV8  a reversal dated BEFORE a confirmed reversal of the same line is refused, naming it; the
  *        same two in date order credit 2,160 then 360 and the origin's billed ties to its revenue
  *   RV9  a subscription line earned ahead of billing (instalment 3 skipped) is refused on the staged
  *        earned figure, naming instalment 3; nothing is cancelled and nothing is booked
  *   RV10 a taxed line billed by instalment, 4 of 10 returned: the memo credits 360 and the return
  *        refunds no tax, because the tax reaches the ledger one instalment at a time (#266)
+ *   RV11 a partial return lowers the uninvoiced instalments by the returned units' share of what
+ *        they still bill, records it on the returning line, and every later instalment still
+ *        invoices; the origin's balance is what its instalments bill (#661)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -479,7 +484,7 @@ export const ContractReversalChecks: NamedCheck[] = [
     },
     {
         Id: 'contract-reversal.RV7',
-        Name: 'RV7: reversing 4 of 10 in November and the other 6 in February credits 360 then 1,620',
+        Name: 'RV7: reversing 4 of 10 in November and the other 6 in February credits 360 then 540',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -487,7 +492,12 @@ export const ContractReversalChecks: NamedCheck[] = [
                 // Andrew's second pass. RV6 runs both reversals on one date, where the first one's
                 // mirrors all fall after the second and nothing is double-counted. Here the first one's
                 // December, January and February mirrors (3 x 360) sit before the second, so counting
-                // the origin's releases alone as earned would credit 540 rather than 1,620.
+                // the origin's releases alone as earned would credit nothing rather than 540.
+                //
+                // The first reversal lowers instalments 3 and 4 by four tenths of what they had left
+                // (#661), so instalment 3 bills the six units kept: 1,620, not 2,700. Before that it
+                // billed the whole contract and the second memo credited the overbilling back (1,620);
+                // the customer ends billed the same 6,120 net either way.
                 const { orderID, ids, originLineID } = await scenarioOneAtMonthFive(ctx, 10);
                 const window = SCENARIO_1().servicePeriod;
                 const ar = await accountCodeForRole(ctx, 'Accounts Receivable', f.CoA.ID);
@@ -497,15 +507,20 @@ export const ContractReversalChecks: NamedCheck[] = [
                 const four = await reverse(ctx, originLineID, f.Products.DeferredA, { orderDate: MONTH_FIVE, servicePeriod: window, quantity: 4 });
                 Assert(four.Saved, `the first reversal must confirm: ${four.Message}`);
                 AssertEqual(await memoOf(four.Order.ID as string), 360, 'four tenths of the 900');
+                AssertEqual(
+                    (await schedule(ctx, orderID)).map((r) => Number(r.Amount)).join(','),
+                    '2700,2700,1620,1620',
+                    'the instalments not yet invoiced lose four tenths',
+                );
 
                 Assert((await issue(ctx, ids[2])).Success, 'issue instalment 3 on 1 January');
-                AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 7740, '5,040 plus the 2,700 instalment');
+                AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 6660, '5,040 plus the lowered 1,620 instalment');
 
                 const six = await reverse(ctx, originLineID, f.Products.DeferredA, { orderDate: '2027-02-15', servicePeriod: window, quantity: 6 });
                 Assert(six.Saved, `the second reversal must confirm: ${six.Message}`);
-                // 7,740 billed, less 7,200 staged through 1 February, plus the 1,080 the first
+                // 6,660 billed, less 7,200 staged through 1 February, plus the 1,080 the first
                 // reversal already took back of it.
-                AssertEqual(await memoOf(six.Order.ID as string), 1620, 'owed 1,620, not 540');
+                AssertEqual(await memoOf(six.Order.ID as string), 540, 'owed 540, not nothing');
                 AssertEqual(sum(await releases(ctx, six.Order.ID as string)), 2160, 'six tenths of the four releases after 15 February');
                 AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 6120, 'the origin ends billed for what it kept earned');
                 AssertEqual(
@@ -659,6 +674,51 @@ export const ContractReversalChecks: NamedCheck[] = [
                             (SELECT CAST(ID AS NVARCHAR(400)) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${backID}')`,
                 );
                 AssertEqual(Number(taxLines!.N), 0, 'and nothing posted to Sales Tax Payable');
+            }),
+    },
+    {
+        Id: 'contract-reversal.RV11',
+        Name: 'RV11: returning 4 of 10 lowers the uninvoiced instalments to 1,620 each, and both still invoice',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // #661. Instalments 3 and 4 still bill 5,400 of the line; four tenths of that, 2,160,
+                // is what the returned units had not yet been invoiced for. Before the fix they kept
+                // billing 2,700 each, and lowering them by hand left a schedule that no longer tied.
+                const { orderID, ids, originLineID } = await scenarioOneAtMonthFive(ctx, 10);
+                const back = await reverse(ctx, originLineID, f.Products.DeferredA, {
+                    orderDate: MONTH_FIVE,
+                    servicePeriod: SCENARIO_1().servicePeriod,
+                    quantity: 4,
+                });
+                Assert(back.Saved, `the reversal must confirm: ${back.Message}`);
+
+                const returning = await TxOne<{ ScheduleReduction: number | null }>(
+                    ctx,
+                    `SELECT ScheduleReduction FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${back.Order.ID}'`,
+                );
+                AssertEqual(Number(returning!.ScheduleReduction), 2160, 'the returning line records what it took off');
+                AssertEqual(
+                    (await schedule(ctx, orderID)).map((r) => `${r.Status}:${Number(r.Amount)}`).join(','),
+                    'Invoiced:2700,Invoiced:2700,Scheduled:1620,Scheduled:1620',
+                    'only the uninvoiced instalments are lowered, pro rata',
+                );
+
+                const header = async () =>
+                    TxOne<{ TotalGross: number; Balance: number }>(ctx, `SELECT TotalGross, Balance FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID='${orderID}'`);
+                AssertEqual(Number((await header())!.TotalGross), 10800, 'the origin keeps its booked lines');
+                AssertEqual(Number((await header())!.Balance), 8640, 'and owes what its instalments bill: 10,800 less 2,160');
+
+                const third = await issue(ctx, ids[2]);
+                Assert(third.Success, `instalment 3 must invoice against the lowered schedule: ${third.Message ?? ''}`);
+                const fourth = await issue(ctx, ids[3]);
+                Assert(fourth.Success, `and instalment 4: ${fourth.Message ?? ''}`);
+                AssertEqual(
+                    Number((await lineTotals(ctx, orderID))[0].BilledToDate),
+                    8280,
+                    '5,040 after the memo, plus the two lowered instalments',
+                );
             }),
     },
 ];

@@ -47,7 +47,7 @@
  *   WRITES: Accounting.CreateJournalEntries · Subscription Terms · Order Header Payment Schedules ·
  *           Order Lines (BilledToDate) · Subscription Events · Tasks
  */
-import { RunView, type IRunViewProvider } from '@memberjunction/core';
+import { RunView, type EntitySaveOptions, type IRunViewProvider } from '@memberjunction/core';
 import type { mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersSubscriptionEventEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import {
@@ -59,6 +59,7 @@ import {
     SplitCreditMemo,
     type AmountChangePlan,
     type CreditMemoSplit,
+    type InstalmentChange,
     type ReductionPlan,
 } from './AmountChangePlan.js';
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -531,15 +532,28 @@ async function setTermAmount(checked: CheckedAmountChange, ctx: ApprovalTaskCont
 
 /** Each uninvoiced instalment the plan changes takes its new amount, or is cancelled at zero. */
 async function lowerInstalments(checked: CheckedAmountChange, ctx: ApprovalTaskContext): Promise<void> {
-    for (const change of checked.Billing.Instalments) {
+    await LowerInstalments(checked.Billing.Instalments, 'the amount change waited', ctx);
+}
+
+/**
+ * Write a reduction plan's instalments: each takes its new amount, or is cancelled at zero. Refuses an
+ * instalment invoiced since the plan was made. `waited` finishes "was invoiced while …".
+ */
+export async function LowerInstalments(
+    changes: InstalmentChange[],
+    waited: string,
+    ctx: ApprovalTaskContext,
+    options?: EntitySaveOptions,
+): Promise<void> {
+    for (const change of changes) {
         const row = await ctx.Provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ctx.User);
         if (!(await row.Load(change.ID))) throw new Error(`Instalment ${change.InstallmentNumber} could not be loaded to lower it.`);
         if (row.Status !== 'Scheduled' || row.DocumentNumber) {
-            throw new Error(`Instalment ${change.InstallmentNumber} was invoiced while the amount change waited, so it can no longer be lowered.`);
+            throw new Error(`Instalment ${change.InstallmentNumber} was invoiced while ${waited}, so it can no longer be lowered.`);
         }
         if (change.NewAmount > 0) row.Amount = change.NewAmount;
         else row.Status = 'Canceled';
-        if (!(await row.Save())) {
+        if (!(await row.Save(options))) {
             throw new Error(`Instalment ${change.InstallmentNumber} could not be lowered: ${row.LatestResult?.CompleteMessage}`);
         }
     }

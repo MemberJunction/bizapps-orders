@@ -46,7 +46,6 @@ import {
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
 } from '@mj-biz-apps/orders-entities';
 
-import { AppliedAmountChanges } from './AmountChange.js';
 import { ReduceLineAmounts } from './AmountChangePlan.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
@@ -58,6 +57,7 @@ import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { InstalmentDocumentNumber } from './InvoiceBehavior.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
+import { AppliedScheduleReductions } from './ReversalScheduleReduction.js';
 import { RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 
@@ -173,12 +173,13 @@ export async function IssueInstalment(
         if (!lines.Success || !siblings.Success) {
             return refuse(`Could not read order ${order.OrderNumber} to check its schedule: ${lines.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, echo);
         }
-        // An approved amount change lowered the instalments, not the lines (#506): the lines are read less what it
-        // took off them, so the lowered schedule still ties and each instalment bills the lowered line.
-        const amountChanges = await AppliedAmountChanges(order.ID, { Provider: provider, User: user });
+        // An approved amount change (#506) or a return (#661) lowered the instalments, not the lines: the lines are
+        // read less what each took off them, so the lowered schedule still ties and each instalment bills the
+        // lowered line.
+        const reductions = await AppliedScheduleReductions(order.ID, { Provider: provider, User: user });
         const billedLines = [
             ...(lines.Results ?? []),
-            ...amountChanges.map((c) => ({ CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
+            ...reductions.map((c) => ({ CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
         ];
         const shortfalls = ScheduleShortfalls(siblings.Results ?? [], billedLines, order.CompanyID);
         if (shortfalls.length) {
@@ -268,7 +269,7 @@ export async function IssueInstalment(
             for (const piece of pieces) {
                 const company = String(piece.CompanyID);
                 const companyLines = (await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], company, invoiceDay)).map((l) =>
-                    ReduceLineAmounts(l, amountChanges),
+                    ReduceLineAmounts(l, reductions),
                 );
                 if (!companyLines.length) continue;
                 billings.push({
