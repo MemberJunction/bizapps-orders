@@ -61,7 +61,7 @@ if [ -z "$LAST_TAG" ]; then
   exit 0
 fi
 
-MIGRATIONS=$(git --no-pager diff --name-only "$LAST_TAG" HEAD -- migrations/ || true)
+MIGRATIONS=$(changed_migrations "$LAST_TAG" HEAD)
 METADATA=$(substantive_metadata_changes "$LAST_TAG" HEAD)
 
 RAW_METADATA=$(git --no-pager diff --name-only "$LAST_TAG" HEAD -- metadata/ || true)
