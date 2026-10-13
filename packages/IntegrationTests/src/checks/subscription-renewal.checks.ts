@@ -94,7 +94,7 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { OrdersEngine, Today } from '@mj-biz-apps/orders-entities';
+import { OrdersEngine, Today, type CustomerPaymentMethodEntity } from '@mj-biz-apps/orders-entities';
 import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
@@ -117,7 +117,6 @@ import {
     CUSTOMER_PAYMENT_METHOD_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,
-    PAYMENT_DETAIL_ENTITY,
     PAYMENT_INTENT_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,
@@ -196,12 +195,14 @@ async function buySubscription(
     discountPct?: number,
     promotionCodes?: string[],
     organizationID?: string,
+    billToPersonID?: string,
 ) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         OrderDate: JAN_1,
         BillToOrganizationID: organizationID ?? f.Customers.OrganizationID,
+        BillToPersonID: billToPersonID,
         Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct }],
         PromotionCodes: promotionCodes,
     });
@@ -1315,7 +1316,9 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const paused = await renewalPromotion(ctx, { AppliesToRenewals: true });
                 const expired = await renewalPromotion(ctx, { AppliesToRenewals: true });
                 const a = await buySubscription(ctx, 'SubRolling', 1200, undefined, [paused]);
-                const b = await buySubscription(ctx, 'SubRolling', 1200, undefined, [expired]);
+                // Another holder: a second SubRolling purchase by the same one would extend a's subscription,
+                // leaving a nothing to renew on the date this check asks about.
+                const b = await buySubscription(ctx, 'SubRolling', 1200, undefined, [expired], Fx().Customers.SecondOrganizationID);
                 AssertEqual(await lineDiscount(ctx, a.OrderID), 240, 'precondition: the paused one applied at purchase');
                 AssertEqual(await lineDiscount(ctx, b.OrderID), 240, 'precondition: the expired one applied at purchase');
 
@@ -1621,7 +1624,10 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () =>
                 withRenewalLinks(async () => {
-                    const { SubscriptionID, OrderID, TermStart } = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                    // A bill-to person with an e-mail address: the link goes to them.
+                    const { SubscriptionID, OrderID, TermStart } = await renewWithCard(ctx, 'pm_card_chargeDeclined', {
+                        billToPersonID: Fx().Customers.PersonID,
+                    });
                     const first = await chargeRenewalsViaAction(ctx, { SubscriptionID, AsOfDate: TermStart, Preview: 'false' });
                     AssertEqual(first.Failed, 1, `the first charge failed: ${first.Message}`);
                     const a1 = first.Attempts.find((a) => SameID(a.OrderID, OrderID));
@@ -1873,31 +1879,33 @@ async function stubStripeProvider(ctx: IntegrationCheckContext, active = true): 
 async function renewWithCard(
     ctx: IntegrationCheckContext,
     instrumentRef: string,
-    opts: { inactiveProvider?: boolean; organizationID?: string } = {},
+    opts: { inactiveProvider?: boolean; organizationID?: string; billToPersonID?: string } = {},
 ): Promise<{ SubscriptionID: string; OrderID: string; TermStart: string; SourceOrderID: string; ProviderID: string }> {
     const f = Fx();
     // A second subscription in one check needs a second holder: AnnualRolling is ExtendExisting, so the
     // same holder buying again extends the first subscription instead of starting another.
     const holder = opts.organizationID ?? f.Customers.OrganizationID;
-    const { SubscriptionID, Term, OrderID: SourceOrderID } = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder);
+    const { SubscriptionID, Term, OrderID: SourceOrderID } = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder, opts.billToPersonID);
     const providerID = await stubStripeProvider(ctx, !opts.inactiveProvider);
     const tenderID = f.PaymentTypeIDs.get('CreditCard');
     Assert(tenderID != null, 'precondition: a CreditCard payment type');
-    const detailID = await createViaEntity(ctx, PAYMENT_DETAIL_ENTITY, {
-        CompanyID: f.CoA.ID,
-        PaymentTypeID: tenderID,
-        PaymentProviderID: providerID,
-        ProviderCustomerRef: 'cus_it_renewal',
-        ProviderInstrumentRef: instrumentRef,
-        Brand: 'visa',
-        Last4: '4242',
-    });
-    const walletID = await createViaEntity(ctx, CUSTOMER_PAYMENT_METHOD_ENTITY, {
-        OwnerOrganizationID: holder,
-        PaymentDetailID: detailID,
-        IsDefault: 1,
-        IsActive: 1,
-    });
+    // The card is the wallet's embedded Payment Detail, written through the wallet as checkout writes it
+    // (D38/D39): a new wallet holds a new, empty detail, and the wallet's save persists it first.
+    const wallet = await ctx.Provider.GetEntityObject<CustomerPaymentMethodEntity>(CUSTOMER_PAYMENT_METHOD_ENTITY, ctx.User);
+    wallet.NewRecord();
+    wallet.OwnerOrganizationID = holder;
+    wallet.IsDefault = true;
+    wallet.IsActive = true;
+    const detail = wallet.PaymentDetailID_Object;
+    detail.CompanyID = f.CoA.ID;
+    detail.PaymentTypeID = tenderID!;
+    detail.PaymentProviderID = providerID;
+    detail.ProviderCustomerRef = 'cus_it_renewal';
+    detail.ProviderInstrumentRef = instrumentRef;
+    detail.Brand = 'visa';
+    detail.Last4 = '4242';
+    Assert(await wallet.Save(), `the renewal card is filed: ${wallet.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+    const walletID = wallet.ID;
     await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { DefaultCustomerPaymentMethodID: walletID });
 
     const placed = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });

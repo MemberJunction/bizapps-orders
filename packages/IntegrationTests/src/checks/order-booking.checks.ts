@@ -140,7 +140,8 @@ async function lineEntries(ctx: IntegrationCheckContext, orderID: string) {
 /**
  * A product written the way a catalog loader or another process writes one: a raw INSERT, which
  * fires no entity event, so this process's `OrdersEngine` never hears of it (golive #301). Copies
- * the classification of `like` so booking resolves the same GL accounts, and adds NO price row.
+ * the classification of `like` so booking resolves the same GL accounts, and its status and availability
+ * window so the sellability check treats it as `like` (the column default is Draft), and adds NO price row.
  */
 async function productCachedNowhere(ctx: IntegrationCheckContext, like: string): Promise<{ ID: string; CompanyID: string }> {
     // Warm the cache FIRST, as MJAPI does at startup. A cache that first loads after the INSERT
@@ -151,8 +152,10 @@ async function productCachedNowhere(ctx: IntegrationCheckContext, like: string):
     const sku = `G301-${id.slice(0, 8)}`;
     await TxQuery(
         ctx,
-        `INSERT INTO ${ORDERS_SCHEMA}.Product (ID, Name, SKU, ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID)
-         SELECT '${id}', '${sku}', '${sku}', ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID
+        `INSERT INTO ${ORDERS_SCHEMA}.Product (ID, Name, SKU, ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID,
+                                               Status, AvailableFrom, AvailableTo)
+         SELECT '${id}', '${sku}', '${sku}', ProductTypeID, ProductCategoryID, CompanyID, RevenueRecognitionTypeID,
+                Status, AvailableFrom, AvailableTo
            FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${like}'`,
     );
     Assert(!OrdersEngine.Instance.ProductByID(id), 'precondition: the raw INSERT must not reach the engine cache');

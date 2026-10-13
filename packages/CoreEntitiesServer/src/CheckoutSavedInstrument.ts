@@ -36,7 +36,6 @@
 import { IMetadataProvider, LogError, LogStatus, RunView, UserInfo } from '@memberjunction/core';
 import type {
     mjBizAppsOrdersCustomerPaymentMethodEntity,
-    mjBizAppsOrdersPaymentDetailEntity,
     mjBizAppsOrdersSubscriptionEntity,
 } from '@mj-biz-apps/orders-entities';
 import type { RetrievedInstrument } from './BasePaymentProvider.js';
@@ -317,8 +316,14 @@ async function createWalletEntry(
 ): Promise<string> {
     const paymentTypeID = await paymentTypeIDFor(input.TenderCode, user);
 
-    const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
-    detail.NewRecord();
+    // The instrument snapshot is the wallet's embedded Payment Detail (D38/D39): a new wallet already holds a
+    // new, empty one, and saving the wallet saves it first and stamps PaymentDetailID. A detail saved on its
+    // own and pointed at would leave that empty embed to be saved, and refused for having no company.
+    const wallet = await provider.GetEntityObject<mjBizAppsOrdersCustomerPaymentMethodEntity>(CUSTOMER_PAYMENT_METHOD_ENTITY, user);
+    wallet.NewRecord();
+    if (owner.PersonID) wallet.OwnerPersonID = owner.PersonID;
+    else wallet.OwnerOrganizationID = owner.OrganizationID!;
+    const detail = wallet.PaymentDetailID_Object;
     detail.CompanyID = input.CompanyID;
     detail.PaymentTypeID = paymentTypeID;
     detail.PaymentProviderID = input.PaymentProviderID;
@@ -329,21 +334,12 @@ async function createWalletEntry(
     if (instrument.ExpiryMonth) detail.ExpiryMonth = instrument.ExpiryMonth;
     if (instrument.ExpiryYear) detail.ExpiryYear = instrument.ExpiryYear;
     if (instrument.HolderName) detail.HolderName = instrument.HolderName;
-    if (!(await detail.Save())) {
-        throw new Error(`could not record the card: ${detail.LatestResult?.CompleteMessage ?? 'unknown error'}`);
-    }
-
-    const wallet = await provider.GetEntityObject<mjBizAppsOrdersCustomerPaymentMethodEntity>(CUSTOMER_PAYMENT_METHOD_ENTITY, user);
-    wallet.NewRecord();
-    if (owner.PersonID) wallet.OwnerPersonID = owner.PersonID;
-    else wallet.OwnerOrganizationID = owner.OrganizationID!;
-    wallet.PaymentDetailID = detail.ID;
     wallet.IsDefault = true;
     wallet.IsActive = true;
     const nickname = [instrument.Brand, instrument.Last4 ? `ending ${instrument.Last4}` : null].filter(Boolean).join(' ');
     if (nickname) wallet.Nickname = nickname;
     if (!(await wallet.Save())) {
-        throw new Error(`could not add the card to the wallet: ${wallet.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        throw new Error(`could not record the card in the wallet: ${wallet.LatestResult?.CompleteMessage ?? 'unknown error'}`);
     }
     return wallet.ID;
 }

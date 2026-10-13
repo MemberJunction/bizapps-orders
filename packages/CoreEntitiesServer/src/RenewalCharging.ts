@@ -70,6 +70,7 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY, type OpenIntentResult } from './PaymentIntentService.js';
+import { PaymentProviderNotConfiguredError } from './PaymentProviderResolver.js';
 import { AddDays } from './PaymentTermsBehavior.js';
 import { DaysBetween } from './InvoiceBehavior.js';
 import { RequireOptionalDay, RequireOptionalUUID, RequireUUIDs } from './sql-guards.js';
@@ -497,6 +498,10 @@ async function chargeOnce(
             user,
         );
     } catch (err) {
+        // A provider that cannot be used (inactive, or not configured) is refused before the gateway is
+        // asked, so nothing reached the card: a configuration fault, not an unknown outcome. Not logged,
+        // so the order is not held and a rerun once the provider is fixed charges as usual.
+        if (err instanceof PaymentProviderNotConfiguredError) throw err;
         // The gateway may have charged the card: unreachable, a server error, or our row not written
         // after it answered. Recorded so later passes hold the order instead of charging it again
         // under the next day's key.

@@ -665,7 +665,9 @@ export const PricingChecks: NamedCheck[] = [
         const f = Fx();
         await setSellability(ctx, f.Products.WidgetA, { Status: "Discontinued" });
 
-        for (const unitPrice of [undefined, 10]) {
+        // The stated price is above any engine price, so no concession is involved: the concession gate
+        // runs before pricing and would otherwise refuse the confirm first, for a reason this check is not about.
+        for (const unitPrice of [undefined, 1000]) {
           const how = unitPrice === undefined ? "engine-priced" : "hand-priced";
           const order = await confirmLine(ctx, f.Products.WidgetA, { unitPrice });
           Assert(!order.Saved, `a ${how} line of a Discontinued product must refuse the confirm`);

@@ -43,9 +43,22 @@ function entity(name: string) {
         LatestResult: { CompleteMessage: '' },
         NewRecord() {
             this.ID = `00000000-0000-0000-0000-${String(++state.nextID).padStart(12, '0')}`;
+            // A wallet embeds its Payment Detail (D38/D39): a new wallet holds a new detail, and saving the
+            // wallet saves the detail first and stamps PaymentDetailID, as MJ's embedded record does.
+            if (name === 'MJ_BizApps_Orders: Customer Payment Methods') {
+                const detail = entity('MJ_BizApps_Orders: Payment Details') as { NewRecord(): void };
+                detail.NewRecord();
+                this.PaymentDetailID_Object = detail;
+            }
         },
         async Save() {
-            state.saved.push({ entity: name, row: { ...this } });
+            const embedded = this.PaymentDetailID_Object as { ID: string; Save(): Promise<boolean> } | undefined;
+            if (embedded) {
+                if (!(await embedded.Save())) return false;
+                this.PaymentDetailID = embedded.ID;
+            }
+            const { PaymentDetailID_Object: _embed, ...fields } = this;
+            state.saved.push({ entity: name, row: { ...fields } });
             return true;
         },
     };

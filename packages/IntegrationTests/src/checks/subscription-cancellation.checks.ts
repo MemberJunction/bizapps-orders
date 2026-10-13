@@ -17,8 +17,8 @@
  *   SC8   a lifecycle SubscriptionEvent is logged, carrying the decision
  *   SC9   cancelling twice is refused rather than double-reversing
  *   SC10  an unknown subscription fails as OUTPUT, not as a thrown fault
- *   SC11  a later term sold on the same order is canceled and reversed in full, even under
- *         NoRefund, on a reversal pointing at that order (#406)
+ *   SC11  a later term sold and invoiced on the same order is canceled, and under NoRefund its
+ *         invoiced amount is kept: nothing is reversed (#406, #560)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -456,7 +456,7 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-cancellation.SC11',
-        Name: 'SC11: a later term sold on the same order is canceled and reversed in full',
+        Name: 'SC11: a later term sold and invoiced on the same order is canceled and, under NoRefund, kept',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -488,11 +488,13 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                 const out = await cancel(ctx, { SubscriptionID, RequestDate: '2026-09-01' });
                 Assert(out.Success, `cancel failed: ${out.Message}`);
 
-                // Term 1 rides out under NoRefund. Term 2 never starts, so NoRefund does not keep it.
+                // Term 1 rides out under NoRefund. Term 2 never starts, and the order invoiced it in full
+                // at confirm, so NoRefund keeps it too: it is canceled and nothing is reversed (#560,
+                // provisional until the refund policy is confirmed there).
                 AssertEqual(Number(out.Decision!.RefundAmount), 0, 'NoRefund keeps term 1');
                 AssertEqual(out.LaterTerms?.length ?? 0, 1, 'term 2 is the one later term');
-                AssertEqual(Number(out.LaterTerms![0].Decision.RefundAmount), 1200, 'term 2 comes back in full');
-                AssertEqual(Number(out.TotalRefundAmount), 1200, 'the whole refund is term 2');
+                AssertEqual(Number(out.LaterTerms![0].Decision.RefundAmount), 0, 'NoRefund keeps the invoiced term 2');
+                AssertEqual(Number(out.TotalRefundAmount), 0, 'nothing is refunded');
 
                 const terms = await TxQuery<{ TermNumber: number; Status: string }>(
                     ctx,
@@ -501,34 +503,17 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                 );
                 AssertEqual(terms.map((t) => t.Status).join(','), 'Completed,Canceled', 'term 1 rides out, term 2 is canceled');
 
-                Assert(out.ReversalOrderID != null, 'reversing term 2 needs a reversal order');
-                const reversal = await TxOne<{ Status: string; ReversesOrderHeaderID: string | null }>(
+                AssertEqual(out.ReversalOrderID ?? null, null, 'nothing is reversed, so no reversal order is booked');
+                const reversals = await TxQuery<{ ID: string }>(
                     ctx,
-                    `SELECT Status, ReversesOrderHeaderID FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${out.ReversalOrderID}'`,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ReversesOrderLineID = '${sold[1].OrderLineID}'`,
                 );
-                AssertEqual(reversal.Status, 'Confirmed', 'the reversal is booked');
-                Assert(SameID(reversal.ReversesOrderHeaderID ?? '', order.Order.ID), 'and points at the order that sold term 2');
-                const lines = await TxQuery<{ ReversesOrderLineID: string; Quantity: number }>(
+                AssertEqual(reversals.length, 0, "nothing reverses term 2's line");
+                const billed = await TxOne<{ BilledToDate: number }>(
                     ctx,
-                    `SELECT ReversesOrderLineID, Quantity FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${out.ReversalOrderID}'`,
+                    `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${sold[1].OrderLineID}'`,
                 );
-                AssertEqual(lines.length, 1, 'one reversal line: term 1 reverses nothing');
-                Assert(SameID(lines[0].ReversesOrderLineID, sold[1].OrderLineID), "reversing term 2's line");
-                AssertEqual(Number(lines[0].Quantity), -1, 'in full');
-
-                // The reversal mirrors term 2's booking: Dr Deferred Revenue / Cr AR, 1,200 each.
-                const je = await TxQuery<{ Code: string; DebitAmount: number; CreditAmount: number }>(
-                    ctx,
-                    `SELECT gl.Code, jel.DebitAmount, jel.CreditAmount
-                     FROM ${ORDERS_SCHEMA}.OrderLine ol
-                     JOIN ${ACCT_SCHEMA}.JournalEntryLine jel ON jel.JournalEntryID = ol.JournalEntryID
-                     JOIN ${ACCT_SCHEMA}.GLAccount gl ON gl.ID = jel.GLAccountID
-                     WHERE ol.OrderHeaderID = '${out.ReversalOrderID}'`,
-                );
-                const net = (code: string) =>
-                    Math.round(je.filter((l) => l.Code === code).reduce((t, l) => t + Number(l.DebitAmount) - Number(l.CreditAmount), 0) * 100) / 100;
-                AssertEqual(net('21301'), 1200, `Deferred Revenue is debited 1,200: ${JSON.stringify(je)}`);
-                AssertEqual(net('11201'), -1200, `AR is credited 1,200: ${JSON.stringify(je)}`);
+                AssertEqual(Number(billed.BilledToDate), 1200, "term 2's invoiced amount stays billed, so it stays on AR");
             }),
     },
 ];
