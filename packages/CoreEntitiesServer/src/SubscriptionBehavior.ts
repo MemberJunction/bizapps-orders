@@ -118,6 +118,14 @@ export interface CancellableTerm {
     TermNumber: number;
 }
 
+/**
+ * When the person cancelling wants coverage to end, overriding the type's `CancellationMode` for
+ * this one cancellation. Absent, the type decides.
+ */
+export type CancellationTiming = 'Immediate' | 'EndOfTerm';
+
+export const CANCELLATION_TIMINGS: readonly CancellationTiming[] = ['Immediate', 'EndOfTerm'];
+
 export interface CancellationContext {
     Rules: SubscriptionTypeRules;
     /** When the customer asked to cancel. */
@@ -763,6 +771,26 @@ export class SubscriptionBehavior {
     // the POLICY — and the raw mechanic is terrible data entry. Amith's case: a subscription running
     // 1/1-12/31, cancelled on 7/1, needs a line of quantity -0.5. The user should pick a DATE; the
     // engine derives the fraction. That is what this computes.
+
+    /**
+     * The rules a cancellation runs under when the person cancelling chose a timing. The type's own
+     * rules stand when `timing` is absent.
+     *
+     * `Immediate` also drops the grace period: someone who asks for access to end now means now,
+     * and grace would keep the holder in for `GracePeriodDays` more. `EndOfTerm` keeps the type's
+     * grace, which is the type's policy for a term that runs out. Refund mode is never changed here;
+     * a refund the type does not give is a separate decision, made with `Orders.RefundPayment`.
+     */
+    public RulesForTiming(rules: SubscriptionTypeRules, timing?: CancellationTiming | null): SubscriptionTypeRules {
+        switch (timing) {
+            case 'Immediate':
+                return { ...rules, CancellationMode: 'Immediate', GracePeriodDays: 0 };
+            case 'EndOfTerm':
+                return { ...rules, CancellationMode: 'EndOfTerm' };
+            default:
+                return rules;
+        }
+    }
 
     /**
      * Apply the type's cancellation rules to a request. Pure — computes dates and amounts, touches
