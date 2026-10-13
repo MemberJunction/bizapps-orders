@@ -1,0 +1,172 @@
+[
+  {
+    "_comments": [
+      "THE RENEWAL CHARGE ACTION (#289). Its own dot-json so parallel work on other actions conflicts on nothing.",
+      "",
+      "WHY AN ACTION. A renewal falls due with nothing being written, so only the clock can start the charge;",
+      "MJ's scheduler dispatches Actions, and this row is how the daily job reaches ChargeRenewals. The class",
+      "behind it holds no charging logic.",
+      "",
+      "SAFE TO SHIP Active: nothing invokes it until the ScheduledJob in metadata/scheduled-jobs/ is enabled,",
+      "and that job ships Disabled and set to Preview."
+    ],
+    "fields": {
+      "Name": "Charge Renewals",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Charge the renewal card of each renewal order due a charge today: on its due day (the new term's first day), then on the retry days after it (the RenewalChargeRetryDays setting, default 3, 7 and 11), until it is paid or reaches the access cutoff. A success is captured against the order; a decline or an authentication demand is recorded as a failed attempt with the next attempt day. Preview reports what would be charged without charging.",
+      "Type": "Custom",
+      "DriverClass": "Orders.ChargeRenewals",
+      "IconClass": "fa-solid fa-credit-card",
+      "UserPrompt": "Charge the saved cards of renewal orders due a charge today, or preview what would be charged.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "6FCFE3A6-7591-432F-8311-A5DF4EB12FB7"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AsOfDate",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Treat this date as today when deciding which renewal orders are due a charge (YYYY-MM-DD). Omit for the business day, which is what the schedule uses. An unreadable value is refused rather than replaced with today."
+          },
+          "primaryKey": {
+            "ID": "E36A44EF-B2B4-434F-9A76-FFC3054541A0"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SubscriptionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Restrict the pass to the renewal orders of one subscription, for a targeted retry or a test. Omit for every subscription with a renewal card."
+          },
+          "primaryKey": {
+            "ID": "7E14737F-319A-4A6E-B6DB-A24699325F23"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True reports what WOULD be charged and charges nothing; false (the default) charges. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "8076E4BA-0E36-4B54-B000-1DC353004A4E"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on orders charged in one pass. Orders left over are charged on the next pass if the day is still a charge day. A value that is not a whole number of at least 1 is refused."
+          },
+          "primaryKey": {
+            "ID": "7EEE5BE9-3C06-41E4-9412-7524974F9011"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Charged",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many renewal orders this pass paid from the renewal card (or would, on a preview)."
+          },
+          "primaryKey": {
+            "ID": "F1C5CF3B-F8EE-454A-A24F-FB7656BA5ED3"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many charges the gateway declined or that needed the customer to authenticate."
+          },
+          "primaryKey": {
+            "ID": "D3BB5FBE-EBEC-467A-A2B6-E6FA70164934"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Skipped",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many renewal orders were looked at and not charged today, each with its reason in Attempts."
+          },
+          "primaryKey": {
+            "ID": "B3C436C0-CCB8-41DB-A108-32F2E9281A6B"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Attempts",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every renewal order looked at: the subscription, the amount, the due day, the attempt number, the outcome, the reason, the intent and payment, and the next attempt day after a failure."
+          },
+          "primaryKey": {
+            "ID": "835B2418-7D58-48D3-9B48-CAC177D63EB0"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failures",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Orders whose attempt hit a fault, with the error. The rest of the pass stands."
+          },
+          "primaryKey": {
+            "ID": "3EDF6AE9-D3FC-4ACD-8794-C36DADA352E4"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass reported its list and charged nothing. Not named Preview, so the input's value is not overwritten."
+          },
+          "primaryKey": {
+            "ID": "8EEB8B32-30D7-47C7-B3C8-BBF7B85C9F47"
+          }
+        }
+      ]
+    }
+  }
+]

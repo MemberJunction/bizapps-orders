@@ -135,6 +135,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         }
 
         if (this.useStub) {
+            if (request.ProviderInstrumentRef) return this.stubSavedInstrumentCharge(request);
             // Deterministic from the order, so re-running a check produces the same id and a duplicate
             // is visible as a duplicate rather than as two unrelated intents.
             const seed = request.OrderHeaderID ?? request.IdempotencyKey ?? 'no-order';
@@ -171,14 +172,61 @@ export class StripePaymentProvider extends BasePaymentProvider {
         this.DecorateIntentBody(body, request);
 
         const result = await this.call('POST', '/payment_intents', body, request.IdempotencyKey);
-        if (!result.Ok) return { Success: false, Reason: result.Reason };
+        if (!result.Ok) {
+            // A saved card charged at create time is declined with HTTP 402, and the error carries the
+            // intent Stripe opened for the attempt. Kept, so the attempt is recorded rather than lost.
+            return request.ProviderInstrumentRef ? StripeChargeRefusal(result.Body, result.Reason) : { Success: false, Reason: result.Reason };
+        }
 
+        const status = MapStripeIntentStatus(result.Body.status as string);
+        const created = Number(result.Body.created);
         return {
             Success: true,
             ProviderIntentID: String(result.Body.id),
-            Status: MapStripeIntentStatus(result.Body.status as string),
+            Status: status,
             ClientSecret: result.Body.client_secret as string | undefined,
+            // An off-session confirm that Stripe answers with `requires_action` needs the absent
+            // customer to authenticate. Reported so the caller can treat it as the failure it is.
+            RequiresAuthentication:
+                request.ProviderInstrumentRef && String(result.Body.status ?? '') === 'requires_action' ? true : undefined,
+            // The intent is created and confirmed in the same request, so its `created` is when the
+            // money was taken.
+            CapturedAt:
+                request.ProviderInstrumentRef && status === 'Succeeded' && Number.isFinite(created) && created > 0
+                    ? new Date(created * 1000)
+                    : undefined,
         };
+    }
+
+    /**
+     * The stub's answer to a saved-instrument charge, keyed on Stripe's own test payment-method names
+     * so a check reads the same as a test-mode run: `pm_card_chargeDeclined` (and the
+     * `pm_card_visa_chargeDeclined…` family) is declined, `pm_card_authenticationRequired` demands
+     * authentication, anything else succeeds.
+     *
+     * The intent id comes from the idempotency key, so each attempt on an order has its own id and a
+     * repeated key returns the same intent, as Stripe does.
+     */
+    private stubSavedInstrumentCharge(request: CreateIntentRequest): CreateIntentResult {
+        const seed = request.IdempotencyKey ?? `${request.OrderHeaderID ?? 'no-order'}:${request.ProviderInstrumentRef}`;
+        const providerIntentID = `pi_stub_${StubDigest(seed)}`;
+        const instrument = request.ProviderInstrumentRef ?? '';
+        if (/chargeDeclined/i.test(instrument)) {
+            return { Success: false, Reason: 'Your card was declined.', ProviderIntentID: providerIntentID, Status: 'Failed', FailureCode: 'card_declined' };
+        }
+        if (/authenticationRequired/i.test(instrument)) {
+            return {
+                Success: false,
+                Reason: 'Your card was declined. This transaction requires authentication.',
+                ProviderIntentID: providerIntentID,
+                Status: 'Failed',
+                FailureCode: 'authentication_required',
+                RequiresAuthentication: true,
+            };
+        }
+        // A card charge settles at once; a bank debit (a subclass whose stub opens Processing) does not.
+        const status: IntentStatus = this.StubIntentStatus === 'RequiresPayment' ? 'Succeeded' : this.StubIntentStatus;
+        return { Success: true, ProviderIntentID: providerIntentID, Status: status, CapturedAt: status === 'Succeeded' ? new Date() : undefined };
     }
 
     public override async UpdateIntent(request: UpdateIntentRequest): Promise<UpdateIntentResult> {
@@ -664,6 +712,48 @@ export function stripeCaptureAlreadyCollected(
         msg.includes('already been captured') ||
         msg.includes('already succeeded')
     );
+}
+
+/**
+ * A refused saved-instrument charge as a `CreateIntentResult`.
+ *
+ * Stripe declines an off-session confirm with HTTP 402 and an `error` that carries the intent it
+ * opened (`error.payment_intent`), the reason (`code`, refined by `decline_code`) and a message for a
+ * person. `authentication_required` is the SCA demand: the card wants the customer, who is not there.
+ * Without an intent in the error there is nothing to record, and only the reason comes back.
+ */
+export function StripeChargeRefusal(body: Record<string, unknown>, reason: string | undefined): CreateIntentResult {
+    const error = (body?.error ?? {}) as Record<string, unknown>;
+    const intent = error.payment_intent as Record<string, unknown> | string | undefined;
+    const providerIntentID = typeof intent === 'string' ? intent : ((intent?.id as string | undefined) ?? undefined);
+    const code = typeof error.code === 'string' ? error.code : undefined;
+    const declineCode = typeof error.decline_code === 'string' ? error.decline_code : undefined;
+    const intentStatus = typeof intent === 'object' && intent ? String(intent.status ?? '') : '';
+    return {
+        Success: false,
+        Reason: reason ?? 'Stripe refused the charge.',
+        ProviderIntentID: providerIntentID,
+        Status: providerIntentID ? 'Failed' : undefined,
+        FailureCode: declineCode ?? code,
+        RequiresAuthentication: code === 'authentication_required' || declineCode === 'authentication_required' || intentStatus === 'requires_action' ? true : undefined,
+    };
+}
+
+/**
+ * 24 hex characters that depend on every character of `seed`: three FNV-1a passes with different
+ * offsets. For the stub's intent ids only, where a collision would show as a reused intent; never
+ * for anything that needs to resist an attacker.
+ */
+export function StubDigest(seed: string): string {
+    const pass = (offset: number): string => {
+        let h = offset >>> 0;
+        for (let i = 0; i < seed.length; i++) {
+            h ^= seed.charCodeAt(i);
+            h = Math.imul(h, 0x01000193) >>> 0;
+        }
+        return h.toString(16).padStart(8, '0');
+    };
+    return pass(0x811c9dc5) + pass(0x050c5d1f) + pass(0x2f8b1a9e);
 }
 
 /** Stripe's `created[gte]` / `created[lte]` filter, in unix seconds. */

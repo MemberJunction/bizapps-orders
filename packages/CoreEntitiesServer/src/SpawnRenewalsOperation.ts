@@ -18,7 +18,9 @@
  * payment schedule due on the pass's day, so under D92 the receivable is raised by that instalment's
  * invoice, dated when it is issued, not on the term start (#305). Revenue is not affected — the
  * invoice credits Deferred Revenue and the recognition entries are dated into the new term's own
- * window (D14).
+ * window (D14). A subscription with a renewal card (`DefaultCustomerPaymentMethodID`) is the one
+ * exception to the due day: its row is due on the term start, when `ChargeRenewals` charges the card
+ * (#289). Placing an order still never calls a gateway.
  *
  * IDEMPOTENCY, which a scheduled job makes non-negotiable
  * Two independent guards, because this runs unattended and a double-spawn double-bills a customer:
@@ -190,6 +192,8 @@ interface DueRow {
     SubscriptionStartDate: string;
     SubscriptionIncreasePercent: number | null;
     CarryDiscountOnRenewal: boolean;
+    /** The renewal card (#289). When set, the renewal is charged on its term start and is due that day. */
+    DefaultCustomerPaymentMethodID: string | null;
 }
 
 interface SourceLineRow {
@@ -388,6 +392,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 s.StartDate           AS SubscriptionStartDate,
                 s.RenewalIncreasePercent AS SubscriptionIncreasePercent,
                 s.CarryDiscountOnRenewal,
+                s.DefaultCustomerPaymentMethodID,
                 l.ID                  AS TermID,
                 l.TermNumber,
                 l.StartDate           AS TermStartDate,
@@ -539,9 +544,10 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
 
             // Due on the invoice day plus the customer's terms, capped at the order date (#305
             // review). `resolveDueDate` is the confirm's own terms walk, run now so the row can use
-            // it; confirm then sees the date already set and leaves it.
+            // it; confirm then sees the date already set and leaves it. A subscription with a renewal
+            // card is due on the order date, the day `ChargeRenewals` first charges the card (#289).
             await order.resolveDueDate();
-            const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate);
+            const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, !!due.DefaultCustomerPaymentMethodID);
             await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
 
             order.Status = 'Confirmed';

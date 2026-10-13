@@ -466,6 +466,9 @@ After `Confirm()` commits, `CompleteCheckout` marks the session `Confirmed` with
 
 A failure at any step rolls the whole booking back. Payment is not checked inside `Confirm()`: `CompleteCheckout` verified it first.
 
+#### Keeping the card for renewals
+When the draft sells a product with a subscription type, the intent is opened with a gateway customer and a request to keep the card. After the capture books, `SaveCheckoutInstrumentForRenewals` (`CheckoutSavedInstrument.ts`) files the card in the buyer's wallet and sets it as `Subscription.DefaultCustomerPaymentMethodID` on each new auto-renewing subscription. That subscription's renewal order is then due on the new term's first day, and the daily `Orders.ChargeRenewals` job charges the card off-session on that day, retrying on the `RenewalChargeRetryDays` setting (default 3, 7 and 11 days after) until the access cutoff (`RenewalCharging.ts`, #289).
+
 ---
 
 ## Pre-Purchase Checks

@@ -146,10 +146,15 @@ export function RenewalScheduleRows(
  * The terms are the ones `resolveDueDate` already settled for the order, read back as the gap
  * between its `OrderDate` and `DueDate`, so there is one terms lookup, not two. Capping at the order
  * date keeps the row due on or before it, which is what makes confirm issue it (D92).
+ *
+ * A subscription with a RENEWAL CARD (`hasRenewalCard`, #289) is charged on the new term's first day,
+ * so its row is due on the order date itself: the past-due count, and the access cutoff with it,
+ * starts from the day the card is first charged, not from an invoice day weeks earlier.
  */
-export function RenewalDueDate(invoiceDay: string, orderDate: DateCell, orderDueDate: DateCell): string {
+export function RenewalDueDate(invoiceDay: string, orderDate: DateCell, orderDueDate: DateCell, hasRenewalCard = false): string {
     const orderDay = ToISODate(orderDate);
     const termsDue = ToISODate(orderDueDate);
+    if (hasRenewalCard && orderDay) return orderDay;
     if (!orderDay || !termsDue) {
         throw new Error(`A renewal needs its order date and resolved due date to date its instalment (got ${orderDay}, ${termsDue}).`);
     }
