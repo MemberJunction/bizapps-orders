@@ -154,7 +154,7 @@ interface GateRow {
 }
 
 /** The access columns of every grant an order produced. */
-const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
+export const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<GateRow>(
     ctx,
     `SELECT g.ID, g.Status, g.GrantTimingApplied, g.SuspensionReason, g.SuspendedAt
@@ -171,7 +171,7 @@ const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
  * so a row changed behind its back keeps its old timing. The timing is put back the same way before
  * the transaction rolls back, or the cache would carry this check's policy into the next one.
  */
-async function withGrantTiming(
+export async function withGrantTiming(
   ctx: IntegrationCheckContext,
   productID: string,
   timing: string,
@@ -188,7 +188,7 @@ async function withGrantTiming(
 }
 
 /** Capture cash against one order through `Orders.CapturePayment` — the path a finance user takes. */
-async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number): Promise<void> {
+export async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number): Promise<void> {
   const f = Fx();
   Assert(f.PaymentTypeIDs.get("Cash") != null, "PaymentType 'Cash' missing — push the orders app metadata");
   const op = MJGlobal.Instance.ClassFactory.CreateInstance<
@@ -209,7 +209,7 @@ async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: n
 }
 
 /** Place the renewal of one subscription through `Orders.SpawnRenewals`, and return its order. */
-async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf: string): Promise<string> {
+export async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf: string): Promise<string> {
   const op = MJGlobal.Instance.ClassFactory.CreateInstance<
     BaseRemotableOperation<Record<string, unknown>, { Placed: number; Message?: string; Candidates: Array<{ OrderID?: string }> }>
   >(BaseRemotableOperation, "Orders.SpawnRenewals");
@@ -219,7 +219,7 @@ async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf:
   return result.Output!.Candidates[0].OrderID!;
 }
 
-const addDays = (iso: string, n: number): string => {
+export const addDays = (iso: string, n: number): string => {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
