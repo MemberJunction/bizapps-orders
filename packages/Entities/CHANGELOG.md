@@ -1,5 +1,32 @@
 # @mj-biz-apps/orders-entities
 
+## 5.31.0
+
+### Minor Changes
+
+- 1f5d3f6: `Orders.CapturePayment` now returns each order effect's `PaymentStatus` (`Unpaid`, `PartiallyPaid` or `Paid`), derived from the order's totals. It was read from a column the order no longer has, so it was always missing. The invoice builder no longer carries the same dead field.
+- f8b53d9: Guard triggers report their own rule again when a write goes through MemberJunction. The order, payment, payment schedule, progress measurement and access override guards refused a write with `ROLLBACK TRANSACTION` before `THROW`; under the `INSERT ... EXEC` that every MemberJunction save and tracked delete uses, SQL Server rejects that `ROLLBACK` with error 3915, so the caller saw "Cannot use the ROLLBACK statement within an INSERT-EXEC statement" instead of the rule. A new migration recreates the eight triggers with `THROW` alone, which still rolls the whole transaction back.
+- e98b880: The 5.31 Metadata_Sync ships what metadata/ changed since the 5.29 seed, since 5.30 shipped without one: payment reconciliation (the Orders.ReconcilePaymentProviderCharges operation, the Reconcile Payment Provider Charges and Check Payment Webhook Endpoints actions, and their daily and hourly jobs, created Disabled), the AccessOverrideFallbackApproverRole setting, Account Director and Finance on the access-override authorization, the Payment Webhook Deliveries "Not Applied" view, form sections on 287 fields, the Party Order Lifetime and Party Orders Overview SQL, and the updated Capture Payment, Check Entitlement, List Entitlements and Amend Arrangement contracts. It has a Postgres counterpart. The seed is idempotent and safe on a host that already ran `mj sync push`. The ML training pipelines under metadata/ are not included.
+- 50de8dc: The guard-trigger migration `V202610091200` gains its Postgres counterpart. The eight guards (order header and line, payment header, line and detail, payment schedule, progress measurement and access override) refuse the same writes on Postgres with the same messages, as statement-level triggers that raise an exception; the T-SQL error number is in the exception's DETAIL.
+
+### Patch Changes
+
+- 8f105ee: `Orders.PollExternalPayments` follows the scheduled poll job's state on every run that would write, whoever calls it (#583): with no job installed or the job not Active it refuses and records nothing; with the job in Preview it runs as a preview and says so; only an Active job out of Preview records cash. The rule moved from the Bill.com webhook into `orders-entities` (`ClassifyPollJob`, `ClassifyPollJobs`, `LoadPollJobState`), and the webhook reads it from there. On the External Invoicing queue page, "Check for payments now" is disabled while the job is off, runs as a labelled preview while the job previews, and asks for confirmation before a live run.
+- 1ea0ecf: The peer ranges for `@mj-biz-apps/common-entities` and `@mj-biz-apps/common-ng` start at 5.52.0 instead of 5.49.0. `@mj-biz-apps/common-server` 5.52.0, which accounting's server package needs, pins `common-entities` 5.52.0 exactly, so a host that resolved orders' floor got a second copy of the common entity classes. With the floor at 5.52.0 the workspace resolves one copy.
+- 52e3762: Days now display and compare correctly in every browser zone (golive #168).
+
+  - **Date columns** (`date` in SQL: order, due, payment, term and price-list dates) read as their own day. A payment dated Oct 1 showed "Sep 30" in its own header, and in the subscription, term, price list, product and pricing-widget forms and the party orders overview, for anyone west of UTC. `FormatDate` and `DaysSince` read a `Date` by its UTC day and a string by its leading `YYYY-MM-DD`.
+  - **Timestamps** (`datetimeoffset`: an event's start and end, a promotion's schedule, entitlement validity, subscription and stored-value events, an external invoice's sent date) display as the business-zone day they fell on, through the new `FormatInstantDate`, `FormatShortInstantDate` and `FormatInstantWindow`. Nothing infers which kind a value is from its time of day. A promotion starting at 7:00 PM Central now reads Oct 1, not Oct 2.
+  - The orders dashboard's "days past due", the pricing page's list windows, and the customer AR, charges and tax, and subscriptions page dates no longer read "0 days" or "—" when a cell is a `Date`.
+  - The party orders overview files orders by the month their date names and ends its six-month window at the business month. Its query and the party lifetime query count from the business day instead of the UTC clock.
+  - "Today" comes from the business calendar instead of the UTC day, which is already tomorrow for the whole American evening. This covers the orders dashboard, overdue, customer AR, order document, product and party stats, a new or retired product GL link, revenue-recognition release on the subscriptions page, and `ResolveActiveEmployerOrganization`'s default as-of day.
+
+- bcdb1dc: `mj-app.json` now lists `@mj-biz-apps/orders-actions` under `server` instead of `shared`. They use server-only code (Node built-ins, or MemberJunction's actions, AI engine, storage or server packages), and `shared` installs a package into MJExplorer too. The Open App client bootstrap imports every `shared` package, so Explorer's browser build failed on a host with this app installed (`Could not resolve "node:crypto"`, `"node:net"`, `"stream"`). The server still loads them exactly as before.
+- 0feb8d2: The payment poll gate is per provider (#608). A scheduled poll job that sets `PaymentProviderID` governs only that provider; jobs that set none govern every provider without a job of its own. `Orders.PollExternalPayments` gates each provider in the run separately: a provider whose job is off is skipped, one in Preview runs as a preview, and the run fails only when every provider was skipped. The Bill.com webhook checks the notified provider's jobs. Adds `ClassifyPollJobsFor`, `ClassifyPollJobGroups`, `PollJobProviderID` and `LoadPollJobs` to `orders-entities`; `LoadPollJobState` takes an optional provider ID.
+- d462e77: `ResolvePrice` now invokes the `BasePriceResolver` named by `PricingDriverClass` (product, category chain, product type, company policy; most specific first, through the same `ResolvePricingDriver` walk the browser uses) before the `Product:`/`Category:`/`Company:` ID keys. A named key with no registered resolver, or a driver lookup that cannot be read, refuses the line with a `PriceResolutionError`. The final fallback now picks the no-key registration explicitly, so a keyed plugin can no longer stand in as the default for products it was not named for.
+- cb861ae: The three scoring record processes in `metadata/record-processes` are retired with `deleteRecord`. Each scored with one of the ML models already retired, and no release seed carried them. `scripts/check-release-seed-coverage.mjs` no longer counts a retired record that no migration ever created, since no host has it.
+- 06ee0ac: Both built-in checkout clients now complete Cloudflare Turnstile, so a widget can set `requireTurnstile` (#592). Before, neither `<mj-orders-checkout>` nor the fallback page sent a token, and every initialize and complete answered 403. The edge's 403 now names the site key (new `TurnstileSiteKey` edge setting, paired with `TurnstileSecretEnvVar`); the clients render the challenge, retry once, and get a fresh token for each later initialize or complete. The checkout page's CSP allows `https://challenges.cloudflare.com`. An edge that requires Turnstile without a site key fails closed with a 503.
+
 ## 5.30.0
 
 ### Minor Changes
@@ -570,8 +597,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                    "FK_EntityFieldValue_EntityField"
+                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
