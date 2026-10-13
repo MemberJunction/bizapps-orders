@@ -637,16 +637,25 @@ function acknowledgmentDescription(checked: CheckedAmountChange, concession: App
             ? `Left as the customer's credit: ${billing.OpenCredit.toFixed(2)}, on the order's balance. It can be spent on ` +
               `another order with Orders.ApplyAccountCredit, or refunded with Orders.RefundPayment.`
             : '';
+    // The customer's copy of the memo is sent on purpose, not by the approval: sending reaches someone outside the
+    // company and cannot be taken back (#684).
+    const send =
+        memo.Gross > 0
+            ? `Send the customer credit memo ${concession.CreditMemoNumber} with Orders.SendDocument, naming this concession in ` +
+              `OrderConcessionID. It goes by email, also for a company that invoices through Bill.com.`
+            : '';
     return [
         `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} went from ${checked.CurrentAmount.toFixed(2)} to ` +
             `${checked.NewAmount.toFixed(2)} (${concession.ReasonCategory}: ${concession.Reason}). ${where} ` +
-            `Confirm the catch-up and the re-cut below${billing.Refund > 0 ? ', pay the refund' : ''}, then complete this task.`,
+            `Confirm the catch-up and the re-cut below${memo.Gross > 0 ? ', send the credit memo' : ''}` +
+            `${billing.Refund > 0 ? ', pay the refund' : ''}, then complete this task.`,
         '',
         `Catch-up on ${isoDay(checked.EffectiveDate)}: ${plan.CatchUp.toFixed(2)} of revenue already earned taken back.`,
         plan.Targets.length ? `Replaced: ${plan.Targets.length} staged entries, each offset on its own date.\n${before}` : '',
         plan.Respread.length ? `New schedule, ${plan.Remaining} over ${plan.Respread.length} entries:\n${after}` : '',
         instalments ? `Instalments:\n${instalments}` : '',
         credited ? `Credited by the memo:\n${credited}` : '',
+        send,
         refund,
         open,
     ]

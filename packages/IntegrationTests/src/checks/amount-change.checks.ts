@@ -18,6 +18,9 @@
  *   AC8   billed as a whole: all of it is a credit memo on the order, whose balance falls by it
  *   AC9   a refund of a paid invoice's credit: recorded on that invoice, then paid with Orders.RefundPayment
  *
+ * AC7–AC9 also render the customer's credit memo from what the approval recorded, and the invoices it credited
+ * re-rendered with the credit (#684).
+ *
  * The checks run on today's date, so how much is already earned depends on the day: they assert the plan's
  * arithmetic against the term's own staged entries rather than fixed figures.
  *
@@ -33,7 +36,7 @@ import {
 } from "@memberjunction/testing-integration";
 import { BaseRemotableOperation, Metadata } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
-import { ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import { BuildCreditMemoDocuments, BuildInvoiceDocuments, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
 import type { mjBizAppsOrdersOrderConcessionEntity, OrderHeaderEntity } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
@@ -357,6 +360,19 @@ export const AmountChangeChecks: NamedCheck[] = [
         AssertEqual(await billedToDate(ctx, Term.OrderLineID), money(billedBefore - memo.Net), "the line is billed the memo's net less");
         AssertEqual(await recognised(ctx, Term.ID), money(recognisedBefore - 200), "the term recognises 200 less in all");
 
+        const doc = await memoDocument(ctx, { OrderID, Out: out, Gross: gross, Net: memo.Net });
+        const applied = doc.Ladder.filter((r) => r.Kind === "Payment");
+        AssertEqual(applied.length, 1, "the memo document shows the invoice it credited");
+        Assert(applied[0].Label.startsWith("Applied to invoice "), `naming it: ${applied[0].Label}`);
+        AssertEqual(applied[0].Amount, gross, "for the whole memo");
+        AssertEqual(doc.AmountDue, 0, "so no credit is left to the customer");
+        const invoice = await BuildInvoiceDocuments(OrderID, ctx.Provider, ctx.User, { PaymentScheduleID: InstalmentIDs[0] });
+        Assert(invoice.Success, `instalment 1 re-renders: ${invoice.Message}`);
+        AssertEqual(invoice.Documents[0].AmountDue, money(300 - gross), "the re-rendered invoice asks for its balance");
+        Assert(invoice.Documents[0].Ladder.some((r) => r.Label === `Credit memo ${doc.DocumentNumber}`), "and names the memo that credited it");
+        const task = await acknowledgmentOf(ctx, out.OrderConcessionID!);
+        Assert(/Orders\.SendDocument/.test(String(task.Task.Description ?? "")), "the acknowledgment task says how to send the memo");
+
         const next = await issue(ctx, InstalmentIDs[1]);
         Assert(next.Success, `the next instalment still invoices: ${next.Message}`);
       }),
@@ -385,6 +401,13 @@ export const AmountChangeChecks: NamedCheck[] = [
         AssertEqual(await recognised(ctx, Term.ID), money(recognisedBefore - 300), "the term recognises 300 less in all");
         const term = await TxOne<{ Amount: number }>(ctx, `SELECT Amount FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID = '${Term.ID}'`);
         AssertEqual(Number(term.Amount), 900, "the term's amount is lowered");
+
+        const doc = await memoDocument(ctx, { OrderID, Out: out, Gross: gross, Net: memo.Net });
+        const onOrder = money(doc.Ladder.filter((r) => r.Kind === "Payment").reduce((s, r) => s + r.Amount, 0));
+        AssertEqual(money(onOrder - doc.AmountDue), gross, "what the memo applied to the order and what it leaves make up the memo");
+        const invoice = await BuildInvoiceDocuments(OrderID, ctx.Provider, ctx.User, {});
+        Assert(invoice.Success, `the order re-renders: ${invoice.Message}`);
+        AssertEqual(invoice.Documents[0].AmountDue, await orderBalance(ctx, OrderID), "the order's invoice asks for what the order's balance says");
       }),
   },
   {
@@ -414,6 +437,9 @@ export const AmountChangeChecks: NamedCheck[] = [
 
         const task = await acknowledgmentOf(ctx, out.OrderConcessionID!);
         Assert(/Orders\.RefundPayment/.test(String(task.Task.Description ?? "")), "the acknowledgment task tells finance to pay the refund");
+        const doc = await memoDocument(ctx, { OrderID, Out: out, Gross: gross });
+        AssertEqual(doc.AmountDue, money(-gross), "the memo document leaves all of it as credit due to the customer");
+        Assert(/refunded to you/.test(doc.Description ?? ""), "and says it is refunded");
 
         const refunded = await run<{ Success: boolean; Message?: string }>(ctx, "Orders.RefundPayment", {
           PaymentHeaderID: paid.Payment.ID,
@@ -506,6 +532,21 @@ async function assertCreditMemo(ctx: IntegrationCheckContext, a: { OrderID: stri
   const deferred = money(lines.filter((l) => /Deferred/.test(l.Account)).reduce((s, l) => s + Number(l.Debit), 0));
   Assert(deferred > 0, "deferred revenue is debited");
   return { Net: deferred };
+}
+
+/** The credit memo document, built from what the approval recorded: kind, number and amounts. */
+async function memoDocument(ctx: IntegrationCheckContext, a: { OrderID: string; Out: AmendOutput; Gross: number; Net?: number }) {
+  const built = await BuildCreditMemoDocuments(a.Out.OrderConcessionID!, ctx.Provider, ctx.User, { OrderHeaderID: a.OrderID });
+  Assert(built.Success, `the credit memo renders: ${built.Message}`);
+  AssertEqual(built.Documents.length, 1, "as one document");
+  const doc = built.Documents[0];
+  AssertEqual(doc.Kind, "Credit Memo", "a credit memo");
+  const concession = await TxOne<{ CreditMemoNumber: string }>(ctx,
+    `SELECT CreditMemoNumber FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${a.Out.OrderConcessionID}'`);
+  AssertEqual(doc.DocumentNumber, concession.CreditMemoNumber, "under the memo's number");
+  AssertEqual(doc.Gross, money(-a.Gross), "for the memo's amount");
+  if (a.Net != null) AssertEqual(doc.NetTotal, money(-a.Net), "its net is what the memo's entry took off deferred revenue");
+  return doc;
 }
 
 interface AmendOutput {

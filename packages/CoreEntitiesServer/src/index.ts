@@ -865,6 +865,7 @@ export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEnt
 // in an MJ Template so it can be changed without a deploy.
 export {
     AttributeByLine,
+    BuildAmountChangeCreditMemo,
     BuildDocuments,
     BuildLadder,
     BuildRows,
@@ -884,9 +885,12 @@ export {
     TermsLabel,
 } from './InvoiceBehavior.js';
 export type {
+    AmountChangeMemoFacts,
+    CreditMemoApplicationFacts,
     DocumentKind,
     InvoiceAdjustmentFacts,
     InvoiceChargeFacts,
+    InvoiceCreditFacts,
     InvoiceDocument,
     InvoiceInstalmentFacts,
     InvoiceIssuerFacts,
@@ -898,7 +902,7 @@ export type {
     LadderRow,
 } from './InvoiceBehavior.js';
 
-export { BuildInvoiceDocuments } from './InvoiceBuilder.js';
+export { BuildCreditMemoDocuments, BuildInvoiceDocuments, OrderCredits } from './InvoiceBuilder.js';
 export type { InvoiceBuildResult } from './InvoiceBuilder.js';
 
 export { DecorateInvoice, DuePhrase, FormatDate, FormatMoney, FormatQuantity } from './InvoiceDisplay.js';
