@@ -152,13 +152,19 @@ jobs:
   # One case is not an over-bump but a wrong answer: a PR that REVERTS unreleased migration or
   # metadata work. Its own diff touches migrations/, yet nothing differs from the last release,
   # so a minor here would ship a minor release with nothing in it. `migration-changeset-exempt`
-  # covers that, and only at this door: rr: minor bump and rr: metadata shipped judge the net
+  # covers that, only at this door, and only when a Maintain or Admin added it: rr: minor bump and rr: metadata shipped judge the net
   # change since the last tag and read no label, so a mislabelled real change is still caught.
   migration-changeset:
     name: 'migration changeset'
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # The two reads let the check find who added `migration-changeset-exempt` (the PR's events)
+    # and look up their repository role; only Maintain or Admin may use the label.
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -176,6 +182,8 @@ jobs:
       - name: Migrations require a minor or major changeset
         env:
           MIGRATION_CHANGESET_EXEMPT: ${{ contains(github.event.pull_request.labels.*.name, 'migration-changeset-exempt') }}
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           ./.github/scripts/check-migration-changeset.sh --self-test
           ./.github/scripts/check-migration-changeset.sh ${{ steps.mb.outputs.sha }} HEAD
