@@ -359,10 +359,11 @@ async function testRollupsAndImmutability(pool, md, user, seed) {
     order.Status = 'Confirmed';
     if (!(await order.Save())) { check('rollup fixture confirmed', false, order.LatestResult?.CompleteMessage ?? ''); return; }
 
-    let row = (await q(pool, `SELECT TotalGross, AmountPaid, Balance, PaymentStatus FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
+    let row = (await q(pool, `SELECT TotalGross, AmountPaid, Balance FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
     check('TotalGross rolled up from lines (250)', Number(row.TotalGross) === 250, JSON.stringify(row));
     check('Balance = TotalGross - AmountPaid (250)', Number(row.Balance) === 250, JSON.stringify(row));
-    check("PaymentStatus 'Unpaid' with no payments", row.PaymentStatus === 'Unpaid', JSON.stringify(row));
+    // Payment state is derived from the rollups; the stored PaymentStatus column was dropped in V202608241300.
+    check('unpaid with no payments (AmountPaid 0)', Number(row.AmountPaid) === 0, JSON.stringify(row));
 
     // Apply a partial payment: 100 of 250.
     const ptCash = (await q(pool, `SELECT ID FROM ${ORDERS}.PaymentType WHERE Code='Cash'`))[0].ID;
@@ -377,10 +378,10 @@ async function testRollupsAndImmutability(pool, md, user, seed) {
         `INSERT INTO ${ORDERS}.PaymentLine (ID, PaymentHeaderID, OrderHeaderID, Amount, AllocatedAt)
          VALUES ('${randomUUID()}','${payID}','${order.ID}',100,SYSDATETIMEOFFSET())`);
 
-    row = (await q(pool, `SELECT TotalGross, AmountPaid, Balance, PaymentStatus FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
+    row = (await q(pool, `SELECT TotalGross, AmountPaid, Balance FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
     check('AmountPaid rolled up from PaymentLine (100)', Number(row.AmountPaid) === 100, JSON.stringify(row));
     check('Balance recalculated (150)', Number(row.Balance) === 150, JSON.stringify(row));
-    check("PaymentStatus 'PartiallyPaid'", row.PaymentStatus === 'PartiallyPaid', JSON.stringify(row));
+    check('partially paid (AmountPaid > 0, Balance > 0)', Number(row.AmountPaid) > 0 && Number(row.Balance) > 0, JSON.stringify(row));
 
     // PaymentDetail instrument fields are immutable (D39) — this is what makes copy-on-use safe.
     let blocked = false;
@@ -444,7 +445,7 @@ async function testNumberingAndInitialPayment(pool, md, user, seed) {
     order.Status = 'Confirmed';
     if (!(await order.Save())) { check('order with initial payment confirmed', false, order.LatestResult?.CompleteMessage ?? ''); return; }
 
-    const saved = (await q(pool, `SELECT OrderNumber, TotalGross, AmountPaid, Balance, PaymentStatus FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
+    const saved = (await q(pool, `SELECT OrderNumber, TotalGross, AmountPaid, Balance FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
     check('OrderNumber auto-assigned as ORD-{seq}', /^ORD-\d{6}$/.test(saved.OrderNumber ?? ''), saved.OrderNumber);
 
     const pay = await q(pool, `
@@ -454,8 +455,8 @@ async function testNumberingAndInitialPayment(pool, md, user, seed) {
     check('initial payment auto-generated and applied', pay.length === 1, `got ${pay.length}`);
     check('PaymentNumber auto-assigned as PAY-{seq}', /^PAY-\d{6}$/.test(pay[0]?.PaymentNumber ?? ''), pay[0]?.PaymentNumber);
     check('payment fully applied to the order (400)', Number(pay[0]?.Applied) === 400);
-    check('rollups reflect the payment (Balance 0, Paid)',
-        Number(saved.Balance) === 0 && saved.PaymentStatus === 'Paid',
+    check('rollups reflect the payment (AmountPaid 400, Balance 0)',
+        Number(saved.AmountPaid) === 400 && Number(saved.Balance) === 0,
         JSON.stringify(saved));
 
     // D39: the payment got its OWN copy of the instrument, not the order's row.

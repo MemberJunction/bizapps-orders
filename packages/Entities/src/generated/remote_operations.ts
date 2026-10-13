@@ -550,7 +550,8 @@ export interface CapturePaymentOrderEffect {
     /** As the rollup triggers left it, not as the operation calculated it. */
     AmountPaid: number;
     Balance: number;
-    PaymentStatus: string;
+    /** Derived from TotalGross, AmountPaid and Balance; the order stores no payment status. */
+    PaymentStatus: 'Unpaid' | 'PartiallyPaid' | 'Paid';
     /**
      * True when this order's balance went NEGATIVE — the customer over-paid and the surplus is now
      * spendable credit (D68). Not an error: the account-credit screen depends on these existing.

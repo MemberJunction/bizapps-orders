@@ -1,5 +1,39 @@
 # @mj-biz-apps/orders-ng
 
+## 5.31.0
+
+### Minor Changes
+
+- 52e3762: Days now display and compare correctly in every browser zone (golive #168).
+
+  - **Date columns** (`date` in SQL: order, due, payment, term and price-list dates) read as their own day. A payment dated Oct 1 showed "Sep 30" in its own header, and in the subscription, term, price list, product and pricing-widget forms and the party orders overview, for anyone west of UTC. `FormatDate` and `DaysSince` read a `Date` by its UTC day and a string by its leading `YYYY-MM-DD`.
+  - **Timestamps** (`datetimeoffset`: an event's start and end, a promotion's schedule, entitlement validity, subscription and stored-value events, an external invoice's sent date) display as the business-zone day they fell on, through the new `FormatInstantDate`, `FormatShortInstantDate` and `FormatInstantWindow`. Nothing infers which kind a value is from its time of day. A promotion starting at 7:00 PM Central now reads Oct 1, not Oct 2.
+  - The orders dashboard's "days past due", the pricing page's list windows, and the customer AR, charges and tax, and subscriptions page dates no longer read "0 days" or "—" when a cell is a `Date`.
+  - The party orders overview files orders by the month their date names and ends its six-month window at the business month. Its query and the party lifetime query count from the business day instead of the UTC clock.
+  - "Today" comes from the business calendar instead of the UTC day, which is already tomorrow for the whole American evening. This covers the orders dashboard, overdue, customer AR, order document, product and party stats, a new or retired product GL link, revenue-recognition release on the subscriptions page, and `ResolveActiveEmployerOrganization`'s default as-of day.
+
+### Patch Changes
+
+- 8f105ee: `Orders.PollExternalPayments` follows the scheduled poll job's state on every run that would write, whoever calls it (#583): with no job installed or the job not Active it refuses and records nothing; with the job in Preview it runs as a preview and says so; only an Active job out of Preview records cash. The rule moved from the Bill.com webhook into `orders-entities` (`ClassifyPollJob`, `ClassifyPollJobs`, `LoadPollJobState`), and the webhook reads it from there. On the External Invoicing queue page, "Check for payments now" is disabled while the job is off, runs as a labelled preview while the job previews, and asks for confirmation before a live run.
+- 98ba1d8: Checkout field discovery sends a value-list field its values as `options`, so the widget's select has choices; a NOT NULL field with a database default is no longer required; NVARCHAR(MAX) (stored as Length -1) maps to a textarea, and the 255 threshold is read in characters. The `checkout-complete` event carries the applied promotion code as `coupon` (#583 items 9, 10, 11).
+- 1ea0ecf: The peer ranges for `@mj-biz-apps/common-entities` and `@mj-biz-apps/common-ng` start at 5.52.0 instead of 5.49.0. `@mj-biz-apps/common-server` 5.52.0, which accounting's server package needs, pins `common-entities` 5.52.0 exactly, so a host that resolved orders' floor got a second copy of the common entity classes. With the floor at 5.52.0 the workspace resolves one copy.
+- 0feb8d2: The payment poll gate is per provider (#608). A scheduled poll job that sets `PaymentProviderID` governs only that provider; jobs that set none govern every provider without a job of its own. `Orders.PollExternalPayments` gates each provider in the run separately: a provider whose job is off is skipped, one in Preview runs as a preview, and the run fails only when every provider was skipped. The Bill.com webhook checks the notified provider's jobs. Adds `ClassifyPollJobsFor`, `ClassifyPollJobGroups`, `PollJobProviderID` and `LoadPollJobs` to `orders-entities`; `LoadPollJobState` takes an optional provider ID.
+- 8073f27: The server bootstrap now calls `LoadProductPriceEntityServer()`, so the price-rule collision check survives tree-shaking like its neighbours (#583). `orders-ng` drops the unregistered PriceList, Promotion, Subscription and SubscriptionTerm form components and `BizAppsProductFormComponent` (none rendered as an entity's form), and the parked `transfer-pending/` workspace-tabs copy, which `@memberjunction/ng-ui-components` 6.1.5 now exports.
+- 06ee0ac: Both built-in checkout clients now complete Cloudflare Turnstile, so a widget can set `requireTurnstile` (#592). Before, neither `<mj-orders-checkout>` nor the fallback page sent a token, and every initialize and complete answered 403. The edge's 403 now names the site key (new `TurnstileSiteKey` edge setting, paired with `TurnstileSecretEnvVar`); the clients render the challenge, retry once, and get a fresh token for each later initialize or complete. The checkout page's CSP allows `https://challenges.cloudflare.com`. An edge that requires Turnstile without a site key fails closed with a 503.
+- Updated dependencies [8f105ee]
+- Updated dependencies [1f5d3f6]
+- Updated dependencies [1ea0ecf]
+- Updated dependencies [52e3762]
+- Updated dependencies [f8b53d9]
+- Updated dependencies [bcdb1dc]
+- Updated dependencies [e98b880]
+- Updated dependencies [50de8dc]
+- Updated dependencies [0feb8d2]
+- Updated dependencies [d462e77]
+- Updated dependencies [cb861ae]
+- Updated dependencies [06ee0ac]
+  - @mj-biz-apps/orders-entities@5.31.0
+
 ## 5.30.0
 
 ### Minor Changes
@@ -633,8 +667,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                    "FK_EntityFieldValue_EntityField"
+                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
