@@ -114,7 +114,7 @@ const money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 1
  */
 export type InstalmentSibling = Pick<
     mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
-    'ID' | 'InstallmentNumber' | 'Amount' | 'Status'
+    'ID' | 'InstallmentNumber' | 'Amount' | 'Status' | 'DocumentNumber'
 >;
 
 /** One order line of the invoiced company, as the slice arithmetic reads it. */
@@ -137,8 +137,26 @@ export interface InstalmentLineFacts {
     ProductCategoryID: string | null;
     ProductTypeID: string;
     Dimensions: Array<{ DimensionID: string; DimensionValueID: string }>;
-    /** Charge/tax credits for the WHOLE line; each is sliced the same way the amounts are. */
-    ChargeCredits: Array<{ GLAccountID: string; Amount: number; Label: string }>;
+    /**
+     * Charge/tax credits for the WHOLE line, one per charge type; each is sliced the same way the
+     * amounts are. The charge type is what an invoice's record of its pieces is keyed on (#681).
+     */
+    ChargeCredits: Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }>;
+}
+
+/** Which amount of a line a slice piece is: the layout {@link SliceLayout} slices, named. */
+export type InstalmentBillingPart = 'Net' | 'Unallocated' | 'Charge';
+
+/**
+ * What one instalment invoice billed one line for one part, signed as the line is. Recorded when the
+ * instalment is invoiced, so later invoices take it as billed instead of slicing it again (#681).
+ */
+export interface InstalmentBilledPart {
+    OrderLineID: string;
+    Part: InstalmentBillingPart;
+    /** Set for a `Charge` part only. */
+    ChargeTypeID: string | null;
+    Amount: number;
 }
 
 /**
@@ -152,6 +170,8 @@ export interface InstalmentInvoiceResult {
     JournalEntryID: string | null;
     /** OrderLineID → what this instalment billed for it (its share of the AR debit). */
     BilledByLine: Map<string, number>;
+    /** Every piece this instalment billed, part by part, for the caller to record in the same transaction (#681). */
+    BilledParts: InstalmentBilledPart[];
 }
 
 /** Everything the billing entry needs, read once by the operation. */
@@ -175,6 +195,12 @@ export interface InstalmentInvoiceContext {
     Siblings: InstalmentSibling[];
     /** The company's lines on this order. */
     Lines: InstalmentLineFacts[];
+    /**
+     * What the company's invoiced siblings already billed of each amount, aligned with
+     * `Lines.map(SliceLayout).flat()` (`BilledSoFar` in ./InstalmentBilledSoFar.ts). This instalment is
+     * sliced against what each line has left to bill (#681).
+     */
+    BilledSoFar: number[];
 }
 
 /** This row's index among its siblings. */
@@ -194,6 +220,24 @@ export function SliceLayout(line: Pick<InstalmentLineFacts, 'Quantity' | 'Net' |
     return amounts.map((a) => sign * a);
 }
 
+/** The part each of {@link SliceLayout}'s amounts is, in the same order. */
+export function SliceLayoutParts(line: Pick<InstalmentLineFacts, 'ID' | 'ChargeCredits'>): Array<Omit<InstalmentBilledPart, 'Amount'>> {
+    return [
+        { OrderLineID: line.ID, Part: 'Net', ChargeTypeID: null },
+        { OrderLineID: line.ID, Part: 'Unallocated', ChargeTypeID: null },
+        ...line.ChargeCredits.map((c) => ({ OrderLineID: line.ID, Part: 'Charge' as const, ChargeTypeID: c.ChargeTypeID })),
+    ];
+}
+
+/**
+ * The instalments already invoiced and what they billed of each amount, for {@link TiedSlice}.
+ * `Amounts` is aligned with its `totals`; `Invoiced` with its `rows`.
+ */
+export interface SliceBilledSoFar {
+    Amounts: number[];
+    Invoiced: boolean[];
+}
+
 /**
  * This instalment's piece of every amount, TIED BOTH WAYS (#234 third review, item 1): the pieces
  * of one instalment sum to its schedule row, and each amount's pieces across all instalments sum to
@@ -207,32 +251,54 @@ export function SliceLayout(line: Pick<InstalmentLineFacts, 'Quantity' | 'Net' |
  * against what is left (rather than the original totals) is what keeps every piece between zero and
  * the amount it comes from, so no instalment ever carries a negative piece of a positive line.
  *
+ * INVOICED ROWS ARE TAKEN AS BILLED (#681). `billed` says which rows are already invoiced and what
+ * they billed of each amount; only the rows not yet invoiced are split, against each amount less
+ * what it has been billed. Replaying an invoiced row instead re-splits it against the amounts as
+ * they stand now, which is not what it billed once an amount change or a return has lowered a line:
+ * two 600 lines, four 300 rows, row 1 invoiced 150/150, line A lowered by 225, and the replay bills
+ * the rest 259.62 / 415.38, so A ends at 409.62 of 375. Without `billed`, no row is invoiced and
+ * every earlier row is replayed, which is right while the amounts have never changed.
+ *
  * `totals` are signed (a reversal line's amounts are negative); `rows` are the live rows in
- * `InstallmentNumber` order. Pure; every earlier instalment is replayed, so the answer depends only
- * on the schedule and the lines, not on what was issued before.
+ * `InstallmentNumber` order. Pure.
  */
-export function TiedSlice(totals: number[], rows: number[], index: number): number[] {
+export function TiedSlice(totals: number[], rows: number[], index: number, billed?: SliceBilledSoFar): number[] {
     const toCents = (n: number): number => Math.round(Number(n) * 100);
     const rowCents = rows.map(toCents);
     if (!(index >= 0 && index < rowCents.length)) throw new Error(`TiedSlice: instalment index ${index} is outside ${rowCents.length} rows.`);
     if (rowCents.some((r) => r < 0)) throw new Error('TiedSlice: a schedule row is negative.');
-    let remaining = totals.map(toCents);
-    const owed = rowCents.reduce((t, r) => t + r, 0);
+    const invoiced = billed?.Invoiced ?? rows.map(() => false);
+    if (invoiced.length !== rows.length || (billed && billed.Amounts.length !== totals.length)) {
+        throw new Error('TiedSlice: what was billed does not line up with the rows and amounts it describes.');
+    }
+    if (invoiced[index]) throw new Error(`TiedSlice: instalment index ${index} is already invoiced, so it has nothing left to slice.`);
+    const original = totals.map(toCents);
+    let remaining = original.map((t, j) => t - toCents(billed?.Amounts[j] ?? 0));
+    remaining.forEach((r, j) => {
+        if (r * original[j] < 0 || Math.abs(r) > Math.abs(original[j])) {
+            throw new Error(
+                `An amount of ${original[j] / 100} has already been invoiced ${(original[j] - r) / 100}, more than it now ` +
+                    `holds, so what is left cannot be sliced across the remaining instalments. Nothing was posted.`,
+            );
+        }
+    });
+    const open = rowCents.map((_, i) => i).filter((i) => !invoiced[i]);
+    const owed = open.reduce((t, i) => t + rowCents[i], 0);
     const held = remaining.reduce((t, r) => t + r, 0);
     if (owed !== held) {
         throw new Error(
-            `The schedule rows total ${owed / 100} but the lines they bill total ${held / 100}, so the ` +
+            `The schedule rows not yet invoiced total ${owed / 100} but the lines have ${held / 100} left to bill, so the ` +
                 `instalments cannot be sliced to tie to their rows. Nothing was posted.`,
         );
     }
     const splitRow = (row: number, left: number[]): number[] =>
         SplitExactly(row / 100, left).map((p) => Math.round(p * 100));
-    for (let i = 0; i < index; i++) {
+    for (const i of open) {
+        if (i >= index) break;
         const pieces = splitRow(rowCents[i], remaining);
         remaining = remaining.map((r, j) => r - pieces[j]);
     }
-    const mine = index === rowCents.length - 1 ? remaining : splitRow(rowCents[index], remaining);
-    const original = totals.map(toCents);
+    const mine = index === open[open.length - 1] ? remaining : splitRow(rowCents[index], remaining);
     mine.forEach((p, j) => {
         if (p * original[j] < 0 || Math.abs(p) > Math.abs(original[j])) {
             throw new Error(`TiedSlice: piece ${p / 100} of amount ${original[j] / 100} is out of range.`);
@@ -296,7 +362,7 @@ export async function EmitInstalmentInvoiceEntry(
                 `${context.Amount}; no billing entry was posted. An instalment with no positive amount ` +
                 `bills nothing.`,
         );
-        return { JournalEntryID: null, BilledByLine: new Map() };
+        return { JournalEntryID: null, BilledByLine: new Map(), BilledParts: [] };
     }
 
     const index = rowIndex(context);
@@ -313,13 +379,17 @@ export async function EmitInstalmentInvoiceEntry(
     const receivables: LineReceivable[] = [];
     const lines: JELineDraft[] = [];
 
-    // Sliced together so the instalment's AR debit is exactly its row.
+    // Sliced together so the instalment's AR debit is exactly its row, against what each line has left.
     const layout = context.Lines.map(SliceLayout);
     const allPieces = TiedSlice(
         layout.flat(),
         context.Siblings.map((s) => money(Number(s.Amount ?? 0))),
         index,
+        { Amounts: context.BilledSoFar, Invoiced: context.Siblings.map((s) => !!s.DocumentNumber) },
     );
+    const billedParts: InstalmentBilledPart[] = context.Lines.flatMap(SliceLayoutParts)
+        .map((part, k) => ({ ...part, Amount: allPieces[k] }))
+        .filter((part) => part.Amount !== 0);
     let at = 0;
 
     for (const line of context.Lines) {
@@ -458,7 +528,7 @@ export async function EmitInstalmentInvoiceEntry(
             `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} bills nothing, so no ` +
                 `journal entry was posted. The document number and the Invoiced stamp still stand.`,
         );
-        return { JournalEntryID: null, BilledByLine: billedByLine };
+        return { JournalEntryID: null, BilledByLine: billedByLine, BilledParts: billedParts };
     }
     assertBalanced(posted, context);
 
@@ -489,7 +559,7 @@ export async function EmitInstalmentInvoiceEntry(
                 `instalment ${context.InstallmentNumber} of order ${context.OrderNumber}.`,
         );
     }
-    return { JournalEntryID: journalEntryID, BilledByLine: billedByLine };
+    return { JournalEntryID: journalEntryID, BilledByLine: billedByLine, BilledParts: billedParts };
 }
 
 /** One billed line's receivable: where its AR debit went and how much, for the deposit application. */

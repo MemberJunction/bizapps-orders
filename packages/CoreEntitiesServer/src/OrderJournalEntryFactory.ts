@@ -1325,7 +1325,7 @@ export class OrderJournalEntryFactory {
         line: mjBizAppsOrdersOrderLineEntity,
         companyID: string,
         asOf: Date,
-    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string }>> {
+    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }>> {
         const total = money(Math.abs(line.LineTax ?? 0)) + money(Math.abs(line.ChargeAmount ?? 0));
         if (total === 0) return [];
 
@@ -1369,7 +1369,7 @@ export class OrderJournalEntryFactory {
             byType.set(parent.ChargeTypeID, cur);
         }
 
-        const out: Array<{ GLAccountID: string; Amount: number; Label: string }> = [];
+        const out: Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }> = [];
         for (const [chargeTypeID, info] of byType) {
             if (info.Amount === 0) continue;
             const account = await this._resolver.ResolveForRecord(
@@ -1389,7 +1389,7 @@ export class OrderJournalEntryFactory {
                         `and never recorded in the ledger.`,
                 );
             }
-            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label });
+            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label, ChargeTypeID: chargeTypeID });
         }
         return out;
     }

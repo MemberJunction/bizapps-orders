@@ -22,7 +22,8 @@
  * CONNECTS TO:
  *   CALLER: OrderEntityServer (confirm of a return) · IssueInstalmentInvoiceOperation (tie and slicing)
  *   USES:   ./AmountChange.ts (amount changes, lowering instalments) · ./AmountChangePlan.ts (the spread)
- *           ./InstalmentInvoiceEntry.ts (the slicing) · ./PaymentScheduleBehavior.ts (company slices)
+ *           ./InstalmentInvoiceEntry.ts (the slicing) · ./InstalmentBilledSoFar.ts (what invoices billed) ·
+ *           ./PaymentScheduleBehavior.ts (company slices)
  */
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import type { mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
@@ -32,6 +33,7 @@ import { ReduceLineAmounts } from './AmountChangePlan.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import type { ApprovalTaskContext } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { BilledSoFar, ReadInstalmentLineBillings } from './InstalmentBilledSoFar.js';
 import { SliceLayout, TiedSlice, type InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
 import { OrderJournalEntryFactory } from './OrderJournalEntryFactory.js';
 import { CompanySlices } from './PaymentScheduleBehavior.js';
@@ -55,6 +57,7 @@ export interface LineStillToBill {
 
 /** One instalment, as the slicing reads it. */
 export interface SlicedInstalment {
+    ID: string;
     Amount: number;
     Status: string;
     /** Set once invoiced, and never cleared. */
@@ -63,20 +66,24 @@ export interface SlicedInstalment {
 
 /**
  * Per line, what the instalments not yet invoiced will still bill it: the sum of each such instalment's
- * tied slice. `instalments` are one company's live rows in instalment order, as an invoice slices them.
+ * tied slice. `instalments` are one company's live rows in instalment order, as an invoice slices them,
+ * and `billedSoFar` is what the invoiced ones billed (`BilledSoFar`, aligned with the lines' slice
+ * layout), so each slice is taken against what the line has left, as the invoice will take it (#681).
  * The slices carry tax and other charges together, so the tax is their share in the line's own
  * proportion. Pure.
  */
 export function StillToBillByLine(
     lines: Array<Pick<InstalmentLineFacts, 'ID' | 'Quantity' | 'Net' | 'Tax' | 'Charges' | 'ChargeCredits'>>,
     instalments: SlicedInstalment[],
+    billedSoFar: number[],
 ): Map<string, LineStillToBill> {
     const sums = new Map<string, { Net: number; Other: number }>(lines.map((l) => [l.ID.toLowerCase(), { Net: 0, Other: 0 }]));
     const layout = lines.map(SliceLayout);
     const amounts = instalments.map((i) => money(Number(i.Amount)));
+    const billed = { Amounts: billedSoFar, Invoiced: instalments.map((i) => !!i.DocumentNumber) };
     instalments.forEach((instalment, index) => {
         if (instalment.Status !== 'Scheduled' || instalment.DocumentNumber) return;
-        const pieces = TiedSlice(layout.flat(), amounts, index);
+        const pieces = TiedSlice(layout.flat(), amounts, index, billed);
         let at = 0;
         lines.forEach((line, j) => {
             const mine = pieces.slice(at, at + layout[j].length).map(Math.abs);
@@ -197,14 +204,16 @@ export async function OrderStillToBill(orderHeaderID: string, ctx: ApprovalTaskC
         ctx.User,
     );
     const today = await CalendarDayOrToday(null, ctx.Provider, ctx.User);
+    const recorded = await ReadInstalmentLineBillings(orderID, ctx.Provider, ctx.User);
     const out = new Map<string, LineStillToBill>();
     for (const company of new Set((lines.Results ?? []).map((l) => String(l.CompanyID)))) {
-        const facts = (await factory.BuildInstalmentLineFacts(lines.Results ?? [], company, today)).map((l) => ReduceLineAmounts(l, reductions));
+        const booked = await factory.BuildInstalmentLineFacts(lines.Results ?? [], company, today);
+        const facts = booked.map((l) => ReduceLineAmounts(l, reductions));
         if (!facts.length) continue;
         const instalments = slices
             .filter((s) => String(s.CompanyID).toLowerCase() === company.toLowerCase())
             .sort((a, b) => Number(a.InstallmentNumber) - Number(b.InstallmentNumber));
-        for (const [id, still] of StillToBillByLine(facts, instalments)) out.set(id, still);
+        for (const [id, still] of StillToBillByLine(facts, instalments, BilledSoFar(facts, booked, instalments, recorded))) out.set(id, still);
     }
     return out;
 }

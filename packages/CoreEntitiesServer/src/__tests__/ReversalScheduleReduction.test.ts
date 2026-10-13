@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { PlanReduction, ReduceLineAmounts } from '../AmountChangePlan';
+import { BilledSoFar } from '../InstalmentBilledSoFar';
 import { SliceLayout, TiedSlice } from '../InstalmentInvoiceEntry';
 import { ReturnScheduleReduction, SplitReturnReduction, StillToBillByLine, type SlicedInstalment } from '../ReversalScheduleReduction';
 
@@ -12,6 +13,7 @@ import { ReturnScheduleReduction, SplitReturnReduction, StillToBillByLine, type 
 const A = 'AAAAAAAA-0000-0000-0000-000000000001';
 const B = 'BBBBBBBB-0000-0000-0000-000000000002';
 const TAX_ACCOUNT = 'CCCCCCCC-0000-0000-0000-000000000003';
+const TAX_TYPE = 'DDDDDDDD-0000-0000-0000-000000000004';
 
 function line(id: string, net: number, tax = 0) {
     return {
@@ -21,28 +23,38 @@ function line(id: string, net: number, tax = 0) {
         Tax: tax,
         Charges: 0,
         Gross: net + tax,
-        ChargeCredits: tax ? [{ GLAccountID: TAX_ACCOUNT, Amount: tax, Label: 'Tax' }] : [],
+        ChargeCredits: tax ? [{ GLAccountID: TAX_ACCOUNT, Amount: tax, Label: 'Tax', ChargeTypeID: TAX_TYPE }] : [],
     };
 }
 
 function rows(amounts: number[], invoiced: number): SlicedInstalment[] {
-    return amounts.map((Amount, i) => ({ Amount, Status: i < invoiced ? 'Invoiced' : 'Scheduled', DocumentNumber: i < invoiced ? `INV-${i + 1}` : null }));
+    return amounts.map((Amount, i) => ({
+        ID: `row-${i + 1}`,
+        Amount,
+        Status: i < invoiced ? 'Invoiced' : 'Scheduled',
+        DocumentNumber: i < invoiced ? `INV-${i + 1}` : null,
+    }));
+}
+
+/** Still to bill, with the invoiced rows' pieces rebuilt as their invoices sliced them (no record yet). */
+function stillToBill(lines: ReturnType<typeof line>[], schedule: SlicedInstalment[]) {
+    return StillToBillByLine(lines, schedule, BilledSoFar(lines, lines, schedule, []));
 }
 
 describe('StillToBillByLine', () => {
     it('sums the uninvoiced instalments’ slices of each line', () => {
-        const still = StillToBillByLine([line(A, 600), line(B, 600)], rows([300, 300, 300, 300], 1));
+        const still = stillToBill([line(A, 600), line(B, 600)], rows([300, 300, 300, 300], 1));
         expect(still.get(A.toLowerCase())).toEqual({ Net: 450, Tax: 0 });
         expect(still.get(B.toLowerCase())).toEqual({ Net: 450, Tax: 0 });
     });
 
     it('keeps the tax apart from the net', () => {
-        const still = StillToBillByLine([line(A, 600, 60), line(B, 600, 60)], rows([330, 330, 330, 330], 1));
+        const still = stillToBill([line(A, 600, 60), line(B, 600, 60)], rows([330, 330, 330, 330], 1));
         expect(still.get(A.toLowerCase())).toEqual({ Net: 450, Tax: 45 });
     });
 
     it('bills nothing more once every instalment is invoiced', () => {
-        const still = StillToBillByLine([line(A, 600)], rows([300, 300], 2));
+        const still = stillToBill([line(A, 600)], rows([300, 300], 2));
         expect(still.get(A.toLowerCase())).toEqual({ Net: 0, Tax: 0 });
     });
 });
@@ -83,7 +95,7 @@ describe('a partial return on an order billed in four instalments', () => {
     // Two subscription lines billed in four instalments; instalment 1 invoiced; half of line A returned.
     const lines = [line(A, 600, 60), line(B, 600, 60)];
     const schedule = rows([330, 330, 330, 330], 1);
-    const gross = ReturnScheduleReduction(StillToBillByLine(lines, schedule).get(A.toLowerCase())!, 1, 2);
+    const gross = ReturnScheduleReduction(stillToBill(lines, schedule).get(A.toLowerCase())!, 1, 2);
     const plan = PlanReduction({
         GrossReduction: gross,
         Instalments: schedule.map((r, i) => ({
@@ -109,16 +121,30 @@ describe('a partial return on an order billed in four instalments', () => {
         expect(lowered.slice(1).reduce((t, a) => t + a, 0)).toBeCloseTo(990 - 247.5, 2);
     });
 
+    const loweredRows = schedule.map((r, i) => ({ ...r, Amount: lowered[i] }));
+    const billed = { Amounts: BilledSoFar(reduced, lines, loweredRows, []), Invoiced: loweredRows.map((r) => !!r.DocumentNumber) };
+
     it('still ties, so every remaining instalment can be invoiced', () => {
         const layout = reduced.map(SliceLayout).flat();
         for (let index = 1; index < lowered.length; index++) {
-            const pieces = TiedSlice(layout, lowered, index);
+            const pieces = TiedSlice(layout, lowered, index, billed);
             expect(pieces.reduce((t, p) => t + p, 0)).toBeCloseTo(lowered[index], 2);
         }
     });
 
+    it('bills each line exactly what it has left (#681)', () => {
+        const layout = reduced.map(SliceLayout).flat();
+        const rest = [1, 2, 3].map((index) => TiedSlice(layout, lowered, index, billed));
+        // Line A: net then tax (the unallocated slot is between them); invoiced 150 + 15, half returned.
+        const lineA = (k: number) => rest.reduce((t, p) => t + p[k], 0);
+        expect(lineA(0)).toBeCloseTo(600 - 150 - split.Net, 2);
+        expect(lineA(2)).toBeCloseTo(60 - 15 - split.Tax, 2);
+        expect(rest.reduce((t, p) => t + p[3], 0)).toBeCloseTo(450, 2);
+    });
+
     it('does not tie when nothing is taken off the lines, which is the refusal the issue reports', () => {
         const layout = lines.map(SliceLayout).flat();
-        expect(() => TiedSlice(layout, lowered, 1)).toThrow(/cannot be sliced/);
+        const unreduced = { Amounts: BilledSoFar(lines, lines, loweredRows, []), Invoiced: billed.Invoiced };
+        expect(() => TiedSlice(layout, lowered, 1, unreduced)).toThrow(/cannot be sliced/);
     });
 });
