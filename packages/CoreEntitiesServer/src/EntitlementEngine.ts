@@ -553,6 +553,82 @@ export async function RevokeGrantsForReturn(
 }
 
 /**
+ * A term's seat count changed: its live grants follow the new count (#686).
+ *
+ * An approved Seats concession adds seats to a booked term. A `PerUnit` grant scales by the term's
+ * seats, so it is recomputed from its template the same way `CreateEntitlementGrants` computed it;
+ * a `Flat` grant and a grant with no countable quantity stay as they are. Revoked and expired grants
+ * are history and are left alone.
+ */
+export async function ResizeTermGrants(
+    termID: string,
+    productID: string,
+    seats: number,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<{ Resized: number }> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const grants = await rv.RunView<{ ID: string; ProductEntitlementID: string; Quantity: number | null }>(
+        {
+            EntityName: ENTITLEMENT_GRANT_ENTITY,
+            ExtraFilter: `SubscriptionTermID = '${RequireUUID(termID, 'SubscriptionTermID')}' AND Status IN ('Active','Suspended')`,
+            Fields: ['ID', 'ProductEntitlementID', 'Quantity'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    const rows = grants?.Results ?? [];
+    if (!rows.length) return { Resized: 0 };
+
+    const templates = await rv.RunView<{ ID: string; Quantity: number | null; ValidityMode: ValidityMode | null }>(
+        {
+            EntityName: PRODUCT_ENTITLEMENT_ENTITY,
+            ExtraFilter: `ID IN (${quote([...new Set(rows.map((g) => g.ProductEntitlementID))])})`,
+            Fields: ['ID', 'Quantity', 'ValidityMode'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    const templateByID = new Map((templates?.Results ?? []).map((t) => [key(t.ID), t]));
+
+    const inputs = (await loadPolicyInputs([productID], provider, user)).get(key(productID));
+    if (!inputs) {
+        throw new Error(
+            `The grants of term ${termID} follow its seats, but the policy of product ${productID} could not be ` +
+                `resolved, so they cannot be resized.`,
+        );
+    }
+
+    let resized = 0;
+    for (const row of rows) {
+        const template = templateByID.get(key(row.ProductEntitlementID));
+        if (!template) continue;
+        const mode = ResolveEntitlementPolicy(inputs.Product, inputs.CategoryChain, inputs.Type, {
+            ValidityMode: template.ValidityMode,
+        }).QuantityMode;
+        const quantity = ResolveGrantQuantity(template.Quantity, seats, mode);
+        if (quantity === (row.Quantity == null ? null : Number(row.Quantity))) continue;
+
+        const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(
+            ENTITLEMENT_GRANT_ENTITY,
+            CompositeKey.FromID(row.ID),
+            user,
+        );
+        grant.Quantity = quantity;
+        if (!(await grant.Save())) {
+            throw new Error(
+                `Entitlement grant ${row.ID} could not be resized to the term's ${seats} seats: ` +
+                    `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            );
+        }
+        resized++;
+    }
+    return { Resized: resized };
+}
+
+/**
  * After a subscription cancel, make stored grant Status less of a lie — still not the read path.
  *
  * Access-through in the future (grace) leaves the rows `Active`; `EvaluateGrantAccess` honours

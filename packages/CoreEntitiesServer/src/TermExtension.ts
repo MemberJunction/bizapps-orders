@@ -257,7 +257,7 @@ export async function ApplyTermExtension(concession: ApprovedDurationConcession,
 // ─── Checks ─────────────────────────────────────────────────────────────────
 
 /** A later term, or a renewal line that has not booked one yet, means this term's renewal is already placed. */
-export async function RenewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Promise<string | null> {
+export async function RenewalAlreadyPlaced(term: Pick<TermRow, 'SubscriptionID' | 'TermNumber'>, ctx: ApprovalTaskContext): Promise<string | null> {
     const subscriptionID = RequireUUID(term.SubscriptionID, 'SubscriptionID');
     const later = await ReadRows<{ ID: string }>(ctx, {
         EntityName: SUBSCRIPTION_TERM_ENTITY,
