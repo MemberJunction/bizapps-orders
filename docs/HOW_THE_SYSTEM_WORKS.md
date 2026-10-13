@@ -296,7 +296,7 @@ Not documented here yet: the steps that register a local checkout in a running M
 
 ## 13. What is not this app
 
-- **Stripe / Business Central export live tests** — other team. Bill.com is part of this app: the invoice rail, its operations and its webhook ship here ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)), and `test-harnesses/billcom-live.mjs` probes a Bill.com sandbox by hand.
+- **Stripe / Business Central export live tests** — other team. Bill.com is part of this app: the invoice rail, its operations and its webhook ship here ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)), and `test-harnesses/billcom-live.mjs` probes a Bill.com sandbox by hand. `test-harnesses/stripe-live.mjs` runs `Orders.CreateOrderFromProviderPayment` against Stripe's test mode by hand (#575): the integration suite's Stripe stub has no charges to read.
 - **LXP packaging** (tiers, track bundles, hosted checkout as a product surface) — consumer work, not missing engine.
 - **Approvals inbox** — sales rules can name an approver role; the Task exists; there is no Orders UI for it.
 - **Contracts / Inventory** — future sibling apps. Do not put their columns here.
