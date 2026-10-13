@@ -67,8 +67,9 @@ export async function SendRenewalPaymentLink(
 
         const order = await LoadRenewalPaymentOrder(attempt.OrderID, provider, user);
         if (!order) return { Sent: false, Reason: 'the renewal order was not found' };
-        const recipient = order.BillToPersonID ? await personContact(order.BillToPersonID, provider, user) : null;
-        if (!recipient?.Email) return { Sent: false, Reason: 'the renewal has no bill-to person with an e-mail address' };
+        // The payer: the person who owns the declined card, not the beneficiary a gift renewal bills.
+        const recipient = order.PayerPersonID ? await personContact(order.PayerPersonID, provider, user) : null;
+        if (!recipient?.Email) return { Sent: false, Reason: 'the renewal has no paying person with an e-mail address' };
 
         const expiresAt = RenewalPaymentLinkExpiresAt(attempt.DueDate, OrdersSettings.RenewalAccessCutoffDaysPastDue);
         const token = await SignRenewalPaymentToken({ OrderID: order.OrderID, SubscriptionID: attempt.SubscriptionID, ExpiresAt: expiresAt }, secret);
