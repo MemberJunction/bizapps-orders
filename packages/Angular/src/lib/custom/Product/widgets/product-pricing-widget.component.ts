@@ -25,7 +25,7 @@ import type {
     mjBizAppsOrdersProductEntity,
     mjBizAppsOrdersPriceListEntity
 } from '@mj-biz-apps/orders-entities';
-import { FormatMoney } from '../../../panels/money-format';
+import { FormatDate, FormatMoney } from '../../../panels/money-format';
 import { LoadOrdersEngine, OrdersEngine, PRICE_APPLICABILITY_SOURCES, ProductPriceEntity, TodayAsDateValue, priceApplies } from '@mj-biz-apps/orders-entities';
 
 export interface PriceChannel {
@@ -131,6 +131,9 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             this.navService = undefined;
         }
     }
+
+    /** Template access to the shared date formatter: an `EffectiveTo` is a calendar day, not an instant. */
+    public readonly FormatDate = FormatDate;
 
     public IsLoading = false;
     public IsSaving = false;
@@ -518,7 +521,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
                 UnitSavings: savings,
                 PricingModel: rec.PricingModel || 'PerUnit',
                 FeeType: rec.FeeType || 'Standard',
-                EffectiveDatesText: rec.EffectiveTo ? `Until ${new Date(rec.EffectiveTo).toLocaleDateString()}` : 'Always Active',
+                EffectiveDatesText: rec.EffectiveTo ? `Until ${FormatDate(rec.EffectiveTo)}` : 'Always Active',
                 IsBaseBracket: index === 0 && min === 1 && this.SelectedChannelID === null,
             };
         });

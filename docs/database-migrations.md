@@ -18,8 +18,11 @@ longer hold:
   recorded as applied.
 - **A rebuild throws away data.** Once there is anything worth keeping in a developer or shared
   database, "drop and re-apply" stops being a neutral operation.
-- **Flyway checksums the baseline.** Editing a script that has already run makes every existing
-  database refuse to migrate until someone repairs it by hand.
+- **New databases get the edit; existing ones never do.** A clean install runs the edited script,
+  while every database that already ran it keeps what it had. The runner records each script's
+  checksum but does not compare it again for a versioned or baseline migration, so nothing reports
+  the split. (Repeatable `R__` scripts are the exception: a changed checksum re-runs them. This repo
+  has none.)
 
 ## What to do instead
 
@@ -41,8 +44,9 @@ constraint.
 Then regenerate the code CodeGen owns:
 
 ```bash
-npm run mj:migrate      # apply the new migration to your database
-npm run mj:codegen      # entity metadata, base views, CRUD procs, TypeScript
+pnpm run mj:migrate                      # apply the new migration to your database
+pnpm exec mj sync push --dir metadata    # bring your database's metadata up to metadata/
+pnpm run mj:codegen                      # entity metadata, base views, CRUD procs, TypeScript
 scripts/append-codegen.sh migrations/V<new>.sql   # CodeGen's SQL, below the new migration's banner
 ```
 
@@ -57,15 +61,18 @@ Details (`.github/scripts/check-form-details-panel.mjs`).
 
 No edits, no renames, no deletions once it is on `next`. Fix it forward in a new file.
 
-The runner records each applied migration's version, script name and checksum. Change the file and
-every database that ran it refuses to migrate until somebody repairs the history table by hand, while
-every database that did not run it gets different SQL. The populations diverge silently — which
+The runner records each applied migration's version, script name and checksum, and never runs a
+recorded version again. Change the file and every database that ran it keeps the old SQL, while
+every database that did not run it gets the new SQL. The populations diverge silently — which
 schema a colleague has depends on when they last pulled.
 
 Renaming counts, and is the case people miss. The version is the twelve digits in the filename, so a
-rename produces a migration nobody has run: it executes again, and plain DDL then fails on objects
-that already exist. Because a run is one transaction, that failure takes every other pending
-migration down with it.
+rename produces a migration nobody has run. On a database whose newest applied migration sorts above
+the new name, `mj migrate` refuses the whole run as out of order and applies nothing. Otherwise the
+file executes again, plain DDL fails on objects that already exist, and because `mj migrate` runs
+each migration in its own transaction and stops at the first failure, that migration rolls back and
+everything after it stays pending. Either way the database is stuck until the rename is reverted or
+someone edits its history table by hand.
 
 Renumbering a migration that has **not** merged is fine and is the normal response when `next` gains a
 higher timestamp while your branch is open. Only the author's own database is affected, and the file
@@ -76,9 +83,11 @@ self-test. Reviewers: a red result here is blocking. It has been merged past twi
 
 ## What must NOT happen any more
 
-**Do not edit the baseline** (`migrations/V202607061432__v0.1.x__Tables_and_Objects.sql`), above or
-below the CodeGen banner. Both halves have already been applied everywhere, and like every merged
-migration it is locked. `scripts/append-codegen.sh` takes the migration to append to as a required
+**Do not edit the baseline** (`migrations/B202607061431__v0.1.x__Schema_and_Types.sql` and
+`migrations/V202607061432__v0.1.x__Tables_and_Objects.sql`), including below the `V` file's CodeGen
+banner.
+Both files have already been applied everywhere, and like every merged migration they are locked.
+`scripts/append-codegen.sh` takes the migration to append to as a required
 argument and refuses any file already on `origin/next`, the baseline included: CodeGen output for a
 change goes below the banner of the new migration that made the change.
 
@@ -86,11 +95,12 @@ change goes below the banner of the new migration that made the change.
 it is still correct for — standing up a brand-new empty database from nothing — and its own header
 says so. It is not a development loop.
 
-**A migration that depends on CodeGen metadata cannot assume it exists.** Entity and field rows are
-created by CodeGen, which runs *after* migrations. A migration that reads `__mj.Entity` must skip
-cleanly when the row is absent rather than throw, or it will fail on precisely the clean installs it
-was supposed to support. If the change is really about metadata — field categories, display names,
-form layout — its home is `metadata/` and `mj sync push` **while you are developing**.
+**Do not write MJ metadata rows by hand in a migration.** A migration holds schema DDL plus the
+CodeGen output captured below its banner, and that captured output is what registers the
+`__mj.Entity` / `__mj.EntityField` rows. A hand-written `INSERT` or `UPDATE` against an `__mj.*`
+metadata table (entity settings, field categories, display names, form layout) belongs in
+`metadata/` instead, applied while you develop as `pnpm run mj:migrate` → `mj sync push` →
+`pnpm run mj:codegen`. The next section is how those rows reach a host.
 
 ## Metadata reaches a host only as a migration
 
@@ -120,6 +130,6 @@ environment bridges the gap — deliberately, not as a substitute for the migrat
 ## The test to apply in review
 
 > If a colleague pulls this branch onto a database that already has last week's schema and runs
-> `npm run mj:migrate`, do they end up with exactly the schema this branch describes?
+> `pnpm run mj:migrate`, do they end up with exactly the schema this branch describes?
 
 If the answer requires them to drop their database, the change is in the wrong place.

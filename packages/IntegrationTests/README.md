@@ -27,50 +27,75 @@ WIRE_VOL_COUNT=40 GRAPHQL_PORT=4103 node test-harnesses/integration-client.mjs w
 ## Running
 
 ```bash
-# fast inner loop: one bundle, or one check. Stack traces with IT_VERBOSE=1.
-node test-harnesses/integration.mjs                    # all 20 bundles, 230 checks
+# fast inner loop: every server bundle, one bundle, or one check. Stack traces with IT_VERBOSE=1.
+node test-harnesses/integration.mjs
 node test-harnesses/integration.mjs subscriptions
 node test-harnesses/integration.mjs subscriptions.SB5
 
 # the recorded path — same registry, results written against the metadata Test records
 RUN_MUTATION_TESTS=1 MJ_INTEGRATION_TEST=1 \
-  npm run mj -- test suite --name "BizApps Orders Integration"
+  pnpm run mj test suite --name "BizApps Orders Integration"
 ```
 
-Both need a working database — `scripts/rebuild-db.sh` from zero.
+Both need a working database (`scripts/rebuild-db.sh` from zero) and the built packages: they load
+`dist/`, so run `pnpm run build` after a change.
 
-`RUN_MUTATION_TESTS=1` is **required**. Every check here is mutation-class, so without the gate the
-driver reports zero checks and the suite passes having done nothing.
+`RUN_MUTATION_TESTS=1` is **required** for `mj test`. Every check here is mutation-class, so without
+the gate the driver skips every check and the suite still exits 0, having done nothing. The standalone
+harness runs every check regardless.
 
-Run the **workspace** CLI (`npm run mj`), never a global `mj`: a global install ships its own
+Run the **workspace** CLI (`pnpm run mj`), never a global `mj`: a global install ships its own
 published testing packages and cannot resolve this private one, so the bundles never register.
+
+From the repo root:
+
+| Command | What it does |
+|---|---|
+| `pnpm run test:integration` | `node test-harnesses/integration.mjs`: every server bundle, no count check. |
+| `pnpm run verify` | Unit tests, the full build, every server bundle with the output saved to `/tmp/integration.log`, then `scripts/assert-check-count.mjs` on that log. |
+| `pnpm run test:coverage-gate <log>` | `scripts/assert-check-count.mjs` alone, against a saved run log. |
+
+`assert-check-count.mjs` reads the expected counts from `EXPECTED_BUNDLES` in the parity test (see
+[Drift guards](#drift-guards)) and fails when any check failed, when fewer checks ran than declared,
+when a bundle never ran or registered a different number of checks than declared, or when the run
+never printed its final tally. A green tally alone is not evidence that anything ran.
+
+`verify` runs the unit tests before its build step, and they import the workspace packages' built
+`dist/`, so on a clean checkout run `pnpm run build` first.
 
 ## Isolation
 
-The fixture (companies, GL accounts + links, product catalog, tax geography) is created once per
-bundle and committed — inert reference data. Every check then runs inside a provider transaction that
-**always rolls back**, so orders, journal entries, payments and subscription terms never reach disk.
+The fixture is ORD-WORLD, the committed catalog in [`src/world/`](src/world/README.md): companies,
+GL accounts and links, people, organizations, the product catalog, tax geography, and a price list
+with two sample orders (one Draft, one Confirmed) for Explorer. Bundle Setup calls
+`CreateOrdersFixture()`, which loads it (an idempotent upsert) and maps it onto the `Fx()` shape;
+`catalog-world` loads it inside its one check instead, and `party-roster` needs none. It is shared
+with Explorer, and bundle Teardown leaves it in place, except that `intercompany` and
+`account-credit` delete the intercompany account matches among BCP, HH and ORPHAN, which the next
+bundle's Setup creates again. Every check then runs inside a provider transaction that **always
+rolls back**, so the orders, journal entries, payments and subscription terms a check creates never
+reach disk.
 
 This works because the booking path's own transaction and accounting's `CreateJournalEntries`
 savepoints nest correctly three deep — verified by a spike before any check was written
 (`plans/archive/integration-testing-plan.md` §0).
 
-Teardown is an FK-ordered sweep, and it **does** disable the immutability triggers while it runs. It
-has to: a booked `OrderLine.JournalEntryID` cannot be cleared and a captured `PaymentLine` cannot be
-deleted, because in the application a correction is a reversal and never an edit. Housekeeping is the
-one caller genuinely removing history rather than rewriting it. The triggers go back on in the same
-statement list.
+Apart from those two teardowns, removing committed data is a separate, manual step.
+`node test-harnesses/purge-fixture-data.mjs` deletes what older per-run fixtures left behind
+(companies named `IT-ORD-…` and everything hanging off them), and `seed-review-data.mjs` runs the
+same purge before it seeds unless given `--keep-existing`.
+The sweep is FK-ordered, and it **does** disable the immutability triggers while it runs. It has to:
+a booked `OrderLine.JournalEntryID` cannot be cleared and a captured `PaymentLine` cannot be deleted,
+because in the application a correction is a reversal and never an edit. Housekeeping is the one
+caller genuinely removing history rather than rewriting it. The triggers go back on in the same
+statement list. The sweep also deletes every charge-type `GLAccountLink`, because those are keyed by
+charge type rather than by company; run it against a development database only.
 
-That was not always true, and the reason it went unnoticed is worth keeping in mind when reading
-anything here: because every check rolls back, teardown had only ever been asked to delete rows that
-were not there. It "worked" by having nothing to do, and was missing five child tables as well. Both
-only surfaced once `seed-review-data.mjs` started committing orders on purpose — see
-`docs/reviewing-the-data.md`.
-
-**One thing the fixture is not scoped by company:** the charge-type `GLAccountLink` rows, which are
-keyed by charge type (application metadata shared by every run). Setup deletes any pre-existing set
-before writing its own, because two active links per type let one run's shipping and tax post to
-another run's accounts.
+The trigger handling was not always there, and the reason it went unnoticed is worth keeping in mind
+when reading anything here: because every check rolls back, the sweep had only ever been asked to
+delete rows that were not there. It "worked" by having nothing to do, and was missing five child
+tables as well. Both only surfaced once `seed-review-data.mjs` started committing orders on purpose —
+see `docs/reviewing-the-data.md`.
 
 ## Writing a check
 
@@ -107,39 +132,42 @@ included, so rollback-based isolation is impossible for that check.
 
 ## Bundles
 
+The server bundles and their exact check counts are `EXPECTED_BUNDLES` in
+[`src/__tests__/registry-parity.test.ts`](src/__tests__/registry-parity.test.ts); `src/index.ts`
+exports each one, and the parity test fails when the two disagree. What a bundle covers is in its
+check file's header comment (`src/checks/<bundle>.checks.ts`) and in the description of its `MJ: Tests`
+record (`metadata-tests/tests/`).
+
+Three client-only bundles run over GraphQL instead:
+
 | Bundle | Checks |
 |---|---|
-| `order-booking` | OB1–OB9 |
-| `revenue-recognition` | RR1–RR7 |
-| `subscriptions` | SB1–SB12 |
-| `subscription-cancellation` | SC1–SC10 |
-| `subscription-renewal` | SR1–SR11 |
-| `payments-rollups` | PR1–PR9 |
-| `volume` | VL1–VL13 |
-| `entitlement-read` | ER1–ER7 (CheckEntitlement / ListEntitlements, in-process Execute) |
-| `wire-crud` | W1–W3 (client only) |
-| `wire-volume` | WV1–WV7 (client only, committed) |
-| `wire-entitlements` | WE1–WE5 (client only, Check/List over GraphQL; WE1 confirms) |
+| `wire-crud` | W1–W3 |
+| `wire-volume` | WV1–WV7 (committed) |
+| `wire-entitlements` | WE1–WE5 (Check/List over GraphQL; WE1 confirms) |
 
 `wire-crud`, `wire-volume`, and `wire-entitlements` are **not** in `src/index.ts` or `EXPECTED_BUNDLES`. They register from `src/client-index.ts` and `test-harnesses/integration-client.mjs` so a GraphQL process never loads `*EntityServer`. `wire-entitlements` confirms one STYLE-HB order (`Notes` `ER-WIRE:<runId>`) so Check/List have a real grant on the wire.
 
-The complete server-bundle list, with what each bundle is for, is the header comment of `src/index.ts` — it is next
-to the exports that register them, so it cannot drift as far as a table over here can.
+`volume` is the slow one: it confirms several hundred orders and runs last for that reason. It is
+also the only bundle that creates a SECOND `SQLServerDataProvider`, which is how a real
+`ConfirmOrder` gets an independent session; its header explains what that does and does not make
+provable.
 
-`volume` is the slow one: it confirms several hundred orders across its thirteen checks and runs last
-for that reason. It is also the only bundle that creates a SECOND `SQLServerDataProvider`, which is
-how a real `ConfirmOrder` gets an independent session; its header explains what that does and does
-not make provable.
+No bundle covers the Bill.com invoice rail. It is covered by unit tests in `CoreEntitiesServer` and
+`Server` and by the sandbox harness `test-harnesses/billcom-live.mjs`, which never runs in CI; see
+[`docs/billcom-invoice-rail.md`](../../docs/billcom-invoice-rail.md).
 
 ## Drift guards
 
-`npm test` in this package is not an integration run — it is the wiring check. Bundle names live in
-four places (check IDs, `src/index.ts`, `ALL_BUNDLES`, and a `MJ: Tests` record) and a miss in any
-one produces a bundle nothing dispatches: no error, just silently absent coverage. The parity test
-asserts exact per-bundle check counts and cross-checks all four places.
+`pnpm test` in this package is not an integration run — it is the wiring check, and
+`pnpm run test:unit` at the root includes it. It needs no database, but it does need the packages
+built. Bundle names live in four places (check IDs,
+`src/index.ts`, `ALL_BUNDLES`, and a `MJ: Tests` record) and a miss in any one produces a bundle
+nothing dispatches: no error, just silently absent coverage. The parity test asserts exact
+per-bundle check counts and cross-checks all four places.
 
-It matters more than it looks. `mj test` reports a **green suite when it runs zero checks**, so
-"the suite passed" only means something if something else independently asserts the checks exist.
+It matters more than it looks. `mj test` exits 0 **when it runs zero checks**, so "the suite passed"
+only means something if something else independently asserts the checks exist.
 
 ## Adding a bundle
 
@@ -148,7 +176,9 @@ It matters more than it looks. `mj test` reports a **green suite when it runs ze
 2. Export it from `src/index.ts`.
 3. Add it to `ALL_BUNDLES` in `test-harnesses/integration.mjs`.
 4. Add a `MJ: Tests` record under `metadata-tests/tests/` naming the bundle in
-   `Configuration.checks[].type`, plus suite membership, then `mj sync push --dir metadata-tests`.
-5. Add it to `EXPECTED_BUNDLES` in `src/__tests__/registry-parity.test.ts` with its check count.
+   `Configuration.checks[].type`, plus suite membership, then
+   `pnpm run mj sync push --dir metadata-tests`.
+5. Import it in `src/__tests__/registry-parity.test.ts` and add it to `EXPECTED_BUNDLES` with its
+   check count.
 
 Step 5 is what makes steps 1–4 hard to get wrong: the guard fails until all of them are done.

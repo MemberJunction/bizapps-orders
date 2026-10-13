@@ -4,17 +4,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import type { UserInfo } from '@memberjunction/core';
-// Local fallback contracts — see ../identityClaimContracts.ts. Restore this import to
-// '@memberjunction/core-entities' once MJ publishes these exports.
 import {
     BaseIdentityClaimDriver,
     type ClaimRedeemContext,
     type ClaimContext,
     type MJIdentityClaimEntity
-} from '../identityClaimContracts.js';
+} from '@memberjunction/core-entities';
 
 // Hoisted with the mocks: the driver imports `IsBooked` from orders-entities at runtime, so the
 // module factory below runs before ordinary top-level declarations exist.
+const ORDER_ID = '7d1e3f0a-2b4c-4d5e-8f60-718293a4b5c6';
+const grantView = vi.hoisted(() => ({
+    filters: [] as string[],
+    result: null as null | { Success: boolean; Results?: unknown[]; ErrorMessage?: string },
+}));
+
 const { mockOrderSave, mockOrderLoad, mockGrantSave, mockGrantLoad, MockOrderHeader, MockEntitlementGrant } = vi.hoisted(() => {
     const mockOrderSave = vi.fn().mockResolvedValue(true);
     const mockOrderLoad = vi.fn().mockResolvedValue(true);
@@ -75,6 +79,8 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     });
                 }
                 if (params.EntityName.includes('Entitlement Grants')) {
+                    grantView.filters.push((params as { ExtraFilter?: string }).ExtraFilter ?? '');
+                    if (grantView.result) return Promise.resolve(grantView.result);
                     return Promise.resolve({
                         Success: true,
                         Results: [{ ID: 'grant-100', Status: 'Pending' }]
@@ -105,7 +111,9 @@ describe('GuestOrderClaimDriver', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
-        mockOrderInstance.ID = 'order-100';
+        mockOrderInstance.ID = ORDER_ID;
+        grantView.filters = [];
+        grantView.result = null;
         mockOrderInstance.Status = 'Confirmed';
         mockOrderInstance.BillToPersonID = null;
         mockOrderInstance.ShipToPersonID = null;
@@ -145,7 +153,7 @@ describe('GuestOrderClaimDriver', () => {
 
             const result = await driver.OnClaim(context);
             expect(result.Success).toBe(true);
-            expect(result.Data?.OrderID).toBe('order-100');
+            expect(result.Data?.OrderID).toBe(ORDER_ID);
             expect(result.Data?.PersonID).toBe('person-88');
             expect(result.Data?.CascadedGrants).toEqual(['grant-100']);
 
@@ -204,7 +212,32 @@ describe('GuestOrderClaimDriver', () => {
 
             const result = await driver.OnClaim(context);
             expect(result.Success).toBe(true);
-            expect(result.Data?.OrderID).toBe('order-100');
+            expect(result.Data?.OrderID).toBe(ORDER_ID);
+        });
+
+        it('finds the grants through the order lines\' OrderHeaderID (#583)', async () => {
+            const context: ClaimRedeemContext = {
+                Claim: { ID: 'claim-7', RecordID: ORDER_ID, Status: 'Pending' } as unknown as MJIdentityClaimEntity,
+                User: mockUser
+            };
+
+            await driver.OnClaim(context);
+            expect(grantView.filters).toEqual([
+                `OrderLineID IN (SELECT ID FROM [__mj_BizAppsOrders].[vwOrderLines] WHERE OrderHeaderID = '${ORDER_ID}')`,
+            ]);
+        });
+
+        it('fails, rather than skipping, when the grants cannot be read (#583)', async () => {
+            grantView.result = { Success: false, ErrorMessage: 'Invalid column name' };
+            const context: ClaimRedeemContext = {
+                Claim: { ID: 'claim-8', RecordID: ORDER_ID, Status: 'Pending' } as unknown as MJIdentityClaimEntity,
+                User: mockUser
+            };
+
+            const result = await driver.OnClaim(context);
+            expect(result.Success).toBe(false);
+            expect(result.ErrorMessage).toContain('Invalid column name');
+            expect(mockGrantSave).not.toHaveBeenCalled();
         });
 
         it('fails if no OrderID can be found in claim', async () => {

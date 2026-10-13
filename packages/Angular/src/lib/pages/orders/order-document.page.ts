@@ -4,7 +4,7 @@ import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format
 
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
-import { ParseAddressSnapshot, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { ParseAddressSnapshot, Today, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { FormatSoldAddress } from '../../custom/OrderHeader/order-header-prefs';
 
 /** Who issued the bill. */
@@ -296,7 +296,7 @@ export class MJOOrderDocumentPageComponent implements OnInit {
 
     public Order: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: mjBizAppsOrdersOrderLineEntity[] = [];
-    public readonly today = new Date().toISOString().slice(0, 10);
+    public readonly today = Today();
 
     public async ngOnInit(): Promise<void> {
         if (!this.OrderID) return;

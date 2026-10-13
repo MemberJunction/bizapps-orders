@@ -61,3 +61,17 @@ Each change is also dispatched as a bubbling, composed `checkout-access-state` D
 
 - `OutboundDelivery` rows show each consumer's status per event, and can be read per order through `OutboundEvent.OrderHeaderID`.
 - To re-send a dead-lettered row, set its `Status` back to `Pending` and its `DeadlineAt` into the future; the next pass sends it.
+
+## Where the code lives
+
+| What | Where |
+|---|---|
+| Consumer base class, envelope, recording, dispatch, and the retry, lease and timeout constants | [`packages/CoreEntitiesServer/src/OutboundEvents.ts`](../packages/CoreEntitiesServer/src/OutboundEvents.ts) |
+| `OrderConfirmed`, recorded in the booking transaction | `recordOrderConfirmedEvent` in [`packages/CoreEntitiesServer/src/OrderEntityServer.ts`](../packages/CoreEntitiesServer/src/OrderEntityServer.ts) |
+| `GrantStatusChanged`, recorded when a grant is created or a save changes its `Status` | [`packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts`](../packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts) |
+| The `Orders.DispatchOutboundEvents` action the scheduled job runs | [`packages/Server/src/custom/dispatch-outbound-events.action.ts`](../packages/Server/src/custom/dispatch-outbound-events.action.ts) |
+| The action and job metadata | [`metadata/actions/.orders-outbound-actions.json`](../metadata/actions/.orders-outbound-actions.json), [`metadata/scheduled-jobs/.orders-outbound-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-outbound-scheduled-jobs.json) |
+| The dispatch after `/complete`, and `POST /checkout/access-status` | [`packages/Server/src/CheckoutServerExtension.ts`](../packages/Server/src/CheckoutServerExtension.ts) |
+| The access state, read from the gating deliveries | [`packages/CoreEntitiesServer/src/CheckoutAccessStatus.ts`](../packages/CoreEntitiesServer/src/CheckoutAccessStatus.ts) |
+| The success screen's polling interval, timeout and default messages | [`packages/Angular/src/lib/checkout-widget/checkout-access.ts`](../packages/Angular/src/lib/checkout-widget/checkout-access.ts) |
+| Checks against a real database | [`packages/IntegrationTests/src/checks/outbound-events.checks.ts`](../packages/IntegrationTests/src/checks/outbound-events.checks.ts) |

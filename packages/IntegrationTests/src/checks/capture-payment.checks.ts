@@ -37,7 +37,7 @@
  *
  * CONNECTS TO:
  *   CODE: CapturePaymentOperation · PaymentHeaderEntityServer.Lines · PaymentLineEntityServer
- *   DOC:  docs/spec-capture-payment-operation.md · plans/archive/bizapps-orders-master.md D68
+ *   DOC:  plans/archive/spec-capture-payment-operation.md · plans/archive/bizapps-orders-master.md D68
  */
 import { randomUUID } from "node:crypto";
 import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
@@ -211,6 +211,7 @@ export const CapturePaymentChecks: NamedCheck[] = [
         Assert(effect != null, "the output reports the order effect");
         AssertEqual(Number(effect!.AmountPaid), 150, "and it agrees with the row");
         AssertEqual(Number(effect!.Balance), 250, "on the balance too");
+        AssertEqual(effect!.PaymentStatus, "PartiallyPaid", "and on the status");
       }),
   },
   {
@@ -320,6 +321,7 @@ export const CapturePaymentChecks: NamedCheck[] = [
 
         const effect = out.OrderEffects?.[0];
         AssertEqual(effect?.HasCredit, true, "and the output flags it as credit");
+        AssertEqual(effect?.PaymentStatus, "Paid", "an over-paid order reads as paid");
       }),
   },
   {
