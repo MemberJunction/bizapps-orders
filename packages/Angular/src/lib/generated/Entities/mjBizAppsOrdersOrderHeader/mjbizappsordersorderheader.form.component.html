@@ -214,6 +214,22 @@
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="IPCountry"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CardIssuingCountry"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
 
     </mj-collapsible-panel>
 
@@ -772,7 +788,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderConcessions"
         SectionName="Order Concessions"
-        Icon="fa fa-table"
+        Icon="fa fa-hand-holding-usd"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"

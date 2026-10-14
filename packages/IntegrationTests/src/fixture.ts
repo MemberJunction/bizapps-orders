@@ -131,7 +131,7 @@ export interface OrdersFixture {
      * WHICH of these is legal — so we need both an organization and an individual to prove the
      * organization-only type rejects a person and the Either types accept both.
      */
-    Customers: { OrganizationID: string; SecondOrganizationID: string; PersonID: string };
+    Customers: { OrganizationID: string; SecondOrganizationID: string; PersonID: string; SecondPersonID: string };
     /** Products by mnemonic — see {@link CreateOrdersFixture} for what each one is for. */
     Products: Record<string, string>;
     /**
@@ -390,6 +390,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             OrganizationID: world.Organizations.RIV,
             SecondOrganizationID: world.Organizations.NGS,
             PersonID: world.People['jordan.blake@example.com'],
+            SecondPersonID: world.People['nora.calhoun@riverside.org'],
         },
         Products: {
             WidgetA: requireProduct('WidgetA'),

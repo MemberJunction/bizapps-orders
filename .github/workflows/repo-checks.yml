@@ -38,6 +38,14 @@ jobs:
           node ./.github/scripts/check-dependency-model.mjs --self-test
           node ./.github/scripts/check-dependency-model.mjs
 
+      # What the workspace installs, not what it declares: pnpm-lock.yaml holds one version of each
+      # @memberjunction/* and other apps' @mj-biz-apps/* package. A second version (an old exact pin,
+      # or a missing peer that auto-install-peers fills on its own) splits the class-factory registry.
+      - name: One copy of each MJ and sibling-app package
+        run: |
+          node ./.github/scripts/check-single-copy.mjs --self-test
+          node ./.github/scripts/check-single-copy.mjs
+
       - name: Generated forms put no field in the Details panel
         run: |
           node ./.github/scripts/check-form-details-panel.mjs --self-test

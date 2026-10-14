@@ -3,11 +3,12 @@
 # findWorkspacePackageJsonFiles, and the publish workflow's jq steps) — pnpm itself
 # ignores it and uses this file. Keep the two glob lists in sync.
 
-# LOAD-BEARING. pnpm 10 defaults this to false, which makes internal deps pinned at
-# an exact version resolve from the REGISTRY instead of linking to the local package.
-# For an unpublished version that fails loudly; for a published one it silently
-# installs a stale copy. This repo pins its own workspace packages at exact
-# versions, so without this every workspace link becomes a registry download.
+# LOAD-BEARING. pnpm 10 defaults this to false, which makes internal deps declared at
+# a plain version range (here ^x.y.z) resolve from the REGISTRY instead of linking to
+# the local package. For an unpublished version that fails loudly; for a published one
+# it silently installs a stale copy. This repo declares its own workspace packages by
+# caret range rather than `workspace:`, so without this every workspace link becomes a
+# registry download.
 linkWorkspacePackages: true
 
 # Peer handling (strict-peer-dependencies, auto-install-peers) lives in .npmrc.

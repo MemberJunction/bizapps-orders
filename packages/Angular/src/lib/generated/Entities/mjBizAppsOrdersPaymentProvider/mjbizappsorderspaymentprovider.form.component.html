@@ -366,6 +366,31 @@
         }
     </mj-collapsible-panel>
 
+    <!-- Payment Provider Prices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentProviderPrices"
+        SectionName="Payment Provider Prices"
+        Icon="fa fa-money-bill-wave"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentProviderPrices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Provider Prices','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Provider Prices','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentProviderPrices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentProviderPrices', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
     <mj-form-panel-slot Entity="{{record.EntityInfo.Name}}" Slot="after-related" [Record]="record" [FormComponent]="this" [FormContext]="formContext"></mj-form-panel-slot>
 </mj-record-form-container>
         

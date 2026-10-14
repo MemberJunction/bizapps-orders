@@ -1,5 +1,22 @@
 # @mj-biz-apps/orders-ng
 
+## 5.32.1
+
+### Patch Changes
+
+- d120083: The packages' dependencies on each other are caret ranges (`^5.32.0`) instead of exact versions. A host that pins or overrides one package of this app at a later compatible version no longer forces an exact-match copy of its siblings. Changesets keeps the caret and moves its floor on each release.
+  - @mj-biz-apps/orders-entities@5.32.1
+
+## 5.32.0
+
+### Minor Changes
+
+- b9a5618: The Organization form's Staff section (from `@mj-biz-apps/common-ng`) now shows order figures for the organization's staff: Staff LTV with how many staff have bought, Staff orders with open and overdue counts, active subscriptions and the last staff order date, plus Orders and LTV columns on each staff row. `OrdersStaffContributor` registers against Common's `OrganizationStaffContributor` plug-in point and uses the same definitions as the person header's `Party Order Lifetime` query: an order counts unless Voided, LTV is the sum of `TotalGross`, open means overdue or a balance due, and a subscription counts when its Status is Active. Requires `@mj-biz-apps/common-ng` 5.53.0 or later, the release that adds the Staff section.
+
+### Patch Changes
+
+- @mj-biz-apps/orders-entities@5.32.0
+
 ## 5.31.0
 
 ### Minor Changes
@@ -667,8 +684,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                      "FK_EntityFieldValue_EntityField"
+                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

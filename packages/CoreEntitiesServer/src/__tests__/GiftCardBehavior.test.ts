@@ -22,6 +22,8 @@ import {
 } from '../GiftCardBehavior.js';
 
 const ORDER: GiftCardOrderFacts = {
+    ShipToPersonID: null,
+    ShipToOrganizationID: null,
     BillToPersonID: 'buyer-person',
     BillToOrganizationID: 'buyer-org',
 };
@@ -148,8 +150,18 @@ describe('PlanGiftCardIssuance — who the card is for (D27)', () => {
         expect(plan.Cards[0].BeneficiaryOrganizationID).toBe('buyer-org');
     });
 
+    it("falls back to the order's ship-to before the bill-to, as subscriptions and access grants do", () => {
+        // Billed to an organization, shipped to a person, nothing on the line: the card goes to the
+        // ship-to person, the same party the order's subscriptions and access grants name (#622).
+        const plan = PlanGiftCardIssuance(line(), { ...ORDER, ShipToPersonID: 'ship-to-person' });
+        expect(plan.Cards[0].BeneficiaryPersonID).toBe('ship-to-person');
+        expect(plan.Cards[0].BeneficiaryOrganizationID).toBe('buyer-org');
+    });
+
     it('leaves a side null when neither the line nor the order names one', () => {
         const plan = PlanGiftCardIssuance(line(), {
+            ShipToPersonID: null,
+            ShipToOrganizationID: null,
             BillToPersonID: null,
             BillToOrganizationID: null,
         });
