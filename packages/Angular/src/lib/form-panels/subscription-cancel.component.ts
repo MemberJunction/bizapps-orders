@@ -10,7 +10,8 @@ import {
 
 /**
  * What the person cancelling picks: the subscription type's own rule (`Type`, which sends no timing),
- * or one of the two timings that override it. The type's grace applies to end of term only.
+ * or one of the two timings that override it. Only the type's own rule applies its grace period; a
+ * chosen timing ends access on the day it names.
  */
 export type MJOCancelTiming = 'Type' | NonNullable<CancelSubscriptionInput['Timing']>;
 
@@ -84,6 +85,8 @@ export class MJOSubscriptionCancelComponent {
 
     public Close(): void {
         this.Open = false;
+        this.Timing = 'Type';
+        this.Reason = '';
         this.Preview = null;
         this.Error = null;
     }

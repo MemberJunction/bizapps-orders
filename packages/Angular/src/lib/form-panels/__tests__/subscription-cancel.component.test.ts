@@ -62,6 +62,7 @@ describe('Cancel subscription', () => {
     it('is offered on a live subscription to a viewer who may update subscriptions', () => {
         expect(componentFor({}).CanCancel).toBe(true);
         expect(componentFor({ Status: 'Trialing' }).CanCancel).toBe(true);
+        expect(componentFor({ Status: 'Paused' }).CanCancel).toBe(true);
     });
 
     it('is not offered on a canceled subscription, an unsaved one, or to a viewer who may not update', () => {
@@ -93,6 +94,8 @@ describe('Cancel subscription', () => {
         expect(mocks.calls[1].input).toEqual({ SubscriptionID: SUB, Timing: 'Immediate', Reason: 'Moved to another plan', Preview: false });
         expect(c.Canceled.emit).toHaveBeenCalledOnce();
         expect(c.Open).toBe(false);
+        expect(c.Timing).toBe('Type');
+        expect(c.Reason).toBe('');
     });
 
     it('sends end of term when the person overrides the type with it', async () => {
@@ -110,9 +113,9 @@ describe('Cancel subscription', () => {
         await c.RunPreview();
         c.Timing = 'Immediate';
         c.Changed();
+        expect(c.Preview).toBeNull();
         await c.Confirm();
 
-        expect(c.Preview).toBeNull();
         expect(mocks.calls).toHaveLength(1);
     });
 
