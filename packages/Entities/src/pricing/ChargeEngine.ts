@@ -19,6 +19,7 @@
  *   DOC:    plans/archive/pricing-charges-and-promotions.md §5
  */
 import { BaseEntity, IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import {
     mjBizAppsOrdersOrderChargeAllocationEntity,
     mjBizAppsOrdersOrderChargeEntity,
@@ -94,7 +95,7 @@ export async function RunCharges(
     //
     // This is the boundary of what the engine cache is for: rows nobody changes mid-transaction.
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const codes = [...new Set(requested.map((r) => r.Code))].map((c) => `'${c.replace(/'/g, "''")}'`).join(',');
+    const codes = [...new Set(requested.map((r) => r.Code))].map((c) => `'${EscapeSQLString(c)}'`).join(',');
     const res = await rv.RunView<ChargeTypeRow>(
         { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Code IN (${codes})`, ResultType: 'simple', BypassCache: true },
         user,
@@ -185,15 +186,9 @@ export async function DeleteTaxCharges(
     user: UserInfo,
 ): Promise<void> {
     if (!lineIDs.length) return;
+    const types = await ReadTaxChargeTypes(provider, user);
+    if (!types.length) return;
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const types = await rv.RunView<{ ID: string }>(
-        { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Category = 'Tax'`, Fields: ['ID'], ResultType: 'simple', BypassCache: true },
-        user,
-    );
-    if (!types?.Success) {
-        throw new ChargeError(`Could not read charge types: ${types?.ErrorMessage ?? 'unknown error'}`);
-    }
-    if (!types.Results.length) return;
 
     const touched = await rv.RunView<{ OrderChargeID: string }>(
         {
@@ -211,7 +206,7 @@ export async function DeleteTaxCharges(
     // A tax charge that came to nothing has no allocation at all — a waiver, or a jurisdiction that
     // rates the product at zero — so no line leads to it. The walk re-decides it like any other, so
     // it goes too, or each re-price leaves another zero row behind.
-    const unallocated = await zeroTaxChargesWithoutAllocations(orderHeaderID, types.Results.map((t) => t.ID), rv, user);
+    const unallocated = await zeroTaxChargesWithoutAllocations(orderHeaderID, types.map((t) => t.ID), rv, user);
     const chargeIDs = [...touched.Results.map((a) => a.OrderChargeID), ...unallocated];
     if (!chargeIDs.length) return;
 
@@ -221,7 +216,7 @@ export async function DeleteTaxCharges(
             ExtraFilter:
                 `OrderHeaderID = '${orderHeaderID}'` +
                 ` AND ID IN (${quoted(chargeIDs)})` +
-                ` AND ChargeTypeID IN (${quoted(types.Results.map((t) => t.ID))})`,
+                ` AND ChargeTypeID IN (${quoted(types.map((t) => t.ID))})`,
             ResultType: 'entity_object',
             BypassCache: true,
         },
@@ -293,6 +288,38 @@ async function zeroTaxChargesWithoutAllocations(
 }
 
 /**
+ * The charge types whose `Category` is 'Tax' — `SalesTax`, `VAT`, and any a host adds.
+ *
+ * Whether a charge is a tax is the type's category, never its code. Matching the code against "tax"
+ * missed `VAT`, so a stated VAT did not stop tax resolution and the order was charged the stated VAT
+ * and the resolved sales tax together.
+ *
+ * Read with `BypassCache` for the reason {@link RunCharges} gives: charge types can change inside the
+ * transaction that prices the order.
+ */
+export async function ReadTaxChargeTypes(
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Array<{ ID: string; Code: string }>> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const types = await rv.RunView<{ ID: string; Code: string }>(
+        { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Category = 'Tax'`, Fields: ['ID', 'Code'], ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    if (!types?.Success) {
+        throw new ChargeError(`Could not read charge types: ${types?.ErrorMessage ?? 'unknown error'}`);
+    }
+    return types.Results ?? [];
+}
+
+/** Whether any of these charge codes is a tax-category type. See {@link ReadTaxChargeTypes}. */
+export async function StatesTaxCharge(codes: string[], provider: IMetadataProvider, user: UserInfo): Promise<boolean> {
+    if (!codes.length) return false;
+    const taxCodes = new Set((await ReadTaxChargeTypes(provider, user)).map((t) => t.Code.toLowerCase()));
+    return codes.some((c) => taxCodes.has(c.toLowerCase()));
+}
+
+/**
  * The tax charges a caller STATED on this saved order, read back as requests for the next walk.
  *
  * A stated tax (a rate or amount, or an override with its reason) wins over the tax resolved from
@@ -328,25 +355,20 @@ export async function ReadStatedTaxCharges(
     if (!position.size) return [];
     const skip = new Set(skipLineIDs.map((id) => id.toLowerCase()));
 
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const types = await rv.RunView<{ ID: string; Code: string }>(
-        { EntityName: CHARGE_TYPE_ENTITY, ExtraFilter: `Category = 'Tax'`, Fields: ['ID', 'Code'], ResultType: 'simple', BypassCache: true },
-        user,
-    );
-    if (!types?.Success) {
-        throw new ChargeError(`Could not read charge types: ${types?.ErrorMessage ?? 'unknown error'}`);
-    }
-    if (!types.Results.length) return [];
-    const codeOf = new Map(types.Results.map((t) => [t.ID.toLowerCase(), t.Code]));
-    const taxCodes = new Set(types.Results.map((t) => t.Code.toLowerCase()));
+    const types = await ReadTaxChargeTypes(provider, user);
+    if (!types.length) return [];
+    const codeOf = new Map(types.map((t) => [t.ID.toLowerCase(), t.Code]));
+    const taxCodes = new Set(types.map((t) => t.Code.toLowerCase()));
     if (requestedCodes.some((c) => taxCodes.has(c.toLowerCase()))) return [];
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
 
     const charges = await rv.RunView<mjBizAppsOrdersOrderChargeEntity>(
         {
             EntityName: ORDER_CHARGE_ENTITY,
             ExtraFilter:
                 `OrderHeaderID = '${orderHeaderID}'` +
-                ` AND ChargeTypeID IN (${quoted(types.Results.map((t) => t.ID))})` +
+                ` AND ChargeTypeID IN (${quoted(types.map((t) => t.ID))})` +
                 ` AND (IsOverridden = 1 OR TaxRateID IS NULL)`,
             OrderBy: 'Sequence',
             ResultType: 'entity_object',

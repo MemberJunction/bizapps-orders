@@ -32,7 +32,7 @@
   "peerDependencies": {
     "@memberjunction/core": "^6.1.5",
     "@memberjunction/global": "^6.1.5",
-    "@mj-biz-apps/common-entities": "^5.52.0"
+    "@mj-biz-apps/common-entities": "^5.53.0"
   },
   "repository": {
     "type": "git",

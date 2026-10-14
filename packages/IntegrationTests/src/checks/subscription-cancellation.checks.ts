@@ -1,5 +1,5 @@
 /**
- * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC10).
+ * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC11).
  *
  * `Orders.CancelSubscription` is where the `SubscriptionType` cancellation columns finally do
  * something. The user picks a DATE; the operation applies `CancellationMode` /
@@ -17,6 +17,8 @@
  *   SC8   a lifecycle SubscriptionEvent is logged, carrying the decision
  *   SC9   cancelling twice is refused rather than double-reversing
  *   SC10  an unknown subscription fails as OUTPUT, not as a thrown fault
+ *   SC11  a later term sold and invoiced on the same order is canceled, and under NoRefund its
+ *         invoiced amount is kept: nothing is reversed (#406, #560)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -56,6 +58,8 @@ interface CancelOutput {
         Explanation: string;
     };
     SubscriptionTermID?: string;
+    LaterTerms?: { SubscriptionTermID: string; TermNumber: number; Decision: { RefundAmount: number; TermStatus: string } }[];
+    TotalRefundAmount?: number;
     ReversalOrderID?: string;
     ReversalOrderNumber?: string;
 }
@@ -448,6 +452,68 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                     /no subscription found/i.test(out.Message ?? ''),
                     `the message should name the problem, got: ${out.Message}`,
                 );
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC11',
+        Name: 'SC11: a later term sold and invoiced on the same order is canceled and, under NoRefund, kept',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // AnnualRolling: ExtendExisting, EndOfTerm, NoRefund. Two lines of it on one order
+                // make term 1 (2026-07-01 → 2027-06-30) and term 2 (2027-07-01 → 2028-06-30) of one
+                // subscription, both sold by this order, so neither term is a renewal.
+                const f = Fx();
+                const order = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [
+                        { ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 },
+                        { ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 },
+                    ],
+                });
+                Assert(order.Saved, `confirm failed: ${order.Message}`);
+                const sold = await TxQuery<{ ID: string; SubscriptionID: string; TermNumber: number; OrderLineID: string }>(
+                    ctx,
+                    `SELECT st.ID, st.SubscriptionID, st.TermNumber, st.OrderLineID
+                     FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+                     JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+                     WHERE ol.OrderHeaderID = '${order.Order.ID}' ORDER BY st.TermNumber`,
+                );
+                AssertEqual(sold.map((t) => t.TermNumber).join(','), '1,2', 'precondition: the order sold terms 1 and 2');
+                Assert(SameID(sold[0].SubscriptionID, sold[1].SubscriptionID), 'precondition: of one subscription');
+                const SubscriptionID = sold[0].SubscriptionID;
+
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: '2026-09-01' });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+
+                // Term 1 rides out under NoRefund. Term 2 never starts, and the order invoiced it in full
+                // at confirm, so NoRefund keeps it too: it is canceled and nothing is reversed (#560,
+                // provisional until the refund policy is confirmed there).
+                AssertEqual(Number(out.Decision!.RefundAmount), 0, 'NoRefund keeps term 1');
+                AssertEqual(out.LaterTerms?.length ?? 0, 1, 'term 2 is the one later term');
+                AssertEqual(Number(out.LaterTerms![0].Decision.RefundAmount), 0, 'NoRefund keeps the invoiced term 2');
+                AssertEqual(Number(out.TotalRefundAmount), 0, 'nothing is refunded');
+
+                const terms = await TxQuery<{ TermNumber: number; Status: string }>(
+                    ctx,
+                    `SELECT TermNumber, Status FROM ${ORDERS_SCHEMA}.SubscriptionTerm
+                     WHERE SubscriptionID = '${SubscriptionID}' ORDER BY TermNumber`,
+                );
+                AssertEqual(terms.map((t) => t.Status).join(','), 'Completed,Canceled', 'term 1 rides out, term 2 is canceled');
+
+                AssertEqual(out.ReversalOrderID ?? null, null, 'nothing is reversed, so no reversal order is booked');
+                const reversals = await TxQuery<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ReversesOrderLineID = '${sold[1].OrderLineID}'`,
+                );
+                AssertEqual(reversals.length, 0, "nothing reverses term 2's line");
+                const billed = await TxOne<{ BilledToDate: number }>(
+                    ctx,
+                    `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${sold[1].OrderLineID}'`,
+                );
+                AssertEqual(Number(billed.BilledToDate), 1200, "term 2's invoiced amount stays billed, so it stays on AR");
             }),
     },
 ];

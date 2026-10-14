@@ -15,6 +15,12 @@ export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 /** The order line entity. */
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
+/** IsA Disjoint child of Product — present only for products that ARE events. */
+export const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+/** IsA Disjoint child of OrderLine, sharing its key: the line's attendee. */
+export const EVENT_ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Event Order Lines';
+
 /** The order line's accounting dimension tags (D31). */
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 
@@ -58,3 +64,6 @@ export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 /** Subscription families — the bands of one subscription offering, per company (golive #276). */
 export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';
+
+/** What each instalment invoice billed each line, part by part (#681). */
+export const INSTALMENT_LINE_BILLING_ENTITY = 'MJ_BizApps_Orders: Instalment Line Billings';

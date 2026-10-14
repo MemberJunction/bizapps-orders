@@ -104,12 +104,29 @@ export interface CreateIntentRequest {
 export interface CreateIntentResult {
     Success: boolean;
     Reason?: string;
+    /**
+     * The gateway's intent id. Also set on a REFUSAL when the gateway created the intent before
+     * declining it: a saved instrument charged at create time (#289) comes back declined with the
+     * intent it opened, and that attempt is recorded as a Failed intent rather than lost.
+     */
     ProviderIntentID?: string;
     Status?: IntentStatus;
     /** For a client-side confirmation flow. Never logged. */
     ClientSecret?: string;
     /** For a hosted-checkout flow — where to send the customer. */
     HostedUrl?: string;
+    /**
+     * The gateway's code for why a saved-instrument charge was refused (`card_declined`,
+     * `insufficient_funds`, `authentication_required`, ...). Set only on a refusal.
+     */
+    FailureCode?: string;
+    /**
+     * True when charging a saved instrument needs the customer to authenticate (an SCA demand). The
+     * customer is not present, so the charge cannot complete; callers treat it as a failure (#289).
+     */
+    RequiresAuthentication?: boolean;
+    /** When the gateway took the money, for a saved-instrument charge that succeeded at create time. */
+    CapturedAt?: Date;
 }
 
 /**
@@ -165,6 +182,8 @@ export interface RetrievedInstrument {
     ExpiryMonth?: number;
     ExpiryYear?: number;
     HolderName?: string;
+    /** ISO 3166-1 alpha-2 country of the card's issuer, when the gateway reports one. */
+    IssuingCountry?: string;
 }
 
 /** A gateway customer to reuse or create — the owner of any instrument saved for later charges. */
@@ -263,6 +282,36 @@ export interface GatewayCharge {
     /** The gateway's own status, unmapped (Stripe: succeeded, pending, failed). */
     Status: string;
     CreatedAt?: Date;
+    /** The payer's e-mail as the gateway holds it (Stripe: the billing details, else the receipt address). */
+    BuyerEmail?: string | null;
+    /** The payer's name as the gateway holds it (Stripe: the billing details). */
+    BuyerName?: string | null;
+}
+
+/**
+ * One line of what a charge paid for, as the gateway's hosted checkout or payment link recorded it.
+ * The gateway's price id is what an unmatched charge's product is chosen by (#481).
+ */
+export interface GatewayChargeItem {
+    ProviderPriceID: string;
+    ProviderProductID?: string | null;
+    Quantity: number;
+    /** Major units, the line's total. */
+    Amount: number;
+}
+
+export interface ListChargeItemsRequest {
+    ProviderIntentID: string;
+}
+
+export interface ListChargeItemsResult {
+    Success: boolean;
+    Reason?: string;
+    /** Empty when the charge came through no hosted checkout or link (a dashboard or API charge). */
+    Items?: GatewayChargeItem[];
+    /** The buyer the checkout collected, which can be fuller than the charge's billing details. */
+    BuyerEmail?: string | null;
+    BuyerName?: string | null;
 }
 
 export interface ListChargesRequest {
@@ -448,6 +497,15 @@ export class BasePaymentProvider {
     /** One charge by id. Read-only. */
     public async RetrieveCharge(_request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
         return { Success: false, Reason: this.notImplemented('reading a charge') };
+    }
+
+    /**
+     * What a charge paid for, by the gateway intent it was taken on: the lines of the hosted checkout
+     * or payment link behind it, and the buyer that checkout collected. Read-only. Used to choose the
+     * product and buyer of an order created from a charge that matched nothing (#481).
+     */
+    public async ListChargeItems(_request: ListChargeItemsRequest): Promise<ListChargeItemsResult> {
+        return { Success: false, Reason: this.notImplemented('reading what a charge paid for') };
     }
 
     /** The webhook endpoints configured at the gateway, for the drift check (#477). Read-only. */

@@ -52,5 +52,63 @@
       "lastModified": "2026-09-02T03:26:35.428Z",
       "checksum": "801d177bcd571212e845703ce0498034753f0acfe77e2dbf5d1b0830f46e8d27"
     }
+  },
+  {
+    "fields": {
+      "Name": "Orders: Renewal Payment Link",
+      "Description": "The e-mail sent to a subscription's bill-to person after the renewal card's first failed charge, a decline or a bank's request to authenticate (#289). It carries the signed link that pays the renewal with a new card. Edit the wording here; the link, amounts and dates come from the code.",
+      "CategoryID": "@lookup:MJ: Template Categories.Name=Orders: Documents",
+      "UserPrompt": "Render the update-card e-mail. Variables: FirstName, OrderNumber, SubscriptionNumber, Description (what renews), Amount (formatted), PaymentUrl, ExpiresOn and NextAttemptDay (YYYY-MM-DD, NextAttemptDay empty when none is left), AuthenticationRequired (true when the bank asked the buyer to confirm).",
+      "UserID": "@lookup:MJ: Users.Name=System",
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "FF42A468-4800-488D-8D46-5DDA3A4602C3"
+    },
+    "relatedEntities": {
+      "MJ: Template Contents": [
+        {
+          "fields": {
+            "TemplateID": "@parent:ID",
+            "TypeID": "@lookup:MJ: Template Content Types.Name=HTML",
+            "TemplateText": "@file:renewal-payment-link.html",
+            "Priority": 1,
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "93B8889A-3396-4510-B311-D422C82862B6"
+          }
+        }
+      ]
+    }
+  },
+  {
+    "fields": {
+      "Name": "Orders: Renewal Payment Link Subject",
+      "Description": "The subject line of the update-card e-mail (#289). Same variables as Orders: Renewal Payment Link. Whitespace is collapsed to one line.",
+      "CategoryID": "@lookup:MJ: Template Categories.Name=Orders: Documents",
+      "UserPrompt": "Render one subject line for the update-card e-mail, from the same variables as Orders: Renewal Payment Link.",
+      "UserID": "@lookup:MJ: Users.Name=System",
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "E92FA1E3-15EA-4437-BE17-37EF564940A6"
+    },
+    "relatedEntities": {
+      "MJ: Template Contents": [
+        {
+          "fields": {
+            "TemplateID": "@parent:ID",
+            "TypeID": "@lookup:MJ: Template Content Types.Name=Text",
+            "TemplateText": "@file:renewal-payment-link-subject.txt",
+            "Priority": 1,
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "3DB0EFD3-6548-4DEC-B0B1-D8791DE517F0"
+          }
+        }
+      ]
+    }
   }
 ]
