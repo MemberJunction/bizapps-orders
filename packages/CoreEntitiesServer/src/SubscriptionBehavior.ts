@@ -804,17 +804,19 @@ export class SubscriptionBehavior {
      * The rules a cancellation runs under when the person cancelling chose a timing. The type's own
      * rules stand when `timing` is absent.
      *
-     * `Immediate` also drops the grace period: someone who asks for access to end now means now,
-     * and grace would keep the holder in for `GracePeriodDays` more. `EndOfTerm` keeps the type's
-     * grace, which is the type's policy for a term that runs out. Refund mode is never changed here;
-     * a refund the type does not give is a separate decision, made with `Orders.RefundPayment`.
+     * Both timings drop the grace period. A chosen timing names the day access ends: the request
+     * day for `Immediate`, the term's last day for `EndOfTerm`. Grace is the type's allowance for a
+     * term that runs out unrenewed; keeping it here would leave the holder in for `GracePeriodDays`
+     * past the day the person cancelling chose, and past the grant's own end, which is where a
+     * system that provisions from the grant stops access. Refund mode is never changed here; a
+     * refund the type does not give is a separate decision, made with `Orders.RefundPayment`.
      */
     public RulesForTiming(rules: SubscriptionTypeRules, timing?: CancellationTiming | null): SubscriptionTypeRules {
         switch (timing) {
             case 'Immediate':
                 return { ...rules, CancellationMode: 'Immediate', GracePeriodDays: 0 };
             case 'EndOfTerm':
-                return { ...rules, CancellationMode: 'EndOfTerm' };
+                return { ...rules, CancellationMode: 'EndOfTerm', GracePeriodDays: 0 };
             default:
                 return rules;
         }

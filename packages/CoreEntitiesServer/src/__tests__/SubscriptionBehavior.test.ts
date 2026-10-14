@@ -648,13 +648,20 @@ describe('cancellation policy', () => {
             expect(d.TermStatus).toBe('Canceled');
         });
 
+        it('EndOfTerm on the type\'s own mode still drops its grace: access ends on the term\'s last day', () => {
+            const d = cancelTimed('EndOfTerm', '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
+            expect(d.TermStatus).toBe('Completed');
+        });
+
         it('Immediate keeps the type\'s refund mode: NoRefund reverses nothing', () => {
             const d = cancelTimed('Immediate', '2026-07-01');
             expect(d.RefundAmount).toBe(0);
             expect(d.ReversalFraction).toBe(0);
         });
 
-        it('EndOfTerm on an Immediate type rides the term out and keeps the type\'s grace', () => {
+        it('EndOfTerm on an Immediate type rides the term out and drops the type\'s grace', () => {
             const behavior = new SubscriptionBehavior();
             const d = behavior.DecideCancellation({
                 Rules: behavior.RulesForTiming(rules({ CancellationMode: 'Immediate', GracePeriodDays: 10 }), 'EndOfTerm'),
@@ -662,7 +669,7 @@ describe('cancellation policy', () => {
                 Term: term,
             });
             expect(iso(d.EffectiveDate)).toBe('2026-12-31');
-            expect(iso(d.AccessThroughDate)).toBe('2027-01-10');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
             expect(d.TermStatus).toBe('Completed');
         });
     });

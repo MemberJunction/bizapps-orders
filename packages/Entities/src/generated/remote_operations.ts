@@ -433,8 +433,9 @@ export interface CancelSubscriptionInput {
     Reason?: string;
     /**
      * When coverage ends, chosen by the person cancelling. `Immediate` ends coverage and access on
-     * the request day (no grace); `EndOfTerm` ends coverage at the end of the term, with the type's
-     * grace. Absent, the subscription type's cancellation mode decides. Refund mode never changes.
+     * the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's
+     * grace. Absent, the subscription type's cancellation mode and grace decide. Refund mode never
+     * changes.
      */
     Timing?: 'Immediate' | 'EndOfTerm';
     /**
