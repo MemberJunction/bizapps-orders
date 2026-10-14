@@ -56,9 +56,9 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-actions": "5.32.0",
-    "@mj-biz-apps/orders-core-entities-server": "5.32.0",
-    "@mj-biz-apps/orders-entities": "5.32.0",
+    "@mj-biz-apps/orders-actions": "^5.32.0",
+    "@mj-biz-apps/orders-core-entities-server": "^5.32.0",
+    "@mj-biz-apps/orders-entities": "^5.32.0",
     "body-parser": "^2.2.0",
     "class-validator": "^0.14.3"
   },
