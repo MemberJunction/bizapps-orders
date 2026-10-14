@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121700 — OrderHeader.IPCountry and OrderHeader.CardIssuingCountry: VAT location
+-- V202610131511 — OrderHeader.IPCountry and OrderHeader.CardIssuingCountry: VAT location
 -- evidence for self-serve checkout (MemberJunction/bizapps-orders#480)
 -- =============================================================================
 -- VAT on digital sales to buyers in the EU or UK expects two pieces of non-contradictory
@@ -19,9 +19,10 @@
 --
 -- CodeGen output for this app is folded below the banner at the end of this file. It regenerates
 -- vwOrderHeadersGenerated with the Address geo embed joins (__mj_Latitude_/__mj_Longitude_ for
--- BillToAddressID and ShipToAddressID). The four virtual EntityField rows for those columns are
--- created earlier, by V202610121610's CodeGen output: in the combined PR (bizapps-orders#645)
--- that was the first migration whose CodeGen run met the geo-embed view. Without them a database
+-- BillToAddressID and ShipToAddressID). V202610131507 already rebuilt that view with those columns,
+-- and the four virtual EntityField rows for them are created by V202610131508's CodeGen output, the
+-- next migration: CodeGen registers a view's new columns on the run after it rebuilds the view.
+-- Without them a database
 -- built from migrations would return view columns its entity metadata does not list, and every
 -- Order Header save would fail (MemberJunction/bizapps-orders#491).
 -- =============================================================================

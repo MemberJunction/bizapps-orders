@@ -599,7 +599,7 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
-            "TestID": "@lookup:MJ: Tests.Name=ORD-43 - Amount Change Preview",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-43 - Amount Change",
             "Sequence": 43,
             "Status": "Active"
           },

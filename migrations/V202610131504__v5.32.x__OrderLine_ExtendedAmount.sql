@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121300 — OrderLine.ExtendedAmount: the exact amount a price rule set
+-- V202610131504 — OrderLine.ExtendedAmount: the exact amount a price rule set
 --                 for the line, before discount (MemberJunction/bizapps-orders#579)
 -- =============================================================================
 -- A Flat price does not always divide by the quantity. Flat 100.00 at quantity 3

@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121600 — CodeGen heal: value lists for CHECK-constrained status columns
+-- V202610131506 — CodeGen heal: value lists for CHECK-constrained status columns
 -- (bizapps-orders#491)
 -- =============================================================================
 -- The migrations that added these columns carry their CHECK constraints but not

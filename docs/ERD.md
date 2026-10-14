@@ -15,7 +15,7 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-10-12 · latest migration `V202610121620__v5.30.x__OrderLine_CoverageOverlapReason.sql`
+> **Verified against the live database:** 2026-10-11 · latest migration `V202610081700__v5.30.x__PaymentWebhookDelivery.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
 > **68 tables · 121 internal relationships · 75 cross-app foreign keys ·

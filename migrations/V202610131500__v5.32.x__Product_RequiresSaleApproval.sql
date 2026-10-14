@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610091600 — RequiresSaleApproval on ProductType, ProductCategory and
+-- V202610131500 — RequiresSaleApproval on ProductType, ProductCategory and
 --                 Product (golive #281)
 -- =============================================================================
 -- Some products are priced per engagement: professional services, custom scope,

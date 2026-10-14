@@ -230,8 +230,10 @@ describe('the bundle name agrees everywhere it is written down', () => {
                 suite,
                 `'${name}' has a Test record but is not a member of the suite — 'mj test suite' ` +
                     `would go green having never dispatched it`,
-            ).toContain(`Tests.Name=${name}`);
+            ).toContain(`Tests.Name=${name}"`);
         }
+        // The closing quote matters: 'ORD-43 - Amount Change' is a prefix of a stale
+        // 'ORD-43 - Amount Change Preview' lookup, which would otherwise pass here and fail the push.
     });
 
     it('index.ts exports every bundle, so importing the package registers them all', () => {

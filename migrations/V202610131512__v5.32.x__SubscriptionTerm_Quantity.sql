@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121800 — SubscriptionTerm.Quantity: how many seats a term covers
+-- V202610131512 — SubscriptionTerm.Quantity: how many seats a term covers
 --                 (MemberJunction/bizapps-orders#589)
 -- =============================================================================
 -- A subscription line bought at quantity 10 bills ten times the rate and creates

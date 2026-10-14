@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610091610 — SignedAmendmentReference on OrderConcession (golive #268)
+-- V202610131501 — SignedAmendmentReference on OrderConcession (golive #268)
 -- =============================================================================
 -- An approved concession changes what the customer was sold, and the contract
 -- side of that change is a signed amendment held outside Orders. Nothing on the

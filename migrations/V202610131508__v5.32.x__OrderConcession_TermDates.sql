@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121610 — Shifting or shortening a booked term (#507)
+-- V202610131508 — Shifting or shortening a booked term (#507)
 -- =============================================================================
 -- An amendment could only move a booked term's end later (a Duration concession).
 -- Moving its start and end together (a shift) or giving the customer less time (a
@@ -167,7 +167,7 @@ GO
 -- run also emitted the Order Headers address geo fields (__mj_Latitude_/__mj_Longitude_
 -- for BillToAddressID and ShipToAddressID), which no earlier migration creates, and the
 -- Order Headers view and CRUD; they are kept here. Validators CodeGen regenerated for
--- other entities are in V202610121605__v5.30.x__CodeGen_Drift_Heal.sql.
+-- other entities are in V202610131507__v5.32.x__CodeGen_Drift_Heal.sql.
 -- =============================================================================
 
 

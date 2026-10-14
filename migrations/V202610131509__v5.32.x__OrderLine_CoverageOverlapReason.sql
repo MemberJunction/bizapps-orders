@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121620 — OrderLine.CoverageOverlapReason: why a line runs alongside
+-- V202610131509 — OrderLine.CoverageOverlapReason: why a line runs alongside
 -- existing coverage (bizapps-orders#511)
 -- =============================================================================
 -- A line that sets AcknowledgesCoverageOverlap books a second band of a
@@ -83,7 +83,7 @@ GO
 --   database built from its migrations, with the hand-authored DDL above applied.
 --   Contains the CoverageOverlapReason field registration on Order Lines and its
 --   IS-A child Event Order Lines, the rebuilt views, CRUD procs and grants for those
---   two (they now carry ExtendedAmount, which V202610121300 added), their FK indexes
+--   two (they now carry ExtendedAmount, which V202610131504 added), their FK indexes
 --   and hierarchy functions, and Order Lines' validators.
 --
 --   Left out: validators the run regenerated for other entities; they are not this

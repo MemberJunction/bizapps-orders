@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610091700 — Concession approval tiers on SalesRule (#308)
+-- V202610131502 — Concession approval tiers on SalesRule (#308)
 -- =============================================================================
 -- A concession outside the requester's SalesAuthority is decided by a holder of
 -- one role: the ApprovalRequiredRoleID of the active ConcessionLimit rule. One

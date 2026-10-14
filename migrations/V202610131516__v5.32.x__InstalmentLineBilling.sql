@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610131200 — What each instalment invoice billed each line (#681)
+-- V202610131516 — What each instalment invoice billed each line (#681)
 -- =============================================================================
 -- An instalment invoice slices its amount across the order's lines: each line's
 -- net, whatever of its tax and charges no charge allocation covers, and each
@@ -786,12 +786,6 @@ INSERT INTO [${mjSchema}].[EntityFieldValue]
 
 /* SQL text to update ValueListType for entity field ID D3D719CE-8F97-4F8E-802F-1DD83FF868B2 */
 UPDATE [${mjSchema}].[EntityField] SET ValueListType='List' WHERE ID='D3D719CE-8F97-4F8E-802F-1DD83FF868B2';
-
-/* SQL text to update entity field value sequence */
-UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=1 WHERE ID='8FFE2530-CC83-4203-8F08-B8D5ADD1D4C1';
-
-/* SQL text to update entity field value sequence */
-UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=2 WHERE ID='7705BEC3-6F59-4027-AA60-9F3D86F2EA38';
 
 
 /* Create Entity Relationship: MJ_BizApps_Orders: Order Lines -> MJ_BizApps_Orders: Instalment Line Billings (One To Many via OrderLineID) */

@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121900 — Promotion.AppliesToRenewals: a promotion that keeps discounting
+-- V202610131513 — Promotion.AppliesToRenewals: a promotion that keeps discounting
 --                 automatic renewals (MemberJunction/bizapps-orders#289)
 -- =============================================================================
 -- A promotion code discounts the order it is entered on. Nothing said whether

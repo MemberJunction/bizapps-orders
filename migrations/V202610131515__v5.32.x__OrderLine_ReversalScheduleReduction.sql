@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610131000 — A return against an order billed by instalment (#661)
+-- V202610131515 — A return against an order billed by instalment (#661)
 -- =============================================================================
 -- A return is a separate order whose lines point at the lines they take back. When the
 -- origin order is billed by instalment, booking the return credits the customer with a
@@ -50,7 +50,7 @@ EXEC sp_addextendedproperty
 GO
 
 -- -----------------------------------------------------------------------------
--- 2. spRecalcOrderHeaderTotals — as V202610122000 left it (approved amount changes'
+-- 2. spRecalcOrderHeaderTotals — as V202610131514 left it (approved amount changes'
 --    schedule reductions and credit memos), with
 --    - the balance net of what returns took off this order's instalments, and
 --    - each returning line that booked a credit memo counted at that memo.

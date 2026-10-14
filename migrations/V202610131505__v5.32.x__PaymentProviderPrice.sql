@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121400 — PaymentProviderPrice: which Orders product a gateway price sells
+-- V202610131505 — PaymentProviderPrice: which Orders product a gateway price sells
 -- (bizapps-orders#481)
 -- =============================================================================
 -- A card payment can reach the gateway with no order behind it: the buyer paid a

@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610121605 — CodeGen heal: Order Headers view and CHECK-constraint validators
+-- V202610131507 — CodeGen heal: Order Headers view and CHECK-constraint validators
 -- (bizapps-orders#645)
 -- =============================================================================
 -- CodeGen run on a database built from this repo's migrations emits two things no
@@ -11,7 +11,7 @@
 --     GeneratedCode rows the committed Validate*() methods come from were never
 --     installed by a migration.
 -- Shipping them here, once, makes later CodeGen runs emit only their own change.
--- Order Concessions' validators are in V202610121610, the migration that changes
+-- Order Concessions' validators are in V202610131508, the migration that changes
 -- that table.
 --
 -- This file has no hand-authored DDL. Everything below the banner is CodeGen's

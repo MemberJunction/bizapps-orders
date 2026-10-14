@@ -193,7 +193,7 @@ Revenue recognition is **real forward-dated JEs written at booking**. A 12-month
 
 Locked history is never edited.
 
-- Return / cancellation / credit memo = a **new** Order Header (`ReversesOrderHeaderID`) with negative-quantity lines.
+- Return / cancellation = a **new** Order Header (`ReversesOrderHeaderID`) with negative-quantity lines, and so is the credit memo a return or cancellation books. An amount change's credit memo is not an order; see below.
 - A return against an order billed by instalment books a credit memo for the returned units' share of what was invoiced and not yet earned. The returned units' share of what is not yet invoiced is the returning line's `ScheduleReduction`: a partial return lowers the origin's uninvoiced instalments by it, pro rata, and a whole-order return cancels them. The origin's balance, its schedule check and each later instalment invoice read the origin's lines less these reductions, as they do for approved amount changes.
 - An approved amount change that needs a credit memo is that memo; no order carries it. `Orders.GenerateInvoice` and `Orders.SendDocument` render it from what the approval logged on the `AmountChanged` subscription event when given its `OrderConcessionID`; the memo goes by email even when the order's company invoices through Bill.com, which carries no credit memos. A re-rendered instalment invoice shows what memos credited it and asks for its balance; a whole-order document subtracts each approved change's memo and schedule reduction, as the order's balance does. Sending is not automatic: the acknowledgment task tells accounting to send it.
 - Refund = a new Payment Header (`ReversesPaymentHeaderID`).
