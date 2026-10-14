@@ -138,11 +138,12 @@ export function ResolveEntitlementPolicy(
  * three packs expects. `Flat` ignores the line quantity entirely, for entitlements that are not
  * countable: "access to the member portal" does not become three portals.
  *
- * ROUNDED UP, and only ever up. A prorated subscription line carries a fractional quantity (0.5833
- * for a short first period), and 0.5833 × 5 seats is 2.9165. Rounding down hands the customer two
- * seats for a five-seat product and generates a support ticket; rounding up hands them three and
- * generates nothing. Under-granting is the expensive direction, exactly as under-collecting is with
- * tax, and for the same reason: the customer notices.
+ * ROUNDED UP, and only ever up: a fractional quantity × 5 seats can land between two whole seats.
+ * Rounding down under-grants and generates a support ticket; rounding up generates nothing.
+ * Under-granting is the expensive direction, exactly as under-collecting is with tax, and for the
+ * same reason: the customer notices. A SUBSCRIPTION line is not passed its own quantity, which a
+ * prorated first period scales (0.5833 for a short period, so 5 seats read 2.9165): the caller
+ * passes the term's seat count, because a shorter period covers fewer days, not fewer people (#589).
  *
  * A null template quantity means the entitlement is not a countable thing (a Feature or AccessLevel
  * rather than a ResourceQuantity), and stays null rather than becoming zero — zero would read as

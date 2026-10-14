@@ -97,6 +97,56 @@
 
     </mj-collapsible-panel>
 
+    <!-- Concession Limits Section -->
+    <mj-collapsible-panel
+        SectionKey="concessionLimits"
+        SectionName="Concession Limits"
+        Icon="fa fa-info-circle"
+        [Form]="this"
+        [FormContext]="formContext">
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="ConcessionTier"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MinConcessionValue"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MinConcessionPctOfContract"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="MinTermExtensionDays"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RequiresDecisionWithinAuthority"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
     <!-- System Metadata Section -->
     <mj-collapsible-panel
         SectionKey="systemMetadata"
@@ -133,7 +183,7 @@
     <mj-collapsible-panel
         SectionKey="mJBizAppsOrdersOrderConcessions"
         SectionName="Order Concessions"
-        Icon="fa fa-table"
+        Icon="fa fa-hand-holding-usd"
         Variant="related-entity"
         [Form]="this"
         [FormContext]="formContext"
