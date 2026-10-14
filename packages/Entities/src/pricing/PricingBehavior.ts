@@ -305,6 +305,12 @@ export function Money(v: number): number {
  * the line's own total, the charge/tax base, and the subscription term amount — so
  * a Flat line disagreed with itself three ways at once. Exactly the shape of the
  * bug `NetAfterDiscount` was consolidated to end.
+ *
+ * The figure is STORED on the line (`OrderLine.ExtendedAmount`, #579). While it was
+ * held only in memory, everything that read the line later — the invoice, the journal
+ * entry, a draft line saved a second time — rebuilt `quantity × unitPrice` and was a
+ * penny out. See {@link DropStaleExtendedAmount} for when the stored figure stops
+ * describing the line.
  */
 export function LineGross(
     quantity: number,
@@ -314,6 +320,33 @@ export function LineGross(
     return extendedAmount === null || extendedAmount === undefined
         ? Money(quantity * unitPrice)
         : Money(extendedAmount);
+}
+
+/** The parts of an order line {@link DropStaleExtendedAmount} reads: the stored figure and the dirty state. */
+export interface ExtendedAmountCarrier {
+    ExtendedAmount: number | null;
+    GetFieldByName(fieldName: string): { Dirty: boolean } | null | undefined;
+}
+
+/**
+ * Clear a stored extended amount that no longer describes the line.
+ *
+ * The figure belongs to the quantity and unit price the rule priced. Pricing writes all
+ * three together; a line whose quantity or unit price changes WITHOUT a new figure has
+ * been edited past it — a stated price typed over the rule's, or a quantity changed on a
+ * line that keeps its unit rate — and from then on `quantity × unitPrice` is the line's
+ * amount, as it is for any stated price. Keeping the old figure would bill 100.00 for a
+ * line the user just re-priced to 3 × 30.00.
+ *
+ * Called where pricing leaves a line unpriced and again before the line computes its own
+ * totals, so neither reads a figure the other would have dropped.
+ */
+export function DropStaleExtendedAmount(line: ExtendedAmountCarrier): void {
+    if (line.ExtendedAmount === null || line.ExtendedAmount === undefined) return;
+    const dirty = (name: string) => line.GetFieldByName(name)?.Dirty === true;
+    if ((dirty('Quantity') || dirty('UnitPrice')) && !dirty('ExtendedAmount')) {
+        line.ExtendedAmount = null;
+    }
 }
 
 export function NetAfterDiscount(gross: number, discountPct: number, discountAmount: number): number {
@@ -358,12 +391,13 @@ export interface PricedLineAmounts {
 export function ReadPricedLineAmounts(line: {
     Quantity?: number | null;
     UnitPrice?: number | null;
+    ExtendedAmount?: number | null;
     DiscountPct?: number | null;
     DiscountAmount?: number | null;
     ChargeAmount?: number | null;
     LineTax?: number | null;
 }): PricedLineAmounts {
-    const gross = Money(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0));
+    const gross = LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), line.ExtendedAmount);
     const pct = Math.round(Number(line.DiscountPct ?? 0) * 1e4) / 1e4;
     const net = NetAfterDiscount(gross, pct, Number(line.DiscountAmount ?? 0));
     const charge = Number(line.ChargeAmount ?? 0);

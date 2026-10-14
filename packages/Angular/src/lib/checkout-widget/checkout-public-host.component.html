@@ -60,6 +60,50 @@
         </div>
     } @else if (!config) {
         <p class="mj-checkout-public__status" role="status">Loading checkout…</p>
+    } @else if (renewal) {
+        <form class="mj-checkout-renewal" (submit)="$event.preventDefault(); payRenewal()">
+            <h1 class="mj-checkout-renewal__title">Renew your subscription</h1>
+            <p class="mj-checkout-renewal__lead">Your saved card could not be charged. Pay with a new card to keep your subscription active.</p>
+            <dl class="mj-checkout-renewal__summary">
+                @if (renewal.Description) {
+                    <div class="mj-checkout-renewal__row">
+                        <dt>Renewal of</dt>
+                        <dd>{{ renewal.Description }}</dd>
+                    </div>
+                }
+                @if (renewal.SubscriptionNumber) {
+                    <div class="mj-checkout-renewal__row">
+                        <dt>Subscription</dt>
+                        <dd>{{ renewal.SubscriptionNumber }}</dd>
+                    </div>
+                }
+                <div class="mj-checkout-renewal__row">
+                    <dt>Renewal order</dt>
+                    <dd>{{ renewal.OrderNumber }}</dd>
+                </div>
+                @if (renewal.DueDate) {
+                    <div class="mj-checkout-renewal__row">
+                        <dt>Due</dt>
+                        <dd>{{ renewal.DueDate }}</dd>
+                    </div>
+                }
+                <div class="mj-checkout-renewal__row mj-checkout-renewal__row--total">
+                    <dt>Amount due</dt>
+                    <dd>{{ renewalAmount }}</dd>
+                </div>
+            </dl>
+            @if (config.stripePublishableKey) {
+                <label class="mj-checkout-renewal__label" for="stripe-card-element">Card</label>
+                <div id="stripe-card-element" class="mj-checkout-renewal__card"></div>
+            }
+            <p class="mj-checkout-renewal__note">The card you pay with will be charged for future renewals.</p>
+            @if (errorMessage) {
+                <div class="mj-widget-error-banner" role="alert">{{ errorMessage }}</div>
+            }
+            <button class="mj-checkout-renewal__pay" type="submit" [disabled]="processing || !isPaymentReady">
+                {{ processing ? 'Processing…' : 'Pay ' + renewalAmount }}
+            </button>
+        </form>
     } @else {
         @for (generation of [formGeneration]; track generation) {
         <mj-checkout-widget

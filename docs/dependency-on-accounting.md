@@ -72,7 +72,7 @@ where each item stands:
    2), the root harnesses resolve accounting through `packages/IntegrationTests`, which declares it.
 2. **Delete `test-harnesses/resolve-app-packages.mjs`** and return its callers to bare imports. Not
    doing, by decision (#583): the helper stays, and `integration.mjs`, `booking-live.mjs`,
-   `invoice-live.mjs`, `seed-demo-data.mjs` and `seed-review-data.mjs` keep importing accounting
+   `invoice-live.mjs`, `stripe-live.mjs`, `seed-demo-data.mjs` and `seed-review-data.mjs` keep importing accounting
    through it.
 3. **Set `auto-install-peers=true` in `.npmrc`**, the common/accounting family baseline. Done.
 4. **Confirm a bare checkout installs from the registry.** Done in practice: the lockfile resolves

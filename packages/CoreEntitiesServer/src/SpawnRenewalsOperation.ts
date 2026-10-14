@@ -18,7 +18,9 @@
  * payment schedule due on the pass's day, so under D92 the receivable is raised by that instalment's
  * invoice, dated when it is issued, not on the term start (#305). Revenue is not affected — the
  * invoice credits Deferred Revenue and the recognition entries are dated into the new term's own
- * window (D14).
+ * window (D14). A subscription with a renewal card (`DefaultCustomerPaymentMethodID`) is the one
+ * exception to the due day: its row is due on the term start, when `ChargeRenewals` charges the card
+ * (#289). Placing an order still never calls a gateway.
  *
  * IDEMPOTENCY, which a scheduled job makes non-negotiable
  * Two independent guards, because this runs unattended and a double-spawn double-bills a customer:
@@ -38,14 +40,27 @@
  * it was reached are reported on every candidate, preview included, written into the order's notes
  * and logged on the renewal event, so the figure can be checked before a live pass books it.
  *
+ * PROMOTIONS THAT CARRY INTO RENEWALS (#289)
+ * A promotion with `AppliesToRenewals` set is presented again on each automatic renewal of a
+ * subscription bought with one of its codes. The codes come from the line that bought the expiring
+ * term (its `OrderAdjustment` rows), so a code carries from one renewal to the next for as long as
+ * it keeps applying. They go on the renewal order through the ordinary promotion path, and the
+ * pricing engine decides whether each still applies: Active, inside its dates on the renewal's order
+ * date, and its targets, minimums, limits and qualifier passing. A code that does not apply is
+ * reported on the candidate, in the notes and on the event, and the renewal is placed at the
+ * undiscounted price. The preview runs the same engine without saving. The discount is an
+ * adjustment, not a change to the line's unit price, so `MarkRenewalPriced` still recognises the
+ * price the pass wrote.
+ *
  * CONNECTS TO:
  *   BOOKING: OrderEntityServer.Save — the renewal order goes through the ordinary confirm path,
  *            so extension, term creation, GL resolution and recognition are all the SAME code
  *   POLICY:  SubscriptionBehavior (IsRenewal bypasses ConcurrencyMode — a renewal is not a second
  *            concurrent subscription, it is this one continuing)
  *   PRICING: orders-entities PriceRenewal / ResolveRenewalIncrease / RenewalCrossesAnniversary
+ *   PROMOS:  ./RenewalPromotions.ts (which codes, and what became of them); OrderPricingService for the preview
  *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine,OrderHeaderPaymentSchedule,
- *            Product,ProductCategory,OrderCompanyPolicy}
+ *            Product,ProductCategory,OrderCompanyPolicy,OrderAdjustment,PromotionCode,Promotion}
  */
 import {
     BaseEntity,
@@ -62,6 +77,7 @@ import {
     OrdersSpawnRenewalsOperation as OrdersSpawnRenewalsOperationBase,
     AsDateValue,
     BuildLinePriceContext,
+    OrderPricingService,
     PriceRenewal,
     RenewalCrossesAnniversary,
     ResolvePrice,
@@ -73,11 +89,18 @@ import {
     mjBizAppsOrdersSubscriptionEventEntity,
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
-import { RequireOptionalDay, RequireOptionalUUID } from './sql-guards.js';
+import { RequireOptionalDay, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { RenewalDueDate, RenewalScheduleRows } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import {
+    ClassifyRenewalPromotionCodes,
+    RenewalPromotionNote,
+    SelectRenewalPromotionCodes,
+    type RenewalPromotionOutcome,
+    type UnusableRenewalPromotionCode,
+} from './RenewalPromotions.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -129,6 +152,16 @@ export interface RenewalCandidate {
     UnitPrice?: number;
     /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
     DiscountPct?: number;
+    /**
+     * Promotion codes that carried into the renewal and discounted it: codes recorded on the line that
+     * bought the expiring term whose promotion has `AppliesToRenewals` set. Absent when none were presented.
+     */
+    RenewalPromotionCodes?: string[];
+    /**
+     * Codes presented on the renewal that gave no discount, each with the reason: the promotion paused,
+     * expired or out of its dates, or its other rules not met. The renewal is placed without them.
+     */
+    UnusableRenewalPromotionCodes?: UnusableRenewalPromotionCode[];
 }
 
 export interface SpawnRenewalsOutput {
@@ -153,10 +186,14 @@ interface DueRow {
     TermNumber: number;
     TermStartDate: string;
     TermEndDate: string;
+    /** Seats the expiring term covers (`SubscriptionTerm.Quantity`) — what the renewal buys again. */
+    TermQuantity: number;
     OrderLineID: string;
     SubscriptionStartDate: string;
     SubscriptionIncreasePercent: number | null;
     CarryDiscountOnRenewal: boolean;
+    /** The renewal card (#289). When set, the renewal is charged on its term start and is due that day. */
+    DefaultCustomerPaymentMethodID: string | null;
 }
 
 interface SourceLineRow {
@@ -180,6 +217,13 @@ interface ChainProductRow {
     SuccessorProductID: string | null;
 }
 
+/** A promotion code recorded on the line that bought the expiring term. */
+interface RecordedCodeRow {
+    PromotionCodeID: string;
+    Code: string;
+    AppliesToRenewals: boolean;
+}
+
 /** What `priceRenewal` decided: the product, quantity and price the renewal line is written with. */
 interface PricedRenewal {
     ProductID: string;
@@ -187,6 +231,8 @@ interface PricedRenewal {
     MovesToSuccessor: boolean;
     Quantity: number;
     Price: RenewalPrice;
+    /** The codes the renewal presents (see `RenewalPromotions.ts`), with their PromotionCode IDs. */
+    PromotionCodes: RecordedCodeRow[];
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.SpawnRenewals')
@@ -268,6 +314,21 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             candidate.DiscountPct = priced.Price.DiscountPct;
 
             if (input.Preview) {
+                // The same engine the live pass runs, without saving, so the preview reports which
+                // carried promotions will apply. A failure here is reported, not fatal: the live
+                // pass decides again when it places the order.
+                if (priced.PromotionCodes.length) {
+                    try {
+                        this.reportPromotions(candidate, await this.previewPromotions(provider, user, due, priced));
+                    } catch (err) {
+                        const message = err instanceof Error ? err.message : String(err);
+                        LogError(`Orders.SpawnRenewals: ${due.SubscriptionNumber} promotion preview failed: ${message}`);
+                        candidate.UnusableRenewalPromotionCodes = priced.PromotionCodes.map((c) => ({
+                            Code: c.Code,
+                            Reason: `the preview could not price it: ${message}`,
+                        }));
+                    }
+                }
                 out.Skipped++;
                 committed++;
                 continue;
@@ -277,6 +338,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 const order = await this.placeRenewal(provider, user, due, priced, asOf.toISOString().slice(0, 10));
                 candidate.OrderID = order.ID;
                 candidate.OrderNumber = order.Number;
+                if (order.Promotions) this.reportPromotions(candidate, order.Promotions);
                 out.Placed++;
                 committed++;
             } catch (err) {
@@ -330,10 +392,12 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 s.StartDate           AS SubscriptionStartDate,
                 s.RenewalIncreasePercent AS SubscriptionIncreasePercent,
                 s.CarryDiscountOnRenewal,
+                s.DefaultCustomerPaymentMethodID,
                 l.ID                  AS TermID,
                 l.TermNumber,
                 l.StartDate           AS TermStartDate,
                 l.EndDate             AS TermEndDate,
+                l.Quantity            AS TermQuantity,
                 l.OrderLineID
             FROM __mj_BizAppsOrders.Subscription s
             JOIN __mj_BizAppsOrders.SubscriptionType t ON t.ID = s.SubscriptionTypeID
@@ -392,7 +456,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         due: DueRow,
         priced: PricedRenewal,
         invoiceDay: string,
-    ): Promise<{ ID: string; Number: string }> {
+    ): Promise<{ ID: string; Number: string; Promotions: RenewalPromotionOutcome | null }> {
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
@@ -434,6 +498,12 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             line.DiscountPct = priced.Price.DiscountPct;
             order.MarkRenewalPriced(line);
 
+            // Promotions that carry into renewals (#289), through the ordinary promotion path: the
+            // engine decides whether each still applies, and writes the discount as an adjustment.
+            if (priced.PromotionCodes.length) {
+                order.PromotionCodes.Codes = priced.PromotionCodes.map((c) => c.Code);
+            }
+
             // Attached rather than assigned — see the note in CancelSubscriptionOperation.
             order.Lines.Add(line);
 
@@ -460,11 +530,24 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                     `Failed to save the renewal order as a draft: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
+            // What became of the carried promotions, known once the draft's pricing has run. Written
+            // into the notes before the confirm, which re-decides the same codes on the same date.
+            let promotions: RenewalPromotionOutcome | null = null;
+            if (priced.PromotionCodes.length) {
+                promotions = ClassifyRenewalPromotionCodes(
+                    priced.PromotionCodes.map((c) => c.Code),
+                    order.UnusablePromotionCodes,
+                    await this.appliedCodes(provider, order.ID, priced.PromotionCodes),
+                );
+                order.Notes = this.renewalNotes(due, priced, promotions);
+            }
+
             // Due on the invoice day plus the customer's terms, capped at the order date (#305
             // review). `resolveDueDate` is the confirm's own terms walk, run now so the row can use
-            // it; confirm then sees the date already set and leaves it.
+            // it; confirm then sees the date already set and leaves it. A subscription with a renewal
+            // card is due on the order date, the day `ChargeRenewals` first charges the card (#289).
             await order.resolveDueDate();
-            const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate);
+            const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, !!due.DefaultCustomerPaymentMethodID);
             await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
 
             order.Status = 'Confirmed';
@@ -474,9 +557,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 );
             }
 
-            await this.logEvent(provider, user, due, priced, order.ID);
+            await this.logEvent(provider, user, due, priced, order.ID, promotions);
             await dbProvider.CommitTransaction();
-            return { ID: order.ID, Number: order.OrderNumber };
+            return { ID: order.ID, Number: order.OrderNumber, Promotions: promotions };
         } catch (err) {
             try {
                 await dbProvider.RollbackTransaction();
@@ -539,7 +622,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         const chain = await this.loadSuccessorChain(provider, due.ProductID);
         const product = chain[chain.length - 1];
         const movesToSuccessor = chain.length > 1;
-        const quantity = this.renewalQuantity(source);
+        const quantity = this.renewalQuantity(due);
         const renewalDay = this.dayAfter(due.TermEndDate);
         const carry = !!due.CarryDiscountOnRenewal;
 
@@ -579,7 +662,110 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             );
         }
 
-        return { ProductID: product.ID, ProductName: product.Name, MovesToSuccessor: movesToSuccessor, Quantity: quantity, Price: price };
+        return {
+            ProductID: product.ID,
+            ProductName: product.Name,
+            MovesToSuccessor: movesToSuccessor,
+            Quantity: quantity,
+            Price: price,
+            PromotionCodes: await this.loadRenewalPromotionCodes(provider, source),
+        };
+    }
+
+    /**
+     * The codes the renewal presents: those recorded on the line that bought the expiring term whose
+     * promotion carries into renewals (#289). A promotion's adjustment rows always name a line; an
+     * order-level promotion writes one per line, so the source line's own rows are complete.
+     */
+    private async loadRenewalPromotionCodes(provider: IMetadataProvider, source: SourceLineRow): Promise<RecordedCodeRow[]> {
+        const orderID = RequireUUID(String(source.OrderHeaderID), 'OrderHeaderID');
+        const lineID = RequireUUID(String(source.ID), 'OrderLineID');
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const rows = (await db.ExecuteSQL(`
+            SELECT pc.ID AS PromotionCodeID, pc.Code, p.AppliesToRenewals, MIN(oa.Sequence) AS FirstSequence
+            FROM __mj_BizAppsOrders.OrderAdjustment oa
+            JOIN __mj_BizAppsOrders.PromotionCode pc ON pc.ID = oa.PromotionCodeID
+            JOIN __mj_BizAppsOrders.Promotion p ON p.ID = pc.PromotionID
+            WHERE oa.OrderHeaderID = '${orderID}'
+              AND oa.OrderLineID = '${lineID}'
+            GROUP BY pc.ID, pc.Code, p.AppliesToRenewals
+            ORDER BY MIN(oa.Sequence), pc.Code
+        `)) as RecordedCodeRow[];
+        if (!Array.isArray(rows)) return [];
+        const keep = new Set(
+            SelectRenewalPromotionCodes(rows.map((r) => ({ Code: r.Code, AppliesToRenewals: !!r.AppliesToRenewals }))).map((c) =>
+                c.toLowerCase(),
+            ),
+        );
+        const out: RecordedCodeRow[] = [];
+        for (const r of rows) {
+            if (!keep.delete(String(r.Code).trim().toLowerCase())) continue;
+            out.push({ PromotionCodeID: String(r.PromotionCodeID), Code: String(r.Code).trim(), AppliesToRenewals: true });
+        }
+        return out;
+    }
+
+    /** The presented codes the engine wrote a discount for on this order, read from its adjustment rows. */
+    private async appliedCodes(provider: IMetadataProvider, orderID: string, presented: RecordedCodeRow[]): Promise<string[]> {
+        const id = RequireUUID(String(orderID), 'OrderHeaderID');
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const rows = (await db.ExecuteSQL(`
+            SELECT DISTINCT PromotionCodeID FROM __mj_BizAppsOrders.OrderAdjustment
+            WHERE OrderHeaderID = '${id}' AND PromotionCodeID IS NOT NULL
+        `)) as Array<{ PromotionCodeID: string }>;
+        return this.codesFor(presented, Array.isArray(rows) ? rows.map((r) => r.PromotionCodeID) : []);
+    }
+
+    /** The presented codes whose PromotionCode ID is among `codeIDs`. */
+    private codesFor(presented: RecordedCodeRow[], codeIDs: ReadonlyArray<string | null>): string[] {
+        const ids = new Set(codeIDs.filter((id): id is string => !!id).map((id) => id.toLowerCase()));
+        return presented.filter((c) => ids.has(c.PromotionCodeID.toLowerCase())).map((c) => c.Code);
+    }
+
+    /**
+     * What the carried promotions would do on this renewal, priced by the same engine and persisting
+     * nothing: the renewal line as the live pass writes it, materialised and never saved.
+     */
+    private async previewPromotions(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        due: DueRow,
+        priced: PricedRenewal,
+    ): Promise<RenewalPromotionOutcome> {
+        const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+        MarkAsOrdersOwnWrite(line);
+        line.NewRecord();
+        line.ProductID = priced.ProductID;
+        line.LineNumber = 1;
+        line.RenewsSubscriptionID = due.SubscriptionID;
+        line.Quantity = priced.Quantity;
+        line.UnitPrice = priced.Price.UnitPrice;
+        line.DiscountPct = priced.Price.DiscountPct;
+
+        const codes = priced.PromotionCodes.map((c) => c.Code);
+        const result = await new OrderPricingService({ Provider: provider, User: user }).Price({
+            OrderHeaderID: null,
+            CompanyID: due.CompanyID,
+            BillToPersonID: due.BeneficiaryPersonID,
+            BillToOrganizationID: due.HolderOrganizationID,
+            OrderDate: this.dayAfter(due.TermEndDate),
+            ShipToAddressID: null,
+            Lines: [line],
+            PromotionCodes: codes,
+            ManualDiscounts: [],
+            Charges: [],
+        });
+        const applied = this.codesFor(
+            priced.PromotionCodes,
+            (result.Promotions?.Applications ?? []).filter((a) => a.Amount > 0).map((a) => a.PromotionCodeID),
+        );
+        return ClassifyRenewalPromotionCodes(codes, result.UnusableCodes, applied);
+    }
+
+    /** Copy a promotion outcome onto the candidate. */
+    private reportPromotions(candidate: RenewalCandidate, outcome: RenewalPromotionOutcome): void {
+        candidate.RenewalPromotionCodes = outcome.Applied;
+        candidate.UnusableRenewalPromotionCodes = outcome.Unusable;
     }
 
     /**
@@ -674,8 +860,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         return resolved ? Number(resolved.UnitPrice) : null;
     }
 
-    /** The renewal order's notes: what it renews, and how its price was reached. */
-    private renewalNotes(due: DueRow, priced: PricedRenewal): string {
+    /** The renewal order's notes: what it renews, how its price was reached, and what its promotions did. */
+    private renewalNotes(due: DueRow, priced: PricedRenewal, promotions?: RenewalPromotionOutcome | null): string {
         const p = priced.Price;
         const money = (n: number) => n.toFixed(2);
         const base = { PriorPrice: 'prior price', PriorList: 'prior list price', SuccessorList: 'list price' }[p.BaseSource];
@@ -683,19 +869,20 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         if (priced.MovesToSuccessor) parts.push(`onto successor product ${priced.ProductName}`);
         const increase = p.IncreasePercent > 0 ? ` + ${p.IncreasePercent}% annual increase (${p.IncreaseSource.toLowerCase()})` : '';
         const discount = p.DiscountPct > 0 ? `, discount ${Math.round(p.DiscountPct * 10000) / 100}% continued` : '';
-        return `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${increase}${discount}.`;
+        const price = `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${increase}${discount}.`;
+        const promotionNote = promotions ? RenewalPromotionNote(promotions) : '';
+        return promotionNote ? `${price} ${promotionNote}` : price;
     }
 
     /**
-     * Quantity for the renewal.
+     * Quantity for the renewal: the seats the expiring term covers (#589).
      *
-     * A PRORATED source line carries a fractional quantity — the short first period into a calendar
-     * anchor (D54). Renewing at that fraction would bill half a year forever. A renewal is always a
-     * FULL period, so the fraction is dropped and the quantity rounds up to whole units.
+     * Not the source line's quantity. A PRORATED source line carries a scaled quantity — the short
+     * first period into a calendar anchor (D54) — so 10 seats over half a period read 5, and the
+     * renewal billed and granted 5 seats for a full period. The term records the seats as bought.
      */
-    private renewalQuantity(source: SourceLineRow): number {
-        const quantity = Number(source.Quantity);
-        return quantity > 0 && quantity < 1 ? 1 : Math.round(quantity);
+    private renewalQuantity(due: DueRow): number {
+        return Math.max(1, Number(due.TermQuantity));
     }
 
     private dayAfter(date: string): Date {
@@ -749,6 +936,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         due: DueRow,
         priced: PricedRenewal,
         orderID: string,
+        promotions: RenewalPromotionOutcome | null,
     ): Promise<void> {
         const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
         event.NewRecord();
@@ -770,6 +958,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 IncreaseSource: priced.Price.IncreaseSource,
                 UnitPrice: priced.Price.UnitPrice,
                 DiscountPct: priced.Price.DiscountPct,
+                ...(promotions
+                    ? { RenewalPromotionCodes: promotions.Applied, UnusableRenewalPromotionCodes: promotions.Unusable }
+                    : {}),
             }),
         );
         if (!(await event.Save())) {

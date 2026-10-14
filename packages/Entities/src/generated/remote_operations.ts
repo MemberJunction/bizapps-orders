@@ -187,21 +187,49 @@ export interface BlockerResult {
  *
  * NO import statements — definitions are emitted verbatim.
  */
-export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Other';
+export type AmendmentReasonCategory = 'Retention' | 'Referral' | 'Dispute' | 'Other';
 
 export interface AmendArrangementInput {
     /** The booked term to amend. Not given with `NewPaymentTermsTypeID`. */
     SubscriptionTermID?: string;
-    /** The term's new end date. Must be later than its current end. */
+    /**
+     * The term's new end date. Alone, it must be later than the current end (an extension). With
+     * `NewStartDate`, it must move by the same days as the start (a shift); leave it out and it follows the start.
+     */
     NewEndDate?: string;
+    /** The term's new start date: a shift moves start and end by the same number of days. */
+    NewStartDate?: string;
     /** The confirmed order whose payment terms change. Given with `NewPaymentTermsTypeID`. */
     OrderHeaderID?: string;
     /** The order's new payment terms. */
     NewPaymentTermsTypeID?: string;
-    /** A change of amount. Not supported yet; refused. */
+    /**
+     * The term's new amount, net of discount and before tax. Lower than the current amount and more than zero.
+     * Given with `SubscriptionTermID` and without `NewEndDate`. The reduction and its tax come off the instalments not
+     * yet invoiced; what they cannot absorb is credited on a credit memo the approved change carries.
+     */
     NewAmount?: number;
-    ReasonCategory: AmendmentReasonCategory;
+    /**
+     * With `NewAmount`: the invoiced instalment the reduction is about. That invoice is credited up to its open
+     * amount, and the rest comes off the instalments not yet invoiced. Blank: it all comes off those.
+     */
+    AppliesToInvoiceID?: string;
+    /**
+     * With `AppliesToInvoiceID` naming a paid invoice: refund its credit instead of taking it off the next instalment.
+     * The approval credits that invoice on the credit memo; finance pays the refund with `Orders.RefundPayment`.
+     */
+    RefundRequested?: boolean;
+    /** A term extension earned by a referral: the program that approves it. Requires ReasonCategory 'Referral'. */
+    ReferralProgramID?: string;
+    /** Required for every amendment; not given with `EscalateOrderConcessionID`. */
+    ReasonCategory?: AmendmentReasonCategory;
+    /** Why the amendment is made, or, with `EscalateOrderConcessionID`, why the case goes to the ConcessionLimit approver. */
     Reason: string;
+    /**
+     * A Shift concession awaiting finance review, which a holder of the finance acknowledgment role sends to the
+     * ConcessionLimit approver instead of deciding it. Given alone, with `Reason`.
+     */
+    EscalateOrderConcessionID?: string;
     /** Return what the amendment would do without writing anything. */
     Preview?: boolean;
 }
@@ -218,19 +246,71 @@ export interface AmendArrangementEntry {
     Offsets?: string;
 }
 
+/** An instalment not yet invoiced that a shift moves. */
+export interface AmendArrangementMovedInstalment {
+    InstallmentNumber: number;
+    DueDate: string;
+    NewDueDate: string;
+}
+
+/** An instalment not yet invoiced that a change of amount reduces. A `NewAmount` of zero cancels it. */
+export interface AmendArrangementInstalment {
+    InstalmentID: string;
+    InstallmentNumber: number;
+    DueDate: string;
+    CurrentAmount: number;
+    NewAmount: number;
+}
+
+/** Where a change of amount's credit memo is applied: an invoiced instalment, or the order billed as a whole. */
+export interface AmendArrangementCredit {
+    /** Null when the order itself is credited. */
+    InstalmentID: string | null;
+    DocumentNumber: string | null;
+    Amount: number;
+}
+
 export interface AmendArrangementOutput {
     Success: boolean;
     Message?: string;
+    CurrentStartDate?: string;
+    NewStartDate?: string;
     CurrentEndDate?: string;
     NewEndDate?: string;
-    /** The day the extension takes effect: staged entries from here on are replaced. */
+    /** The day the amendment takes effect: staged entries from here on are replaced. */
     EffectiveDate?: string;
-    /** What the added days are worth at the term's own rate. */
+    /** What the added days are worth at the term's own rate; for a change of amount, the reduction. */
     Value?: number;
     /** What the replaced entries were going to recognise, and the new schedule now does. */
     Respread?: number;
     Offsets?: AmendArrangementEntry[];
     NewSchedule?: AmendArrangementEntry[];
+    /** A change of amount: the term's amount before and after, net of discount and before tax. */
+    CurrentAmount?: number;
+    NewAmount?: number;
+    /** The tax charged on the reduction, and the reduction with it: what the customer is billed less. */
+    TaxReduction?: number;
+    GrossReduction?: number;
+    /** The reduction's share that belongs to periods already earned, taken back on the effective date. */
+    CatchUp?: number;
+    /** Instalments not yet invoiced that the reduction comes off. */
+    Instalments?: AmendArrangementInstalment[];
+    /** The credit memo: the part of the reduction not taken off an uninvoiced instalment. Zero when no document is needed. */
+    CreditMemo?: number;
+    /** Where the credit memo is applied. */
+    CreditApplied?: AmendArrangementCredit[];
+    /** The credit memo's part refunded, and the part left as the customer's credit. */
+    Refund?: number;
+    OpenCredit?: number;
+    /**
+     * A shift: the one entry, dated the effective day, that corrects periods already behind it. A positive amount
+     * catches up revenue the new dates place earlier; a negative one reverses revenue they place later.
+     */
+    Correction?: AmendArrangementEntry | null;
+    /** A shift: the instalments not yet invoiced that move with the term. */
+    MovedInstalments?: AmendArrangementMovedInstalment[];
+    /** A shift: why the order's instalments were left alone, when they were. */
+    InstalmentsLeft?: string | null;
     /** A change of payment terms: the terms before and after, by name. */
     CurrentPaymentTerms?: string | null;
     NewPaymentTerms?: string;
@@ -238,6 +318,9 @@ export interface AmendArrangementOutput {
     DaysChange?: number;
     CurrentDueDate?: string | null;
     NewDueDate?: string | null;
+    /** With a referral program: its name, and whether it approves the extension (false: routed for approval). */
+    ReferralProgram?: string;
+    ApprovedByReferralProgram?: boolean;
     /** Set when recorded: the concession, and whether it is Approved (applied) or Pending (awaiting approval). */
     OrderConcessionID?: string;
     Status?: string;
@@ -350,8 +433,9 @@ export interface CancelSubscriptionInput {
     Reason?: string;
     /**
      * When coverage ends, chosen by the person cancelling. `Immediate` ends coverage and access on
-     * the request day (no grace); `EndOfTerm` ends coverage at the end of the term, with the type's
-     * grace. Absent, the subscription type's cancellation mode decides. Refund mode never changes.
+     * the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's
+     * grace. Absent, the subscription type's cancellation mode and grace decide. Refund mode never
+     * changes.
      */
     Timing?: 'Immediate' | 'EndOfTerm';
     /**
@@ -747,6 +831,53 @@ export interface CheckEntitlementOutput {
     EvaluatedAt: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
     CacheUntil: string;
+}
+
+/**
+ * Input for `Orders.CreateOrderFromProviderPayment`.
+ *
+ * Creates a paid order from a gateway charge that matched no order or invoice: the order in the
+ * payment provider's company, one line at the charge's amount, and the charge captured against it.
+ * The product and the buyer are named by the caller.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderFromProviderPaymentInput {
+    /** The payment provider the charge was taken through. Its company receives the order and the cash. */
+    PaymentProviderID: string;
+    /** The gateway's charge id (Stripe: ch_...), as the reconciliation reports it. */
+    ProviderChargeID: string;
+    /** The product the order's one line carries, priced at the charge's amount. */
+    ProductID: string;
+    /** The buyer. */
+    BillToPersonID: string;
+    /** The buyer's organization, when the order is billed to one. */
+    BillToOrganizationID?: string | null;
+}
+
+/**
+ * Output for `Orders.CreateOrderFromProviderPayment`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCreateOrderFromProviderPaymentOutput {
+    Success: boolean;
+    Message: string;
+    /**
+     * Why nothing was created, when Success is false: BadInput, ProviderNotFound, ChargeNotFound,
+     * ChargeNotSucceeded, ChargeRefunded, ChargeHasNoAmount, ChargeHasNoIntent, CurrencyMismatch,
+     * IntentOpenedByOrders, ConfirmRefused or CaptureRefused.
+     */
+    Code?: string;
+    /** True when an earlier call already created the order for this charge; nothing new was written. */
+    WasExisting?: boolean;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    PaymentIntentID?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount, which the order totals and the payment records. */
+    Amount?: number | null;
 }
 
 /**
@@ -1847,7 +1978,21 @@ export interface PaymentProviderReconciliationResult {
     ChargesRead: number;
     RefundsRead: number;
     Mismatches: number;
+    /** Orders created from this provider's unmatched charges. Zero in preview. */
+    OrdersCreated: number;
     Message?: string;
+}
+
+/** A paid order created from a charge that matched no Orders payment (#481). */
+export interface PaymentProviderUnmatchedChargeOrder {
+    PaymentProviderID: string;
+    ProviderChargeID: string;
+    OrderHeaderID: string;
+    OrderNumber?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount, major units. */
+    Amount: number;
 }
 
 export interface PaymentProviderReconciliationError {
@@ -1869,6 +2014,11 @@ export interface OrdersReconcilePaymentProviderChargesOutput {
     Raised: number;
     /** Mismatches that already had an exception from an earlier run. */
     AlreadyRaised: number;
+    /**
+     * Charges without a payment that became paid orders: the provider's price map named the product
+     * and the charge's e-mail named the buyer. They are not in Mismatches. Empty in preview.
+     */
+    OrdersCreated: PaymentProviderUnmatchedChargeOrder[];
     Errors: PaymentProviderReconciliationError[];
 }
 
@@ -2121,6 +2271,55 @@ export interface RequestAccessOverrideOutput {
 }
 
 /**
+ * Input for `Orders.ResolveChargeException`.
+ *
+ * Books the gateway charge a charge-without-payment finance exception names as a paid order, then
+ * clears the exception. The provider and charge come from the exception; the caller names the product
+ * and the buyer.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersResolveChargeExceptionInput {
+    /** The PROVIDER_CHARGE_MISMATCH finance exception to resolve. */
+    FinanceExceptionID: string;
+    /** The product the order's one line carries, priced at the charge's amount. */
+    ProductID: string;
+    /** The buyer. */
+    BillToPersonID: string;
+    /** The buyer's organization, when the order is billed to one. */
+    BillToOrganizationID?: string | null;
+}
+
+/**
+ * Output for `Orders.ResolveChargeException`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersResolveChargeExceptionOutput {
+    /** True when the order is booked and the exception cleared. */
+    Success: boolean;
+    Message: string;
+    /**
+     * Why it did not finish, when Success is false: BadInput, NotAuthorized, ExceptionNotFound, NotOpen,
+     * WrongType, WrongKind, OpenedByOrders, UnreadableKey, ClearRefused, or a code from
+     * Orders.CreateOrderFromProviderPayment. Only ClearRefused leaves a booked order behind.
+     */
+    Code?: string;
+    /** True when the exception was cleared. */
+    Cleared: boolean;
+    /** The gateway charge the exception names. */
+    ProviderChargeID?: string | null;
+    /** True when an earlier call already booked the order for this charge. */
+    WasExisting?: boolean;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    PaymentHeaderID?: string | null;
+    PaymentNumber?: string | null;
+    /** The charge's gross amount. */
+    Amount?: number | null;
+}
+
+/**
  * Input for `Orders.SendExternalInvoices`.
  *
  * The sweep: read the external invoicing worklist and send each unit through
@@ -2234,6 +2433,16 @@ export interface RenewalCandidate {
     UnitPrice?: number;
     /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
     DiscountPct?: number;
+    /**
+     * Promotion codes that carried into the renewal and discounted it: codes recorded on the line that
+     * bought the expiring term whose promotion has `AppliesToRenewals` set. Absent when none were presented.
+     */
+    RenewalPromotionCodes?: string[];
+    /**
+     * Codes presented on the renewal that gave no discount, each with the reason: the promotion paused,
+     * expired or out of its dates, or its other rules not met. The renewal is placed without them.
+     */
+    UnusableRenewalPromotionCodes?: Array<{ Code: string; Reason: string }>;
 }
 
 export interface SpawnRenewalsOutput {
@@ -2282,7 +2491,7 @@ export class OrdersAdvanceOrderStateOperation extends BaseRemotableOperation<Ord
 // ============================================================
 /**
  * Amend Arrangement
- * Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.
+ * Extend a booked subscription term at no charge, or move its start and end together (a shift). Preview returns what the amendment would do and writes nothing. An extension records a Duration concession, routed for approval like any other; it applies when approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A shift records a Shift concession valued at zero, which goes through under the TermShiftReviewDays setting and otherwise waits for the finance acknowledgment role; it applies when approved: the term's dates, a re-spread from the new start with one catch-up or reversal in the current open period, access, instalments not yet invoiced, and the acknowledgment task. A holder of that role can escalate a shift awaiting review to the ConcessionLimit approver. A change of amount (NewAmount, optionally AppliesToInvoiceID) is previewed the same way: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and any credit memo. Otherwise it records a Price concession carrying NewAmount, routed for approval; when approved, the catch-up and re-cut are posted, the term's amount and the uninvoiced instalments are lowered, what they cannot absorb is credited on a credit memo the concession carries (crediting the named invoice, or left as the customer's credit), and accounting is asked to confirm. RefundRequested asks for a paid invoice's credit back; finance pays it with Orders.RefundPayment. A shortening is refused until that same credit-memo path exists.
  * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
  * under 'Orders.AmendArrangement'. This generated base provides the typed contract only (client-safe).
  */
@@ -2386,6 +2595,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CreateOrderFromProviderPayment — Create Order From Provider Payment
+// ============================================================
+/**
+ * Create Order From Provider Payment
+ * Create a paid order from a payment gateway charge that matched no order or invoice. Reads the charge from the gateway, creates and confirms an order in the payment provider's company with one line of the named product at the charge's gross amount, records the gateway intent, and captures the charge against the order, so the gateway's fee is booked and the bank deposit that follows matches. Refuses a charge that has not succeeded, has any refund, has no gateway intent, is in another currency, or belongs to an intent Orders opened. One order per charge: a repeat call returns the order already created and finishes its capture if that had failed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CreateOrderFromProviderPayment'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCreateOrderFromProviderPaymentOperation extends BaseRemotableOperation<OrdersCreateOrderFromProviderPaymentInput, OrdersCreateOrderFromProviderPaymentOutput> {
+    public readonly OperationKey = "Orders.CreateOrderFromProviderPayment";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
@@ -2720,6 +2945,22 @@ export class OrdersReplayCheckoutStepOperation extends BaseRemotableOperation<Or
  */
 export class OrdersRequestAccessOverrideOperation extends BaseRemotableOperation<RequestAccessOverrideInput, RequestAccessOverrideOutput> {
     public readonly OperationKey = "Orders.RequestAccessOverride";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ResolveChargeException — Resolve Charge Exception
+// ============================================================
+/**
+ * Resolve Charge Exception
+ * Book a charge-without-payment finance exception as a paid order and clear it. Reads the payment provider and gateway charge from the exception, books the order through Orders.CreateOrderFromProviderPayment with the product and buyer the caller names, then clears the exception as Corrected with a note naming the order and payment. Requires the authorization to clear finance exceptions, checked before anything is booked. Refuses an exception that is not Open, is not a PROVIDER_CHARGE_MISMATCH of kind ChargeWithoutPayment, or names a charge Orders opened. A repeat call returns the order already booked and clears the exception if that had failed.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ResolveChargeException'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersResolveChargeExceptionOperation extends BaseRemotableOperation<OrdersResolveChargeExceptionInput, OrdersResolveChargeExceptionOutput> {
+    public readonly OperationKey = "Orders.ResolveChargeException";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;

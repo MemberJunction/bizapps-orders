@@ -24,6 +24,8 @@
  *   DOC:  plans/archive/bizapps-orders-master.md D4 (GiftCard product type), D27 (beneficiary), D44
  */
 
+import { ResolveLineParty } from './LineParty.js';
+
 /** The ProductType.Code that marks a product as a gift card. Seeded per D4. */
 export const GIFT_CARD_PRODUCT_TYPE_CODE = 'GiftCard';
 
@@ -41,8 +43,10 @@ export interface GiftCardLineFacts {
     ShipToOrganizationID: string | null;
 }
 
-/** The order-level fallbacks for whoever the card is for. */
+/** The order-level fallbacks for whoever the card is for: the ship-to, then the bill-to. */
 export interface GiftCardOrderFacts {
+    ShipToPersonID: string | null;
+    ShipToOrganizationID: string | null;
     BillToPersonID: string | null;
     BillToOrganizationID: string | null;
 }
@@ -105,12 +109,11 @@ export function PlanGiftCardIssuance(
     const faceValue = Money(Number(line.UnitPrice ?? 0));
     if (!(faceValue > 0)) return EMPTY('NonPositiveFaceValue');
 
-    // WHO THE CARD IS FOR (D27). A gift card is the archetypal case of a line bought by one person
-    // for another, so the line's ship-to wins when stated. The order's bill-to is the fallback for
-    // the ordinary case of buying a card for yourself — NOT a default that overrides an explicit
-    // recipient, which is why each side falls back independently.
-    const beneficiaryPersonID = line.ShipToPersonID ?? order.BillToPersonID ?? null;
-    const beneficiaryOrganizationID = line.ShipToOrganizationID ?? order.BillToOrganizationID ?? null;
+    // WHO THE CARD IS FOR (D27, D61). A gift card is the archetypal case of a line bought by one
+    // person for another, so the line's ship-to wins when stated, then the order's ship-to, and only
+    // then the bill-to — the ordinary case of buying a card for yourself. The same fallback as the
+    // subscription holder and the entitlement beneficiary, so one order never names two recipients.
+    const { PersonID: beneficiaryPersonID, OrganizationID: beneficiaryOrganizationID } = ResolveLineParty(line, order);
 
     const cards: PlannedGiftCard[] = [];
     for (let i = 1; i <= qty; i++) {

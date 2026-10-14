@@ -20,7 +20,7 @@
  *   DOC:  plans/archive/pricing-charges-and-promotions.md
  */
 import { randomUUID } from "crypto";
-import { BaseRemotableOperation } from "@memberjunction/core";
+import { BaseRemotableOperation, Metadata } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
 import {
   Assert,
@@ -43,14 +43,16 @@ import {
 } from "../fixture.js";
 import { FindRows, Quote } from "../world/entity-io.js";
 import {
+  ORDER_HEADER_ENTITY,
   PRICE_LIST_ASSIGNMENT_ENTITY,
   PRICE_LIST_ENTITY,
   PRICE_TIER_ENTITY,
   PRODUCT_ENTITY,
   PRODUCT_PRICE_ENTITY,
 } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import type { mjBizAppsOrdersProductPriceEntity } from "@mj-biz-apps/orders-entities";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
 
 interface PreviewOutput {
   Success: boolean;
@@ -221,12 +223,71 @@ async function confirmUnpriced(
   });
 }
 
+/**
+ * Confirm a one-line order, stating its price or not.
+ *
+ * The sellability checks run both ways because a stated price used to skip the check entirely: the
+ * engine path refused a retired product while a typed price on the same line booked it.
+ */
+async function confirmLine(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  opts: { unitPrice?: number; orderDate?: Date },
+) {
+  const f = Fx();
+  return ConfirmOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    BillToOrganizationID: f.Customers.OrganizationID,
+    OrderDate: opts.orderDate,
+    Lines: [{ ProductID: productID, Quantity: 1, UnitPrice: opts.unitPrice }],
+  });
+}
+
+/** Change the product's sale status or window, and make sure the catalog cache sees it. */
+async function setSellability(
+  ctx: IntegrationCheckContext,
+  productID: string,
+  fields: { Status?: string; AvailableFrom?: Date | null; AvailableTo?: Date | null },
+): Promise<void> {
+  await upsertViaEntity(ctx, PRODUCT_ENTITY, productID, fields);
+  await ReloadOrdersEngine(ctx);
+}
+
+/** A local calendar day `n` days from today, at noon so no time zone moves it across midnight. */
+function daysFromToday(n: number): Date {
+  const d = new Date();
+  d.setHours(12, 0, 0, 0);
+  d.setDate(d.getDate() + n);
+  return d;
+}
+
 const lineOf = (ctx: IntegrationCheckContext, orderID: string) =>
   TxOne<{ UnitPrice: number; LineTotalGross: number; ProductPriceID: string | null; ID: string }>(
     ctx,
     `SELECT TOP 1 ID, UnitPrice, LineTotalGross, ProductPriceID
        FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
   );
+
+const extendedOf = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxOne<{ ExtendedAmount: number | null; LineTotalNet: number }>(
+    ctx,
+    `SELECT TOP 1 ExtendedAmount, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
+  );
+
+/** Send `quantity` units of an order's only line back, through the ordinary confirm path. */
+async function returnFlat(ctx: IntegrationCheckContext, saleOrderID: string, productID: string, quantity: number) {
+  const f = Fx();
+  const origin = await TxOne<{ ID: string }>(
+    ctx,
+    `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${saleOrderID}'`,
+  );
+  return ConfirmOrder(ctx.User, {
+    CompanyID: f.CoA.ID,
+    OrderType: "Return",
+    BillToOrganizationID: f.Customers.OrganizationID,
+    Lines: [{ ProductID: productID, Quantity: -Math.abs(quantity), ReversesOrderLineID: origin.ID }],
+  });
+}
 
 async function preview(
   ctx: IntegrationCheckContext,
@@ -593,6 +654,150 @@ export const PricingChecks: NamedCheck[] = [
         AssertEqual(Number(comp.N), 1, "one component for a plain base price");
         AssertEqual(Number(comp.Total), 45, "the component carries the extended amount");
         Assert(/list rate/.test(comp.Label), `the component is labelled from the rule: ${comp.Label}`);
+      }),
+  },
+  {
+    Id: "pricing.PC17",
+    Name: "PC17: a product that is not Active is refused, whether the line's price is stated or not",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await setSellability(ctx, f.Products.WidgetA, { Status: "Discontinued" });
+
+        // The stated price is above any engine price, so no concession is involved: the concession gate
+        // runs before pricing and would otherwise refuse the confirm first, for a reason this check is not about.
+        for (const unitPrice of [undefined, 1000]) {
+          const how = unitPrice === undefined ? "engine-priced" : "hand-priced";
+          const order = await confirmLine(ctx, f.Products.WidgetA, { unitPrice });
+          Assert(!order.Saved, `a ${how} line of a Discontinued product must refuse the confirm`);
+          Assert(
+            /status is 'Discontinued', not 'Active'/.test(order.Message),
+            `the ${how} refusal should name the status, got: ${order.Message}`,
+          );
+        }
+      }),
+  },
+  {
+    Id: "pricing.PC18",
+    Name: "PC18: a hand-priced line is refused before the product's AvailableFrom",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await setSellability(ctx, f.Products.WidgetA, { AvailableFrom: daysFromToday(30) });
+
+        const order = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 85 });
+        Assert(!order.Saved, "a typed price must not sell a product before its window opens");
+        Assert(/not available until/.test(order.Message), `the refusal should name the window, got: ${order.Message}`);
+      }),
+  },
+  {
+    Id: "pricing.PC19",
+    Name: "PC19: a hand-priced line is refused after AvailableTo, and books when back-dated into the window",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await setSellability(ctx, f.Products.WidgetA, { AvailableTo: daysFromToday(-2) });
+
+        const late = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 80 });
+        Assert(!late.Saved, "a typed price must not sell a product after its window closed");
+        Assert(/was available until/.test(late.Message), `the refusal should name the window, got: ${late.Message}`);
+
+        // The order's own date is the test, not today: an order dated while the product was on sale
+        // is legitimate.
+        const backDated = await confirmLine(ctx, f.Products.WidgetA, { unitPrice: 80, orderDate: daysFromToday(-3) });
+        Assert(backDated.Saved, `an order dated inside the window should book: ${backDated.Message}`);
+      }),
+  },
+  {
+    Id: "pricing.PC20",
+    Name: "PC20: a Flat price stores the rule's figure, and the line totals the flat amount at any quantity",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // 100/3 → 33.33 → 99.99 and 100/7 → 14.29 → 100.03 when re-multiplied (#579).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        for (const qty of [3, 7]) {
+          const order = await confirmUnpriced(ctx, f.Products.WidgetA, qty);
+          Assert(order.Saved, `confirm failed at qty ${qty}: ${order.Message}`);
+          const line = await extendedOf(ctx, order.Order.ID as string);
+          AssertEqual(Number(line.ExtendedAmount), 100, `the rule's figure is stored at qty ${qty}`);
+          AssertEqual(Number(line.LineTotalNet), 100, `the line totals the flat amount at qty ${qty}`);
+        }
+      }),
+  },
+  {
+    Id: "pricing.PC21",
+    Name: "PC21: a Flat-priced draft reloaded and confirmed keeps the flat amount",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // A reloaded line has a unit price, so pricing treats it as stated and does not run the rule
+        // again. Before the figure was stored, the line then recomputed 3 × 33.33 = 99.99 (#579).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 3 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        const orderID = built.Order.ID as string;
+
+        const fresh = await new Metadata().GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await fresh.Load(orderID), "the draft did not reload");
+        fresh.Status = "Confirmed";
+        Assert(await fresh.Save(), `confirm failed: ${fresh.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const line = await extendedOf(ctx, orderID);
+        AssertEqual(Number(line.ExtendedAmount), 100, "the figure survived the reload");
+        AssertEqual(Number(line.LineTotalNet), 100, "the confirmed line still totals 100.00, not 99.99");
+      }),
+  },
+  {
+    Id: "pricing.PC22",
+    Name: "PC22: a full return of a Flat-priced line credits the flat amount, not quantity × unit price",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // The return copies the unit price, 33.33 at qty 3 and 14.29 at qty 7; without the origin's
+        // exact amount it credited −99.99 and −100.03 (#651).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        for (const qty of [3, 7]) {
+          const sale = await confirmUnpriced(ctx, f.Products.WidgetA, qty);
+          Assert(sale.Saved, `the sale did not confirm at qty ${qty}: ${sale.Message}`);
+          const back = await returnFlat(ctx, sale.Order.ID as string, f.Products.WidgetA, qty);
+          Assert(back.Saved, `the return did not confirm at qty ${qty}: ${back.Message}`);
+          const line = await extendedOf(ctx, back.Order.ID as string);
+          AssertEqual(Number(line.ExtendedAmount), -100, `the return carries the exact amount at qty ${qty}`);
+          AssertEqual(Number(line.LineTotalNet), -100, `the return credits −100.00 at qty ${qty}`);
+        }
+      }),
+  },
+  {
+    Id: "pricing.PC23",
+    Name: "PC23: partial returns of a Flat-priced line credit exactly the flat amount between them",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // Each return takes its rounded share through its end less the share before it, as returned
+        // tax does: 33.33, 33.34, 33.33. Three × 33.33 would leave a cent unreturned (#651).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, { amount: 100, model: "Flat", priority: 10 });
+        const sale = await confirmUnpriced(ctx, f.Products.WidgetA, 3);
+        Assert(sale.Saved, `the sale did not confirm: ${sale.Message}`);
+        const credited: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const back = await returnFlat(ctx, sale.Order.ID as string, f.Products.WidgetA, 1);
+          Assert(back.Saved, `return ${i + 1} did not confirm: ${back.Message}`);
+          credited.push(Number((await extendedOf(ctx, back.Order.ID as string)).LineTotalNet));
+        }
+        AssertEqual(credited.join(","), "-33.33,-33.34,-33.33", "each return's share");
+        AssertEqual(Math.round(credited.reduce((a, b) => a + b, 0) * 100) / 100, -100, "the returns credit the whole amount");
       }),
   },
 ];

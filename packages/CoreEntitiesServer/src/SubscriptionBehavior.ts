@@ -134,12 +134,23 @@ export interface CancellationContext {
     Term: CancellableTerm;
 }
 
+/**
+ * How much of a later term has been invoiced (#560). An order with no payment schedule invoices in
+ * full when it is confirmed; a scheduled one invoices instalment by instalment.
+ *   Invoiced      every live instalment has gone out, or the order has no schedule
+ *   NotInvoiced   no instalment has gone out
+ *   PartInvoiced  some have and some are still to come
+ */
+export type LaterTermBilling = 'Invoiced' | 'NotInvoiced' | 'PartInvoiced';
+
 /** A term that starts after the cancelled term's coverage ends (#406). */
 export interface LaterTermCancellationContext {
     Rules: SubscriptionTypeRules;
     Term: CancellableTerm;
     /** The cancelled term's `EffectiveDate` — when the subscription's coverage ends. */
     CoverageEndsDate: Date;
+    /** What has been invoiced for the term so far. */
+    Billing: LaterTermBilling;
 }
 
 /**
@@ -510,6 +521,23 @@ export class SubscriptionBehavior {
     }
 
     /**
+     * How many seats a subscription line buys, or why the quantity cannot be a seat count (#589).
+     *
+     * Read from the quantity as ENTERED, before proration scales it to price a short first period;
+     * the term stores the result, and entitlement grants and renewals read it from there.
+     *
+     * A seat is whole: 2.5 seats bills 2.5 × the rate for coverage nobody can hold. Every benefit
+     * model records the count as bought; ten staff can still be ten lines, each naming its person
+     * (see `DedupeIdentity`).
+     */
+    public SeatCount(_rules: SubscriptionTypeRules, quantity: number): { Seats: number } | { Error: string } {
+        if (!Number.isInteger(quantity) || quantity < 1) {
+            return { Error: `a subscription is bought in whole seats, so the quantity must be a whole number of at least 1 (it is ${quantity}).` };
+        }
+        return { Seats: quantity };
+    }
+
+    /**
      * The identity a duplicate is judged against — the heart of the concurrency rule.
      *
      * `Organization` keys on the ORG alone: a company holds ONE membership however many
@@ -776,17 +804,19 @@ export class SubscriptionBehavior {
      * The rules a cancellation runs under when the person cancelling chose a timing. The type's own
      * rules stand when `timing` is absent.
      *
-     * `Immediate` also drops the grace period: someone who asks for access to end now means now,
-     * and grace would keep the holder in for `GracePeriodDays` more. `EndOfTerm` keeps the type's
-     * grace, which is the type's policy for a term that runs out. Refund mode is never changed here;
-     * a refund the type does not give is a separate decision, made with `Orders.RefundPayment`.
+     * Both timings drop the grace period. A chosen timing names the day access ends: the request
+     * day for `Immediate`, the term's last day for `EndOfTerm`. Grace is the type's allowance for a
+     * term that runs out unrenewed; keeping it here would leave the holder in for `GracePeriodDays`
+     * past the day the person cancelling chose, and past the grant's own end, which is where a
+     * system that provisions from the grant stops access. Refund mode is never changed here; a
+     * refund the type does not give is a separate decision, made with `Orders.RefundPayment`.
      */
     public RulesForTiming(rules: SubscriptionTypeRules, timing?: CancellationTiming | null): SubscriptionTypeRules {
         switch (timing) {
             case 'Immediate':
                 return { ...rules, CancellationMode: 'Immediate', GracePeriodDays: 0 };
             case 'EndOfTerm':
-                return { ...rules, CancellationMode: 'EndOfTerm' };
+                return { ...rules, CancellationMode: 'EndOfTerm', GracePeriodDays: 0 };
             default:
                 return rules;
         }
@@ -836,14 +866,33 @@ export class SubscriptionBehavior {
 
     /**
      * What cancelling does to a LATER term — one that starts after the cancelled term's effective
-     * date, such as a renewal already booked (#406). The subscription ends before it begins, so
-     * none of it is ever delivered: it is cancelled and reversed in full, whatever the type's
-     * refund mode. `CancellationRefundMode` governs coverage the customer has had; a term that
-     * never started has none. Override to change that.
+     * date, such as a renewal already booked (#406). The subscription ends before the term begins,
+     * so the term is always `Canceled` and grants no access.
+     *
+     * The money follows the type's refund mode (#560). `ProrateUnused` and
+     * `FullRefundWithinWindow` give the whole term back, because none of it was used and it is
+     * inside any window. `NoRefund` keeps what was invoiced: such a term reverses nothing. A
+     * `NoRefund` term not invoiced yet is reversed in full, which withdraws its instalments and
+     * credits nothing, since there is no money to keep. This policy is provisional until the
+     * refund-policy owner confirms it on #560; override to change it.
      */
     public DecideLaterTermCancellation(rawContext: LaterTermCancellationContext): CancellationDecision {
         const start = utcDay(rawContext.Term.StartDate);
         const amount = money(Math.max(rawContext.Term.Amount, 0));
+        const coverage =
+            `Term ${rawContext.Term.TermNumber} starts ${isoDay(start)}, after coverage ends ` +
+            `${isoDay(utcDay(rawContext.CoverageEndsDate))}, so it is canceled`;
+        const keeps = rawContext.Rules.CancellationRefundMode === 'NoRefund' && rawContext.Billing !== 'NotInvoiced';
+        if (keeps) {
+            return {
+                EffectiveDate: start,
+                AccessThroughDate: start,
+                RefundAmount: 0,
+                ReversalFraction: 0,
+                TermStatus: 'Canceled',
+                Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept.`,
+            };
+        }
         return {
             EffectiveDate: start,
             // Access is the subscription's, decided by the cancelled term; this term grants none.
@@ -853,8 +902,9 @@ export class SubscriptionBehavior {
             ReversalFraction: amount > 0 ? 1 : 0,
             TermStatus: 'Canceled',
             Explanation:
-                `Term ${rawContext.Term.TermNumber} starts ${isoDay(start)}, after coverage ends ` +
-                `${isoDay(utcDay(rawContext.CoverageEndsDate))}, so it is canceled and its full ${amount} reversed.`,
+                rawContext.Rules.CancellationRefundMode === 'NoRefund'
+                    ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed and its instalments withdrawn.`
+                    : `${coverage} and its full ${amount} reversed.`,
         };
     }
 

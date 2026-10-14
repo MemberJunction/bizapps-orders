@@ -15,6 +15,7 @@ import {
     SubscriptionTypeRulesFrom,
     OverlappingCoverage,
     type CoverageOverlap,
+    type LaterTermBilling,
     type SubscriptionTypeRules,
 } from '../SubscriptionBehavior.js';
 
@@ -647,13 +648,20 @@ describe('cancellation policy', () => {
             expect(d.TermStatus).toBe('Canceled');
         });
 
+        it('EndOfTerm on the type\'s own mode still drops its grace: access ends on the term\'s last day', () => {
+            const d = cancelTimed('EndOfTerm', '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
+            expect(d.TermStatus).toBe('Completed');
+        });
+
         it('Immediate keeps the type\'s refund mode: NoRefund reverses nothing', () => {
             const d = cancelTimed('Immediate', '2026-07-01');
             expect(d.RefundAmount).toBe(0);
             expect(d.ReversalFraction).toBe(0);
         });
 
-        it('EndOfTerm on an Immediate type rides the term out and keeps the type\'s grace', () => {
+        it('EndOfTerm on an Immediate type rides the term out and drops the type\'s grace', () => {
             const behavior = new SubscriptionBehavior();
             const d = behavior.DecideCancellation({
                 Rules: behavior.RulesForTiming(rules({ CancellationMode: 'Immediate', GracePeriodDays: 10 }), 'EndOfTerm'),
@@ -661,7 +669,7 @@ describe('cancellation policy', () => {
                 Term: term,
             });
             expect(iso(d.EffectiveDate)).toBe('2026-12-31');
-            expect(iso(d.AccessThroughDate)).toBe('2027-01-10');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
             expect(d.TermStatus).toBe('Completed');
         });
     });
@@ -673,15 +681,15 @@ describe('cancellation policy', () => {
             Amount: 1300,
             TermNumber: 2,
         };
-        const laterWith = (r: Partial<SubscriptionTypeRules>) =>
+        const laterWith = (r: Partial<SubscriptionTypeRules>, billing: LaterTermBilling = 'Invoiced') =>
             new SubscriptionBehavior().DecideLaterTermCancellation({
                 Rules: rules(r),
                 Term: renewal,
                 CoverageEndsDate: new Date('2026-12-31T00:00:00Z'),
+                Billing: billing,
             });
 
         it.each([
-            ['NoRefund', { CancellationRefundMode: 'NoRefund' as const }],
             ['ProrateUnused', { CancellationRefundMode: 'ProrateUnused' as const }],
             ['an expired refund window', { CancellationRefundMode: 'FullRefundWithinWindow' as const, CancellationWindowDays: 0 }],
         ])('is canceled and reversed in full under %s', (_name, r) => {
@@ -693,11 +701,28 @@ describe('cancellation policy', () => {
             expect(d.Explanation).toMatch(/Term 2 starts 2027-01-01, after coverage ends 2026-12-31/);
         });
 
+        it.each(['Invoiced', 'PartInvoiced'] as const)('keeps what was invoiced under NoRefund when %s (#560)', (billing) => {
+            const d = laterWith({ CancellationRefundMode: 'NoRefund' }, billing);
+            expect(d.RefundAmount).toBe(0);
+            expect(d.ReversalFraction).toBe(0);
+            expect(d.TermStatus).toBe('Canceled');
+            expect(iso(d.AccessThroughDate)).toBe('2027-01-01');
+            expect(d.Explanation).toMatch(/what was invoiced for it is kept/);
+        });
+
+        it('reverses a NoRefund term in full when nothing was invoiced yet (#560)', () => {
+            const d = laterWith({ CancellationRefundMode: 'NoRefund' }, 'NotInvoiced');
+            expect(d.RefundAmount).toBe(1300);
+            expect(d.ReversalFraction).toBe(1);
+            expect(d.Explanation).toMatch(/Nothing has been invoiced for it yet/);
+        });
+
         it('reverses nothing when the term charged nothing', () => {
             const d = new SubscriptionBehavior().DecideLaterTermCancellation({
                 Rules: rules(),
                 Term: { ...renewal, Amount: 0 },
                 CoverageEndsDate: new Date('2026-12-31T00:00:00Z'),
+                Billing: 'NotInvoiced',
             });
             expect(d.ReversalFraction).toBe(0);
             expect(d.TermStatus).toBe('Canceled');
@@ -1080,5 +1105,29 @@ describe("the line's own choice when the subscriber already holds the product (g
             RequestedAction: 'ExtendExisting',
         });
         expect(decision.Action).toBe('Reactivate');
+    });
+});
+
+describe('seat count from the line quantity (#589)', () => {
+    const behavior = new SubscriptionBehavior();
+
+    it('records the whole-number quantity as the seats bought', () => {
+        expect(behavior.SeatCount(rules(), 10)).toEqual({ Seats: 10 });
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Organization' }), 25)).toEqual({ Seats: 25 });
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Individual' }), 1)).toEqual({ Seats: 1 });
+    });
+
+    it('refuses a fractional quantity: a half seat covers nobody', () => {
+        const result = behavior.SeatCount(rules(), 2.5);
+        expect('Error' in result && result.Error).toMatch(/whole seats/);
+    });
+
+    it('refuses zero and negative quantities', () => {
+        expect('Error' in behavior.SeatCount(rules(), 0)).toBe(true);
+        expect('Error' in behavior.SeatCount(rules(), -3)).toBe(true);
+    });
+
+    it('records more than one seat on a type that benefits one named person', () => {
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Individual', Code: 'SEAT' }), 10)).toEqual({ Seats: 10 });
     });
 });

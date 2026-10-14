@@ -26,8 +26,18 @@ vi.mock('@memberjunction/global', () => ({
     RegisterClass: () => (cls: unknown) => cls,
 }));
 
+const renewalEdge = vi.hoisted(() => ({
+    verify: vi.fn(),
+    loadOrder: vi.fn(),
+}));
+
 vi.mock('@mj-biz-apps/orders-core-entities-server', () => ({
+    VerifyRenewalPaymentToken: (...args: unknown[]) => renewalEdge.verify(...args),
+    LoadRenewalPaymentOrder: (...args: unknown[]) => renewalEdge.loadOrder(...args),
+    RenewalPaymentLinkSecret: () => 'secret',
+    RenewalPaymentTokenMessage: (reason: string) => (reason === 'expired' ? 'This payment link has expired. Contact us to renew.' : 'This payment link is not valid.'),
     CheckoutSessionService: {
+        InitializeRenewalPaymentSession: vi.fn(),
         InitializeSession: vi.fn(),
         UpdateDraft: vi.fn(),
         OpenPaymentIntentForSession: vi.fn(),
@@ -56,7 +66,8 @@ import {
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
 } from '@mj-biz-apps/orders-core-entities-server';
-import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap } from '../CheckoutServerExtension.js';
+import { LogStatus } from '@memberjunction/core';
+import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap, turnstileConfigGap } from '../CheckoutServerExtension.js';
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -126,6 +137,18 @@ describe('shouldServeCheckoutElementSourceMap', () => {
     });
 });
 
+describe('turnstileConfigGap', () => {
+    it('is null when the site key and the secret both resolve', () => {
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, { TS: 'secret' })).toBeNull();
+    });
+
+    it('names the missing setting', () => {
+        expect(turnstileConfigGap({}, {})).toBe('Settings.TurnstileSecretEnvVar unset');
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: 'site-key-1' }, {})).toBe("Settings.TurnstileSecretEnvVar='TS' resolved empty");
+        expect(turnstileConfigGap({ TurnstileSecretEnvVar: 'TS', TurnstileSiteKey: '  ' }, { TS: 'secret' })).toBe('Settings.TurnstileSiteKey unset');
+    });
+});
+
 describe('CheckoutServerExtension', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -153,7 +176,7 @@ describe('CheckoutServerExtension', () => {
             '/checkout/initialize',
             '/checkout/payment-intent',
         ]);
-        expect(Object.keys(routes.get).sort()).toEqual(['/checkout/:slug', '/checkout/element/main.js'].sort());
+        expect(Object.keys(routes.get).sort()).toEqual(['/checkout/:slug', '/checkout/element/main.js', '/checkout/renew/:token'].sort());
         expect(routes.get['/checkout/element/main.js.map']).toBeUndefined();
         expect(result.RegisteredRoutes).toEqual([
             'POST /checkout/initialize',
@@ -163,8 +186,92 @@ describe('CheckoutServerExtension', () => {
             'POST /checkout/account',
             'POST /checkout/account/password',
             'POST /checkout/access-status',
+            'GET /checkout/renew/:token',
             'GET /checkout/:slug',
         ]);
+    });
+
+    it('warns at startup when Turnstile is not configured, naming the missing setting', async () => {
+        const { app } = mockApp();
+        await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+        const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+        expect(lines.some((line) => line.includes('Turnstile is not configured (Settings.TurnstileSecretEnvVar unset)'))).toBe(true);
+    });
+
+    it('stays quiet at startup when Turnstile is configured', async () => {
+        process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP = 'secret';
+        try {
+            const { app } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, {
+                Enabled: true,
+                DriverClass: 'OrdersCheckoutEdge',
+                RootPath: '/checkout',
+                Settings: { TurnstileSecretEnvVar: 'CHECKOUT_TURNSTILE_SECRET_STARTUP', TurnstileSiteKey: 'site-key-1' },
+            });
+            const lines = vi.mocked(LogStatus).mock.calls.map(([line]) => String(line));
+            expect(lines.some((line) => line.includes('Turnstile'))).toBe(false);
+        } finally {
+            delete process.env.CHECKOUT_TURNSTILE_SECRET_STARTUP;
+        }
+    });
+
+    describe('the update-card link (#289)', () => {
+        const init = async () => {
+            const { app, routes } = mockApp();
+            const ext = new CheckoutServerExtension();
+            await ext.Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+            return { ext, routes };
+        };
+        const get = async (routes: RouteMap, token: string) => {
+            const res = mockRes();
+            await routes.get['/checkout/renew/:token'](
+                { params: { token }, headers: {}, socket: { remoteAddress: '127.0.0.9' } } as unknown as Request,
+                res as unknown as Response
+            );
+            return res;
+        };
+
+        it('answers a forged or expired link with a page that says only that, and reads no order', async () => {
+            const { routes } = await init();
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: false, Reason: 'signature' });
+            const forged = await get(routes, 'p.s');
+            expect(forged.statusCode).toBe(404);
+            expect(forged.body).toContain('This payment link is not valid.');
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: false, Reason: 'expired' });
+            const expired = await get(routes, 'p.s');
+            expect(expired.body).toContain('expired');
+            expect(renewalEdge.loadOrder).not.toHaveBeenCalled();
+        });
+
+        it('hosts the element in pay-renewal mode inside the selling widget’s distribution, with no referrer', async () => {
+            const { routes } = await init();
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: true, OrderID: 'aaaaaaaa-0000-4000-8000-000000000001', SubscriptionID: 's', ExpiresAt: new Date() });
+            renewalEdge.loadOrder.mockResolvedValueOnce({ SourceCheckoutWidgetID: 'widget-1' });
+            mockRunView.mockResolvedValueOnce({ Success: true, Results: [{ Slug: 'annual-plan' }] });
+            const res = await get(routes, 'payload.signature');
+            // Without a built element bundle the page cannot host the mode, and says so.
+            if (res.statusCode === 503) {
+                expect(res.body).toContain('not available on this server');
+                return;
+            }
+            expect(res.statusCode).toBe(200);
+            expect(res.body).toContain('slug="annual-plan"');
+            expect(res.body).toContain('renewal-token="payload.signature"');
+            expect(res.headers['referrer-policy']).toBe('no-referrer');
+        });
+
+        it('initialize with a renewal token opens the pay-renewal session, not a sale', async () => {
+            const { ext } = await init();
+            vi.mocked(CheckoutSessionService.InitializeRenewalPaymentSession).mockResolvedValue({ Success: true, SessionID: 'sess-r' } as never);
+            const res = mockRes();
+            await (ext as unknown as { handleInitialize(req: Request, res: Response): Promise<void> }).handleInitialize(
+                { body: { slug: 'annual-plan', clientSessionKey: 'k', renewalToken: ' t.s ' }, headers: {}, socket: {} } as unknown as Request,
+                res as unknown as Response
+            );
+            expect(CheckoutSessionService.InitializeRenewalPaymentSession).toHaveBeenCalledWith('t.s', 'k', expect.anything());
+            expect(CheckoutSessionService.InitializeSession).not.toHaveBeenCalled();
+            expect(res.statusCode).toBe(200);
+        });
     });
 
     it('passes the buyer’s promotion codes through to the draft, unmodified', async () => {
@@ -528,6 +635,25 @@ describe('CheckoutServerExtension', () => {
             const res = await complete({ Success: true, SessionID: 'sess-1', Status: 'Confirmed', OrderID: 'order-1' });
             expect(res.statusCode).toBe(200);
             expect(DispatchOutboundDeliveries).toHaveBeenCalledWith({ OrderHeaderID: 'order-1' }, expect.anything(), expect.anything());
+        });
+
+        it('passes the configured IP country header to the checkout as VAT location evidence (#480)', async () => {
+            mockGetSystemUser.mockReturnValue({ ID: 'svc-1', Email: 'svc@example.com' });
+            const completeMock = vi.mocked(CheckoutSessionService.CompleteCheckout);
+            completeMock.mockClear();
+            completeMock.mockResolvedValue({ Success: true, SessionID: 'sess-1', Status: 'Confirmed' } as never);
+            const ext = new CheckoutServerExtension() as unknown as {
+                settings: Record<string, unknown>;
+                handleComplete(req: Request, res: Response): Promise<void>;
+            };
+            const req = { body: { sessionId: 'sess-1', clientSessionKey: 'k' }, headers: { 'cf-ipcountry': 'SE' } } as unknown as Request;
+
+            await ext.handleComplete(req, mockRes() as unknown as Response);
+            expect(completeMock.mock.calls[0][3]).toEqual({ IPCountry: undefined });
+
+            ext.settings = { IPCountryHeader: 'CF-IPCountry' };
+            await ext.handleComplete(req, mockRes() as unknown as Response);
+            expect(completeMock.mock.calls[1][3]).toEqual({ IPCountry: 'SE' });
         });
 
         it('sends nothing for a checkout that did not complete', async () => {

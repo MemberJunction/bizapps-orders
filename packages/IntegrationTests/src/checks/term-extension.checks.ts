@@ -60,7 +60,7 @@ const DAY = 86_400_000;
 const iso = (d: Date | string) => new Date(d).toISOString().slice(0, 10);
 const addDays = (d: Date | string, n: number) => new Date(new Date(d).getTime() + n * DAY);
 
-async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, maxDays: number): Promise<void> {
+export async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, maxDays: number): Promise<void> {
   await createViaEntity(ctx, SALES_AUTHORITY_ENTITY, {
     SalesRepUserID: ctx.User.ID,
     MaxConcessionValue: maxValue,
@@ -76,7 +76,7 @@ async function grantAuthority(ctx: IntegrationCheckContext, maxValue: number, ma
  * A Pending concession's approval task is assigned to the person records of the role's other holders, and
  * one nobody could be told of is refused, so a holder is given a person record when none of them has one.
  */
-async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string) {
+export async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string) {
   const holders = await TxQuery<{ UserID: string; PersonID: string | null }>(ctx,
     `SELECT ur.UserID, (SELECT TOP 1 p.ID FROM __mj_BizAppsCommon.Person p
                          WHERE p.LinkedUserID = ur.UserID AND p.Status = 'Active') AS PersonID
@@ -151,7 +151,7 @@ function byDate(rows: { EffectiveDate: Date; Net: number }[]): Map<string, numbe
   return out;
 }
 
-async function acknowledgmentOf(ctx: IntegrationCheckContext, concessionID: string) {
+export async function acknowledgmentOf(ctx: IntegrationCheckContext, concessionID: string) {
   const task = await TxOne<{ ID: string; Status: string; TypeCode: string; Description: string }>(ctx,
     `SELECT t.ID, t.Status, tt.Code AS TypeCode, t.Description
        FROM __mj_BizAppsTasks.Task t
@@ -372,8 +372,8 @@ export const TermExtensionChecks: NamedCheck[] = [
         AssertEqual(done.Status, "Approved", "inside authority it applies in the same call");
         await assertApplied(ctx, Term, 90);
 
-        const amount = await amend(ctx, { ...input, NewAmount: 900 });
-        Assert(!amount.Success && /amount/.test(amount.Message ?? ""), "a change of amount is refused for now");
+        const both = await amend(ctx, { ...input, NewAmount: 900 });
+        Assert(!both.Success && /amended separately/.test(both.Message ?? ""), "a change of amount is not combined with a new end");
       }),
   },
   {

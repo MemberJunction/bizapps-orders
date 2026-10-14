@@ -22,7 +22,9 @@ export class mjBizAppsOrdersOrderHeaderPaymentScheduleFormComponent extends Base
             { sectionKey: 'paymentStatus', sectionName: 'Payment Status', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersPaymentLines', sectionName: 'Payment Lines', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersExternalInvoices', sectionName: 'External Invoices', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersExternalInvoices', sectionName: 'External Invoices', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersInstalmentLineBillings', sectionName: 'Instalment Line Billings', isExpanded: false }
         ]);
     }
 }

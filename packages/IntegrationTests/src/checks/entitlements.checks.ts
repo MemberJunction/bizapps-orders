@@ -796,49 +796,35 @@ export const EntitlementsChecks: NamedCheck[] = [
   },
   {
     Id: "entitlements.EN15",
-    Name: "EN15: a PRORATED line rounds its seat count UP, never down",
+    Name: "EN15: a PRORATED subscription line grants its seats from the term, not the prorated quantity",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
         await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubCalendar, { EntitlementQuantityMode: 'PerUnit' });
         // SubCalendar is Jan-1 anchored WITH proration, so buying it mid-year scales the line
-        // quantity to a fraction — and the seat count is computed from that fraction. This is the
-        // only place a fractional quantity arises naturally, which is why the unit test alone was
-        // not enough: rounding DOWN survived the whole bundle until this check existed, because
-        // every other check buys whole units and ceil and floor agree.
+        // quantity to a fraction to price the short period. The grant used to be computed from that
+        // fraction: 3 subscriptions x 4 seats over half a year granted 6. A shorter period covers
+        // fewer days, not fewer people, so the grant reads the seats the term records (#589).
         const order = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
           OrderDate: new Date("2026-07-01"),
-          Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
+          Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 3, UnitPrice: 1200 }],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
 
         const line = await TxOne<{ Q: number }>(ctx,
           `SELECT Quantity AS Q FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${order.Order.ID}'`);
         Assert(
-          Number(line.Q) > 0 && Number(line.Q) < 1,
+          Number(line.Q) > 0 && Number(line.Q) < 3,
           `the line must actually be prorated for this check to mean anything (quantity ${line.Q})`,
         );
 
         const g = byCode(await grantsFor(ctx, order.Order.ID as string));
         const seats = g.get("PRORATED-SEATS");
         Assert(seats != null, "the prorated subscription granted its seats");
-
-        // 4 seats x a fraction, rounded UP. Asserted against the stored quantity rather than a
-        // hard-coded number, because the proration factor depends on the anchor and the order date.
-        const expected = Math.ceil(4 * Number(line.Q));
-        AssertEqual(
-          Number(seats!.Quantity),
-          expected,
-          `4 seats x ${line.Q} rounds UP to ${expected} — under-granting is the expensive direction, ` +
-            `exactly as under-collecting is with tax`,
-        );
-        Assert(
-          Number(seats!.Quantity) > 4 * Number(line.Q),
-          "and it is strictly MORE than the exact fraction, which is what 'up' means",
-        );
+        AssertEqual(Number(seats!.Quantity), 12, `4 seats x 3 bought, whatever the proration (line quantity ${line.Q})`);
       }),
   },
   {
