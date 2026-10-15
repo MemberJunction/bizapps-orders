@@ -126,7 +126,8 @@ export function billComErrorText(body: unknown): string | null {
     return typeof body === 'string' && body.trim() ? body.trim().slice(0, 300) : null;
 }
 
-async function connectorFor(ci: MJCompanyIntegrationEntity, provider: IMetadataProvider, user: UserInfo) {
+/** The live connector behind a Company Integration. Shared with the HubSpot payments gateway. */
+export async function ConnectorForCompanyIntegration(ci: MJCompanyIntegrationEntity, provider: IMetadataProvider, user: UserInfo) {
     // The connector's generic CRUD reads IntegrationObject rows (API paths, body shapes) from the
     // IntegrationEngineBase cache, and nothing on this path loads it — the live sandbox run failed with
     // `IntegrationObject not found: "customers"` against a fully seeded database. Config() is a no-op
@@ -162,15 +163,15 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
             return { Known: false, Reason: 'the Company Integration names neither a credential nor a Configuration' };
         },
         async createRecord(ci, object, attrs, user) {
-            const c = await connectorFor(ci, provider, user);
+            const c = await ConnectorForCompanyIntegration(ci, provider, user);
             return c.CreateRecord({ CompanyIntegration: ci, ObjectName: object, ContextUser: user, Attributes: attrs });
         },
         async updateRecord(ci, object, externalID, attrs, user) {
-            const c = await connectorFor(ci, provider, user);
+            const c = await ConnectorForCompanyIntegration(ci, provider, user);
             return c.UpdateRecord({ CompanyIntegration: ci, ObjectName: object, ContextUser: user, ExternalID: externalID, Attributes: attrs });
         },
         async getRecord(ci, object, externalID, user) {
-            const c = await connectorFor(ci, provider, user);
+            const c = await ConnectorForCompanyIntegration(ci, provider, user);
             return c.GetRecord({ CompanyIntegration: ci, ObjectName: object, ContextUser: user, ExternalID: externalID });
         },
         async archiveInvoice(ci, externalID, user) {
@@ -178,7 +179,7 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
             // from the connector's protected session helpers, which was always a last resort and is
             // now actively wrong: 0.3.2 moved the version out of the base URL and into the paths
             // (Integrations #390), so `${base}/invoices/…/archive` silently loses the `/v3`.
-            const c = (await connectorFor(ci, provider, user)) as unknown as ArchivingConnector;
+            const c = (await ConnectorForCompanyIntegration(ci, provider, user)) as unknown as ArchivingConnector;
             if (typeof c.ArchiveInvoice !== 'function') {
                 return {
                     Success: false,
@@ -191,7 +192,7 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
             return c.ArchiveInvoice({ CompanyIntegration: ci, ExternalID: externalID, ContextUser: user });
         },
         async fetchChanges(ci, object, watermark, user) {
-            const c = await connectorFor(ci, provider, user);
+            const c = await ConnectorForCompanyIntegration(ci, provider, user);
             const all: ExternalRecord[] = [];
             let page = 1;
             let cursor: string | undefined;

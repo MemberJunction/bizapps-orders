@@ -74,5 +74,15 @@
     "primaryKey": {
       "ID": "9A313BB3-9226-4358-AA86-7B0268D1185D"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Coverage.RunAlongside",
+      "RoleID": "@lookup:MJ: Roles.Name=Account Director",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "95C1EB47-69B0-49AB-A007-FC035EB5CB86"
+    }
   }
 ]

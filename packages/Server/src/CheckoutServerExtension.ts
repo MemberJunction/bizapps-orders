@@ -70,6 +70,10 @@ import {
     EnsureCheckoutAccount,
     EscapeText,
     GetCheckoutAccessStatus,
+    LoadRenewalPaymentOrder,
+    RenewalPaymentLinkSecret,
+    RenewalPaymentTokenMessage,
+    VerifyRenewalPaymentToken,
     HasCheckoutAccountStep,
     SetCheckoutAccountPassword,
     type CheckoutBillingAddressInput,
@@ -81,7 +85,7 @@ import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp } from './checkout-edge-policy.js';
+import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp, resolveIpCountryHeader } from './checkout-edge-policy.js';
 import { checkoutHostSecurityHeaders, renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
 /** Checkout request bodies are small; anything larger is abuse, not commerce. */
@@ -168,6 +172,14 @@ interface CheckoutEdgeSettings {
      */
     TrustedProxyHops?: number;
     /**
+     * Name of the request header carrying the buyer's IP country as a two-letter code, set by the
+     * proxy or CDN in front of MJAPI (for example `CF-IPCountry`). A completed checkout records it
+     * on the order as VAT location evidence (#480); the IP address itself is never stored. Unset
+     * (the default) records no IP country. Name only a header the proxy sets and overwrites on
+     * every request: anything else is whatever the browser sent.
+     */
+    IPCountryHeader?: string;
+    /**
      * When true, GET `{root}/element/main.js.map` is registered. Default off —
      * the map is original TypeScript on an unauthenticated payment route.
      * Also honoured via env `CHECKOUT_ELEMENT_SOURCEMAP=1` when the setting is unset.
@@ -187,6 +199,21 @@ export function shouldServeCheckoutElementSourceMap(
         return false;
     }
     return env.CHECKOUT_ELEMENT_SOURCEMAP === '1';
+}
+
+/**
+ * Which Turnstile edge setting is missing, or null when the site key and the secret both resolve.
+ * The startup warning and the per-request 503 share it, so they always name the same gap.
+ */
+export function turnstileConfigGap(
+    settings: Pick<CheckoutEdgeSettings, 'TurnstileSecretEnvVar' | 'TurnstileSiteKey'>,
+    env: NodeJS.ProcessEnv = process.env,
+): string | null {
+    const envVar = settings.TurnstileSecretEnvVar;
+    if (!envVar || !env[envVar]) {
+        return `Settings.TurnstileSecretEnvVar${envVar ? `='${envVar}' resolved empty` : ' unset'}`;
+    }
+    return settings.TurnstileSiteKey?.trim() ? null : 'Settings.TurnstileSiteKey unset';
 }
 
 /** The body of a Turnstile refusal; a 403 also names the challenge the client must render. */
@@ -250,14 +277,25 @@ export class CheckoutServerExtension extends BaseServerExtension {
             });
         }
 
+        // The update-card link (#289). Registered before `/:slug`, which it would otherwise never reach
+        // past: `renew` is a reserved slug, and the token is the second path segment.
+        const renewPath = `${root}/renew/:token`;
+        app.get(renewPath, (req: Request, res: Response) => this.handleGetRenewal(req, res));
+
         const hostPath = `${root}/:slug`;
         app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
 
         LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password,access-status}`);
+        // Widgets can't be read here (the user cache may not be loaded yet), so this names the gap
+        // for every widget: one that sets requireTurnstile answers 503 until the edge is configured.
+        const turnstileGap = turnstileConfigGap(this.settings);
+        if (turnstileGap) {
+            LogStatus(`[OrdersCheckoutEdge] Turnstile is not configured (${turnstileGap}): a widget that sets requireTurnstile answers 503 on initialize and complete. Setup: docs/checkout-widget-and-session-architecture.md#turnstile`);
+        }
         return {
             Success: true,
             Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
-            RegisteredRoutes: [...routes.map(([path]) => `POST ${path}`), `GET ${hostPath}`],
+            RegisteredRoutes: [...routes.map(([path]) => `POST ${path}`), `GET ${renewPath}`, `GET ${hostPath}`],
         };
     }
 
@@ -441,13 +479,12 @@ export class CheckoutServerExtension extends BaseServerExtension {
      * retrying once with a fresh token (tokens are single-use).
      */
     private async verifyTurnstile(req: Request): Promise<[number, TurnstileRefusal] | null> {
+        const missing = turnstileConfigGap(this.settings);
         const envVar = this.settings.TurnstileSecretEnvVar;
         const secret = envVar ? process.env[envVar] : undefined;
         const siteKey = this.settings.TurnstileSiteKey?.trim();
-        if (!secret || !siteKey) {
-            const missing = !secret
-                ? `Settings.TurnstileSecretEnvVar${envVar ? `='${envVar}' resolved empty` : ' unset'}`
-                : 'Settings.TurnstileSiteKey unset';
+        // turnstileConfigGap already rules out an empty secret or site key; the extra checks narrow the types.
+        if (missing || !secret || !siteKey) {
             LogError(`[OrdersCheckoutEdge] Widget requires Turnstile but it is not configured (${missing})`);
             return [503, { ErrorMessage: 'Checkout verification is not configured — contact the site operator.' }];
         }
@@ -526,6 +563,83 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
     }
 
+    /**
+     * `GET /checkout/renew/:token` — the update-card link (#289). The token is checked here so an
+     * expired or forged link gets a page that says so; the page then hosts the element in its
+     * pay-renewal mode, inside the distribution of the widget that sold the subscription, so that
+     * widget's origin and Turnstile policy apply to every call it makes. The token is checked again,
+     * with the order, by `/initialize`. `Referrer-Policy: no-referrer` keeps it out of other sites'
+     * logs.
+     */
+    private async handleGetRenewal(req: Request, res: Response): Promise<void> {
+        try {
+            const token = typeof req.params?.token === 'string' ? req.params.token.trim() : '';
+            const ip = this.clientIp(req);
+            const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|get|renew`)) {
+                this.sendHostError(res, 429, 'Too many requests — slow down and try again shortly.');
+                return;
+            }
+            const user = this.resolveActingUser();
+            if (!user) {
+                this.sendHostError(res, 503, 'Checkout is not ready — please try again shortly.');
+                return;
+            }
+            const check = await VerifyRenewalPaymentToken(token, RenewalPaymentLinkSecret());
+            if (check.Valid === false) {
+                this.sendHostError(res, check.Reason === 'not-configured' ? 503 : 404, RenewalPaymentTokenMessage(check.Reason));
+                return;
+            }
+            const elementDir = resolveCheckoutElementDir();
+            if (!elementDir) {
+                this.sendHostError(res, 503, 'Renewal payment is not available on this server.');
+                return;
+            }
+            const slug = await this.renewalDistributionSlug(check.OrderID, user);
+            if (!slug) {
+                this.sendHostError(res, 404, 'This renewal cannot be paid here.');
+                return;
+            }
+            const nonce = randomBytes(16).toString('base64url');
+            this.applyHostSecurityHeaders(res, nonce);
+            res
+                .status(200)
+                .setHeader('Content-Type', 'text/html; charset=utf-8')
+                .send(renderCheckoutHostPage({
+                    slug,
+                    apiRoot: this.rootPath,
+                    cspNonce: nonce,
+                    elementSrc: `${this.rootPath}/element/main.js`,
+                    renewalToken: token,
+                    pageTitle: 'Renew your subscription',
+                }));
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[OrdersCheckoutEdge] Unhandled error on GET renewal: ${msg}`);
+            if (!res.headersSent) {
+                this.sendHostError(res, 500, 'Checkout is temporarily unavailable.');
+            }
+        }
+    }
+
+    /** An active distribution slug of the widget that sold the renewed subscription, or null. */
+    private async renewalDistributionSlug(orderID: string, user: UserInfo): Promise<string | null> {
+        const provider = Metadata.Provider;
+        if (!provider) return null;
+        const order = await LoadRenewalPaymentOrder(orderID, provider, user);
+        if (!order?.SourceCheckoutWidgetID) return null;
+        const rv = new RunView();
+        const dist = await rv.RunView<{ Slug: string }>({
+            EntityName: CHECKOUT_DISTRIBUTION_ENTITY,
+            Fields: ['Slug'],
+            ExtraFilter: `CheckoutWidgetID = '${EscapeText(order.SourceCheckoutWidgetID)}' AND Status = 'Active'`,
+            MaxRows: 1,
+            ResultType: 'simple',
+        }, user);
+        const slug = dist?.Results?.[0]?.Slug ?? '';
+        return isValidCheckoutSlug(slug) ? slug : null;
+    }
+
     private sendHostError(res: Response, status: number, message: string): void {
         const nonce = randomBytes(16).toString('base64url');
         this.applyHostSecurityHeaders(res, nonce);
@@ -580,8 +694,13 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const renewalToken = typeof req.body?.renewalToken === 'string' ? req.body.renewalToken.trim() : '';
         this.maybeReapExpiredSessions(user);
-        const result = await CheckoutSessionService.InitializeSession(slug, clientSessionKey, user);
+        // The update-card link opens a session on the renewal order its token names (#289). The slug
+        // still went through the edge gates above; the token is the credential for the order.
+        const result = renewalToken
+            ? await CheckoutSessionService.InitializeRenewalPaymentSession(renewalToken, clientSessionKey, user)
+            : await CheckoutSessionService.InitializeSession(slug, clientSessionKey, user);
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -637,7 +756,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user, {
+            IPCountry: resolveIpCountryHeader(req, this.settings.IPCountryHeader),
+        });
         if (!result.Success) {
             res.status(409).json(result);
             return;

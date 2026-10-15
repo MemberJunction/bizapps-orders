@@ -16,6 +16,13 @@ describe('escapeHtml / escapeAttr', () => {
 });
 
 describe('renderCheckoutHostPage', () => {
+    it('keeps the full-width field rule off checkboxes and radios', () => {
+        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
+        const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
+        expect(css).toContain('.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {');
+        expect(css).not.toMatch(/\.mj-co input\s*[,{]/);
+    });
+
     it('hosts the Angular Element when elementSrc is provided', () => {
         const html = renderCheckoutHostPage({
             slug: 'summit-2027',
@@ -124,3 +131,14 @@ describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
         expect(html).not.toContain("post('/complete'");
     });
 });
+
+describe('the pay-renewal page (#289)', () => {
+    it('passes the update-card token to the element as an escaped attribute, and only when given', async () => {
+        const { renderCheckoutHostPage } = await import('../checkout-host-page.js');
+        const page = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n', elementSrc: '/checkout/element/main.js', renewalToken: 'a"b.c' });
+        expect(page).toContain('renewal-token="a&quot;b.c"');
+        const plain = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n', elementSrc: '/checkout/element/main.js' });
+        expect(plain).not.toContain('renewal-token');
+    });
+});
+

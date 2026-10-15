@@ -27,6 +27,11 @@ export interface CheckoutHostPageOptions {
      * extension fields). When omitted, a vanilla fallback form is used.
      */
     elementSrc?: string;
+    /**
+     * A signed update-card link token (#289). Set, the element opens in the pay-renewal mode: it pays
+     * the renewal order the token names instead of selling the widget's product.
+     */
+    renewalToken?: string;
 }
 
 export interface CheckoutHostErrorOptions {
@@ -78,6 +83,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
     const apiRoot = escapeAttr(options.apiRoot);
     const nonceAttr = ` nonce="${escapeAttr(options.cspNonce)}"`;
     const elementSrc = options.elementSrc ? escapeAttr(options.elementSrc) : '';
+    const renewal = options.renewalToken ? ` renewal-token="${escapeAttr(options.renewalToken)}"` : '';
     if (elementSrc) {
         return `<!doctype html>
 <html lang="en">
@@ -91,7 +97,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 </head>
 <body>
   <main class="mj-co">
-    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"></mj-orders-checkout>
+    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"${renewal}></mj-orders-checkout>
   </main>
 </body>
 </html>`;
@@ -161,7 +167,7 @@ body {
 .mj-co h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .mj-co p { margin: 0 0 1rem; }
 .mj-co label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
-.mj-co input, .mj-co select, .mj-co textarea {
+.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {
   width: 100%;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--mj-border, #c9cdd4);

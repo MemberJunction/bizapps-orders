@@ -123,6 +123,8 @@ The table lists the main ones. The full list, by area, is in [`orders-api-and-ui
 | `Orders.CancelSubscription` | Policy in, reversal out. |
 | `Orders.SpawnRenewals` | Long-running: place renewal orders at lead time. |
 
+`Orders.ChargeRenewals` is a scheduled Action rather than a remote operation: it charges renewal cards daily and has no browser caller (`packages/Server/src/custom/charge-renewals.action.ts`).
+
 `Orders.SaveOrder` / `ConfirmOrder` / `PreviewOrder` / `PreviewConfirm` were retired when related-record collections landed ([why the old pattern existed](ui-architecture.md#what-changed-in-mj-61-and-why-the-old-pattern-existed-at-all)).
 
 **Unstated `UnitPrice` is omitted, never sent as `0`.** A stated `0` is a free line and suppresses resolution ([the price rule](orders-api-and-ui-architecture.md#the-one-rule-about-prices-that-carries-real-risk)).
@@ -150,7 +152,7 @@ A fully-comped order can produce **no** JEs. Accounting refuses an empty draft s
 `OrderPricingService` (shared package) is the one walk. Confirm and `Orders.PriceOrder` call the same service.
 
 1. **Resolve price** — price list / assignment / tier, or stated `UnitPrice` (direct entry wins).
-2. **Promotions** — codes and targets, stacking rules, authorized manual discounts.
+2. **Promotions** — codes and targets, stacking rules, authorized manual discounts. A typed code that applied nowhere comes back in `UnusablePromotionCodes` with the reason: unknown, inactive or out of dates, a spent limit, below a minimum, beaten by a better offer (named), blocked by the company's no-stacking policy, or aimed at nothing on the order. A promotion flagged `AppliesToRenewals` is presented again on automatic renewals (§8).
 3. **Charges** — shipping, handling, and tax as one mechanism (`ChargeType` + `GLAccountLink`).
 4. **Tax** — address + nexus + taxability + exemptions. Snapshot onto the line; we are not a tax engine.
 
@@ -166,7 +168,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross).
 - Refund and bank return are reversal payments: `Status = 'Refunded'`, positive `Amount`, negative lines, `ReversesPaymentHeaderID` set. Refund with `Orders.RefundPayment`; the ACH webhook writes bank returns. Nothing writes chargebacks yet.
 - Over-payment is a **negative Balance** — that *is* the account credit. Spend it with `Orders.ApplyAccountCredit`.
-- Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
+- Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). **HubSpotPayments** reads the payments a company's HubSpot portal collects through the same poll, and also refuses checkout verbs ([`hubspot-payments.md`](hubspot-payments.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
 
 ---
 
@@ -174,10 +176,14 @@ Results persist as line price-component / charge / adjustment children so the bo
 
 - A subscription product on confirm materializes `Subscription` + `Subscription Term` via `SubscriptionBehavior`.
 - **Term start**: `OrderLine.ServicePeriodStart` states when coverage begins and wins over `StartMode`; absent, the start is derived from `OrderHeader.OrderDate` through the type's rules. Either way the type computes the **end** (term length, anchor, proration), a stated end is ignored, and the line ends up holding the settled term. `OrderDate` stays the booking date and still dates the booking JE, so an order booked 8/27 can sell a term running 8/1–7/31. An extension continues existing coverage the day after it ends, and reports a stated start only when the term begins somewhere else. The order line editor exposes this as "Term start" on subscription lines, defaulting to the order date — read-only on a line renewing live coverage, where it shows the continuation date instead of asking for one.
+- **Seats**: a subscription line's quantity is a seat count, recorded on the term as `SubscriptionTerm.Quantity` before proration scales the line's quantity to price a short first period. Entitlement grants and renewals read the term's count, never the line's. The quantity must be a whole number of at least 1, for every `BenefitModel`; ten staff can still be ten lines, each naming its person. An approved Seats concession adds its seats to the term: on approval when the term is booked (its `PerUnit` grants follow, and the renewal buys them at full price), or at confirm when it was approved on a draft. It is refused once the term's renewal is placed.
 - Annual billed annually = one order, deferred, recognized ratably (forward-dated JEs at booking).
 - Monthly billed monthly = one renewal Order Header per cycle (`Orders.SpawnRenewals` places Drafts at lead time; a human confirms).
-- Cancel is `Orders.CancelSubscription` (policy → reversal).
-- **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee. Capacity is **not** enforced on confirm.
+- **Renewal pricing** (`Orders.SpawnRenewals`): the prior term's undiscounted unit price, or a successor product's list price, plus any `RenewalIncreasePercent` when the new term crosses an anniversary. A first-term discount lapses unless `Subscription.CarryDiscountOnRenewal` is set.
+- **Promotions on renewal**: a promotion with `AppliesToRenewals` set carries into automatic renewals. The pass reads the codes recorded on the line that bought the expiring term and presents the flagged ones on the renewal order, where the ordinary promotion engine decides: the promotion must be Active, inside its `EffectiveFrom`/`EffectiveTo` dates on the renewal's order date, and pass its targets, minimums, limits and qualifier. A code that no longer applies is reported on the candidate (`UnusableRenewalPromotionCodes`), in the order notes and on the `RenewalOrderSpawned` event, and the renewal is placed at the undiscounted price. Preview runs the same engine without saving. Unflagged promotions apply to the purchase only.
+- **Charging the renewal card** (#289). A checkout that sells an auto-renewing product keeps the card (`Subscription.DefaultCustomerPaymentMethodID`, a wallet entry). That subscription's renewal order is due on the new term's first day, and the daily `Orders.ChargeRenewals` job (`RenewalCharging.ts`, ships disabled and set to preview) charges the card off-session that day. A decline, or a demand that the absent customer authenticate (SCA), is retried on the days in the `RenewalChargeRetryDays` setting (default 3, 7 and 11 after the due day) until the access cutoff suspends the renewal. Each attempt is its own `PaymentIntent` and a `PaymentSucceeded` / `PaymentFailed` subscription event; a success is captured through `Orders.CapturePayment`, dated the business day the gateway took the money. Money the gateway took that no payment booked (a failed capture) is booked by the next pass on any day, even after the last retry day or with automatic renewal turned off; those conditions stop new charges, not the booking (#683). A subscription without a renewal card stays invoice-only. The first failed charge, once its `PaymentFailed` event is saved, e-mails the payer (the renewal card's owner; on a gift, the buyer) a signed link that opens the checkout in a pay-renewal mode: it pays the open renewal order with a new card and makes that card the renewal card ([the update-card link](checkout-widget-and-session-architecture.md#paying-a-renewal-through-the-checkout-the-update-card-link)).
+- Cancel is `Orders.CancelSubscription` (policy → reversal). The type's `CancellationMode` decides when coverage ends unless the caller passes `Timing`: `Immediate` ends coverage and access on the request day, `EndOfTerm` on the term's last day; a chosen timing drops the type's grace. The refund mode always comes from the type.
+- **Event products** (`EventProduct` IsA, shared UUID with Product) stamp `ServicePeriodStart`/`End` from the event unless the line already set them. `EventOrderLine` holds the attendee, one per line. When `EventProduct.RequiresAttendeeInfo` is set, the order refuses to book unless each line of that event is quantity 1 with an attendee row, and checkout refuses to open a payment intent until each ticket has an attendee with an e-mail (`AttendeeRequirement.ts`). Reversals and bundle components are exempt. Capacity is **not** enforced on confirm.
 
 Revenue recognition is **real forward-dated JEs written at booking**. A 12-month $1,200 subscription writes 12 × $100 Dr Deferred / Cr Revenue dated on the monthly anniversaries. Accounting's batch sweep by date is what "fires" recognition. Staged entries are never edited; corrections are reversing orders.
 
@@ -187,7 +193,9 @@ Revenue recognition is **real forward-dated JEs written at booking**. A 12-month
 
 Locked history is never edited.
 
-- Return / cancellation / credit memo = a **new** Order Header (`ReversesOrderHeaderID`) with negative-quantity lines.
+- Return / cancellation = a **new** Order Header (`ReversesOrderHeaderID`) with negative-quantity lines, and so is the credit memo a return or cancellation books. An amount change's credit memo is not an order; see below.
+- A return against an order billed by instalment books a credit memo for the returned units' share of what was invoiced and not yet earned. The returned units' share of what is not yet invoiced is the returning line's `ScheduleReduction`: a partial return lowers the origin's uninvoiced instalments by it, pro rata, and a whole-order return cancels them. The origin's balance, its schedule check and each later instalment invoice read the origin's lines less these reductions, as they do for approved amount changes.
+- An approved amount change that needs a credit memo is that memo; no order carries it. `Orders.GenerateInvoice` and `Orders.SendDocument` render it from what the approval logged on the `AmountChanged` subscription event when given its `OrderConcessionID`; the memo goes by email even when the order's company invoices through Bill.com, which carries no credit memos. A re-rendered instalment invoice shows what memos credited it and asks for its balance; a whole-order document subtracts each approved change's memo and schedule reduction, as the order's balance does. Sending is not automatic: the acknowledgment task tells accounting to send it.
 - Refund = a new Payment Header (`ReversesPaymentHeaderID`).
 - Entitlement grants created at booking are revoked on return (`EntitlementEngine`). Downstream apps **ask** `Orders.CheckEntitlement` (by `ProductEntitlement.Code`); they do not poll `EntitlementGrant.Status`. Status is a recorded decision, not current truth — the evaluator also honours the window and, after cancel, `subscription.EndDate` (grace). `Orders.ListEntitlements` is the person's library, same evaluator. v1 is person grants only. Contract: [`plans/entitlement-read-contract.md`](../plans/entitlement-read-contract.md).
 
@@ -290,7 +298,7 @@ Not documented here yet: the steps that register a local checkout in a running M
 
 ## 13. What is not this app
 
-- **Stripe / Business Central export live tests** — other team. Bill.com is part of this app: the invoice rail, its operations and its webhook ship here ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)), and `test-harnesses/billcom-live.mjs` probes a Bill.com sandbox by hand.
+- **Stripe / Business Central export live tests** — other team. Bill.com is part of this app: the invoice rail, its operations and its webhook ship here ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)), and `test-harnesses/billcom-live.mjs` probes a Bill.com sandbox by hand. `test-harnesses/stripe-live.mjs` runs `Orders.CreateOrderFromProviderPayment` against Stripe's test mode by hand (#575): the integration suite's Stripe stub has no charges to read.
 - **LXP packaging** (tiers, track bundles, hosted checkout as a product surface) — consumer work, not missing engine.
 - **Approvals inbox** — sales rules can name an approver role; the Task exists; there is no Orders UI for it.
 - **Contracts / Inventory** — future sibling apps. Do not put their columns here.
@@ -310,7 +318,7 @@ Not documented here yet: the steps that register a local checkout in a running M
 | Price / promo / charge / tax | `packages/Entities/src/pricing/` |
 | Capture / refund | `CapturePaymentOperation.ts`, `RefundPaymentOperation.ts` |
 | Intercompany cash | `PaymentAllocationFactory.ts` |
-| Subscriptions | `SubscriptionBehavior.ts`, `CancelSubscriptionOperation.ts`, `SpawnRenewalsOperation.ts` |
+| Subscriptions | `SubscriptionBehavior.ts`, `CancelSubscriptionOperation.ts`, `SpawnRenewalsOperation.ts`, `RenewalCharging.ts` |
 | Explorer sections | `packages/Angular/src/lib/sections/` |
 | Order compose form | `packages/Angular/src/lib/custom/OrderHeader/` |
 | Form contributions | `packages/Angular/src/lib/form-panels/` |

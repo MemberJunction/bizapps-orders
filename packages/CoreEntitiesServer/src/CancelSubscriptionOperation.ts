@@ -14,7 +14,9 @@
  *   1. resolve the affected term (the one whose window covers the request, else the next to
  *      start, else the latest), and the LATER terms — open terms that start after its coverage ends
  *   2. ask the behaviour what the rules say — effective date, refund, reversal fraction — for the
- *      affected term, and for each later term (never delivered, so reversed in full, #406)
+ *      affected term, and for each later term (never delivered, so reversed in full, #406). The
+ *      rules are the type's, or, when the caller chose a `Timing`, the type's with that timing
+ *      in place of its `CancellationMode`
  *   3. when there is something to reverse, emit ONE reversal ORDER with a line per reversed term,
  *      each carrying the negative quantity and pointing at its original line, and confirm it —
  *      booking mirrors the JEs
@@ -64,10 +66,14 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
+    CANCELLATION_TIMINGS,
     type CancellableTerm,
     type CancellationDecision,
+    type CancellationTiming,
+    type LaterTermBilling,
     type SubscriptionTypeRules,
 } from './SubscriptionBehavior.js';
+import { InstalmentsToCancel } from './ContractBalance.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { LoadReversalContext } from './ReversalResolver.js';
 
@@ -84,6 +90,13 @@ export interface CancelSubscriptionInput {
     RequestDate?: Date | string;
     /** Free text, stored on the lifecycle event. */
     Reason?: string;
+    /**
+     * When coverage ends, chosen by the person cancelling: `Immediate` ends coverage and access on
+     * the request day, `EndOfTerm` on the term's last day. Either way the type's grace does not
+     * apply. Absent, the type's `CancellationMode` and grace decide. See
+     * `SubscriptionBehavior.RulesForTiming`.
+     */
+    Timing?: CancellationTiming;
     /**
      * Compute and return the decision WITHOUT writing anything — for a confirmation screen that
      * shows "you will be refunded $X, coverage ends Y" before the user commits.
@@ -149,8 +162,6 @@ interface OrderLineRow {
     OrderHeaderID: string;
     ProductID: string;
     Quantity: number;
-    UnitPrice: number;
-    DiscountPct: number | null;
 }
 
 /** The decision as it crosses the transport: dates as ISO strings, the form JSON gives a `Date`. */
@@ -192,6 +203,15 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return { Success: false, Message: String((e as Error).message) };
         }
 
+        // A timing outside the two the contract names would fall through to the type's rule, and
+        // the caller would believe they had chosen something they had not.
+        if (input.Timing != null && !CANCELLATION_TIMINGS.includes(input.Timing)) {
+            return {
+                Success: false,
+                Message: `Timing must be one of ${CANCELLATION_TIMINGS.join(', ')}; got '${input.Timing}'.`,
+            };
+        }
+
         const requestDate = await CalendarDayOrToday(requestedDay, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
@@ -203,8 +223,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return { Success: false, Message: `Subscription is already canceled.` };
         }
 
-        const rules = await this.loadRules(provider, user, subscription.SubscriptionTypeID);
-        if (!rules) {
+        const typeRules = await this.loadRules(provider, user, subscription.SubscriptionTypeID);
+        if (!typeRules) {
             return {
                 Success: false,
                 Message: `Subscription type '${subscription.SubscriptionTypeID}' was not found.`,
@@ -220,7 +240,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             };
         }
 
-        const behavior = this.behaviorFor(rules);
+        const behavior = this.behaviorFor(typeRules);
+        const rules = behavior.RulesForTiming(typeRules, input.Timing);
         const decision = behavior.DecideCancellation({
             Rules: rules,
             RequestDate: requestDate,
@@ -230,17 +251,32 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // A later term would otherwise stay booked and billed after the subscription it belongs to
         // has ended (#406). One that starts on or before the effective date overlaps the cancelled
         // term's coverage and is not decided here.
-        const later: TermCancellation[] = openTerms
+        const laterRows = openTerms
             .filter((t) => t.ID !== term.ID && new Date(t.StartDate).getTime() > decision.EffectiveDate.getTime())
-            .sort((a, b) => a.TermNumber - b.TermNumber)
-            .map((t) => ({
-                Term: t,
-                Decision: behavior.DecideLaterTermCancellation({
-                    Rules: rules,
-                    Term: this.cancellableTerm(t),
-                    CoverageEndsDate: decision.EffectiveDate,
-                }),
-            }));
+            .sort((a, b) => a.TermNumber - b.TermNumber);
+        const later: TermCancellation[] = [];
+        for (const t of laterRows) {
+            const billing = await this.laterTermBilling(provider, user, t);
+            const laterDecision = behavior.DecideLaterTermCancellation({
+                Rules: rules,
+                Term: this.cancellableTerm(t),
+                CoverageEndsDate: decision.EffectiveDate,
+                Billing: billing,
+            });
+            // Keeping what was invoiced means withdrawing only the instalments still to come, which
+            // nothing books yet: the only path that withdraws them is a reversal of the whole term,
+            // and that credits the invoiced part back too (#560).
+            if (billing === 'PartInvoiced' && laterDecision.ReversalFraction === 0 && Number(t.Amount) > 0) {
+                return {
+                    Success: false,
+                    Message:
+                        `Term ${t.TermNumber} has been partly invoiced and this subscription type does not refund, so ` +
+                        `its invoiced amount is kept and its remaining instalments would have to be withdrawn on their own. ` +
+                        `That is not supported yet. Reverse the order line that sold the term instead.`,
+                };
+            }
+            later.push({ Term: t, Decision: laterDecision });
+        }
         const laterTerms: CanceledLaterTerm[] = later.map((l) => ({
             SubscriptionTermID: l.Term.ID,
             TermNumber: l.Term.TermNumber,
@@ -270,7 +306,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             }
             await this.stampSubscription(provider, user, subscription.ID, decision);
             await this.syncGrantsOnCancel(provider, user, subscription.ID, decision, input.Reason);
-            await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input.Reason, reversal?.ID);
+            await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input, reversal?.ID);
 
             await dbProvider.CommitTransaction();
             return {
@@ -379,6 +415,22 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             .filter((t) => new Date(t.StartDate).getTime() > at)
             .sort((a, b) => new Date(a.StartDate).getTime() - new Date(b.StartDate).getTime());
         return upcoming[0] ?? terms[0];
+    }
+
+    /**
+     * How much of a later term has been invoiced, read from the order that sold it (#560). An order
+     * with no payment schedule was invoiced in full at confirm. On a scheduled one, an instalment
+     * was invoiced when it carries a document number, which is frozen at invoicing.
+     */
+    private async laterTermBilling(provider: IMetadataProvider, user: UserInfo, term: TermRow): Promise<LaterTermBilling> {
+        const context = await LoadReversalContext(term.OrderLineID, provider, user);
+        // A missing line is read as nothing kept: the reversal then refuses it by name.
+        if (!context) return 'NotInvoiced';
+        if (!context.OriginScheduled) return 'Invoiced';
+        const invoiced = context.ScheduleRows.some((r) => r.DocumentNumber);
+        const toCome = InstalmentsToCancel(context.ScheduleRows).length > 0;
+        if (!invoiced) return 'NotInvoiced';
+        return toCome ? 'PartInvoiced' : 'Invoiced';
     }
 
     private cancellableTerm(term: TermRow): CancellableTerm {
@@ -500,8 +552,10 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             );
         }
         line.Quantity = -reversalQuantity;
-        line.UnitPrice = original.UnitPrice;
-        line.DiscountPct = original.DiscountPct ?? 0;
+        // NO PRICE SET HERE. The order save settles a reversal line's money from its origin, as it
+        // does for any return: unit price, discount rate, the allocated discount and the exact
+        // amount a Flat price booked (#651). Copying the unit price here left the exact amount
+        // behind, and the cancellation credited quantity × unit price.
         line.ReversesOrderLineID = original.ID;
         line.ServicePeriodStart = decision.EffectiveDate;
         line.ServicePeriodEnd = new Date(term.EndDate);
@@ -518,7 +572,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             {
                 EntityName: ORDER_LINE_ENTITY,
                 ExtraFilter: `ID='${orderLineID}'`,
-                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity', 'UnitPrice', 'DiscountPct'],
+                Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -577,7 +631,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         decision: CancellationDecision,
         later: TermCancellation[],
         totalRefund: number,
-        reason?: string,
+        input: CancelSubscriptionInput,
         reversalOrderID?: string,
     ): Promise<void> {
         const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
@@ -600,7 +654,10 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 ReversalFraction: l.Decision.ReversalFraction,
             })),
             TotalRefundAmount: totalRefund,
-            Reason: reason ?? null,
+            // Which timing the person cancelling chose, so a reader can tell an override from the
+            // type's own rule. Null when the type decided.
+            Timing: input.Timing ?? null,
+            Reason: input.Reason ?? null,
         });
         if (!(await event.Save())) {
             throw new Error(

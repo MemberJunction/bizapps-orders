@@ -23,7 +23,8 @@
  * WHAT NEEDS A PERSON. `Unmatched` (an invoice we did not issue — pre-cutover AR, or created directly
  * in Bill.com) and `ReversalNeeded` (captured, then voided on the rail) are reported as `ATTENTION`
  * with Success false so a job that notifies on failure tells somebody; the rows stay in
- * `ExternalPayment` until dealt with.
+ * `ExternalPayment` until dealt with. A payment the rail itself records Unmatched (HubSpot, which
+ * cannot name a payment's deal yet) is counted but does not fail the run on its own.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
@@ -33,6 +34,7 @@ import {
     AllocateInvoicePayments,
     DecideExternalPayment,
     ExternalPaymentIdempotencyKey,
+    PaymentStatusVocabularyFor,
     TenderFor,
     OrdersCapturePaymentOperation,
     OrdersPollExternalPaymentsOperation as OrdersPollExternalPaymentsOperationBase,
@@ -53,7 +55,7 @@ import {
     PAYMENT_LINE_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
 } from './entity-names.js';
-import { ListInvoiceRailProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
+import { ListPaymentSourceProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { LoadExternalInvoicesByRef, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
@@ -130,14 +132,14 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const jobs = preview ? null : await LoadPollJobs(user, provider as unknown as IRunViewProvider);
             const providers = input?.PaymentProviderID
                 ? [{ ID: RequireUUID(input.PaymentProviderID, 'PaymentProviderID'), CompanyID: '' }]
-                : await ListInvoiceRailProviderIDs(provider, user);
+                : await ListPaymentSourceProviderIDs(provider, user);
             if (!providers.length) {
-                return { ...out, ResultCode: 'NO_PROVIDERS', Message: 'No active external invoice rail is configured for any company; nothing to poll.' };
+                return { ...out, ResultCode: 'NO_PROVIDERS', Message: 'No active external payment source (invoice rail or HubSpot portal) is configured for any company; nothing to poll.' };
             }
             const faults: string[] = [];
             const skipped: string[] = [];
             const previewed: string[] = [];
-            const passes: Array<{ Preview: boolean; Outcomes: ExternalPaymentOutcome[] }> = [];
+            const passes: Array<{ Preview: boolean; Outcomes: ExternalPaymentOutcome[]; RailUnmatched: number }> = [];
             for (const p of providers) {
                 let providerPreview = preview;
                 if (jobs) {
@@ -152,7 +154,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                     }
                 }
                 const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, provider, user);
-                passes.push({ Preview: providerPreview, Outcomes: result.Outcomes });
+                passes.push({ Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0 });
                 out.Outcomes.push(...result.Outcomes);
                 out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
                 if (result.Fault) faults.push(result.Fault);
@@ -187,17 +189,23 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             if (faults.length) {
                 return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
-            if (!preview && out.Unmatched + out.Refused + out.Reapplied + out.ReversalNeeded > 0) {
+            // A payment the rail itself records Unmatched (every HubSpot payment, until its deal can be read) is the
+            // expected state, not something this run found wrong: it is counted and listed, but on its own it does
+            // not fail the run, or every hourly run would fail for as long as such payments exist.
+            const railUnmatched = passes.filter((x) => x.Preview === preview).reduce((n, x) => n + x.RailUnmatched, 0);
+            const awaitingNote = railUnmatched > 0 ? ` ${railUnmatched} recorded Unmatched by a rail that cannot match payments to orders yet (see External Payments).` : '';
+            const needsPerson = out.Unmatched - railUnmatched + out.Refused + out.Reapplied + out.ReversalNeeded;
+            if (!preview && needsPerson > 0) {
                 return {
                     ...out,
                     Success: false,
                     ResultCode: 'ATTENTION',
-                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).`,
+                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched - railUnmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).${awaitingNote}`,
                 };
             }
             out.Message = preview
                 ? `${previewNote}Would capture ${out.Outcomes.filter((o) => o.Disposition === 'Captured').length} payment(s); ${out.Held} held, ${out.Unmatched} unmatched.`
-                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.`;
+                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.${awaitingNote}`;
             return out;
         } catch (err) {
             LogError(`Orders.PollExternalPayments failed: ${err}`);
@@ -210,8 +218,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         opts: { preview: boolean; maxCount: number; since: string | null },
         provider: IMetadataProvider,
         user: UserInfo,
-    ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null }> {
+    ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null; RailUnmatched?: number }> {
         const outcomes: ExternalPaymentOutcome[] = [];
+        let railUnmatched = 0;
         const rail = await ResolveInvoiceRail(paymentProviderID, provider, user);
         // A configuration fault (no Company Integration, live/sandbox mismatch, connector not loaded)
         // is the provider's problem, not any payment's: report it as a fault, write nothing.
@@ -262,6 +271,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 const prior = seen.get(p.ExternalPaymentRef) ?? null;
                 const outcome = await this.handlePayment(rail, p, prior, opts.preview, bookingCurrency, provider, user);
                 outcomes.push(outcome);
+                if (outcome.Disposition === 'Unmatched' && p.UnmatchedReason) railUnmatched++;
             } catch (err) {
                 // One bad payment must not stop the pass — but it must stop the watermark.
                 fault = `${p.ExternalPaymentRef}: ${err instanceof Error ? err.message : String(err)}`;
@@ -289,7 +299,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                     : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${fresh.length - freshBatch.length} more next pass.` : null },
             );
         }
-        return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null };
+        return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null, RailUnmatched: railUnmatched };
     }
 
     private async handlePayment(
@@ -307,20 +317,32 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         // skipped otherwise. `Reapplied` is included as well as `Captured`: the comparison is what
         // lets a raised exception CLEAR itself once a person has corrected the allocation, and
         // without it the row would report a difference that no longer exists for ever.
+        const vocabulary = PaymentStatusVocabularyFor(rail.Config.TypeCode);
+        // A rail that reports no invoice applications (HubSpot) cannot have re-applied anything, and
+        // comparing its empty list against our payment lines would flag every captured payment.
         const applicationsChanged =
-            (prior?.Disposition === 'Captured' || prior?.Disposition === 'Reapplied') && prior.PaymentHeaderID
+            vocabulary.ReportsInvoiceApplications && (prior?.Disposition === 'Captured' || prior?.Disposition === 'Reapplied') && prior.PaymentHeaderID
                 ? await applicationsDiffer(String(prior.PaymentHeaderID), p, providerID, provider, user)
                 : undefined;
+
+        const record = async (disposition: ExternalPaymentDisposition, reason: string, paymentHeaderID: string | null = prior?.PaymentHeaderID ?? null) => {
+            if (!preview) await upsertExternalPayment(provider, user, providerID, p, prior, disposition, reason, paymentHeaderID);
+        };
+
+        // Money this rail only records, collected and booked through another path. Never captured
+        // here; a payment already captured keeps its row and its header.
+        if (p.SetAsideReason && !prior?.PaymentHeaderID) {
+            await record('Ignored', p.SetAsideReason, null);
+            return { ...base, Disposition: 'Ignored', Reason: p.SetAsideReason };
+        }
+
         const decision = DecideExternalPayment({
             ExternalPaymentRef: p.ExternalPaymentRef,
             Status: p.Status,
             PriorDisposition: prior?.Disposition ?? null,
             ApplicationsChanged: applicationsChanged,
+            Vocabulary: vocabulary,
         });
-
-        const record = async (disposition: ExternalPaymentDisposition, reason: string, paymentHeaderID: string | null = prior?.PaymentHeaderID ?? null) => {
-            if (!preview) await upsertExternalPayment(provider, user, providerID, p, prior, disposition, reason, paymentHeaderID);
-        };
 
         if (decision.Action === 'Ignore') {
             // A person's reason for setting a row aside outlives our automatic one.
@@ -349,6 +371,12 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         if (decision.Action === 'ReversalNeeded') {
             await record('ReversalNeeded', decision.Reason);
             return { ...base, Disposition: 'ReversalNeeded', Reason: decision.Reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
+        }
+
+        // The rail already knows nothing here matches it (HubSpot: no deal link to read yet).
+        if (p.UnmatchedReason) {
+            await record('Unmatched', p.UnmatchedReason);
+            return { ...base, Disposition: 'Unmatched', Reason: p.UnmatchedReason };
         }
 
         // Capture: every invoice on the payment must be one we issued.
@@ -389,7 +417,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             return { ...base, Disposition: 'Refused', Reason: reason };
         }
 
-        const notes = [`Bill.com receivable payment ${p.ExternalPaymentRef}`];
+        const notes = [vocabulary.ReportsInvoiceApplications ? `${vocabulary.RailName} receivable payment ${p.ExternalPaymentRef}` : `${vocabulary.RailName} payment ${p.ExternalPaymentRef}`];
         if (p.UnappliedAmount > 0) notes.push(`${money(p.UnappliedAmount).toFixed(2)} left unapplied on the rail (customer credit there, not here).`);
 
         const capture = await new OrdersCapturePaymentOperation().Execute(
@@ -398,7 +426,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 ReceivingCompanyID: rail.Config.CompanyID,
                 BillToOrganizationID: allocation.Payer.BillToOrganizationID,
                 BillToPersonID: allocation.Payer.BillToPersonID,
-                TenderCode: TenderFor(p),
+                TenderCode: p.TenderCode ?? TenderFor(p),
                 PaymentDate: p.PaymentDate?.slice(0, 10) ?? Today(),
                 Reference: p.ExternalPaymentRef,
                 Notes: notes.join(' '),

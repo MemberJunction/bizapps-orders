@@ -19,7 +19,8 @@ export class mjBizAppsOrdersChargeTypeFormComponent extends BaseFormComponent {
             { sectionKey: 'chargeConfiguration', sectionName: 'Charge Configuration', isExpanded: true },
             { sectionKey: 'computationLogic', sectionName: 'Computation Logic', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderCharges', sectionName: 'Order Charges', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderCharges', sectionName: 'Order Charges', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersInstalmentLineBillings', sectionName: 'Instalment Line Billings', isExpanded: false }
         ]);
     }
 }

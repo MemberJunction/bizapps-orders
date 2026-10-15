@@ -1,5 +1,134 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.34.1
+
+### Patch Changes
+
+- Updated dependencies [5dcc41e]
+  - @mj-biz-apps/orders-server@5.34.1
+  - @mj-biz-apps/orders-core-entities-server@5.34.1
+  - @mj-biz-apps/orders-entities@5.34.1
+
+## 5.34.0
+
+### Patch Changes
+
+- Updated dependencies [59236a8]
+  - @mj-biz-apps/orders-entities@5.34.0
+  - @mj-biz-apps/orders-core-entities-server@5.34.0
+  - @mj-biz-apps/orders-server@5.34.0
+
+## 5.33.0
+
+### Minor Changes
+
+- e384e15: An amount change that needs a credit memo is no longer refused (#662). The approved change is the credit memo: it carries the memo's amount and number (`<order number>-CM<n>`), posts its entry dated the effective day (deferred revenue and tax debited, the receivable credited), credits the invoice named in `AppliesToInvoiceID` up to its open amount, and lowers the line's `BilledToDate` by the memo's net. What no invoice takes stays on the order's balance as the customer's credit. `RefundRequested` against a paid invoice records the credit on that invoice; the acknowledgment task asks finance to pay it with `Orders.RefundPayment`. Payments landing on a credited invoice settle only what it still owes. Integration bundle `amount-change` gains AC8 and AC9, and AC7 now applies a credit on an invoice already sent.
+- 9a78b8e: `Orders.AmendArrangement` previews a lower amount on a booked term (#506). With `NewAmount` and `Preview`, it returns the reduction and its tax, the catch-up on revenue already earned, the staged recognition entries it would offset and the new schedule, the uninvoiced instalments it would reduce or cancel, and the credit memo with where it is applied (`AppliesToInvoiceID`, `RefundRequested`). It writes nothing. Recording a change of amount is still refused until its application exists. New integration bundle `amount-change` (AC1 to AC4).
+- 67e1dbd: `Orders.AmendArrangement` records a lower amount on a booked term (#506). Without `Preview`, it records a Price concession carrying `NewAmount`, routed through the ConcessionLimit rule like any other. When approved, in the same transaction: the catch-up and the re-cut recognition entries are posted, the term's amount and the instalments not yet invoiced are lowered, an `AmountChanged` subscription event is logged, and accounting's acknowledgment task is raised. Later instalment invoices bill the lowered line, and the schedule check subtracts approved reductions. A change that needs a credit memo (a credit on an invoice already sent, an order billed as a whole, or a refund) is still refused. `ReasonCategory` accepts `Dispute`. Integration bundle `amount-change` gains AC5 to AC7.
+- a184085: A return against an order billed by instalment records the credit memo it booked on each returning line (`CreditMemoAmount`, zero when it credited nothing), so the return order's `Balance` is what the customer was credited rather than the full value of its lines (#661). RV5 and RV11 check both balances.
+- b0deb81: A partial return against an order billed by instalment lowers the origin's instalments not yet invoiced by the returned units' share of what they still bill, pro rata, and records it on the returning line (`ScheduleReduction`) (#661). A whole-order return records it too and cancels the instalments as before. The schedule check and each instalment invoice read the origin's lines less these reductions, alongside approved amount changes, so the lowered instalments still invoice. A reduction that needs a credit memo (more than the uninvoiced instalments bill, or below what is already paid on one) refuses the return. `contract-reversal` gains RV11; RV7's figures follow the lowered instalments.
+
+### Patch Changes
+
+- 9e4c8df: An amount change's credit memo has a customer document (#684). `Orders.GenerateInvoice` and `Orders.SendDocument` take `OrderConcessionID` and render the credit memo that approved change issued: its number, the line's net and tax credited, the invoice or order it was applied to, and the credit left to the customer (refunded when they asked for it). It is built from what the approval logged on the `AmountChanged` subscription event, not recomputed. `Orders.SendDocument` sends it by email also when the order's company invoices through Bill.com, which carries no credit memos, and another concession still pending on the order does not hold it. Re-rendered invoices show the credit: an instalment invoice lists the memos that credited it and asks for its balance, and a whole-order document subtracts each approved amount change's memo and schedule reduction, as the order's balance does. The acknowledgment task for an amount change with a memo tells accounting to send it. Integration checks AC7–AC9 render the memo and the credited invoices.
+- f7109a3: New `billcom-rail` integration bundle (BR1–BR20) covers the Bill.com invoice rail against a real database, with Bill.com replaced by an in-memory stub behind the rail's gateway seam. It runs the send sweep, re-send, cancel, payment poll (preview, capture, watermark, part, multi-order, scheduled and unmatched payments) and the webhook handler. It checks that the send and poll jobs ship Disabled and in Preview, that a poll asked to record cash records nothing while its job is Disabled and only previews while it is in Preview, and that each invoice a payment touched is refreshed with its own due amount.
+- 7cc1751: Review fixes. An order created automatically from an unmatched charge books the units the checkout bought, at the charge divided by them; a charge that does not divide into a unit price at the line's four decimals, or a checkout line with a quantity that is not a whole number, is left to finance. Applying an amount change on an order billed as a whole plans against the balance before its own credit memo, so the refund or credit it reports matches the preview (integration check AC11). A return against an instalment-billed order renders a document that asks for the credit memo only, with the part taken off the origin's uninvoiced instalments shown on its own row. A reconciliation run that creates an order for a charge clears the exception an earlier run raised for it. HubSpot payments, which are recorded Unmatched until their deal can be read, no longer fail the poll run on their own. The generated spawn-renewals output type carries the renewal promotion codes.
+- Updated dependencies [2cc0d55]
+- Updated dependencies [e384e15]
+- Updated dependencies [9a78b8e]
+- Updated dependencies [67e1dbd]
+- Updated dependencies [3388b7e]
+- Updated dependencies [9e4c8df]
+- Updated dependencies [008f08f]
+- Updated dependencies [adad687]
+- Updated dependencies [a58c964]
+- Updated dependencies [2972434]
+- Updated dependencies [3ec829a]
+- Updated dependencies [3bbd5d6]
+- Updated dependencies
+- Updated dependencies [7d0ccf6]
+- Updated dependencies [3f6fd86]
+- Updated dependencies [3c16360]
+- Updated dependencies [1a69590]
+- Updated dependencies [d3ba6b5]
+- Updated dependencies [5606499]
+- Updated dependencies [cd5b92e]
+- Updated dependencies [df7ff8d]
+- Updated dependencies [49a6d65]
+- Updated dependencies [f3ff9c4]
+- Updated dependencies [77050bc]
+- Updated dependencies [968549b]
+- Updated dependencies [bc1778f]
+- Updated dependencies [fde8cc8]
+- Updated dependencies [17e183d]
+- Updated dependencies [0cdc7b6]
+- Updated dependencies [3f2f22a]
+- Updated dependencies [c0d0b84]
+- Updated dependencies [60f4ef3]
+- Updated dependencies [8525cc2]
+- Updated dependencies [4f1f89a]
+- Updated dependencies [4ba919b]
+- Updated dependencies [465980d]
+- Updated dependencies [49c52df]
+- Updated dependencies [dfcc809]
+- Updated dependencies [313f19f]
+- Updated dependencies [32aa1b2]
+- Updated dependencies [55dd0ca]
+- Updated dependencies [e51a86a]
+- Updated dependencies [7cc1751]
+- Updated dependencies [21f2d6e]
+- Updated dependencies [a33ca5a]
+- Updated dependencies [6f50258]
+- Updated dependencies [37f31ea]
+- Updated dependencies [3388b7e]
+- Updated dependencies [3388b7e]
+- Updated dependencies [4c88fcd]
+- Updated dependencies [e43db9f]
+- Updated dependencies [9c40399]
+- Updated dependencies [c418914]
+- Updated dependencies [a20dbf0]
+- Updated dependencies [500e533]
+- Updated dependencies [a184085]
+- Updated dependencies [78ff171]
+- Updated dependencies [bc4607f]
+- Updated dependencies [b0deb81]
+- Updated dependencies [59a2c13]
+- Updated dependencies [4c28b84]
+- Updated dependencies [d77b2bd]
+- Updated dependencies [11afb0b]
+- Updated dependencies [f48b68f]
+- Updated dependencies [44a267d]
+- Updated dependencies [72f235c]
+- Updated dependencies [c03ff3d]
+- Updated dependencies [0ab95c6]
+- Updated dependencies [3869621]
+- Updated dependencies [b1b4844]
+- Updated dependencies [01f209b]
+- Updated dependencies [3f8c3a0]
+- Updated dependencies [55343b7]
+- Updated dependencies [920b008]
+- Updated dependencies [ca98a5d]
+  - @mj-biz-apps/orders-core-entities-server@5.33.0
+  - @mj-biz-apps/orders-entities@5.33.0
+  - @mj-biz-apps/orders-server@5.33.0
+
+## 5.32.1
+
+### Patch Changes
+
+- Updated dependencies [d120083]
+  - @mj-biz-apps/orders-core-entities-server@5.32.1
+  - @mj-biz-apps/orders-server@5.32.1
+  - @mj-biz-apps/orders-entities@5.32.1
+
+## 5.32.0
+
+### Patch Changes
+
+- @mj-biz-apps/orders-core-entities-server@5.32.0
+- @mj-biz-apps/orders-entities@5.32.0
+- @mj-biz-apps/orders-server@5.32.0
+
 ## 5.31.0
 
 ### Patch Changes

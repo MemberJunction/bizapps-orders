@@ -308,11 +308,10 @@ describe('stamping the journal entry the booking just created', () => {
      * The changeset lists "the journal entry id once the order books" among Orders' own writes, and
      * until this was added the code did not say so anywhere.
      *
-     * On the common path it did not need to: this runs only inside `if (booking)`, so the line found
-     * in `this.Lines` already carries the bypass the graph loop set. Two other objects reach the same
-     * `Save`, and no loop has ever touched either — a line loaded fresh when it is not in `this.Lines`,
-     * and the one exercised here: `resolveOrderLineForStamp` walks UP the IS-A chain, so an Event or
-     * Subscription line in the collection is not what gets stamped, its parent Order Line is.
+     * The lines it stamps are the ones booking read, which no graph loop touched, and two more objects
+     * reach the same `Save` — a line loaded fresh when it is not among them, and the one exercised
+     * here: `resolveOrderLineForStamp` walks UP the IS-A chain, so an Event or Subscription line is not
+     * what gets stamped, its parent Order Line is.
      *
      * Nothing refuses it today, because Sales confirms the order BEFORE writing the Won status, so the
      * freeze is not yet in place. That is an ordering in another repository, and this write has no
@@ -336,21 +335,21 @@ describe('stamping the journal entry the booking just created', () => {
         // A generated accessor routes through `Set()`, which `Object.create` leaves without Fields.
         Object.defineProperty(parent, 'JournalEntryID', { value: null, writable: true });
 
-        // The Event Order Line actually sitting in `this.Lines`, whose ID the draft names.
+        // The Event Order Line booking read, whose ID the draft names.
         const child = Object.create(OrderLineEntityServer.prototype) as object;
         Object.defineProperty(child, 'ID', { value: CHILD, writable: true });
         Object.defineProperty(child, '_parentEntity', { value: parent, writable: true });
 
         const header = Object.create(OrderEntityServer.prototype) as {
-            stampJournalEntryIDs(drafts: unknown[], result: unknown, options?: unknown): Promise<void>;
+            stampJournalEntryIDs(lines: unknown[], drafts: unknown[], result: unknown, options?: unknown): Promise<void>;
         };
-        Object.defineProperty(header, 'Lines', { value: { Items: [child] }, writable: true });
-        // Never reached: the child is found in `this.Lines`, so nothing is loaded.
+        // Never reached: the child is among the lines booking read, so nothing is loaded.
         Object.defineProperty(header, 'ProviderToUse', { value: {}, writable: true });
         Object.defineProperty(header, 'ContextCurrentUser', { value: { ID: 'user-1' }, writable: true });
 
         await expect(
             header.stampJournalEntryIDs(
+                [child],
                 [{ IsBooking: true, OrderLineID: CHILD }],
                 { Results: [{ JournalEntryID: JE }] },
             ),

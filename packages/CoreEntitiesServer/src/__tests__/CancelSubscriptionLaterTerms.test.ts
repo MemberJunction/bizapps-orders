@@ -15,8 +15,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     /** Rows `RunView` answers with, keyed by a fragment of the entity name. */
     rows: new Map<string, Record<string, unknown>[]>(),
-    /** Order line IDs whose origin is billed by instalment. */
-    instalmentLines: new Set<string>(),
+    /** Instalments of the order behind each line billed by instalment; a line absent here has no schedule. */
+    schedules: new Map<string, { Status: string; DocumentNumber: string | null }[]>(),
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -39,9 +39,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 vi.mock('../ReversalResolver.js', () => ({
     LoadReversalContext: vi.fn().mockImplementation((lineID: string) =>
         Promise.resolve(
-            mocks.instalmentLines.has(lineID)
-                ? { OriginScheduled: true, Origin: { OrderNumber: 'ORD-0002' } }
-                : { OriginScheduled: false, Origin: {} },
+            mocks.schedules.has(lineID)
+                ? { OriginScheduled: true, Origin: { OrderNumber: 'ORD-0002' }, ScheduleRows: mocks.schedules.get(lineID) }
+                : { OriginScheduled: false, Origin: {}, ScheduleRows: [] },
         ),
     ),
 }));
@@ -148,7 +148,7 @@ const PRORATE_NOW = { CancellationMode: 'Immediate', CancellationRefundMode: 'Pr
 describe('cancelling a subscription with a later term (#406)', () => {
     beforeEach(() => {
         mocks.rows.clear();
-        mocks.instalmentLines.clear();
+        mocks.schedules.clear();
     });
 
     it('cancels and reverses the later term in full, on the same reversal order', async () => {
@@ -181,19 +181,19 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect(rec.tx).toEqual(['begin', 'commit']);
     });
 
-    it('reverses the later term even when the type refunds nothing for the current one', async () => {
+    it('keeps an invoiced later term when the type refunds nothing: canceled, nothing reversed (#560)', async () => {
+        // An order with no schedule was invoiced in full at confirm.
         seed({ CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund' });
         const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
 
         expect(out.Success, out.Message).toBe(true);
-        // The current term rides out and reverses nothing; the renewal never starts.
+        // The current term rides out and reverses nothing; the renewal never starts and keeps its money.
         expect(rec.terms.get(T1)?.Status).toBe('Completed');
         expect(rec.terms.get(T2)?.Status).toBe('Canceled');
-        expect(rec.orders).toHaveLength(1);
-        expect(rec.orders[0].Lines).toHaveLength(1);
-        expect(rec.orders[0].Lines[0].ReversesOrderLineID).toBe(L2);
-        expect(rec.orders[0].Lines[0].LineNumber).toBe(1);
-        expect(out.TotalRefundAmount).toBe(1300);
+        expect(rec.orders).toEqual([]);
+        expect(out.ReversalOrderID).toBeUndefined();
+        expect(out.TotalRefundAmount).toBe(0);
+        expect(out.Message).toMatch(/does not refund, so what was invoiced for it is kept/);
     });
 
     it('an early cancellation acts on the next term to start, not the latest, and leaves neither booked', async () => {
@@ -224,11 +224,23 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect(rec.terms.size).toBe(0);
     });
 
-    it('a later term on an instalment-billed order is reversed in full, as an order-line return is', async () => {
+    it('a NoRefund renewal invoiced ahead keeps its money and reverses nothing (#560)', async () => {
         // Every automatic renewal carries a one-row payment schedule (#305), so this is the ordinary
         // renewal: booked and invoiced ahead, cancelled before it starts.
         seed({ CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund' });
-        mocks.instalmentLines.add(L2);
+        mocks.schedules.set(L2, [{ Status: 'Invoiced', DocumentNumber: 'INV-1' }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-12-10' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(rec.orders).toEqual([]);
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(out.TotalRefundAmount).toBe(0);
+    });
+
+    it('a NoRefund renewal not invoiced yet is reversed in full, as an order-line return is', async () => {
+        // Nothing was invoiced, so there is nothing to keep; the reversal withdraws the instalment.
+        seed({ CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund' });
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
         const { out, rec } = await cancel({ RequestDate: '2026-12-10' });
 
         expect(out.Success, out.Message).toBe(true);
@@ -243,9 +255,32 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect(out.TotalRefundAmount).toBe(1300);
     });
 
+    it('refuses a partly invoiced NoRefund later term before writing anything (#560)', async () => {
+        seed({ CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund' });
+        mocks.schedules.set(L2, [
+            { Status: 'Invoiced', DocumentNumber: 'INV-1' },
+            { Status: 'Scheduled', DocumentNumber: null },
+        ]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Preview: true });
+
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/Term 2 has been partly invoiced/);
+        expect(rec.tx).toEqual([]);
+        expect(rec.orders).toEqual([]);
+    });
+
+    it('a later term the type refunds is reversed in full even when invoiced', async () => {
+        seed(PRORATE_NOW);
+        mocks.schedules.set(L2, [{ Status: 'Invoiced', DocumentNumber: 'INV-1' }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toContainEqual([L2, -1]);
+    });
+
     it('part of a term on an instalment-billed order still refuses the whole cancel and rolls back', async () => {
         seed(PRORATE_NOW);
-        mocks.instalmentLines.add(L1);
+        mocks.schedules.set(L1, [{ Status: 'Scheduled', DocumentNumber: null }]);
         const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
 
         expect(out.Success).toBe(false);
@@ -270,5 +305,79 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect(out.LaterTerms).toEqual([]);
         expect(rec.orders[0].Lines).toHaveLength(1);
         expect([...rec.terms.keys()]).toEqual([T1]);
+    });
+});
+
+describe('a timing chosen at cancellation', () => {
+    /** An annual rolling type: ride the term out, no refund, 30 days' grace. */
+    const ROLLING = { CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund', GracePeriodDays: 30 };
+
+    beforeEach(() => {
+        mocks.rows.clear();
+        mocks.schedules.clear();
+    });
+
+    it('Immediate ends the subscription on the request day, with no grace and nothing reversed', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-07-01');
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-07-01');
+        expect(rec.terms.get(T1)?.Status).toBe('Canceled');
+        expect(rec.orders).toEqual([]);
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBe('Immediate');
+    });
+
+    it('EndOfTerm ends access on the term\'s last day without the type\'s grace, and the event records the choice', async () => {
+        seed({ ...ROLLING, CancellationMode: 'Immediate' }, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-12-31');
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-12-31');
+        expect(rec.terms.get(T1)?.Status).toBe('Completed');
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBe('EndOfTerm');
+    });
+
+    it('Immediate with a renewal booked behind it cancels both and reverses the renewal in full', async () => {
+        seed(ROLLING);
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-07-01');
+        expect(rec.terms.get(T1)?.Status).toBe('Canceled');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toEqual([[L2, -1]]);
+    });
+
+    it('EndOfTerm with a renewal booked behind it completes the term and cancels the renewal', async () => {
+        seed(ROLLING);
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-12-31');
+        expect(rec.terms.get(T1)?.Status).toBe('Completed');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toEqual([[L2, -1]]);
+    });
+
+    it('without a timing, the type decides and the event says so', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-12-31');
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBeNull();
+    });
+
+    it('refuses a timing the contract does not name, before writing anything', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Tomorrow' });
+
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/Timing must be one of Immediate, EndOfTerm/);
+        expect(rec.tx).toEqual([]);
     });
 });
