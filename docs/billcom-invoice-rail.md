@@ -56,6 +56,9 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
   the rail of the row's company. A row is invoiceable once `Orders.IssueInstalmentInvoice` has frozen
   its document number (status `Invoiced`); its BILL invoice is one line for the instalment amount, or
   the order's lines when the schedule has a single row.
+- **Service period.** BILL's invoice has no field for it, so it rides in the line text in the format
+  our own invoice prints: `Product — description (Oct 1, 2026 – Oct 31, 2026)`. An instalment line
+  carries the span of the order's rows, earliest start to latest end.
 - **Re-issue.** A cancelled whole-order unit is sent again only on request (`AllowReissue`), as
   `ORD-1234-R1`, `-R2` and so on, since BILL would accept the archived number and the customer would
   hold two different `ORD-1234`s. An instalment is never re-issued; a new schedule row replaces it.

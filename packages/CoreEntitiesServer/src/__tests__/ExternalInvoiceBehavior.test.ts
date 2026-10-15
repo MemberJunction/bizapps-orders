@@ -335,3 +335,43 @@ describe('ReissueDocumentNumber', () => {
         expect(ReissueDocumentNumber('ORD-1234-A', 1).length).toBe(13);
     });
 });
+
+/**
+ * Bill.com's invoice has no service-period field, so a customer reading it saw a product and a price
+ * with no dates. The period now rides in the line text, formatted as our own document prints it.
+ */
+describe('BuildExternalInvoicePayload — service period in the line text', () => {
+    const one = (r: InvoiceRow) => doc({ Rows: [r], ListSubtotal: r.Amount, NetTotal: r.Amount, ChargeTotal: 0, TaxTotal: 0, Gross: r.Amount, AmountDue: r.Amount });
+
+    it('appends a row\'s period after its name and description', () => {
+        const r = BuildExternalInvoicePayload(
+            one(row(1, 120, 1, { Description: 'Annual seat', ServicePeriodStart: '2026-10-01', ServicePeriodEnd: '2027-09-30' })),
+            whole({ Amount: 120 }),
+            '2026-09-22',
+        );
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'P1 — Annual seat (Oct 1, 2026 – Sep 30, 2027)', Quantity: 1, UnitPrice: 120 }]);
+    });
+
+    it('keeps the period when the quantity collapses to one unit', () => {
+        const r = BuildExternalInvoicePayload(
+            one(row(1, 10, 3, { ServicePeriodStart: '2026-10-01', ServicePeriodEnd: '2026-10-31' })),
+            whole({ Amount: 10 }),
+            '2026-09-22',
+        );
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'P1 (×3) (Oct 1, 2026 – Oct 31, 2026)', Quantity: 1, UnitPrice: 10 }]);
+    });
+
+    it('prints a dash for an open end, as the document does', () => {
+        const r = BuildExternalInvoicePayload(one(row(1, 50, 1, { ServicePeriodStart: '2026-10-01' })), whole({ Amount: 50 }), '2026-09-22');
+        expect(r.OK && r.Payload.Lines[0].Description).toBe('P1 (Oct 1, 2026 – —)');
+    });
+
+    it('an instalment line carries the span of the order\'s rows, children included', () => {
+        const rows = [
+            row(1, 100, 1, { ServicePeriodStart: '2026-11-01', ServicePeriodEnd: '2027-10-31' }),
+            row(2, 50, 1, { Children: [row(3, 0, 1, { IncludedInParent: true, ServicePeriodStart: '2026-10-15', ServicePeriodEnd: '2027-01-14' })] }),
+        ];
+        const r = BuildExternalInvoicePayload(doc({ Rows: rows }), whole({ InstallmentNumber: 1, InstallmentCount: 2, Amount: 75, DocumentNumber: 'ORD-1-1' }), '2026-09-22');
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'Instalment 1 of 2 — order ORD-1 (Oct 15, 2026 – Oct 31, 2027)', Quantity: 1, UnitPrice: 75 }]);
+    });
+});
