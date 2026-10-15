@@ -57,9 +57,15 @@ export class SubscriptionHeaderPanel extends BaseFormPanel<mjBizAppsOrdersSubscr
         return FormatCoverageWindow(this.Record.StartDate, this.Record.EndDate);
     }
 
-    /** A confirmed cancellation rewrote the status, end date and auto-renew; show them. */
+    /**
+     * A confirmed cancellation rewrote the status, end date and auto-renew, and the terms, grants and
+     * events beside them. `RefreshRecord()` reloads the record and tells every panel through
+     * `OnRecordRefreshed`, so the Overview cards update too; when it declines (edit mode) the record is
+     * re-read directly so this header at least shows the cancellation.
+     */
     public async OnCanceled(): Promise<void> {
-        await this.Record.Refresh();
+        const refreshed = await this.FormComponent.RefreshRecord();
+        if (!refreshed) await this.Record.Refresh();
         this.FormComponent.cdr.detectChanges();
     }
 
