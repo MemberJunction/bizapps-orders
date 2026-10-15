@@ -16,6 +16,13 @@ describe('escapeHtml / escapeAttr', () => {
 });
 
 describe('renderCheckoutHostPage', () => {
+    it('keeps the full-width field rule off checkboxes and radios', () => {
+        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
+        const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
+        expect(css).toContain('.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {');
+        expect(css).not.toMatch(/\.mj-co input\s*[,{]/);
+    });
+
     it('hosts the Angular Element when elementSrc is provided', () => {
         const html = renderCheckoutHostPage({
             slug: 'summit-2027',
