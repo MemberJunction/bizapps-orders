@@ -76,6 +76,7 @@ metadata descriptions predate the code.
 | `Orders.AdvanceOrderState` | `orders:write` | Sync | Back-office entry of something already done (a counter sale, a shipment made before anyone opened the system, a migration): marks a Confirmed order's fulfillable lines, then sets its `FulfillmentStatus` to Fulfilled. The caller decides whether it may move with lines still Pending. Refuses an order that is not Confirmed; books nothing. |
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Marks lines Fulfilled and sets the order's `FulfillmentStatus` once nothing is left to ship, in one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
+| `Orders.CheckOrderLinesEditable` | `orders:read` | Sync | Whether the order-line veto another app registered on the server (Sales, while the deal behind the order is closed) would refuse adding, changing or removing a line, with its refusal. Asks the veto the line save asks, so the order editor shows the lines read-only before anyone types a change the save refuses. A vetoer that fails counts as a refusal. |
 | `Orders.GetPriorReturns` | `orders:read` | Sync | How much of each line has been returned and how much may still come back, from the same cap confirm enforces. |
 | **Payments and credits** | | | |
 | `Orders.CapturePayment` | `orders:write` | Sync | Settles with the provider before the money is recorded, recognises a re-submitted capture as the same payment, turns over-payment into credit. |
