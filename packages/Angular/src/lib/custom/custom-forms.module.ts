@@ -17,7 +17,7 @@ import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
 import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
-import { SellingCompanyFieldComponent } from '@mj-biz-apps/common-ng';
+import { RelatedChipsComponent, SellingCompanyFieldComponent } from '@mj-biz-apps/common-ng';
 
 // Custom Form Components
 import { BizAppsProductSaveGuardFormComponent, LoadProductSaveGuardFormComponent } from './Product/product-save-guard-form.component';
@@ -60,6 +60,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         MJOPartyAddressPickerComponent,
         DeferredRevenueWaterfallModule,
         SellingCompanyFieldComponent,
+        RelatedChipsComponent,
     ],
     exports: [
         BizAppsProductSaveGuardFormComponent,
