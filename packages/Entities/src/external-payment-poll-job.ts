@@ -55,10 +55,18 @@ export interface PollJobRow {
  * the two have to answer the same way or the gate is worse than no gate.
  */
 export function PollPreviewParamIsTrue(configuration: string | null): boolean {
+    return JobPreviewParamIsTrue(configuration, POLL_EXTERNAL_PAYMENTS_PREVIEW_PARAM_ID);
+}
+
+/**
+ * `PollPreviewParamIsTrue` for any scheduled job's `Preview` param, named by its ActionParam ID. The
+ * send job (`external-invoice-send-job.ts`) reads its own Preview param the same way.
+ */
+export function JobPreviewParamIsTrue(configuration: string | null, previewParamID: string): boolean {
     const params = jobParams(configuration);
     // Unreadable configuration is not permission to record money.
     if (params === 'unreadable') return true;
-    const preview = findParam(params, POLL_EXTERNAL_PAYMENTS_PREVIEW_PARAM_ID);
+    const preview = findParam(params, previewParamID);
     if (!preview) return false;
     const raw = (preview as { Value?: unknown }).Value;
     if (raw == null || raw === '') return false;
@@ -77,6 +85,13 @@ export function PollJobProviderID(configuration: string | null): string | null {
     if (params === 'unreadable') return null;
     const raw = (findParam(params, POLL_EXTERNAL_PAYMENTS_PROVIDER_PARAM_ID) as { Value?: unknown } | undefined)?.Value;
     return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+}
+
+/** One param's static `Value` from a job's Configuration; 'unreadable' when the JSON does not parse. */
+export function JobParamValue(configuration: string | null, actionParamID: string): unknown {
+    const params = jobParams(configuration);
+    if (params === 'unreadable') return 'unreadable';
+    return (findParam(params, actionParamID) as { Value?: unknown } | undefined)?.Value;
 }
 
 /** The job's `Params` array: empty when it has none, 'unreadable' when the JSON does not parse. */

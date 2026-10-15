@@ -7,6 +7,11 @@ import {
     OrdersAdoptExternalInvoiceOperation,
     OrdersCancelExternalInvoiceOperation,
     OrdersIssueExternalInvoiceOperation,
+    ClassifySendJobsFor,
+    LoadSendJobs,
+    SendNowDetail,
+    SendQueuedNote,
+    type SendJobState,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
@@ -39,7 +44,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
  * `mjo-external-invoices-panel` — the rail's side of one order, on the order.
  *
  * WHY THIS EXISTS. Everything the rail does runs on a schedule: a confirmed order joins a queue and a
- * job sends it within the half hour. That is the right default and it is invisible, so when somebody
+ * job sends it on its next run, once that job is enabled and out of Preview. That is the right default and it is invisible, so when somebody
  * asks "did this customer get their invoice?" there was nowhere to look. This panel is that place, and
  * it carries the two acts a person is allowed to take.
  *
@@ -78,7 +83,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
                 @if (!Rows.length && !LoadError) {
                     <p class="mjo-xi__empty">
                         Nothing has been sent to {{ ProviderName }} for this order yet.
-                        @if (Sendable) { It is queued, and the scheduled send picks it up. }
+                        @if (Sendable) { {{ QueuedNote }} }
                     </p>
                 }
 
@@ -203,6 +208,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public ProviderName = 'the invoicing rail';
     /** True when the order bills in instalments; the whole-order Send does not apply to it. */
     public BilledOnSchedule = false;
+    /** Whether the scheduled send would pick this order up; null when it could not be read. */
+    public SendJob: SendJobState | null = null;
 
     public readonly money = (n: number): string => FormatMoney(n);
     /** `SentAt` is a `datetimeoffset`: shown as the business day it happened on. */
@@ -217,6 +224,10 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
 
     public get Sendable(): boolean {
         return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+    }
+
+    public get QueuedNote(): string {
+        return SendQueuedNote(this.SendJob);
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */
@@ -248,12 +259,13 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public async Send(): Promise<void> {
         if (this.Busy) return;
         const failed = this.Rows.find((r) => r.Status === 'Failed' || r.Status === 'Canceled');
+        const job = failed ? null : (this.SendJob = await this.loadSendJob());
         const proceed = await this.confirm.Confirm({
             title: `Send ${this.Record.OrderNumber} to ${this.ProviderName}?`,
             message: `The customer receives an invoice for ${FormatMoney(Number(this.Record.TotalGross ?? 0))}.`,
             detail: failed
                 ? 'This unit has been on the rail before. Check there first: re-issuing when an invoice already exists bills the customer twice.'
-                : 'The scheduled send would do this within the half hour anyway; this sends it now.',
+                : SendNowDetail(job),
             type: 'warning',
             confirmText: 'Send it',
             cancelText: 'Not yet',
@@ -400,6 +412,18 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
 
     /* ── Loading ────────────────────────────────────────────────────────── */
 
+    /**
+     * Whether the scheduled send would pick this order up, read when the dialog opens so it reflects
+     * the job as it is now. Null when it cannot be read: the dialog then promises nothing.
+     */
+    private async loadSendJob(): Promise<SendJobState | null> {
+        try {
+            return ClassifySendJobsFor(await LoadSendJobs(), this.Record.CompanyID);
+        } catch {
+            return null;
+        }
+    }
+
     private async load(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const rv = new RunView();
@@ -421,6 +445,7 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
             }
             this.LoadError = null;
             this.Rows = result.Results ?? [];
+            if (this.Sendable) this.SendJob = await this.loadSendJob();
             if (this.Selected) this.Selected = this.Rows.find((r) => r.ID === this.Selected!.ID) ?? null;
         } catch (err) {
             this.LoadError = err instanceof Error ? err.message : String(err);
