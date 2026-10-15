@@ -6,6 +6,7 @@
  * can book against the same companies, people, and SKUs Explorer uses.
  */
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import type { IntegrationCheckContext } from '@memberjunction/testing-integration/registry';
 import { mjBizAppsCommonPersonEntity } from '@mj-biz-apps/common-entities';
 import {
@@ -55,7 +56,7 @@ export function View(ctx: IntegrationCheckContext): RunView {
 }
 
 export function QuoteFilter(value: string): string {
-    return value.replace(/'/g, "''");
+    return EscapeSQLString(value);
 }
 
 export function IdList(ids: string[]): string {

@@ -70,7 +70,7 @@ import {
     DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, HoldingSubscriberFor, RequireUUIDs, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -1461,7 +1461,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private async overrideKindFromLiveRoles(user: UserInfo | null): Promise<PriceOverrideKind> {
         const roleIDs = (user?.UserRoles ?? []).map((r) => r.RoleID).filter(Boolean);
         if (!roleIDs.length) return 'none';
-        const quoted = roleIDs.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(',');
+        const quoted = RequireUUIDs(roleIDs, 'RoleID').map((id) => `'${id}'`).join(',');
         const rv = new RunView();
         const res = await rv.RunView<{ Authorization: string; Type: string }>({
             EntityName: 'MJ: Authorization Roles',

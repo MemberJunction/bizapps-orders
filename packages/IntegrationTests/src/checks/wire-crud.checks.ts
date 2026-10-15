@@ -9,6 +9,7 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration/registry';
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import { ORDER_HEADER_ENTITY, PERSON_ENTITY, PRODUCT_ENTITY, PRODUCT_TYPE_ENTITY } from '../entity-names.js';
 
 function View(ctx: IntegrationCheckContext): RunView {
@@ -72,7 +73,7 @@ const checks: NamedCheck[] = [
             const found = await View(ctx).RunView<{ ID: string }>(
                 {
                     EntityName: PERSON_ENTITY,
-                    ExtraFilter: `Email = '${email.replace(/'/g, "''")}'`,
+                    ExtraFilter: `Email = '${EscapeSQLString(email)}'`,
                     Fields: ['ID'],
                     ResultType: 'simple',
                 },
