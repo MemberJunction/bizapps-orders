@@ -132,3 +132,4 @@ export * from './checks/billcom-rail.checks.js';
 export function LoadOrdersIntegrationTests(): void {
     // intentionally empty
 }
+export * from './checks/service-period-lock.checks.js';
