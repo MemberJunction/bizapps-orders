@@ -15,6 +15,8 @@
  *                    attach to records this application did not create. A first-time buyer has no
  *                    person yet (completion creates it), so their customer is opened for the checkout
  *                    session instead, and becomes that person's once the card is filed.
+ *   NO PAYMENT       `StopAutoRenewWithoutRenewalCard`: a code brought the order to zero, so no card
+ *                    was entered and the subscription is set not to renew on its own.
  *   AFTER PAYMENT    `SaveCheckoutInstrumentForRenewals` reads back the card the buyer paid with, puts
  *                    it in their wallet (`CustomerPaymentMethod` over its own `PaymentDetail`, D38/D39)
  *                    and makes it each new subscription's renewal card.
@@ -217,10 +219,38 @@ export async function SaveCheckoutInstrumentForRenewals(
     }
 }
 
+/**
+ * Turns auto-renew off on an order's subscriptions that have no renewal card, for an order nothing was
+ * paid on — a paid product a promotion code brought to zero. No card was entered, so renewal has
+ * nothing to charge and would only fail; the buyer renews by hand instead.
+ *
+ * FAIL-SOFT, like saving a card: the order is confirmed before this runs, so a failure is logged and
+ * leaves the subscription as it was rather than undoing the sale.
+ */
+export async function StopAutoRenewWithoutRenewalCard(orderID: string, user: UserInfo | undefined): Promise<string[]> {
+    const stopped: string[] = [];
+    try {
+        for (const subscription of await subscriptionsNeedingRenewalCard(orderID, user)) {
+            subscription.AutoRenew = false;
+            if (await subscription.Save()) {
+                stopped.push(subscription.ID);
+            } else {
+                LogError(
+                    `[CheckoutSavedInstrument] Could not turn auto-renew off on subscription ${subscription.ID}: ` +
+                        `${subscription.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
+    } catch (err) {
+        LogError(`[CheckoutSavedInstrument] Could not turn auto-renew off for order ${orderID}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return stopped;
+}
+
 /** The order's auto-renewing subscriptions that do not yet have a renewal card. */
 async function subscriptionsNeedingRenewalCard(
     orderID: string,
-    user: UserInfo,
+    user: UserInfo | undefined,
 ): Promise<mjBizAppsOrdersSubscriptionEntity[]> {
     const rv = new RunView();
     const lines = await rv.RunView<{ ID: string }>(

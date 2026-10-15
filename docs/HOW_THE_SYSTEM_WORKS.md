@@ -143,7 +143,7 @@ Every order line books **its own complete, single-company journal entry**. There
 - `Product.CompanyID` is the source of truth for line ownership. `Order.CompanyID` is the originating/owning company (document, visibility, sales rep). `OrderLine.CompanyID` is a stamp of the product's company at save.
 - Intercompany legs are **not** booked at confirm. Each line's AR sits with the line's company. Cash received by one company and applied to another company's AR books due-to/due-from at **payment application** (`PaymentAllocationFactory`).
 
-A fully-comped order can produce **no** JEs. Accounting refuses an empty draft set, so `bookLines` skips the call rather than failing the order.
+A fully-comped order can produce **no** JEs. Accounting refuses an empty draft set, so `bookLines` skips the call rather than failing the order. A fully discounted deferred line stages no revenue releases either: its schedule would be built from a zero net, and accounting refuses a JE line for zero.
 
 ---
 
