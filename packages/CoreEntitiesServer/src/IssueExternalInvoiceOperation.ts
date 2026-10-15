@@ -258,12 +258,14 @@ export async function IssueOneUnit(
     // 4. History and the decision.
     const unitKey: BillingUnitKey = { OrderHeaderID: order.ID, CompanyID: companyID, OrderHeaderPaymentScheduleID: row ? String(row.ID) : null };
     const existing = await LoadExternalInvoiceForUnit(rail.Config.PaymentProviderID, unitKey, provider, user);
+    const railNumbersSpent = await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user);
     const decision = DecideInvoiceable({
         OrderStatus: String(order.Status),
         HasSchedule: scheduleRows.length > 0,
         ScheduleRowNamed: !!row,
         ScheduleRowStatus: row ? String(row.Status) : null,
         ExistingStatus: existing?.Status ?? null,
+        UnitReachedRail: railNumbersSpent > 0,
         AllowReissue: opts.AllowReissue,
     });
     if (decision.Verdict === 'AlreadySent' && existing) {
@@ -290,7 +292,7 @@ export async function IssueOneUnit(
     // the first, and neither side would say a word.
     const wholeOrderNumber = row
         ? null
-        : ReissueDocumentNumber(order.OrderNumber, await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user));
+        : ReissueDocumentNumber(order.OrderNumber, railNumbersSpent);
     if (wholeOrderNumber && wholeOrderNumber.length > MAX_DOCUMENT_NUMBER_LENGTH) {
         // Refused rather than truncated: a truncated number is either a duplicate the rail rejects or a
         // different document's number, and both are worse than saying so.
@@ -347,6 +349,13 @@ export async function IssueOneUnit(
     }
 
     if (opts.Preview) {
+        // A preview answers what a send would answer, short of calling the rail: a bill-to party the
+        // rail would refuse as a customer is reported here, so the order form can say so before
+        // anyone presses Send and the sweep's preview lists it.
+        const party = await checkCustomerForRail(rail, order, provider, user);
+        if (party.OK === false) {
+            return refuse(party.Code, party.Reason, { DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount });
+        }
         return {
             Success: true,
             ResultCode: 'PREVIEWED',
@@ -730,7 +739,19 @@ type CustomerOutcome =
     | { OK: true; ExternalCustomerRef: string }
     | { OK: false; Code: 'NO_CUSTOMER_EMAIL' | 'RAIL_REFUSED' | 'ERROR'; Reason: string };
 
-async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerOutcome> {
+/**
+ * The bill-to party, as the rail would see it, checked without calling the rail.
+ *
+ * `Known` is the party's existing customer on the rail: the rail already accepted it, so nothing is
+ * checked again. Otherwise `Facts` is what `EnsureCustomer` will send, already past the checks this
+ * app can make itself — the name's length and the rail's own `CheckCustomer` (Bill.com: an email).
+ */
+type CustomerCheck =
+    | { OK: true; Known: string; Facts: null; OrgID: string | null; PersonID: string | null }
+    | { OK: true; Known: null; Facts: RailCustomerFacts; OrgID: string | null; PersonID: string | null }
+    | { OK: false; Code: 'NO_CUSTOMER_EMAIL' | 'RAIL_REFUSED' | 'ERROR'; Reason: string };
+
+async function checkCustomerForRail(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerCheck> {
     const orgID = order.BillToOrganizationID ? RequireUUID(order.BillToOrganizationID, 'BillToOrganizationID') : null;
     const personID = !orgID && order.BillToPersonID ? RequireUUID(order.BillToPersonID, 'BillToPersonID') : null;
     if (!orgID && !personID) return { OK: false, Code: 'ERROR', Reason: `Order ${order.OrderNumber} has no bill-to party; there is nobody to invoice.` };
@@ -746,7 +767,7 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
         user,
     );
     const known = existing.Results?.[0]?.ExternalCustomerRef;
-    if (known) return { OK: true, ExternalCustomerRef: known };
+    if (known) return { OK: true, Known: known, Facts: null, OrgID: orgID, PersonID: personID };
 
     const facts = await loadPartyFacts(orgID, personID, provider, user);
     if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
@@ -754,6 +775,17 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
     // with an error that does not say which field or limit (bc-aidp-next-golive#280).
     const tooLong = await CheckRailCustomerName(rail, facts.PartyKind, facts.Name, provider, user);
     if (tooLong) return { OK: false, Code: 'RAIL_REFUSED', Reason: `Not sent to ${rail.Config.Name}: ${tooLong}` };
+    const missing = rail.CheckCustomer(facts);
+    if (missing) return { OK: false, Code: missing.Code, Reason: missing.Reason };
+    return { OK: true, Known: null, Facts: facts, OrgID: orgID, PersonID: personID };
+}
+
+async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerOutcome> {
+    const check = await checkCustomerForRail(rail, order, provider, user);
+    if (check.OK === false) return check;
+    if (check.Known) return { OK: true, ExternalCustomerRef: check.Known };
+    const { Facts: facts, OrgID: orgID, PersonID: personID } = check;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
 
     const created = await rail.EnsureCustomer(facts);
     if (created.Success === false) {

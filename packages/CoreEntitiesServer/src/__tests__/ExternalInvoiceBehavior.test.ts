@@ -44,7 +44,7 @@ const whole = (over: Partial<ExternalInvoiceUnitFacts> = {}): ExternalInvoiceUni
  */
 describe('DecideInvoiceable — an interrupted send', () => {
     const sending = (allowReissue: boolean) =>
-        DecideInvoiceable({ OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: 'Sending', AllowReissue: allowReissue });
+        DecideInvoiceable({ OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: 'Sending', UnitReachedRail: false, AllowReissue: allowReissue });
 
     it('refuses an automatic retry and says how to check', () => {
         const d = sending(false);
@@ -72,6 +72,7 @@ describe('DecideInvoiceable — a cancelled unit', () => {
             ScheduleRowStatus: null,
             ScheduleRowNamed: false,
             ExistingStatus: 'Canceled',
+            UnitReachedRail: true,
             AllowReissue: false,
             ...over,
         });
@@ -87,6 +88,44 @@ describe('DecideInvoiceable — a cancelled unit', () => {
     it('still lets a whole-order unit be re-issued deliberately — no ruling there yet', () => {
         expect(decide({ AllowReissue: true }).Verdict).toBe('Issue');
         expect(decide({ AllowReissue: false }).Verdict).toBe('Refuse');
+    });
+});
+
+/**
+ * A send the rail refused before creating anything — the customer had no email, the number was too
+ * long, Bill.com answered no — leaves a Failed row with no rail reference. There is nothing on the
+ * rail to bill twice, so the next send is an ordinary send, not a re-issue a person must vouch for.
+ */
+describe('DecideInvoiceable — a send that never reached the rail', () => {
+    const decide = (over: Partial<Parameters<typeof DecideInvoiceable>[0]> = {}) =>
+        DecideInvoiceable({
+            OrderStatus: 'Confirmed',
+            HasSchedule: false,
+            ScheduleRowStatus: null,
+            ScheduleRowNamed: false,
+            ExistingStatus: 'Failed',
+            UnitReachedRail: false,
+            AllowReissue: false,
+            ...over,
+        });
+
+    it('sends again without AllowReissue', () => {
+        expect(decide().Verdict).toBe('Issue');
+    });
+
+    it('still checks the order: a voided order is refused', () => {
+        expect(decide({ OrderStatus: 'Voided' }).Code).toBe('NOT_CONFIRMED');
+    });
+
+    it('asks for AllowReissue once anything for the unit reached the rail', () => {
+        const d = decide({ UnitReachedRail: true });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('HAS_HISTORY');
+        expect(decide({ UnitReachedRail: true, AllowReissue: true }).Verdict).toBe('Issue');
+    });
+
+    it('leaves an unconfirmed send blocked whatever the reference says', () => {
+        expect(decide({ ExistingStatus: 'Sending' }).Code).toBe('IN_FLIGHT');
     });
 });
 
@@ -191,7 +230,7 @@ describe('BuildExternalInvoicePayload', () => {
 });
 
 describe('DecideInvoiceable', () => {
-    const base = { OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: null, AllowReissue: false } as const;
+    const base = { OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: null, UnitReachedRail: true, AllowReissue: false } as const;
     it('a confirmed schedule-less order with no history issues', () => expect(DecideInvoiceable(base).Code).toBe('OK'));
     it('a draft refuses', () => expect(DecideInvoiceable({ ...base, OrderStatus: 'Draft' }).Code).toBe('NOT_CONFIRMED'));
     it('a voided order refuses', () => expect(DecideInvoiceable({ ...base, OrderStatus: 'Voided' }).Code).toBe('NOT_CONFIRMED'));

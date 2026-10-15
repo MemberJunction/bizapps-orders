@@ -13,6 +13,7 @@ import {
     CanResolveInFlight,
     CanSend,
     DispositionChipClass,
+    SendIsReissue,
     DispositionLabel,
     StateChipClass,
     StateLabel,
@@ -21,6 +22,22 @@ import {
 } from '../external-invoice-view';
 
 const row = (Status: ExternalInvoiceLike['Status'], ExternalStatus: string | null = null): ExternalInvoiceLike => ({ Status, ExternalStatus });
+
+describe('SendIsReissue', () => {
+    it('is a first send when nothing ever reached the rail, even after a Failed row', () => {
+        expect(SendIsReissue([])).toBe(false);
+        expect(SendIsReissue([{ Status: 'Failed', ExternalInvoiceRef: null }])).toBe(false);
+    });
+
+    it('is a re-issue once the rail held an invoice for the order: cancelled, or failed after creating one', () => {
+        expect(SendIsReissue([{ Status: 'Canceled', ExternalInvoiceRef: '00e0A' }])).toBe(true);
+        expect(SendIsReissue([{ Status: 'Failed', ExternalInvoiceRef: '00e0B' }, { Status: 'Failed', ExternalInvoiceRef: null }])).toBe(true);
+    });
+
+    it('ignores instalment rows: the panel sends only the whole-order unit', () => {
+        expect(SendIsReissue([{ Status: 'Canceled', ExternalInvoiceRef: '00e0C', OrderHeaderPaymentScheduleID: 'sched-1' }])).toBe(false);
+    });
+});
 
 describe('CanSend', () => {
     it('allows a send on a confirmed order with a rail and nothing live', () => {
