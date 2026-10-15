@@ -167,7 +167,7 @@ body {
 .mj-co h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .mj-co p { margin: 0 0 1rem; }
 .mj-co label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
-.mj-co input, .mj-co select, .mj-co textarea {
+.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {
   width: 100%;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--mj-border, #c9cdd4);
