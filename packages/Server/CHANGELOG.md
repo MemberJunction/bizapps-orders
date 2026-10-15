@@ -1,5 +1,14 @@
 # @mj-biz-apps/orders-server
 
+## 5.34.1
+
+### Patch Changes
+
+- 5dcc41e: Hosted checkout page no longer stretches checkboxes to full width: the page's field rule skips checkboxes and radios, and the checkout widget sizes its own checkboxes and keeps their labels at normal weight, so the auto-renew consent and choice lists lay out correctly on any host page.
+  - @mj-biz-apps/orders-actions@5.34.1
+  - @mj-biz-apps/orders-core-entities-server@5.34.1
+  - @mj-biz-apps/orders-entities@5.34.1
+
 ## 5.34.0
 
 ### Patch Changes
@@ -835,8 +844,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                              "FK_EntityFieldValue_EntityField"
+                                                The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
