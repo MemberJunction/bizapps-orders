@@ -58,6 +58,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import type { IntentStatus } from './PaymentProviderBehavior.js';
+import type { CreateIntentResult } from './BasePaymentProvider.js';
 import { DescribeOrder } from './IntentDescription.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
@@ -120,6 +121,12 @@ export interface OpenIntentResult {
     HostedUrl?: string;
     /** True when this call found an intent we had already opened rather than opening a new one. */
     WasExisting?: boolean;
+    /** The gateway's reason code for a refused saved-instrument charge. See `CreateIntentResult`. */
+    FailureCode?: string;
+    /** The saved instrument needs the absent customer to authenticate (SCA). See `CreateIntentResult`. */
+    RequiresAuthentication?: boolean;
+    /** When the gateway took the money, for a saved-instrument charge that succeeded at once. */
+    CapturedAt?: Date;
 }
 
 /**
@@ -171,6 +178,21 @@ export async function OpenPaymentIntent(
         IdempotencyKey: request.IdempotencyKey ?? undefined,
     });
 
+    if (!opened.Success && opened.ProviderIntentID) {
+        // A saved instrument charged at create time and DECLINED (#289). The gateway opened an intent
+        // for the attempt, so it is recorded as Failed: each attempt keeps its own row, and a webhook
+        // about it later finds an intent it recognises.
+        const failedRowID = await recordIntent(request, { ...opened, Status: 'Failed' }, opened.ProviderIntentID, provider, user);
+        return {
+            Success: false,
+            Reason: opened.Reason ?? 'The gateway refused the charge.',
+            PaymentIntentID: failedRowID,
+            ProviderIntentID: opened.ProviderIntentID,
+            Status: 'Failed',
+            FailureCode: opened.FailureCode,
+            RequiresAuthentication: opened.RequiresAuthentication,
+        };
+    }
     if (!opened.Success || !opened.ProviderIntentID) {
         return { Success: false, Reason: opened.Reason ?? 'The gateway did not open a payment intent.' };
     }
@@ -188,13 +210,44 @@ export async function OpenPaymentIntent(
             // it is not ours to withhold merely because the row predates this call.
             ClientSecret: opened.ClientSecret,
             HostedUrl: opened.HostedUrl,
+            RequiresAuthentication: opened.RequiresAuthentication,
+            CapturedAt: opened.CapturedAt,
         };
     }
+
+    const rowID = await recordIntent(request, opened, opened.ProviderIntentID, provider, user);
+    return {
+        Success: true,
+        WasExisting: false,
+        PaymentIntentID: rowID,
+        ProviderIntentID: opened.ProviderIntentID,
+        Status: opened.Status,
+        ClientSecret: opened.ClientSecret,
+        HostedUrl: opened.HostedUrl,
+        RequiresAuthentication: opened.RequiresAuthentication,
+        CapturedAt: opened.CapturedAt,
+    };
+}
+
+/**
+ * Write our row for a gateway intent, or return the one we already hold for it (a repeated
+ * idempotency key brings back the same intent). Throws when the row cannot be written — see the note
+ * in the body.
+ */
+async function recordIntent(
+    request: OpenIntentRequest,
+    opened: CreateIntentResult,
+    providerIntentID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string> {
+    const existing = await findByProviderIntentID(providerIntentID, provider, user);
+    if (existing) return existing;
 
     const row = await provider.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, user);
     row.NewRecord();
     row.PaymentProviderID = request.PaymentProviderID;
-    row.ProviderIntentID = opened.ProviderIntentID;
+    row.ProviderIntentID = providerIntentID;
     // The gateway's reading, already mapped to our CHECK vocabulary by the driver. Defaulted to
     // Processing rather than to a confident value — the same rule `MapStripeIntentStatus` follows.
     row.Status = opened.Status ?? 'Processing';
@@ -210,21 +263,12 @@ export async function OpenPaymentIntent(
         // retry would open a second intent unless an idempotency key was supplied.
         const reason = row.LatestResult?.CompleteMessage ?? 'unknown error';
         LogError(
-            `Opened gateway intent ${opened.ProviderIntentID} but could not record it: ${reason}. ` +
+            `Opened gateway intent ${providerIntentID} but could not record it: ${reason}. ` +
                 `A webhook for this intent will not match any payment.`,
         );
-        throw new Error(`Could not record payment intent ${opened.ProviderIntentID}: ${reason}`);
+        throw new Error(`Could not record payment intent ${providerIntentID}: ${reason}`);
     }
-
-    return {
-        Success: true,
-        WasExisting: false,
-        PaymentIntentID: row.ID,
-        ProviderIntentID: opened.ProviderIntentID,
-        Status: opened.Status,
-        ClientSecret: opened.ClientSecret,
-        HostedUrl: opened.HostedUrl,
-    };
+    return row.ID;
 }
 
 /** Our row for a gateway intent id, if we already hold one. */

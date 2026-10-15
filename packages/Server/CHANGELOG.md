@@ -1,5 +1,153 @@
 # @mj-biz-apps/orders-server
 
+## 5.34.0
+
+### Patch Changes
+
+- Updated dependencies [59236a8]
+  - @mj-biz-apps/orders-entities@5.34.0
+  - @mj-biz-apps/orders-actions@5.34.0
+  - @mj-biz-apps/orders-core-entities-server@5.34.0
+
+## 5.33.0
+
+### Minor Changes
+
+- 1a69590: Schema for concession approval tiers (#308). `SalesRule` gains, for ConcessionLimit rules only: `ConcessionTier` (rank), the thresholds `MinConcessionValue`, `MinConcessionPctOfContract` and `MinTermExtensionDays`, and `RequiresDecisionWithinAuthority` (bit, default 0). A CHECK keeps them empty on other rule types. Existing rules keep no tier, no thresholds and no sign-off. Schema only; the behaviour ships separately.
+- 77050bc: The payment poll reads HubSpot Payments (#482). A `HubSpotPayments` provider row per company, pointing at that company's HubSpot portal, makes `Orders.PollExternalPayments` record every payment the portal collects in `ExternalPayment` when it is made, ahead of the payout.
+
+  - Payments collected through the company's own Stripe account, or only recorded in HubSpot, are set aside (`Ignored`) so they are not booked twice.
+  - A succeeded HubSpot-collected payment is `Unmatched`, with its gross, fee, net and buyer, until order matching by deal is possible; processing ones are held.
+  - Payment statuses are classified per rail (`PaymentStatusVocabularyFor`). A refund or dispute against a captured payment is reported for a person instead of read as already captured. Bill.com's behaviour is unchanged.
+  - New provider type `HubSpotPayments` in `metadata/payment-provider-types` (driver `HubSpotPaymentsProvider`, which refuses every checkout verb). It reaches hosts with the release's metadata sync.
+
+- 968549b: New entity `Instalment Line Billings` (#681): what each instalment invoice billed each order line, part by part (the net, the tax and charges no charge allocation covers, and each allocated charge type). Written by the server when an instalment is invoiced, so later invoices can take earlier ones as billed instead of slicing them again against lines an amount change or a return has lowered.
+- 3f2f22a: Order Concessions gain the fields of a change to a booked term's amount (#506): `NewAmount`, `AppliesToPaymentScheduleID` (the invoiced instalment the reduction is about) and `ScheduleReduction` (what an approved change took off the instalments not yet invoiced). An order's `Balance` subtracts its approved schedule reductions. `ReasonCategory` gains `Dispute`, and Subscription Events gain the `AmountChanged` event type.
+- c0d0b84: Order Concessions gain the credit memo an amount change issues (#662): `CreditMemoAmount`, `CreditMemoNumber` (unique) and `RefundRequested`. Order Header Payment Schedules gain `AmountCredited`, what credit memos credited on an invoiced instalment; its `Balance` and the cash cascade net it out. An order's `Balance` subtracts approved credit memos as well as schedule reductions.
+- 4ba919b: Order Lines gain two fields for a return against an order billed by instalment (#661): `ScheduleReduction` (the returned units' share of what the origin's instalments had not yet invoiced) and `CreditMemoAmount` (the credit memo the return booked). An origin order's `Balance` subtracts what its returns took off its instalments, and a return order's `Balance` counts each such line at its credit memo rather than its full value.
+- 55343b7: Schema for shifting or shortening a booked term (#507). Order Concessions gain two delivery forms, `Shift` (start and end moved by the same number of days) and `Shorten` (a later start or an earlier end), and four date fields, `PriorStartDate`, `PriorEndDate`, `NewStartDate` and `NewEndDate`, recorded only on those forms; `CK_OrderConcession_TermDates` holds the rules for each. Subscription Events gain the `Rescheduled` and `Shortened` event types. `ConcessionDeliveryForm` follows the new forms. The code that records and applies a shift lands separately.
+
+### Patch Changes
+
+- 9e4c8df: An amount change's credit memo has a customer document (#684). `Orders.GenerateInvoice` and `Orders.SendDocument` take `OrderConcessionID` and render the credit memo that approved change issued: its number, the line's net and tax credited, the invoice or order it was applied to, and the credit left to the customer (refunded when they asked for it). It is built from what the approval logged on the `AmountChanged` subscription event, not recomputed. `Orders.SendDocument` sends it by email also when the order's company invoices through Bill.com, which carries no credit memos, and another concession still pending on the order does not hold it. Re-rendered invoices show the credit: an instalment invoice lists the memos that credited it and asks for its balance, and a whole-order document subtracts each approved amount change's memo and schedule reduction, as the order's balance does. The acknowledgment task for an amount change with a memo tells accounting to send it. Integration checks AC7–AC9 render the memo and the credited invoices.
+- 2972434: Renewals of subscriptions with a kept card are now charged. A new daily job, `Orders — Charge Renewals (daily)` (Action `Orders.ChargeRenewals`, shipped disabled and set to preview), charges the subscription's renewal card off-session on the renewal order's due day and captures the payment through `Orders.CapturePayment`, dated the business day the gateway took the money. A declined charge, or a demand that the absent customer authenticate (SCA), is retried on the days in the new `RenewalChargeRetryDays` setting (default `3,7,11` days after the due day) and stops at the access cutoff. Each attempt is its own payment intent and a `PaymentSucceeded` or `PaymentFailed` subscription event naming the attempt, the reason and the next attempt day. The gateway idempotency key is the order and the attempt day, so a second run on the same day charges nothing.
+
+  `Orders.SpawnRenewals` now makes a renewal-card subscription's renewal due on the new term's first day, so the access cutoff counts from the first charge. Subscriptions without a renewal card keep the invoice-day due date and are not charged.
+
+  On the payment driver seam: a saved-card charge the gateway declines now returns the intent it opened (`CreateIntentResult.ProviderIntentID`, `FailureCode`, `RequiresAuthentication`), and `OpenPaymentIntent` records it as a Failed intent. A successful saved-card charge reports `CapturedAt`. The Stripe stub answers saved-card charges by Stripe's test card names (`pm_card_chargeDeclined`, `pm_card_authenticationRequired`).
+
+- 3ec829a: Self-serve checkout records two pieces of VAT location evidence on the order beside its billing address (#480): the issuing country of the card that paid, as Stripe reports it, and the country of the buyer's IP address, read from a header the proxy or CDN in front of MJAPI sets. The header is named by the checkout edge's new `IPCountryHeader` setting; unset, no IP country is recorded. A checkout whose countries cannot be resolved still completes, with the value null.
+- The `@mj-biz-apps/common-*` pins and floors move to 5.53.0, the release with the Organization form's Staff section, so one copy of each common package installs.
+- 8525cc2: A card payment that matched no order or invoice can become a paid order. The `Orders.CreateOrderFromProviderPayment` remote operation reads a charge from the payment gateway and, in the payment provider's company, creates and confirms an order with one line of the product the caller names, at the charge's gross amount, billed to the buyer the caller names. It records the gateway intent and captures the charge against the order, so the gateway's fee is booked and the bank deposit that follows, net of that fee, matches. It refuses a charge that has not succeeded, has any refund, has no gateway intent, is in another currency, or belongs to an intent Orders opened. The order confirms through the ordinary path, so a charge below the product's price waits on an approved concession, and an order that would total more than the charge (tax or charges) is refused. One order per charge: a repeat call returns the first order and finishes its capture if that had failed. These orders carry `Origin = 'ProviderPayment'`.
+- dfcc809: The charge reconciliation turns a card charge that matched no order into a paid order (#481). On a real run (not Preview), a charge without a payment, on a gateway intent Orders did not open, becomes an order when every gateway price its hosted checkout or payment link sold maps to one product in the provider's price map (`Payment Provider Prices`) and its buyer e-mail finds a person, or carries a name to create one with. The order is created through `Orders.CreateOrderFromProviderPayment`'s path, so the same checks apply. Created orders come back in the output's `OrdersCreated` (and the Action's `OrdersCreated` output) and are not raised; a charge the rules cannot decide is raised as before, with the reason added. A provider with no mapped price is not read and behaves as before.
+- 32aa1b2: New table `PaymentProviderPrice` (entity `Payment Provider Prices`): which Orders product a payment gateway's price sells, per payment provider. The charge reconciliation reads it to choose the product of an order created from a card payment that matched no order (#481). A price with no active row creates no order, so an empty table changes nothing.
+- 9c40399: The update-card link follows the person who owns the declined renewal card. On a gift, where the renewal order bills the beneficiary, the e-mail, the checkout session, the payment and the new card are now the buyer's; the old card's gateway customer is reused only when it belongs to the payer, so a card never joins another person's customer. The renewal order's bill-to is unchanged. The link is also refused, on opening and before the payment opens, unless the subscription is Active with automatic renewal on, so a cancelled subscription's open renewal can no longer be paid through it.
+- c418914: A renewal card's first failed charge (a decline, or a bank's request that the absent buyer authenticate) now e-mails the subscription's bill-to person a link to pay the renewal with a new card. The e-mail is two new MJ Templates, `Orders: Renewal Payment Link` and `Orders: Renewal Payment Link Subject`, sent through the `Email` delivery channel.
+
+  The link, `<RenewalPaymentLinkBaseUrl>/renew/<token>`, opens the checkout widget that sold the subscription in a pay-renewal mode: it shows the renewal order and the amount due, and pays the open renewal order on-session with no new order and no re-pricing. Paying keeps the new card (same gateway customer, `setup_future_usage`), makes it the subscription's renewal card, and books the payment through the ordinary checkout capture, which restores any access the cutoff suspended.
+
+  The token is the renewal order id, the subscription id and an expiry, signed with HMAC-SHA256; it carries no personal data, expires seven days after the access cutoff, and is refused once the renewal is paid. Configure the secret in the `ORDERS_RENEWAL_LINK_SECRET` environment variable (32 characters or more) and the link address in the new `RenewalPaymentLinkBaseUrl` setting; without either, no link is sent.
+
+  New: `GET /checkout/renew/:token` on the checkout edge, `renewalToken` on `POST /checkout/initialize`, `CheckoutSessionService.InitializeRenewalPaymentSession`, the `renewal-token` attribute on `<mj-orders-checkout>`, and `ReplaceCardOnSubscriptionIDs` / `OwnerOrganizationID` on `SaveCheckoutInstrumentForRenewals`.
+
+- a20dbf0: A finance reviewer can turn a charge-without-payment finance exception into a paid order without leaving the app. On accounting's Finance Exception form, an open `PROVIDER_CHARGE_MISMATCH` exception for a gateway charge Orders holds nothing for shows a panel that asks for the product, the buyer and an optional organization. It calls the new `Orders.ResolveChargeException` remote operation, which reads the payment provider and charge from the exception, books the order through `Orders.CreateOrderFromProviderPayment`, then clears the exception as Corrected with a note naming the order and payment. The caller must hold the authorization to clear finance exceptions; that is checked before anything is booked. Other kinds of mismatch, and charges Orders opened itself, are refused and the panel does not show on them. If the clear fails after the order is booked, running it again clears the exception without booking a second order.
+- f48b68f: `@mj-biz-apps/orders-server` declares `@mj-biz-apps/common-entities` and `@mj-biz-apps/common-server` (peers `^5.52.0`, exact devDependencies), which accounting's server package needs as peers. Without them, `auto-install-peers` picked a `common-entities` version for this package on its own, and the workspace installed a second copy of the common entity classes.
+- ca98a5d: The checkout edge logs at startup when Turnstile is not configured, naming the missing setting (`TurnstileSecretEnvVar` or `TurnstileSiteKey`), so the gap shows before a widget that sets `requireTurnstile` answers 503. The checkout docs gain a step-by-step setup guide for a deployment, and `.env.example` names `CHECKOUT_TURNSTILE_SECRET` (#609).
+- Updated dependencies [2cc0d55]
+- Updated dependencies [e384e15]
+- Updated dependencies [9a78b8e]
+- Updated dependencies [67e1dbd]
+- Updated dependencies [3388b7e]
+- Updated dependencies [9e4c8df]
+- Updated dependencies [008f08f]
+- Updated dependencies [adad687]
+- Updated dependencies [a58c964]
+- Updated dependencies [2972434]
+- Updated dependencies [3ec829a]
+- Updated dependencies [3bbd5d6]
+- Updated dependencies
+- Updated dependencies [7d0ccf6]
+- Updated dependencies [3f6fd86]
+- Updated dependencies [3c16360]
+- Updated dependencies [1a69590]
+- Updated dependencies [d3ba6b5]
+- Updated dependencies [5606499]
+- Updated dependencies [cd5b92e]
+- Updated dependencies [df7ff8d]
+- Updated dependencies [49a6d65]
+- Updated dependencies [f3ff9c4]
+- Updated dependencies [77050bc]
+- Updated dependencies [968549b]
+- Updated dependencies [bc1778f]
+- Updated dependencies [fde8cc8]
+- Updated dependencies [17e183d]
+- Updated dependencies [0cdc7b6]
+- Updated dependencies [3f2f22a]
+- Updated dependencies [c0d0b84]
+- Updated dependencies [60f4ef3]
+- Updated dependencies [8525cc2]
+- Updated dependencies [4f1f89a]
+- Updated dependencies [4ba919b]
+- Updated dependencies [465980d]
+- Updated dependencies [49c52df]
+- Updated dependencies [dfcc809]
+- Updated dependencies [313f19f]
+- Updated dependencies [32aa1b2]
+- Updated dependencies [55dd0ca]
+- Updated dependencies [e51a86a]
+- Updated dependencies [7cc1751]
+- Updated dependencies [21f2d6e]
+- Updated dependencies [a33ca5a]
+- Updated dependencies [6f50258]
+- Updated dependencies [37f31ea]
+- Updated dependencies [3388b7e]
+- Updated dependencies [3388b7e]
+- Updated dependencies [4c88fcd]
+- Updated dependencies [e43db9f]
+- Updated dependencies [9c40399]
+- Updated dependencies [c418914]
+- Updated dependencies [a20dbf0]
+- Updated dependencies [500e533]
+- Updated dependencies [a184085]
+- Updated dependencies [78ff171]
+- Updated dependencies [bc4607f]
+- Updated dependencies [b0deb81]
+- Updated dependencies [59a2c13]
+- Updated dependencies [4c28b84]
+- Updated dependencies [d77b2bd]
+- Updated dependencies [11afb0b]
+- Updated dependencies [44a267d]
+- Updated dependencies [72f235c]
+- Updated dependencies [c03ff3d]
+- Updated dependencies [0ab95c6]
+- Updated dependencies [3869621]
+- Updated dependencies [b1b4844]
+- Updated dependencies [01f209b]
+- Updated dependencies [3f8c3a0]
+- Updated dependencies [55343b7]
+- Updated dependencies [920b008]
+  - @mj-biz-apps/orders-core-entities-server@5.33.0
+  - @mj-biz-apps/orders-entities@5.33.0
+  - @mj-biz-apps/orders-actions@5.33.0
+
+## 5.32.1
+
+### Patch Changes
+
+- d120083: The packages' dependencies on each other are caret ranges (`^5.32.0`) instead of exact versions. A host that pins or overrides one package of this app at a later compatible version no longer forces an exact-match copy of its siblings. Changesets keeps the caret and moves its floor on each release.
+- Updated dependencies [d120083]
+  - @mj-biz-apps/orders-core-entities-server@5.32.1
+  - @mj-biz-apps/orders-actions@5.32.1
+  - @mj-biz-apps/orders-entities@5.32.1
+
+## 5.32.0
+
+### Patch Changes
+
+- @mj-biz-apps/orders-actions@5.32.0
+- @mj-biz-apps/orders-core-entities-server@5.32.0
+- @mj-biz-apps/orders-entities@5.32.0
+
 ## 5.31.0
 
 ### Patch Changes
@@ -687,8 +835,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                      "FK_EntityFieldValue_EntityField"
+                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
