@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-entities
 
+## 5.34.0
+
+### Minor Changes
+
+- 59236a8: The PostgreSQL counterpart of the guard-trigger migration (`V202610091200`) now runs. It quoted the `${flyway:defaultSchema}` placeholder, which on PostgreSQL resolves to the mixed-case `__mj_BizAppsOrders`; quoted, that names a different schema from the lowercase one the orders tables live in, so the migration failed with `relation "__mj_BizAppsOrders.OrderHeader" does not exist`. The placeholder is now unquoted. No SQL Server change.
+
 ## 5.33.0
 
 ### Minor Changes
@@ -683,8 +689,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                            The INSERT statement conflicted with the FOREIGN KEY constraint
-                                            "FK_EntityFieldValue_EntityField"
+                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
