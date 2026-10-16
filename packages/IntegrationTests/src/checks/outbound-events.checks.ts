@@ -12,7 +12,7 @@
  *
  * CONNECTS TO:
  *   SERVER: packages/CoreEntitiesServer/src/OutboundEvents.ts, EntitlementGrantEntityServer.ts,
- *           OrderEntityServer.recordOrderConfirmedEvent
+ *           OrderEntityServer.recordOrderConfirmedEvent, PaymentGatedAccess.EnforcePaymentGatedAccess
  */
 import {
   Assert,
@@ -25,7 +25,9 @@ import { RegisterClass } from "@memberjunction/global";
 import { CompositeKey } from "@memberjunction/core";
 import {
   DispatchOutboundDeliveries,
+  EnforcePaymentGatedAccess,
   OrdersOutboundConsumer,
+  OrdersSettings,
   type OutboundEventEnvelope,
   type OutboundEventType,
 } from "@mj-biz-apps/orders-core-entities-server";
@@ -41,6 +43,7 @@ import {
 } from "../fixture.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import { ENTITLEMENT_GRANT_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
+import { addDays, gatesFor, payOrder, renew, withGrantTiming } from "./entitlements.checks.js";
 
 const CONSUMER_KEY = "integration-test-consumer";
 
@@ -358,6 +361,69 @@ export const OutboundEventsChecks: NamedCheck[] = [
           ]),
           "and the event carries them, ordered by question key",
         );
+      }),
+  },
+  {
+    Id: "outbound-events.OB8",
+    Name: "OB8: an unpaid renewal cut off by the nightly pass tells consumers, and so does the payment that restores it (#700)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const f = Fx();
+        await withGrantTiming(ctx, f.Products.SubRolling, "OnFirstPayment", async () => {
+          const first = await ConfirmOrder(ctx.User, {
+            CompanyID: f.CoA.ID,
+            OrderDate: new Date("2026-01-01T00:00:00Z"),
+            BillToOrganizationID: f.Customers.OrganizationID,
+            Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1 }],
+          });
+          Assert(first.Saved, `confirm failed: ${first.Message}`);
+          const term = await TxOne<{ SubscriptionID: string; EndDate: Date; Gross: number }>(ctx,
+            `SELECT st.SubscriptionID, st.EndDate, oh.TotalGross AS Gross
+               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+               JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+               JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+              WHERE ol.OrderHeaderID = '${first.Order.ID}'`);
+          await payOrder(ctx, first.Order.ID as string, Number(term.Gross));
+
+          const renewalID = await renew(ctx, term.SubscriptionID, addDays(new Date(term.EndDate).toISOString(), -10));
+          const grantIDs = new Set((await gatesFor(ctx, renewalID)).map((g) => g.ID.toLowerCase()));
+          Assert(grantIDs.size > 0, "the renewal grants the next term");
+          const due = await TxOne<{ NextDueDate: Date | null; Balance: number }>(ctx,
+            `SELECT NextDueDate, Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${renewalID}'`);
+          Assert(due.NextDueDate != null, "the renewal carries a due date");
+          await OrdersSettings.Load(ctx.Provider, ctx.User);
+          const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+          Assert(cutoff != null && cutoff > 0, "the cutoff setting is on, with a positive number of days");
+
+          /** The renewal grants' status changes recorded since `skip` events were already there. */
+          const changes = async (skip: number) =>
+            (await eventsFor(ctx, renewalID))
+              .slice(skip)
+              .filter((e) => e.EventType === "GrantStatusChanged" && grantIDs.has((e.EntitlementGrantID ?? "").toLowerCase()))
+              .map((e) => JSON.parse(e.PayloadJSON) as { FromStatus: string | null; ToStatus: string; SuspensionReason: string | null });
+          const atConfirm = (await eventsFor(ctx, renewalID)).length;
+
+          const cut = await EnforcePaymentGatedAccess(
+            { AsOfDate: addDays(new Date(due.NextDueDate!).toISOString(), cutoff!) },
+            ctx.Provider,
+            ctx.User,
+          );
+          Assert(cut.Success, `the pass ran: ${cut.Message}`);
+          const suspended = await changes(atConfirm);
+          AssertEqual(suspended.length, grantIDs.size, `each renewal grant records its suspension (${JSON.stringify(suspended)})`);
+          Assert(
+            suspended.every((p) => p.FromStatus === "Active" && p.ToStatus === "Suspended" && p.SuspensionReason === "PastDue"),
+            "as Active to Suspended, past due",
+          );
+
+          const afterCut = (await eventsFor(ctx, renewalID)).length;
+          await payOrder(ctx, renewalID, Number(due.Balance));
+          const restored = await changes(afterCut);
+          AssertEqual(restored.length, grantIDs.size, `paying the renewal records each grant's return (${JSON.stringify(restored)})`);
+          Assert(restored.every((p) => p.FromStatus === "Suspended" && p.ToStatus === "Active"), "as Suspended to Active");
+        });
       }),
   },
 ];

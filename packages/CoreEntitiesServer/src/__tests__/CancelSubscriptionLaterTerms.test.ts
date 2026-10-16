@@ -307,3 +307,77 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect([...rec.terms.keys()]).toEqual([T1]);
     });
 });
+
+describe('a timing chosen at cancellation', () => {
+    /** An annual rolling type: ride the term out, no refund, 30 days' grace. */
+    const ROLLING = { CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund', GracePeriodDays: 30 };
+
+    beforeEach(() => {
+        mocks.rows.clear();
+        mocks.schedules.clear();
+    });
+
+    it('Immediate ends the subscription on the request day, with no grace and nothing reversed', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-07-01');
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-07-01');
+        expect(rec.terms.get(T1)?.Status).toBe('Canceled');
+        expect(rec.orders).toEqual([]);
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBe('Immediate');
+    });
+
+    it('EndOfTerm ends access on the term\'s last day without the type\'s grace, and the event records the choice', async () => {
+        seed({ ...ROLLING, CancellationMode: 'Immediate' }, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-12-31');
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-12-31');
+        expect(rec.terms.get(T1)?.Status).toBe('Completed');
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBe('EndOfTerm');
+    });
+
+    it('Immediate with a renewal booked behind it cancels both and reverses the renewal in full', async () => {
+        seed(ROLLING);
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-07-01');
+        expect(rec.terms.get(T1)?.Status).toBe('Canceled');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toEqual([[L2, -1]]);
+    });
+
+    it('EndOfTerm with a renewal booked behind it completes the term and cancels the renewal', async () => {
+        seed(ROLLING);
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-12-31');
+        expect(rec.terms.get(T1)?.Status).toBe('Completed');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toEqual([[L2, -1]]);
+    });
+
+    it('without a timing, the type decides and the event says so', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-12-31');
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBeNull();
+    });
+
+    it('refuses a timing the contract does not name, before writing anything', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Tomorrow' });
+
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/Timing must be one of Immediate, EndOfTerm/);
+        expect(rec.tx).toEqual([]);
+    });
+});
