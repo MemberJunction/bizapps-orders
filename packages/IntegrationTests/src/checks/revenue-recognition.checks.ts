@@ -277,7 +277,7 @@ export const RevenueRecognitionChecks: NamedCheck[] = [
                 const refused = await ConfirmOrder(ctx.User, spec(false) as Parameters<typeof ConfirmOrder>[1]);
                 AssertEqual(refused.Saved, false, 'an undated deferred line does not confirm');
                 Assert(
-                    /needs a service period/.test(refused.Message),
+                    /needs a service period|service start and end date/.test(refused.Message),
                     `the refusal names the missing service period: ${refused.Message}`,
                 );
 

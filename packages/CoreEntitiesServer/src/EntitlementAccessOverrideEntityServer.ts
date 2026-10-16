@@ -42,16 +42,16 @@ export class EntitlementAccessOverrideEntityServer extends mjBizAppsOrdersEntitl
 
     private async refusal(): Promise<string | null> {
         const user = this.ContextCurrentUser;
-        if (!user) return 'An access override can only be written by a known user.';
+        if (!user) return 'An access override can only be saved by a signed-in user.';
 
         if (!this.IsSaved) {
-            if (this.Status !== 'Requested') return 'A new access override must start Requested.';
-            if (!UUIDsEqual(this.RequestedByUserID, user.ID)) return 'An access override is requested in the name of the user saving it.';
+            if (this.Status !== 'Requested') return 'A new access override must be saved with the status Requested.';
+            if (!UUIDsEqual(this.RequestedByUserID, user.ID)) return 'An access override must be requested under the name of the user saving it.';
             if (this.OverrideType !== 'WaivePaymentHold' && this.OverrideType !== 'DeferCutoff') {
-                return `OverrideType must be WaivePaymentHold or DeferCutoff; got '${this.OverrideType}'.`;
+                return `The override type '${this.OverrideType}' is not recognized. Pick WaivePaymentHold or DeferCutoff.`;
             }
             if (!UserMayRequestAccessOverride(this.OverrideType, user, this.metadata)) {
-                return `Requesting a ${this.OverrideType} override requires the ${ACCESS_OVERRIDE_AUTH[this.OverrideType]} authorization.`;
+                return `You do not have permission to request a ${this.OverrideType} override. Ask an administrator for the ${ACCESS_OVERRIDE_AUTH[this.OverrideType]} authorization.`;
             }
             return null;
         }
@@ -62,11 +62,11 @@ export class EntitlementAccessOverrideEntityServer extends mjBizAppsOrdersEntitl
         switch (this.Status) {
             case 'Approved':
             case 'Rejected': {
-                if (!UUIDsEqual(this.DecidedByUserID, user.ID)) return 'An access override decision is recorded in the name of the user making it.';
+                if (!UUIDsEqual(this.DecidedByUserID, user.ID)) return 'An access override decision must be recorded under the name of the user making it.';
                 const expected = this.Status === 'Approved' ? 'Completed' : 'Cancelled';
                 const taskStatus = await this.approvalTaskStatus();
                 if (taskStatus !== expected) {
-                    return `An access override is ${this.Status} only through its approval task, which is ${taskStatus ?? 'missing'}.`;
+                    return `An access override can be ${this.Status.toLowerCase()} only from its approval task, which is ${taskStatus ?? 'missing'}. Approve or reject it from that task.`;
                 }
                 return DecisionRefusalFor(this, user.ID, this.Status === 'Approved', this.metadata, user);
             }
@@ -75,7 +75,7 @@ export class EntitlementAccessOverrideEntityServer extends mjBizAppsOrdersEntitl
                 const taskStatus = await this.approvalTaskStatus();
                 return taskStatus === 'Completed' || taskStatus === 'Cancelled'
                     ? null
-                    : 'An access override is Withdrawn only once its approval task has closed.';
+                    : 'An access override can be withdrawn only after its approval task is closed. Complete or cancel the task first.';
             }
             default:
                 return null;

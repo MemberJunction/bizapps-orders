@@ -160,7 +160,7 @@ export class OrderAccessOverridesPanel extends BaseFormPanel<mjBizAppsOrdersOrde
                 Reason: this.NewReason.trim(),
                 EffectiveThrough: this.NewThrough,
             });
-            if (!result.Success || !result.Output?.Success) throw new Error(result.Output?.Message ?? result.ErrorMessage ?? 'The request failed.');
+            if (!result.Success || !result.Output?.Success) throw new Error(result.Output?.Message ?? result.ErrorMessage ?? 'The access override request could not be sent.');
             this.ShowRequest = false;
             this.NewReason = '';
             this.NewThrough = '';
@@ -174,7 +174,7 @@ export class OrderAccessOverridesPanel extends BaseFormPanel<mjBizAppsOrdersOrde
                 Outcome: outcome,
                 Notes: this.DecisionNotes[o.ID]?.trim() || undefined,
             });
-            if (!result.Success || !result.Output?.Success) throw new Error(result.Output?.Message ?? result.ErrorMessage ?? 'The decision failed.');
+            if (!result.Success || !result.Output?.Success) throw new Error(result.Output?.Message ?? result.ErrorMessage ?? 'The decision could not be recorded.');
         });
     }
 

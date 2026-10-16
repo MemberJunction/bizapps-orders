@@ -21,8 +21,8 @@ import {
 } from './BasePaymentProvider.js';
 
 const NOT_A_CHECKOUT_RAIL =
-    'HubSpot Payments is read, not charged: HubSpot collects the money, and Orders.PollExternalPayments ' +
-    'reads the payments it reports. Refunds are made in HubSpot.';
+    'HubSpot Payments cannot take or refund payments from Orders. HubSpot collects the money and Orders ' +
+    'reads the payments HubSpot reports. Make refunds in HubSpot.';
 
 @RegisterClass(BasePaymentProvider, 'HubSpotPayments')
 export class HubSpotPaymentsProvider extends BasePaymentProvider {

@@ -106,7 +106,7 @@ function draftFor(
     const lineID = u.Line.ID as string;
     const companyID = companyByLine.get(lineID.toLowerCase());
     if (!companyID) {
-        throw new Error(`Order line ${lineID} has no company, so its finance exception has nowhere to be raised.`);
+        throw new Error(`Order line ${lineID} has no company, so the finance exception for its below-list price cannot be raised. Set a company on the line.`);
     }
     return {
         TypeCode: PRICE_BELOW_ENGINE_TYPE_CODE,

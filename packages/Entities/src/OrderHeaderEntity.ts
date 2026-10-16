@@ -341,8 +341,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 result.Errors.push(
                     new ValidationErrorInfo(
                         'Status',
-                        `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would ` +
-                            `be nothing to book.`,
+                        `Order ${this.OrderNumber ?? ''} has no lines, so it cannot be confirmed. ` +
+                            `Add at least one line first.`,
                         this.Status,
                         ValidationErrorType.Failure,
                     ),
@@ -475,7 +475,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             new ValidationErrorInfo(
                 'PaymentTermsTypeID',
                 `${order} is confirmed, so its payment terms cannot be edited directly. ` +
-                    `Amend them with Orders.AmendArrangement; the change takes effect when its Terms concession is approved.`,
+                    `To change them, amend the order's arrangement (Orders.AmendArrangement); the change takes effect once the payment terms concession is approved.`,
                 this.PaymentTermsTypeID,
                 ValidationErrorType.Failure,
             ),
@@ -512,14 +512,14 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         if (!this.addressSnapshotsStamped) {
             for (const name of ['BillToAddressSnapshot', 'ShipToAddressSnapshot'] as const) {
                 if (this.FieldIsDirty(name)) {
-                    refuse(name, `${name} is written by the server from the Address row and cannot be set directly.`);
+                    refuse(name, `The ${name === 'BillToAddressSnapshot' ? 'bill-to' : 'ship-to'} address copy on an order is filled in by the system from the chosen address and cannot be edited directly.`);
                 }
             }
             this.Lines.Items.forEach((line, index) => {
                 if (anyFieldIsDirty(line, ['ShipToAddressSnapshot'])) {
                     refuse(
                         `Lines[${index}].ShipToAddressSnapshot`,
-                        'ShipToAddressSnapshot is written by the server from the Address row and cannot be set directly.',
+                        'The ship-to address copy on an order line is filled in by the system from the chosen address and cannot be edited directly.',
                     );
                 }
             });
@@ -635,10 +635,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const status = CanOfferConfirm(from);
         if (!status.Allowed) return status;
         if (!this.BillToPersonID && !this.BillToOrganizationID) {
-            return { Allowed: false, Reason: 'Need a bill-to party.' };
+            return { Allowed: false, Reason: 'Choose who to bill, a person or an organization, before confirming.' };
         }
         if (this.Lines.Count === 0 && (!this.IsSaved || this.Lines.IsLoaded)) {
-            return { Allowed: false, Reason: 'Need a line.' };
+            return { Allowed: false, Reason: 'Add at least one line before confirming.' };
         }
         const undated = this.LinesMissingServicePeriod();
         if (undated.length > 0) {

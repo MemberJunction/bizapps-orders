@@ -498,7 +498,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (!result.Success || !result.Output) {
             this.CoverageCheckError =
                 result.ErrorMessage?.trim() ||
-                'Whether these subscriptions overlap coverage the customer already has could not be checked. Confirm still checks.';
+                'Could not check whether these subscriptions overlap coverage the customer already has. The check runs again when you confirm.';
         } else {
             this.CoverageCheckError = null;
             for (const row of result.Output.Lines) this.coverageByLine.set(row.OrderLineID.toLowerCase(), row);
@@ -913,7 +913,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public DiscountError(line: mjBizAppsOrdersOrderLineEntity): string | null {
         const amount = this.DraftDiscountAmount(line);
         if (amount == null) return null;
-        if (amount <= 0) return 'A discount has to be more than nothing.';
+        if (amount <= 0) return 'Enter a discount greater than zero.';
         const base = this.DiscountBase(line);
         if (amount > base + 0.005) {
             return `That is more than the ${FormatMoney(base)} left to discount on this line.`;

@@ -69,7 +69,7 @@ export function ParseAddressSnapshot(json: string | null | undefined): OrderAddr
     if (json == null || json.trim() === '') return null;
     const parsed: unknown = JSON.parse(json);
     if (!isSnapshot(parsed)) {
-        throw new Error(`Stored address snapshot is not in the expected shape: ${json}`);
+        throw new Error(`The address saved on this order is not in the expected shape and cannot be read: ${json}`);
     }
     return parsed;
 }

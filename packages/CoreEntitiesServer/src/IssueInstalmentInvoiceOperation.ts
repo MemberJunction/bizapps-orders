@@ -122,14 +122,14 @@ export async function IssueInstalment(
             user,
         );
         const row = rowResult.Results?.[0];
-        if (!row) return refuse(`No instalment with ID ${scheduleID}.`);
+        if (!row) return refuse(`The instalment was not found (ID ${scheduleID}).`);
 
         const orderResult = await rv.RunView<{ ID: string; OrderNumber: string; Status: string; CompanyID: string }>(
             { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(row.OrderHeaderID, 'OrderHeaderID')}'`, Fields: ['ID', 'OrderNumber', 'Status', 'CompanyID'], ResultType: 'simple' },
             user,
         );
         const order = orderResult.Results?.[0];
-        if (!order) return refuse(`Instalment ${scheduleID} belongs to an order that could not be read.`);
+        if (!order) return refuse(`The order for instalment ${scheduleID} could not be read.`);
 
         const echo = {
             OrderHeaderPaymentScheduleID: row.ID,
@@ -153,10 +153,10 @@ export async function IssueInstalment(
             };
         }
         if (row.Status !== 'Scheduled') {
-            return refuse(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} is ${row.Status} and cannot be invoiced.`, echo);
+            return refuse(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} is ${row.Status}, so it cannot be invoiced. Only a scheduled instalment can be.`, echo);
         }
         if (!BOOKED_STATUSES.has(order.Status)) {
-            return refuse(`Order ${order.OrderNumber} is ${order.Status}; only a Confirmed order has a receivable to invoice.`, echo);
+            return refuse(`Order ${order.OrderNumber} is ${order.Status}. Only a confirmed order can have its instalments invoiced.`, echo);
         }
 
         // The schedule must tie to the lines — the same check the confirm ran, because a Scheduled
@@ -226,7 +226,7 @@ export async function IssueInstalment(
             return refuse(
                 `Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} would be numbered ` +
                     `${documentNumber}, which instalment ${clash.InstallmentNumber} of the same order already ` +
-                    `holds. Two documents cannot share a number — the customer's AP system and Bill.com both ` +
+                    `holds. Two invoices cannot share a number, because the customer's accounts payable system and Bill.com both ` +
                     `match on it. Renumber the instalments so each is distinct, then issue again.`,
                 echo,
             );
@@ -311,7 +311,7 @@ export async function IssueInstalment(
         BeginInstalmentIssue(row.ID);
         try {
             const entity = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, user);
-            if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be loaded for update.`);
+            if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} could not be loaded to mark it invoiced.`);
             entity.DocumentNumber = documentNumber;
             entity.InvoicedAt = invoicedAt;
             entity.InvoicedByUserID = user.ID;
@@ -365,7 +365,7 @@ export async function IssueInstalment(
                 // Reloaded first: the rollup rewrote AmountPaid and Status when the row became
                 // billed (a fully prepaid row is Paid by now), and saving the stale copy would write
                 // them back.
-                if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.ID} could not be reloaded to record its billing entry.`);
+                if (!(await entity.Load(row.ID))) throw new Error(`Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} could not be reloaded to record its billing entry.`);
                 entity.JournalEntryID = journalEntryID;
                 if (!(await entity.Save())) {
                     throw new Error(entity.LatestResult?.CompleteMessage ?? 'The billing entry could not be recorded on the instalment.');
@@ -382,13 +382,13 @@ export async function IssueInstalment(
                 if (billed === 0) continue;
                 const lineEntity = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
                 if (!(await lineEntity.Load(orderLineID))) {
-                    throw new Error(`Order line ${orderLineID} could not be loaded to advance its BilledToDate.`);
+                    throw new Error(`Order line ${orderLineID} could not be loaded to update how much of it has been billed.`);
                 }
                 lineEntity.BilledToDate = Number(lineEntity.BilledToDate ?? 0) + billed;
                 if (!(await lineEntity.Save())) {
                     throw new Error(
                         lineEntity.LatestResult?.CompleteMessage ??
-                            `BilledToDate could not be advanced on order line ${orderLineID}.`,
+                            `Could not update how much of order line ${orderLineID} has been billed.`,
                     );
                 }
             }

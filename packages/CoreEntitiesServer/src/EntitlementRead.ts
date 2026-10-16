@@ -191,12 +191,12 @@ function parseAsOf(value: Date | string | null | undefined, now: Date = new Date
     } else {
         const text = String(value);
         if (/['";]/.test(text)) {
-            throw new InvalidOperationInputError('AsOf must be an ISO datetime.');
+            throw new InvalidOperationInputError('AsOf must be a date and time in ISO format, for example 2026-07-01T00:00:00Z.');
         }
         d = new Date(text);
     }
     if (Number.isNaN(d.getTime())) {
-        throw new InvalidOperationInputError('AsOf must be an ISO datetime.');
+        throw new InvalidOperationInputError('AsOf must be a date and time in ISO format, for example 2026-07-01T00:00:00Z.');
     }
     // Historical audit ("did they have access on the 3rd?") is the point of AsOf.
     // Hours/years ahead is refused. Sub-minute skew is NTP, not a diagnostic of 2030.
@@ -209,14 +209,14 @@ function parseAsOf(value: Date | string | null | undefined, now: Date = new Date
 function requireCode(value: unknown): string {
     const code = String(value ?? '').trim();
     if (!code) throw new InvalidOperationInputError('Code is required.');
-    if (code.length > 80) throw new InvalidOperationInputError('Code is too long.');
+    if (code.length > 80) throw new InvalidOperationInputError('Code is too long; it can be at most 80 characters.');
     return code;
 }
 
 function normalizeEmail(value: unknown): string | null {
     const email = String(value ?? '').trim().toLowerCase();
     if (!email) return null;
-    if (email.length > 254) throw new InvalidOperationInputError('Email is too long.');
+    if (email.length > 254) throw new InvalidOperationInputError('Email is too long; it can be at most 254 characters.');
     return email;
 }
 

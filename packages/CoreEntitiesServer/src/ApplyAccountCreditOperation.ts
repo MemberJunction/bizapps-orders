@@ -130,7 +130,7 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         user: UserInfo,
     ): Promise<ApplyAccountCreditOutput> {
         if (!input?.SourceOrderHeaderID || !input?.TargetOrderHeaderID) {
-            return { Success: false, Message: 'Both SourceOrderHeaderID and TargetOrderHeaderID are required.' };
+            return { Success: false, Message: 'Pick both the order that holds the credit and the order to apply it to.' };
         }
         // Caller-supplied ids reach SQL filter text downstream. Validated here,
         // at the boundary, so every frame below this one can trust them.
@@ -140,7 +140,7 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         if (input.SourceOrderHeaderID.toLowerCase() === input.TargetOrderHeaderID.toLowerCase()) {
             return {
                 Success: false,
-                Message: 'The source and target orders are the same. Moving a credit onto the order that already holds it would change nothing.',
+                Message: 'The credit is already on this order. Pick a different order to apply it to.',
             };
         }
 
@@ -155,8 +155,8 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
             return {
                 Success: false,
                 Message:
-                    `Order ${source.OrderNumber} has no credit to spend — its balance is ${money(Number(source.Balance ?? 0))}. ` +
-                    `A credit exists only when an order has been paid MORE than it is worth, which shows as a negative balance.`,
+                    `Order ${source.OrderNumber} has no credit to spend; its balance is ${money(Number(source.Balance ?? 0))}. ` +
+                    `An order has credit only when it was paid more than it is worth, which shows as a negative balance.`,
             };
         }
 
@@ -173,12 +173,12 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         // Default to as much as both sides allow; an explicit amount is checked against both.
         const requested = input.Amount === undefined ? Math.min(available, owing) : money(Number(input.Amount));
         if (!(requested > TOLERANCE)) {
-            return { Success: false, Message: `Amount must be greater than zero (received ${input.Amount}).` };
+            return { Success: false, Message: `Enter an amount greater than zero (${input.Amount} was entered).` };
         }
         if (requested > available + TOLERANCE) {
             return {
                 Success: false,
-                Message: `Order ${source.OrderNumber} only has ${available} of credit; ${requested} was requested.`,
+                Message: `Order ${source.OrderNumber} only has ${available} of credit, less than the ${requested} asked for. Apply ${available} or less.`,
             };
         }
         if (requested > owing + TOLERANCE) {
@@ -210,7 +210,7 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
             return {
                 Success: false,
                 Message:
-                    `The '${ACCOUNT_CREDIT_TYPE_CODE}' payment type is not present. Push metadata/payment-types before applying credits.`,
+                    `Credits cannot be applied because the '${ACCOUNT_CREDIT_TYPE_CODE}' payment type is not installed. Ask an administrator to push the Orders payment-type metadata.`,
             };
         }
 
@@ -345,7 +345,7 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
 
         const seq = rows?.[0]?.Seq;
         if (!seq) {
-            throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
+            throw new Error('Could not get the next payment number because the payment number sequence (PaymentSequence row 1) is missing. Ask an administrator to restore it.');
         }
         return `PAY-${String(seq).padStart(6, '0')}`;
     }

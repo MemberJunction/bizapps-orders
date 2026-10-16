@@ -78,7 +78,7 @@ function wholeYears(from: Date | string, to: Date | string): number {
 
 function calendarDay(value: Date | string): { y: number; m: number; d: number } {
     const d = value instanceof Date ? value : new Date(`${String(value).slice(0, 10)}T00:00:00Z`);
-    if (Number.isNaN(d.getTime())) throw new Error(`Not a calendar day: ${String(value)}`);
+    if (Number.isNaN(d.getTime())) throw new Error(`'${String(value)}' is not a valid date.`);
     return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate() };
 }
 

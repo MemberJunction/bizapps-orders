@@ -605,7 +605,7 @@ export const PaymentLedgerChecks: NamedCheck[] = [
           "un-applying 250 when only 100 was applied must be refused",
         );
         Assert(
-          /nothing more to/i.test(attempt.Message),
+          /no more than that/i.test(attempt.Message),
           `the refusal should explain, got: ${attempt.Message}`,
         );
       }),

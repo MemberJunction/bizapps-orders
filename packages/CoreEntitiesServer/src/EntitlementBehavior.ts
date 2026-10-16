@@ -652,8 +652,8 @@ export function AccessOverrideApprovers(facts: AccessOverrideApproverFacts): Acc
     if (!approver) {
         return {
             Refusal:
-                "The order's company has no active approver (AccountingCompanyProfile.ApprovalCFOUserID), so no one " +
-                'could approve this override. Set the company approver first.',
+                "The order's company has no active approver, so no one can approve this override. Ask an administrator " +
+                "to set an active approver on the company's accounting profile (ApprovalCFOUserID), then request the override again.",
         };
     }
     if (!sameUser(approver, facts.RequesterUserID)) return { UserIDs: [approver], Basis: 'CompanyApprover' };
@@ -661,8 +661,8 @@ export function AccessOverrideApprovers(facts: AccessOverrideApproverFacts): Acc
     if (!facts.FallbackRoleName) {
         return {
             Refusal:
-                "You are the order company's approver and cannot approve your own override, and no fallback approver " +
-                'role is configured (Orders setting AccessOverrideFallbackApproverRole).',
+                "You are the approver for the order's company and cannot approve your own override, and no fallback approver " +
+                'role is set up. Ask an administrator to set the Orders setting AccessOverrideFallbackApproverRole, then request the override again.',
         };
     }
     const others: string[] = [];
@@ -672,8 +672,8 @@ export function AccessOverrideApprovers(facts: AccessOverrideApproverFacts): Acc
     if (others.length === 0) {
         return {
             Refusal:
-                `You are the order company's approver and cannot approve your own override, and no active holder of ` +
-                `the fallback approver role '${facts.FallbackRoleName}' other than you exists.`,
+                `You are the approver for the order's company and cannot approve your own override, and no one else holds ` +
+                `the fallback approver role '${facts.FallbackRoleName}'. Ask an administrator to give that role to another active user, then request the override again.`,
         };
     }
     return { UserIDs: others, Basis: 'FallbackRole' };

@@ -50,7 +50,7 @@ describe('TiedSlice', () => {
     });
 
     it('refuses rows that do not total the lines', () => {
-        expect(() => TiedSlice([100], [50, 49.99], 0)).toThrow(/cannot be sliced/);
+        expect(() => TiedSlice([100], [50, 49.99], 0)).toThrow(/cannot be split/);
     });
 });
 
@@ -92,6 +92,6 @@ describe('TiedSlice with instalments already invoiced (#681)', () => {
     });
 
     it('refuses rows not yet invoiced that do not total what the lines have left', () => {
-        expect(() => TiedSlice(totals, [300, 300, 225, 225], 1, billed)).toThrow(/cannot be sliced/);
+        expect(() => TiedSlice(totals, [300, 300, 225, 225], 1, billed)).toThrow(/cannot be split/);
     });
 });

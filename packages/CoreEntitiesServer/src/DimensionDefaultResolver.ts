@@ -191,8 +191,9 @@ export class DimensionDefaultResolver {
         );
         if (!result?.Success) {
             throw new Error(
-                `Could not read the dimension defaults, so this order's lines cannot be tagged: ` +
-                    `${result?.ErrorMessage ?? 'no error message supplied'}`,
+                `Could not read the default accounting dimensions, so this order's lines cannot be tagged. ` +
+                    `Try again; if it keeps failing, ask an administrator to check the server. ` +
+                    `Details: ${result?.ErrorMessage ?? 'none given'}`,
             );
         }
         this._rows = result.Results ?? [];

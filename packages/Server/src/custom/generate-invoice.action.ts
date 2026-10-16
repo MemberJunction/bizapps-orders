@@ -119,7 +119,7 @@ export class GenerateInvoiceAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'INVALID_ORDER_ID',
-                Message: `'${orderID}' is not an order ID. This action takes the OrderHeader's ID, not its order number.`,
+                Message: `'${orderID}' is not an order ID. Pass the order's record ID, not its order number.`,
             };
         }
 
@@ -137,7 +137,7 @@ export class GenerateInvoiceAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'MISSING_USER',
-                Message: 'ContextUser is required: the order is read through the metadata layer, which resolves permissions per user.',
+                Message: 'This action needs a user to run as, because the order is read with that user\'s permissions. Run it from a scheduled job that has a run-as user, or as a signed-in user.',
             };
         }
 
@@ -154,7 +154,7 @@ export class GenerateInvoiceAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'NO_PROVIDER',
-                Message: 'No metadata provider is configured — the data layer has not been set up in this process.',
+                Message: 'The server\'s data connection is not set up, so the order cannot be read. Ask an administrator to check the server configuration.',
             };
         }
 
@@ -163,7 +163,7 @@ export class GenerateInvoiceAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'UNSUPPORTED_FORMAT',
-                Message: `Format '${format}' is not supported. Use 'HTML' for a rendered document or 'DATA' for the figures alone. PDF is produced by rendering this HTML — see the operations notes.`,
+                Message: `Format '${format}' is not supported. Use 'HTML' for a rendered document or 'DATA' for the figures alone. To get a PDF, print the HTML document to PDF.`,
             };
         }
 
@@ -172,7 +172,7 @@ export class GenerateInvoiceAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'INVALID_PAYMENT_SCHEDULE_ID',
-                Message: `'${paymentScheduleID}' is not a payment schedule row ID.`,
+                Message: `'${paymentScheduleID}' is not a payment schedule ID.`,
             };
         }
 

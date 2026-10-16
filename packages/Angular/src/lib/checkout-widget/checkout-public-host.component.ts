@@ -216,12 +216,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.loadError = null;
         this.readHostAttributes();
         if (!this.slug) {
-            this.loadError = 'This checkout link is missing its reference.';
+            this.loadError = 'This checkout link is incomplete. Check the link and try again.';
             return;
         }
         this.sessionKey = this.clientKey();
         if (!this.sessionKey) {
-            this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
+            this.loadError = 'This checkout needs a secure connection. Open the page with an https:// address.';
             return;
         }
         if (!this.renewalToken && (await this.resumeAccountStep())) {
@@ -253,7 +253,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     return;
                 }
             } else if (!cfg.productId) {
-                this.loadError = 'This checkout is not configured with a product.';
+                this.loadError = 'This checkout has no product to sell. Contact the site operator.';
                 return;
             }
             this.config = cfg;
@@ -503,7 +503,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
             }
             if (!this.stripe || !this.card) {
-                throw new Error('Card entry is not ready.');
+                throw new Error('The card form is still loading. Wait a moment and try again.');
             }
             const result = await this.stripe.confirmCardPayment(String(intent.ClientSecret), {
                 payment_method: {
@@ -526,12 +526,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             } else {
                 const stripeStatus = (result.paymentIntent?.status || '').toLowerCase();
                 if (stripeStatus && stripeStatus !== 'succeeded' && stripeStatus !== 'processing') {
-                    throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
+                    throw new Error(`The payment was not confirmed (status: ${result.paymentIntent?.status}). Please try again, or use another card.`);
                 }
             }
             await this.finish();
         } catch (err) {
-            this.errorMessage = err instanceof Error ? err.message : 'Checkout failed.';
+            this.errorMessage = err instanceof Error ? err.message : 'Checkout did not complete. Please try again.';
             this.reportError(this.errorMessage);
         } finally {
             this.processing = false;
@@ -564,7 +564,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     throw new Error('Could not start payment.');
                 }
                 if (!this.stripe || !this.card) {
-                    throw new Error('Card entry is not ready.');
+                    throw new Error('The card form is still loading. Wait a moment and try again.');
                 }
                 const result = await this.stripe.confirmCardPayment(String(intent.ClientSecret), {
                     payment_method: { card: this.card },
@@ -576,7 +576,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 } else {
                     const stripeStatus = (result.paymentIntent?.status || '').toLowerCase();
                     if (stripeStatus && stripeStatus !== 'succeeded' && stripeStatus !== 'processing') {
-                        throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
+                        throw new Error(`The payment was not confirmed (status: ${result.paymentIntent?.status}). Please try again, or use another card.`);
                     }
                 }
             }
@@ -602,7 +602,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 })
             );
         } catch (err) {
-            this.errorMessage = err instanceof Error ? err.message : 'Payment failed.';
+            this.errorMessage = err instanceof Error ? err.message : 'The payment did not go through. Please try again.';
             this.reportError(this.errorMessage);
         } finally {
             this.processing = false;
@@ -867,7 +867,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             });
         } catch (err) {
             this.cardMounted = false;
-            this.errorMessage = err instanceof Error ? err.message : 'Could not load card entry.';
+            this.errorMessage = err instanceof Error ? err.message : 'The card form could not be loaded. Check your connection and try again.';
             this.reportError(this.errorMessage);
         }
     }
@@ -879,7 +879,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         return new Promise((resolve, reject) => {
             const inst = () => {
                 if (!window.Stripe) {
-                    reject(new Error('Stripe.js did not load'));
+                    reject(new Error('The card payment form did not load. Check your connection and try again.'));
                     return;
                 }
                 resolve(window.Stripe(pk));
@@ -891,7 +891,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             const s = document.createElement('script');
             s.src = 'https://js.stripe.com/v3/';
             s.onload = () => inst();
-            s.onerror = () => reject(new Error('Could not load Stripe.js'));
+            s.onerror = () => reject(new Error('The card payment form could not be loaded. Check your connection and try again.'));
             document.head.appendChild(s);
         });
     }

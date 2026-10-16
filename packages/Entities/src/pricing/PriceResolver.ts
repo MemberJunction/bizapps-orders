@@ -371,7 +371,7 @@ export class DefaultPriceResolver extends BasePriceResolver {
             } catch (err) {
                 throw new PriceResolutionError(
                     ctx.ProductID,
-                    `Price '${priceLabel(row)}' has invalid Applicability JSON: ${err instanceof Error ? err.message : String(err)}`,
+                    `Price '${priceLabel(row)}' has a who-it-applies-to rule that cannot be read. Fix or clear that rule on the price. Details: ${err instanceof Error ? err.message : String(err)}`,
                 );
             }
         }

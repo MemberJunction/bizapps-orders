@@ -139,11 +139,11 @@ export class DetectUnattestedProgressOperation extends OrdersDetectUnattestedPro
         try {
             const type = await GetActiveFinanceExceptionType(PROGRESS_UNATTESTED, provider, user);
             if (!type) {
-                return { Success: true, AsOfDate: asOf, TypeInactive: true, Lines: [], Raised: 0, AlreadyRaised: 0, Message: `${PROGRESS_UNATTESTED} is not active in accounting; nothing was raised.` };
+                return { Success: true, AsOfDate: asOf, TypeInactive: true, Lines: [], Raised: 0, AlreadyRaised: 0, Message: `Unattested progress was not checked because the ${PROGRESS_UNATTESTED} finance exception type is missing or turned off in accounting.` };
             }
             const maxDays = ReadMaxDaysWithoutAttestation(type.Configuration);
             if (maxDays === null) {
-                return this.fail(asOf, `${PROGRESS_UNATTESTED} has no usable MaxDaysWithoutAttestation in its Configuration; set a whole number of days.`);
+                return this.fail(asOf, `Unattested progress was not checked because the ${PROGRESS_UNATTESTED} finance exception type has no valid MaxDaysWithoutAttestation setting. Ask an administrator to set it to a whole number of days in the type's configuration.`);
             }
 
             const worklist = await new GetProgressWorklistOperation().Build({ MaxCount: Number.MAX_SAFE_INTEGER }, provider, user);

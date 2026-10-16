@@ -84,7 +84,7 @@ export async function CreateOrderForUnmatchedCharge(
     const { Charge: charge } = args;
     try {
         if (!charge.ProviderIntentID) {
-            return { Created: false, Code: 'ChargeHasNoIntent', Message: `Charge ${charge.ProviderChargeID} has no gateway intent to read its checkout from.` };
+            return { Created: false, Code: 'ChargeHasNoIntent', Message: `Charge ${charge.ProviderChargeID} has no payment intent at the payment provider, so what it paid for cannot be read. Create the order by hand.` };
         }
         const items = await args.Driver.ListChargeItems({ ProviderIntentID: charge.ProviderIntentID });
         if (!items.Success) {

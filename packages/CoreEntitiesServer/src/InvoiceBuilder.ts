@@ -157,15 +157,15 @@ export async function BuildInvoiceDocuments(
     const onlyCompanyID = instalment?.CompanyID ?? options?.OnlyCompanyID ?? null;
 
     const header = await view<Row>(provider, user, ORDER_HEADER_ENTITY, `ID = '${id}'`);
-    if (header.error) return { Success: false, Message: `Could not read the order — ${header.error}`, Documents: [] };
-    if (!header.rows.length) return { Success: false, Message: `No order with ID ${id}.`, Documents: [] };
+    if (header.error) return { Success: false, Message: `Could not read the order to build its invoice: ${header.error}`, Documents: [] };
+    if (!header.rows.length) return { Success: false, Message: `The order was not found (ID ${id}). It may have been deleted.`, Documents: [] };
 
     const order = header.rows[0];
     const renderable = CanRender(String(order.Status));
     if (!renderable.OK) return { Success: false, Message: renderable.Reason, Documents: [] };
 
     const lineResult = await view<Row>(provider, user, ORDER_LINE_ENTITY, `OrderHeaderID = '${id}'`, 'LineNumber');
-    if (lineResult.error) return { Success: false, Message: `Could not read the order lines — ${lineResult.error}`, Documents: [] };
+    if (lineResult.error) return { Success: false, Message: `Could not read the order's lines to build its invoice: ${lineResult.error}`, Documents: [] };
     const lineRows = lineResult.rows;
     const lineIDs = uuidList(lineRows.map((l) => String(l.ID)), 'OrderLineID');
 
@@ -199,7 +199,7 @@ export async function BuildInvoiceDocuments(
     const readError = [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult, concessionResult]
         .map((r) => ('error' in r ? r.error : undefined))
         .find(Boolean);
-    if (readError) return { Success: false, Message: `Could not assemble the invoice — ${readError}`, Documents: [] };
+    if (readError) return { Success: false, Message: `Could not build the invoice: ${readError}`, Documents: [] };
 
     const chargeIDs = uuidList(chargeResult.rows.map((c) => String(c.ID)), 'OrderChargeID');
     const adjustmentIDs = uuidList(adjustmentResult.rows.map((a) => String(a.ID)), 'OrderAdjustmentID');
@@ -239,7 +239,7 @@ export async function BuildInvoiceDocuments(
     const secondError = [chargeAllocResult, adjustmentAllocResult, chargeTypeResult, paymentHeaderResult, companyResult, profileResult, companyAddressResult]
         .map((r) => ('error' in r ? r.error : undefined))
         .find(Boolean);
-    if (secondError) return { Success: false, Message: `Could not assemble the invoice — ${secondError}`, Documents: [] };
+    if (secondError) return { Success: false, Message: `Could not build the invoice: ${secondError}`, Documents: [] };
 
     // The issuer addresses need a third trip because they are only knowable once the links are read.
     // It is skipped entirely when no company has an address on file, which is the common case until
@@ -457,8 +457,8 @@ export async function BuildInvoiceDocuments(
             Success: false,
             Code: 'NOT_ORDER_COMPANY',
             Message:
-                `Order ${orderFacts.OrderNumber} is invoiced by its own company (${orderFacts.CompanyName || orderFacts.CompanyID}), ` +
-                `not by company ${onlyCompanyID}: an order has one document, whatever company owns each product.`,
+                `Order ${orderFacts.OrderNumber} is invoiced by its own company, ${orderFacts.CompanyName || orderFacts.CompanyID}, ` +
+                `not by company ${onlyCompanyID}. An order has one invoice, whichever companies own its products.`,
             Documents: [],
         };
     }
@@ -502,18 +502,18 @@ export async function BuildCreditMemoDocuments(
 ): Promise<InvoiceBuildResult> {
     const id = RequireUUID(orderConcessionID, 'OrderConcessionID');
     const concessions = await view<Row>(provider, user, ORDER_CONCESSION_ENTITY, `ID = '${id}'`);
-    if (concessions.error) return { Success: false, Message: `Could not read the concession — ${concessions.error}`, Documents: [] };
+    if (concessions.error) return { Success: false, Message: `Could not read the concession to build its credit memo: ${concessions.error}`, Documents: [] };
     const concession = concessions.rows[0];
-    if (!concession) return { Success: false, Message: `No concession with ID ${id}.`, Documents: [] };
+    if (!concession) return { Success: false, Message: `The concession was not found (ID ${id}).`, Documents: [] };
     const orderHeaderID = String(concession.OrderHeaderID);
     if (options?.OrderHeaderID && orderHeaderID.toLowerCase() !== RequireUUID(options.OrderHeaderID, 'OrderHeaderID').toLowerCase()) {
-        return { Success: false, Message: `Concession ${id} is not on order ${options.OrderHeaderID}.`, Documents: [] };
+        return { Success: false, Message: `This concession belongs to a different order, not order ${options.OrderHeaderID}.`, Documents: [] };
     }
     const number = str(concession.CreditMemoNumber);
     if (String(concession.Status) !== 'Approved' || !number) {
         return {
             Success: false,
-            Message: `Concession ${id} issued no credit memo: only an approved amount change that needed one has a memo to send.`,
+            Message: `This concession has no credit memo to send. Only an approved amount change that issued a credit memo has one.`,
             Documents: [],
         };
     }
@@ -532,14 +532,14 @@ export async function BuildCreditMemoDocuments(
         view<Row>(provider, user, SUBSCRIPTION_TERM_ENTITY, `ID = '${RequireUUID(String(concession.SubscriptionTermID), 'SubscriptionTermID')}'`),
     ]);
     const readError = events.error ?? terms.error;
-    if (readError) return { Success: false, Message: `Could not read the amount change — ${readError}`, Documents: [] };
+    if (readError) return { Success: false, Message: `Could not read the amount change to build its credit memo: ${readError}`, Documents: [] };
 
     const recorded = events.rows
         .map((e) => ({ Event: e, Data: parseEventData(e.EventData) }))
         .find((e) => String(e.Data?.OrderConcessionID ?? '').toLowerCase() === id.toLowerCase());
     const memo = recorded?.Data?.CreditMemo;
     if (!recorded || !memo) {
-        return { Success: false, Message: `Credit memo ${number} has no record of what it credited: its amount change logged no memo.`, Documents: [] };
+        return { Success: false, Message: `Credit memo ${number} cannot be shown: the amount change that issued it has no record of what it credited. Ask an administrator to check the subscription's history.`, Documents: [] };
     }
     const term = terms.rows[0];
     const subscriptions = term
@@ -604,9 +604,9 @@ async function readInstalment(
         `OrderHeaderID = '${orderHeaderID}' AND Status <> 'Canceled'`,
         'InstallmentNumber',
     );
-    if (rows.error) return { error: `Could not read the payment schedule — ${rows.error}` };
+    if (rows.error) return { error: `Could not read the order's payment schedule: ${rows.error}` };
     const row = rows.rows.find((r) => String(r.ID).toLowerCase() === scheduleID.toLowerCase());
-    if (!row) return { error: `Instalment ${scheduleID} is not on order ${orderHeaderID}, or has been cancelled.` };
+    if (!row) return { error: 'This instalment is not on the order, or it has been cancelled.' };
 
     const companyID = String(row.CompanyID);
     const siblings = rows.rows.filter((r) => String(r.CompanyID).toLowerCase() === companyID.toLowerCase());

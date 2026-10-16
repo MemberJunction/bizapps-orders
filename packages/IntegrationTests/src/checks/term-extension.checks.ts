@@ -304,7 +304,7 @@ export const TermExtensionChecks: NamedCheck[] = [
         OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, solo.Name);
         const c = await recordExtension(ctx, Term.ID, 30);
         Assert(!c.Saved, "the requester cannot acknowledge their own amendment");
-        Assert(/requester cannot acknowledge/.test(c.Message), `the refusal says why: ${c.Message}`);
+        Assert(/cannot acknowledge your own/.test(c.Message), `the refusal says why: ${c.Message}`);
       }),
   },
   {

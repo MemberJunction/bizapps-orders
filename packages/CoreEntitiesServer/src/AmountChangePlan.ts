@@ -269,7 +269,7 @@ export function PlanReduction(input: ReductionInput): ReductionPlan | string {
 
     if (input.Instalments.length === 0) {
         if (input.AppliesToInvoiceID) {
-            return 'This order is billed as a whole, so the order itself is the invoice credited. Leave AppliesToInvoiceID blank.';
+            return 'This order is billed as a whole, so the order itself is the invoice credited. Leave the invoice to credit blank.';
         }
         const onOrder = money(Math.min(left, Math.max(0, input.OrderBalance)));
         if (onOrder > 0) applied.push({ InstalmentID: null, DocumentNumber: null, Amount: onOrder });
@@ -287,11 +287,11 @@ export function PlanReduction(input: ReductionInput): ReductionPlan | string {
 
     if (input.AppliesToInvoiceID) {
         const invoice = input.Instalments.find((i) => i.ID.toLowerCase() === String(input.AppliesToInvoiceID).toLowerCase());
-        if (!invoice) return `Instalment ${input.AppliesToInvoiceID} is not one of this term's order's instalments for the company that sold it.`;
+        if (!invoice) return `Instalment ${input.AppliesToInvoiceID} is not one of the instalments on this term's order for the company that sold it. Pick one of that order's invoices.`;
         if (!invoice.DocumentNumber || (invoice.Status !== 'Invoiced' && invoice.Status !== 'Paid')) {
             return (
                 `Instalment ${invoice.InstallmentNumber} is ${invoice.Status} and has not been invoiced, so there is no invoice to credit. ` +
-                `Leave AppliesToInvoiceID blank: the reduction comes off the uninvoiced instalments.`
+                `Leave the invoice to credit blank; the reduction comes off the instalments not yet invoiced.`
             );
         }
         const open = money(Math.max(0, invoice.Balance));
@@ -313,7 +313,7 @@ export function PlanReduction(input: ReductionInput): ReductionPlan | string {
             }
         }
     } else if (input.RefundRequested) {
-        return 'A refund is asked for against a paid invoice: name it in AppliesToInvoiceID.';
+        return 'A refund needs the paid invoice it comes from. Pick that invoice to credit.';
     }
 
     if (left > 0) left = spreadProRata(left, scheduled, changes);
@@ -483,7 +483,7 @@ export function CreditMemoEntry(input: CreditMemoEntryInput): JEDraft | string {
     const taxCents = cents(split.Tax);
     if (taxCents > 0 && credited === 0) {
         return (
-            `The credit memo carries ${split.Tax.toFixed(2)} of tax, but the line credited its tax to no account, so there ` +
+            `The credit memo carries ${split.Tax.toFixed(2)} of tax, but the line's tax was not posted to any account, so there ` +
             `is no account to take it back from.`
         );
     }

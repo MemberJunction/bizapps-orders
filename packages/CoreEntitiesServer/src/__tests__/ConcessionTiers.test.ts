@@ -210,7 +210,7 @@ describe('deciding a concession under tiers', () => {
         row.approvingRule = async () => ({ Name: 'Director', ApprovalRequiredRoleID: 'role-director', RequiresDecisionWithinAuthority: false });
         roles.UserHoldsRole.mockImplementation(async (roleID: string) => roleID === 'role-manager');
 
-        expect(await row.applyDecision()).toBe('Only a holder of the role named by the ConcessionLimit rule can decide this concession.');
+        expect(await row.applyDecision()).toBe("Only a holder of the role named by this concession's approval rule can decide it.");
     });
 
     it('refuses the requester on a sign-off tier, even as a holder of its role', async () => {

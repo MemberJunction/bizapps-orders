@@ -319,7 +319,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
                     ? 'Payments are recorded only for providers whose poll job is live; the rest are previewed or skipped.'
                     : 'Captured payments are not listed — only what the poll could not finish.';
             default:
-                return 'The poll job could not be read; the server decides whether a check records anything.';
+                return 'The scheduled payment check could not be read, so this page cannot tell whether a check here records payments. The server decides when it runs.';
         }
     }
 
@@ -406,7 +406,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         if (!preview) {
             const proceed = await this.confirm.Confirm({
                 title: 'Record payments now?',
-                message: 'This reads the payments the rail reported since the last poll and records each cleared one as cash against its orders.',
+                message: 'This reads the payments the billing service reported since the last check and records each cleared one as cash against its orders.',
                 detail: 'The scheduled poll would do this on its own at its next run.',
                 type: 'warning',
                 confirmText: 'Record payments',

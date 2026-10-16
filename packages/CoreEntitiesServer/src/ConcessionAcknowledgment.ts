@@ -91,7 +91,7 @@ export async function RaiseConcessionAcknowledgment(
     );
     const typeID = (types?.Results?.[0] as { ID: string } | undefined)?.ID;
     if (!typeID) {
-        throw new Error(`The tasks app has no '${ACKNOWLEDGMENT_TASK_TYPE_CODE}' task type, so accounting cannot be told of the concession.`);
+        throw new Error(`The concession was not approved: the tasks app has no '${ACKNOWLEDGMENT_TASK_TYPE_CODE}' task type, so accounting cannot be told about it. Ask an administrator to add that task type.`);
     }
     const orderNumber = (orders?.Results?.[0] as { OrderNumber: string } | undefined)?.OrderNumber ?? concession.OrderHeaderID;
     const summary = ConcessionSummary({
@@ -110,7 +110,7 @@ export async function RaiseConcessionAcknowledgment(
     task.Priority = 'Medium';
     task.Status = 'Open';
     if (!(await task.Save())) {
-        throw new Error(`The acknowledgment task for ${orderNumber} could not be created: ${task.LatestResult?.CompleteMessage}`);
+        throw new Error(`The concession on ${orderNumber} was not approved because accounting's confirmation task could not be created: ${task.LatestResult?.CompleteMessage}`);
     }
 
     await EnsureTaskLink(task.ID, EntityIDFor(ORDER_CONCESSION_ENTITY), concession.ID, ctx);

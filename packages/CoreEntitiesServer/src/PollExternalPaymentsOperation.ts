@@ -276,7 +276,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 // One bad payment must not stop the pass — but it must stop the watermark.
                 fault = `${p.ExternalPaymentRef}: ${err instanceof Error ? err.message : String(err)}`;
                 LogError(`Orders.PollExternalPayments: ${fault}`);
-                outcomes.push({ PaymentProviderID: paymentProviderID, ExternalPaymentRef: p.ExternalPaymentRef, Amount: p.Amount, ExternalStatus: p.Status, Disposition: 'Held', Reason: `Fault while processing: ${fault}`, });
+                outcomes.push({ PaymentProviderID: paymentProviderID, ExternalPaymentRef: p.ExternalPaymentRef, Amount: p.Amount, ExternalStatus: p.Status, Disposition: 'Held', Reason: `Could not process this payment: ${fault}`, });
             }
         }
 
@@ -296,7 +296,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 state,
                 fault
                     ? { LastError: fault }
-                    : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${fresh.length - freshBatch.length} more next pass.` : null },
+                    : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Stopped after ${opts.maxCount} payments; ${fresh.length - freshBatch.length} more will be picked up on the next run.` : null },
             );
         }
         return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null, RailUnmatched: railUnmatched };
@@ -441,14 +441,14 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         if (!capture.Success || !cap?.Success) {
             // A refusal from the capture path is a fact about OUR data (a split-company order, an
             // ambiguous payer) or our configuration — a person has to look, so it counts as attention.
-            const reason = `Orders.CapturePayment refused: ${cap?.Message ?? capture.ErrorMessage ?? 'no reason'}${cap?.Blockers?.length ? ` (${cap.Blockers.map((b) => b.Code ?? b.Message).join(', ')})` : ''}`;
+            const reason = `Orders could not record this payment: ${cap?.Message ?? capture.ErrorMessage ?? 'no reason was given'}${cap?.Blockers?.length ? ` (${cap.Blockers.map((b) => b.Code ?? b.Message).join(', ')})` : ''}`;
             await record('Refused', reason);
             return { ...base, Disposition: 'Refused', Reason: reason };
         }
         if (cap.WasRetry) {
             // The unique key found an earlier capture this table did not know about.
-            await record('Captured', 'Already captured under the idempotency key; row adopted.', cap.PaymentHeaderID ?? null);
-            return { ...base, Disposition: 'Ignored', Reason: 'Already captured under the idempotency key.', PaymentNumber: cap.PaymentNumber, PaymentHeaderID: cap.PaymentHeaderID };
+            await record('Captured', 'This payment was already recorded earlier; linked to that record.', cap.PaymentHeaderID ?? null);
+            return { ...base, Disposition: 'Ignored', Reason: 'This payment was already recorded earlier.', PaymentNumber: cap.PaymentNumber, PaymentHeaderID: cap.PaymentHeaderID };
         }
         const reason = `Captured as ${cap.PaymentNumber ?? '(preview)'} for ${allocation.Total.toFixed(2)} across ${allocation.Allocations.length} order(s).`;
         await record('Captured', reason, cap.PaymentHeaderID ?? null);

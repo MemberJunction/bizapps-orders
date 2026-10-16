@@ -207,7 +207,7 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
             Results: Array.from({ length: 1000 }, () => dependentRow('c', [])),
         });
 
-        await expect(orderWith([fakeLine(7, [])]).deleteRemovedLines()).rejects.toThrow(/refusing to delete/);
+        await expect(orderWith([fakeLine(7, [])]).deleteRemovedLines()).rejects.toThrow(/was not removed/);
     });
 });
 

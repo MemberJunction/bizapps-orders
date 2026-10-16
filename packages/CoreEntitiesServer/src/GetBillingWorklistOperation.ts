@@ -99,7 +99,7 @@ export class GetBillingWorklistOperation extends OrdersGetBillingWorklistOperati
             },
             user,
         );
-        if (!due.Success) return this.empty(`Could not read the payment schedule: ${due.ErrorMessage ?? 'unknown error'}`, asOf, windowEnd);
+        if (!due.Success) return this.empty(`Could not load the billing worklist because the payment schedule could not be read. Refresh to try again; if it keeps failing, ask an administrator to check the server. Details: ${due.ErrorMessage ?? 'none given'}`, asOf, windowEnd);
 
         let rows = due.Results ?? [];
         const truncated = rows.length > maxCount;
@@ -129,7 +129,7 @@ export class GetBillingWorklistOperation extends OrdersGetBillingWorklistOperati
             ),
         ]);
         if (!orders.Success || !siblings.Success) {
-            return this.empty(`Could not read the orders behind the schedule: ${orders.ErrorMessage ?? siblings.ErrorMessage ?? 'unknown error'}`, asOf, windowEnd);
+            return this.empty(`Could not load the billing worklist because the orders behind the schedule could not be read. Refresh to try again; if it keeps failing, ask an administrator to check the server. Details: ${orders.ErrorMessage ?? siblings.ErrorMessage ?? 'none given'}`, asOf, windowEnd);
         }
 
         const orderByID = new Map((orders.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));

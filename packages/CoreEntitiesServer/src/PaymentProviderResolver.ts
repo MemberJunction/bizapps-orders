@@ -122,7 +122,7 @@ export async function LoadPaymentProviderConfig(
 ): Promise<PaymentProviderConfig> {
     if (!/^[0-9a-fA-F-]{36}$/.test(paymentProviderID)) {
         throw new PaymentProviderNotConfiguredError(
-            `'${paymentProviderID}' is not a valid payment provider identifier.`,
+            `'${paymentProviderID}' is not a valid payment provider ID. Pick the payment provider again.`,
         );
     }
 
@@ -151,13 +151,12 @@ export async function LoadPaymentProviderConfig(
     const row = result?.Results?.[0];
     if (!row) {
         throw new PaymentProviderNotConfiguredError(
-            `No payment provider ${paymentProviderID} exists. A payment cannot be routed without one.`,
+            `Payment provider ${paymentProviderID} was not found. Pick another payment provider, or ask an administrator to set one up.`,
         );
     }
     if (!row.IsActive) {
         throw new PaymentProviderNotConfiguredError(
-            `Payment provider '${row.Name}' is inactive. Reactivate it or point the payment at another, ` +
-                `rather than letting an inactive gateway be used silently.`,
+            `Payment provider '${row.Name}' is inactive. Ask an administrator to reactivate it, or pick another payment provider.`,
         );
     }
 
@@ -196,10 +195,9 @@ export async function BuildPaymentProvider(
     );
     if (!driver) {
         throw new PaymentProviderNotConfiguredError(
-            `No payment driver is registered for provider type '${config.TypeCode}'. Register one with ` +
-                `@RegisterClass(BasePaymentProvider, '${config.TypeCode}') and call its Load* anchor from ` +
-                `the server bootstrap — without the anchor the decorator is tree-shaken away and the ` +
-                `class is silently absent.`,
+            `Payments through '${config.TypeCode}' providers cannot be processed: the server has no driver registered ` +
+                `for that provider type. A developer needs to register it with @RegisterClass(BasePaymentProvider, ` +
+                `'${config.TypeCode}') and call its Load* function from the server startup.`,
         );
     }
 
@@ -208,8 +206,8 @@ export async function BuildPaymentProvider(
     // "Stripe cannot take payments", which sends the reader to the gateway instead of to the bootstrap.
     if (driver.constructor === BasePaymentProvider) {
         throw new PaymentProviderNotConfiguredError(
-            `Provider type '${config.TypeCode}' resolved to the BASE payment driver, which implements ` +
-                `nothing. Its Load* anchor is almost certainly missing from the server bootstrap.`,
+            `Payments through '${config.TypeCode}' providers cannot be processed: the server loaded only the generic ` +
+                `payment driver for that type. A developer needs to add the driver's Load* call to the server startup.`,
         );
     }
 
@@ -282,7 +280,7 @@ async function resolveTypeCode(
     }
     if (!type) {
         throw new PaymentProviderNotConfiguredError(
-            `Payment provider type ${typeID}${relatedName ? ` ('${relatedName}')` : ''} was not found.`,
+            `Payment provider type ${typeID}${relatedName ? ` ('${relatedName}')` : ''} was not found. Ask an administrator to check the payment provider's setup.`,
         );
     }
     return {

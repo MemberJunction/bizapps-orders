@@ -525,7 +525,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             const md = new Metadata();
             const link = await md.GetEntityObject<BaseEntity>(LINK_ENTITY);
             if (!(await link.InnerLoad(CompositeKey.FromID(edit.ID)))) {
-                throw new Error(`link ${edit.ID} could not be re-read`);
+                throw new Error(`The GL account link (ID ${edit.ID}) could not be reloaded; it may have been removed. Reload the page.`);
             }
 
             /**
@@ -555,7 +555,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             link.Set('EndedAt', edit.EndedAt ? new Date(`${edit.EndedAt}T00:00:00.000Z`) : null);
 
             if (!(await link.Save())) {
-                this.WriteError = this.readableError(link) ?? 'the link could not be updated';
+                this.WriteError = this.readableError(link) ?? 'The GL account link could not be updated.';
                 return;
             }
             this.Editing = null;
@@ -637,7 +637,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             link.Set('StartedAt', draft.StartedAt ? new Date(`${draft.StartedAt}T00:00:00.000Z`) : null);
 
             if (!(await link.Save())) {
-                this.WriteError = this.readableError(link) ?? 'the link could not be saved';
+                this.WriteError = this.readableError(link) ?? 'The GL account link could not be saved.';
                 return;
             }
             this.Draft = null;
@@ -725,7 +725,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             }
             link.Set('EndedAt', new Date(`${this.today()}T00:00:00.000Z`));
             if (!(await link.Save())) {
-                this.WriteError = this.readableError(link) ?? 'the link could not be retired';
+                this.WriteError = this.readableError(link) ?? 'The GL account link could not be retired.';
                 return;
             }
             // The row this form was bound to has just changed underneath it; see closeEditFor.
@@ -767,7 +767,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
                 throw new Error(`link ${row.ID} could not be re-read`);
             }
             if (!(await link.Delete())) {
-                this.WriteError = this.readableError(link) ?? 'the link could not be removed';
+                this.WriteError = this.readableError(link) ?? 'The GL account link could not be removed.';
                 return;
             }
             // The row this form was bound to has just changed underneath it; see closeEditFor.

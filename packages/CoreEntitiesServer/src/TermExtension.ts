@@ -288,12 +288,12 @@ export async function AcknowledgerIDs(requesterID: string, ctx: ApprovalTaskCont
     const roleName = OrdersSettings.AmendmentAcknowledgmentRole;
     if (!roleName) {
         return (
-            'No acknowledgment role is configured (Orders setting AmendmentAcknowledgmentRole), so accounting would ' +
-            'not be told that the recognition schedule changed.'
+            'No acknowledgment role is set (Orders setting AmendmentAcknowledgmentRole), so accounting would ' +
+            'not be told that the recognition schedule changed. Ask an administrator to set it.'
         );
     }
     if (!ctx.Provider.EntityByName(TASK_ENTITY)) {
-        return 'Accounting is told of an amendment through the tasks app, and the tasks app is not installed.';
+        return 'The Tasks app is not installed, so accounting cannot be told about this change. Ask an administrator to install BizApps Tasks.';
     }
     const role = (
         await ReadRows<{ ID: string }>(ctx, {
@@ -303,12 +303,12 @@ export async function AcknowledgerIDs(requesterID: string, ctx: ApprovalTaskCont
             ResultType: 'simple',
         })
     )[0];
-    if (!role) return `The acknowledgment role '${roleName}' does not exist.`;
+    if (!role) return `The acknowledgment role '${roleName}' does not exist. Ask an administrator to create it or change the AmendmentAcknowledgmentRole setting.`;
     const holders = (await ActiveRoleHolderIDs(role.ID, ctx)).filter((id) => !UUIDsEqual(id, requesterID));
     if (holders.length === 0) {
         return (
-            `No active holder of the acknowledgment role '${roleName}' other than the requester exists, and the ` +
-            `requester cannot acknowledge their own amendment.`
+            `No one other than you holds the acknowledgment role '${roleName}', and you cannot acknowledge your own change. ` +
+            `Ask an administrator to give the role to someone else.`
         );
     }
     return holders;
@@ -328,7 +328,7 @@ export async function TermRecognition(
 
     const driver = MJGlobal.Instance.ClassFactory.CreateInstance<RevenueRecognitionDriver>(RevenueRecognitionDriver, type.DriverClass);
     if (!driver) {
-        throw new Error(`Revenue recognition type '${type.Code}' names driver '${type.DriverClass}', which is not registered.`);
+        throw new Error(`Revenue recognition type '${type.Code}' uses '${type.DriverClass}', which is not loaded on the server. Report this to the development team.`);
     }
 
     // The cadence the subscription was sold on, read the way booking reads it (see OrderEntityServer's
@@ -339,7 +339,7 @@ export async function TermRecognition(
     const behavior = rules.DriverClass
         ? MJGlobal.Instance.ClassFactory.CreateInstance<SubscriptionBehavior>(SubscriptionBehavior, rules.DriverClass)
         : new SubscriptionBehavior();
-    if (!behavior) throw new Error(`Subscription type '${rules.Code}' names driver '${rules.DriverClass}', which is not registered.`);
+    if (!behavior) throw new Error(`Subscription type '${rules.Code}' uses '${rules.DriverClass}', which is not loaded on the server. Report this to the development team.`);
     return { Driver: driver, PeriodMonths: behavior.RecognitionMonths(rules) };
 }
 
@@ -353,7 +353,7 @@ export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTask
             ResultType: 'simple',
         })
     )[0];
-    if (!type) throw new Error("Accounting has no 'RevenueRecognition' journal entry type.");
+    if (!type) throw new Error("Accounting has no 'RevenueRecognition' journal entry type. Ask an administrator to sync the Accounting metadata.");
 
     const entries = await ReadRows<{ ID: string; EntryNumber: string; EffectiveDate: Date | string; Status: string; JournalEntryBatchID: string | null }>(ctx, {
         EntityName: JE_ENTITY,
@@ -533,7 +533,7 @@ export async function RaiseRecutAcknowledgment(facts: RecutAcknowledgment, ctx: 
         MaxRows: 1,
     });
     const typeID = types[0]?.ID;
-    if (!typeID) throw new Error(`The tasks app has no '${ACKNOWLEDGMENT_TASK_TYPE_CODE}' task type, so accounting cannot be told of the amendment.`);
+    if (!typeID) throw new Error(`The Tasks app has no '${ACKNOWLEDGMENT_TASK_TYPE_CODE}' task type, so accounting cannot be told about this change. Ask an administrator to sync the Orders metadata.`);
 
     const task = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASK_ENTITY, ctx.User);
     requireSubclass(task, TASK_ENTITY);

@@ -150,20 +150,20 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         // reads, the entry and the line's running total are made as the system user. The attester is
         // still who signs: the observation row is saved as them and names them, and so does the entry.
         const ledger = UserCache.Instance.GetSystemUser();
-        if (!ledger) throw new Error('Orders.RecordProgress needs the MJ system user, and the user cache does not hold it.');
+        if (!ledger) throw new Error("Progress cannot be recorded because the server's system user is not loaded. Ask an administrator to check the server setup.");
         const lineID = RequireUUID(input?.OrderLineID, 'OrderLineID');
         const measurementDate = RequireDate(input?.MeasurementDate, 'MeasurementDate');
         const preview = !!input?.Preview;
         const supersedesID = input?.SupersedesMeasurementID ? RequireUUID(input.SupersedesMeasurementID, 'SupersedesMeasurementID') : null;
 
         const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ledger);
-        if (!(await line.Load(lineID))) return this.refuse(preview, `No order line with ID ${lineID}.`);
+        if (!(await line.Load(lineID))) return this.refuse(preview, `Order line ${lineID} was not found.`);
         const order = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ledger);
         if (!(await order.Load(line.OrderHeaderID))) return this.refuse(preview, `Order line ${lineID} belongs to an order that could not be read.`);
         const echo = { OrderLineID: line.ID, OrderNumber: order.OrderNumber, LineNumber: line.LineNumber, MeasurementDate: measurementDate };
 
         const revRec = await this.revRecTypeOf(line, provider, ledger);
-        if (!revRec) return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} has no revenue recognition type.`, echo);
+        if (!revRec) return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} has no revenue recognition type, so progress cannot be recorded. Ask an administrator to set one on the line's product.`, echo);
         if (revRec.ScheduleBasis !== 'OnMeasurement') {
             return this.refuse(preview, `Order line ${line.LineNumber} of ${order.OrderNumber} recognises revenue ${revRec.Code} at booking, not by progress. Only a percentage-of-completion line takes an observation.`, echo);
         }
@@ -178,7 +178,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
 
         const methodCode = (input.MethodCode ?? revRec.DriverClass).trim();
         const driver = MJGlobal.Instance.ClassFactory.CreateInstance<ProgressRecognitionDriver>(ProgressRecognitionDriver, methodCode);
-        if (!driver) return this.refuse(preview, `'${methodCode}' is not a registered progress method.`, echo);
+        if (!driver) return this.refuse(preview, `'${methodCode}' is not a known progress method. Pick another method, or ask an administrator to check the line's revenue recognition type.`, echo);
         let percent: number;
         try {
             percent = driver.PercentComplete({ PercentComplete: input.PercentComplete, MeasureNumerator: input.MeasureNumerator, MeasureDenominator: input.MeasureDenominator });
@@ -451,7 +451,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             },
             user,
         );
-        if (!result.Success) throw new Error(result.ErrorMessage || 'the journal entry batch read failed');
+        if (!result.Success) throw new Error(result.ErrorMessage || 'Could not read the journal entry batches.');
         return (result.Results ?? []).map((b) => ({
             JournalEntryBatchNumber: b.JournalEntryBatchNumber,
             PostingMonth: (ToISODate(b.PostingDate) ?? '').slice(0, 7),
@@ -487,17 +487,17 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             'Accounting.CreateJournalEntries',
         );
         if (!op) {
-            throw new Error(`The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting server package must be loaded before progress can be recognised.`);
+            throw new Error(`Progress cannot be recognised because the Accounting app is not loaded on the server. Ask an administrator to install or enable the BizApps Accounting server package.`);
         }
         const result = await op.Execute({ Drafts: [draft] }, { provider, user });
-        if (!result.Success) throw new Error(`Accounting.CreateJournalEntries did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
+        if (!result.Success) throw new Error(`Accounting could not create the journal entries: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
         const payload = result.Output;
-        if (!payload) throw new Error('Accounting.CreateJournalEntries returned no payload.');
+        if (!payload) throw new Error('Accounting returned no result when creating the journal entries. Ask an administrator to check the server logs.');
         if (!payload.Success) {
-            throw new Error(`The recognition entry was refused. ${(payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ')}`);
+            throw new Error(`Accounting rejected the revenue recognition entry. ${(payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ')}`);
         }
         const id = payload.Results?.[0]?.JournalEntryID;
-        if (!id) throw new Error('Accounting reported success but returned no journal entry.');
+        if (!id) throw new Error('Accounting reported success but returned no journal entry, so nothing was recorded. Ask an administrator to check the accounting setup.');
         return id;
     }
 
@@ -519,7 +519,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         if (!(await line.Save())) {
             throw new Error(
                 line.LatestResult?.CompleteMessage ??
-                    `RecognizedToDate could not be advanced on order line ${line.ID}.`,
+                    `The recognized-to-date amount on order line ${line.ID} could not be updated.`,
             );
         }
     }

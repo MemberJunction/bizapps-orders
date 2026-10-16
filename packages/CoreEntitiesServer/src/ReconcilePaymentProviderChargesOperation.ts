@@ -105,7 +105,7 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
         };
         if (fromDate > toDate) {
             out.Success = false;
-            out.Errors.push({ Code: 'INVALID_WINDOW', Message: `FromDate ${fromDate} is after ToDate ${toDate}.` });
+            out.Errors.push({ Code: 'INVALID_WINDOW', Message: `The start date ${fromDate} is after the end date ${toDate}. Pick a start date on or before the end date.` });
             return out;
         }
 
@@ -123,7 +123,7 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
                 const config = await LoadPaymentProviderConfig(row.ID, provider, user);
                 if (!config.IsLiveMode) {
                     result.Status = 'Skipped';
-                    result.Message = 'Test mode: the stub driver has no charges to read.';
+                    result.Message = 'Skipped: this provider is in test mode, so there are no charges to check.';
                     out.Providers.push(result);
                     continue;
                 }
@@ -282,7 +282,7 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
         if (!type) {
             out.Errors.push({
                 Code: 'TYPE_INACTIVE',
-                Message: `The ${PROVIDER_CHARGE_MISMATCH_TYPE_CODE} finance exception type is not defined or is inactive, so the mismatches were not raised.`,
+                Message: `The ${PROVIDER_CHARGE_MISMATCH_TYPE_CODE} finance exception type is missing or inactive, so the mismatches were not raised. Ask an administrator to sync the Orders metadata or reactivate the type.`,
             });
             return;
         }

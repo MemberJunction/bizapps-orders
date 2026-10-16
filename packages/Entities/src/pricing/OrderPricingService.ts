@@ -617,7 +617,7 @@ export class OrderPricingService {
             if (await this.refusesUnpricedLines()) {
                 throw new Error(
                     `Order line ${line.LineNumber} (${product?.Name ?? line.ProductID}) cannot be priced: no price ` +
-                        `rule was found for this product, and no UnitPrice was supplied. Add a price for the product ` +
+                        `rule was found for this product, and no unit price was entered on the line. Add a price for the product ` +
                         `or state one on the line.`,
                 );
             }

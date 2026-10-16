@@ -147,10 +147,10 @@ export async function OpenPaymentIntent(
     user: UserInfo,
 ): Promise<OpenIntentResult> {
     if (!Number.isFinite(request?.Amount) || request.Amount <= 0) {
-        return { Success: false, Reason: `Cannot open a payment intent for ${request?.Amount}.` };
+        return { Success: false, Reason: `A payment of ${request?.Amount} cannot be started. Enter an amount greater than zero.` };
     }
     if (!request?.PaymentProviderID) {
-        return { Success: false, Reason: 'A payment intent needs a PaymentProviderID — it decides which gateway to ask.' };
+        return { Success: false, Reason: 'Pick a payment provider before starting the payment.' };
     }
     if ((request.CurrencyCode ?? '').trim().toUpperCase() !== SUPPORTED_PAYMENT_CURRENCY) {
         return {
@@ -185,7 +185,7 @@ export async function OpenPaymentIntent(
         const failedRowID = await recordIntent(request, { ...opened, Status: 'Failed' }, opened.ProviderIntentID, provider, user);
         return {
             Success: false,
-            Reason: opened.Reason ?? 'The gateway refused the charge.',
+            Reason: opened.Reason ?? 'The payment provider declined the charge.',
             PaymentIntentID: failedRowID,
             ProviderIntentID: opened.ProviderIntentID,
             Status: 'Failed',
@@ -194,7 +194,7 @@ export async function OpenPaymentIntent(
         };
     }
     if (!opened.Success || !opened.ProviderIntentID) {
-        return { Success: false, Reason: opened.Reason ?? 'The gateway did not open a payment intent.' };
+        return { Success: false, Reason: opened.Reason ?? 'The payment provider did not start the payment. Try again, or use another payment method.' };
     }
 
     const existing = await findByProviderIntentID(opened.ProviderIntentID, provider, user);
@@ -266,7 +266,8 @@ async function recordIntent(
             `Opened gateway intent ${providerIntentID} but could not record it: ${reason}. ` +
                 `A webhook for this intent will not match any payment.`,
         );
-        throw new Error(`Could not record payment intent ${providerIntentID}: ${reason}`);
+        throw new Error(`The payment was started with the provider (reference ${providerIntentID}) but could not be recorded here, ` +
+            `so updates from the provider will not match a payment. Ask an administrator to check it before retrying. Details: ${reason}`);
     }
     return row.ID;
 }

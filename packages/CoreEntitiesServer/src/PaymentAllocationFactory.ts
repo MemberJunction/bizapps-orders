@@ -240,8 +240,8 @@ export function AllocateByCompany(
         const target = orderLines.find((l) => key(l.OrderLineID) === key(targetOrderLineID));
         if (!target) {
             throw new Error(
-                `Payment line targets order line ${targetOrderLineID}, which is not on this order. ` +
-                    `A targeted allocation must name a line of the order it is applied to.`,
+                `This payment is applied to order line ${targetOrderLineID}, which is not on this order. ` +
+                    `Apply it to a line of the order it pays.`,
             );
         }
         return [{ CompanyID: target.CompanyID, Amount: total }];
@@ -261,8 +261,8 @@ export function AllocateByCompany(
     const groups = [...byCompany.values()].filter((g) => g.Weight > 0);
     if (groups.length === 0) {
         throw new Error(
-            `Cannot allocate ${amount}: the order has no lines with a non-zero amount, so there is no ` +
-                `basis for splitting the payment across companies.`,
+            `Cannot allocate ${amount}: every line on the order is zero, so there is no basis for ` +
+                `splitting the payment across companies.`,
         );
     }
     const weightTotal = money(groups.reduce((s, g) => s + g.Weight, 0));
@@ -407,7 +407,7 @@ export function LinesInSlice(
     const k = dimKey(slice.Dimensions);
     const out = mine.filter((l) => dimKey(l.Dimensions) === k);
     if (!out.length) {
-        throw new Error(`No order line of company ${share.CompanyID} carries the tag set of a slice it produced.`);
+        throw new Error(`Payment allocation stopped: none of company ${share.CompanyID}'s order lines carry the dimension tags of a payment slice built from them. Report this to support.`);
     }
     return out;
 }
@@ -430,8 +430,8 @@ export class PaymentAllocationFactory {
         const total = money(Math.abs(ctx.Amount));
         if (total <= 0) {
             throw new Error(
-                `Payment line on ${ctx.PaymentNumber} has an amount of ${ctx.Amount}, so there is nothing ` +
-                    `to allocate. A zero-amount allocation should not reach booking.`,
+                `The payment line on ${ctx.PaymentNumber} has an amount of ${ctx.Amount}, so there is nothing ` +
+                    `to allocate. A zero-amount payment line should not reach booking; report this to support.`,
             );
         }
 
@@ -480,7 +480,8 @@ export class PaymentAllocationFactory {
             if (deposit < 0 || deposit > share.Amount) {
                 throw new Error(
                     `Payment ${ctx.PaymentNumber} on order ${ctx.OrderNumber}: a deposit of ${deposit} cannot ` +
-                        `come out of company ${share.CompanyID}'s share of ${share.Amount}.`,
+                        `come out of company ${share.CompanyID}'s share of ${share.Amount}, because it is ` +
+                        `negative or larger than that share.`,
                 );
             }
             const arAccount = await this._resolver.Resolve(GL_ROLE.AccountsReceivable, null, null, share.CompanyID, asOf);
@@ -559,12 +560,11 @@ export class PaymentAllocationFactory {
                     receivingEntity,
                     ownerEntity,
                     `Payment ${ctx.PaymentNumber} applies ${share.Amount} of company ${share.CompanyID}'s ` +
-                        `revenue to cash collected by company ${receiving}, but no active ` +
-                        `IntercompanyAccountMatch is configured for that direction between their legal ` +
-                        `entities as of ${isoDate(asOf)}. Booking is refused rather than defaulted: a guessed ` +
-                        `intercompany account would still balance, so the misposting would not surface ` +
-                        `until the two companies' books disagreed. Configure the pair ` +
-                        `(Source=${receivingEntity}, Target=${ownerEntity}) and retry.`,
+                        `revenue to cash collected by company ${receiving}, but no active intercompany account ` +
+                        `match is set up for that direction between their legal entities as of ${isoDate(asOf)}. ` +
+                        `Ask an administrator to add an IntercompanyAccountMatch (Source=${receivingEntity}, ` +
+                        `Target=${ownerEntity}), then retry. Nothing is guessed, because a guessed account ` +
+                        `would hide the misposting.`,
                 );
             }
 
@@ -656,7 +656,8 @@ export class PaymentAllocationFactory {
         if (debits !== credits) {
             throw new Error(
                 `An allocation entry for payment ${ctx.PaymentNumber} on order ${ctx.OrderNumber} does not ` +
-                    `balance: debits ${debits} vs credits ${credits}. Amount ${ctx.Amount}.`,
+                    `balance (debits ${debits}, credits ${credits}, payment amount ${ctx.Amount}), so nothing ` +
+                    `was booked. Report this to support.`,
             );
         }
     }

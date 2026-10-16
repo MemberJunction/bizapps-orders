@@ -148,11 +148,10 @@ export class StripeACHPaymentProvider extends StripePaymentProvider {
                 Status: status === 'processing' ? 'Processing' : 'Failed',
                 Reason:
                     status === 'processing'
-                        ? `The bank debit ${request.ProviderIntentID} has not cleared yet — it is still processing. ` +
-                          `A bank debit settles on the bank's schedule, so this payment will be captured by the ` +
-                          `webhook when the answer arrives rather than by asking again now.`
-                        : `The bank debit ${request.ProviderIntentID} reads '${status}' at Stripe, so no money moved. ` +
-                          `Capturing it would book cash that does not exist.`,
+                        ? `The bank debit ${request.ProviderIntentID} has not cleared yet. Bank debits settle on the bank's ` +
+                          `schedule; this payment is recorded automatically when the bank confirms it, so there is no need to try again.`
+                        : `The bank debit ${request.ProviderIntentID} is '${status}' at Stripe, so no money was collected ` +
+                          `and the payment cannot be recorded.`,
             };
         }
 

@@ -535,7 +535,7 @@ export class BasePaymentProvider {
         _rawBody: string,
         _headers: Record<string, string | undefined>,
     ): Promise<{ Valid: boolean; Reason?: string }> {
-        return { Valid: false, Reason: `${this.Config?.TypeCode ?? 'this provider'} does not verify webhooks` };
+        return { Valid: false, Reason: `The ${this.Config?.TypeCode ?? 'payment'} provider cannot verify webhooks, so the webhook was refused.` };
     }
 
     /** Reduce a verified payload to the facts we act on. Null when it is not an event we can read. */
@@ -546,9 +546,9 @@ export class BasePaymentProvider {
     protected notImplemented(what: string): string {
         const code = this.Config?.TypeCode ?? 'unknown';
         return (
-            `The '${code}' payment provider does not support ${what}. This is a driver that has not ` +
-            `implemented the operation, not a gateway that declined it — check ` +
-            `PaymentProviderType.Code against the registered driver classes.`
+            `The '${code}' payment provider does not support ${what}. The payment gateway did not decline it; ` +
+            `this app has no code for it with this provider. Ask an administrator to check that the provider's ` +
+            `type code (PaymentProviderType.Code) matches a registered payment driver.`
         );
     }
 }

@@ -57,7 +57,7 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
         if (!grantID) {
             return {
                 Success: false,
-                ErrorMessage: 'Claim does not reference an EntitlementGrant RecordID'
+                ErrorMessage: 'This claim link does not point to any access grant. Ask the sender for a new link.'
             };
         }
 
@@ -71,7 +71,7 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
         if (!loaded) {
             return {
                 Success: false,
-                ErrorMessage: `EntitlementGrant with ID ${grantID} not found`
+                ErrorMessage: `The access grant this link points to (ID ${grantID}) no longer exists. Ask the sender for a new link.`
             };
         }
 
@@ -93,7 +93,7 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
         if (!saved) {
             return {
                 Success: false,
-                ErrorMessage: `Failed to activate EntitlementGrant: ${grant.LatestResult?.Message ?? 'Unknown save error'}`
+                ErrorMessage: `Could not activate this access grant: ${grant.LatestResult?.Message ?? 'no reason given'}`
             };
         }
 

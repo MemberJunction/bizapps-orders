@@ -218,9 +218,9 @@ export async function BookProviderRefunds(
             if (!booked.Success) {
                 const remaining = money(plan.Difference - outcome.Booked.reduce((s, b) => s + b.Amount, 0));
                 reviewReason =
-                    `Orders.RefundPayment refused gateway refund ${refund.ProviderRefundID} of ${refund.Amount} ` +
-                    `on payment ${payment.PaymentNumber}: ${booked.Message ?? 'no reason given'}. ` +
-                    `${remaining} of the gateway's refunds is not booked.`;
+                    `Orders could not record gateway refund ${refund.ProviderRefundID} of ${refund.Amount} on payment ` +
+                    `${payment.PaymentNumber}, so ${remaining} of the gateway's refunds is not booked. ` +
+                    `Reason: ${booked.Message ?? 'none given'}`;
                 break;
             }
             outcome.Booked.push({
@@ -259,7 +259,7 @@ async function bookOne(
         { provider, user, emitProgress: () => undefined },
     );
     if (!result.Success || !result.Output) {
-        return { Success: false, Message: result.ErrorMessage ?? 'Orders.RefundPayment returned no result.' };
+        return { Success: false, Message: result.ErrorMessage ?? 'The refund operation returned no result.' };
     }
     return result.Output;
 }

@@ -205,7 +205,7 @@ export function DecideInvoiceable(i: {
 }): InvoiceableDecision {
     switch (i.ExistingStatus) {
         case 'Sent':
-            return { Verdict: 'AlreadySent', Code: 'ALREADY_SENT', Reason: 'This unit already has a live invoice on the rail.' };
+            return { Verdict: 'AlreadySent', Code: 'ALREADY_SENT', Reason: 'This has already been sent to the invoicing system, and that invoice is still open.' };
         case 'Sending':
             // A claim is kept when a send could not be confirmed (a timeout, a dropped socket), so this
             // state also means "the rail may or may not hold an invoice for this unit". Automatic retry
@@ -216,8 +216,8 @@ export function DecideInvoiceable(i: {
                     Verdict: 'Refuse',
                     Code: 'IN_FLIGHT',
                     Reason:
-                        'A send for this unit is in flight, or was interrupted before the rail confirmed it. Check the rail: if the ' +
-                        'invoice is there, record its reference against this unit; if it is not, send again with AllowReissue.',
+                        'A send for this invoice is in progress, or was interrupted before the invoicing system confirmed it. Check the ' +
+                        'invoicing system: if the invoice is there, record its reference here; if it is not, send again with AllowReissue.',
                 };
             }
             break;
@@ -234,15 +234,15 @@ export function DecideInvoiceable(i: {
                     Verdict: 'Refuse',
                     Code: 'HAS_HISTORY',
                     Reason:
-                        'This instalment was cancelled on the rail and keeps its number as history. Instalments are never re-issued: ' +
-                        'cancel the instalment itself to raise a credit memo and a replacement row, which bills under the next number.',
+                        'This instalment was cancelled in the invoicing system and keeps its number as history. Instalments are never re-issued: ' +
+                        'cancel the instalment itself, which raises a credit memo and a replacement row billed under the next number.',
                 };
             }
             if (!i.AllowReissue) {
                 return {
                     Verdict: 'Refuse',
                     Code: 'HAS_HISTORY',
-                    Reason: 'This unit was previously canceled on the rail. Re-issuing is a deliberate act: send again with AllowReissue.',
+                    Reason: 'This invoice was cancelled in the invoicing system before. To send it again, confirm the re-issue with AllowReissue.',
                 };
             }
             break;
@@ -251,7 +251,7 @@ export function DecideInvoiceable(i: {
                 return {
                     Verdict: 'Refuse',
                     Code: 'HAS_HISTORY',
-                    Reason: `This unit was previously ${i.ExistingStatus.toLowerCase()} on the rail. Re-issuing is a deliberate act: send again with AllowReissue.`,
+                    Reason: 'An earlier send of this invoice failed. To send it again, confirm the re-issue with AllowReissue.',
                 };
             }
             break;
@@ -259,20 +259,20 @@ export function DecideInvoiceable(i: {
             break;
     }
     if (i.OrderStatus !== 'Confirmed') {
-        return { Verdict: 'Refuse', Code: 'NOT_CONFIRMED', Reason: `The order is ${i.OrderStatus}; only a Confirmed order has a receivable to invoice.` };
+        return { Verdict: 'Refuse', Code: 'NOT_CONFIRMED', Reason: `The order is ${i.OrderStatus}. Only a confirmed order can be invoiced; confirm the order first.` };
     }
     if (i.HasSchedule && !i.ScheduleRowNamed) {
         return {
             Verdict: 'Refuse',
             Code: 'NAME_THE_INSTALMENT',
-            Reason: 'This order is billed in instalments; issue the instalment from the Billing worklist, which names the schedule row.',
+            Reason: 'This order is billed in instalments. Send each instalment from the Billing worklist instead.',
         };
     }
     if (i.ScheduleRowNamed && i.ScheduleRowStatus !== 'Invoiced') {
         return {
             Verdict: 'Refuse',
             Code: 'INSTALMENT_NOT_INVOICED',
-            Reason: `The instalment is ${i.ScheduleRowStatus ?? 'unknown'}; it must be Invoiced (its number frozen) before it can be sent to the rail.`,
+            Reason: `This instalment is ${i.ScheduleRowStatus ?? 'in an unknown state'}. Issue its invoice from the Billing worklist first, then send it.`,
         };
     }
     return { Verdict: 'Issue', Code: 'OK', Reason: 'the unit is invoiceable and unsent' };
@@ -298,14 +298,14 @@ export function DecideCancel(i: {
         return {
             OK: false,
             Code: 'HAS_PAYMENT',
-            Reason: `${money(i.PaidAmountOnUnit).toFixed(2)} has been applied against this unit. A paid or part-paid invoice is reversed through the refund path, not cancelled.`,
+            Reason: `${money(i.PaidAmountOnUnit).toFixed(2)} has been paid against this invoice. A paid or part-paid invoice cannot be cancelled; refund the payment instead.`,
         };
     }
     if (i.ExternalDueAmount !== null && i.ExternalTotal !== null && money(i.ExternalDueAmount) < money(i.ExternalTotal)) {
         return {
             OK: false,
             Code: 'PAYMENT_PENDING_ON_RAIL',
-            Reason: `The rail shows ${money(i.ExternalTotal - i.ExternalDueAmount).toFixed(2)} applied or scheduled against this invoice that has not been polled yet. Run the payment poll, then decide.`,
+            Reason: `The invoicing system shows ${money(i.ExternalTotal - i.ExternalDueAmount).toFixed(2)} paid or scheduled against this invoice that has not been brought in yet. Run the payment poll, then try again.`,
         };
     }
     return { OK: true, Code: 'OK', Reason: 'nothing has been paid against this invoice' };
@@ -364,8 +364,8 @@ export function DecideAdoption(i: {
             OK: false,
             Code: 'ARCHIVED',
             Reason:
-                `${ref} is archived on ${rail} — the customer does not hold it. Adopting it would mark ${doc || 'this unit'} sent ` +
-                `against a withdrawn document, and the unit would never be billed. If ${rail} holds nothing live for this unit, re-issue it instead.`,
+                `${ref} is archived in ${rail}, so the customer does not have it. Adopting it would mark ${doc || 'this invoice'} as sent ` +
+                `against a withdrawn document, and it would never be billed. If ${rail} has no open invoice for this, re-issue it instead.`,
         };
     }
 
@@ -375,8 +375,8 @@ export function DecideAdoption(i: {
             OK: false,
             Code: 'WRONG_DOCUMENT',
             Reason:
-                `${ref} is numbered ${railNumber} on ${rail}, not ${doc}. That is a different document — adopting it would point this ` +
-                `receivable at somebody else's invoice, and the payment against it would be captured onto this order.`,
+                `${ref} is numbered ${railNumber} in ${rail}, not ${doc}, so it is a different invoice. Adopting it would link this ` +
+                `order to that invoice, and payments made on it would be recorded on this order. Check the reference.`,
         };
     }
 
@@ -387,8 +387,8 @@ export function DecideAdoption(i: {
             OK: false,
             Code: 'TIE_FAILED',
             Reason:
-                `${rail} totals ${ref} at ${total.toFixed(2)} but ${doc || 'this unit'} is ${amount.toFixed(2)}. ` +
-                `Refusing rather than tying this receivable to a customer document for a different figure.`,
+                `${rail} shows ${ref} with a total of ${total.toFixed(2)}, but ${doc || 'this invoice'} is ${amount.toFixed(2)}. ` +
+                `The totals must match before it can be adopted. Check the reference.`,
         };
     }
     return { OK: true, Code: 'OK', Reason: `${ref} is live on ${rail}, numbered ${railNumber || doc}, and ties at ${total.toFixed(2)}.` };

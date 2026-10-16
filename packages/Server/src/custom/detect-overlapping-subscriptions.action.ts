@@ -68,7 +68,7 @@ export class DetectOverlappingSubscriptionsAction extends BaseAction {
 
     private async detect(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
-        if (!user) return refuse('NO_CONTEXT_USER', 'ContextUser is required: the exceptions raised have to be attributable to somebody.');
+        if (!user) return refuse('NO_CONTEXT_USER', 'This action needs a user to run as, because the exceptions it raises are recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.');
 
         const input: OrdersDetectOverlappingSubscriptionsInput = {};
         const asOf = param(params, 'AsOfDate');
@@ -90,7 +90,7 @@ export class DetectOverlappingSubscriptionsAction extends BaseAction {
                 Success: false,
                 ResultCode: result.ResultCode ?? 'OPERATION_FAILED',
                 Params: params.Params,
-                Message: result.ErrorMessage ?? 'Orders.DetectOverlappingSubscriptions returned no result.',
+                Message: result.ErrorMessage ?? 'The overlapping-subscription check returned no result. Check the server log for the cause.',
             };
         }
 

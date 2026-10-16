@@ -320,7 +320,7 @@ export function CanRender(status: string): { OK: boolean; Reason?: string } {
     if (status === 'Voided')
         return {
             OK: false,
-            Reason: 'This order is voided — there is nothing to bill, and a voided order rendered as an invoice is indistinguishable from a live one.',
+            Reason: 'This order is voided, so it has no invoice: printed, it would look like a real bill. Open the order itself to see what it held.',
         };
     return { OK: true };
 }
@@ -1036,15 +1036,19 @@ export function BuildAmountChangeCreditMemo(orderDocument: InvoiceDocument, memo
     const tax = Money(memo.Tax);
     const gross = Money(memo.Gross);
     if (Money(net + tax) !== gross) {
-        throw new Error(`Credit memo ${memo.DocumentNumber} records ${net.toFixed(2)} and ${tax.toFixed(2)} of tax, which is not its ${gross.toFixed(2)}.`);
+        throw new Error(
+            `Credit memo ${memo.DocumentNumber} cannot be printed: its net of ${net.toFixed(2)} and tax of ${tax.toFixed(2)} ` +
+                `do not add up to its total of ${gross.toFixed(2)}.`,
+        );
     }
     const applied = memo.Applied.filter((a) => Money(a.Amount) !== 0);
     const appliedTotal = Money(applied.reduce((s, a) => s + a.Amount, 0));
     const due = Money(gross - appliedTotal);
     if (due !== Money(memo.Refund + memo.OpenCredit)) {
         throw new Error(
-            `Credit memo ${memo.DocumentNumber} is for ${gross.toFixed(2)}, applies ${appliedTotal.toFixed(2)} and leaves ` +
-                `${Money(memo.Refund + memo.OpenCredit).toFixed(2)}; those do not add up.`,
+            `Credit memo ${memo.DocumentNumber} cannot be printed: its total of ${gross.toFixed(2)}, less the ` +
+                `${appliedTotal.toFixed(2)} applied to invoices, does not add up to the ` +
+                `${Money(memo.Refund + memo.OpenCredit).toFixed(2)} left to refund or hold as credit.`,
         );
     }
     // Negated amounts go through Money so a zero prints as 0, not -0.

@@ -360,7 +360,7 @@ export async function GetOrders(
     // UUID never reaches the filter string.
     if (options.OrderHeaderID) {
         if (!UUID_PATTERN.test(options.OrderHeaderID)) {
-            throw new Error(`OrderHeaderID is not a UUID: ${options.OrderHeaderID}`);
+            throw new Error(`The order ID is not valid: ${options.OrderHeaderID}`);
         }
         filters.push(`ID = '${options.OrderHeaderID}'`);
     }

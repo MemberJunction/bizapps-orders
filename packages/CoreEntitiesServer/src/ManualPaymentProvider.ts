@@ -45,7 +45,7 @@ export class ManualPaymentProvider extends BasePaymentProvider {
      */
     public override async CreateIntent(request: CreateIntentRequest): Promise<CreateIntentResult> {
         if (request.Amount <= 0) {
-            return { Success: false, Reason: `A manual payment of ${request.Amount} records nothing.` };
+            return { Success: false, Reason: `A manual payment must be for more than zero; ${request.Amount} was entered.` };
         }
         return {
             Success: true,
@@ -60,7 +60,7 @@ export class ManualPaymentProvider extends BasePaymentProvider {
     public override async Capture(request: CaptureRequest): Promise<CaptureResult> {
         const amount = request.Amount ?? 0;
         if (amount <= 0) {
-            return { Success: false, Reason: 'A manual capture needs the amount that actually arrived.' };
+            return { Success: false, Reason: 'Enter the amount that was received to record this manual payment.' };
         }
         return {
             Success: true,
@@ -79,7 +79,7 @@ export class ManualPaymentProvider extends BasePaymentProvider {
     public override async Refund(request: RefundRequest): Promise<RefundResult> {
         const amount = request.Amount;
         if (amount == null || amount <= 0) {
-            return { Success: false, Reason: 'A manual refund needs the amount being returned.' };
+            return { Success: false, Reason: 'Enter the amount being refunded to record this manual refund.' };
         }
         return {
             Success: true,

@@ -87,7 +87,7 @@ export async function LoadOrderLineShares(
         const dims = tags.get(String(l.ID).toLowerCase());
         const product = OrdersEngine.Instance.ProductByID(l.ProductID);
         if (!product) {
-            throw new Error(`Order line ${l.ID} references product ${l.ProductID}, which was not found.`);
+            throw new Error(`Order line ${l.ID} uses product ${l.ProductID}, which is no longer in the catalog. Ask an administrator to check the product.`);
         }
         return {
             OrderLineID: l.ID,

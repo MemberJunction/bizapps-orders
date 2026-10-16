@@ -48,13 +48,13 @@ export class ReplayCheckoutStepOperation extends OrdersReplayCheckoutStepOperati
         const sessionID = RequireUUID(input?.CheckoutSessionID, 'CheckoutSessionID');
         const stepName = STEP_NAMES.find((s) => s === input?.StepName);
         if (!stepName) {
-            return refuse(`StepName must be one of ${STEP_NAMES.join(', ')}.`, { CheckoutSessionID: sessionID });
+            return refuse(`Pick a step to replay: ${STEP_NAMES.join(', ')}.`, { CheckoutSessionID: sessionID });
         }
         // Past the gate the operation is the authority: the operator holds read on the record and
         // nothing on payments, so the replay itself runs as the system user. The record names the
         // operator as LastReplayedByUserID.
         const system = UserCache.Instance.GetSystemUser();
-        if (!system) throw new Error('Orders.ReplayCheckoutStep needs the MJ system user, and the user cache does not hold it.');
+        if (!system) throw new Error("Checkout steps cannot be replayed because the server's system user is not loaded. Ask an administrator to check the server setup.");
 
         const step = await CheckoutStepLog.Find(sessionID, stepName, system);
         if (!step) {

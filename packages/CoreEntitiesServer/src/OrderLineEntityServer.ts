@@ -98,8 +98,8 @@ export class OrderLineEntityServer extends OrderLineEntity {
             result.Errors.push(
                 new ValidationErrorInfo(
                     'Quantity',
-                    `A negative quantity is only valid on a reversal line. Set ReversesOrderLineID to the ` +
-                        `line being reversed, or use a positive quantity.`,
+                    `A negative quantity is only allowed on a return line that points at the line it ` +
+                        `reverses (ReversesOrderLineID). Pick the original line, or enter a positive quantity.`,
                     this.Quantity,
                     ValidationErrorType.Failure,
                 ),
@@ -113,12 +113,12 @@ export class OrderLineEntityServer extends OrderLineEntity {
         const dimensionHalves = [this.DimensionID, this.DimensionValueID];
         if (dimensionHalves.some((half) => !!half) && dimensionHalves.some((half) => !half)) {
             const missing = this.DimensionID ? 'DimensionValueID' : 'DimensionID';
+            const missingLabel = this.DimensionID ? 'a value' : 'a dimension';
             result.Success = false;
             result.Errors.push(
                 new ValidationErrorInfo(
                     missing,
-                    `A GL dimension tag needs both halves: the dimension names the axis and the value ` +
-                        `names the point on it, and a journal entry line carries the pair. Set ${missing}, ` +
+                    `A GL dimension tag needs both a dimension and a value. Pick ${missingLabel}, ` +
                         `or clear both to leave this line untagged.`,
                     this[missing],
                     ValidationErrorType.Failure,
@@ -177,9 +177,9 @@ export class OrderLineEntityServer extends OrderLineEntity {
         result.Errors.push(
             new ValidationErrorInfo(
                 'ParentOrderLineID',
-                'ParentOrderLineID is set only by bundle expansion, which writes each component of a bundle ' +
-                    'line at its share of the bundle price. Leave it empty, and sell the bundle product to get ' +
-                    'its components.',
+                'The parent line is set only by bundle expansion: bundle components are added automatically ' +
+                    'when you sell the bundle product, each priced at its share of the bundle. Leave the parent ' +
+                    'line empty, and sell the bundle product to get its components.',
                 this.ParentOrderLineID,
                 ValidationErrorType.Failure,
             ),
@@ -320,7 +320,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         result.Errors.push(
             new ValidationErrorInfo(
                 'OrderHeaderID',
-                `Order line cannot be added — the order is booked. Corrections to booked orders go through reversal orders.`,
+                `Lines cannot be added to a booked order. To change a booked order, create a reversal order.`,
                 this.OrderHeaderID,
                 ValidationErrorType.Failure,
             ),
@@ -412,7 +412,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
             const saved = await ext.Save(options);
             if (!saved) {
                 throw new Error(
-                    `Failed to save line extension '${this.Extension.EntityName}' for order line ${this.LineNumber}: ` +
+                    `Could not save the extra details (${this.Extension.EntityName}) for order line ${this.LineNumber}: ` +
                         (ext.LatestResult?.CompleteMessage ?? 'unknown error'),
                 );
             }

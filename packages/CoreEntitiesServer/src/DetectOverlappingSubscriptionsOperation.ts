@@ -195,7 +195,7 @@ export class DetectOverlappingSubscriptionsOperation extends OrdersDetectOverlap
         // Null when accounting has no such type or has switched it off; the bridge logs which.
         const type = await GetActiveFinanceExceptionType(OVERLAPPING_SUBSCRIPTION_TYPE_CODE, provider, user);
         if (!type) {
-            out.Message = `The ${OVERLAPPING_SUBSCRIPTION_TYPE_CODE} finance exception type is not defined or is inactive; nothing was checked.`;
+            out.Message = `Overlapping subscriptions were not checked because the ${OVERLAPPING_SUBSCRIPTION_TYPE_CODE} finance exception type is missing or turned off in accounting.`;
             LogStatus(`Orders.DetectOverlappingSubscriptions: ${out.Message}`);
             return out;
         }
@@ -286,7 +286,7 @@ export class DetectOverlappingSubscriptionsOperation extends OrdersDetectOverlap
         );
         const result = await op.Execute({ Exceptions: batch }, { provider, user });
         if (!result.Success || !result.Output) {
-            const message = `Accounting.RaiseFinanceExceptions did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'no payload'}`;
+            const message = `Not raised: accounting's Accounting.RaiseFinanceExceptions operation did not run (${result.ErrorMessage ?? result.ResultCode ?? 'no reason given'}).`;
             out.Errors.push(...batch.map((e): OverlappingSubscriptionsDetectionError => ({ DedupeKey: e.DedupeKey, Code: 'RAISE_FAILED', Message: message })));
             return;
         }
@@ -302,7 +302,7 @@ export class DetectOverlappingSubscriptionsOperation extends OrdersDetectOverlap
                 out.Errors.push({
                     DedupeKey: e.DedupeKey,
                     Code: own?.Code ?? general[0]?.Code ?? 'RAISE_FAILED',
-                    Message: own?.Message ?? `Not raised: the batch was refused. ${describeErrors(payload.Errors)}`,
+                    Message: own?.Message ?? `Not raised: accounting refused this batch of exceptions. ${describeErrors(payload.Errors)}`,
                 });
             });
             return;

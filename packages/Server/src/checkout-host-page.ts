@@ -232,7 +232,7 @@ const BOOT_SCRIPT = `
       for (var i = 0; i < 16; i++) hex.push(('0' + b[i].toString(16)).slice(-2));
       key = hex.slice(0, 4).join('') + '-' + hex.slice(4, 6).join('') + '-' + hex.slice(6, 8).join('') + '-' + hex.slice(8, 10).join('') + '-' + hex.slice(10, 16).join('');
     } else {
-      showError('Checkout requires a secure random source. Open this page over HTTPS.');
+      showError('This checkout needs a secure connection. Open the page with an https:// address.');
       return '';
     }
     try { sessionStorage.setItem(storageKey, key); } catch (e) {}
@@ -336,10 +336,10 @@ const BOOT_SCRIPT = `
       var s = document.createElement('script');
       s.src = 'https://js.stripe.com/v3/';
       s.onload = function () {
-        if (!window.Stripe) { reject(new Error('Stripe.js did not load')); return; }
+        if (!window.Stripe) { reject(new Error('The card payment form did not load. Check your connection and try again.')); return; }
         inst();
       };
-      s.onerror = function () { reject(new Error('Could not load Stripe.js')); };
+      s.onerror = function () { reject(new Error('The card payment form could not be loaded. Check your connection and try again.')); };
       document.head.appendChild(s);
     });
   }
@@ -365,7 +365,7 @@ const BOOT_SCRIPT = `
     config = init.Configuration || {};
     var productId = config.productId;
     if (!productId) {
-      showError('This checkout is not configured with a product.');
+      showError('This checkout has no product to sell. Contact the site operator.');
       return;
     }
 
@@ -496,7 +496,7 @@ const BOOT_SCRIPT = `
           }
           var pk = config.stripePublishableKey;
           if (!pk) {
-            throw new Error('This checkout requires card payment. Configure stripePublishableKey on the widget, or embed the checkout widget on a site that already loads Stripe.');
+            throw new Error('Card payment is not set up for this checkout. Contact the site operator. (Site operator: add the Stripe publishable key to the checkout widget, or embed the widget on a site that already loads Stripe.)');
           }
           return loadStripe(pk).then(function (stripeInst) {
             stripe = stripeInst;
@@ -514,7 +514,7 @@ const BOOT_SCRIPT = `
             return stripe.confirmCardPayment(intent.ClientSecret, {
               payment_method: { card: cardElement, billing_details: { email: email } }
             }).then(function (result) {
-              if (result.error) throw new Error(result.error.message || 'Payment failed.');
+              if (result.error) throw new Error(result.error.message || 'The payment did not go through. Check your card details and try again.');
               status.textContent = 'Completing…';
               return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
             });
@@ -551,7 +551,7 @@ const BOOT_SCRIPT = `
         var p = document.createElement('p');
         p.className = 'mj-co__error';
         p.setAttribute('role', 'alert');
-        p.textContent = err && err.message ? err.message : 'Checkout failed.';
+        p.textContent = err && err.message ? err.message : 'Checkout did not complete. Please try again.';
         form.insertBefore(p, submit);
         submit.disabled = false;
       });

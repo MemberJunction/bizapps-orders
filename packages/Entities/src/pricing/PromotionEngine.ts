@@ -478,7 +478,7 @@ export async function RunPromotions(
         if (!plugin) {
             // A promotion naming a qualifier nobody registered must NOT quietly apply to everyone —
             // that is the opposite of what its author intended.
-            unusable.push({ Code: p.Code, Reason: `its qualifier '${p.QualifierKey}' is not registered` });
+            unusable.push({ Code: p.Code, Reason: `its eligibility check '${p.QualifierKey}' is not installed on the server` });
             continue;
         }
         const ok = await plugin.Qualifies(
@@ -712,7 +712,7 @@ export async function AuthorizeManualDiscount(
         return {
             AuthorityID: null,
             NeedsApproval: false,
-            Refusal: 'A manual discount must be attributable to a user, and no user was supplied.',
+            Refusal: 'A manual discount must be recorded against a user, and none was given.',
         };
     }
 
@@ -760,8 +760,8 @@ export async function AuthorizeManualDiscount(
             AuthorityID: null,
             NeedsApproval: false,
             Refusal:
-                `Manual discounts require a SalesAuthority, and this user has none. Grant one with a ` +
-                `MaxDiscountPct before discounting — absence of an authority is not permission to discount.`,
+                `You have no sales authority, so you cannot apply manual discounts. Ask an administrator to give ` +
+                `you a sales authority with a maximum discount percent.`,
         };
     }
 
@@ -785,7 +785,7 @@ export async function AuthorizeManualDiscount(
     // Approving one's own over-cap discount is legitimate here: holding the approver role IS the
     // authority. What matters is that it is recorded — `ApprovedByUserID` makes the exception
     // visible rather than indistinguishable from an ordinary discount.
-    const breaches = `This discount of ${amount} on ${baseAmount} is outside this user's SalesAuthority: ` +
+    const breaches = `This discount of ${amount} on ${baseAmount} is over your discount limit: ` +
         `${assessment.Breaches.join('; ')}.`;
     const rule = await findDiscountLimitRule(provider, user);
     if (!rule?.ApprovalRequiredRoleID) {
@@ -793,9 +793,9 @@ export async function AuthorizeManualDiscount(
             AuthorityID: authority.ID,
             NeedsApproval: true,
             Refusal:
-                `${breaches} No SalesRule of type 'DiscountLimit' names an approving role, so there is no one ` +
-                `who could authorize it. Either lower the discount, raise the limit, or configure a DiscountLimit ` +
-                `rule with an ApprovalRequiredRoleID.`,
+                `${breaches} No approving role is set up for discounts over the limit, so no one can approve it. ` +
+                `Lower the discount, or ask an administrator to raise your limit or add a discount-limit sales rule ` +
+                `that names an approving role.`,
         };
     }
 
@@ -804,8 +804,8 @@ export async function AuthorizeManualDiscount(
             AuthorityID: authority.ID,
             NeedsApproval: true,
             Refusal:
-                `${breaches} It needs approval from someone holding the role named by SalesRule '${rule.Name}'. ` +
-                `Have an approver apply it, or lower the discount to within the limit.`,
+                `${breaches} It needs approval from someone with the approving role in the '${rule.Name}' sales rule. ` +
+                `Ask an approver to apply it, or lower the discount to within your limit.`,
         };
     }
 

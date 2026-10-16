@@ -262,7 +262,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private async reloadProducts(): Promise<void> {
         const config = this.Configs.find((c) => c.PropertyName === '_products');
         if (!config) {
-            throw new Error('OrdersEngine has no Products config to reload; was Config() called?');
+            throw new Error('The product catalog cannot be reloaded because the Orders engine was not started. Check that the Orders engine is configured when the app starts.');
         }
         await this.LoadSingleConfig(config, this.ContextUser, true);
         // A failed read leaves the old rows in place and only logs; say so here rather than let the

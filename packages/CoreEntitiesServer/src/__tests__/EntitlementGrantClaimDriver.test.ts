@@ -107,7 +107,7 @@ describe('EntitlementGrantClaimDriver', () => {
 
             const result = await driver.OnClaim(context);
             expect(result.Success).toBe(false);
-            expect(result.ErrorMessage).toContain('does not reference an EntitlementGrant');
+            expect(result.ErrorMessage).toContain('does not point to any access grant');
         });
     });
 

@@ -76,8 +76,8 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
         if (!this.Provider || !this.User) throw new Error('BillComInvoiceRail needs Provider and User; resolve it through ResolveInvoiceRail.');
         if (!this.Config.CompanyIntegrationID) {
             throw new Error(
-                `Payment provider '${this.Config.Name}' has no CompanyIntegrationID. Bill.com cannot be reached without the ` +
-                    `MJ Company Integration that holds its credential; set it on the provider row.`,
+                `Payment provider '${this.Config.Name}' is not connected to Bill.com: it names no company integration holding the ` +
+                    `Bill.com credential. Ask an administrator to set CompanyIntegrationID on the payment provider.`,
             );
         }
         const gw = BillComGateway(this.Provider);
@@ -90,14 +90,15 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
             // environment check at all. The whole point of the check is the case where we are unsure.
             throw new Error(
                 `Payment provider '${this.Config.Name}' cannot be used: this app cannot tell whether its Bill.com ` +
-                    `connection points at sandbox or production, because ${env.Reason}. Refusing rather than risking a real ` +
-                    `customer receiving a sandbox invoice, or sandbox money being recorded as cash.`,
+                    `connection points at sandbox or production, because ${env.Reason}. Nothing was sent, so no real customer gets a ` +
+                    `sandbox invoice and no sandbox money is recorded as cash. Ask an administrator to fix the connection's settings.`,
             );
         }
         if ((env.Environment === 'production') !== this.Config.IsLiveMode) {
             throw new Error(
-                `Payment provider '${this.Config.Name}' is ${this.Config.IsLiveMode ? 'LIVE' : 'not live'} but its Bill.com connection is ` +
-                    `'${env.Environment}'. Refusing rather than sending a real customer a sandbox invoice, or recording sandbox money as cash.`,
+                `Payment provider '${this.Config.Name}' is marked ${this.Config.IsLiveMode ? 'live' : 'not live'} but its Bill.com connection points at ` +
+                    `${env.Environment}. Nothing was sent, so no real customer gets a sandbox invoice and no sandbox money is recorded as cash. ` +
+                    `Ask an administrator to make the two match.`,
             );
         }
         return { gw, ci };
@@ -210,7 +211,7 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
                 return {
                     Success: false,
                     Transient: false,
-                    Reason: `Bill.com answered the archive with HTTP ${r.StatusCode} but ${ref} still reads archived: false. Archive it in Bill.com and record the cancel here.`,
+                    Reason: `Bill.com accepted the archive request (HTTP ${r.StatusCode}) but invoice ${ref} still reads archived: false there. Archive it in Bill.com, then record the cancel here.`,
                 };
             }
             return { Success: true, Value: { Archived: true } };

@@ -83,10 +83,8 @@ export class OrderLineProgressMeasurementEntityServer extends mjBizAppsOrdersOrd
         const date = this.MeasurementDate instanceof Date ? this.MeasurementDate.toISOString() : String(this.MeasurementDate ?? '');
         if (this.OrderLineID && posting.has(key(this.OrderLineID, date))) return null;
         return (
-            `A progress observation can only be posted by Orders.RecordProgress. A Posted row carries a ` +
-            `recognition amount and a journal entry id, and what makes those true is that the entry was ` +
-            `written in the same transaction — a row posted any other way claims revenue the ledger never ` +
-            `saw. Save it as Draft, or record the observation through the operation.`
+            `A progress entry can only be posted by Orders.RecordProgress, which writes its revenue ` +
+            `journal entry at the same time. Save it as Draft, then post it through Record Progress.`
         );
     }
 

@@ -23,10 +23,10 @@ export class CheckPaymentWebhookEndpointsAction extends BaseAction {
     protected async InternalRunAction(params: RunActionParams): Promise<ActionResultSimple> {
         try {
             const user = params.ContextUser;
-            if (!user) return refuse('NO_CONTEXT_USER', 'ContextUser is required to read the payment providers.');
+            if (!user) return refuse('NO_CONTEXT_USER', 'This action needs a user to run as, to read the payment providers. Run it from a scheduled job that has a run-as user, or as a signed-in user.');
             const providerID = strParam(params, 'PaymentProviderID');
             if (providerID !== null && !UUID.test(providerID)) {
-                return refuse('INVALID_PAYMENT_PROVIDER_ID', `'${providerID}' is not a payment provider id.`);
+                return refuse('INVALID_PAYMENT_PROVIDER_ID', `'${providerID}' is not a payment provider ID.`);
             }
 
             const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;

@@ -48,7 +48,7 @@ export function BuildInvoiceRail(config: InvoiceRailConfig, provider: IMetadataP
         throw new InvoiceRailNotConfiguredError(
             `No invoice rail is registered for provider type '${config.TypeCode}'. Register one with ` +
                 `@RegisterClass(BaseInvoiceRail, '${config.TypeCode}') and call its Load* anchor from the ` +
-                `server bootstrap — without the anchor the decorator is tree-shaken away and the class is silently absent.`,
+                `server bootstrap. Without that call the build drops the class and no rail is found.`,
         );
     }
     rail.Config = config;
@@ -112,8 +112,8 @@ export async function FindInvoiceRailProviderID(companyID: string, provider: IMe
     if (!found.length) return null;
     if (found.length > 1) {
         throw new InvoiceRailNotConfiguredError(
-            `Company ${companyID} has ${found.length} active invoice rails configured; exactly one is allowed, ` +
-                `because two rails would each claim every invoice.`,
+            `Company ${companyID} has ${found.length} active external invoicing providers; only one is allowed, ` +
+                `because each would claim every invoice. Ask an administrator to deactivate all but one.`,
         );
     }
     return found[0].ID;

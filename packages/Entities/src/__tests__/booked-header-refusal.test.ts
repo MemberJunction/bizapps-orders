@@ -12,6 +12,7 @@
 import { describe, expect, it } from 'vitest';
 import { ValidationResult } from '@memberjunction/core';
 import { OrderHeaderEntity } from '../OrderHeaderEntity';
+import { FieldLabel } from '../booked-money';
 
 type FieldStub = { Dirty: boolean; OldValue: unknown };
 type HeaderUnderTest = { refuseBookedMoneyEdits(result: ValidationResult): void };
@@ -41,12 +42,12 @@ describe('a booked header', () => {
     it.each(['OrderDate', 'OrderType', 'CompanyID', 'ReversesOrderHeaderID', 'ConfirmedByUserID'])('refuses a change to %s, naming it', (name) => {
         const message = refusal({ booked: true, fields: { [name]: changed('before') } });
         expect(message).toContain('booked');
-        expect(message).toContain(name);
+        expect(message).toContain(FieldLabel(name));
     });
 
     it.each(['BillToPersonID', 'BillToOrganizationID'])('refuses replacing a set %s', (name) => {
         const message = refusal({ booked: true, fields: { [name]: changed('person-at-checkout') } });
-        expect(message).toContain(name);
+        expect(message).toContain(FieldLabel(name));
     });
 
     it.each(['BillToPersonID', 'BillToOrganizationID'])('lets an empty %s be filled', (name) => {

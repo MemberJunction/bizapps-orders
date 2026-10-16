@@ -166,8 +166,8 @@ export function ProratedCreditMemo(position: ReversalPosition, reversalQuantity:
     const remaining = Number(position.RemainingQuantity);
     if (!(remaining > 0) || quantity > remaining + 1e-9) {
         throw new Error(
-            `Reversing ${quantity} of order line ${position.OriginLineID} leaves ${remaining} to take back ` +
-                `from — the reversal validation should have refused this before booking.`,
+            `Cannot return ${quantity} of order line ${position.OriginLineID}: only ${remaining} remain to return. ` +
+                `The return should have been refused before booking, so this is a bug to report.`,
         );
     }
     const deferred = money(Number(position.BilledToDate ?? 0) - Number(position.RecognizedToDate ?? 0) - stagedEarned);

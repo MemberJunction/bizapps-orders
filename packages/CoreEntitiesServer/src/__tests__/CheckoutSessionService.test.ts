@@ -1325,23 +1325,23 @@ describe('CheckoutSessionService', () => {
             // Negative quantity
             const resNeg = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: -1 }], BILLING);
             expect(resNeg.Success).toBe(false);
-            expect(resNeg.ErrorMessage).toContain('positive integer');
+            expect(resNeg.ErrorMessage).toContain('whole number of 1 or more');
 
             // Zero quantity
             const resZero = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 0 }], BILLING);
             expect(resZero.Success).toBe(false);
-            expect(resZero.ErrorMessage).toContain('positive integer');
+            expect(resZero.ErrorMessage).toContain('whole number of 1 or more');
 
             // Float quantity
             const resFloat = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 2.5 }], BILLING);
             expect(resFloat.Success).toBe(false);
-            expect(resFloat.ErrorMessage).toContain('positive integer');
+            expect(resFloat.ErrorMessage).toContain('whole number of 1 or more');
 
             // Exceeds maxQuantityPerLine
             mocks.mockProductInstance.MaxQuantityPerLine = 5;
             const resMax = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 10 }], BILLING);
             expect(resMax.Success).toBe(false);
-            expect(resMax.ErrorMessage).toContain('exceeds maximum allowed quantity of 5');
+            expect(resMax.ErrorMessage).toContain('at most 5 of this item');
             mocks.mockProductInstance.MaxQuantityPerLine = null;
         });
 
@@ -1349,7 +1349,7 @@ describe('CheckoutSessionService', () => {
             mocks.mockProductInstance.MaxQuantityPerLine = null;
             const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: 101 }], BILLING);
             expect(res.Success).toBe(false);
-            expect(res.ErrorMessage).toContain('exceeds maximum allowed quantity of 100');
+            expect(res.ErrorMessage).toContain('at most 100 of this item');
         });
 
         it('detaches a previously opened payment intent when the priced total changes', async () => {
@@ -1942,7 +1942,7 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
-            expect(res.ErrorMessage).toContain('buyer email');
+            expect(res.ErrorMessage).toContain('email address');
             expect(res.Status).toBe('Open');
             expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
         });
@@ -2320,7 +2320,7 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
-            expect(res.ErrorMessage).toContain('Cannot confirm paid order');
+            expect(res.ErrorMessage).toContain('no payment was started');
         });
 
         it('rejects paid order confirmation when the intent exists but has NOT settled', async () => {
@@ -2382,7 +2382,7 @@ describe('CheckoutSessionService', () => {
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
-            expect(res.ErrorMessage).toContain('Session is not in an Open status');
+            expect(res.ErrorMessage).toContain('no longer open');
         });
 
         it('creates a single order line with Quantity 3 when unitMode is perLine', async () => {
@@ -2415,7 +2415,7 @@ describe('CheckoutSessionService', () => {
 
             const resNeg = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(resNeg.Success).toBe(false);
-            expect(resNeg.ErrorMessage).toContain('positive integer');
+            expect(resNeg.ErrorMessage).toContain('whole number of 1 or more');
             expect(resNeg.Status).toBe('Open');
 
             mocks.mockSessionInstance.Status = 'Open';
@@ -2425,7 +2425,7 @@ describe('CheckoutSessionService', () => {
             });
             const resZero = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(resZero.Success).toBe(false);
-            expect(resZero.ErrorMessage).toContain('positive integer');
+            expect(resZero.ErrorMessage).toContain('whole number of 1 or more');
             expect(resZero.Status).toBe('Open');
         });
 

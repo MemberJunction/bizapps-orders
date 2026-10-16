@@ -377,7 +377,7 @@ describe('a timing chosen at cancellation', () => {
         const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Tomorrow' });
 
         expect(out.Success).toBe(false);
-        expect(out.Message).toMatch(/Timing must be one of Immediate, EndOfTerm/);
+        expect(out.Message).toMatch(/is not a cancellation timing. Use one of: Immediate, EndOfTerm/);
         expect(rec.tx).toEqual([]);
     });
 });

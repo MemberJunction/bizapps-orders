@@ -179,7 +179,7 @@ export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
     // hour after it was raised — leaving the wrong allocation in place with nothing flagging it.
     if (p.PriorDisposition === 'Captured' || p.PriorDisposition === 'Reapplied') {
         if (cls === 'Reversed') {
-            return { Action: 'ReversalNeeded', Reason: `${ref} was captured and ${rail} now reports it '${p.Status}'. The cash has to be reversed (bank-return path, O-US13); nothing is changed automatically.` };
+            return { Action: 'ReversalNeeded', Reason: `${ref} was captured and ${rail} now reports it '${p.Status}'. The cash has to be reversed as a bank return; nothing is changed automatically.` };
         }
         if (cls === 'Attention') {
             // A refund or dispute against cash already booked. Not a full reversal, and not something
@@ -302,7 +302,7 @@ export function AllocateInvoicePayments(
         }
         const amount = money(ip.Amount);
         if (!(amount > 0)) {
-            return { OK: false, Unmatched: [], Reason: `Invoice ${ip.ExternalInvoiceRef} carries a non-positive share (${ip.Amount}); refusing to allocate it.` };
+            return { OK: false, Unmatched: [], Reason: `Invoice ${ip.ExternalInvoiceRef} has a zero or negative amount (${ip.Amount}), so the payment was not applied.` };
         }
         allocations.push({ OrderHeaderID: unit.OrderHeaderID, Amount: amount, OrderHeaderPaymentScheduleID: unit.OrderHeaderPaymentScheduleID });
         companies.add(unit.CompanyID.toLowerCase());
@@ -316,7 +316,7 @@ export function AllocateInvoicePayments(
         return {
             OK: false,
             Unmatched: unmatched,
-            Reason: `Bill.com invoice(s) ${unmatched.join(', ')} were not issued by Orders (pre-cutover AR, or created directly in Bill.com). Nothing captured: a partial capture would misstate the payment.`,
+            Reason: `Bill.com invoice(s) ${unmatched.join(', ')} were not issued by this app (they predate the switch to this app, or were created directly in Bill.com). Nothing was captured, because capturing part of the payment would misstate it.`,
         };
     }
     if (companies.size > 1) {

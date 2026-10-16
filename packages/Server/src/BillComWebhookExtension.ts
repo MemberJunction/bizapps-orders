@@ -64,7 +64,7 @@ export class BillComWebhookExtension extends BaseServerExtension {
         const user = this.resolveSystemUser();
         return user
             ? { Healthy: true, Name: 'OrdersBillComWebhook' }
-            : { Healthy: false, Name: 'OrdersBillComWebhook', Details: { Reason: "MJ's system user does not resolve, so every Bill.com notification will be refused." } };
+            : { Healthy: false, Name: 'OrdersBillComWebhook', Details: { Reason: "The server's system user cannot be found, so every Bill.com notification will be refused. Ask an administrator to check the system user setup." } };
     }
 
     private resolveSystemUser(): UserInfo | undefined {

@@ -16,6 +16,7 @@
 import { BaseEntity, ValidationErrorInfo, ValidationErrorType, type ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersSubscriptionTermEntity } from './generated/entity_subclasses';
+import { FieldLabelList } from './booked-money';
 
 /** Term columns the booking and the recognition schedule were built from. */
 export const SUBSCRIPTION_TERM_BOOKED_FIELDS = ['StartDate', 'EndDate', 'Amount'] as const;
@@ -44,8 +45,8 @@ export class SubscriptionTermEntity extends mjBizAppsOrdersSubscriptionTermEntit
         result.Errors.push(
             new ValidationErrorInfo(
                 dirty[0],
-                `A booked term cannot change ${dirty.join(', ')}: the order's journal entries and the ` +
-                    `recognition schedule were built from them. To extend a term at no charge, record a ` +
+                `A booked term's ${FieldLabelList(dirty)} cannot change, because the order's journal entries and ` +
+                    `revenue schedule were built from them. To extend a term at no charge, record a ` +
                     `Duration concession against it; approving it applies the extension.`,
                 this.GetFieldByName(dirty[0])?.Value,
                 ValidationErrorType.Failure,

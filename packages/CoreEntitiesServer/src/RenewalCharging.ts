@@ -415,7 +415,7 @@ export async function ChargeRenewals(
             continue;
         }
         if (committed >= limit) {
-            attempt.Reason = 'left for the next pass: MaxCount reached';
+            attempt.Reason = 'left for the next run: this run reached its limit of charges';
             out.Skipped++;
             continue;
         }
@@ -560,7 +560,7 @@ async function chargeOnce(
         // Nothing reached the card: a configuration fault, not a decline. Not logged as a failed
         // payment, so nobody is told their card failed; a rerun sends the same idempotency key.
         attempt.Outcome = 'Error';
-        attempt.Reason = opened.Reason ?? 'the gateway did not open an intent';
+        attempt.Reason = opened.Reason ?? 'the payment provider did not start the charge';
         return false;
     }
     if (kind === 'InFlight') {

@@ -145,9 +145,9 @@
                 <i class="fa-solid fa-circle-exclamation"></i>
                 <span>Before this can be confirmed</span>
                 @if (NeedsBillTo) {
-                    <button type="button" (click)="JumpToBill()">Need a bill-to party</button>
+                    <button type="button" (click)="JumpToBill()">Choose who to bill</button>
                 } @else if (NeedsPaymentReference) {
-                    <button type="button" (click)="JumpToPayment()">Need a check / ACH reference</button>
+                    <button type="button" (click)="JumpToPayment()">Enter the check or ACH reference</button>
                 } @else {
                     <span class="mjo-oh-todo__hint">{{ ConfirmBlockedReason }}</span>
                 }

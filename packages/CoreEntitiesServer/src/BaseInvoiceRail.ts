@@ -203,9 +203,10 @@ export class BaseInvoiceRail {
             Success: false,
             Transient: false,
             Reason:
-                `The '${code}' invoice rail does not implement ${what}. Register a subclass with ` +
-                `@RegisterClass(BaseInvoiceRail, '${code}') and call its Load* anchor from the server bootstrap — ` +
-                `without the anchor the decorator is tree-shaken away and the class is silently absent.`,
+                `The '${code}' billing system connection does not support ${what}, because its server code is not loaded. ` +
+                `Ask an administrator to check the server install. For developers: register a subclass with ` +
+                `@RegisterClass(BaseInvoiceRail, '${code}') and call its Load* anchor from the server bootstrap, or the ` +
+                `build drops the class.`,
         };
     }
 }

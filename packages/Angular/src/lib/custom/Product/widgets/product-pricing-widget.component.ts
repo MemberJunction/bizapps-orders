@@ -578,7 +578,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public async AddTierBracket(): Promise<void> {
         if (!this.Product?.ID) {
-            this.ShowToast('Cannot add pricing tier: Product must be saved first.', 'error');
+            this.ShowToast('Save the product before adding a pricing tier.', 'error');
             return;
         }
 
@@ -623,7 +623,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             } else {
                 const md = new Metadata();
                 const obj = await md.GetEntityObject<ProductPriceEntity>(PRODUCT_PRICES_ENTITY);
-                if (!obj) throw new Error(`Failed to create entity object for ${PRODUCT_PRICES_ENTITY}`);
+                if (!obj) throw new Error(`A new price could not be started. Reload the page and try again.`);
                 newPrice = obj;
             }
 
@@ -658,7 +658,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         } catch (err) {
             console.error('Failed to create tier bracket:', err);
             const errMsg = err instanceof Error ? err.message : String(err);
-            this.ShowToast(`Error creating pricing bracket: ${errMsg}`, 'error', 6000);
+            this.ShowToast(`The pricing bracket could not be created: ${errMsg}`, 'error', 6000);
             if (newPrice) this.discardUnsaved(newPrice);
         } finally {
             this.IsSaving = false;
@@ -687,13 +687,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             } else {
                 console.error('Failed to update price:', tier.Record.LatestResult);
                 const errMsg = this.extractErrorMessage(tier.Record.LatestResult);
-                this.ShowToast(`Failed to update price: ${errMsg}`, 'error');
+                this.ShowToast(`The price could not be updated: ${errMsg}`, 'error');
                 input.value = this.FormatCurrency(tier.Amount);
             }
         } catch (err) {
             console.error('Failed to update tier price:', err);
             const errMsg = err instanceof Error ? err.message : String(err);
-            this.ShowToast(`Error updating price: ${errMsg}`, 'error');
+            this.ShowToast(`The price could not be updated: ${errMsg}`, 'error');
             input.value = this.FormatCurrency(tier.Amount);
         } finally {
             this.IsSaving = false;
@@ -779,7 +779,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     private extractErrorMessage(result: unknown): string {
-        if (!result) return 'An unexpected error occurred.';
+        if (!result) return 'The save failed without giving a reason. Please try again.';
         if (typeof result === 'string') {
             try {
                 const parsed = JSON.parse(result);
@@ -793,7 +793,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             if (typeof obj['Message'] === 'string') return this.extractErrorMessage(obj['Message']);
             if (typeof obj['message'] === 'string') return this.extractErrorMessage(obj['message']);
         }
-        return 'Operation failed';
+        return 'The change could not be saved.';
     }
 
     public FormatCurrency(val: number): string {
@@ -966,7 +966,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             return;
         }
         if (!(await this.ensurePricesLoaded())) {
-            this.ShowToast('Product.Prices collection is not available. Reload after CodeGen.', 'error');
+            this.ShowToast('This product\'s prices could not be loaded. Reload the page; if this keeps happening, ask an administrator to check the app\'s setup.', 'error');
             return;
         }
         const name = (this.NewPriceName || 'List').trim().slice(0, 100);

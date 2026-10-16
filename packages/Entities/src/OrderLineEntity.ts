@@ -15,7 +15,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
-import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
+import { FieldLabelList, ORDER_LINE_MONEY_FIELDS } from './booked-money';
 import { anyFieldIsDirty } from './field-dirty';
 import { BuildLinePriceContext } from './pricing/linePriceContext';
 import {
@@ -114,7 +114,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 result.Errors.push(
                     new ValidationErrorInfo(
                         'ProductPriceID',
-                        'This line uses a price that is not one of the named applicable prices. OverrideList lets you pick another named price; typing an amount needs OverrideAny.',
+                        'This line uses a price that does not apply to it. You may pick another listed price for this product, but typing your own amount needs permission to override any price. Ask an administrator if you need it.',
                         this.ProductPriceID,
                         ValidationErrorType.Failure,
                     ),
@@ -126,8 +126,8 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 new ValidationErrorInfo(
                     'UnitPrice',
                     engine
-                        ? `This line's price is not the engine price (${engine.PriceName ?? engine.ProductPriceID} · ${engine.UnitPrice}). Changing it requires MJ.BizApps.Orders.Price.OverrideList or OverrideAny.`
-                        : 'This line has a stated price and no engine price. Typing an amount requires MJ.BizApps.Orders.Price.OverrideAny.',
+                        ? `This line's price differs from the standard price (${engine.PriceName ?? engine.ProductPriceID} · ${engine.UnitPrice}). Changing it needs permission to override prices. Ask an administrator if you need it.`
+                        : 'No standard price applies to this line, so its price was typed in. Typing your own amount needs permission to override any price. Ask an administrator if you need it.',
                     this.UnitPrice,
                     ValidationErrorType.Failure,
                 ),
@@ -162,8 +162,8 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
         result.Errors.push(
             new ValidationErrorInfo(
                 dirty[0],
-                `This line is booked — it cannot change ${dirty.join(', ')}. ` +
-                    `Voiding the order is how booked money is undone.`,
+                `This line is booked, so its ${FieldLabelList(dirty)} cannot change. ` +
+                    `To undo booked amounts, create a reversal order.`,
                 this.GetFieldByName(dirty[0])?.Value,
                 ValidationErrorType.Failure,
             ),

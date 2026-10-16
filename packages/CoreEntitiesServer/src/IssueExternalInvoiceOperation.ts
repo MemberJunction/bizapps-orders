@@ -200,7 +200,7 @@ export async function IssueOneUnit(
         user,
     );
     const order = orderResult.Results?.[0];
-    if (!order) return refuse('ERROR', `No order with ID ${unit.OrderHeaderID}.`);
+    if (!order) return refuse('ERROR', `The order was not found (ID ${unit.OrderHeaderID}).`);
 
     const scheduleSupported = ScheduleSupported(provider);
     let scheduleRows: ScheduleRow[] = [];
@@ -211,13 +211,13 @@ export async function IssueOneUnit(
         );
         scheduleRows = (s.Results ?? []).filter((r) => r.Status !== 'Canceled');
     } else if (unit.OrderHeaderPaymentScheduleID) {
-        return refuse('ERROR', 'This database has no payment-schedule table yet (PR #220); an instalment cannot be named.');
+        return refuse('ERROR', 'This database does not support payment schedules yet, so an instalment cannot be sent. Ask an administrator to apply the latest database update.');
     }
     const row = unit.OrderHeaderPaymentScheduleID
         ? scheduleRows.find((r) => String(r.ID).toLowerCase() === unit.OrderHeaderPaymentScheduleID!.toLowerCase())
         : undefined;
     if (unit.OrderHeaderPaymentScheduleID && !row) {
-        return refuse('ERROR', `Instalment ${unit.OrderHeaderPaymentScheduleID} is not a live instalment of order ${order.OrderNumber}.`);
+        return refuse('ERROR', `This instalment is not an active instalment of order ${order.OrderNumber}; it may have been cancelled.`);
     }
 
     // 2. Whose rail bills this unit: the ORDER's company (golive #311), so the customer pays the
@@ -228,8 +228,8 @@ export async function IssueOneUnit(
     if (!row && unit.CompanyID && !UUIDsEqual(unit.CompanyID, String(order.CompanyID))) {
         return refuse(
             'ERROR',
-            `Order ${order.OrderNumber} is invoiced by its own company (${companyNameOr(order, String(order.CompanyID))}), ` +
-                `not by company ${unit.CompanyID}: an order is one invoice, whatever company owns each product.`,
+            `Order ${order.OrderNumber} is invoiced by its own company, ${companyNameOr(order, String(order.CompanyID))}, ` +
+                `not by company ${unit.CompanyID}. An order is one invoice, whichever companies own its products.`,
         );
     }
     const companyID = RequireUUID(row ? String(row.CompanyID) : String(order.CompanyID), 'CompanyID');
@@ -238,9 +238,9 @@ export async function IssueOneUnit(
         if (split) {
             return refuse(
                 'ERROR',
-                `Order ${order.OrderNumber} already has ${split.DocumentNumber} on a rail for company ${split.CompanyID}, sent ` +
-                    `when an order was invoiced once per product company. Sending the order's own invoice now would bill ` +
-                    `those lines twice. Cancel ${split.DocumentNumber} (Orders.CancelExternalInvoice) first, then send.`,
+                `Order ${order.OrderNumber} already has invoice ${split.DocumentNumber} with an external invoicing provider for ` +
+                    `company ${split.CompanyID}, sent when orders were invoiced once per product company. Sending the order's own ` +
+                    `invoice now would bill those lines twice. Cancel ${split.DocumentNumber} first, then send again.`,
             );
         }
     }
@@ -248,12 +248,12 @@ export async function IssueOneUnit(
     // 3. The rail. None is the ordinary answer for a company that invoices natively.
     const rail = await FindInvoiceRailForCompany(companyID, provider, user);
     if (!rail) {
-        return refuse('NO_RAIL', `${companyNameOr(order, companyID)} has no external invoice rail configured; this order is invoiced natively.`);
+        return refuse('NO_RAIL', `${companyNameOr(order, companyID)} has no external invoicing provider set up, so this order is invoiced in this app instead.`);
     }
     // A mis-configured rail is an ERROR for the operation, not a Failed row for the unit: one bad
     // provider row must not poison every unit in a sweep, and a preview must surface it (finding 7).
     const ready = await rail.CheckConfiguration();
-    if (ready.Success === false) throw new Error(`Rail '${rail.Config.Name}' is not configured: ${ready.Reason}`);
+    if (ready.Success === false) throw new Error(`The external invoicing provider '${rail.Config.Name}' is not configured: ${ready.Reason}`);
 
     // 4. History and the decision.
     const unitKey: BillingUnitKey = { OrderHeaderID: order.ID, CompanyID: companyID, OrderHeaderPaymentScheduleID: row ? String(row.ID) : null };
@@ -281,7 +281,7 @@ export async function IssueOneUnit(
     // 5. The document and the payload.
     const built = await BuildInvoiceDocuments(order.ID, provider, user, { OnlyCompanyID: companyID, PaymentScheduleID: row ? String(row.ID) : null });
     if (!built.Success || !built.Documents.length) {
-        return refuse('ERROR', built.Message ?? `Order ${order.OrderNumber} produced no document for company ${companyID}.`);
+        return refuse('ERROR', built.Message ?? `No invoice could be built for order ${order.OrderNumber} for company ${companyID}.`);
     }
     const doc = built.Documents[0];
     // A WHOLE-ORDER RE-ISSUE IS RENUMBERED (Craig, golive #242). Not because the rail forces it — probed
@@ -296,8 +296,8 @@ export async function IssueOneUnit(
         // different document's number, and both are worse than saying so.
         return refuse(
             'ERROR',
-            `The document number for this re-issue would be '${wholeOrderNumber}' (${wholeOrderNumber.length} characters), longer than the ${MAX_DOCUMENT_NUMBER_LENGTH} this app stores. ` +
-                `Shorten the order number or invoice this unit outside the rail.`,
+            `Re-issuing would number this invoice '${wholeOrderNumber}' (${wholeOrderNumber.length} characters), longer than the ${MAX_DOCUMENT_NUMBER_LENGTH} characters Orders can store. ` +
+                `Shorten the order number, or invoice it outside ${rail.Config.Name}.`,
         );
     }
 
@@ -394,7 +394,7 @@ export async function IssueOneUnit(
     if (opts.AllowReissue && existing?.Status === 'Sending' && existing.ID) {
         await updateExternalInvoice(provider, user, String(existing.ID), {
             Status: 'Failed',
-            LastError: `Superseded by a deliberate re-issue at ${new Date().toISOString()}. The person re-issuing confirmed the rail holds no invoice for this unit.`,
+            LastError: `Superseded by a re-issue at ${new Date().toISOString()}: the person re-issuing confirmed ${rail.Config.Name} has no invoice for it.`,
         });
     }
 
@@ -409,7 +409,7 @@ export async function IssueOneUnit(
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         if (/UQ_ExternalInvoice_LiveUnit|duplicate key/i.test(message)) {
-            return refuse('IN_FLIGHT', `Another send for ${payload.Payload.DocumentNumber} is already in flight.`);
+            return refuse('IN_FLIGHT', `${payload.Payload.DocumentNumber} is already being sent to ${rail.Config.Name}. Wait for that send to finish before trying again.`);
         }
         throw err;
     }
@@ -427,13 +427,13 @@ export async function IssueOneUnit(
         // Bill.com and there is no invoice"; re-issuing is already a deliberate act on this rail (D-B7).
         if (issued.Transient) {
             await updateExternalInvoice(provider, user, externalInvoiceID, {
-                LastError: `Uncertain: ${issued.Reason}. The invoice may or may not exist on the rail — check Bill.com for ${payload.Payload.DocumentNumber} before re-issuing.`,
+                LastError: `Not confirmed: ${issued.Reason}. The invoice may or may not exist on ${rail.Config.Name}; check there for ${payload.Payload.DocumentNumber} before re-issuing.`,
             });
             return refuse(
                 'UNCERTAIN',
-                `${payload.Payload.DocumentNumber} could not be confirmed with ${rail.Config.Name}: ${issued.Reason}. ` +
-                    `The invoice may already exist there, so this unit is left claimed rather than sent again automatically. ` +
-                    `Check Bill.com: if the invoice is there, record it against this unit; if it is not, send again with AllowReissue.`,
+                `${rail.Config.Name} did not confirm ${payload.Payload.DocumentNumber}: ${issued.Reason}. ` +
+                    `The invoice may already exist there, so it is held as sending and will not be sent again automatically. ` +
+                    `Check ${rail.Config.Name}: if the invoice is there, record its reference here; if it is not, re-issue it.`,
                 { ExternalInvoiceID: externalInvoiceID, DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount },
             );
         }
@@ -448,13 +448,15 @@ export async function IssueOneUnit(
     let back = await rail.GetInvoice(ref);
     if (back.Success === false && back.Transient) back = await rail.GetInvoice(ref);
     const snapshot = back.Success === true ? back.Value : null;
-    const readBackError = back.Success === false ? `Total not verified after send: ${back.Reason}` : snapshot ? null : 'Total not verified after send: the rail returned no invoice for the id it issued.';
+    const readBackError = back.Success === false ? `Sent, but the total could not be checked afterwards: ${back.Reason}` : snapshot ? null : `Sent, but the total could not be checked afterwards: ${rail.Config.Name} returned no invoice for the reference it issued.`;
     if (snapshot && Math.abs(money(snapshot.Total) - payload.Payload.Amount) > 0.005) {
         // A document for the wrong figure must not reach a customer: withdraw it and fail loudly.
         const undo = await rail.CancelInvoice(ref);
         const reason =
-            `${rail.Config.Name} totalled ${payload.Payload.DocumentNumber} at ${money(snapshot.Total).toFixed(2)} but the unit is ${payload.Payload.Amount.toFixed(2)}. ` +
-            (undo.Success === true ? 'The rail invoice was archived.' : `The rail invoice ${ref} could NOT be archived (${undo.Success === false ? undo.Reason : 'unknown'}); archive it by hand.`);
+            `${rail.Config.Name} totalled ${payload.Payload.DocumentNumber} at ${money(snapshot.Total).toFixed(2)}, but this invoice is for ${payload.Payload.Amount.toFixed(2)}. ` +
+            (undo.Success === true
+                ? `The invoice on ${rail.Config.Name} was archived.`
+                : `The invoice ${ref} on ${rail.Config.Name} could not be archived (${undo.Success === false ? undo.Reason : 'unknown reason'}); archive it there by hand.`);
         await updateExternalInvoice(provider, user, externalInvoiceID, { Status: 'Failed', ExternalInvoiceRef: ref, ExternalTotal: money(snapshot.Total), LastError: reason });
         return refuse('TIE_FAILED', reason, { ExternalInvoiceID: externalInvoiceID, ExternalInvoiceRef: ref, DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount });
     }
@@ -650,7 +652,7 @@ async function writeExternalInvoice(
         true,
     );
     if (!(await entity.Save())) {
-        throw new Error(entity.LatestResult?.CompleteMessage ?? 'The external invoice row could not be written.');
+        throw new Error(entity.LatestResult?.CompleteMessage ?? 'The external invoice record could not be saved.');
     }
     return String(entity.Get('ID'));
 }
@@ -733,7 +735,7 @@ type CustomerOutcome =
 async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerOutcome> {
     const orgID = order.BillToOrganizationID ? RequireUUID(order.BillToOrganizationID, 'BillToOrganizationID') : null;
     const personID = !orgID && order.BillToPersonID ? RequireUUID(order.BillToPersonID, 'BillToPersonID') : null;
-    if (!orgID && !personID) return { OK: false, Code: 'ERROR', Reason: `Order ${order.OrderNumber} has no bill-to party; there is nobody to invoice.` };
+    if (!orgID && !personID) return { OK: false, Code: 'ERROR', Reason: `Order ${order.OrderNumber} has no bill-to customer, so there is nobody to invoice. Add a bill-to organization or person to the order.` };
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const existing = await rv.RunView<{ ExternalCustomerRef: string }>(
@@ -749,7 +751,7 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
     if (known) return { OK: true, ExternalCustomerRef: known };
 
     const facts = await loadPartyFacts(orgID, personID, provider, user);
-    if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
+    if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to customer on order ${order.OrderNumber} could not be read.` };
     // Refused here rather than by the rail: the rail would refuse the same name, days after entry,
     // with an error that does not say which field or limit (bc-aidp-next-golive#280).
     const tooLong = await CheckRailCustomerName(rail, facts.PartyKind, facts.Name, provider, user);

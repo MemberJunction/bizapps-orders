@@ -54,15 +54,15 @@ export async function GetCheckoutAccessStatus(
     try {
         RequireUUID(sessionID, 'sessionId');
     } catch {
-        return { Success: false, ErrorMessage: 'Checkout session not found' };
+        return { Success: false, ErrorMessage: 'This checkout could not be found. Start the checkout again.' };
     }
     const md = new Metadata();
     const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
     if (!(await session.Load(sessionID))) {
-        return { Success: false, ErrorMessage: 'Checkout session not found' };
+        return { Success: false, ErrorMessage: 'This checkout could not be found. Start the checkout again.' };
     }
     if (!keyMatches(session.ClientSessionKey, clientSessionKey)) {
-        return { Success: false, ErrorMessage: 'Checkout session key does not match' };
+        return { Success: false, ErrorMessage: 'This checkout was started in a different browser session. Return to the browser you used, or start the checkout again.' };
     }
     if (session.Status !== 'Confirmed' || !session.DraftOrderID) {
         return { Success: false, ErrorMessage: 'This checkout has not completed yet.' };
@@ -84,7 +84,7 @@ export async function GetCheckoutAccessStatus(
     );
     if (!rows?.Success) {
         LogError(`[CheckoutAccessStatus] could not read deliveries for order ${orderID}: ${rows?.ErrorMessage ?? 'unknown error'}`);
-        return { Success: false, ErrorMessage: 'Access status is not available right now.' };
+        return { Success: false, ErrorMessage: 'Your access status is not available right now. Please try again in a moment.' };
     }
     return { Success: true, State: SummarizeAccessDeliveries((rows.Results ?? []).map((r) => r.Status)) };
 }

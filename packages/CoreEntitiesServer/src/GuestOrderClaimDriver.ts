@@ -64,7 +64,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
         if (!orderID) {
             return {
                 Success: false,
-                ErrorMessage: 'Claim does not reference an OrderHeader RecordID'
+                ErrorMessage: 'This claim link does not point to any order. Ask the sender for a new link.'
             };
         }
 
@@ -78,7 +78,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
         if (!loaded) {
             return {
                 Success: false,
-                ErrorMessage: `Order with ID ${orderID} not found`
+                ErrorMessage: `The order this link points to (ID ${orderID}) no longer exists. Ask the sender for a new link.`
             };
         }
 
@@ -86,7 +86,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
         if (!personID) {
             return {
                 Success: false,
-                ErrorMessage: `Could not resolve Person record for redeeming user ${User?.Email || 'unknown'}`
+                ErrorMessage: `Could not find a contact record for your account (${User?.Email || 'no e-mail'}), so the order cannot be linked to you. Ask an administrator to check your account.`
             };
         }
 
@@ -113,7 +113,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             if (!saved) {
                 return {
                     Success: false,
-                    ErrorMessage: `Failed to update Order with redeeming PersonID: ${order.LatestResult?.Message ?? 'Unknown save error'}`
+                    ErrorMessage: `Could not link the order to you: ${order.LatestResult?.Message ?? 'no reason given'}`
                 };
             }
         }
@@ -131,7 +131,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             }, User);
 
             if (!grantResult.Success) {
-                const message = `Could not read the entitlement grants of order ${order.ID}: ${grantResult.ErrorMessage ?? 'unknown error'}`;
+                const message = `The order is linked to you, but its access grants could not be read, so they were not moved to you. Open the link again to retry. Details: ${grantResult.ErrorMessage ?? 'none given'} (order ${order.ID})`;
                 LogError(`[GuestOrderClaimDriver] ${message}`);
                 return { Success: false, ErrorMessage: message };
             }
@@ -159,7 +159,7 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             }
         } catch (err) {
             // The order is linked; a retry re-runs the cascade (OnClaim is idempotent).
-            const message = `Could not move the entitlement grants of order ${order.ID}: ${err instanceof Error ? err.message : String(err)}`;
+            const message = `The order is linked to you, but its access grants could not be moved to you. Open the link again to retry. Details: ${err instanceof Error ? err.message : String(err)} (order ${order.ID})`;
             LogError(`[GuestOrderClaimDriver] ${message}`);
             return { Success: false, ErrorMessage: message };
         }
