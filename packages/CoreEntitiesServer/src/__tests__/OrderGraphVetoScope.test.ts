@@ -51,8 +51,18 @@ function patchParentProto(instance: object, name: string, value: unknown): void 
     Object.defineProperty(proto, name, { value, writable: true, configurable: true });
 }
 
+/**
+ * @param dirty which fields the save is changing, for the service-period exemption (golive#322).
+ *        Default EMPTY, which is what every case written before that existed assumes: with nothing
+ *        dirty the exemption cannot apply and the veto is asked, as those cases expect.
+ * @param status the parent order's STORED status, which the exemption consults.
+ */
 /** A real `OrderLineEntityServer` whose Save runs the REAL ValidateAsync, so the real veto decides. */
-function realLine(calls: { asked: number }) {
+function realLine(
+    calls: { asked: number },
+    dirty: Array<{ Name: string; Dirty: boolean }> = [],
+    status = 'Quoted',
+) {
     const line = Object.create(OrderLineEntityServer.prototype) as OrderLineEntityServer & {
         Save(): Promise<boolean>;
         BypassExternalEditVeto?: boolean;
@@ -63,7 +73,7 @@ function realLine(calls: { asked: number }) {
         ID: 'b1c2d3e4-0000-4000-8000-000000000002',
         IsSaved: true,
         ContextCurrentUser: { ID: 'user-1' },
-        Fields: [],
+        Fields: dirty,
         Quantity: 1,
         ReversesOrderLineID: null,
         ParentOrderLineID: null,
@@ -81,6 +91,8 @@ function realLine(calls: { asked: number }) {
     // `super.ValidateAsync()` and the booked-parent check are not what this is about; stub only those,
     // so `refuseVetoedEdit` — the thing under test — still runs for real.
     Object.defineProperty(line, 'refuseNewLineOnBookedOrder', { value: async () => undefined, writable: true });
+    // The service-period exemption reads the parent's STORED status; this stands in for that read.
+    Object.defineProperty(line, 'storedOrderStatus', { value: async () => status, writable: true });
     patchParentProto(line, 'ValidateAsync', async () => ({ Success: true, Errors: [] }));
     // `ExtractEntityErrorMessage` walks LeafEntity/RootEntity and reads LatestResult off each. Those
     // are real getters on BaseEntity that `Object.create` leaves unusable, so they are shadowed here —
@@ -152,6 +164,51 @@ describe('saving the whole order, NOT booking', () => {
 
         await expect(order.savePendingLines()).resolves.toBeUndefined();
         expect(calls.asked).toBe(1);
+    });
+});
+
+/**
+ * THE SERVICE-PERIOD EXEMPTION REACHES THIS PATH TOO (golive#322).
+ *
+ * The exemption was written and tested against a line saved ON ITS OWN. This is the other way a line
+ * gets saved, and it is the path that regressed before: `savePendingLines` runs on any header save
+ * with dirty lines, and deliberately does NOT claim the write as Orders' own unless it is booking. So
+ * the veto is asked here, and the exemption has to make the same call here that it makes there.
+ *
+ * Both directions are pinned, because an exemption that applied on one path and not the other would
+ * be the #206 defect again with the sign reversed: the grid would accept a service period the deal
+ * workspace refused, one screen apart.
+ */
+describe('the service-period exemption, on the whole-order path', () => {
+    const DATES = [
+        { Name: 'ServicePeriodStart', Dirty: true },
+        { Name: 'ServicePeriodEnd', Dirty: true },
+    ];
+
+    it('lets a dates-only line through without asking the veto at all', async () => {
+        RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
+        const calls = { asked: 0 };
+        const order = orderWith(realLine(calls, DATES), false);
+
+        await expect(order.savePendingLines()).resolves.toBeUndefined();
+        expect(calls.asked, 'the line was saved through this path').toBe(1);
+    });
+
+    it('still meets the lock when the same save moves the quantity', async () => {
+        RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
+        const calls = { asked: 0 };
+        const line = realLine(calls, [...DATES, { Name: 'Quantity', Dirty: true }]);
+        const order = orderWith(line, false);
+
+        await expect(order.savePendingLines()).rejects.toThrow(new RegExp(FROZEN.slice(0, 30)));
+    });
+
+    it('still meets the lock once the parent order has booked', async () => {
+        RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
+        const calls = { asked: 0 };
+        const order = orderWith(realLine(calls, DATES, 'Confirmed'), false);
+
+        await expect(order.savePendingLines()).rejects.toThrow(new RegExp(FROZEN.slice(0, 30)));
     });
 });
 
