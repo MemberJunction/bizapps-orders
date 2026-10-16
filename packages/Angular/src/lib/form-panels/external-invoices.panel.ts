@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { RunView } from '@memberjunction/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
@@ -35,6 +35,12 @@ const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Pa
 /** Provider type codes that invoice through an external rail. Mirrors `INVOICE_RAIL_TYPE_CODES`. */
 const RAIL_TYPE_CODES = ['BillCom'];
 
+/** The form toolbar key of the Send button this panel registers. */
+const SEND_TOOLBAR_KEY = 'send-external-invoice';
+
+/** The panel's `SectionKey`; Send opens it so the result and the new row are in view. */
+const SECTION_KEY = 'externalInvoices';
+
 /**
  * `mjo-external-invoices-panel` — the rail's side of one order, on the order.
  *
@@ -47,6 +53,11 @@ const RAIL_TYPE_CODES = ['BillCom'];
  * today; a second is a row and a class. A button reading "Send to Bill.com" would be a second place to
  * edit on that day, and simply wrong on an order whose companies sit on different rails.
  *
+ * SEND LIVES IN THE FORM TOOLBAR, NOT IN THE PANEL. Once an order is confirmed, sending it is the next
+ * thing a person does with it, and the panel sits collapsed at the foot of the form. The panel
+ * registers the button in the slot Confirm order held, so it sits where the eye already goes; the
+ * panel keeps the rows, the warning that blocks a send, and the acts on one selected invoice.
+ *
  * IT HIDES ITSELF when no company on the order has an active rail, so the overwhelming majority of
  * orders — the ones invoiced natively — look exactly as they did before this feature existed.
  *
@@ -58,7 +69,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
     template: `
         @if (Visible) {
             <mj-collapsible-panel
-                SectionKey="externalInvoices"
+                [SectionKey]="SectionKey"
                 SectionName="External invoicing"
                 Icon="fa-solid fa-paper-plane"
                 [Form]="FormComponent"
@@ -148,12 +159,6 @@ const RAIL_TYPE_CODES = ['BillCom'];
                 }
 
                 <div class="row mjo-xi__actions">
-                    @if (Sendable) {
-                        <button type="button" mjButton variant="primary" [disabled]="Busy || !!SendBlocked" (click)="Send()">
-                            <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-                            {{ Busy ? 'Working…' : 'Send to ' + ProviderName }}
-                        </button>
-                    }
                     @if (Cancellable) {
                         <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="Cancel()">
                             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel in {{ ProviderName }}
@@ -194,10 +199,11 @@ const RAIL_TYPE_CODES = ['BillCom'];
         inclusion: 'Primary' as const,
     },
 })
-export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHeaderEntity> implements OnInit {
+export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHeaderEntity> implements OnInit, OnDestroy {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly confirm = inject(MJConfirmService);
 
+    public readonly SectionKey = SECTION_KEY;
     public Visible = false;
     public LoadError: string | null = null;
     public Notice: { Tone: 'success' | 'error' | 'warning'; Text: string } | null = null;
@@ -223,7 +229,33 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
 
     public async ngOnInit(): Promise<void> {
         await this.load();
+        this.registerSendButton();
         this.cdr.detectChanges();
+    }
+
+    public ngOnDestroy(): void {
+        this.UnregisterToolbarItem(SEND_TOOLBAR_KEY);
+    }
+
+    /**
+     * Send, in the form toolbar. Registered after the first load because the label carries the
+     * provider's name, which is read from data. Order 5 is the slot Confirm order holds; Confirm hides
+     * once the order is booked, and Send only shows on a booked order, so the two never sit together.
+     */
+    private registerSendButton(): void {
+        if (!this.Visible) return;
+        this.RegisterToolbarItem({
+            Key: SEND_TOOLBAR_KEY,
+            Text: `Send to ${this.ProviderName}`,
+            Icon: 'fa-solid fa-paper-plane',
+            Variant: 'primary',
+            Mode: 'read',
+            Order: 5,
+            Visible: () => this.Sendable,
+            Disabled: () => (this.Busy ? 'Working…' : (this.SendBlocked ?? false)),
+            IsLoading: () => this.Busy,
+            OnClick: async () => this.Send(),
+        });
     }
 
     /* ── What a person may do ───────────────────────────────────────────── */
@@ -295,6 +327,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
             await this.load();
         } finally {
             this.Busy = false;
+            // Send is clicked from the toolbar, so the outcome would otherwise land in a collapsed panel.
+            this.FormComponent?.SetSectionExpanded(SECTION_KEY, true);
             this.cdr.detectChanges();
         }
     }
