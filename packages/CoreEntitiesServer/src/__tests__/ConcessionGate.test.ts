@@ -333,8 +333,8 @@ describe('FindUnapprovedConcessions — products that always need approval (goli
         catalog({ type: true });
         const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
         expect(problems).toEqual([
-            'line 1 is for a product that always needs approval, and no Price or Scope concession approved by the ' +
-                'ConcessionLimit approver is recorded for it',
+            'line 1 is for a product that always needs approval, and no approved Price or Scope concession is recorded ' +
+                'for it. Record one against the line and confirm once the approver on its concession limit rule approves it',
         ]);
     });
 

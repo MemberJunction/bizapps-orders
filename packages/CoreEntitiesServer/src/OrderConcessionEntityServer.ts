@@ -268,8 +268,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                     const applied = await ApplyAmountChange(this.asApprovedAmountChange(), ctx);
                     if (applied.ScheduleReduction !== Number(this.ScheduleReduction)) {
                         throw new Error(
-                            `The amount change would take ${applied.ScheduleReduction.toFixed(2)} off the instalments, not the ` +
-                                `${Number(this.ScheduleReduction).toFixed(2)} recorded on approval; the order changed meanwhile. Try again.`,
+                            `This amount change would now take ${applied.ScheduleReduction.toFixed(2)} off the instalments, not the ` +
+                                `${Number(this.ScheduleReduction).toFixed(2)} recorded when it was approved, because the order has changed since. Try again.`,
                         );
                     }
                 }
@@ -357,7 +357,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
      */
     private async stampScheduleReduction(): Promise<string | null> {
         const user = this.ContextCurrentUser;
-        if (!user?.ID) return 'An amount change must be attributable to a user, and no user was supplied.';
+        if (!user?.ID) return 'An amount change needs a signed-in user to record who made it, and none was given.';
         const checked = await CheckAmountChange(
             {
                 SubscriptionTermID: this.SubscriptionTermID!,
@@ -410,9 +410,9 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (this.Status !== 'Pending' && !this.WithdrawWithDraftLine && !(await this.approvedOnAuthorityInDraft())) {
             this.RegisterResultHistoryEntry(
                 this.buildRejection(
-                    `This concession is ${this.Status}. A decided concession is the record of that decision and ` +
-                        `cannot be deleted; only a Pending one, or one approved on the requester's own authority ` +
-                        `while its order is not confirmed, can be withdrawn.`,
+                    `This concession is ${this.Status}, so it cannot be deleted: it is the record of that decision. Only a ` +
+                        `pending concession, or one approved within the requester's own authority on an order that is ` +
+                        `not yet confirmed, can be withdrawn.`,
                     'delete',
                 ),
             );
@@ -440,7 +440,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     ): Promise<boolean> {
         const user = this.ContextCurrentUser;
         if (!user?.ID) {
-            this.RegisterResultHistoryEntry(this.buildRejection('A concession change must be attributable to a user, and no user was supplied.', type));
+            this.RegisterResultHistoryEntry(this.buildRejection('A concession change needs a signed-in user to record who made it, and none was given.', type));
             return false;
         }
         const scope = await (this.ProviderToUse as unknown as DatabaseProviderBase).BeginEntityTransaction();
@@ -476,7 +476,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
     private async prepareNew(): Promise<string | null> {
         const user = this.ContextCurrentUser;
-        if (!user?.ID) return 'A concession must be attributable to a user, and no user was supplied.';
+        if (!user?.ID) return 'A concession needs a signed-in user to record who asked for it, and none was given.';
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
         this.termDateChange = null;
@@ -542,9 +542,9 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const rule = tier.Rule;
         if (!rule?.ApprovalRequiredRoleID) {
             return (
-                `This concession is outside the requester's authority (${assessment.Breaches.join('; ')}), and no ` +
-                `active SalesRule of type 'ConcessionLimit' whose thresholds it meets names an approving role, so no ` +
-                `one could approve it. Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no ` +
+                `This concession is outside the requester's sales authority (${assessment.Breaches.join('; ')}), and no ` +
+                `active ConcessionLimit sales rule whose thresholds it meets names an approving role, so no one could ` +
+                `approve it. Ask an administrator to set up a ConcessionLimit rule with an approving role and no ` +
                 `thresholds, as the lowest tier.`
             );
         }
@@ -586,9 +586,9 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (tier.Conflict) return tier.Conflict;
         if (!tier.Rule?.ApprovalRequiredRoleID) {
             return (
-                `${what} always needs approval, and no active SalesRule of type ` +
-                `'ConcessionLimit' whose thresholds it meets names an approving role, so no one could approve it. ` +
-                `Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no thresholds, as the lowest tier.`
+                `${what} always needs approval, and no active ConcessionLimit sales rule whose thresholds it meets ` +
+                `names an approving role, so no one could approve it. Ask an administrator to set up a ConcessionLimit ` +
+                `rule with an approving role and no thresholds, as the lowest tier.`
             );
         }
         return this.pendForAnotherHolder(tier.Rule, user, `${what} cannot be decided by the person who asked for it`);
@@ -600,13 +600,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
      */
     private async pendForAnotherHolder(rule: ConcessionTierRule, user: UserInfo, why: string): Promise<string | null> {
         if (!rule.ApprovalRequiredRoleID) {
-            return `${why}, and ConcessionLimit rule '${rule.Name}' names no approving role, so no one could decide it.`;
+            return `${why}, and the ConcessionLimit sales rule '${rule.Name}' names no approving role, so no one could decide it. Ask an administrator to give the rule an approving role.`;
         }
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
             return (
-                `${why}, and no active user other than the requester holds the role ConcessionLimit rule ` +
-                `'${rule.Name}' names. Assign that role to another approver.`
+                `${why}, and no active user other than the requester holds the approving role of sales rule ` +
+                `'${rule.Name}'. Ask an administrator to give that role to another approver.`
             );
         }
         this.pend(rule.ID, rule.ApprovalRequiredRoleID);
@@ -653,11 +653,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             this.RegisterResultHistoryEntry(this.buildRejection(message, 'update'));
             return false;
         };
-        if (!user?.ID) return refuse('An escalation must be attributable to a user, and no user was supplied.');
+        if (!user?.ID) return refuse('An escalation needs a signed-in user to record who made it, and none was given.');
         if (!this.IsSaved || this.DeliveryForm !== 'Shift' || this.Status !== 'Pending' || this.SalesRuleID) {
             return refuse('Only a Shift concession awaiting finance review can be escalated.');
         }
-        if (!note?.trim()) return refuse('An escalation must say why the case is unusual.');
+        if (!note?.trim()) return refuse('Enter a note saying why this case is unusual before escalating it.');
         if (UUIDsEqual(user.ID, this.RequestedByUserID)) return refuse('The person who asked for a shift cannot escalate it.');
         const reviewRoleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
         if (!reviewRoleID || !(await UserHoldsRole(reviewRoleID, this.provider(), user, user.ID))) {
@@ -671,8 +671,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (tier.Conflict) return refuse(tier.Conflict);
         if (!tier.Rule?.ApprovalRequiredRoleID) {
             return refuse(
-                'No active SalesRule of type ConcessionLimit names an approving role for this shift, so there is no one ' +
-                    'to escalate it to. Configure a ConcessionLimit rule with an ApprovalRequiredRoleID and no thresholds.',
+                'No active ConcessionLimit sales rule names an approving role for this shift, so there is no one to ' +
+                    'escalate it to. Ask an administrator to set up a ConcessionLimit rule with an approving role and no thresholds.',
             );
         }
         this.escalation = { Note: note.trim(), Rule: tier.Rule };
@@ -720,7 +720,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             case 'Shift':
                 return this.valueShift(user);
             default:
-                return `'${String(this.DeliveryForm)}' is not a concession form.`;
+                return `'${String(this.DeliveryForm)}' is not a known type of concession.`;
         }
     }
 
@@ -736,11 +736,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             'Amount',
             'Status',
         ], user);
-        if (!term) return `Subscription term ${this.SubscriptionTermID} was not found.`;
+        if (!term) return 'The subscription term this concession names was not found.';
         if (term.Status === 'Canceled') return 'A canceled term cannot be extended.';
 
         const line = await this.loadLine(term.OrderLineID, user);
-        if (!line) return `The order line that bought term ${this.SubscriptionTermID} was not found.`;
+        if (!line) return 'The order line that bought this subscription term was not found.';
 
         // Refuse now what could never be applied — a placed renewal, a batched entry, nobody to acknowledge it —
         // rather than route it for approval and refuse the approval.
@@ -830,8 +830,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
         if (!concession) {
             return (
-                `Line ${line.LineNumber} is charged its engine price or another named price that applies, with no ` +
-                `discount, so there is no price concession on it to record.`
+                `Line ${line.LineNumber} is charged its standard price, or another price that applies to it, with no ` +
+                `discount, so there is no price concession to record.`
             );
         }
         this.DeliveryForm = concession.Form;
@@ -891,7 +891,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!this.SubscriptionTermID) return 'A Shift concession must name the term it moves.';
         if (!this.NewStartDate || !this.NewEndDate) return 'A Shift concession must give the term\'s new start and end dates.';
         const term = await this.loadRow<TermRow>(SUBSCRIPTION_TERM_ENTITY, this.SubscriptionTermID, ['OrderLineID', 'StartDate', 'EndDate', 'Amount', 'Status'], user);
-        if (!term) return `Subscription term ${this.SubscriptionTermID} was not found.`;
+        if (!term) return 'The subscription term this concession names was not found.';
 
         const priorStart = AsDay(term.StartDate);
         const priorEnd = AsDay(term.EndDate);
@@ -901,8 +901,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         );
         if (change.ShiftDays === 0 || change.ExtensionDays !== 0 || change.ShorteningDays !== 0) {
             return (
-                `A Shift moves a term's start and end by the same number of days. Term ${IsoDay(priorStart)} – ` +
-                `${IsoDay(priorEnd)} to ${IsoDay(AsDay(this.NewStartDate))} – ${IsoDay(AsDay(this.NewEndDate))} is not one.`
+                `A shift moves a term's start and end by the same number of days. Moving the term from ${IsoDay(priorStart)} – ` +
+                `${IsoDay(priorEnd)} to ${IsoDay(AsDay(this.NewStartDate))} – ${IsoDay(AsDay(this.NewEndDate))} changes its length, so it is not a shift. Pick new dates the same distance apart.`
             );
         }
 
@@ -926,7 +926,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private async requireLine(user: UserInfo): Promise<LineRow | string> {
         if (!this.OrderLineID) return `A ${this.DeliveryForm} concession must name the order line it applies to.`;
         const line = await this.loadLine(this.OrderLineID, user);
-        return line ?? `Order line ${this.OrderLineID} was not found.`;
+        return line ?? 'The order line this concession names was not found.';
     }
 
     // ─── Deciding ─────────────────────────────────────────────────────────────
@@ -944,7 +944,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const statusField = this.GetFieldByName('Status');
         if (!statusField?.Dirty) {
             if (this.GetFieldByName('DecisionNotes')?.Dirty) {
-                return 'A decision note is recorded with the decision itself, by setting Status to Approved or Rejected.';
+                return 'A decision note can only be added when the concession is approved or rejected.';
             }
             if (this.GetFieldByName('SignedAmendmentReference')?.Dirty && this.Status !== 'Approved') {
                 return `This concession is ${this.Status}. A signed amendment is recorded only against an Approved concession.`;
@@ -953,11 +953,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
 
         const previous = String(statusField.OldValue ?? '');
-        if (previous !== 'Pending') return `This concession was already ${previous}; a decision is not reopened.`;
+        if (previous !== 'Pending') return `This concession was already ${previous}, and a decision cannot be changed.`;
         if (this.Status !== 'Approved' && this.Status !== 'Rejected') {
             return 'A Pending concession can only be Approved or Rejected.';
         }
-        if (!user?.ID) return 'A decision must be attributable to a user, and no user was supplied.';
+        if (!user?.ID) return 'A decision needs a signed-in user to record who made it, and none was given.';
         if (ConcessionAlwaysEscalates(this.DeliveryForm) && UUIDsEqual(user.ID, this.RequestedByUserID)) {
             return `A ${this.DeliveryForm} concession cannot be decided by the person who asked for it.`;
         }
@@ -969,13 +969,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         const rule = await this.approvingRule(user);
         if (!rule?.ApprovalRequiredRoleID) {
-            return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
+            return 'This concession has no ConcessionLimit sales rule with an approving role, so no one can decide it. Ask an administrator to check the ConcessionLimit rules.';
         }
         if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
-            return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+            return "Only a holder of the role named by this concession's approval rule can decide it.";
         }
         if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
-            return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+            return `The sales rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
         }
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
         // record should show the share the decision was made at.
@@ -991,7 +991,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private async decideShiftReview(user: UserInfo): Promise<string | null> {
         if (UUIDsEqual(user.ID, this.RequestedByUserID)) return 'A shift cannot be decided by the person who asked for it.';
         const roleID = await ShiftReviewRoleID({ Provider: this.provider(), User: user });
-        if (!roleID) return 'No finance acknowledgment role is configured (Orders setting AmendmentAcknowledgmentRole), so no one can decide this shift.';
+        if (!roleID) return 'No finance acknowledgment role is set up, so no one can decide this shift. Ask an administrator to set the Orders setting AmendmentAcknowledgmentRole.';
         if (!(await UserHoldsRole(roleID, this.provider(), user, user.ID))) {
             return 'Only a holder of the finance acknowledgment role can decide a shift under review.';
         }

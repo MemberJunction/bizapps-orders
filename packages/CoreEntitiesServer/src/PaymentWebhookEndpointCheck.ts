@@ -71,7 +71,7 @@ export function CheckWebhookEndpointDrift(input: {
         return {
             Status: 'Missing',
             MissingKinds: [...input.HandledKinds],
-            Message: `No webhook endpoint at the gateway points at this provider's route (…/${input.PaymentProviderID}).`,
+            Message: `No webhook endpoint at the payment provider points at this provider's address (…/${input.PaymentProviderID}). Add one in the payment provider's dashboard so payment updates reach Orders.`,
         };
     }
     const missingFor = (e: GatewayWebhookEndpoint): string[] =>
@@ -82,7 +82,7 @@ export function CheckWebhookEndpointDrift(input: {
             Status: 'Disabled',
             MissingKinds: [...input.HandledKinds],
             EndpointUrl: mine[0].Url,
-            Message: `The webhook endpoint ${mine[0].Url} is disabled at the gateway, so no events reach Orders.`,
+            Message: `The webhook endpoint ${mine[0].Url} is disabled at the payment provider, so no payment updates reach Orders. Enable it in the payment provider's dashboard.`,
         };
     }
     const best = [...enabled].sort((a, b) => missingFor(a).length - missingFor(b).length)[0];
@@ -94,7 +94,7 @@ export function CheckWebhookEndpointDrift(input: {
         Status: 'Drift',
         MissingKinds: missing,
         EndpointUrl: best.Url,
-        Message: `The webhook endpoint ${best.Url} does not send ${missing.join(', ')}, which Orders acts on.`,
+        Message: `The webhook endpoint ${best.Url} does not send ${missing.join(', ')}, which Orders needs. Turn those events on for the endpoint in the payment provider's dashboard.`,
     };
 }
 
@@ -128,7 +128,7 @@ export async function CheckPaymentWebhookEndpoints(
             const config = await LoadPaymentProviderConfig(row.ID, provider, user);
             if (!config.Capabilities.SupportsWebhooks) continue;
             if (!config.IsLiveMode) {
-                results.push({ ...base, Status: 'Skipped', Message: 'Test mode: the stub driver has no webhook endpoint to read.' });
+                results.push({ ...base, Status: 'Skipped', Message: 'Skipped: this provider is in test mode, so there is no webhook endpoint to check.' });
                 continue;
             }
             const driver = await BuildPaymentProvider(config, provider, user);

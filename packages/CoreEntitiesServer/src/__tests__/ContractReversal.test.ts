@@ -107,8 +107,8 @@ describe('ProratedCreditMemo', () => {
     });
 
     it('refuses to take back more than is left rather than inventing a balance', () => {
-        expect(() => ProratedCreditMemo(position(100, 0, 2), -3, 0)).toThrow(/leaves 2/);
-        expect(() => ProratedCreditMemo(position(100, 0, 0), -1, 0)).toThrow(/leaves 0/);
+        expect(() => ProratedCreditMemo(position(100, 0, 2), -3, 0)).toThrow(/only 2 remain/);
+        expect(() => ProratedCreditMemo(position(100, 0, 0), -1, 0)).toThrow(/only 0 remain/);
     });
 });
 

@@ -112,7 +112,7 @@ export function EntityIDFor(name: string): string {
     // the global-provider footgun in code paths that were handed a provider (Marcelo, PR #15).
     const entity = new Metadata().EntityByName(name);
     if (!entity) {
-        throw new Error(`Entity '${name}' not found in metadata. Has CodeGen run for this schema?`);
+        throw new Error(`The '${name}' entity is missing from metadata. Ask an administrator to run CodeGen for this app.`);
     }
     return entity.ID;
 }
@@ -293,8 +293,8 @@ export async function SubmitJournalEntryDrafts(
     >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
     if (!op) {
         throw new Error(
-            `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting ` +
-                `server package must be loaded before orders can book ${what}.`,
+            `The 'Accounting.CreateJournalEntries' operation is not registered, so orders cannot book ${what}. ` +
+                `Ask an administrator to load the BizApps Accounting server package.`,
         );
     }
 
@@ -373,7 +373,7 @@ export function ResolveAccountingOperation<I, O>(key: string, what: string): Bas
     const op = resolved.Resolved ? resolved.Instance : null;
     if (!op) {
         throw new Error(
-            `The '${key}' operation is not registered. The BizApps Accounting server package must be loaded before orders can ${what}.`,
+            `The '${key}' operation is not registered, so orders cannot ${what}. Ask an administrator to load the BizApps Accounting server package.`,
         );
     }
     return op;

@@ -76,7 +76,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
     ): Promise<AmendArrangementOutput> {
         if (input.EscalateOrderConcessionID != null) return this.escalateShift(input, provider, user);
         if (!input.ReasonCategory || !REASON_CATEGORIES.includes(input.ReasonCategory)) {
-            return { Success: false, Message: `ReasonCategory must be one of ${REASON_CATEGORIES.join(', ')}.` };
+            return { Success: false, Message: `Pick a reason category: one of ${REASON_CATEGORIES.join(', ')}.` };
         }
         if (!input.Reason?.trim()) return { Success: false, Message: 'An amendment must state its reason.' };
         if (input.NewPaymentTermsTypeID != null || input.OrderHeaderID != null) {
@@ -90,22 +90,22 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             ) {
                 return {
                     Success: false,
-                    Message: 'A change of payment terms is amended on its own, without a term, end date, amount or referral program.',
+                    Message: 'Change payment terms on their own. Leave the term, dates, amount and referral program empty.',
                 };
             }
             return this.amendPaymentTerms(input, provider, user);
         }
         if (input.NewAmount != null) {
             if (input.NewEndDate != null || input.NewStartDate != null) {
-                return { Success: false, Message: 'A change of amount and a change of dates are amended separately.' };
+                return { Success: false, Message: 'The amount and the dates are amended separately. Change one, then the other.' };
             }
             if (input.ReferralProgramID != null) {
-                return { Success: false, Message: 'A referral program extends a term; it does not go with a change of amount.' };
+                return { Success: false, Message: 'A referral program can only extend a term, so it cannot go with a change of amount. Remove the referral program or the new amount.' };
             }
             return this.amendAmount(input, provider, user);
         }
         if (input.AppliesToInvoiceID != null || input.RefundRequested) {
-            return { Success: false, Message: 'AppliesToInvoiceID and RefundRequested go with a change of amount (NewAmount).' };
+            return { Success: false, Message: 'An invoice to credit and a refund request only go with a new amount. Enter the new amount, or clear those fields.' };
         }
 
         let newEnd: Date | null;
@@ -118,7 +118,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         } catch (e) {
             return { Success: false, Message: String((e as Error).message) };
         }
-        if (!newEnd && !newStart) return { Success: false, Message: 'NewEndDate or NewStartDate is required.' };
+        if (!newEnd && !newStart) return { Success: false, Message: 'Enter a new start date or a new end date.' };
         const termID = input.SubscriptionTermID as string;
 
         const current = await this.currentDates(termID, provider, user);
@@ -133,8 +133,8 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             return {
                 Success: false,
                 Message:
-                    'Shortening a booked term (an earlier end, or a later start with the same end) is not supported yet: ' +
-                    'its credit follows the change-of-amount path, which cannot record a change yet.',
+                    'Shortening a booked term (an earlier end date, or a later start with the same end date) is not supported yet. ' +
+                    'The credit it would need cannot be recorded through an amendment.',
             };
         }
         if (change.ShiftDays !== 0 && change.ExtensionDays !== 0) {
@@ -145,7 +145,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         }
         if (change.ShiftDays !== 0) {
             if (input.ReferralProgramID != null) {
-                return { Success: false, Message: 'A referral program extends a term; it does not go with a move of its dates.' };
+                return { Success: false, Message: 'A referral program can only extend a term, so it cannot go with moving its dates. Remove the referral program.' };
             }
             return this.amendShift(input, termID, current, change.ShiftDays, provider, user);
         }
@@ -218,7 +218,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             Value: Number(concession.ComputedValue),
             Message:
                 concession.Status === 'Approved'
-                    ? `Term extended to ${summary.NewEndDate}. Accounting has been asked to confirm the re-cut.`
+                    ? `Term extended to ${summary.NewEndDate}. Accounting has been asked to confirm the new revenue schedule.`
                     : `The extension to ${summary.NewEndDate} is awaiting approval; it takes effect when approved.`,
         };
     }
@@ -307,7 +307,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
                 concession.Status === 'Approved'
                     ? `Term ${checked.TermNumber} lowered to ${checked.NewAmount.toFixed(2)}` +
                       (concession.CreditMemoNumber ? `, with credit memo ${concession.CreditMemoNumber}` : '') +
-                      `. Accounting has been asked to confirm the re-cut${billing.Refund > 0 ? ' and pay the refund' : ''}.`
+                      `. Accounting has been asked to confirm the new revenue schedule${billing.Refund > 0 ? ' and pay the refund' : ''}.`
                     : `Lowering term ${checked.TermNumber} to ${checked.NewAmount.toFixed(2)} is awaiting approval; it takes effect when approved.`,
         };
     }
@@ -457,7 +457,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             Status: concession.Status,
             Message:
                 concession.Status === 'Approved'
-                    ? `Term moved to ${window}. Accounting has been asked to confirm the re-cut.`
+                    ? `Term moved to ${window}. Accounting has been asked to confirm the new revenue schedule.`
                     : `The move to ${window} is awaiting finance review; it takes effect when approved.`,
         };
     }
@@ -472,12 +472,12 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         }
         const others = [input.SubscriptionTermID, input.NewStartDate, input.NewEndDate, input.NewAmount, input.OrderHeaderID, input.ReferralProgramID];
         if (others.some((v) => v != null)) {
-            return { Success: false, Message: 'An escalation names only the concession and the reason.' };
+            return { Success: false, Message: 'To escalate a shift, send only the concession and the reason. Leave the term, dates, amount, order and referral program empty.' };
         }
         const concession = await provider.GetEntityObject<OrderConcessionEntityServer>(ORDER_CONCESSION_ENTITY, user);
         if (!(await concession.Load(id))) return { Success: false, Message: `Order concession ${id} was not found.` };
         if (typeof concession.EscalateShift !== 'function') {
-            return { Success: false, Message: 'The orders server subclass of Order Concessions is not registered, so the shift cannot be escalated.' };
+            return { Success: false, Message: 'The shift cannot be escalated because the Orders server code for concessions is not loaded. Ask an administrator to check the server install.' };
         }
         if (!(await concession.EscalateShift(input.Reason ?? ''))) {
             return { Success: false, Message: concession.LatestResult?.CompleteMessage ?? 'The shift could not be escalated.' };
@@ -486,7 +486,7 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
             Success: true,
             OrderConcessionID: concession.ID,
             Status: concession.Status,
-            Message: 'The shift was sent to the ConcessionLimit approver; it takes effect when approved.',
+            Message: 'The shift was sent to the concession approver; it takes effect when approved.',
         };
     }
 }

@@ -119,8 +119,8 @@ export function UserMayRequestAccessOverride(type: AccessOverrideType, user: Use
     const auth = auths.find((a) => a.Name === name);
     if (!auth) {
         throw new Error(
-            `Authorization '${name}' is not in metadata. Access overrides are refused until the ` +
-                `${ACCESS_OVERRIDE_AUTH.Parent} authorizations are installed and granted to roles.`,
+            `Access overrides are turned off because the '${name}' authorization is not installed. Ask an administrator to ` +
+                `install the ${ACCESS_OVERRIDE_AUTH.Parent} authorizations and grant them to roles.`,
         );
     }
     return new AuthorizationEvaluator().UserCanExecuteWithAncestors(auth, user, auths);
@@ -156,15 +156,15 @@ export async function RequestAccessOverride(
 ): Promise<RequestAccessOverrideOutput> {
     RequireUUID(input.OrderHeaderID, 'OrderHeaderID');
     if (!OVERRIDE_TYPES.includes(input.OverrideType)) {
-        return { Success: false, Message: `OverrideType must be one of ${OVERRIDE_TYPES.join(', ')}; got '${input.OverrideType}'.` };
+        return { Success: false, Message: `'${input.OverrideType}' is not an override type. Use one of: ${OVERRIDE_TYPES.join(', ')}.` };
     }
     if (!UserMayRequestAccessOverride(input.OverrideType, user, provider)) {
-        return { Success: false, Message: `Requesting a ${input.OverrideType} override requires the ${ACCESS_OVERRIDE_AUTH[input.OverrideType]} authorization.` };
+        return { Success: false, Message: `You need the ${ACCESS_OVERRIDE_AUTH[input.OverrideType]} authorization to ${overrideLabel(input.OverrideType)}. Ask an administrator to grant it.` };
     }
     const reason = (input.Reason ?? '').trim();
     if (!reason) return { Success: false, Message: 'An access override must state a reason.' };
-    if (reason.length > REASON_MAX) return { Success: false, Message: `Reason is limited to ${REASON_MAX} characters.` };
-    if (!input.EffectiveThrough) return { Success: false, Message: 'An access override must state the last day it holds (EffectiveThrough).' };
+    if (reason.length > REASON_MAX) return { Success: false, Message: `The reason can be at most ${REASON_MAX} characters. Shorten it and try again.` };
+    if (!input.EffectiveThrough) return { Success: false, Message: 'Enter the last day the access override applies.' };
     const through = RequireDate(input.EffectiveThrough, 'EffectiveThrough');
 
     const order = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
@@ -172,11 +172,11 @@ export async function RequestAccessOverride(
         return { Success: false, Message: `No order found with ID '${input.OrderHeaderID}'.` };
     }
     const today = await BusinessDay(provider, user);
-    if (through < today) return { Success: false, Message: `EffectiveThrough ${through} is before today (${today}).` };
+    if (through < today) return { Success: false, Message: `The last day of the override (${through}) is before today (${today}). Pick today or a later date.` };
 
     if (!AccessOverrideCanApply(input.OverrideType, await gatedGrantsOnOrder(input.OrderHeaderID, provider, user))) {
-        const what = input.OverrideType === 'DeferCutoff' ? 'an OnFirstPayment renewal' : 'a grant held for payment';
-        return { Success: false, Message: `Order ${order.OrderNumber} has no ${what}, so a ${input.OverrideType} override would change nothing.` };
+        const what = input.OverrideType === 'DeferCutoff' ? 'renewal that waits for its first payment' : 'access held until payment';
+        return { Success: false, Message: `Order ${order.OrderNumber} has no ${what}, so a request to ${overrideLabel(input.OverrideType)} would change nothing.` };
     }
 
     const open = await findOpenOverride(input.OrderHeaderID, input.OverrideType, provider, user);
@@ -184,7 +184,7 @@ export async function RequestAccessOverride(
         return {
             Success: false,
             AccessOverrideID: open.ID,
-            Message: `This order already has a ${open.Status} ${input.OverrideType} override; it must close before another is requested.`,
+            Message: `This order already has a ${open.Status.toLowerCase()} request to ${overrideLabel(input.OverrideType)}. Wait for it to close before requesting another.`,
         };
     }
     const approvers = await resolveApprovers(order, user, provider);
@@ -208,7 +208,7 @@ export async function RequestAccessOverride(
 
         const overrideEntity = provider.EntityByName(ACCESS_OVERRIDE_ENTITY);
         if (!overrideEntity) throw new Error(`Entity metadata for '${ACCESS_OVERRIDE_ENTITY}' is missing.`);
-        const label = input.OverrideType === 'WaivePaymentHold' ? 'waive the payment hold' : 'defer the renewal cutoff';
+        const label = overrideLabel(input.OverrideType);
         await new TaskOrchestrationService().CreateApprovalRequest(
             {
                 Name: `Approve access override on order ${order.OrderNumber}: ${label} through ${through}`,
@@ -275,7 +275,7 @@ export async function RecordAccessOverrideDecision(
 ): Promise<AccessOverrideDecisionOutput> {
     RequireUUID(input.AccessOverrideID, 'AccessOverrideID');
     if (!IsTaskDecisionOutcomeCode(input.Outcome)) {
-        return { Success: false, Message: `'${input.Outcome}' is not a decision outcome.` };
+        return { Success: false, Message: `'${input.Outcome}' is not a decision this approval accepts. Approve or reject the request.` };
     }
     const outcome: TaskDecisionOutcomeCode = input.Outcome;
     const override = await provider.GetEntityObject<mjBizAppsOrdersEntitlementAccessOverrideEntity>(ACCESS_OVERRIDE_ENTITY, user);
@@ -322,7 +322,7 @@ export async function ApplyAccessOverrideDecision(
     if (!found.Success) throw new Error(`Could not read access overrides: ${found.ErrorMessage}`);
     const override = found.Results?.[0];
     if (!override) return { Success: false, Message: `Task ${taskID} is not an access override approval.` };
-    if (override.Status !== 'Requested') return { Success: true, Status: override.Status, Message: `Already ${override.Status}.` };
+    if (override.Status !== 'Requested') return { Success: true, Status: override.Status, Message: `The access override is already ${override.Status}.` };
 
     const task = await provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASKS_ENTITY, user);
     if (!(await task.Load(taskID))) throw new Error(`Approval task ${taskID} not found.`);
@@ -439,7 +439,7 @@ async function resolveApprovers(
         fallbackRole = OrdersSettings.AccessOverrideFallbackApproverRole;
         if (fallbackRole) {
             const role = (await read<{ ID: string }>(ROLE_ENTITY, `Name = '${EscapeText(fallbackRole)}'`, ['ID']))[0];
-            if (!role) return { Refusal: `The fallback approver role '${fallbackRole}' (Orders setting AccessOverrideFallbackApproverRole) does not exist.` };
+            if (!role) return { Refusal: `The fallback approver role '${fallbackRole}' does not exist. Ask an administrator to create it or change the Orders setting AccessOverrideFallbackApproverRole.` };
             fallbackHolders = await ActiveRoleHolderIDs(role.ID, { Provider: provider, User: user });
         }
     }
@@ -475,6 +475,11 @@ async function resolveApprovers(
 
 // ─── helpers ───────────────────────────────────────────────────────────────────
 
+/** What an override of this type does, in words a requester reads. */
+function overrideLabel(type: AccessOverrideType): string {
+    return type === 'WaivePaymentHold' ? 'waive the payment hold' : 'defer the renewal cutoff';
+}
+
 async function findOpenOverride(
     orderID: string,
     type: AccessOverrideType,
@@ -506,7 +511,7 @@ async function resolveTaskTypeID(provider: IMetadataProvider, user: UserInfo): P
     );
     const type = res.Results?.[0];
     if (!res.Success || !type) {
-        throw new Error(`TaskType '${ACCESS_OVERRIDE_TASK_TYPE_CODE}' not found; the Orders task-type metadata has not been installed.`);
+        throw new Error(`The approval task type '${ACCESS_OVERRIDE_TASK_TYPE_CODE}' is not installed. Ask an administrator to install the Orders task-type metadata.`);
     }
     return type.ID;
 }

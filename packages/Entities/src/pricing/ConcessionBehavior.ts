@@ -278,7 +278,7 @@ export function AssessConcession(
     cumulativeShare?: number | null,
 ): ConcessionAssessment {
     if (!authority) {
-        return { WithinAuthority: false, Breaches: ['the requester has no active SalesAuthority'] };
+        return { WithinAuthority: false, Breaches: ['the requester has no active sales authority'] };
     }
 
     const breaches: string[] = [];
@@ -297,13 +297,13 @@ export function AssessConcession(
             breaches.push(`a value of ${valuation.Value.toFixed(2)} exceeds the ${cap.toFixed(2)} concession limit`);
         }
     } else if (!reducesPrice) {
-        breaches.push('the SalesAuthority sets no MaxConcessionValue, so it grants no authority for this concession');
+        breaches.push('the sales authority has no maximum concession value, so it does not cover this concession');
     }
 
     const days = Math.max(0, Number(extensionDays ?? 0));
     if (form === 'Duration' || days > 0) {
         if (authority.MaxTermExtensionDays == null) {
-            breaches.push('the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to extend a term');
+            breaches.push('the sales authority has no maximum term extension, so it does not cover extending a term');
         } else if (days >= Number(authority.MaxTermExtensionDays)) {
             // At or above: the limit is the length that needs approval, so it reads as the policy does.
             breaches.push(`a ${days}-day extension is at or above the ${authority.MaxTermExtensionDays}-day limit`);

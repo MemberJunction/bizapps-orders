@@ -44,12 +44,12 @@ export class ReconcilePaymentProviderChargesAction extends BaseAction {
 
     private async reconcile(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
-        if (!user) return refuse('NO_CONTEXT_USER', 'ContextUser is required: any exceptions raised have to be attributable to somebody.');
+        if (!user) return refuse('NO_CONTEXT_USER', 'This action needs a user to run as, because the exceptions it raises are recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.');
 
         const input: OrdersReconcilePaymentProviderChargesInput = {};
         const providerID = strParam(params, 'PaymentProviderID');
         if (providerID !== null) {
-            if (!UUID.test(providerID)) return refuse('INVALID_PAYMENT_PROVIDER_ID', `'${providerID}' is not a payment provider id.`);
+            if (!UUID.test(providerID)) return refuse('INVALID_PAYMENT_PROVIDER_ID', `'${providerID}' is not a payment provider ID.`);
             input.PaymentProviderID = providerID;
         }
         for (const name of ['FromDate', 'ToDate'] as const) {
@@ -75,7 +75,7 @@ export class ReconcilePaymentProviderChargesAction extends BaseAction {
                 Success: false,
                 ResultCode: result.ResultCode ?? 'OPERATION_FAILED',
                 Params: params.Params,
-                Message: result.ErrorMessage ?? 'Orders.ReconcilePaymentProviderCharges returned no result.',
+                Message: result.ErrorMessage ?? 'The charge reconciliation returned no result. Check the server log for the cause.',
             };
         }
 

@@ -672,7 +672,7 @@ export const GiftCardChecks: NamedCheck[] = [
         const second = await payWithCard(50);
         Assert(!second.Saved, "a 50 spend against 30 left must be refused");
         Assert(
-          /now holds only 30\.00/.test(second.Message),
+          /now has only 30\.00/.test(second.Message),
           `refused by the driver's check on THIS card: ${second.Message}`,
         );
         AssertEqual(await balanceOf(), 30, "nothing was spent by the refused payment");

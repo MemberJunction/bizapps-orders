@@ -55,7 +55,7 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
             const ref = (input?.ExternalInvoiceRef ?? '').trim();
             const preview = !!input?.Preview;
             if (!ref) {
-                return { Success: false, ResultCode: 'ERROR', Message: 'ExternalInvoiceRef is required: this operation exists to record the reference the rail already holds.' };
+                return { Success: false, ResultCode: 'ERROR', Message: 'Enter the invoice reference the billing system already holds for this invoice.' };
             }
 
             const row = await LoadExternalInvoiceByID(id, provider, user);
@@ -68,7 +68,7 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
                     Message:
                         row.ExternalInvoiceRef === ref
                             ? `${row.DocumentNumber} already carries ${ref}; nothing to do.`
-                            : `${row.DocumentNumber} is already Sent as ${row.ExternalInvoiceRef}, not ${ref}. Refusing to repoint a live invoice — cancel it instead if it is wrong.`,
+                            : `${row.DocumentNumber} is already sent as ${row.ExternalInvoiceRef}, not ${ref}. A sent invoice cannot be pointed at a different reference; cancel it first if it is wrong.`,
                     ExternalInvoiceID: row.ID,
                     ExternalInvoiceRef: row.ExternalInvoiceRef,
                     DocumentNumber: row.DocumentNumber,
@@ -78,7 +78,7 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
                 return {
                     Success: false,
                     ResultCode: 'NOT_CLAIMED',
-                    Message: `${row.DocumentNumber} is ${row.Status}, not a claimed send. This operation resolves a send that was never confirmed; a ${row.Status.toLowerCase()} unit is issued again instead.`,
+                    Message: `${row.DocumentNumber} is ${row.Status.toLowerCase()}, not waiting on an unconfirmed send. Recording a reference only fixes a send that was never confirmed; issue a ${row.Status.toLowerCase()} invoice again instead.`,
                     ExternalInvoiceID: row.ID,
                     DocumentNumber: row.DocumentNumber,
                 };
@@ -88,13 +88,13 @@ export class AdoptExternalInvoiceOperation extends OrdersAdoptExternalInvoiceOpe
             const rail = await ResolveInvoiceRail(String(row.PaymentProviderID), provider, user);
             const snap = await rail.GetInvoice(ref);
             if (snap.Success === false) {
-                return { Success: false, ResultCode: 'ERROR', Message: `${rail.Config.Name} could not be read for ${ref}: ${snap.Reason}`, ExternalInvoiceID: row.ID, ExternalInvoiceRef: ref };
+                return { Success: false, ResultCode: 'ERROR', Message: `Could not look up invoice ${ref} in ${rail.Config.Name}: ${snap.Reason}`, ExternalInvoiceID: row.ID, ExternalInvoiceRef: ref };
             }
             if (!snap.Value) {
                 return {
                     Success: false,
                     ResultCode: 'NOT_FOUND_ON_RAIL',
-                    Message: `${rail.Config.Name} has no invoice ${ref}. If the rail really holds nothing for this unit, send it again with AllowReissue instead of adopting.`,
+                    Message: `${rail.Config.Name} has no invoice ${ref}. Check the reference. If ${rail.Config.Name} holds nothing for this invoice, send it again with AllowReissue instead.`,
                     ExternalInvoiceID: row.ID,
                     ExternalInvoiceRef: ref,
                     DocumentNumber: row.DocumentNumber,

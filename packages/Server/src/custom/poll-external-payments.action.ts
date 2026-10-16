@@ -34,7 +34,7 @@ export class PollExternalPaymentsAction extends BaseAction {
     private async poll(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
         if (!user) {
-            return { Success: false, ResultCode: 'NO_CONTEXT_USER', Message: 'ContextUser is required: a captured payment has to be attributable to somebody.' };
+            return { Success: false, ResultCode: 'NO_CONTEXT_USER', Message: 'This action needs a user to run as, because every captured payment is recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.' };
         }
         const input: OrdersPollExternalPaymentsInput = {};
 
@@ -67,7 +67,7 @@ export class PollExternalPaymentsAction extends BaseAction {
         const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;
         const result = await new OrdersPollExternalPaymentsOperation().Execute(input, { provider, user });
         if (!result.Success || !result.Output) {
-            return { Success: false, ResultCode: result.ResultCode ?? 'OPERATION_FAILED', Params: params.Params, Message: result.ErrorMessage ?? 'Orders.PollExternalPayments returned no result.' };
+            return { Success: false, ResultCode: result.ResultCode ?? 'OPERATION_FAILED', Params: params.Params, Message: result.ErrorMessage ?? 'The external payment poll returned no result. Check the server log for the cause.' };
         }
         const out = result.Output;
         setOutput(params, 'Captured', out.Captured);

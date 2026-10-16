@@ -167,10 +167,10 @@ export function UnbilledReceivableNotLinkedError(
         cause.Role,
         cause.ProductID,
         'NotLinked',
-        `${where}: ${Math.abs(amount).toFixed(2)} of this entry is revenue earned ahead of billing and ` +
-            `belongs in '${GL_ROLE.UnbilledReceivable}', but no '${GL_ROLE.UnbilledReceivable}' GL ` +
-            `account is linked for company ${companyID}. Nothing was posted. Link the company's ` +
-            `'${GL_ROLE.UnbilledReceivable}' account in Accounting's Account Links (one per company; see ` +
+        `${where}: ${Math.abs(amount).toFixed(2)} of this entry is revenue earned before it was billed, which posts to ` +
+            `the '${GL_ROLE.UnbilledReceivable}' account, but company ${companyID} has no '${GL_ROLE.UnbilledReceivable}' ` +
+            `GL account linked. Nothing was posted. Ask an accounting administrator to link the company's ` +
+            `'${GL_ROLE.UnbilledReceivable}' account in Accounting's Account Links (one per company; setup steps in ` +
             `bizapps-accounting docs/unbilled-receivable-seeding.md), then try again.`,
     );
 }
@@ -193,12 +193,11 @@ export function CustomerDepositsNotLinkedError(
         cause.Role,
         cause.ProductID,
         'NotLinked',
-        `${where}: ${Math.abs(amount).toFixed(2)} of this entry is cash held ahead of billing and ` +
-            `belongs in '${GL_ROLE.CustomerDeposits}', but no '${GL_ROLE.CustomerDeposits}' GL account ` +
-            `is linked for company ${companyID}. Nothing was posted. Link the company's ` +
-            `'${GL_ROLE.CustomerDeposits}' account in Accounting's Account Links (a dedicated deposits ` +
-            `account, or the Deferred Revenue account; see bizapps-accounting ` +
-            `docs/customer-deposits-seeding.md), then try again.`,
+        `${where}: ${Math.abs(amount).toFixed(2)} of this entry is cash received before it was billed, which posts to ` +
+            `the '${GL_ROLE.CustomerDeposits}' account, but company ${companyID} has no '${GL_ROLE.CustomerDeposits}' ` +
+            `GL account linked. Nothing was posted. Ask an accounting administrator to link the company's ` +
+            `'${GL_ROLE.CustomerDeposits}' account in Accounting's Account Links (a separate deposits account, or the ` +
+            `Deferred Revenue account; setup steps in bizapps-accounting docs/customer-deposits-seeding.md), then try again.`,
     );
 }
 
@@ -312,8 +311,8 @@ export function RefuseUntaggedLines(
         reported.add(signature);
         firstRole ||= roles[0];
         problems.push(
-            `the '${roles.join("' / '")}' account ${reqs[0].AccountLabel} requires dimension ` +
-                `${[...missing.values()].join(', ')}, which this line does not carry`,
+            `the '${roles.join("' / '")}' account ${reqs[0].AccountLabel} needs the dimension ` +
+                `${[...missing.values()].join(', ')}, which this line does not have`,
         );
     }
 
@@ -322,8 +321,8 @@ export function RefuseUntaggedLines(
         firstRole,
         null,
         'MissingDimensions',
-        `${where}: ${problems.join('; ')}. Nothing was posted. Add a Dimension Default for the ` +
-            `product (or its category, product type or company), or tag the line itself, then try again.`,
+        `${where}: ${problems.join('; ')}. Nothing was posted. Add a dimension default for the ` +
+            `product (or its category, product type or company), or set the dimension on the line itself, then try again.`,
     );
 }
 
@@ -420,12 +419,12 @@ export class GLAccountResolver {
                 productID,
                 'NotLinked',
                 productID
-                    ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
-                      `tree, its product type, and the company default for ${where}. ` +
-                      `Link an account for this role (product, category, product type, or company) before booking.`
-                    : `No GL account is linked for role '${role}' at the company level for ${where}. ` +
-                      `This role is resolved company-wide (there is no product involved), so link an ` +
-                      `account to the company before booking.`,
+                    ? `No GL account is linked for the '${role}' role. Orders checked the product, its categories, ` +
+                      `its product type and the company default for ${where}. ` +
+                      `Link an account for this role on the product, a category, the product type or the company, then try again.`
+                    : `No GL account is linked for the '${role}' role at the company level for ${where}. ` +
+                      `This role does not depend on a product, so link an account for it on the company, ` +
+                      `then try again.`,
             );
         }
 
@@ -468,10 +467,10 @@ export class GLAccountResolver {
             role,
             productID,
             'CrossCompany',
-            `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
-                `${hit.CompanyID}, but this books to ${target}. ` +
-                `Cross-company account mapping is refused — the journal entry would book revenue ` +
-                `to the wrong legal entity.`,
+            `GL account ${hit.GLAccountID} found for the '${role}' role belongs to company ` +
+                `${hit.CompanyID}, but this entry posts to ${target}. ` +
+                `It was refused because it would put the amount in the wrong company's books. ` +
+                `Link an account that belongs to ${target} for this role, then try again.`,
         );
     }
 

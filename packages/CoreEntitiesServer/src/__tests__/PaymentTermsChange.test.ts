@@ -89,7 +89,7 @@ describe('CheckTermsChange', () => {
 
     it('refuses an order that is not Confirmed', async () => {
         world({ status: 'Draft' });
-        expect(await CheckTermsChange(request, ctx)).toContain('edited on the order itself');
+        expect(await CheckTermsChange(request, ctx)).toContain('on the order itself');
     });
 
     it('refuses the terms the order already has', async () => {
@@ -99,7 +99,7 @@ describe('CheckTermsChange', () => {
 
     it('refuses inactive terms', async () => {
         world({ newActive: false });
-        expect(await CheckTermsChange(request, ctx)).toBe('Payment terms Net 60 are inactive.');
+        expect(await CheckTermsChange(request, ctx)).toBe('Payment terms Net 60 are inactive. Pick active payment terms.');
     });
 
     it('refuses a second change while one awaits approval', async () => {

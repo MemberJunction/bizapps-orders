@@ -72,8 +72,9 @@ export function BilledSoFar(lines: SlicedLine[], booked: SlicedLine[], rows: Bil
         if (amount !== 0 && !keys.has(key)) {
             const [lineID, part] = key.split('|');
             throw new Error(
-                `Line ${lineID} has been invoiced ${amount / 100} of its ${part} part, which it no longer carries, so what is ` +
-                    `left of it cannot be sliced across the remaining instalments. Nothing was posted.`,
+                `Order line ${lineID} has already been invoiced ${amount / 100} for its ${part} amount, which the line no longer has, ` +
+                    `so what is left cannot be split across the remaining instalments. Nothing was posted. Ask an administrator ` +
+                    `to check the line's billing history.`,
             );
         }
     }
@@ -128,7 +129,7 @@ export async function ReadInstalmentLineBillings(orderHeaderID: string, provider
         },
         user,
     );
-    if (!result.Success) throw new Error(`What order ${orderID}'s instalments billed could not be read: ${result.ErrorMessage ?? 'unknown error'}`);
+    if (!result.Success) throw new Error(`Could not read what the instalments of order ${orderID} have already billed: ${result.ErrorMessage ?? 'unknown error'}`);
     return (result.Results ?? []).map((p) => ({ ...p, Amount: Number(p.Amount) }));
 }
 
@@ -155,7 +156,7 @@ export async function RecordInstalmentLineBillings(
         if (!(await row.Save())) {
             throw new Error(
                 row.LatestResult?.CompleteMessage ??
-                    `What instalment ${id} billed line ${part.OrderLineID} (${part.Part}) could not be recorded.`,
+                    `Could not record what instalment ${id} billed for order line ${part.OrderLineID} (${part.Part} amount).`,
             );
         }
     }

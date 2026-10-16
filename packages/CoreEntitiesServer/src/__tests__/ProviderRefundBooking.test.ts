@@ -209,7 +209,7 @@ describe('BookProviderRefunds', () => {
     it('raises a finance exception when Orders.RefundPayment refuses', async () => {
         state.refundRefuses = true;
         const out = await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
-        expect(out.ReviewReason).toMatch(/refused/);
+        expect(out.ReviewReason).toMatch(/could not record/);
         expect(state.raised).toEqual([
             expect.objectContaining({
                 TypeCode: 'PROVIDER_REFUND_NOT_BOOKED',

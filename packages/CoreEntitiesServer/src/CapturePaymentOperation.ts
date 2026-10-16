@@ -104,7 +104,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             blockers.push(
                 this.blocker(
                     'NoAllocations',
-                    'A payment must say where the money lands. Send at least one allocation.',
+                    'Say which orders this payment pays. Add at least one order to apply it to.',
                     'Allocate the payment to one or more orders before capturing.',
                 ),
             );
@@ -127,8 +127,8 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 this.blocker(
                     'PayerAmbiguous',
                     orgID
-                        ? 'A payment names ONE payer. Both an organization and a person were given.'
-                        : 'A payment names one payer. Neither an organization nor a person was given.',
+                        ? 'Pick one payer: an organization or a person, not both.'
+                        : 'Pick a payer: an organization or a person.',
                     'Set exactly one of BillToOrganizationID or BillToPersonID.',
                 ),
             );
@@ -146,8 +146,8 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 blockers.push(
                     this.blocker(
                         'NonPositiveAllocation',
-                        `Allocation ${i + 1} is for ${a?.Amount ?? 0}. Every allocation must be a positive amount — ` +
-                            `un-applying money is a different operation.`,
+                        `Allocation ${i + 1} is for ${a?.Amount ?? 0}. Each allocation must be more than zero; ` +
+                            `taking money off an order is done separately.`,
                     ),
                 );
             }
@@ -159,13 +159,13 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         const amount = money(Number(input?.Amount ?? 0));
         const allocated = money(allocations.reduce((s, a) => s + Number(a?.Amount ?? 0), 0));
         if (!(amount > 0)) {
-            blockers.push(this.blocker('NonPositiveAmount', `A payment must be for a positive amount, got ${amount}.`));
+            blockers.push(this.blocker('NonPositiveAmount', `Enter a payment amount greater than zero (${amount} was entered).`));
         } else if (amount !== allocated) {
             blockers.push(
                 this.blocker(
                     'AllocationMismatch',
                     `The payment is for ${amount} but its allocations total ${allocated}, leaving ` +
-                        `${money(amount - allocated)} unaccounted for. Every part of a payment must land on an order (D68).`,
+                        `${money(amount - allocated)} unaccounted for. Every part of a payment must go to an order.`,
                     'Adjust the allocations so they sum to the amount received.',
                 ),
             );
@@ -218,7 +218,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 this.blocker(
                     'UnknownTender',
                     `There is no active payment type with code '${code}'.`,
-                    'Payment types are seeded metadata — check the code, or add the type.',
+                    'Check the payment type code, or ask an administrator to add the payment type.',
                 ),
             ]);
         }
@@ -226,7 +226,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             return this.refuse([
                 this.blocker(
                     'ReversalTender',
-                    `'${code}' is a REVERSAL payment type and cannot be used to take money. Use Orders.RefundPayment.`,
+                    `'${code}' is a reversal payment type and cannot be used to take money. Use a refund (Orders.RefundPayment) instead.`,
                 ),
             ]);
         }
@@ -588,7 +588,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
 
         const seq = rows?.[0]?.Seq;
         if (!seq) {
-            throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
+            throw new Error('Could not get the next payment number because the payment number sequence (PaymentSequence row 1) is missing. Ask an administrator to restore it.');
         }
         return `PAY-${String(seq).padStart(6, '0')}`;
     }

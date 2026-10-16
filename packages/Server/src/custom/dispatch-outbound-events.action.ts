@@ -57,7 +57,7 @@ export class DispatchOutboundEventsAction extends BaseAction {
 
     private async dispatch(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
-        if (!user) return refuse('NO_CONTEXT_USER', 'ContextUser is required: deliveries are recorded against somebody.');
+        if (!user) return refuse('NO_CONTEXT_USER', 'This action needs a user to run as, because every delivery is recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.');
 
         const input: DispatchOutboundInput = {};
         const maxCount = param(params, 'MaxCount');

@@ -103,11 +103,10 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
             result.Errors.push(
                 new ValidationErrorInfo(
                     'ProductPriceEntityServer.ValidateAsync',
-                    `This price rule collides with an existing one: both have priority ${this.Priority}, overlapping ` +
-                        `quantity bands and overlapping effective windows for the same product or category, price list and fee ` +
-                        `type. The other is ${clash.Description?.trim() || clash.ID}. Pricing resolves by highest ` +
-                        `priority and refuses to break a tie, so an order using either quantity would fail. Give one ` +
-                        `of them a different priority, narrow a quantity band, or separate the date windows.`,
+                    `This price rule overlaps another one (${clash.Description?.trim() || clash.ID}): both have priority ${this.Priority}, ` +
+                        `overlapping quantity bands and overlapping dates for the same product or category, price list and fee ` +
+                        `type. Pricing cannot choose between two rules with the same priority, so orders for those quantities ` +
+                        `would fail. Give one rule a different priority, narrow a quantity band, or separate the dates.`,
                     null,
                 ),
             );

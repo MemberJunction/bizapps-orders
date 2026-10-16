@@ -109,8 +109,8 @@ export class CreateOrderFromProviderPaymentOperation extends OrdersCreateOrderFr
             return refuse(
                 'ChargeNotFound',
                 read.NotFound
-                    ? `The gateway has no charge ${checked.ProviderChargeID} for provider ${config.Name}.`
-                    : `Could not read charge ${checked.ProviderChargeID} from the gateway: ${read.Reason ?? 'no reason given'}`,
+                    ? `${config.Name} has no charge ${checked.ProviderChargeID}. Check the charge ID and try again.`
+                    : `Could not read charge ${checked.ProviderChargeID} from ${config.Name}: ${read.Reason ?? 'no reason given'}. Try again later.`,
             );
         }
         return CreateOrderFromGatewayCharge({ ...checked, Charge: read.Charge, Config: config }, provider, user);
@@ -138,7 +138,7 @@ export async function CreateOrderFromGatewayCharge(
 ): Promise<Output> {
     const { Charge: charge, Config: config } = args;
     if (charge.ProviderChargeID !== args.ProviderChargeID) {
-        return refuse('BadInput', `The gateway returned charge ${charge.ProviderChargeID} for ${args.ProviderChargeID}.`);
+        return refuse('BadInput', `The payment provider returned charge ${charge.ProviderChargeID} when asked for ${args.ProviderChargeID}, so no order was created. Report this as an integration fault.`);
     }
     const existing = await findOrderForCharge(args.PaymentProviderID, args.ProviderChargeID, provider, user);
     if (existing) return existing;
@@ -162,9 +162,9 @@ export async function CreateOrderFromGatewayCharge(
         if (!prior || prior.Origin !== PROVIDER_PAYMENT_ORDER_ORIGIN) {
             return refuse(
                 'IntentOpenedByOrders',
-                `Charge ${charge.ProviderChargeID} belongs to gateway intent ${charge.ProviderIntentID}, which Orders opened` +
+                `Charge ${charge.ProviderChargeID} is not an unmatched payment: Orders started it` +
                     (prior ? ` for order ${prior.OrderNumber}` : '') +
-                    `. Book it through that order's own payment path, not as an unmatched payment.`,
+                    ` (payment intent ${charge.ProviderIntentID}). Record it through that order's payment instead.`,
             );
         }
         orderID = prior.ID;
@@ -209,7 +209,7 @@ async function createOrderAndIntent(
         intent.BillToPersonID = args.BillToPersonID;
         intent.BillToOrganizationID = args.BillToOrganizationID;
         if (!(await intent.Save())) {
-            throw new RefusedStep('ConfirmRefused', `Could not record gateway intent ${args.Charge.ProviderIntentID}: ${intent.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            throw new RefusedStep('ConfirmRefused', `Could not record the payment provider's intent ${args.Charge.ProviderIntentID}: ${intent.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
 
         const order = await provider.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
@@ -246,13 +246,13 @@ async function createOrderAndIntent(
         if (total !== amount) {
             throw new RefusedStep(
                 'ConfirmRefused',
-                `The order would total ${total}, not the payment's ${amount}: the product draws tax or charges the payment did not include.`,
+                `No order was created: it would total ${total} but the payment is ${amount}, because the product adds tax or charges the payment did not include.`,
             );
         }
 
         intent.OrderHeaderID = order.ID;
         if (!(await intent.Save())) {
-            throw new RefusedStep('ConfirmRefused', `Could not link the intent to the order: ${intent.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            throw new RefusedStep('ConfirmRefused', `Could not link the payment to the order: ${intent.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
         await db.CommitTransaction();
         return { OrderID: order.ID, IntentID: intent.ID };

@@ -82,7 +82,7 @@
         <div class="mjo-alert mjo-alert--error">
             <i class="fa-solid fa-circle-exclamation"></i>
             <div>
-                <strong>Failed to capture payment:</strong> {{ CaptureError }}
+                <strong>The payment was not captured:</strong> {{ CaptureError }}
             </div>
         </div>
     }
@@ -374,7 +374,7 @@
                             <span>${{ UnallocatedRemainder.toFixed(2) }} remaining to allocate before capturing.</span>
                         } @else {
                             <i class="fa-solid fa-triangle-exclamation text-danger"></i>
-                            <span>Over-allocated by ${{ Math.abs(UnallocatedRemainder).toFixed(2) }}. Please adjust amounts.</span>
+                            <span>${{ Math.abs(UnallocatedRemainder).toFixed(2) }} more is allocated than the payment received. Lower the allocated amounts.</span>
                         }
                     </div>
                 </div>

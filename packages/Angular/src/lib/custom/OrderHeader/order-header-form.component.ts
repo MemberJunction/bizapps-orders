@@ -197,7 +197,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             Disabled: (record) => {
                 if (this.Confirming) return 'Booking order…';
                 const ord = record as OrderHeaderEntity;
-                if (this.NeedsPaymentReference) return 'Need a check / ACH reference before confirming.';
+                if (this.NeedsPaymentReference) return 'Enter the check or ACH reference before confirming.';
                 const verdict = ord?.ConfirmEligibility?.();
                 if (verdict && !verdict.Allowed) return verdict.Reason ?? 'Cannot confirm this order.';
                 return false;
@@ -298,7 +298,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public get ConfirmBlockedReason(): string | null {
         if (!this.record || this.record.IsBookedOrder) return null;
-        if (this.NeedsPaymentReference) return 'Need a check / ACH reference.';
+        if (this.NeedsPaymentReference) return 'Enter the check or ACH reference before confirming.';
         const verdict = this.record.ConfirmEligibility();
         return verdict.Allowed ? null : (verdict.Reason ?? 'Cannot confirm this order.');
     }
@@ -325,7 +325,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                 const saveResult = await this.record.Save();
                 if (!saveResult) {
                     throw new Error(
-                        this.record.LatestResult?.CompleteMessage?.trim() || 'Failed to save order changes before confirming.',
+                        this.record.LatestResult?.CompleteMessage?.trim() || 'Your changes could not be saved, so the order was not confirmed.',
                     );
                 }
             }

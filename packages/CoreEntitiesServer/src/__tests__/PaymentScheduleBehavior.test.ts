@@ -308,6 +308,6 @@ describe('RenewalDueDate (#305 review)', () => {
     });
 
     it('refuses an order with no resolved due date rather than guessing', () => {
-        expect(() => RenewalDueDate('2026-10-03', '2027-01-01', null)).toThrow(/resolved due date/);
+        expect(() => RenewalDueDate('2026-10-03', '2027-01-01', null)).toThrow(/due date is missing/);
     });
 });

@@ -486,15 +486,15 @@ export class SubscriptionBehavior {
         if (!org && !person) {
             return (
                 `Subscription type ${Code} needs a subscriber, but neither a ship-to organization nor ` +
-                `a ship-to person is set on the order line, and the order header names no customer.`
+                `a ship-to person is set on the order line, and the order has no customer. Set one of them.`
             );
         }
 
         if (SubscriberScope === 'Organization' && !org) {
-            return `Subscription type ${Code} is organization-only, but no organization was resolved for this line.`;
+            return `Subscription type ${Code} is organization-only, but this line has no organization. Set a ship-to organization on the line or the order.`;
         }
         if (SubscriberScope === 'Person' && !person) {
-            return `Subscription type ${Code} is individual-only, but no person was resolved for this line.`;
+            return `Subscription type ${Code} is individual-only, but this line has no person. Set a ship-to person on the line or the order.`;
         }
 
         // The benefit model is the stricter of the two rules, so it is checked second.

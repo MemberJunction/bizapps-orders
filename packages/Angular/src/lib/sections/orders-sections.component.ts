@@ -209,7 +209,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // as a broken app; a sentence reads as work in progress, which is what
             // it is while the sub-pages land one at a time.
             const label = this.subPages.find((p) => p.Id === pageId)?.Label ?? pageId;
-            this.LoadError = `${label} is not built yet — see /mockups for the approved design.`;
+            this.LoadError = `${label} is not available yet.`;
             return;
         }
 

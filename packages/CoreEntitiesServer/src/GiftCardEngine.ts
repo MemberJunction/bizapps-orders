@@ -174,8 +174,8 @@ export async function IssueGiftCards(
                 account.CurrentBalance = 0;
                 if (!(await account.Save(options))) {
                     throw new Error(
-                        `Could not void gift card ${originCards[i].ID} for returned line ${line.ID}: ` +
-                            `${account.LatestResult?.CompleteMessage ?? 'no reason given'}`,
+                        `Could not void gift card ${originCards[i].ID} for returned order line ${line.ID}. Try the return again; ` +
+                            `if it keeps failing, ask an administrator. Details: ${account.LatestResult?.CompleteMessage ?? 'none given'}`,
                     );
                 }
                 // The ledger has to show the money leaving, or the account's balance and its
@@ -208,8 +208,8 @@ export async function IssueGiftCards(
             // at — a zero-value or fractional-quantity card line means somebody sold something that
             // cannot exist, and letting it through books revenue against no instrument.
             throw new Error(
-                `Order line ${line.ID} is a gift-card product but issues no card (${plan.Refusal}). ` +
-                    `A gift card needs a whole positive quantity and a face value above zero.`,
+                `Order line ${line.ID} sells a gift card, but no card can be issued from it (${plan.Refusal}). ` +
+                    `A gift-card line needs a whole quantity of 1 or more and a price above zero.`,
             );
         }
 
@@ -231,8 +231,8 @@ export async function IssueGiftCards(
 
             if (!(await account.Save(options))) {
                 throw new Error(
-                    `Could not issue gift card ${card.Sequence} of ${plan.Cards.length} for line ` +
-                        `${card.OrderLineID}: ${account.LatestResult?.CompleteMessage ?? 'no reason given'}`,
+                    `Could not issue gift card ${card.Sequence} of ${plan.Cards.length} for order line ${card.OrderLineID}. ` +
+                        `Try again; if it keeps failing, ask an administrator. Details: ${account.LatestResult?.CompleteMessage ?? 'none given'}`,
                 );
             }
 
@@ -287,7 +287,7 @@ export async function MoveGiftCardBalance(
     options?: EntitySaveOptions,
 ): Promise<number> {
     if (amount === 0 || (type === 'Redeem') !== amount < 0) {
-        throw new Error(`A ${type} of ${amount} is the wrong sign: Redeem is negative, Refund positive.`);
+        throw new Error(`A gift card ${type} of ${amount} has the wrong sign: a redeem must be negative and a refund positive.`);
     }
     RequireUUID(relatedPaymentID, 'RelatedPaymentID');
     const sql = provider as unknown as { ExecuteSQL: (sql: string) => Promise<unknown> };
@@ -297,12 +297,12 @@ export async function MoveGiftCardBalance(
     )) as Array<{ CurrentBalance?: number }> | { Results?: Array<{ CurrentBalance?: number }> } | undefined;
     const lockedRow = (Array.isArray(rows) ? rows : (rows?.Results ?? []))[0];
     if (!lockedRow) {
-        throw new Error(`Gift card ${storedValueAccountID} could not be read, so its balance cannot move.`);
+        throw new Error(`Gift card ${storedValueAccountID} could not be found, so its balance was not changed.`);
     }
 
     const account = await provider.GetEntityObject<mjBizAppsOrdersStoredValueAccountEntity>(STORED_VALUE_ACCOUNT_ENTITY, user);
     if (!(await account.Load(storedValueAccountID))) {
-        throw new Error(`Gift card ${storedValueAccountID} could not be loaded, so its balance cannot move.`);
+        throw new Error(`Gift card ${storedValueAccountID} could not be opened, so its balance was not changed.`);
     }
     const label = `Gift card ${account.Code}`;
     if (type === 'Redeem' && account.Status !== 'Active') {
@@ -316,7 +316,7 @@ export async function MoveGiftCardBalance(
     const after = Math.round((before + amount) * 100) / 100;
     if (after < 0) {
         throw new Error(
-            `${label} holds ${before.toFixed(2)}, which does not cover ${(-amount).toFixed(2)}. Nothing was spent.`,
+            `${label} has ${before.toFixed(2)} available, which does not cover ${(-amount).toFixed(2)}. Nothing was spent.`,
         );
     }
 
@@ -325,7 +325,8 @@ export async function MoveGiftCardBalance(
     else if (account.Status === 'Depleted') account.Status = 'Active';
     if (!(await account.Save(options))) {
         throw new Error(
-            `Could not update the balance of ${label}: ${account.LatestResult?.CompleteMessage ?? 'no reason given'}`,
+            `Could not save the new balance of ${label}. Try again; if it keeps failing, ask an administrator. ` +
+                `Details: ${account.LatestResult?.CompleteMessage ?? 'none given'}`,
         );
     }
     await writeTransaction(provider, user, storedValueAccountID, type, amount, after, relatedOrderHeaderID, options, relatedPaymentID);
@@ -355,8 +356,8 @@ async function writeTransaction(
     txn.OccurredAt = new Date();
     if (!(await txn.Save(options))) {
         throw new Error(
-            `Could not write the ${type} transaction for stored-value account ${storedValueAccountID}: ` +
-                `${txn.LatestResult?.CompleteMessage ?? 'no reason given'}`,
+            `Could not record the ${type} on gift card ${storedValueAccountID}. Try again; if it keeps failing, ask an administrator. ` +
+                `Details: ${txn.LatestResult?.CompleteMessage ?? 'none given'}`,
         );
     }
 }

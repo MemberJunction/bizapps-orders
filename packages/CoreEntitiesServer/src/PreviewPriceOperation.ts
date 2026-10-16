@@ -79,7 +79,7 @@ export class PreviewPriceOperation extends OrdersPreviewPriceOperationBase {
         user: UserInfo,
     ): Promise<PreviewPriceOutput> {
         if (!input?.ProductID) {
-            return { Success: false, Message: 'ProductID is required.' };
+            return { Success: false, Message: 'Pick a product to price.' };
         }
         // Caller-supplied ids reach SQL filter text downstream. Validated here,
         // at the boundary, so every frame below this one can trust them.
@@ -154,8 +154,8 @@ export class PreviewPriceOperation extends OrdersPreviewPriceOperationBase {
                 return {
                     Success: false,
                     Message:
-                        `No price is configured for ${product.Name}. Add a ProductPrice for it — either a base ` +
-                        `price (no list) or one on the list this customer is assigned to.`,
+                        `No price is set up for ${product.Name}. Add a price for it, either a base price with no ` +
+                        `price list or one on this customer's price list.`,
                     Quantity: quantity,
                 };
             }

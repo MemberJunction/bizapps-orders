@@ -20,8 +20,8 @@ describe('CheckBillingLocation', () => {
     });
 
     it('refuses a country that is not an ISO alpha-2 code', () => {
-        expect(reasonOf({ Country: 'USA' })).toMatch(/not an ISO 3166-1 alpha-2/);
-        expect(reasonOf({ Country: 'United States' })).toMatch(/not an ISO 3166-1 alpha-2/);
+        expect(reasonOf({ Country: 'USA' })).toMatch(/not a two-letter country code/);
+        expect(reasonOf({ Country: 'United States' })).toMatch(/not a two-letter country code/);
     });
 
     it('requires a subdivision code for US, CA and AU, and refuses free text', () => {

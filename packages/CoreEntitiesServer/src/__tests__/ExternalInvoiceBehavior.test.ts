@@ -50,7 +50,7 @@ describe('DecideInvoiceable — an interrupted send', () => {
         const d = sending(false);
         expect(d.Verdict).toBe('Refuse');
         expect(d.Code).toBe('IN_FLIGHT');
-        expect(d.Reason).toMatch(/check the rail/i);
+        expect(d.Reason).toMatch(/check the invoicing system/i);
     });
 
     it('lets a person who has checked the rail re-issue deliberately', () => {

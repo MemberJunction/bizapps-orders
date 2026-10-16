@@ -414,7 +414,7 @@ export function CheckBillingLocation(input: unknown): BillingLocationCheck {
         return { Valid: false, Reason: 'A billing country is required.' };
     }
     if (!COUNTRY_CODES.has(country)) {
-        return { Valid: false, Reason: `'${country}' is not an ISO 3166-1 alpha-2 country code.` };
+        return { Valid: false, Reason: `'${country}' is not a two-letter country code (ISO 3166-1), such as US or CA.` };
     }
 
     const region = checkRegion(country, upperText(raw['StateProvince']));

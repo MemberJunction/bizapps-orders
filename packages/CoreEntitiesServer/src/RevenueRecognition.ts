@@ -102,9 +102,8 @@ export abstract class RevenueRecognitionDriver {
     protected RequireServicePeriod(context: RevRecContext, driver: string): { start: Date; end: Date } {
         if (!context.ServicePeriodStart || !context.ServicePeriodEnd) {
             throw new Error(
-                `${driver} needs a service period, but this order line has no ` +
-                    `ServicePeriodStart/ServicePeriodEnd. Set them on the line, or use a revenue ` +
-                    `recognition type that does not require a coverage window.`,
+                `This order line needs a service start and end date for ${driver} revenue recognition. ` +
+                    `Set them on the line, or use a revenue recognition type that does not need a service period.`,
             );
         }
         return { start: new Date(context.ServicePeriodStart), end: new Date(context.ServicePeriodEnd) };
@@ -209,7 +208,7 @@ export class ManualAttestationDriver extends ProgressRecognitionDriver {
     public PercentComplete(m: ProgressMeasurement): number {
         const p = Number(m.PercentComplete);
         if (!Number.isFinite(p) || p < 0 || p > 1) {
-            throw new Error(`PercentComplete must be a fraction between 0 and 1 (got ${String(m.PercentComplete)}).`);
+            throw new Error(`Percent complete must be between 0 and 1, for example 0.25 for 25% (${String(m.PercentComplete)} was entered).`);
         }
         return p;
     }

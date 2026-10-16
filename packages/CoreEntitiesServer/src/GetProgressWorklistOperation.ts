@@ -117,7 +117,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
             },
             user,
         );
-        if (!lines.Success) return { Success: false, Message: `Could not read the order lines: ${lines.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
+        if (!lines.Success) return { Success: false, Message: `Could not load the progress worklist because the order lines could not be read. Refresh to try again; if it keeps failing, ask an administrator to check the server. Details: ${lines.ErrorMessage ?? 'none given'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
         const lineRows = lines.Results ?? [];
         if (lineRows.length === 0) return { Success: true, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
 
@@ -141,7 +141,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
             ),
         ]);
         if (!orders.Success || !measurements.Success) {
-            return { Success: false, Message: `Could not read the orders or observations: ${orders.ErrorMessage ?? measurements.ErrorMessage ?? 'unknown error'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
+            return { Success: false, Message: `Could not load the progress worklist because the orders or progress measurements could not be read. Refresh to try again; if it keeps failing, ask an administrator to check the server. Details: ${orders.ErrorMessage ?? measurements.ErrorMessage ?? 'none given'}`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
         }
 
         const orderByID = new Map((orders.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));

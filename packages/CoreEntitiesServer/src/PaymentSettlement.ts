@@ -264,7 +264,7 @@ async function promote(
 
     if (!(await header.Save())) {
         throw new Error(
-            `Could not capture payment ${payment.PaymentNumber} from event ${event.EventID}: ` +
+            `Could not mark payment ${payment.PaymentNumber} as received after the bank confirmed it (event ${event.EventID}): ` +
                 `${header.LatestResult?.CompleteMessage ?? 'unknown error'}`,
         );
     }
@@ -298,7 +298,7 @@ async function markFailed(
 
     if (!(await header.Save())) {
         throw new Error(
-            `Could not mark payment ${payment.PaymentNumber} as failed from event ${event.EventID}: ` +
+            `Could not mark payment ${payment.PaymentNumber} as failed after the bank reported it did not clear (event ${event.EventID}): ` +
                 `${header.LatestResult?.CompleteMessage ?? 'unknown error'}`,
         );
     }
@@ -322,8 +322,8 @@ async function reverse(
     const applications = await LoadAppliedAllocations(provider, user, payment.ID);
     if (!applications.length) {
         throw new Error(
-            `Payment ${payment.PaymentNumber} was returned by the bank but is not applied to any order, ` +
-                `so there is nothing to un-apply. This should be impossible for a captured payment.`,
+            `Payment ${payment.PaymentNumber} was returned by the bank, but it is not applied to any order, so there is ` +
+                `nothing to reverse. A captured payment should always be applied to an order; check this payment's allocations.`,
         );
     }
 

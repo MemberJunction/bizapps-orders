@@ -106,7 +106,7 @@ export interface AccessOverrideAssignee {
 }
 
 const quotedIDs = (ids: readonly string[], what: string): string => {
-    for (const id of ids) if (!UUID.test(id)) throw new Error(`${what} '${id}' is not a uniqueidentifier.`);
+    for (const id of ids) if (!UUID.test(id)) throw new Error(`${what} '${id}' is not a valid ID.`);
     return ids.map((id) => `'${id}'`).join(',');
 };
 

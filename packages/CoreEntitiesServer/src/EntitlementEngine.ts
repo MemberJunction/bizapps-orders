@@ -244,9 +244,9 @@ export async function CreateEntitlementGrants(
             // The product grants something but could not be read. Refusing beats granting on a guess:
             // an access decision made from defaults nobody configured is not a decision.
             throw new Error(
-                `Order line for product ${line.ProductID} confers entitlements, but the product's ` +
-                    `policy could not be resolved (its type or category tree could not be read). ` +
-                    `Access is refused rather than granted on assumed defaults.`,
+                `Product ${line.ProductID} on this order gives access, but its access settings (product type or ` +
+                    `category) could not be read, so no access was granted. ` +
+                    `Ask an administrator to check the product's setup, then try again.`,
             );
         }
 
@@ -596,8 +596,8 @@ export async function ResizeTermGrants(
     const inputs = (await loadPolicyInputs([productID], provider, user)).get(key(productID));
     if (!inputs) {
         throw new Error(
-            `The grants of term ${termID} follow its seats, but the policy of product ${productID} could not be ` +
-                `resolved, so they cannot be resized.`,
+            `The access on subscription term ${termID} could not be changed to match its seat count, because the ` +
+                `access settings of product ${productID} could not be read. Ask an administrator to check the product's setup.`,
         );
     }
 

@@ -60,7 +60,7 @@ export function ExplainMissingAttendees(
                     `Add one line per attendee, each at quantity 1 with its attendee.`,
             );
         } else if (!line.HasAttendee) {
-            messages.push(`${label} is for an event that requires attendee information and has no attendee.`);
+            messages.push(`${label} is for an event that requires attendee information and has no attendee. Add the attendee to the line.`);
         }
     }
     return messages;

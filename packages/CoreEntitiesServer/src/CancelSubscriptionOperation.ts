@@ -208,7 +208,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         if (input.Timing != null && !CANCELLATION_TIMINGS.includes(input.Timing)) {
             return {
                 Success: false,
-                Message: `Timing must be one of ${CANCELLATION_TIMINGS.join(', ')}; got '${input.Timing}'.`,
+                Message: `'${input.Timing}' is not a cancellation timing. Use one of: ${CANCELLATION_TIMINGS.join(', ')}.`,
             };
         }
 
@@ -227,7 +227,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         if (!typeRules) {
             return {
                 Success: false,
-                Message: `Subscription type '${subscription.SubscriptionTypeID}' was not found.`,
+                Message: `The subscription's type (ID ${subscription.SubscriptionTypeID}) was not found, so its cancellation rules are unknown.`,
             };
         }
 
@@ -547,8 +547,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             Math.round(Number(original.Quantity) * decision.ReversalFraction * 1e4) / 1e4;
         if (reversalQuantity === 0) {
             throw new Error(
-                `The computed reversal (${decision.ReversalFraction} of quantity ${original.Quantity}) ` +
-                    `rounds to zero, which is not a valid order line. Nothing can be reversed at this size.`,
+                `The part of the term left to cancel (${decision.ReversalFraction} of quantity ${original.Quantity}) ` +
+                    `rounds to zero, so there is nothing to reverse.`,
             );
         }
         line.Quantity = -reversalQuantity;
@@ -696,7 +696,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         );
         if (!driver) {
             throw new Error(
-                `Subscription type '${rules.Code}' names driver '${rules.DriverClass}', which is not registered.`,
+                `Subscription type '${rules.Code}' uses the subscription rules '${rules.DriverClass}', which are not loaded on the server. Ask an administrator to check the server install.`,
             );
         }
         return driver;

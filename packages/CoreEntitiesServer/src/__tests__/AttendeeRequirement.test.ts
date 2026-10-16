@@ -54,7 +54,7 @@ describe('ExplainMissingAttendees', () => {
 
     it('refuses a single seat with no attendee', () => {
         expect(ExplainMissingAttendees([fact({ HasAttendee: false })], requiring)).toEqual([
-            'Order line 1 is for an event that requires attendee information and has no attendee.',
+            'Order line 1 is for an event that requires attendee information and has no attendee. Add the attendee to the line.',
         ]);
     });
 
@@ -177,7 +177,7 @@ describe('OrderEntityServer event attendee check', () => {
         vi.mocked(LoadProductsRequiringAttendees).mockResolvedValue(new Set([EVENT.toLowerCase()]));
         const lines = [line({ ISAChild: eventRow(PERSON) }), line({ ID: LINE_2, LineNumber: 2, ISAChild: eventRow(null) })];
         expect(await order(true, lines).checkEventAttendees()).toEqual([
-            'Order line 2 is for an event that requires attendee information and has no attendee.',
+            'Order line 2 is for an event that requires attendee information and has no attendee. Add the attendee to the line.',
         ]);
         expect(vi.mocked(LoadLinesWithAttendee).mock.calls[0][0]).toEqual([]);
     });
@@ -188,7 +188,7 @@ describe('OrderEntityServer event attendee check', () => {
         const lines = [line({ IsSaved: true }), line({ ID: LINE_2, LineNumber: 2, IsSaved: true })];
         const messages = await order(true, lines).checkEventAttendees();
         expect(vi.mocked(LoadLinesWithAttendee).mock.calls[0][0]).toEqual([LINE_1, LINE_2]);
-        expect(messages).toEqual(['Order line 2 is for an event that requires attendee information and has no attendee.']);
+        expect(messages).toEqual(['Order line 2 is for an event that requires attendee information and has no attendee. Add the attendee to the line.']);
     });
 
     it('exempts reversal lines and bundle components', async () => {

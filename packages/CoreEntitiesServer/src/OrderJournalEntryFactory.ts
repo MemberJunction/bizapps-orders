@@ -434,7 +434,7 @@ export class OrderJournalEntryFactory {
         creditMemoByLine?: Map<string, CreditMemoForLine>,
     ): Promise<OrderLineDraft[]> {
         if (lines.length === 0) {
-            throw new Error(`Order ${order.OrderNumber} has no lines to book.`);
+            throw new Error(`Order ${order.OrderNumber} has no lines, so there is nothing to book. Add at least one line before confirming.`);
         }
         // A previous build's recognitions are still here, which means whoever ran it took the
         // drafts and never drained them — so those lines' RecognizedToDate was never advanced and
@@ -442,10 +442,10 @@ export class OrderJournalEntryFactory {
         // account. Fail here, where the cause is visible, rather than in a month's close.
         if (this._recognizedByLine.size > 0 || this._billedByLine.size > 0) {
             throw new Error(
-                `OrderJournalEntryFactory was reused without draining what the last build recognised ` +
-                    `(${this._recognizedByLine.size} recognised, ${this._billedByLine.size} billed). Call ` +
-                    `DrainRecognized() and DrainBilled() inside the booking transaction and advance the ` +
-                    `totals with them, or those lines' balances are wrong.`,
+                `Booking stopped: the order journal entry builder was reused before the previous booking's ` +
+                    `results were collected (${this._recognizedByLine.size} recognised, ${this._billedByLine.size} billed). ` +
+                    `This is a bug: DrainRecognized() and DrainBilled() must run inside the booking transaction, ` +
+                    `or those lines' balances are wrong.`,
             );
         }
 
@@ -469,8 +469,8 @@ export class OrderJournalEntryFactory {
             const company = String(row.CompanyID).toLowerCase();
             if (!covering.has(company)) {
                 throw new Error(
-                    `Order ${order.OrderNumber} has payment schedule rows for company ${company}, ` +
-                        `which covers no lines on this order. Nothing would ever book for them.`,
+                    `Order ${order.OrderNumber} has payment schedule rows for company ${company}, but no line ` +
+                        `on the order belongs to that company, so those instalments would never be booked.`,
                 );
             }
         }
@@ -522,7 +522,7 @@ export class OrderJournalEntryFactory {
         for (const line of mine) {
             const product = products.get(line.ProductID.toLowerCase());
             if (!product) {
-                throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+                throw new Error(`Order line ${line.ID} uses product ${line.ProductID}, which is no longer in the catalog. Ask an administrator to check the product.`);
             }
             out.push({
                 ID: line.ID,
@@ -564,7 +564,7 @@ export class OrderJournalEntryFactory {
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID.toLowerCase());
         if (!product) {
-            throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+            throw new Error(`Order line ${line.ID} uses product ${line.ProductID}, which is no longer in the catalog. Ask an administrator to check the product.`);
         }
 
         const typeDefault = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID;
@@ -574,7 +574,8 @@ export class OrderJournalEntryFactory {
             throw new Error(
                 `Product '${product.Name}' has no valid revenue recognition type` +
                     (revRecID ? ` (${revRecID})` : '') +
-                    ` — cannot determine whether its revenue is earned at booking or over time.`,
+                    `, so its revenue cannot be booked. Ask an administrator to set a revenue recognition type ` +
+                    `on the product or its product type.`,
             );
         }
 
@@ -693,10 +694,9 @@ export class OrderJournalEntryFactory {
         // wrong answer here is a misstated liability.
         if (isScheduled && isGiftCard) {
             throw new Error(
-                `Order ${order.OrderNumber} line ${line.LineNumber} sells a gift card for a company ` +
-                    `billed by instalment. That combination has no defined accounting treatment — a ` +
-                    `card's liability arises in full at issue, not in billing slices. Remove the payment ` +
-                    `schedule for this company, or sell the gift card on its own order.`,
+                `Order ${order.OrderNumber} line ${line.LineNumber} sells a gift card, but this company is ` +
+                    `billed in instalments, and gift cards cannot be sold on a payment schedule. Remove the ` +
+                    `payment schedule for this company, or sell the gift card on its own order.`,
             );
         }
 
@@ -990,9 +990,9 @@ export class OrderJournalEntryFactory {
         const priorMirrors = origin.PriorReversals.flatMap((prior) => {
             if (!prior.OrderDate) {
                 throw new Error(
-                    `An earlier reversal (order line ${prior.ID}) of order line ${origin.OriginLineID} has no ` +
-                        `readable order date, so the releases it already took back cannot be counted and the ` +
-                        `credit memo cannot be worked out.`,
+                    `An earlier return (order line ${prior.ID}) of order line ${origin.OriginLineID} has no ` +
+                        `order date, so the credit memo for this return cannot be calculated. Ask an ` +
+                        `administrator to check that return's order date.`,
                 );
             }
             const after = prior.OrderDate;
@@ -1071,11 +1071,11 @@ export class OrderJournalEntryFactory {
         note: string,
     ): Promise<JEDraft> {
         if (money(delta) === 0) {
-            throw new Error(`Order line ${line.ID}: a zero delta has no entry to build.`);
+            throw new Error(`Order line ${line.ID}: progress did not change, so there is no entry to book.`);
         }
         const product = (await this.loadProducts([line.ProductID])).get(line.ProductID.toLowerCase());
         if (!product) {
-            throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
+            throw new Error(`Order line ${line.ID} uses product ${line.ProductID}, which is no longer in the catalog. Ask an administrator to check the product.`);
         }
         const companyID = line.CompanyID ?? product.CompanyID;
         const asOf = new Date(measurementDate);
@@ -1204,8 +1204,8 @@ export class OrderJournalEntryFactory {
         const credits = money(lines.reduce((s, l) => s + (l.CreditAmount ?? 0), 0));
         if (debits !== credits) {
             throw new Error(
-                `The ${kind} entry for order ${order.OrderNumber} line ${line.LineNumber} does not balance: ` +
-                    `debits ${debits} vs credits ${credits}. No entries were booked.`,
+                `The ${kind} entry for order ${order.OrderNumber} line ${line.LineNumber} does not balance ` +
+                    `(debits ${debits}, credits ${credits}), so nothing was booked. Report this to support.`,
             );
         }
     }
@@ -1384,9 +1384,9 @@ export class OrderJournalEntryFactory {
                     GL_ROLE.Sales,
                     line.ProductID,
                     'NotLinked',
-                    `Charge '${info.Label}' has no GL account linked for company ${companyID}. Link one to the ` +
-                        `charge type before booking — a charge with nowhere to go would be billed to the customer ` +
-                        `and never recorded in the ledger.`,
+                    `Charge '${info.Label}' has no GL account linked for company ${companyID}. Ask an administrator ` +
+                        `to link one to the charge type before booking; otherwise the customer is billed for the ` +
+                        `charge and the ledger never records it.`,
                 );
             }
             out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label, ChargeTypeID: chargeTypeID });

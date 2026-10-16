@@ -131,7 +131,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
 
     public override async CreateIntent(request: CreateIntentRequest): Promise<CreateIntentResult> {
         if (request.Amount <= 0) {
-            return { Success: false, Reason: `Stripe cannot open an intent for ${request.Amount}.` };
+            return { Success: false, Reason: `A card payment must be for more than zero (${request.Amount} was entered).` };
         }
 
         if (this.useStub) {
@@ -231,7 +231,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
 
     public override async UpdateIntent(request: UpdateIntentRequest): Promise<UpdateIntentResult> {
         if (!request.ProviderIntentID) {
-            return { Success: false, Reason: 'A Stripe update needs a provider intent id.' };
+            return { Success: false, Reason: 'Cannot update the Stripe payment: no Stripe payment intent ID was given.' };
         }
         const body: Record<string, string> = {};
         if (request.Description) body.description = request.Description;
@@ -248,7 +248,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
 
     public override async RetrieveIntent(request: RetrieveIntentRequest): Promise<RetrieveIntentResult> {
         if (!request.ProviderIntentID) {
-            return { Success: false, Reason: 'A Stripe retrieve needs a provider intent id.' };
+            return { Success: false, Reason: 'Cannot read the Stripe payment: no Stripe payment intent ID was given.' };
         }
         if (this.useStub) {
             // The stub never sees a browser confirmCardPayment; it stays RequiresPayment
@@ -280,7 +280,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         }
         const owner = request.BillToPersonID ?? request.BillToOrganizationID ?? request.CheckoutSessionID;
         if (!owner) {
-            return { Success: false, Reason: 'A Stripe customer needs the person, organization or checkout it belongs to.' };
+            return { Success: false, Reason: 'Cannot create the Stripe customer: no person, organization or checkout was given for it.' };
         }
 
         if (this.useStub) {
@@ -348,7 +348,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         if (status !== 'Succeeded') {
             // A capture that did not succeed is a REFUSAL, not a fault: the card was declined, or the
             // intent needed action. Reporting success here would book cash that never arrived.
-            return { Success: false, Reason: `Stripe reported the intent as '${captured.Body.status}' after capture.`, Status: status };
+            return { Success: false, Reason: `Stripe reported the payment as '${captured.Body.status}' after capture, so it was not recorded. Check the payment in Stripe.`, Status: status };
         }
 
         return this.captureResultFromIntent(captured.Body, request);
@@ -359,7 +359,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
     public override async Refund(request: RefundRequest): Promise<RefundResult> {
         const target = request.ProviderChargeID ?? request.ProviderIntentID;
         if (!target) {
-            return { Success: false, Reason: 'A Stripe refund needs either a charge id or an intent id.' };
+            return { Success: false, Reason: 'Cannot refund through Stripe: the payment has no Stripe charge or payment intent ID.' };
         }
 
         if (this.useStub) {
@@ -432,7 +432,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         if (!sessions.Ok) return { Success: false, Reason: sessions.Reason };
         if (sessions.Items.length === 0) return { Success: true, Items: [] };
         if (sessions.Items.length > 1) {
-            return { Success: false, Reason: `Stripe has ${sessions.Items.length} checkout sessions for intent ${request.ProviderIntentID}; expected one.` };
+            return { Success: false, Reason: `Stripe has ${sessions.Items.length} checkout sessions for payment ${request.ProviderIntentID}, so it is unclear which one holds the items bought. Check the payment in Stripe.` };
         }
         const session = sessions.Items[0];
         const lines = await this.listAll(`/checkout/sessions/${encodeURIComponent(String(session.id))}/line_items`, {});
@@ -545,8 +545,8 @@ export class StripePaymentProvider extends BasePaymentProvider {
                 Ok: false,
                 Body: {},
                 Reason:
-                    `No Stripe API key is available for provider '${this.Config?.Name ?? this.Config?.ID}'. ` +
-                    `Its CredentialsRef must resolve to a key — see PaymentProviderResolver.`,
+                    `No Stripe API key is set up for payment provider '${this.Config?.Name ?? this.Config?.ID}'. ` +
+                    `Ask an administrator to set the key named by its credentials reference in the server environment.`,
             };
         }
 
@@ -570,7 +570,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         } catch (err) {
             // A fault, not an answer. The caller's payment is in an UNKNOWN state, which is worse than
             // a decline, so it must not be reported as one.
-            throw new Error(`Stripe was unreachable calling ${method} ${path}: ${(err as Error).message}`);
+            throw new Error(`Could not reach Stripe (${method} ${path}). Try again in a few minutes. Details: ${(err as Error).message}`);
         }
 
         const text = await response.text();
@@ -584,11 +584,11 @@ export class StripePaymentProvider extends BasePaymentProvider {
         if (response.ok) return { Ok: true, Body: parsed };
 
         if (response.status >= 500) {
-            throw new Error(`Stripe returned ${response.status} calling ${method} ${path}. The payment state is unknown.`);
+            throw new Error(`Stripe had an error (${response.status}) on ${method} ${path}, so it is not known whether the payment went through. Check the payment in Stripe before trying again.`);
         }
 
         const error = (parsed.error ?? {}) as Record<string, unknown>;
-        const reason = (error.message as string) ?? `Stripe returned ${response.status} with no message.`;
+        const reason = (error.message as string) ?? `Stripe refused the request (status ${response.status}) and gave no reason.`;
         LogError(`Stripe ${method} ${path} refused: ${reason}`);
         return { Ok: false, Body: parsed, Reason: reason };
     }
@@ -617,7 +617,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         }
         return {
             Ok: false,
-            Reason: `Stripe ${path} returned more than ${MAX_LIST_PAGES * 100} objects; ask for a narrower window.`,
+            Reason: `Stripe returned more than ${MAX_LIST_PAGES * 100} records for ${path}. Pick a shorter date range.`,
             Items: items,
         };
     }

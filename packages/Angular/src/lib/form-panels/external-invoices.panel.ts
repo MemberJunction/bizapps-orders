@@ -325,7 +325,7 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         const proceed = await this.confirm.Confirm({
             title: `Re-issue ${row.DocumentNumber}?`,
             message: `This relies on ${this.ProviderName} holding no invoice for this unit.`,
-            detail: 'The unconfirmed send is marked Failed and a fresh invoice is created. If the rail does hold one, the customer receives a second invoice — record its reference instead.',
+            detail: 'The unconfirmed send is marked Failed and a fresh invoice is created. If the billing service does hold one, the customer receives a second invoice; record its reference instead.',
             type: 'warning',
             confirmText: 'Nothing is there — re-issue',
             cancelText: 'Let me check again',

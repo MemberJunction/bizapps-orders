@@ -312,15 +312,15 @@ async function loadConfirmedSession(
     try {
         RequireUUID(sessionID, 'sessionId');
     } catch {
-        return { Refusal: { Success: false, ErrorMessage: 'Checkout session not found' } };
+        return { Refusal: { Success: false, ErrorMessage: 'This checkout could not be found. Start the checkout again.' } };
     }
     const md = new Metadata();
     const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
     if (!(await session.Load(sessionID))) {
-        return { Refusal: { Success: false, ErrorMessage: 'Checkout session not found' } };
+        return { Refusal: { Success: false, ErrorMessage: 'This checkout could not be found. Start the checkout again.' } };
     }
     if (!keyMatches(session, clientSessionKey)) {
-        return { Refusal: { Success: false, ErrorMessage: 'Checkout session key does not match' } };
+        return { Refusal: { Success: false, ErrorMessage: 'This checkout was started in a different browser session. Return to the browser you used, or start the checkout again.' } };
     }
     if (session.Status !== 'Confirmed' || !session.DraftOrderID) {
         return { Refusal: { Success: false, ErrorMessage: 'This checkout has not completed yet.' } };
@@ -479,7 +479,7 @@ async function setPassword(
         return { Success: false, ErrorMessage: errorMessage, Account: state ? toStatus(state, step) : undefined };
     }
     if (typeof password !== 'string' || password.length === 0 || password.length > MAX_CHECKOUT_PASSWORD_LENGTH) {
-        return { Success: false, ErrorMessage: 'Please enter a password.', Account: toStatus(state, step) };
+        return { Success: false, ErrorMessage: `Please enter a password of up to ${MAX_CHECKOUT_PASSWORD_LENGTH} characters.`, Account: toStatus(state, step) };
     }
 
     const pending: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {

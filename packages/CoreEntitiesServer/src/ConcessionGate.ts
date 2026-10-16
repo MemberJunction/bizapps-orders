@@ -127,7 +127,7 @@ export async function LoadConcessionTiers(provider: IMetadataProvider, user: Use
         },
         user,
     );
-    if (!res?.Success) throw new Error(`Could not read the ConcessionLimit rules: ${res?.ErrorMessage}`);
+    if (!res?.Success) throw new Error(`Could not read the concession limit rules: ${res?.ErrorMessage}`);
     return res.Results.map((r) => ({ ...r, RequiresDecisionWithinAuthority: !!r.RequiresDecisionWithinAuthority }));
 }
 
@@ -350,7 +350,10 @@ async function saleApprovalProblems(
                 (r.DeliveryForm === 'Price' || r.DeliveryForm === 'Scope'),
         );
         if (!approved) {
-            problems.push(`${label}, and no Price or Scope concession approved by the ConcessionLimit approver is recorded for it`);
+            problems.push(
+                `${label}, and no approved Price or Scope concession is recorded for it. Record one against the line ` +
+                    `and confirm once the approver on its concession limit rule approves it`,
+            );
         }
     }
     return problems;

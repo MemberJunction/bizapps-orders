@@ -254,7 +254,7 @@ describe('checkout account step', () => {
 
         it('refuses a session id that is not a UUID without loading anything', async () => {
             const res = await EnsureCheckoutAccount("x' OR 1=1 --", KEY);
-            expect(res).toEqual({ Success: false, ErrorMessage: 'Checkout session not found' });
+            expect(res).toEqual({ Success: false, ErrorMessage: 'This checkout could not be found. Start the checkout again.' });
             expect(mocks.session.Load).not.toHaveBeenCalled();
         });
 

@@ -51,7 +51,7 @@ export function RequireDate(value: string, field: string): string {
     const isDateOnly = /^\d{4}-\d{2}-\d{2}$/.test(whole);
     const isDateTime = /^\d{4}-\d{2}-\d{2}[T ][\d:.]+(Z|[+-]\d{2}:?\d{2})?$/.test(whole);
     if ((!isDateOnly && !isDateTime) || Number.isNaN(Date.parse(whole))) {
-        throw new InvalidOperationInputError(`${field} must be an ISO date (YYYY-MM-DD).`);
+        throw new InvalidOperationInputError(`${field} must be a date in the form YYYY-MM-DD.`);
     }
     // `Date.parse` is not enough: it ROLLS OVER, so `2026-02-30` parses happily as 2 March and
     // `2026-06-31` as 1 July. A day that does not exist is a typo in the caller's input, and

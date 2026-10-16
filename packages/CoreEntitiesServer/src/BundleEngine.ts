@@ -179,10 +179,9 @@ export async function ExpandBundleLines(
             // that already exist. A NESTED bundle is not, and saying so beats expanding it wrongly.
             if (plan.Refusal === 'NestedBundle') {
                 throw new Error(
-                    `Order line ${line.ID} is a bundle inside another bundle. Bundles expand ONE level ` +
-                        `only (D45) — the quantity ripple and the price allocation are not defined for ` +
-                        `deeper nesting. Sell the inner bundle's components directly, or sell it as its ` +
-                        `own line.`,
+                    `Order line ${line.ID} is a bundle inside another bundle. A bundle can hold products but not other ` +
+                        `bundles, because quantities and prices are split across one level only. Sell the inner ` +
+                        `bundle's components directly, or sell the inner bundle on its own line.`,
                 );
             }
             continue;
@@ -354,7 +353,7 @@ export async function RippleBundleQuantity(
         entity.Quantity = target;
         if (!(await entity.Save())) {
             throw new Error(
-                `Could not ripple quantity ${target} to bundle child ${child.ID}: ` +
+                `Could not change bundle component line ${child.ID} to quantity ${target}: ` +
                     `${entity.LatestResult?.CompleteMessage ?? 'no reason given'}`,
             );
         }

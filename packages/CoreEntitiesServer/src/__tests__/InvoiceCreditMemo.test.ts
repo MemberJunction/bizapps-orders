@@ -136,8 +136,8 @@ describe('the credit memo document', () => {
     });
 
     it('refuses figures that do not add up rather than print them', () => {
-        expect(() => BuildAmountChangeCreditMemo(build()[0], memo({ Tax: 19 }))).toThrow(/not its 220.00/);
-        expect(() => BuildAmountChangeCreditMemo(build()[0], memo({ OpenCredit: 60 }))).toThrow(/do not add up/);
+        expect(() => BuildAmountChangeCreditMemo(build()[0], memo({ Tax: 19 }))).toThrow(/do not add up to its total of 220.00/);
+        expect(() => BuildAmountChangeCreditMemo(build()[0], memo({ OpenCredit: 60 }))).toThrow(/does not add up/);
     });
 });
 

@@ -91,17 +91,16 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
             return this.refuse(target, [
                 this.blocker(
                     'UNSUPPORTED_TARGET',
-                    `'${target || '(none)'}' is not a state this operation advances to. Use Fulfilled.`,
+                    `'${target || '(none)'}' is not a status this action can move an order to. Use Fulfilled.`,
                     target === 'Draft' || target === 'Quoted' || target === 'Confirmed'
-                        ? 'Those states are reached by saving the order itself — set Status and call Save(). ' +
-                          'Confirmed runs the booking walk on the way through, which is where it belongs.'
-                        : 'Voiding is a separate decision about an existing order, not a rung on the ladder.',
+                        ? 'Draft, Quoted and Confirmed are set by saving the order with that status. Confirming an order also books it.'
+                        : 'Voiding is a separate action on the order, not a step in this one.',
                 ),
             ]);
         }
 
         if (!input?.OrderHeaderID) {
-            return this.refuse(target, [this.blocker('NO_ORDER', 'An OrderHeaderID is required.')]);
+            return this.refuse(target, [this.blocker('NO_ORDER', 'Pick an order to advance.')]);
         }
         // Reaches SQL filter text below.
         RequireUUID(input.OrderHeaderID, 'OrderHeaderID');
@@ -109,7 +108,7 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
         const header = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, user);
         if (!(await header.Load(input.OrderHeaderID))) {
             return this.refuse(target, [
-                this.blocker('NOT_FOUND', `Order ${input.OrderHeaderID} could not be loaded.`),
+                this.blocker('NOT_FOUND', `The order could not be found (ID ${input.OrderHeaderID}). It may have been deleted.`),
             ]);
         }
 
@@ -125,8 +124,8 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
                 [
                     this.blocker(
                         'NOT_CONFIRMED',
-                        `The order is ${status}. Only a Confirmed order can be advanced.`,
-                        'Set Status to Confirmed and save the order — that runs the booking walk. Then advance it.',
+                        `The order is ${status}. Only a confirmed order can be marked fulfilled.`,
+                        'Confirm the order first (set its status to Confirmed and save it, which books it), then try again.',
                     ),
                 ],
                 orderID,
@@ -140,7 +139,7 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
         if (header.FulfillmentStatus === 'Fulfilled') {
             return {
                 Success: true,
-                Message: `The order is already Fulfilled.`,
+                Message: `The order is already fulfilled.`,
                 OrderHeaderID: orderID,
                 OrderNumber: header.OrderNumber ?? null,
                 Status: 'Fulfilled',
@@ -161,8 +160,8 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
                 To: 'Fulfilled',
                 Applied: false,
                 Reason:
-                    `${unfulfilled} fulfillable line(s) could not be marked Fulfilled. The order sits in ` +
-                    `the fulfillment queue. Set ForceFulfillment to advance anyway.`,
+                    `${unfulfilled} line(s) could not be marked fulfilled, so the order stays in the fulfillment queue. ` +
+                    `Choose to force fulfillment (ForceFulfillment) to mark it fulfilled anyway.`,
             });
             return this.stopped(orderID, header, target, header.FulfillmentStatus ?? 'Pending', transitions, unfulfilled, provider);
         }
@@ -179,7 +178,7 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
             Applied: saved,
             Reason:
                 saved && unfulfilled > 0
-                    ? `Forced with ${unfulfilled} line(s) still Pending.`
+                    ? `Marked fulfilled anyway, with ${unfulfilled} line(s) still pending.`
                     : header.LatestResult?.CompleteMessage ?? null,
         });
 
@@ -187,7 +186,7 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
 
         return {
             Success: saved,
-            Message: saved ? undefined : `The order could not be advanced to Fulfilled: ${header.LatestResult?.CompleteMessage ?? 'Save failed'}`,
+            Message: saved ? undefined : `The order could not be marked fulfilled: ${header.LatestResult?.CompleteMessage ?? 'the save failed'}`,
             OrderHeaderID: orderID,
             OrderNumber: header.OrderNumber ?? null,
             Status: saved ? 'Fulfilled' : (header.FulfillmentStatus ?? 'Pending'),
@@ -318,7 +317,7 @@ export class AdvanceOrderStateOperation extends OrdersAdvanceOrderStateOperation
     ): Promise<AdvanceOrderStateOutput> {
         return {
             Success: false,
-            Message: `The order stopped at ${status} rather than ${target}.`,
+            Message: `The order stayed ${status} instead of moving to ${target}.`,
             OrderHeaderID: orderID,
             OrderNumber: header.OrderNumber ?? null,
             Status: status,

@@ -59,21 +59,21 @@ export function ChooseProductForCharge(
     if (items.length === 0) {
         return {
             Code: 'NoCheckoutItems',
-            Message: `Charge ${chargeID} came through no hosted checkout or payment link, so nothing names what it paid for.`,
+            Message: `Charge ${chargeID} did not come through a hosted checkout or payment link, so nothing says what it paid for. Create the order by hand.`,
         };
     }
     const unmapped = [...new Set(items.map((i) => i.ProviderPriceID).filter((p) => !priceMap.has(p)))];
     if (unmapped.length > 0) {
         return {
             Code: 'PriceNotMapped',
-            Message: `Charge ${chargeID} paid for gateway price(s) ${unmapped.join(', ')}, which map to no product.`,
+            Message: `Charge ${chargeID} paid for payment provider price(s) ${unmapped.join(', ')}, which are not linked to any product. Link them in the provider's price map, or create the order by hand.`,
         };
     }
     const products = [...new Set(items.map((i) => priceMap.get(i.ProviderPriceID)!.toLowerCase()))];
     if (products.length > 1) {
         return {
             Code: 'SeveralProducts',
-            Message: `Charge ${chargeID} paid for ${products.length} different products; an order created from a payment carries one.`,
+            Message: `Charge ${chargeID} paid for ${products.length} different products, but an order can be created automatically for only one. Create the order by hand.`,
         };
     }
     const badQuantity = items.find((i) => !Number.isInteger(Number(i.Quantity)) || Number(i.Quantity) < 1);
@@ -107,7 +107,7 @@ export function UnitPriceForCharge(
     if (unitScaled * quantity !== scaled) {
         return {
             Code: 'QuantityDoesNotDivide',
-            Message: `Charge ${chargeID} of ${amount} for ${quantity} units does not divide into a unit price, so no line multiplies back to the payment.`,
+            Message: `Charge ${chargeID} of ${amount} for ${quantity} units does not split into an even unit price, so no order line would add back up to the payment. Create the order by hand.`,
         };
     }
     return { UnitPrice: unit };
@@ -132,7 +132,7 @@ export function BuyerFromCharge(
 ): ChargeBuyer | UnmatchedChargeUnresolved {
     const email = NormalizePersonEmail(items.BuyerEmail) ?? NormalizePersonEmail(charge.BuyerEmail);
     if (!email) {
-        return { Code: 'NoBuyerEmail', Message: `Charge ${charge.ProviderChargeID} carries no buyer e-mail to find or create the buyer by.` };
+        return { Code: 'NoBuyerEmail', Message: `Charge ${charge.ProviderChargeID} has no buyer email, so the buyer cannot be found or created. Create the order by hand.` };
     }
     const name = SplitBuyerName(items.BuyerName ?? charge.BuyerName ?? null);
     return { Email: email, FirstName: name?.FirstName ?? null, LastName: name?.LastName ?? null };
@@ -154,7 +154,7 @@ export function SplitBuyerName(full: string | null): { FirstName: string; LastNa
 export function NoBuyerNameUnresolved(chargeID: string, email: string): UnmatchedChargeUnresolved {
     return {
         Code: 'NoBuyerName',
-        Message: `No person has the e-mail ${email} from charge ${chargeID}, and the charge carries no name to create one with.`,
+        Message: `No person has the email ${email} from charge ${chargeID}, and the charge has no name to create one with. Add the person first, or create the order by hand.`,
     };
 }
 

@@ -120,11 +120,11 @@ export function PlanTermShift(input: TermShiftInput): TermShiftPlan | string {
 
     if (total === 0) {
         if (recognisedBefore !== 0) {
-            return 'The staged recognition entries on this term net to zero overall but not before the shift takes effect; nothing was written.';
+            return 'The staged recognition entries on this term add up to zero overall, but not before the move takes effect, so nothing was written. Ask an administrator to review the entries.';
         }
         return { ...EMPTY, Targets: targets, Offsets: offsets };
     }
-    if (!input.Driver) return 'This term has staged recognition entries but its recognition type defers nothing.';
+    if (!input.Driver) return 'This term has staged recognition entries, but its revenue recognition type does not spread revenue over time, so the term cannot be moved. Ask an administrator to check the revenue recognition type.';
 
     const slices = input.Driver.BuildSchedule({
         Amount: total,
@@ -144,8 +144,8 @@ export function PlanTermShift(input: TermShiftInput): TermShiftPlan | string {
     const scheduled = money(schedule.reduce((sum, d) => sum + (d.Lines[0].DebitAmount ?? 0), 0));
     if (money(recognisedBefore + correctionAmount + scheduled) !== total) {
         return (
-            `The shifted schedule comes to ${money(recognisedBefore + correctionAmount + scheduled)}, not the ${total} ` +
-            `the term recognises; nothing was written.`
+            `The moved recognition schedule adds up to ${money(recognisedBefore + correctionAmount + scheduled)}, not the ${total} ` +
+            `the term recognises, so nothing was written. Report this to the development team.`
         );
     }
     return {

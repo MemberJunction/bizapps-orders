@@ -223,7 +223,7 @@ export const AccountCreditChecks: NamedCheck[] = [
         const result = await payToCoA(ctx, order.Order.ID as string, 1000, 600);
         Assert(!result.Saved, "a payment whose lines do not sum to its Amount must be refused");
         Assert(
-          /unaccounted for/i.test(result.Message),
+          /not applied to any order/i.test(result.Message),
           `the refusal should name the shortfall, got: ${result.Message}`,
         );
       }),

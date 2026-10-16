@@ -410,13 +410,13 @@ export function RenewalPaymentRefusal(
 ): string | null {
     if (!order) return 'This renewal could not be found.';
     if (!order.SubscriptionIDs.some((s) => s.toLowerCase() === subscriptionID.toLowerCase())) {
-        return 'This link does not match the renewal it names.';
+        return 'This payment link does not match its renewal. Use the link from your latest renewal notice, or contact us to renew.';
     }
     const subscription = order.Subscriptions.find((s) => s.ID.toLowerCase() === subscriptionID.toLowerCase());
     if (!subscription || subscription.Status !== 'Active' || !subscription.AutoRenew) {
         return 'This subscription is no longer set to renew, so this renewal cannot be paid here. Contact us to renew.';
     }
-    if (order.Status !== 'Confirmed') return 'This renewal can no longer be paid here.';
+    if (order.Status !== 'Confirmed') return 'This renewal can no longer be paid here. Contact us to renew.';
     if (!(order.Balance > 0.005)) return 'This renewal is already paid.';
     if (alreadyConfirmed) return 'This renewal has already been paid through this link.';
     return null;
@@ -428,7 +428,7 @@ export function RenewalPaymentTokenMessage(reason: RenewalPaymentTokenFailure): 
         case 'expired':
             return 'This payment link has expired. Contact us to renew.';
         case 'not-configured':
-            return 'Renewal payment links are not available at the moment.';
+            return 'Renewal payment links are not available at the moment. Please try again later, or contact us to renew.';
         default:
             return 'This payment link is not valid.';
     }

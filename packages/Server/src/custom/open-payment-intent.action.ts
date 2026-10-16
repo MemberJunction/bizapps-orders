@@ -86,21 +86,21 @@ export class OpenPaymentIntentAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'MISSING_PROVIDER_ID',
-                Message: 'PaymentProviderID is required — it decides which gateway account to ask and which credentials to use.',
+                Message: 'A payment provider ID is required. Pass PaymentProviderID to choose which payment account and credentials to use.',
             };
         }
         if (!UUID.test(providerID)) {
             return {
                 Success: false,
                 ResultCode: 'INVALID_PROVIDER_ID',
-                Message: `'${providerID}' is not a payment provider ID. This takes the PaymentProvider row's ID, not the type code.`,
+                Message: `'${providerID}' is not a payment provider ID. Pass the payment provider's record ID, not its type code.`,
             };
         }
 
         for (const optional of ['OrderHeaderID', 'BillToPersonID', 'BillToOrganizationID'] as const) {
             const value = strParam(params, optional);
             if (value && !UUID.test(value)) {
-                return { Success: false, ResultCode: 'INVALID_ID', Message: `'${value}' is not a valid ${optional}.` };
+                return { Success: false, ResultCode: 'INVALID_ID', Message: `'${value}' is not a valid ID for ${optional}.` };
             }
         }
 
@@ -118,13 +118,13 @@ export class OpenPaymentIntentAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'MISSING_USER',
-                Message: 'ContextUser is required: the provider and its credentials are resolved through the metadata layer.',
+                Message: 'This action needs a user to run as, to read the payment provider and its credentials. Run it from a scheduled job that has a run-as user, or as a signed-in user.',
             };
         }
 
         const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;
         if (!provider) {
-            return { Success: false, ResultCode: 'NO_PROVIDER', Message: 'No metadata provider is configured.' };
+            return { Success: false, ResultCode: 'NO_PROVIDER', Message: 'The server\'s data connection is not set up, so the payment provider cannot be read. Ask an administrator to check the server configuration.' };
         }
 
         const result = await OpenPaymentIntent(
@@ -168,7 +168,7 @@ export class OpenPaymentIntentAction extends BaseAction {
             Params: params.Params,
             Message: result.WasExisting
                 ? `Payment intent ${result.ProviderIntentID} was already open; reusing it.`
-                : `Opened payment intent ${result.ProviderIntentID} (${result.Status}). Pass PaymentIntentID to Orders.CapturePayment when the money is confirmed.`,
+                : `Opened payment intent ${result.ProviderIntentID} (${result.Status}). Capture it with this PaymentIntentID once the payment is confirmed.`,
         };
     }
 }

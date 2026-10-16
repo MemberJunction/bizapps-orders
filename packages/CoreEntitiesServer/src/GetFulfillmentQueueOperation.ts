@@ -83,7 +83,7 @@ export class GetFulfillmentQueueOperation extends OrdersGetFulfillmentQueueOpera
         if (input?.ConfirmedOnOrBefore) {
             const d = new Date(input.ConfirmedOnOrBefore);
             if (Number.isNaN(d.getTime())) {
-                return this.empty(`ConfirmedOnOrBefore is not a date: '${input.ConfirmedOnOrBefore}'`);
+                return this.empty(`'${input.ConfirmedOnOrBefore}' is not a valid "confirmed on or before" date. Enter a date such as 2026-07-01.`);
             }
             filters.push(`OrderDate <= '${d.toISOString()}'`);
         }

@@ -615,7 +615,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         if (!source) {
             throw new Error(
                 `The order line that bought term ${due.TermNumber} (${due.OrderLineID}) no longer exists, ` +
-                    `so there is no price to renew at.`,
+                    `so the renewal price cannot be worked out. Renew this subscription by hand.`,
             );
         }
 

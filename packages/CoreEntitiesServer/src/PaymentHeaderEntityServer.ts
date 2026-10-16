@@ -117,8 +117,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             result.Errors.push(
                 new ValidationErrorInfo(
                     'ProcessingFeeAmount',
-                    `The processing fee (${fee}) must be between 0 and the payment amount ` +
-                        `(${this.Amount}). A larger fee would book negative cash.`,
+                    `The processing fee (${fee}) must be between 0 and the payment amount (${this.Amount}). ` +
+                        `Lower the fee or correct the payment amount.`,
                     fee,
                     ValidationErrorType.Failure,
                 ),
@@ -542,8 +542,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             );
             if (orderLines.length === 0) {
                 throw new Error(
-                    `Cannot allocate ${line.Amount} to order ${line.OrderHeaderID}: the order has no lines, so ` +
-                        `there is no basis for deciding whose revenue the cash settles.`,
+                    `Cannot apply ${line.Amount} to order ${line.OrderHeaderID}: the order has no lines, so there is ` +
+                        `nothing for the payment to pay for. Add lines to the order first, or apply the payment to another order.`,
                 );
             }
             const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
@@ -552,8 +552,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             const before = scheduleFactsByOrder.get(orderKey);
             if (!before) {
                 throw new Error(
-                    `Payment ${this.PaymentNumber}: order ${line.OrderHeaderID}'s schedule was not read before ` +
-                        `the payment was written, so the deposit split cannot be decided. Nothing was booked.`,
+                    `Payment ${this.PaymentNumber} could not be booked: the payment schedule for order ${line.OrderHeaderID} ` +
+                        `was not loaded before the payment was saved, so the deposit split could not be worked out. ` +
+                        `Nothing was booked. Report this to the development team.`,
                 );
             }
             const isReversal = this.Status === 'Refunded' || (line.Amount ?? 0) < 0;
@@ -590,8 +591,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const result = await this.createJournalEntries(allDrafts, provider, user);
         if ((result.Results?.length ?? 0) !== allDrafts.length) {
             throw new Error(
-                `Accounting returned ${result.Results?.length ?? 0} journal entries for allocations that ` +
-                    `produced ${allDrafts.length} drafts. The cash leg is incomplete; refusing to commit.`,
+                `Accounting created ${result.Results?.length ?? 0} journal entries for this payment but ` +
+                    `${allDrafts.length} were needed, so nothing was saved. Ask an administrator to check the accounting setup.`,
             );
         }
 
@@ -602,7 +603,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             saveOptions.IsParentEntitySave = true;
             if (!(await line.Save(saveOptions))) {
                 throw new Error(
-                    `Failed to stamp BookedAt on the allocation: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    `Could not mark the payment allocation as booked: ${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
         }
@@ -671,10 +672,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         throw new Error(
             `Payment ${this.PaymentNumber} cannot be ${verb}: it is for ${amount} but its ` +
                 `${rows.length} allocation${rows.length === 1 ? '' : 's'} total ${allocated} ` +
-                `(expected ${expected}), leaving ${shortfall} unaccounted for. Every part of a payment must ` +
-                `land on an order — allocating MORE than an order is worth is allowed and simply leaves that ` +
-                `order with a credit balance, which can be spent on another order later. Adjust the ` +
-                `allocations, or record the payment for what actually moved.`,
+                `(expected ${expected}), leaving ${shortfall} not applied to any order. Every part of a payment must ` +
+                `be applied to an order. Applying more than an order is worth is allowed and leaves a credit on ` +
+                `that order to spend later. Adjust the allocations, or change the payment amount to what was actually received.`,
         );
     }
 
@@ -718,9 +718,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const intent = await this.loadProviderIntent();
         if (!intent) {
             throw new Error(
-                `Payment ${this.PaymentNumber} names a payment provider but no provider intent, so there ` +
-                    `is nothing for the gateway to capture. Open an intent first, or clear ` +
-                    `PaymentProviderID for a payment that is being recorded rather than collected.`,
+                `Payment ${this.PaymentNumber} has a payment provider but no payment was started with that provider, ` +
+                    `so there is nothing to collect. Start the payment with the provider first, or remove the ` +
+                    `payment provider if you are only recording a payment received another way.`,
             );
         }
 
@@ -737,8 +737,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             // still fails the save, because a payment that did not capture must not be Captured; but it
             // fails with the gateway's own words, which is what the person retrying needs.
             throw new Error(
-                `The gateway refused to capture payment ${this.PaymentNumber}: ` +
-                    `${capture.Reason ?? 'no reason given'}`,
+                `The payment provider declined payment ${this.PaymentNumber}. ` +
+                    `${capture.Reason ?? 'No reason was given.'}`,
             );
         }
 
@@ -879,14 +879,14 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const result = await this.createJournalEntries([Draft], provider, user);
         const journalEntryID = result.Results?.[0]?.JournalEntryID;
         if (!journalEntryID) {
-            throw new Error(`Accounting returned no journal entry for payment ${this.PaymentNumber}.`);
+            throw new Error(`Accounting did not create a journal entry for payment ${this.PaymentNumber}, so the payment was not saved. Ask an administrator to check the accounting setup.`);
         }
 
         // NULL→value-once; the DB trigger enforces the same rule independently.
         this.JournalEntryID = journalEntryID;
         if (!(await super.Save(options))) {
             throw new Error(
-                `Failed to stamp JournalEntryID on payment ${this.PaymentNumber}: ` +
+                `Could not link the journal entry to payment ${this.PaymentNumber}: ` +
                     `${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
@@ -903,20 +903,20 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
 
         if (!op) {
             throw new Error(
-                `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps ` +
-                    `Accounting server package must be loaded before payments can book the cash leg.`,
+                `Payments cannot be booked because the Accounting app is not loaded on the server. ` +
+                    `Ask an administrator to install or enable the BizApps Accounting server package.`,
             );
         }
 
         const result = await op.Execute({ Drafts: drafts }, { provider, user });
         if (!result.Success) {
             throw new Error(
-                `Accounting.CreateJournalEntries did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
+                `Accounting could not create the journal entries: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
             );
         }
         const payload = result.Output;
         if (!payload) {
-            throw new Error('Accounting.CreateJournalEntries returned no payload.');
+            throw new Error('Accounting returned no result when creating the journal entries. Ask an administrator to check the server logs.');
         }
         if (!payload.Success) {
             const detail = (payload.Errors ?? [])
@@ -944,7 +944,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const list = Array.isArray(rows) ? rows : (rows?.Results ?? []);
         const val = list[0]?.Seq;
         if (typeof val !== 'number' || val <= 0) {
-            throw new Error(`Failed to assign sequence number from ${table}: unexpected return ${JSON.stringify(rows)}`);
+            throw new Error(`Could not assign the next number from ${table}; the database returned ${JSON.stringify(rows)}. ` +
+                `Ask an administrator to check that ${table} has its counter row.`);
         }
         return val;
     }

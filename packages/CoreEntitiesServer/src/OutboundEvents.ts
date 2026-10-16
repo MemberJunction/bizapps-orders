@@ -287,7 +287,7 @@ export async function DispatchOutboundDeliveries(
             LogError(`[OutboundEvents] could not record the result of delivery ${delivery.ID}: ${delivery.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
     }
-    if (!out.Success) out.Message = 'Some delivery results could not be recorded; those rows are retried when their lease runs out.';
+    if (!out.Success) out.Message = 'Some delivery results could not be saved. Those deliveries are retried automatically once their lock expires.';
     return out;
 }
 
