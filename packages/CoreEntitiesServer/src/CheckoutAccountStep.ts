@@ -6,8 +6,8 @@
  * subclass registered through the ClassFactory. Once `/complete` has confirmed the order, the widget
  * asks for the account step through `/checkout/account`, and the host is asked to ensure an account
  * for the buyer. It answers one of:
- *   - `Created` — a new account; the buyer may set its password in the widget, once. The account
- *     must not sign in until the host has verified the buyer's e-mail (see the class doc).
+ *   - `Created` — a new account; the buyer may set its password in the widget, once. By default
+ *     the account must not sign in until the host has verified the buyer's e-mail (see the class doc).
  *   - `Exists`  — an account was already there; it is never touched, and the buyer is told to sign in.
  *   - `Failed`  — the host could not answer; the buyer is shown the host's message.
  *   - `NotApplicable` — this checkout is not one the host makes accounts for (another company's
@@ -68,8 +68,19 @@ export interface CheckoutAccountResult {
     /** Shown to the buyer. Worded for the buyer, never containing secrets. */
     Message?: string;
     /**
-     * @deprecated Ignored. Every `Created` account must stay unable to sign in until the host has
-     * verified the e-mail, so the widget always tells the buyer to use the verification link (#395).
+     * `Created` only: the note shown with the password form, and when no form shows. Omitted, the
+     * widget tells the buyer to use the verification link sent to the e-mail. `null` or an empty
+     * string shows no note, for a host that lets the account sign in before verification (see the
+     * class doc).
+     */
+    VerificationNote?: string | null;
+    /**
+     * `Created` only: shown once the buyer has set the password. Omitted, the widget tells the buyer
+     * to verify the e-mail and then sign in.
+     */
+    PasswordSetMessage?: string;
+    /**
+     * @deprecated Ignored. Use `VerificationNote` to change or remove the verification wording.
      */
     VerificationRequired?: boolean;
 }
@@ -90,11 +101,15 @@ export interface CheckoutPasswordResult {
  * `PasswordWindowMinutes` of that answer. Orders cannot see the identity provider, and the checkout
  * never proves the buyer owns the e-mail, so these rules are the host's to hold:
  *   - Never change an account the checkout did not create for this purchase, in either method.
- *   - An account answered `Created` must not sign in until the host has verified the buyer's e-mail,
- *     for example with a link sent to it. Anyone can check out with someone else's e-mail and set
- *     the password here; verification is what keeps that from becoming a working login.
- *   - Until the e-mail is verified, do not link the new login to `PersonID`. That Person was
- *     matched by e-mail alone, and may be an existing member with orders and memberships.
+ *   - An account answered `Created` should not sign in until the host has verified the buyer's
+ *     e-mail, for example with a link sent to it. Anyone can check out with someone else's e-mail
+ *     and set the password here; verification is what keeps that from becoming a working login.
+ *     A host may let the account sign in before verification as its own choice, taking that risk
+ *     on; it then words the step itself through `VerificationNote` and `PasswordSetMessage`, since
+ *     the default wording tells the buyer to verify first.
+ *   - Until the e-mail is verified, do not link the new login to `PersonID`, whether or not the
+ *     account can already sign in. That Person was matched by e-mail alone, and may be an existing
+ *     member with orders and memberships.
  *   - When `EnsureAccount` finds an account it created earlier for the same `SessionID`, answer
  *     `Created`, not `Exists`. A call Orders gave up on (`HostTimeoutSeconds`) is recorded as
  *     `Failed` and asked again, and the host may have finished creating the account meanwhile.
@@ -146,6 +161,10 @@ interface StoredAccountState {
     Message?: string;
     DecidedAt: string;
     VerificationRequired?: boolean;
+    /** The host's `VerificationNote`, kept only when it gave one (`null` included). */
+    VerificationNote?: string | null;
+    /** The host's `PasswordSetMessage`, kept only when it gave one. */
+    PasswordSetMessage?: string;
     PasswordSet?: boolean;
     PasswordAttempts?: number;
     /**
@@ -161,8 +180,12 @@ export interface CheckoutAccountStatus {
     Message?: string;
     /** True while the buyer may still set a password: the outcome was `Created` and none is set yet. */
     CanSetPassword: boolean;
-    /** True for every `Created` account: the buyer must verify the e-mail before the account signs in. */
+    /** True for every `Created` account. */
     VerificationRequired: boolean;
+    /** The host's wording for the verification note; absent means the widget's default, `null` none. */
+    VerificationNote?: string | null;
+    /** The host's wording once the password is set; absent means the widget's default. */
+    PasswordSetMessage?: string;
 }
 
 export interface CheckoutAccountResponse {
@@ -260,7 +283,19 @@ function toStatus(state: StoredAccountState & { Outcome: CheckoutAccountOutcome 
             (state.PasswordAttempts ?? 0) < MAX_CHECKOUT_PASSWORD_ATTEMPTS &&
             withinPasswordWindow(state, step),
         VerificationRequired: state.Outcome === 'Created',
+        ...(state.Outcome === 'Created' && state.VerificationNote !== undefined ? { VerificationNote: state.VerificationNote } : {}),
+        ...(state.Outcome === 'Created' && state.PasswordSetMessage ? { PasswordSetMessage: state.PasswordSetMessage } : {}),
     };
+}
+
+/** The host's `Created` wording as it is kept: a string or `null` note, a non-empty password-set message. */
+function hostWording(result: CheckoutAccountResult | undefined): Pick<StoredAccountState, 'VerificationNote' | 'PasswordSetMessage'> {
+    const wording: Pick<StoredAccountState, 'VerificationNote' | 'PasswordSetMessage'> = {};
+    const note = result?.VerificationNote;
+    if (note === null || typeof note === 'string') wording.VerificationNote = note?.trim() ? note.trim() : null;
+    const passwordSet = result?.PasswordSetMessage;
+    if (typeof passwordSet === 'string' && passwordSet.trim()) wording.PasswordSetMessage = passwordSet.trim();
+    return wording;
 }
 
 /** The recorded state, unless the step does not apply to this session. */
@@ -388,6 +423,7 @@ async function ensureAccount(
         Message: result?.Message ?? (outcome === 'Failed' ? GENERIC_FAILURE : undefined),
         DecidedAt: new Date().toISOString(),
         VerificationRequired: outcome === 'Created',
+        ...(outcome === 'Created' ? hostWording(result) : {}),
         PasswordSet: false,
         PasswordAttempts: 0,
     };
