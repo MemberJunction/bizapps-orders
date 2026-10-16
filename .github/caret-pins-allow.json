@@ -1,0 +1,6 @@
+[
+  {
+    "name": "type-graphql",
+    "reason": "MemberJunction pins type-graphql to 2.0.0-beta.3 exactly. A caret on a prerelease admits later betas and release candidates MJ has not adopted, and the resolver must land on the version MJ builds against."
+  }
+]
