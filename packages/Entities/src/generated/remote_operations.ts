@@ -834,6 +834,42 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.CheckOrderLinesEditable`.
+ *
+ * Whether another app's registered order-line veto would refuse an edit to this order's lines. The
+ * order editor asks this when an order loads and after each save, so it can show the lines read-only
+ * instead of letting someone type changes the save will refuse.
+ *
+ * Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCheckOrderLinesEditableInput {
+    /** A saved order. */
+    OrderHeaderID: string;
+}
+
+/**
+ * Output of `Orders.CheckOrderLinesEditable`.
+ *
+ * One answer per kind of edit: the refusal the save would give, in the vetoer's own words, or null
+ * when the vetoer allows it. All three are null on a host where nothing is registered. A vetoer that
+ * fails counts as a refusal, and its text names the fault.
+ *
+ * The question is asked of the order, not of a line, so the vetoer is told no line id.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersCheckOrderLinesEditableOutput {
+    /** Adding a line. */
+    CreateRefusal: string | null;
+    /** Changing a line already saved. */
+    UpdateRefusal: string | null;
+    /** Removing a line. */
+    DeleteRefusal: string | null;
+}
+
+/**
  * Input for `Orders.CreateOrderFromProviderPayment`.
  *
  * Creates a paid order from a gateway charge that matched no order or invoice: the order in the
@@ -2595,6 +2631,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.CheckOrderLinesEditable — Check Order Lines Editable
+// ============================================================
+/**
+ * Check Order Lines Editable
+ * Whether the order-line veto another app registered on this host would refuse adding, changing or removing a line of a saved order, and the refusal it would give. Read-only. Asks the same veto the line save asks, as the caller, so the editor can show lines read-only before anyone types a change the save would refuse. A vetoer that fails counts as a refusal. With no vetoer registered, every answer is null.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.CheckOrderLinesEditable'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersCheckOrderLinesEditableOperation extends BaseRemotableOperation<OrdersCheckOrderLinesEditableInput, OrdersCheckOrderLinesEditableOutput> {
+    public readonly OperationKey = "Orders.CheckOrderLinesEditable";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 

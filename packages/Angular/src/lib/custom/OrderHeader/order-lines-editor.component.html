@@ -1,4 +1,16 @@
 <div class="mjo-ol">
+    <!-- Lines another app has frozen (bizapps-sales#328). The text is the vetoer's own, from
+         Orders.CheckOrderLinesEditable, so it names the rule and what to do about it. -->
+    @if (ShowsLineEditLock) {
+        <div class="mjo-ol-lock" role="status">
+            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+            <div>
+                @for (reason of LineEditLockReasons; track reason) {
+                    <div>{{ reason }}</div>
+                }
+            </div>
+        </div>
+    }
     @if (CoverageCheckError) {
         <div class="mjo-ol-overlap-err" role="status">{{ CoverageCheckError }}</div>
     }
