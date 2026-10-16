@@ -1,5 +1,15 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+- Updated dependencies [82fa9ea]
+  - @mj-biz-apps/orders-core-entities-server@5.35.1
+  - @mj-biz-apps/orders-entities@5.35.1
+  - @mj-biz-apps/orders-server@5.35.1
+
 ## 5.35.0
 
 ### Patch Changes
