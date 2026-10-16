@@ -671,6 +671,13 @@ export class OrderJournalEntryFactory {
                 discountAccount = null; // plan D11 — net into the revenue credit instead
             }
         }
+        // A FULLY DISCOUNTED DEFERRED LINE BOOKS NOTHING. Its releases are built from the net, which
+        // is zero, so none are staged; a discount split here would credit Deferred Revenue with the
+        // gross and leave it there with nothing to release it. Netting the discount instead makes
+        // the revenue credit zero too, and the zero-line filter below drops both.
+        if (revRec.IsDeferred && !isGiftCard && net === 0) {
+            discountAccount = null;
+        }
 
         // ── the value entry (D10/D11), raised here only when this company is NOT on instalments ──
         //
@@ -900,11 +907,14 @@ export class OrderJournalEntryFactory {
         // A percentage-of-completion type (ScheduleBasis 'OnMeasurement', D90) is deferred but its
         // schedule is not knowable at booking: the credit parks in Deferred Revenue above and
         // Orders.RecordProgress releases it as progress is attested. Nothing is staged here.
-        if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
+        // A zero amount stages nothing: every slice would be a JE line for zero, which accounting
+        // refuses as MALFORMED_DRAFT, and a 100%-off subscription would then refuse the whole order.
+        const releaseAmount = term ? term.Amount : net;
+        if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard && money(releaseAmount) !== 0) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
             const schedule = this.driverFor(revRec).BuildSchedule({
-                Amount: term ? term.Amount : net,
+                Amount: releaseAmount,
                 BookingDate: new Date(effectiveDate),
                 ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
                 ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),

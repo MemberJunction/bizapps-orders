@@ -61,6 +61,7 @@ import {
     FindReusableProviderCustomerRef,
     SnapshotSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
+    StopAutoRenewWithoutRenewalCard,
 } from './CheckoutSavedInstrument.js';
 import {
     CheckoutMemberDiscountNotConfiguredError,
@@ -392,6 +393,15 @@ export interface OpenSessionPaymentIntentResult {
     /** Set when a pre-purchase check refused the purchase; `ErrorMessage` carries the buyer's message. */
     Refusal?: CheckoutRefusal;
 }
+
+/** What the buyer is told when completion fails, before any payment was taken, for a reason that is not theirs to fix. */
+export const CHECKOUT_FAILED_MESSAGE = "We couldn't complete your order. You haven't been charged.";
+/**
+ * The same, once the payment has already checked out. Telling this buyer they were not charged would
+ * be false, and a retry could charge them twice.
+ */
+export const CHECKOUT_FAILED_AFTER_PAYMENT_MESSAGE =
+    "We couldn't complete your order after your payment went through. Please contact us before trying again.";
 
 export class CheckoutSessionService {
     /**
@@ -2687,6 +2697,12 @@ export class CheckoutSessionService {
                 await CheckoutSessionService.stampSessionConfirmedAtomic(sessionID, order.ID, md, contextUser);
             }
 
+            // A code took a paid order to zero: no card was entered, so its subscriptions cannot
+            // renew on their own. A product that is free at list price keeps its renewal setting.
+            if ((order.TotalGross ?? 0) <= 0 && order.Lines.Items.some((l) => (l.DiscountAmount ?? 0) > 0)) {
+                await StopAutoRenewWithoutRenewalCard(order.ID, contextUser);
+            }
+
             // Book the PaymentHeader + allocation now that the order exists. retrieve-on-complete
             // only stamps PaymentIntent.Status = Succeeded; AmountPaid stays 0 until CapturePayment.
             await this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Checkout' });
@@ -2747,9 +2763,12 @@ export class CheckoutSessionService {
             await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
             session.Status = 'Open';
             LogError(`[CheckoutSessionService] CompleteCheckout failed for session ${sessionID}: ${msg}`);
+            // The buyer sees a plain message. The cause — often ledger or validation detail that means
+            // nothing to them — is in the server log above and, on a paid checkout, the step log. A
+            // step was begun only once payment had checked out, so it says which message is true.
             return {
                 Success: false,
-                ErrorMessage: `Failed to complete checkout: ${msg}`,
+                ErrorMessage: confirmStep ? CHECKOUT_FAILED_AFTER_PAYMENT_MESSAGE : CHECKOUT_FAILED_MESSAGE,
                 SessionID: sessionID,
                 Status: 'Open'
             };

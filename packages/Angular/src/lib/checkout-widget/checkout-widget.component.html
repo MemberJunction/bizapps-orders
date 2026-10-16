@@ -358,7 +358,9 @@
 
     <!-- Stripe Embedded Payment Section -->
     @if (!isFree()) {
-        <section class="mj-widget-payment-section">
+        <!-- Hidden rather than removed: the host mounts the card field here once, and a code that
+             is removed again must bring the same field back. -->
+        <section class="mj-widget-payment-section" [hidden]="nothingDue()">
             <h3 class="mj-section-title">Payment</h3>
             <div class="mj-stripe-container">
                 <div id="stripe-card-element" class="mj-stripe-mount-point">
@@ -425,6 +427,8 @@
                 <span>Processing...</span>
             } @else if (isFree()) {
                 <span>Complete Free Registration</span>
+            } @else if (nothingDue()) {
+                <span>Complete Order</span>
             } @else {
                 <span>Pay {{ currencySymbol() }}{{ totalGross().toFixed(2) }}</span>
             }

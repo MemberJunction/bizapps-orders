@@ -416,7 +416,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     /** The agreement text, when this widget sells something that renews on its own and must say so. */
     public autoRenewConsentText = computed<string | null>(() => {
         const text = this._config()?.autoRenewConsentText;
-        return typeof text === 'string' && text.trim() && !this.isFree() ? text.trim() : null;
+        // Nothing due means no card is saved, so nothing can renew on its own and there is nothing to agree to.
+        return typeof text === 'string' && text.trim() && !this.nothingDue() ? text.trim() : null;
     });
     public isPerUnit = computed(() => {
         const cfg = this._config();
@@ -448,6 +449,13 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public totalGross = computed(
         () => this.activePromotion()?.total ?? this.activeServerTotal() ?? this._quotedTotal() ?? this.subtotal()
     );
+
+    /**
+     * Whether the buyer owes nothing: a free product, or a paid one a code brought to zero. No card
+     * is asked for, matching the server, which opens no payment intent for a zero total.
+     * `isFree` stays about the list price — it decides whether a code can be entered at all.
+     */
+    public nothingDue = computed(() => this.totalGross() <= 0);
 
     public currencySymbol = computed(() => {
         const c = this._config()?.currency?.toUpperCase() ?? 'USD';
@@ -692,7 +700,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             if (!em || !em.includes('@') || !fn || !ln) return false;
             if (!this.answersAreComplete()) return false;
             if (!this.choicesAreComplete()) return false;
-            if (!this.isFree() && !this.isPaymentReady) return false;
+            if (!this.nothingDue() && !this.isPaymentReady) return false;
             return true;
         }
 
@@ -729,7 +737,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             return false;
         }
 
-        if (!this.isFree() && !this.isPaymentReady) {
+        if (!this.nothingDue() && !this.isPaymentReady) {
             return false;
         }
 
@@ -786,7 +794,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             totalGross: this.totalGross(),
             answers: this.answers(),
             choices: this.choices(),
-            stripePaymentMethodId: this.isFree() ? undefined : (this.stripePaymentMethodId ?? undefined),
+            stripePaymentMethodId: this.nothingDue() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey,
             autoRenewConsent: this.autoRenewConsentText() ? this.autoRenewConsent() : undefined,
             promotionCode: this.allowsPromotionCodes() && typedCode ? typedCode : undefined

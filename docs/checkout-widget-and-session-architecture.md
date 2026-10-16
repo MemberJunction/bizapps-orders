@@ -196,7 +196,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `allowAnyProduct` | Sells any product of the widget's company: an explicit open catalog, never the default. Requires the widget's `CompanyID`. Server-side only. |
 | `productSku` | Finds the product by SKU when `productId` is not set. |
 | `productName` | Name shown for the item; `/initialize` fills it from the product when unset. |
-| `unitPrice` | Price per unit the widget displays. Unset or 0 shows the checkout as free, with no card form. The amount charged is the server's price. |
+| `unitPrice` | Price per unit the widget displays. Unset or 0 shows the checkout as free, with no card form. The amount charged is the server's price. A paid product a promotion code brings to zero also hides the card form and asks for no agreement; its subscriptions are set not to renew on their own, since no card was kept. |
 | `currency` | Currency of the payment. Unset means USD; a payment intent in any other currency is refused, because orders do not yet record one. |
 | `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode`. When the product type is `'perUnit'`, a line that sends unit details must send one set per unit, so a `'perLine'` widget on a per-unit product is refused at quantity above 1 (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
 | `allowQuantity` | Shows the quantity selector. |
