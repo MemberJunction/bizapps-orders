@@ -180,6 +180,15 @@ describe('BillComInvoiceRail.EnsureCustomer', () => {
         if (!r.Success) { expect(r.Reason).toContain('Pat Lee'); expect(r.Reason).toMatch(/email/); expect(r.Transient).toBe(false); }
         expect(calls).toHaveLength(0);
     });
+
+    it('answers the same refusal from CheckCustomer, with no call, so a preview can report it', () => {
+        const facts = { PartyKind: 'Organization' as const, PartyID: 'o1', Name: 'Placeholder Co', Email: '  ', AddressLines: [], City: null, State: null, PostalCode: null, Country: null };
+        const r = rail().CheckCustomer(facts);
+        expect(r?.Code).toBe('NO_CUSTOMER_EMAIL');
+        expect(r?.Reason).toContain('Placeholder Co');
+        expect(rail().CheckCustomer({ ...facts, Email: 'ap@placeholder.test' })).toBeNull();
+        expect(calls).toHaveLength(0);
+    });
 });
 
 describe('BillComInvoiceRail.GetInvoice and CancelInvoice', () => {
