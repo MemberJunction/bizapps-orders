@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-entities
 
+## 5.35.0
+
+### Minor Changes
+
+- 8a9d2f9: `Orders.CancelSubscription` takes an optional `Timing` (#702). `Immediate` ends coverage and access on the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's grace period, so access ends on the day chosen. Without it the type's `CancellationMode` decides, as before. The refund mode always comes from the type. The policy is `SubscriptionBehavior.RulesForTiming` and can be overridden; an unknown timing is refused before anything is written, and the lifecycle event records the timing chosen.
+- 48ea049: The 5.35 Metadata_Sync ships the Cancel Subscription input contract that metadata/ changed since 5.34, so a host that upgrades by migration describes the operation's new cancellation-timing input the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+
 ## 5.34.1
 
 ## 5.34.0
@@ -691,8 +698,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
