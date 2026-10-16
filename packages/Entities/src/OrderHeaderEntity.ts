@@ -341,8 +341,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 result.Errors.push(
                     new ValidationErrorInfo(
                         'Status',
-                        `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would ` +
-                            `be nothing to book.`,
+                        `Order ${this.OrderNumber ?? ''} has no lines, so it cannot be confirmed. ` +
+                            `Add at least one line first.`,
                         this.Status,
                         ValidationErrorType.Failure,
                     ),
