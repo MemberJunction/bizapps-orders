@@ -1,5 +1,18 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.35.0
+
+### Minor Changes
+
+- 8a9d2f9: `Orders.CancelSubscription` takes an optional `Timing` (#702). `Immediate` ends coverage and access on the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's grace period, so access ends on the day chosen. Without it the type's `CancellationMode` decides, as before. The refund mode always comes from the type. The policy is `SubscriptionBehavior.RulesForTiming` and can be overridden; an unknown timing is refused before anything is written, and the lifecycle event records the timing chosen.
+- 303849b: Checkout account step: a host can set or remove the verification wording. `CheckoutAccountResult` takes `VerificationNote` (text, or `null` for none) and `PasswordSetMessage` on a `Created` answer; the widget shows them in place of its default verification text, and keeps the default when a host gives none. The contract now lets a host allow sign-in before verification as its own choice, while still not linking the login to the matched Person until the e-mail is verified.
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-entities@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes
@@ -928,8 +941,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
