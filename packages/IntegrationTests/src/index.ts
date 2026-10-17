@@ -38,6 +38,7 @@
  *   ach-settlement       AS1–AS17  money that arrives days late, and can leave again (D77/D78/D80)
  *   embedded-payment-detail PD1–PD14  PaymentDetail as an owner-held 1:1 embed (D38/D39)
  *   payment-schedule     PS1–PS13  instalments on the order: tie, issue, per-instalment rollup and ageing (D85–D88)
+ *   schedule-replace     RP1–RP7   an order's schedule set from a list: invoiced rows kept, tie enforced (golive #290)
  *   payment-deposit      PM1–PM12  cash ahead of billing is a deposit, and only the operation issues (D91)
  *   contract-reversal    RV1–RV10  reversing a scheduled order: withdraw, credit back, or refuse (D92 §6)
  *   concessions          CS1–CS25  concessions valued in any form, approved before the customer sees them
@@ -114,6 +115,7 @@ export * from './checks/payment-providers.checks.js';
 export * from './checks/ach-settlement.checks.js';
 export * from './checks/embedded-payment-detail.checks.js';
 export * from './checks/payment-schedule.checks.js';
+export * from './checks/schedule-replace.checks.js';
 export * from './checks/payment-deposit.checks.js';
 export * from './checks/contract-reversal.checks.js';
 export * from './checks/party-roster.checks.js';
