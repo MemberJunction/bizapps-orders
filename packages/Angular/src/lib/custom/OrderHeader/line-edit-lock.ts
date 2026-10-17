@@ -14,9 +14,21 @@ import type { OrdersCheckOrderLinesEditableOutput } from '@mj-biz-apps/orders-en
 /** Shown while the first answer for an order is on its way. */
 export const LINE_EDIT_CHECKING = 'Checking whether these lines can be changed…';
 
-/** Shown when the check itself failed; the server's detail, when it gave one, follows. */
-export const LINE_EDIT_CHECK_FAILED =
-    'Whether these lines can be changed could not be checked, so they are shown read-only. Reload the order to try again.';
+/**
+ * Shown when the check itself failed; the server's detail, when it gave one, follows. The editor
+ * puts a Retry button beside it, so the text does not tell the user how to try again.
+ */
+export const LINE_EDIT_CHECK_FAILED = 'Could not check whether these lines can be changed, so they are shown read-only.';
+
+/**
+ * Whether the check failed rather than answered: the call threw, reported failure, or returned no
+ * output. A failure is retried; a refusal is the vetoer's answer and is not.
+ *
+ * @param result the operation's result, or null when the call threw before returning one.
+ */
+export function LineEditCheckFailed(result: RemoteOpResult<OrdersCheckOrderLinesEditableOutput> | null): boolean {
+    return !result?.Success || !result.Output;
+}
 
 /**
  * The reasons the lines are read-only, one sentence each, or empty when nothing refuses.

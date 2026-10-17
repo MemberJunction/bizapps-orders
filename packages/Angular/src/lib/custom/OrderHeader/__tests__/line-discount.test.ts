@@ -47,6 +47,7 @@ function component(stub: Stub): MJOOrderLinesEditorComponent {
         // Nothing refuses: the read-only state a registered veto sets is line-edit-lock.test.ts's.
         lineEditRefusals: [],
         lineEditCheckPending: false,
+        LineEditCheckFailed: false,
         EditMode: true,
         DiscountAuthorityLoaded: true,
         DiscountAuthority: stub.authority === false ? null : { ID: 'SA1', MaxDiscountPct: stub.cap ?? null },

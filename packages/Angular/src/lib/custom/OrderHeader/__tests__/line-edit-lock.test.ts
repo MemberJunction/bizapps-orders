@@ -30,7 +30,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     return { ...actual, OrdersCheckOrderLinesEditableOperation: FakeCheck };
 });
 
-import { LINE_EDIT_CHECKING, LINE_EDIT_CHECK_FAILED, LineEditRefusals } from '../line-edit-lock';
+import { LINE_EDIT_CHECKING, LINE_EDIT_CHECK_FAILED, LineEditCheckFailed, LineEditRefusals } from '../line-edit-lock';
 import { MJOOrderLinesEditorComponent } from '../order-lines-editor.component';
 
 const ORDER_ID = 'a1b2c3d4-0000-4000-8000-000000000001';
@@ -78,12 +78,32 @@ describe('LineEditRefusals', () => {
     });
 });
 
+describe('LineEditCheckFailed', () => {
+    it('is false for an answer, refusing or not', () => {
+        expect(LineEditCheckFailed(answered({}))).toBe(false);
+        expect(LineEditCheckFailed(answered({ CreateRefusal: CLOSED }))).toBe(false);
+    });
+
+    it('is true when the call threw, reported failure, or returned no output', () => {
+        expect(LineEditCheckFailed(null)).toBe(true);
+        expect(LineEditCheckFailed({ Success: false, ErrorMessage: 'boom' })).toBe(true);
+        expect(LineEditCheckFailed({ Success: true })).toBe(true);
+    });
+
+    it('does not tell the user to reload; the editor offers Retry', () => {
+        expect(LINE_EDIT_CHECK_FAILED.toLowerCase()).not.toContain('reload');
+    });
+});
+
 /** The parts of the editor this test drives; private at compile time only. */
 interface EditorUnderTest {
     EditMode: boolean;
     readonly LineEditLockReasons: string[];
     readonly ShowsLineEditLock: boolean;
     PickerOpen: boolean;
+    readonly LineEditCheckFailed: boolean;
+    readonly CanRetryLineEditCheck: boolean;
+    RetryLineEditCheck(): void;
     refreshLineEditLock(): Promise<void>;
 }
 
@@ -99,6 +119,7 @@ function editor(order: { ID: string; IsSaved: boolean } | null, pending: boolean
         overrideEditorLineIds: new Set<string>(['line-1']),
         lineEditRefusals: [],
         lineEditCheckPending: pending,
+        LineEditCheckFailed: false,
         editModeRequested: true,
         PickerOpen: true,
     });
@@ -140,12 +161,58 @@ describe('the order lines editor', () => {
         const e = await settle(() => Promise.resolve({ Success: false, ErrorMessage: 'boom' }));
         expect(e.EditMode).toBe(false);
         expect(e.LineEditLockReasons[0]).toContain(LINE_EDIT_CHECK_FAILED);
+        expect(e.LineEditCheckFailed).toBe(true);
+        expect(e.CanRetryLineEditCheck).toBe(true);
     });
 
     it('goes read-only when the call throws', async () => {
         const e = await settle(() => Promise.reject(new Error('offline')));
         expect(e.EditMode).toBe(false);
         expect(e.LineEditLockReasons).toEqual([`${LINE_EDIT_CHECK_FAILED} (offline)`]);
+        expect(e.CanRetryLineEditCheck).toBe(true);
+    });
+
+    it('offers no Retry for a refusal, which is an answer and not a failure', async () => {
+        const e = await settle(() => Promise.resolve(answered({ UpdateRefusal: CLOSED })));
+        expect(e.LineEditCheckFailed).toBe(false);
+        expect(e.CanRetryLineEditCheck).toBe(false);
+    });
+
+    it('stays read-only while a retry is in flight, then unlocks when nothing refuses', async () => {
+        const e = await settle(() => Promise.reject(new Error('offline')));
+        let resolve!: (v: unknown) => void;
+        mocks.asked = [];
+        mocks.next = () => new Promise((r) => (resolve = r));
+        e.RetryLineEditCheck();
+        expect(mocks.asked).toEqual([{ OrderHeaderID: ORDER_ID }]);
+        expect(e.EditMode).toBe(false);
+        expect(e.LineEditLockReasons).toEqual([LINE_EDIT_CHECKING]);
+        expect(e.CanRetryLineEditCheck).toBe(false);
+        // A second click while the first retry runs does not ask again.
+        e.RetryLineEditCheck();
+        expect(mocks.asked).toHaveLength(1);
+        resolve(answered({}));
+        await vi.waitFor(() => expect(e.EditMode).toBe(true));
+        expect(e.LineEditCheckFailed).toBe(false);
+        expect(e.ShowsLineEditLock).toBe(false);
+    });
+
+    it('shows the failure and Retry again when the retry fails too', async () => {
+        const e = await settle(() => Promise.reject(new Error('offline')));
+        mocks.next = () => Promise.resolve({ Success: false, ErrorMessage: 'still down' });
+        e.RetryLineEditCheck();
+        await vi.waitFor(() => expect(e.CanRetryLineEditCheck).toBe(true));
+        expect(e.EditMode).toBe(false);
+        expect(e.LineEditLockReasons).toEqual([`${LINE_EDIT_CHECK_FAILED} (still down)`]);
+    });
+
+    it('shows a refusal, without Retry, when the retry is refused', async () => {
+        const e = await settle(() => Promise.reject(new Error('offline')));
+        mocks.next = () => Promise.resolve(answered({ CreateRefusal: CLOSED }));
+        e.RetryLineEditCheck();
+        await vi.waitFor(() => expect(e.LineEditLockReasons).toEqual([CLOSED]));
+        expect(e.EditMode).toBe(false);
+        expect(e.CanRetryLineEditCheck).toBe(false);
     });
 
     it('does not ask about an unsaved order, and leaves it editable', async () => {

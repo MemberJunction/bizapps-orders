@@ -71,7 +71,7 @@ import {
     DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { LINE_EDIT_CHECKING, LineEditRefusals } from './line-edit-lock';
+import { LINE_EDIT_CHECKING, LineEditCheckFailed, LineEditRefusals } from './line-edit-lock';
 import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -532,13 +532,36 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * deal behind the order is closed. The browser has no vetoer, so the editor asks the server
      * through `Orders.CheckOrderLinesEditable` when an order is bound and after each save, and shows
      * the lines read-only with the vetoer's own words. Until the first answer arrives, and when the
-     * check fails, the lines are read-only too: the save asks the same veto and may refuse.
+     * check fails, the lines are read-only too: the save asks the same veto and may refuse. A failed
+     * check offers Retry; a refusal does not, since asking again gets the same answer.
      */
 
     /** Sentences explaining why the lines are read-only; empty when nothing refuses. */
     private lineEditRefusals: string[] = [];
-    /** True until the first answer for the bound order has arrived. */
+    /** True until the first answer for the bound order has arrived, and while a retry is in flight. */
     private lineEditCheckPending = false;
+
+    /**
+     * True when the last check could not run, as opposed to a host refusing. Kept apart from the
+     * refusals so the template offers Retry only for a failure.
+     */
+    public LineEditCheckFailed = false;
+
+    /** Whether to show Retry: the check failed and no new one is in flight. */
+    public get CanRetryLineEditCheck(): boolean {
+        return this.LineEditCheckFailed && !this.lineEditCheckPending;
+    }
+
+    /**
+     * Ask again after a failed check. The lines stay read-only while it runs, showing the
+     * checking message in place of the failure.
+     */
+    public RetryLineEditCheck(): void {
+        if (!this.CanRetryLineEditCheck) return;
+        this.lineEditCheckPending = true;
+        this.cdr.detectChanges();
+        void this.refreshLineEditLock();
+    }
 
     /** Why the lines are read-only although the form allows editing; empty when they are not. */
     public get LineEditLockReasons(): string[] {
@@ -561,19 +584,24 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const order = this._order;
         if (!order?.IsSaved) {
             this.lineEditCheckPending = false;
+            this.LineEditCheckFailed = false;
             this.lineEditRefusals = [];
             return;
         }
         let refusals: string[];
+        let failed: boolean;
         try {
             const result = await new OrdersCheckOrderLinesEditableOperation().Execute({ OrderHeaderID: order.ID });
             refusals = LineEditRefusals(result);
+            failed = LineEditCheckFailed(result);
         } catch (err) {
             refusals = LineEditRefusals(null, err);
+            failed = true;
         }
         // The order may have been swapped while the call was in flight.
         if (this._order !== order) return;
         this.lineEditRefusals = refusals;
+        this.LineEditCheckFailed = failed;
         this.lineEditCheckPending = false;
         if (refusals.length) {
             this.PickerOpen = false;
@@ -1397,6 +1425,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.CoverageCheckError = null;
         this.lineEditRefusals = [];
         this.lineEditCheckPending = false;
+        this.LineEditCheckFailed = false;
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
         this.defaultUnitByLine.clear();

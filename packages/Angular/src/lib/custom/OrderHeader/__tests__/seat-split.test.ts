@@ -25,6 +25,7 @@ function editor(order: { SplitLineIntoSeats: ReturnType<typeof vi.fn> }) {
         // Nothing refuses: the read-only state a registered veto sets is line-edit-lock.test.ts's.
         lineEditRefusals: [],
         lineEditCheckPending: false,
+        LineEditCheckFailed: false,
         EditMode: true,
         _order: order,
         Catalog: [

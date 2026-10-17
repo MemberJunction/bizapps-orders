@@ -543,6 +543,21 @@
 .mjo-ol-lock i {
     margin-top: 2px;
 }
+.mjo-ol-lock__retry {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 2px var(--mj-space-2);
+    border: 1px solid var(--mj-status-warning-border);
+    border-radius: var(--mj-radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.mjo-ol-lock__retry:hover {
+    background: var(--mj-bg-surface-hover);
+}
 
 .mjo-ol-overlap-err {
     margin-bottom: var(--mj-space-2);

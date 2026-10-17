@@ -9,6 +9,10 @@
                     <div>{{ reason }}</div>
                 }
             </div>
+            <!-- Only when the check could not run; a host's refusal would answer the same again. -->
+            @if (CanRetryLineEditCheck) {
+                <button type="button" class="mjo-ol-lock__retry" (click)="RetryLineEditCheck()">Retry</button>
+            }
         </div>
     }
     @if (CoverageCheckError) {
