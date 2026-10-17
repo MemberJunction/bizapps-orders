@@ -9,7 +9,7 @@
  * order. The order screen reads it back (`OrderHeaderEntity.LoadDisplacedTermStarts`).
  */
 import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
-import type { SubscriptionDecision } from './SubscriptionBehavior.js';
+import { CoverageEndOf, type SubscriptionDecision } from './SubscriptionBehavior.js';
 
 /** `YYYY-MM-DD` from a date the rules normalized to UTC midnight. */
 function day(d: Date): string {
@@ -31,6 +31,7 @@ export function DisplacedStartEventData(
         OrderLineID: orderLineID,
         RequestedStartDate: day(requestedStart),
         TermStartDate: day(decision.Term.StartDate),
-        TermEndDate: day(decision.Term.EndDate),
+        // The end of the coverage the line bought, which is the last term's when it bought several.
+        TermEndDate: day(CoverageEndOf(decision) ?? decision.Term.EndDate),
     };
 }
