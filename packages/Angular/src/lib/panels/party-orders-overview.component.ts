@@ -10,6 +10,7 @@ import {
     MJCardToolsDirective,
     MJCardFooterDirective,
 } from '@memberjunction/ng-ui-components';
+import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatDate, FormatMoney } from './money-format';
 import { Today, ToISODate } from '@mj-biz-apps/orders-entities';
@@ -62,6 +63,7 @@ interface TimelineItem {
     standalone: true,
     imports: [
         CommonModule,
+        SharedGenericModule,
         MJCardGridComponent,
         MJCardComponent,
         MJCardToolsDirective,
@@ -71,8 +73,7 @@ interface TimelineItem {
         <div class="mjo-overview">
             @if (Loading) {
                 <div class="mjo-overview__loading">
-                    <div class="mjo-overview__spinner"></div>
-                    <span>Loading account overview &amp; order intelligence...</span>
+                    <mj-loading text="Loading account overview &amp; order intelligence..." size="small"></mj-loading>
                 </div>
             } @else {
                 <mj-card-grid [(MaximizedCardId)]="MaximizedCardId" [Columns]="2" Gap="var(--mj-space-4, 16px)">
@@ -297,19 +298,6 @@ interface TimelineItem {
             padding: 48px 24px;
             color: var(--mj-text-secondary);
             font-size: 13px;
-        }
-
-        .mjo-overview__spinner {
-            width: 20px;
-            height: 20px;
-            border: 2px solid var(--mj-border-default);
-            border-top-color: var(--mj-brand-primary, #38bdf8);
-            border-radius: 50%;
-            animation: mjo-spin 0.8s linear infinite;
-        }
-
-        @keyframes mjo-spin {
-            to { transform: rotate(360deg); }
         }
 
         .mjo-card__count {

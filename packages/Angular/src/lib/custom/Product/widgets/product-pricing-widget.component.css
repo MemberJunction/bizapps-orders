@@ -455,6 +455,13 @@
     cursor: not-allowed;
 }
 
+/* mj-loading fills its container by default; inside the button it sizes to its small logo. */
+.mjo-btn-add__loading {
+    width: auto;
+    height: auto;
+    flex: none;
+}
+
 .mjo-guard-badge {
     font-size: 11.5px;
     color: #22c55e;

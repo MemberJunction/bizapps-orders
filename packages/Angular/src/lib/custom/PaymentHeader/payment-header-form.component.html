@@ -378,8 +378,7 @@
                     <div class="mjo-card mjo-card--table">
                         @if (LoadingAppliedLines) {
                             <div class="mjo-empty-state">
-                                <i class="fa-solid fa-spinner fa-spin fa-2x text-muted"></i>
-                                <p>Loading allocations…</p>
+                                <mj-loading text="Loading allocations…" size="small"></mj-loading>
                             </div>
                         } @else if (AppliedLinesError) {
                             <div class="mjo-alert mjo-alert--error">{{ AppliedLinesError }}</div>
@@ -484,8 +483,7 @@
                     <div class="mjo-card mjo-card--table">
                         @if (LoadingOpenOrders) {
                             <div class="mjo-empty-state">
-                                <i class="fa-solid fa-spinner fa-spin fa-2x text-muted"></i>
-                                <p>Loading open orders…</p>
+                                <mj-loading text="Loading open orders…" size="small"></mj-loading>
                             </div>
                         } @else if (OpenOrders.length === 0) {
                             <div class="mjo-empty-state">
@@ -679,8 +677,7 @@
             @if (AccountingView === 'summary') {
                 @if (RollupLoading) {
                     <div class="mjo-empty-state">
-                        <i class="fa-solid fa-spinner fa-spin fa-2x text-muted"></i>
-                        <p>Rolling up general ledger accounts…</p>
+                        <mj-loading text="Rolling up general ledger accounts…" size="small"></mj-loading>
                     </div>
                 } @else if (RollupError) {
                     <div class="mjo-alert mjo-alert--error">{{ RollupError }}</div>
