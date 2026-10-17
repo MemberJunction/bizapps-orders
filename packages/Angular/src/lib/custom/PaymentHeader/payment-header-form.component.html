@@ -377,17 +377,17 @@
 
                     <div class="mjo-card mjo-card--table">
                         @if (LoadingAppliedLines) {
-                            <div class="mjo-empty-state">
+                            <div class="mjo-loading-state">
                                 <mj-loading text="Loading allocations…" size="small"></mj-loading>
                             </div>
                         } @else if (AppliedLinesError) {
                             <div class="mjo-alert mjo-alert--error">{{ AppliedLinesError }}</div>
                         } @else if (AppliedLines.length === 0) {
-                            <div class="mjo-empty-state">
-                                <i class="fa-solid fa-receipt fa-3x text-muted"></i>
-                                <h3>Not applied to any order</h3>
-                                <p>The full amount is held as unapplied credit.</p>
-                            </div>
+                            <mj-empty-state
+                                Size="compact"
+                                Icon="fa-solid fa-receipt"
+                                Title="Not applied to any order"
+                                Message="The full amount is held as unapplied credit." />
                         } @else {
                             <div class="mjo-table-responsive">
                                 <table class="mjo-table">
@@ -482,15 +482,15 @@
                     <!-- 3. Open Orders & Order Lines Allocation Table -->
                     <div class="mjo-card mjo-card--table">
                         @if (LoadingOpenOrders) {
-                            <div class="mjo-empty-state">
+                            <div class="mjo-loading-state">
                                 <mj-loading text="Loading open orders…" size="small"></mj-loading>
                             </div>
                         } @else if (OpenOrders.length === 0) {
-                            <div class="mjo-empty-state">
-                                <i class="fa-solid fa-receipt fa-3x text-muted"></i>
-                                <h3>No unpaid orders found</h3>
-                                <p>There are zero open unpaid orders. Any recorded payment will be retained as unallocated credit.</p>
-                            </div>
+                            <mj-empty-state
+                                Size="compact"
+                                Icon="fa-solid fa-receipt"
+                                Title="No unpaid orders found"
+                                Message="There are zero open unpaid orders. Any recorded payment will be retained as unallocated credit." />
                         } @else {
                             <div class="mjo-table-responsive">
                                 <table class="mjo-table">
@@ -676,17 +676,17 @@
 
             @if (AccountingView === 'summary') {
                 @if (RollupLoading) {
-                    <div class="mjo-empty-state">
+                    <div class="mjo-loading-state">
                         <mj-loading text="Rolling up general ledger accounts…" size="small"></mj-loading>
                     </div>
                 } @else if (RollupError) {
                     <div class="mjo-alert mjo-alert--error">{{ RollupError }}</div>
                 } @else if (RollupCards.length === 0) {
-                    <div class="mjo-empty-state">
-                        <i class="fa-solid fa-book-open fa-3x text-muted"></i>
-                        <h3>No journal entries booked yet</h3>
-                        <p>Journal entries are booked automatically upon capturing and settling the payment.</p>
-                    </div>
+                    <mj-empty-state
+                        Size="compact"
+                        Icon="fa-solid fa-book-open"
+                        Title="No journal entries booked yet"
+                        Message="Journal entries are booked automatically upon capturing and settling the payment." />
                 } @else {
                     <div class="mjo-gl-cards-grid">
                         @for (card of RollupCards; track card.CompanyID) {

@@ -155,13 +155,13 @@ export function StateLabel(row: ExternalInvoiceLike): string {
 export function StateChipClass(row: ExternalInvoiceLike): string {
     switch (row.Status) {
         case 'Sent':
-            return 'mj-chip--success';
+            return 'mjo-chip--success';
         case 'Sending':
-            return 'mj-chip--info';
+            return 'mjo-chip--info';
         case 'Failed':
-            return 'mj-chip--error';
+            return 'mjo-chip--error';
         default:
-            return 'mj-chip--outline';
+            return 'mjo-chip--outline';
     }
 }
 
@@ -188,7 +188,7 @@ export function DispositionLabel(d: PaymentExceptionDisposition): string {
 
 /** Chip styling for an exception. A reversal is the one that means money moved the wrong way. */
 export function DispositionChipClass(d: PaymentExceptionDisposition): string {
-    if (d === 'ReversalNeeded') return 'mj-chip--error';
-    if (d === 'Held') return 'mj-chip--info';
-    return 'mj-chip--outline';
+    if (d === 'ReversalNeeded') return 'mjo-chip--error';
+    if (d === 'Held') return 'mjo-chip--info';
+    return 'mjo-chip--outline';
 }

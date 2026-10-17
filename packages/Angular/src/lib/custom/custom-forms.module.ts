@@ -14,7 +14,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 
-import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective, MJEmptyStateComponent, MJTabNavComponent } from '@memberjunction/ng-ui-components';
 import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
@@ -56,6 +56,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         LinkDirectivesModule,
         MJButtonDirective,
         MJTabNavComponent,
+        MJEmptyStateComponent,
         SharedGenericModule,
         FilterBuilderModule,
         MJOOrderLinesEditorComponent,

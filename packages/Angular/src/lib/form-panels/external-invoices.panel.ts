@@ -100,10 +100,7 @@ const SECTION_KEY = 'externalInvoices';
                 }
 
                 @if (!Rows.length && !LoadError) {
-                    <p class="mjo-xi__empty">
-                        Nothing has been sent to {{ ProviderName }} for this order yet.
-                        @if (Sendable) { It is queued, and the scheduled send picks it up. }
-                    </p>
+                    <mj-empty-state Size="inline" [Message]="EmptyMessage" />
                 }
 
                 @if (Rows.length) {
@@ -123,7 +120,7 @@ const SECTION_KEY = 'externalInvoices';
                                     <td class="mono">{{ row.DocumentNumber }}</td>
                                     <td class="num">{{ money(row.Amount) }}</td>
                                     <td>
-                                        <span class="mj-chip" [class]="ChipClass(row)">{{ StateLabel(row) }}</span>
+                                        <span class="mjo-chip" [class]="ChipClass(row)">{{ StateLabel(row) }}</span>
                                     </td>
                                     <td class="mono muted">{{ row.ExternalInvoiceRef ?? '—' }}</td>
                                     <td class="muted">{{ row.SentAt ? date(row.SentAt) : '—' }}</td>
@@ -187,7 +184,6 @@ const SECTION_KEY = 'externalInvoices';
     styles: [
         `
             .mjo-xi__note { margin-bottom: var(--mj-space-3); display: block; }
-            .mjo-xi__empty { color: var(--mj-text-muted); margin: 0 0 var(--mj-space-3); }
             .mjo-xi__table { width: 100%; border-collapse: collapse; margin-bottom: var(--mj-space-3); }
             .mjo-xi__table th { text-align: left; font-weight: 600; font-size: 0.82rem; color: var(--mj-text-muted); padding: var(--mj-space-2); border-bottom: 1px solid var(--mj-border-default); }
             .mjo-xi__table td { padding: var(--mj-space-2); border-bottom: 1px solid var(--mj-border-subtle); cursor: pointer; }
@@ -320,6 +316,12 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
 
     public get Sendable(): boolean {
         return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+    }
+
+    /** What the panel says when nothing has gone to the rail yet. */
+    public get EmptyMessage(): string {
+        const sent = `Nothing has been sent to ${this.ProviderName} for this order yet.`;
+        return this.Sendable ? `${sent} It is queued, and the scheduled send picks it up.` : sent;
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */

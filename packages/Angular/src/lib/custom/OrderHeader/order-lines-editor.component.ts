@@ -10,6 +10,7 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import { MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import {
     BaseFormComponent,
     BaseFormsModule,
@@ -144,6 +145,7 @@ type CoverageOverlapLine = CheckCoverageOverlapOutput['Lines'][number];
         MJOLinePricePickerComponent,
         MJOMoneyPipe,
         MJOOrderLineDetailsPanelComponent,
+        MJEmptyStateComponent,
     ],
     templateUrl: './order-lines-editor.component.html',
     styleUrls: ['./order-lines-editor.component.css'],

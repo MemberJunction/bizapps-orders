@@ -794,11 +794,11 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     protected statusClass(order: mjBizAppsOrdersOrderHeaderEntity): string {
         switch (order.Status) {
             case 'Confirmed':
-                return 'mj-chip--success';
+                return 'mjo-chip--success';
             case 'Quoted':
-                return 'mj-chip--info';
+                return 'mjo-chip--info';
             case 'Voided':
-                return 'mj-chip--outline';
+                return 'mjo-chip--outline';
             default:
                 return '';
         }

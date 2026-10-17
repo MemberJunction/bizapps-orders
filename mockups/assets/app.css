@@ -6,7 +6,7 @@
 
      .mj-page-layout / .mj-page-header / .mj-page-body   → the chrome trio
      .mj-page-header-interior                            → rail sub-page chrome
-     .mj-btn / .mj-input / .mj-chip / .mj-stat           → ng-ui-components
+     .mj-btn / .mj-input / .mjo-chip / .mj-stat           → ng-ui-components
      .mj-panel                                           → <mj-collapsible-panel>
      .mj-slide-in / .mj-modal                            → the overlay shells
 
@@ -277,6 +277,26 @@ h1, h2, h3, h4 { margin: 0; font-weight: var(--mj-font-semibold); }
 
 
 /* Filter / preset chips — clickable */
+/* Mockup-only copy. The app renders MJ's <mj-filter-chip>; the shipped kit no longer defines
+   this class, which would collide with the one MJ's component renders. */
+.mj-filter-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 11px; border-radius: var(--mj-radius-full);
+  border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
+  font-family: inherit; font-size: 12.5px; font-weight: var(--mj-font-medium);
+  color: var(--mj-text-secondary); cursor: pointer; white-space: nowrap;
+}
+.mj-filter-chip:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
+.mj-filter-chip .count {
+  font-variant-numeric: tabular-nums; font-size: 11px;
+  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-full); padding: 0 6px;
+}
+.mj-filter-chip.is-active {
+  background: color-mix(in srgb, var(--mj-brand-primary) 12%, transparent);
+  border-color: color-mix(in srgb, var(--mj-brand-primary) 45%, transparent);
+  color: var(--mj-brand-primary); font-weight: var(--mj-font-semibold);
+}
+.mj-filter-chip.is-active .count { background: color-mix(in srgb, var(--mj-brand-primary) 18%, transparent); }
 
 
 
@@ -427,6 +447,15 @@ h1, h2, h3, h4 { margin: 0; font-weight: var(--mj-font-semibold); }
 /* ============================================================================
    18. EMPTY STATE
    ============================================================================ */
+
+/* Mockup-only copy. The app renders MJ's <mj-empty-state>. */
+.mj-empty {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: var(--mj-space-2); padding: var(--mj-space-12) var(--mj-space-6);
+  color: var(--mj-text-muted); text-align: center;
+}
+.mj-empty i { font-size: 26px; color: var(--mj-text-disabled); }
+.mj-empty .t { font-size: 14px; font-weight: var(--mj-font-semibold); color: var(--mj-text-secondary); }
 
 
 

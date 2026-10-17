@@ -283,12 +283,6 @@
     color: var(--mj-text-secondary);
 }
 
-.mjo-ov-empty {
-    padding: 12px 4px;
-    color: var(--mj-text-muted);
-    font-size: var(--mj-text-sm);
-}
-
 @media (max-width: 800px) {
     .mjo-ov,
     .mjo-ov-facts {

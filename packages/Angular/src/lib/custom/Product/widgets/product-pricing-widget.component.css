@@ -552,38 +552,6 @@
     color: var(--mj-text-muted, #94a3b8);
 }
 
-.mjo-empty-tiers {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 24px;
-}
-
-.mjo-empty-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    background: rgba(2, 132, 199, 0.15);
-    color: var(--mj-brand-primary, #0284c7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 18px;
-}
-
-.mjo-empty-text h4 {
-    margin: 0 0 4px 0;
-    font-size: 13.5px;
-    font-weight: 700;
-    color: var(--mj-text-primary, #0f172a);
-}
-
-.mjo-empty-text p {
-    margin: 0;
-    font-size: 12px;
-    color: var(--mj-text-muted, #94a3b8);
-}
-
 .mjo-grid-wrap {
     padding: 0;
     min-height: 400px;

@@ -9,6 +9,7 @@ import {
     MJCardActionsDirective,
     MJCardToolsDirective,
     MJCardFooterDirective,
+    MJEmptyStateComponent,
 } from '@memberjunction/ng-ui-components';
 import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { MJO_ENTITIES } from '../data/entity-names';
@@ -64,6 +65,7 @@ interface TimelineItem {
     imports: [
         CommonModule,
         SharedGenericModule,
+        MJEmptyStateComponent,
         MJCardGridComponent,
         MJCardComponent,
         MJCardToolsDirective,
@@ -102,10 +104,10 @@ interface TimelineItem {
                                     }
                                 </div>
                             } @else {
-                                <div class="mjo-chart__empty">
-                                    <i class="fa-solid fa-chart-line"></i>
-                                    <span>No completed orders in the last 6 months</span>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    Icon="fa-solid fa-chart-line"
+                                    Message="No completed orders in the last 6 months" />
                             }
                         </div>
 
@@ -157,10 +159,10 @@ interface TimelineItem {
                                     </div>
                                 }
                             } @else {
-                                <div class="mjo-empty-state" style="padding: 20px 12px;">
-                                    <i class="fa-solid fa-rotate"></i>
-                                    <p>No active subscriptions on file for this {{ Mode }}.</p>
-                                </div>
+                                <mj-empty-state
+                                    Size="inline"
+                                    Icon="fa-solid fa-rotate"
+                                    [Message]="'No active subscriptions on file for this ' + Mode + '.'" />
                             }
                         </div>
 
@@ -230,10 +232,10 @@ interface TimelineItem {
                                 </table>
                             </div>
                         } @else {
-                            <div class="mjo-empty-state">
-                                <i class="fa-solid fa-shopping-cart"></i>
-                                <p>No orders on file yet for this {{ Mode }}.</p>
-                            </div>
+                            <mj-empty-state
+                                Size="compact"
+                                Icon="fa-solid fa-shopping-cart"
+                                [Message]="'No orders on file yet for this ' + Mode + '.'" />
                         }
                     </mj-card>
 
@@ -265,10 +267,10 @@ interface TimelineItem {
                                     </div>
                                 }
                             } @else {
-                                <div class="mjo-empty-state">
-                                    <i class="fa-solid fa-bolt-lightning"></i>
-                                    <p>No recent touchpoints recorded.</p>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    Icon="fa-solid fa-bolt-lightning"
+                                    Message="No recent touchpoints recorded." />
                             }
                         </div>
                     </mj-card>
@@ -383,18 +385,6 @@ interface TimelineItem {
 
         .mjo-chart__bar-group:hover .mjo-chart__tooltip {
             opacity: 1;
-        }
-
-        .mjo-chart__empty {
-            width: 100%;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            color: var(--mj-text-muted);
-            font-size: 12px;
         }
 
         .mjo-chart__footer {
@@ -714,20 +704,6 @@ interface TimelineItem {
 
         .mjo-btn--ghost:hover {
             color: var(--mj-text-primary);
-        }
-
-        .mjo-empty-state {
-            padding: 32px 16px;
-            text-align: center;
-            color: var(--mj-text-muted);
-            font-size: 12px;
-        }
-
-        .mjo-empty-state i {
-            font-size: 24px;
-            margin-bottom: 8px;
-            opacity: 0.5;
-            display: block;
         }
     `]
 })

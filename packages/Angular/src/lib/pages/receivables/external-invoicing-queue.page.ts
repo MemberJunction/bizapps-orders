@@ -251,7 +251,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             Label: 'State',
             Kind: 'chip',
             Width: '120px',
-            ChipClass: (r) => (r.State === 'Failed' ? 'mj-chip--error' : r.State === 'InFlight' ? 'mj-chip--info' : 'mj-chip--outline'),
+            ChipClass: (r) => (r.State === 'Failed' ? 'mjo-chip--error' : r.State === 'InFlight' ? 'mjo-chip--info' : 'mjo-chip--outline'),
             Format: (r) => (r.State === 'InFlight' ? 'In flight' : r.State),
             Secondary: (r) => r.LastError ?? null,
         },

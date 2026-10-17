@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/co
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { ParseAddressSnapshot, Today, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { FormatSoldAddress } from '../../custom/OrderHeader/order-header-prefs';
@@ -41,7 +41,7 @@ export interface MJOIssuer {
 @Component({
     selector: 'mjo-order-document-page',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJEmptyStateComponent],
     template: `
         <div class="mjo-doc__toolbar no-print">
             <button type="button" mjButton variant="outline" (click)="print()">
@@ -189,11 +189,10 @@ export interface MJOIssuer {
                 </footer>
             </article>
         } @else {
-            <div class="mj-empty mjo-doc__empty">
-                <i class="fa-regular fa-file-lines" aria-hidden="true"></i>
-                <div class="t">No document yet</div>
-                <div class="small">An invoice is available once the order is confirmed.</div>
-            </div>
+            <mj-empty-state
+                Icon="fa-regular fa-file-lines"
+                Title="No document yet"
+                Message="An invoice is available once the order is confirmed." />
         }
     `,
     styles: [
@@ -224,9 +223,6 @@ export interface MJOIssuer {
                 display: flex;
                 gap: var(--mj-space-6);
                 flex-wrap: wrap;
-            }
-            .mjo-doc__empty {
-                padding: var(--mj-space-12);
             }
 
             @media (max-width: 760px) {

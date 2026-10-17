@@ -627,7 +627,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }
@@ -741,7 +741,7 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }
@@ -827,7 +827,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }
@@ -913,7 +913,7 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }

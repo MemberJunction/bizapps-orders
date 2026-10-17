@@ -795,7 +795,7 @@
     color: #16a34a;
 }
 
-.mjo-empty-state {
+.mjo-loading-state {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -803,20 +803,6 @@
     padding: var(--mj-space-6, 32px) var(--mj-space-4, 16px);
     text-align: center;
     gap: var(--mj-space-2, 8px);
-}
-
-.mjo-empty-state h3 {
-    margin: 0;
-    font-size: var(--mj-text-sm, 14px);
-    font-weight: var(--mj-font-bold, 700);
-    color: var(--mj-text-primary, #0f172a);
-}
-
-.mjo-empty-state p {
-    margin: 0;
-    font-size: var(--mj-text-xs, 12px);
-    color: var(--mj-text-muted, #64748b);
-    max-width: 380px;
 }
 
 .mjo-alert {

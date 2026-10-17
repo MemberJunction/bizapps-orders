@@ -68,19 +68,11 @@
                     <mj-loading text="Loading prices…" size="small"></mj-loading>
                 </div>
             } @else if (VisiblePrices.length === 0) {
-                <div class="mjo-empty-tiers">
-                    <div class="mjo-empty-icon"><i class="fa-solid fa-tags"></i></div>
-                    <div class="mjo-empty-text">
-                        <h4>No prices on this channel</h4>
-                        <p>
-                            @if (EditMode) {
-                                Add a price. When is optional — only if this rate is not for everyone.
-                            } @else {
-                                Switch to Edit to add prices.
-                            }
-                        </p>
-                    </div>
-                </div>
+                <mj-empty-state
+                    Size="compact"
+                    Icon="fa-solid fa-tags"
+                    Title="No prices on this channel"
+                    [Message]="EditMode ? 'Add a price. When is optional — only if this rate is not for everyone.' : 'Switch to Edit to add prices.'" />
             } @else {
                 <div
                     class="mjo-price-list"

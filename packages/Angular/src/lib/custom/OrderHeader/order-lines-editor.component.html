@@ -495,11 +495,11 @@
             }
         </div>
     } @empty {
-        <div class="mjo-ol-empty">
-            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
-            <div class="mjo-ol-empty__title">Nothing on this order yet</div>
-            <div>Search the catalog to add the first line.</div>
-        </div>
+        <mj-empty-state
+            Size="compact"
+            Icon="fa-solid fa-cart-plus"
+            Title="Nothing on this order yet"
+            Message="Search the catalog to add the first line." />
     }
 
     @if (EditMode) {
