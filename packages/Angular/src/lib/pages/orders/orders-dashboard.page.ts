@@ -454,7 +454,7 @@ interface MJOAttentionItem {
                 width: 24px;
                 height: 24px;
                 border-radius: 50%;
-                background: var(--mj-bg-subtle, #f3f4f6);
+                background: var(--mj-bg-surface-card);
                 color: var(--mj-text-muted);
                 font-size: 12px;
                 font-weight: var(--mj-font-bold, 600);
@@ -517,12 +517,12 @@ interface MJOAttentionItem {
                 justify-content: center;
                 font-size: 13px;
             }
-            .mjo-tone-neutral { background: var(--mj-status-neutral-bg); color: var(--mj-status-neutral-text); }
+            .mjo-tone-neutral { background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary); }
             .mjo-tone-info    { background: var(--mj-status-info-bg);    color: var(--mj-status-info-text); }
             .mjo-tone-warning { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
             .mjo-tone-error   { background: var(--mj-status-error-bg);   color: var(--mj-status-error-text); }
             .mjo-tone-success { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
-            .mjo-tone-violet  { background: var(--mj-status-violet-bg);  color: var(--mj-status-violet-text); }
+            .mjo-tone-violet  { background: color-mix(in srgb, var(--mj-color-violet-600) 12%, var(--mj-bg-surface));  color: var(--mj-color-violet-700); }
             .mjo-dash__queue-body { flex: 1; min-width: 0; }
             .mjo-dash__queue-label { font-weight: var(--mj-font-medium); }
             .mjo-dash__queue-note { display: block; }

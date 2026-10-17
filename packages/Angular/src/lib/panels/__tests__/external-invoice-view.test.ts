@@ -155,7 +155,7 @@ describe('how a row reads', () => {
     });
 
     it('styles a failure as danger and a live invoice as success', () => {
-        expect(StateChipClass(row('Failed'))).toBe('mj-chip--danger');
+        expect(StateChipClass(row('Failed'))).toBe('mj-chip--error');
         expect(StateChipClass(row('Sent'))).toBe('mj-chip--success');
         expect(StateChipClass(row('Sending'))).toBe('mj-chip--info');
         expect(StateChipClass(row('Canceled'))).toBe('mj-chip--outline');
@@ -176,7 +176,7 @@ describe('why a payment is waiting', () => {
     });
 
     it('marks only a needed reversal as danger', () => {
-        expect(DispositionChipClass('ReversalNeeded')).toBe('mj-chip--danger');
+        expect(DispositionChipClass('ReversalNeeded')).toBe('mj-chip--error');
         expect(DispositionChipClass('Held')).toBe('mj-chip--info');
         expect(DispositionChipClass('Unmatched')).toBe('mj-chip--outline');
         expect(DispositionChipClass('Refused')).toBe('mj-chip--outline');

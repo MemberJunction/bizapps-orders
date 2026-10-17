@@ -159,7 +159,7 @@ export function StateChipClass(row: ExternalInvoiceLike): string {
         case 'Sending':
             return 'mj-chip--info';
         case 'Failed':
-            return 'mj-chip--danger';
+            return 'mj-chip--error';
         default:
             return 'mj-chip--outline';
     }
@@ -188,7 +188,7 @@ export function DispositionLabel(d: PaymentExceptionDisposition): string {
 
 /** Chip styling for an exception. A reversal is the one that means money moved the wrong way. */
 export function DispositionChipClass(d: PaymentExceptionDisposition): string {
-    if (d === 'ReversalNeeded') return 'mj-chip--danger';
+    if (d === 'ReversalNeeded') return 'mj-chip--error';
     if (d === 'Held') return 'mj-chip--info';
     return 'mj-chip--outline';
 }

@@ -85,7 +85,7 @@
 }
 
 .mjo-doc-stat__value {
-    font-size: var(--mj-text-md);
+    font-size: var(--mj-text-base);
     font-weight: 650;
     color: var(--mj-text-primary);
     overflow: hidden;

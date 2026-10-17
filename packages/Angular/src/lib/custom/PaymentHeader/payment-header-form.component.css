@@ -171,7 +171,7 @@
     background: var(--mj-bg-surface-card, #ffffff);
     border: 1px solid var(--mj-border-default, #e2e8f0);
     border-radius: var(--mj-radius-lg, 10px);
-    box-shadow: var(--mj-shadow-xs, 0 1px 2px rgba(0, 0, 0, 0.04));
+    box-shadow: var(--mj-shadow-sm);
     overflow: hidden;
 }
 
@@ -442,7 +442,7 @@
 }
 
 .mjo-table th {
-    background: var(--mj-bg-surface-header, rgba(0, 0, 0, 0.02));
+    background: var(--mj-bg-surface-card);
     color: var(--mj-text-muted, #64748b);
     font-weight: var(--mj-font-semibold, 600);
     text-transform: uppercase;
@@ -606,7 +606,7 @@
 }
 
 .mjo-table tfoot th {
-    background: var(--mj-bg-surface-header, rgba(0, 0, 0, 0.02));
+    background: var(--mj-bg-surface-card);
     border-top: 2px solid var(--mj-border-default, #cbd5e1);
     font-size: var(--mj-text-xs, 12px);
     font-weight: var(--mj-font-bold, 700);

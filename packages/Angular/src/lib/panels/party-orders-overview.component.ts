@@ -318,7 +318,7 @@ interface TimelineItem {
             color: var(--mj-text-muted);
             background: var(--mj-bg-surface-sunken);
             padding: 2px 8px;
-            border-radius: var(--mj-radius-pill, 9999px);
+            border-radius: var(--mj-radius-full);
         }
 
         /* ── Chart ── */
@@ -547,13 +547,13 @@ interface TimelineItem {
         }
 
         .mjo-table tr:hover td {
-            background: var(--mj-bg-hover, rgba(255, 255, 255, 0.04));
+            background: var(--mj-bg-surface-hover);
             color: var(--mj-text-primary);
             cursor: pointer;
         }
 
         .mjo-table__order-num {
-            font-family: var(--mj-font-mono, monospace);
+            font-family: var(--mj-font-family-mono);
             font-weight: 600;
             color: var(--mj-brand-primary, #38bdf8);
             max-width: 140px;
@@ -563,7 +563,7 @@ interface TimelineItem {
         }
 
         .mjo-table__amount {
-            font-family: var(--mj-font-mono, monospace);
+            font-family: var(--mj-font-family-mono);
             font-weight: 700;
             color: var(--mj-text-primary);
         }
@@ -694,7 +694,7 @@ interface TimelineItem {
             gap: 4px;
         }
 
-        .mjo-badge--pill { border-radius: var(--mj-radius-pill, 9999px); }
+        .mjo-badge--pill { border-radius: var(--mj-radius-full); }
         .mjo-badge--green { background: rgba(16, 185, 129, 0.15); color: #10b981; }
         .mjo-badge--blue { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
         .mjo-badge--amber { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }

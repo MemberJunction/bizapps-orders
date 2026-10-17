@@ -137,12 +137,12 @@
     padding: var(--mj-space-2);
     border: 1px solid var(--mj-border-default);
     border-radius: var(--mj-radius-md);
-    background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
+    background: var(--mj-bg-surface-card);
 }
 
 .mjo-ol-override__req {
     font-style: normal;
-    color: var(--mj-status-danger-text, #b42318);
+    color: var(--mj-status-error-text);
     margin-left: 2px;
 }
 
@@ -526,7 +526,7 @@
     font: inherit;
 }
 .mjo-ol-overlap__reason.is-required textarea {
-    border-color: var(--mj-status-danger-text, #b42318);
+    border-color: var(--mj-status-error-text);
 }
 .mjo-ol-overlap-err {
     margin-bottom: var(--mj-space-2);
@@ -781,7 +781,7 @@
 }
 
 .mjo-ol-discount__reason.is-required textarea {
-    border-color: var(--mj-status-danger-text, #b42318);
+    border-color: var(--mj-status-error-text);
 }
 
 .mjo-ol-discount__err {

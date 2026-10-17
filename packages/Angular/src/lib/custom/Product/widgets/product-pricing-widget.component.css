@@ -114,7 +114,7 @@
 }
 
 .mjo-base-pill strong {
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     color: var(--mj-brand-primary, #0284c7);
 }
 
@@ -253,7 +253,7 @@
     display: inline-flex;
     align-items: center;
     gap: 4px;
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     font-weight: 700;
     font-size: 12px;
     padding: 3px 8px;
@@ -263,7 +263,7 @@
 }
 
 .mjo-price-input {
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     font-size: 13.5px;
     font-weight: 700;
     color: var(--mj-text-primary, #0f172a);
@@ -282,7 +282,7 @@
 }
 
 .mjo-price-val {
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     font-size: 13px;
     font-weight: 700;
     color: var(--mj-text-primary, #0f172a);
@@ -309,7 +309,7 @@
 
 .mjo-savings-val {
     color: #22c55e;
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     font-size: 12.5px;
 }
 
@@ -400,7 +400,7 @@
     width: 65px;
     padding: 5px 8px;
     font-size: 12.5px;
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     font-weight: 700;
     text-align: center;
     border-radius: 6px;
@@ -413,7 +413,7 @@
     width: 85px;
     padding: 5px 8px;
     font-size: 12.5px;
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     font-weight: 700;
     border-radius: 6px;
     border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.15));
@@ -525,13 +525,13 @@
 .mjo-step-val {
     font-size: 11px;
     font-weight: 700;
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     color: var(--mj-brand-primary, #0284c7);
 }
 
 .mjo-step-label {
     font-size: 10px;
-    font-family: var(--mj-font-mono, monospace);
+    font-family: var(--mj-font-family-mono);
     color: var(--mj-text-muted, #94a3b8);
 }
 
