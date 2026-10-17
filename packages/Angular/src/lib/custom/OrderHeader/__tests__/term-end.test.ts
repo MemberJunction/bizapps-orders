@@ -8,10 +8,11 @@ import { MJOOrderLinesEditorComponent } from '../order-lines-editor.component';
 import type { MJOExistingHolding, MJOProductOption } from '../../../data/orders-queries';
 
 /**
- * The line card's term end (golive #338).
+ * The line card's term fields (golive #338, u623.1).
  *
  * A subscription line shows its term end: the end the type computes until one is stated, with a
- * reset back to it. The extend-or-new choice names the end an extension would keep.
+ * reset back to it. The extend-or-new choice names the end an extension would keep. A bundle line
+ * whose bundle contains a subscription shows the term start only, and never a dictated one.
  */
 
 const d = (s: string) => new Date(`${s}T00:00:00Z`);
@@ -20,6 +21,7 @@ function seedEngine(): void {
     const engine = OrdersEngine.Instance as unknown as Record<string, unknown>;
     engine._products = [
         { ID: 'p-member', Name: 'Annual Membership', SubscriptionTypeID: 'st-annual' },
+        { ID: 'p-kit', Name: 'Member Starter Kit', SubscriptionTypeID: null },
     ];
     engine._productTypes = [];
     engine._subscriptionTypes = [{ ID: 'st-annual', StartMode: 'Immediate', DefaultTermMonths: 12, BillingCadence: 'Annual' }];
@@ -32,7 +34,7 @@ afterEach(() => {
     engine._subscriptionTypes = [];
 });
 
-const option = (ID: string, subscription: boolean): MJOProductOption => ({
+const option = (ID: string, subscription: boolean, bundle: boolean): MJOProductOption => ({
     ID,
     Name: ID,
     SKU: '',
@@ -45,13 +47,14 @@ const option = (ID: string, subscription: boolean): MJOProductOption => ({
     Taxable: false,
     MaxQuantityPerLine: null,
     SubscriptionTypeID: subscription ? 'st-annual' : null,
+    ContainsSubscription: bundle,
 });
 
 function editor(orderDate = '2026-10-20') {
     const c = Object.create(MJOOrderLinesEditorComponent.prototype) as MJOOrderLinesEditorComponent;
     Object.assign(c as object, {
         EditMode: true,
-        Catalog: [option('p-member', true)],
+        Catalog: [option('p-member', true, false), option('p-kit', false, true)],
         _order: { OrderDate: d(orderDate), MoneyLocked: false },
         cdr: { detectChanges: () => undefined },
         continuationStarts: new Map(),
@@ -111,6 +114,17 @@ describe('term end on a subscription line', () => {
         } as MJOExistingHolding;
         expect(c.HoldingContinuationEnd(line('p-member', '2026-10-01', '2027-03-31'), holding)).toBe('2028-03-31');
         expect(c.HoldingContinuationEnd(line('p-member', '2026-10-01'), holding)).toBe('2028-09-30');
+    });
+});
+
+describe('term start on a bundle line (u623.1)', () => {
+    it('shows on a bundle that contains a subscription, but not the term end or a dictated start', () => {
+        const c = editor();
+        const l = line('p-kit', null, null, { RenewsSubscriptionID: 's1' });
+        expect(c.ShowsTermStart(l)).toBe(true);
+        expect(c.IsSubscriptionBundleLine(l)).toBe(true);
+        expect(c.IsSubscriptionLine(l)).toBe(false);
+        expect(c.TermStartIsDictated(l)).toBe(false);
     });
 });
 

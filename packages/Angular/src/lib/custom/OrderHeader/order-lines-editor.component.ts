@@ -331,6 +331,21 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     /**
+     * A bundle line whose bundle contains a subscription product (u623.1). Its term start reaches
+     * those components when the bundle expands (`InheritedFields`), so the field is offered here too.
+     * Nothing else about a term is: the end, the renewal start and the extend-or-new question belong
+     * to the component lines.
+     */
+    public IsSubscriptionBundleLine(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !this.IsSubscriptionLine(line) && !!this.ProductFor(line)?.ContainsSubscription;
+    }
+
+    /** The term start field shows on a subscription line and on a bundle line that carries one. */
+    public ShowsTermStart(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.IsSubscriptionLine(line) || this.IsSubscriptionBundleLine(line);
+    }
+
+    /**
      * What the date input shows: the stated start, or the order date as a DEFAULT when nothing is
      * stated. Rendering an empty field instead would misreport the outcome — an untouched line
      * still gets a term, and it starts on the order date.
@@ -374,6 +389,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * real answer and is NOT retried; only an unseen id starts a read.
      */
     public ContinuationStartFor(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        // A renewal's dictated start is a direct subscription line's; a bundle line's start reaches its
+        // components, and the renewal target is one of them.
+        if (!this.IsSubscriptionLine(line)) return null;
         const subscriptionID = line.RenewsSubscriptionID;
         // A line that chose to extend what the customer already holds is a continuation too.
         if (!subscriptionID) {

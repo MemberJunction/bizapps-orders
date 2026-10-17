@@ -212,13 +212,14 @@
             }
 
             <!--
-                TERM START — subscription lines only (D-TERMSTART).
+                TERM START — subscription lines, and bundle lines whose bundle contains a subscription
+                (D-TERMSTART, u623.1).
                 The order date says when the sale was booked; this says when coverage begins, and an
                 agreement settles the two independently. Shown on the card rather than behind the
                 extension disclosure because it is a term fact, and not every subscription product
                 type has an extension form to hide it in.
             -->
-            @if (IsSubscriptionLine(line)) {
+            @if (ShowsTermStart(line)) {
                 <div class="mjo-ol-term">
                     <!-- `for` only when there IS an input to point at. A label targeting a missing
                          id is a dead control to a screen reader. -->
@@ -254,7 +255,9 @@
                         <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
                     }
                     <span class="mjo-ol-term__hint">
-                        @if (TermStartIsDictated(line)) {
+                        @if (IsSubscriptionBundleLine(line)) {
+                            Applies to the subscriptions in this bundle.
+                        } @else if (TermStartIsDictated(line)) {
                             Continuing existing coverage, so the term begins the day after the current
                             one ends — not something this line can set.
                         } @else if (TermStartFollowsOrderDate(line)) {
