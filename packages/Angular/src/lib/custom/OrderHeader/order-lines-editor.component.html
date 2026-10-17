@@ -104,6 +104,12 @@
                             [PriceSource]="PricedLine(line)?.PriceSource ?? null"
                             [PricedUnit]="PricedLine(line)?.UnitPrice ?? null"
                             (PriceChanged)="OnLinePriceChanged()"></mjo-line-price-picker>
+                        @if (GiveawayHint(line); as hint) {
+                            <div class="mjo-ol-override__hint" role="note">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                <span>{{ hint }}</span>
+                            </div>
+                        }
                     }
 
                     <!--
@@ -162,6 +168,12 @@
                                 </label>
                                 @if (DiscountError(line); as problem) {
                                     <div class="mjo-ol-discount__err" role="alert">{{ problem }}</div>
+                                }
+                                @if (DiscountApprovalNote(line); as note) {
+                                    <div class="mjo-ol-discount__approval" role="status">
+                                        <span class="mjo-ol-discount__badge">Needs approval</span>
+                                        <span>{{ note }}</span>
+                                    </div>
                                 }
                                 @if (HasStagedDiscount(line)) {
                                     <div class="mjo-ol-discount__staged">

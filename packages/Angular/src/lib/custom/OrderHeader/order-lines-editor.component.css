@@ -794,6 +794,34 @@
     color: var(--mj-text-muted);
 }
 
+/* An over-cap discount is saved held for approval (golive #328): a status, not an error. */
+.mjo-ol-discount__approval {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    color: var(--mj-status-warning-text);
+}
+
+.mjo-ol-discount__badge {
+    flex: none;
+    padding: 0 var(--mj-space-2);
+    border: 1px solid var(--mj-status-warning-border);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-status-warning-bg);
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+/* Beside a price typed as zero: how to give a line away instead (golive #328). */
+.mjo-ol-override__hint {
+    display: flex;
+    align-items: baseline;
+    gap: var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    color: var(--mj-status-info-text);
+}
+
 .mjo-ol-discount__staged {
     display: flex;
     align-items: center;
