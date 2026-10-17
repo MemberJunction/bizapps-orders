@@ -40,6 +40,7 @@ import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { KeptPartyOrganizationsCompanion } from './KeptPartyOrganizationsCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
+import { DescribeStatedTermLength, StatedTermLengthOf } from './subscription-term-length';
 
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 
@@ -715,6 +716,36 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             `${named.join(', ')} ${verb} a price of 0. Enter the negotiated price, or to give it away, ` +
             `enter its price with a 100% discount.`
         );
+    }
+
+    /**
+     * Subscription lines whose stated end gives them a length other than their subscription type's
+     * term, each as one sentence for the confirm checklist (golive #338). Confirm honors the stated
+     * dates and raises each such line for finance review (`SUBSCRIPTION_TERM_LENGTH`), so this does
+     * not block confirm; it says beforehand what will happen.
+     *
+     * Draft orders only: a booked line's dates are the settled term. Reads `OrdersEngine`; the caller
+     * loads it. With the cache empty nothing is reported, which leaves the question to confirm.
+     */
+    public StatedTermLengthNotes(): string[] {
+        if (this.IsBookedOrder || !this.OrderDate) return [];
+        const engine = OrdersEngine.Instance;
+        const notes: string[] = [];
+        for (const line of this.Lines.Items) {
+            if (!line.ServicePeriodEnd || line.ReversesOrderLineID) continue;
+            const type = engine.SubscriptionTypeForProduct(line.ProductID);
+            if (!type) continue;
+            const length = StatedTermLengthOf(
+                type,
+                line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null,
+                new Date(line.ServicePeriodEnd),
+                new Date(this.OrderDate),
+            );
+            if (!length) continue;
+            const product = line.Product ?? engine.ProductByID(line.ProductID)?.Name ?? null;
+            notes.push(DescribeStatedTermLength({ LineNumber: line.LineNumber ?? null, Product: product }, length));
+        }
+        return notes;
     }
 
     /**

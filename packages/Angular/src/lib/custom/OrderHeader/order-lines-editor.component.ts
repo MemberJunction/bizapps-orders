@@ -24,6 +24,9 @@ import {
     CoverageOverlapReasonMissing,
     ExtraSeatLinesNeeded,
     CanRestoreLineDefault,
+    DefaultTermEnd,
+    DefaultTermStart,
+    KeptStatedEnd,
     IsLinePriceOverridden,
     LineNeedsOverrideReason,
     LinePriceOverrideReason,
@@ -609,6 +612,110 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         line.ServicePeriodStart = null;
     }
 
+    /* ── Term end (golive #338) ──────────────────────────────────────────────
+     *
+     * Confirm honors a stated end: the coverage runs to it, as one term or as one term per type term
+     * length, and a length other than the type's term goes to finance review. NULL means "the type's
+     * term", which confirm computes, so the field shows that end as a default and Reset writes null.
+     * The stored value is `OrderLine.ServicePeriodEnd`, read at confirm as `RequestedEndDate`.
+     */
+
+    /** The line's subscription type, as confirm resolves it. Undefined before the catalog loads. */
+    private termRules(line: mjBizAppsOrdersOrderLineEntity) {
+        return OrdersEngine.Instance.SubscriptionTypeForProduct(line.ProductID);
+    }
+
+    /** Where the line meant coverage to begin: its stated start, or the start the type derives. */
+    private intendedTermStart(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        if (line.ServicePeriodStart) return new Date(line.ServicePeriodStart);
+        const orderDate = this._order?.OrderDate ? new Date(this._order.OrderDate) : null;
+        const rules = this.termRules(line);
+        if (!orderDate) return null;
+        return rules ? DefaultTermStart(rules, this.utcDay(orderDate)) : this.utcDay(orderDate);
+    }
+
+    /**
+     * The end confirm computes when the line states none: one type term from the start, or a
+     * calendar-anchored first term's end. A continuation is a whole term from the day after current
+     * coverage ends. Null before the catalog loads.
+     */
+    public ComputedTermEnd(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        const rules = this.termRules(line);
+        if (!rules) return null;
+        const continuation = this.ContinuationStartFor(line);
+        if (continuation) return DefaultTermEnd(rules, continuation, true);
+        const start = this.intendedTermStart(line);
+        return start ? DefaultTermEnd(rules, start, false) : null;
+    }
+
+    /** What the end input shows: the stated end, or the computed one as a default. */
+    public TermEndValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        return this.dateInputValue(line.ServicePeriodEnd ?? this.ComputedTermEnd(line));
+    }
+
+    /** True while the field is only showing the type's end. */
+    public TermEndFollowsType(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !line.ServicePeriodEnd;
+    }
+
+    /** The stated end is before the start it is measured from, which the line's validation refuses. */
+    public TermEndBeforeStart(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (!line.ServicePeriodEnd) return false;
+        const start = this.intendedTermStart(line);
+        return !!start && new Date(line.ServicePeriodEnd).getTime() < start.getTime();
+    }
+
+    /**
+     * Where a stated period ends when existing coverage moves its start: confirm keeps the stated
+     * length from the continuation date. Empty when nothing moves the start or nothing is stated.
+     */
+    public KeptTermEndValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        const continuation = this.ContinuationStartFor(line);
+        const start = this.intendedTermStart(line);
+        if (!continuation || !start || !line.ServicePeriodEnd) return '';
+        return this.dateInputValue(KeptStatedEnd(start, new Date(line.ServicePeriodEnd), continuation));
+    }
+
+    /**
+     * The end an "Add as next term" choice would give this line: its stated length kept from the
+     * continuation date, or one type term from it.
+     */
+    public HoldingContinuationEnd(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): string {
+        const continuation = ContinuationStartFrom(holding);
+        const rules = this.termRules(line);
+        if (!continuation) return '';
+        const start = this.intendedTermStart(line);
+        const kept = line.ServicePeriodEnd && start ? KeptStatedEnd(start, new Date(line.ServicePeriodEnd), continuation) : null;
+        if (kept) return this.dateInputValue(kept);
+        return rules ? this.dateInputValue(DefaultTermEnd(rules, continuation, true)) : '';
+    }
+
+    public SetTermEnd(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.CanEditServicePeriod()) return;
+        const target = event.target;
+        if (!(target instanceof HTMLInputElement)) return;
+        // An emptied field is a reset, as for the term start.
+        if (!target.value) {
+            this.ResetTermEnd(line);
+            return;
+        }
+        const end = this.parseDateInput(target.value);
+        if (!end) return;
+        line.ServicePeriodEnd = end;
+        this.cdr.detectChanges();
+    }
+
+    /** Back to the type's term: the end stops being stated. */
+    public ResetTermEnd(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!this.CanEditServicePeriod()) return;
+        line.ServicePeriodEnd = null;
+        this.cdr.detectChanges();
+    }
+
+    private utcDay(d: Date): Date {
+        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    }
+
     /* ── Service period: deferred lines that nothing else dates ──
      *
      * A recognition type with `RequiresServicePeriod` earns against a window — evenly across it, or
@@ -620,6 +727,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** True when this line's service period has to be typed in. */
     public NeedsStatedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
         return OrdersEngine.Instance.ServicePeriodSource(line.ProductID) === 'Line';
+    }
+
+    /** The order is booked, so its lines' dates are the settled ones. */
+    public get IsMoneyLocked(): boolean {
+        return !!this._order?.MoneyLocked;
     }
 
     /** Editable until the order is booked; a booked line's window is part of what was booked. */

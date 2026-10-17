@@ -3539,7 +3539,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           decision,
                           !!line.RenewsSubscriptionID,
                           options,
-                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                       );
 
