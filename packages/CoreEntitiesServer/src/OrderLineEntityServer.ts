@@ -76,9 +76,13 @@ const SERVICE_PERIOD_FIELDS: readonly string[] = ['ServicePeriodStart', 'Service
 /**
  * Whether a field held NOTHING before this save.
  *
- * A date column reaches here as null, as undefined on a row that never carried one, or as '' from a
- * caller that cleared it by writing an empty string. All three are "not set"; a Date or a non-empty
- * string is a value somebody chose, and changing one is not a fill.
+ * MEASURED against the SQL provider, not assumed: a date column that was never set arrives here as
+ * `null`, and one that carries a date arrives as a real `Date`. Those are the two shapes this rule
+ * actually decides between. `undefined` and the empty string are covered because a value can also
+ * reach a field before any row exists behind it, and because treating either as "set" would refuse
+ * the fill this exemption exists for -- the failure that costs is a blank read as a value, not the
+ * reverse. A non-empty string is NOT blank, so a provider that ever hands these columns back as ISO
+ * strings still sees a set date as set.
  */
 function IsBlankValue(value: unknown): boolean {
     return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');

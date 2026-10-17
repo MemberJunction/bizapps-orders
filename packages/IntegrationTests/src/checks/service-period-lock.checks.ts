@@ -21,6 +21,7 @@
  *   SP2   the same edit carrying a quantity change is refused — that IS changing what was sold
  *   SP3   a dates-only edit is refused once the order is booked, where the period is the settled term
  *   SP4   a dates-only edit that MOVES dates the line already carried is refused, and the row holds
+ *   SP5   the reported shape: the START is already set, only the END is filled, and that goes through
  *
  * CONNECTS TO:
  *   CODE: OrderLineEntityServer.refuseVetoedEdit / changesOnlyTheServicePeriod
@@ -196,6 +197,41 @@ export const ServicePeriodLockChecks: NamedCheck[] = [
         const after = await storedPeriod(ctx, lineID);
         AssertEqual(after.s, START, "the agreed start is untouched");
         AssertEqual(after.e, END, "and the agreed end did not move");
+      }),
+  },
+  {
+    Id: "service-period-lock.SP5",
+    Name: "SP5: a line already carrying the start has only its end filled, and that lands",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const built = await BuildOrder(ctx.User, spec());
+        Assert(await built.Order.Save(), "setup: the draft must save");
+        const line = built.Lines[0];
+        const lineID = line.Get("ID") as string;
+
+        /**
+         * THE SHAPE THE REPORT DESCRIBES, which SP1 does not reach.
+         *
+         * Sales states a term START on a deal line and nothing more, so the line arrives at the order
+         * with a start and a blank end. SP1 fills BOTH from blank; here one column already carries a
+         * date. The rule has to read only the columns the save is CHANGING — a start sitting there
+         * untouched must not disqualify the fill, or the exemption misses the case it was built for.
+         */
+        line.Set("ServicePeriodStart", START);
+        Assert(await line.Save(), `setup: the start must land — ${line.LatestResult?.CompleteMessage ?? ""}`);
+
+        await underAClosedDeal(async () => {
+          line.Set("ServicePeriodEnd", END);
+          Assert(
+            await line.Save(),
+            `filling the end alone must go through — ${line.LatestResult?.CompleteMessage ?? "no reason given"}`,
+          );
+        });
+
+        const after = await storedPeriod(ctx, lineID);
+        AssertEqual(after.e, END, "the end the rep filled is stored");
+        AssertEqual(after.s, START, "and the start it already carried is untouched");
       }),
   },
 ];

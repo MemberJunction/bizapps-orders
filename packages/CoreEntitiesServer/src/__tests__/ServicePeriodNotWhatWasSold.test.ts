@@ -144,6 +144,35 @@ describe('filling a blank is not the same as changing a date', () => {
         expect(out.refused).toBe(false);
         expect(out.asked).toBe(0);
     });
+
+    /**
+     * The provider hands these columns back as `null` or as a `Date` — measured, with a probe inside
+     * the rule against the live database. This case covers the shape it does NOT currently produce:
+     * if these columns ever arrive as ISO strings, a set date must still read as set. A blankness
+     * test that only knew about `Date` would silently exempt every edit on that day.
+     */
+    it('treats a non-empty string prior value as SET, not blank', async () => {
+        const out = await run([{ Name: 'ServicePeriodEnd', Dirty: true, OldValue: '2027-09-30' }]);
+        expect(out.refused, 'a date is a date whether it arrives as a Date or as text').toBe(true);
+        expect(out.asked).toBe(1);
+    });
+
+    it('refuses CLEARING a date that was set — removing a window is not filling one', async () => {
+        const out = await run([{ Name: 'ServicePeriodEnd', Dirty: true, OldValue: new Date('2027-09-30') }]);
+        expect(out.refused, 'the prior value decides, whatever the new one is').toBe(true);
+        expect(out.asked).toBe(1);
+    });
+
+    it('never consults a field that is not dirty, even one holding a date', async () => {
+        // The real shape of the report: Sales wrote the term START onto the line, the END is blank,
+        // and the rep fills only the end. The start carries a date and must not defeat the exemption.
+        const out = await run([
+            { Name: 'ServicePeriodStart', Dirty: false, OldValue: new Date('2026-10-01') },
+            { Name: 'ServicePeriodEnd', Dirty: true, OldValue: null },
+        ]);
+        expect(out.refused, 'only what the save is CHANGING can disqualify it').toBe(false);
+        expect(out.asked).toBe(0);
+    });
 });
 
 describe('what the exemption deliberately does NOT cover', () => {
