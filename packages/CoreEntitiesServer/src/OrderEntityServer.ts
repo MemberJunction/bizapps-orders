@@ -75,7 +75,7 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
-import { DescribeBookingErrors } from './booking-errors.js';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
@@ -3260,11 +3260,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
-            const detail = DescribeBookingErrors(
-                result.Errors,
-                (index) => unbooked.find((l) => l.ID === drafts[index]?.OrderLineID)?.LineNumber,
+            const lineFor = (index: number) => {
+                const line = unbooked.find((l) => l.ID === drafts[index]?.OrderLineID);
+                return line ? { LineNumber: line.LineNumber, Product: line.Product ?? null } : null;
+            };
+            // The codes go to the log for whoever traces the refusal; the person confirming gets a
+            // sentence per refusal naming the line and what to change (bizapps-orders#742).
+            LogError(
+                `Journal entry booking failed for order ${this.OrderNumber ?? this.ID}: ` +
+                    BookingErrorLogText(result.Errors, lineFor),
             );
-            throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
+            throw new Error(`The order could not be booked, and nothing was posted. ${DescribeBookingErrors(result.Errors, lineFor)}`);
         }
 
         await this.stampJournalEntryIDs(lines, drafts, result, options);
@@ -3540,7 +3546,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           decision,
                           !!line.RenewsSubscriptionID,
                           options,
-                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                       );
 

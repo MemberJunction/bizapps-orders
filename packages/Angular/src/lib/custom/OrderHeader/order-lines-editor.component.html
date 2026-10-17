@@ -224,13 +224,14 @@
             }
 
             <!--
-                TERM START — subscription lines only (D-TERMSTART).
+                TERM START — subscription lines, and bundle lines whose bundle contains a subscription
+                (D-TERMSTART, u623.1).
                 The order date says when the sale was booked; this says when coverage begins, and an
                 agreement settles the two independently. Shown on the card rather than behind the
                 extension disclosure because it is a term fact, and not every subscription product
                 type has an extension form to hide it in.
             -->
-            @if (IsSubscriptionLine(line)) {
+            @if (ShowsTermStart(line)) {
                 <div class="mjo-ol-term">
                     <!-- `for` only when there IS an input to point at. A label targeting a missing
                          id is a dead control to a screen reader. -->
@@ -266,7 +267,9 @@
                         <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
                     }
                     <span class="mjo-ol-term__hint">
-                        @if (TermStartIsDictated(line)) {
+                        @if (IsSubscriptionBundleLine(line)) {
+                            Applies to the subscriptions in this bundle.
+                        } @else if (TermStartIsDictated(line)) {
                             Continuing existing coverage, so the term begins the day after the current
                             one ends — not something this line can set.
                         } @else if (TermStartFollowsOrderDate(line)) {
@@ -276,6 +279,56 @@
                             Stated on this line, so a later change to the order date leaves it alone.
                         }
                     </span>
+                </div>
+            }
+
+            <!--
+                TERM END — subscription lines only (golive #338).
+                Confirm keeps a stated end: the coverage runs to it, as one term or one term per type
+                term length. Empty means the type's term, which the field shows as a default.
+            -->
+            @if (IsSubscriptionLine(line)) {
+                <div class="mjo-ol-term">
+                    <label
+                        class="mjo-ol-term__label"
+                        [attr.for]="CanEditServicePeriod() ? 'mjo-ol-term-end-' + line.ID : null">
+                        Term end
+                    </label>
+                    @if (CanEditServicePeriod()) {
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [class.is-default]="TermEndFollowsType(line)"
+                            [id]="'mjo-ol-term-end-' + line.ID"
+                            [value]="TermEndValue(line)"
+                            (change)="SetTermEnd(line, $event)">
+                        @if (!TermEndFollowsType(line)) {
+                            <button
+                                type="button"
+                                class="mjo-ol-term__reset"
+                                (click)="ResetTermEnd(line)">
+                                Reset to the type's term
+                            </button>
+                        }
+                    } @else {
+                        <span class="mjo-ol-term__value">{{ TermEndValue(line) }}</span>
+                    }
+                    @if (TermEndBeforeStart(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            The term end must be on or after the term start.
+                        </span>
+                    } @else if (!IsMoneyLocked) {
+                        <span class="mjo-ol-term__hint">
+                            @if (TermEndFollowsType(line)) {
+                                One term of the subscription type. Set an end to sell a different length.
+                            } @else if (KeptTermEndValue(line); as kept) {
+                                Confirm keeps this length from the continuation date, so the term ends {{ kept }}.
+                            } @else {
+                                Stated on this line, and confirm keeps these dates. A length other than the
+                                type's term goes to finance review.
+                            }
+                        </span>
+                    }
                 </div>
 
                 <!-- The customer already holds this product (golive #299): ask whether this line
@@ -296,7 +349,9 @@
                                     [attr.aria-pressed]="line.SubscriptionAction === 'ExtendExisting'"
                                     (click)="SetSubscriptionAction(line, 'ExtendExisting')">
                                     Add as next term
-                                    @if (HoldingContinuationStart(holding)) { (starts {{ HoldingContinuationStart(holding) }}) }
+                                    @if (HoldingContinuationStart(holding)) {
+                                        (starts {{ HoldingContinuationStart(holding) }}@if (HoldingContinuationEnd(line, holding); as end) {, ends {{ end }}})
+                                    }
                                 </button>
                                 <button
                                     type="button"
@@ -312,7 +367,7 @@
                             @if (line.SubscriptionAction === 'CreateNew') {
                                 Confirm starts a separate subscription on this line's service period.
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
-                                Confirm adds a term to {{ holding.SubscriptionNumber }}, starting the day after its coverage ends.
+                                Confirm adds a term to {{ holding.SubscriptionNumber }}, starting the day after its coverage ends@if (HoldingContinuationEnd(line, holding); as end) { and ending {{ end }}}.
                             } @else {
                                 Not chosen. The subscription type's rule will decide at confirm, and it may move this
                                 line's dates.
