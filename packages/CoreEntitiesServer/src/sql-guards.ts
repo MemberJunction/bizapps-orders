@@ -26,6 +26,7 @@
  * @module @mj-biz-apps/orders-core-entities-server
  */
 
+import { EscapeSQLString } from '@memberjunction/global';
 import { InvalidOperationInputError } from '@mj-biz-apps/orders-entities';
 
 // The UUID guards live in `orders-entities` so its pricing engines can use them without a
@@ -95,8 +96,11 @@ export function RequireOptionalDay(value: Date | string | null | undefined, fiel
  * Escape a free-text value for a SQL string literal.
  *
  * For the values that are legitimately text rather than ids — a provider's refund
- * reference, a search term. Doubling the quote is the SQL Server escape.
+ * reference, a search term. Delegates to MJ's `EscapeSQLString`, which doubles the
+ * quote (the SQL Server escape) AND strips null bytes — the case a bare
+ * `.replace(/'/g, "''")` misses. Kept as a named wrapper so call sites state intent
+ * and keep this function's non-null contract: the value is already known non-null.
  */
 export function EscapeText(value: string): string {
-    return String(value).replace(/'/g, "''");
+    return EscapeSQLString(String(value));
 }

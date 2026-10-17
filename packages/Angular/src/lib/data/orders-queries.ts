@@ -43,7 +43,7 @@
  * @module @mj-biz-apps/orders-ng
  */
 import { Metadata, RunView, type IMetadataProvider, type RunViewParams, type UserInfo } from '@memberjunction/core';
-import { UUIDsEqual } from '@memberjunction/global';
+import { EscapeSQLString, UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
 import {
     FindExistingHolding,
@@ -268,9 +268,18 @@ function uuidList(ids: string[]): string | null {
     return safe.length ? safe.map((id) => `'${id}'`).join(',') : null;
 }
 
-/** Escape a user-typed fragment for a LIKE clause. */
+/**
+ * Escape a user-typed fragment for a LIKE clause.
+ *
+ * Two escapes, in order: LIKE metacharacters are neutralized with SQL Server's
+ * character-class form (`[` first, because `[[]` is itself written with brackets),
+ * then `EscapeSQLString` doubles quotes and strips null bytes. Without the LIKE
+ * step, a typed `%` or `_` silently matches everything / any character instead of
+ * itself.
+ */
 function likeText(value: string): string {
-    return value.replace(/'/g, "''");
+    const neutral = value.replace(/\[/g, '[[]').replace(/%/g, '[%]').replace(/_/g, '[_]');
+    return EscapeSQLString(neutral);
 }
 
 /* ── Orders ──────────────────────────────────────────────────────────────────── */
