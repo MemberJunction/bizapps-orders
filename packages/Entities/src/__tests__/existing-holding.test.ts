@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IRunViewProvider, RunViewParams } from '@memberjunction/core';
 import {
+    EXISTING_HOLDING_STATUSES,
     FindExistingHolding,
     FindUnansweredHeldLines,
     HoldingSubscriberFor,
@@ -87,6 +88,29 @@ describe('FindExistingHolding', () => {
         ).rejects.toThrow(/boom/);
     });
 
+    it('counts every sold status that has not ended, and only those', async () => {
+        expect([...EXISTING_HOLDING_STATUSES].sort()).toEqual(['Active', 'Paused', 'Trialing']);
+        const p = provider(held);
+        await FindExistingHolding(PRODUCT, { OrganizationID: ORG, PersonID: null }, p);
+        const filter = (p.RunView.mock.calls[0][0] as RunViewParams).ExtraFilter ?? '';
+        expect(filter).toContain(`Status IN ('Active', 'Trialing', 'Paused')`);
+        expect(filter).not.toMatch(/Canceled|Migrated/);
+    });
+
+    it('finds a subscription whose first term has not started yet', async () => {
+        // Sold for next month: Active from booking, terms in the future (golive #339).
+        const future: Rows = {
+            ...held,
+            'MJ_BizApps_Orders: Subscription Terms': [
+                { SubscriptionID: SUB, TermNumber: 2, EndDate: '2028-10-31' },
+                { SubscriptionID: SUB, TermNumber: 1, EndDate: '2027-10-31' },
+            ],
+        };
+        const h = await FindExistingHolding(PRODUCT, { OrganizationID: ORG, PersonID: null }, provider(future));
+        expect(h?.SubscriptionID).toBe(SUB);
+        expect(h?.LatestTermEnd?.toISOString().slice(0, 10)).toBe('2028-10-31');
+    });
+
     it('does not query for a malformed id', async () => {
         const p = provider(held);
         expect(await FindExistingHolding('not-a-guid', { OrganizationID: ORG, PersonID: null }, p)).toBeNull();
@@ -101,6 +125,18 @@ describe('FindUnansweredHeldLines', () => {
         expect(found[0].LineNumber).toBe(1);
         expect(found[0].Holding.SubscriptionID).toBe(SUB);
         expect(found[0].Holding.LatestTermEnd?.toISOString().slice(0, 10)).toBe('2027-09-30');
+    });
+
+    it('asks about a paused subscription with the same status set as the single lookup', async () => {
+        const paused: Rows = {
+            ...held,
+            'MJ_BizApps_Orders: Subscriptions': [{ ...(held['MJ_BizApps_Orders: Subscriptions'][0] as object), Status: 'Paused' }],
+        };
+        const p = provider(paused);
+        const found = await FindUnansweredHeldLines(order, [line()], p);
+        expect(found[0]?.Holding.Status).toBe('Paused');
+        const subsCall = p.RunView.mock.calls.find(([params]) => (params as RunViewParams).EntityName === 'MJ_BizApps_Orders: Subscriptions');
+        expect((subsCall?.[0] as RunViewParams).ExtraFilter).toContain(`Status IN ('Active', 'Trialing', 'Paused')`);
     });
 
     it('reads three times however many lines there are', async () => {

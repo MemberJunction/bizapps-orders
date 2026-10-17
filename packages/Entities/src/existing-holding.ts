@@ -26,7 +26,23 @@ const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 
-/** A live subscription the subscriber already holds for a product, with where its coverage ends. */
+/**
+ * The subscription statuses that count as "the customer already holds this": every sold
+ * subscription that has not ended (golive #339). `Canceled` ended it and `Migrated` moved it to another
+ * subscription; every other status (`Active`, `Trialing`, `Paused`) is still held.
+ *
+ * Start date does not matter. A subscription sold to start next month is `Active` from the day it
+ * is booked, and a line for the same product is as much its next term as one bought mid-term.
+ *
+ * Wider than the server's own extend test (`Active`/`Trialing`): a `Paused` holding is still the
+ * customer's, so the line is asked about it, and the server applies its reactivation rule to the
+ * answer. Asking when it did not need to costs a click.
+ */
+export const EXISTING_HOLDING_STATUSES: readonly string[] = ['Active', 'Trialing', 'Paused'];
+
+const HELD_STATUS_FILTER = `Status IN (${EXISTING_HOLDING_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+
+/** A held subscription the subscriber already has for a product, with where its coverage ends. */
 export interface ExistingHolding {
     SubscriptionID: string;
     SubscriptionNumber: string;
@@ -73,8 +89,8 @@ export function HoldingSubscriberFor(line: HoldingLine, order: HoldingOrder | nu
 }
 
 /**
- * The live (`Active`/`Trialing`) subscription to `productID` held by this organization or naming
- * this person, newest first, or null.
+ * The held subscription (status in `EXISTING_HOLDING_STATUSES`) to `productID` held by this
+ * organization or naming this person, newest first, or null.
  *
  * Broader than the server's duplicate test, which keys on the type's `BenefitModel`: matching on
  * either side means a caller may ask about a subscription the server would not extend, never the
@@ -103,7 +119,7 @@ export async function FindExistingHolding(
     const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; Status: string }>(
         {
             EntityName: SUBSCRIPTION_ENTITY,
-            ExtraFilter: `ProductID = '${productID}' AND Status IN ('Active', 'Trialing') AND (${holder.join(' OR ')})`,
+            ExtraFilter: `ProductID = '${productID}' AND ${HELD_STATUS_FILTER} AND (${holder.join(' OR ')})`,
             OrderBy: '__mj_CreatedAt DESC',
             MaxRows: 1,
             Fields: ['ID', 'SubscriptionNumber', 'Status'],
@@ -160,7 +176,7 @@ export async function FindUnansweredHeldLines(
     const asked = await subscriptionLinesToAsk(rv, order, lines, user);
     if (asked.length === 0) return [];
 
-    const subs = await liveSubscriptionsFor(rv, asked, user);
+    const subs = await heldSubscriptionsFor(rv, asked, user);
     if (subs.length === 0) return [];
     const termEnds = await latestTermEnds(rv, subs.map((s) => s.ID), user);
 
@@ -235,8 +251,8 @@ async function subscriptionLinesToAsk(
     return asked;
 }
 
-/** Live subscriptions to any asked product held by any asked subscriber, newest first. */
-async function liveSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], user?: UserInfo): Promise<SubscriptionRow[]> {
+/** Held subscriptions to any asked product held by any asked subscriber, newest first. */
+async function heldSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], user?: UserInfo): Promise<SubscriptionRow[]> {
     const orgs = asked.map((a) => a.Subscriber.OrganizationID).filter((id): id is string => !!id && UUID_PATTERN.test(id));
     const people = asked.map((a) => a.Subscriber.PersonID).filter((id): id is string => !!id && UUID_PATTERN.test(id));
     const holder = [
@@ -249,7 +265,7 @@ async function liveSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], us
         {
             EntityName: SUBSCRIPTION_ENTITY,
             ExtraFilter:
-                `ProductID IN (${inList(asked.map((a) => a.Line.ProductID))}) AND Status IN ('Active', 'Trialing') ` +
+                `ProductID IN (${inList(asked.map((a) => a.Line.ProductID))}) AND ${HELD_STATUS_FILTER} ` +
                 `AND (${holder.join(' OR ')})`,
             OrderBy: '__mj_CreatedAt DESC',
             Fields: ['ID', 'SubscriptionNumber', 'Status', 'ProductID', 'HolderOrganizationID', 'BeneficiaryPersonID'],
