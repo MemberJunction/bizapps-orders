@@ -1,0 +1,74 @@
+[
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Payment Webhook Deliveries to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Payment Webhook Deliveries",
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Payment Webhook Deliveries"
+    },
+    "sync": {
+      "lastModified": "2026-10-17T20:27:32.658Z",
+      "checksum": "a41d9cb8876f5e180122a10aeb64a70859c5ff6e4e0b02097ab06dd1dcad1630"
+    }
+  },
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Outbound Deliveries to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Outbound Deliveries",
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Deliveries"
+    },
+    "sync": {
+      "lastModified": "2026-10-17T20:27:32.693Z",
+      "checksum": "b00e13c825e540e9337d7df3300472f7b814fe6709f8cf2d3f0f5b9fb00ac793"
+    }
+  },
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Outbound Events to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Outbound Events",
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Outbound Events"
+    },
+    "sync": {
+      "lastModified": "2026-10-17T20:27:32.729Z",
+      "checksum": "f682c9335f7ea457b9b259bf70b5be1a06e5f6a4879510cc0d94ee6676c89db1"
+    }
+  },
+  {
+    "_comments": [
+      "Configures MJ_BizApps_Orders: Subscription Events to use SaveReturnMode = datestamps_only so spCreate/spUpdate return only [ID], [__mj_CreatedAt], [__mj_UpdatedAt] from BaseTable instead of re-reading BaseView."
+    ],
+    "fields": {
+      "Name": "MJ_BizApps_Orders: Subscription Events",
+      "Configuration": {
+        "SaveReturnMode": "datestamps_only"
+      }
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscription Events"
+    },
+    "sync": {
+      "lastModified": "2026-10-17T20:27:32.763Z",
+      "checksum": "62da6c97b45a868c4b41745d51b684f1c995721a2528f319cd262efe5e982ba4"
+    }
+  }
+]
