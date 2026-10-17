@@ -103,6 +103,8 @@ Bill-to / ship-to: setting a **person** copies to the other side if that person 
 
 **Confirm Pre-Flight**: Confirm is a direct toolbar action and verb (`order.Confirm()`) that validates all conditions and books immediately in one transaction; no modal overlay is needed.
 
+**Lines at $0**: on an order a person entered (`Origin = 'Direct'`), no line confirms at a unit price of 0. Products sold at a negotiated price sit in the catalog at 0, so the person entering the order types the price; a line given away carries its price and a 100% discount, which goes through concession approval. `OrderHeaderEntity.UnpricedLinesRefusal()` gives the one message both the order form's "Before this can be confirmed" list (`ConfirmEligibility`) and the confirm save (`Validate`) show. Checkout and payment-created orders, bundle components and return lines are exempt. When accounting refuses an order's booking, the message gives each distinct error once, naming the order lines it applies to (`booking-errors.ts`).
+
 ### What is still a remote operation
 
 An operation is an **act** the entity cannot express: decide over a set, talk to a third party, or stay atomic with a write that is not "save this graph."

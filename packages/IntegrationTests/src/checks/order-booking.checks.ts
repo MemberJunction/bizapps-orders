@@ -1,5 +1,5 @@
 /**
- * order-booking.checks.ts — the `order-booking` bundle (OB1–OB30).
+ * order-booking.checks.ts — the `order-booking` bundle (OB1–OB32).
  *
  * The core promise of this app: confirming an order writes correct, balanced double-entry into
  * accounting's ledger, atomically. Graduated from `test-harnesses/booking-live.mjs` tests 1–2.
@@ -38,6 +38,9 @@
  *   OB29 a taxed order saved as a draft and then confirmed books balanced entries whose receivable is
  *        the order's gross, with one set of tax rows per line (#484)
  *   OB30 …and keeps one price breakdown per line, not one per save
+ *   OB31 a paid line beside a line at its $0 catalog price is refused at the confirm checklist and by
+ *        the save, before journal booking, naming the line once (golive #328)
+ *   OB32 a checkout order is not held by that rule; the same lines entered by hand are
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -1166,6 +1169,92 @@ export const OrderBookingChecks: NamedCheck[] = [
                     `confirm-after-draft must book: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`,
                 );
                 AssertEqual(Number(await count()), afterDraft, 'price breakdown rows after the confirm');
+            }),
+    },
+    {
+        Id: 'order-booking.OB31',
+        Name: 'OB31: a paid line beside a line at its $0 catalog price is refused at the confirm checklist and by the save, booking nothing',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A negotiated-price product sits in the catalog at 0, and the person entering the
+                // order must type the price. Left at 0, the deferred line used to reach accounting,
+                // which refused a $0 release for every month of its term (bc-aidp-next-golive#328).
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                await CreateProductPrice(ctx, f.Products.DeferredA, 0);
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-07-01T00:00:00Z'),
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 1 },
+                        {
+                            ProductID: f.Products.DeferredA,
+                            Quantity: 1,
+                            ServicePeriodStart: '2026-07-01',
+                            ServicePeriodEnd: '2027-06-30',
+                        },
+                    ],
+                });
+                Assert(await built.Order.Save(), `the draft must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const free = built.Order.Lines.Items.find((l) => l.ProductID === f.Products.DeferredA);
+                AssertEqual(Number(free?.UnitPrice), 0, 'precondition: the line took its $0 catalog price');
+
+                const verdict = built.Order.ConfirmEligibility();
+                AssertEqual(verdict.Allowed, false, 'the confirm checklist holds the order');
+                Assert(
+                    /^Line 2( \(.+\))? has a price of 0\. Enter the negotiated price/.test(verdict.Reason ?? ''),
+                    `the checklist names the line once: ${verdict.Reason}`,
+                );
+
+                built.Order.Status = 'Confirmed';
+                Assert(!(await built.Order.Save()), 'the save refuses the confirm');
+                const message = built.Order.LatestResult?.CompleteMessage ?? '';
+                Assert(/Line 2( \(.+\))? has a price of 0/.test(message), `the refusal is the checklist's: ${message}`);
+                Assert(!/MALFORMED_DRAFT/.test(message), `the refusal comes before journal booking: ${message}`);
+
+                const booked = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N FROM ${ACCT_SCHEMA}.vwJournalEntries
+                      WHERE LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${built.Order.ID}')`,
+                );
+                AssertEqual(Number(booked.N), 0, 'journal entries for the refused order');
+                const persisted = await TxOne<{ Status: string }>(
+                    ctx,
+                    `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`,
+                );
+                AssertEqual(persisted.Status, 'Draft', 'the order stays a draft');
+            }),
+    },
+    {
+        Id: 'order-booking.OB32',
+        Name: 'OB32: a checkout order is not held by the $0-line rule; its prices come from the catalog',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+                await CreateProductPrice(ctx, f.Products.WidgetB, 0);
+                const built = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 1 },
+                        { ProductID: f.Products.WidgetB, Quantity: 1 },
+                    ],
+                });
+                built.Order.Origin = 'Widget';
+                Assert(await built.Order.Save(), `the draft must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`);
+                AssertEqual(built.Order.UnpricedLines().length, 0, 'no line is held on a checkout order');
+
+                const hand = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    Lines: [
+                        { ProductID: f.Products.WidgetA, Quantity: 1 },
+                        { ProductID: f.Products.WidgetB, Quantity: 1 },
+                    ],
+                });
+                Assert(await hand.Order.Save(), `the draft must save: ${hand.Order.LatestResult?.CompleteMessage ?? ''}`);
+                AssertEqual(hand.Order.UnpricedLines().length, 1, 'the same lines entered by hand hold the $0 one');
             }),
     },
 ];
