@@ -51,6 +51,7 @@ import {
     LoadGetOverdueWorklistOperation,
     LoadGetBillingWorklistOperation,
     LoadIssueInstalmentInvoiceOperation,
+    LoadReplacePaymentScheduleOperation,
     LoadRecordProgressOperation,
     LoadGetProgressWorklistOperation,
     LoadReplayCheckoutStepOperation,
@@ -158,6 +159,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadGetBillingWorklistOperation(); // 'Orders.GetBillingWorklist' — instalments due with no invoice behind them (AIDP-24)
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
+    LoadReplacePaymentScheduleOperation(); // 'Orders.ReplacePaymentSchedule' — set the schedule from a list; invoiced rows kept, tie enforced (golive #290)
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
     LoadReplayCheckoutStepOperation(); // 'Orders.ReplayCheckoutStep' — an operator re-drives one failed post-payment checkout step (#326)
