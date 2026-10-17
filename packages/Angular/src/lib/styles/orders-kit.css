@@ -544,12 +544,17 @@ kbd {
   text-transform: uppercase; opacity: .85; pointer-events: none;
 }
 
+/* Print. This sheet is global (the section shell loads it with ViewEncapsulation.None), so every
+   selector stays under mjo-section-shell: unscoped, `.mj-page-header` would hide MJ's header when
+   printing any Explorer page. No body rule for the same reason; browsers print without
+   backgrounds unless asked. */
 @media print {
-  .mj-topnav, .mj-rail, .mj-page-header, .mj-keys, .no-print { display: none !important; }
-  .mj-app, .mj-page-layout, .mj-page-body { height: auto; overflow: visible; display: block; }
-  .mj-page-body { padding: 0; }
-  .mj-doc { border: none; max-width: none; padding: 0; }
-  body { background: #fff; }
+  mjo-section-shell .mj-page-header,
+  mjo-section-shell .no-print { display: none !important; }
+  mjo-section-shell .mj-page-layout,
+  mjo-section-shell .mj-page-body { height: auto; overflow: visible; display: block; }
+  mjo-section-shell .mj-page-body { padding: 0; }
+  mjo-section-shell .mj-doc { border: none; max-width: none; padding: 0; }
 }
 
 

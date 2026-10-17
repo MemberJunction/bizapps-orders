@@ -135,6 +135,16 @@ h1, h2, h3, h4 { margin: 0; font-weight: var(--mj-font-semibold); }
 .mj-scope i { color: var(--mj-brand-primary); }
 .mj-rail.is-collapsed .mj-scope .lbl { display: none; }
 
+/* Printing a mockup drops the shell. The shipped kit's print block covers only what renders
+   inside mjo-section-shell, so the mockup shell's own chrome is hidden here. */
+@media print {
+  .mj-topnav, .mj-rail, .mj-keys, .mj-page-header, .no-print { display: none !important; }
+  .mj-app, .mj-page-layout, .mj-page-body { height: auto; overflow: visible; display: block; }
+  .mj-page-body { padding: 0; }
+  .mj-doc { border: none; max-width: none; padding: 0; }
+  body { background: var(--mj-color-neutral-0); }
+}
+
 /* ============================================================================
    2. PAGE CHROME TRIO
    ============================================================================ */
