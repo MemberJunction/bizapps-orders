@@ -65,6 +65,14 @@ function money(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * The columns that set WHEN the thing is delivered rather than WHAT was sold (golive#322).
+ *
+ * Kept beside the class rather than inline so the exemption below reads as a list someone may extend
+ * deliberately, and so a reader can see at a glance how short it is.
+ */
+const SERVICE_PERIOD_FIELDS: readonly string[] = ['ServicePeriodStart', 'ServicePeriodEnd'];
+
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends OrderLineEntity {
     /**
@@ -202,6 +210,27 @@ export class OrderLineEntityServer extends OrderLineEntity {
         const veto = HostOrderLineEditVeto();
         if (!veto || !this.OrderHeaderID || this.BypassExternalEditVeto) return;
 
+        /**
+         * A SERVICE PERIOD IS NOT WHAT WAS SOLD (bc-aidp-next-golive#322).
+         *
+         * The lock's own refusal says it: "before changing what was sold". Service dates are the
+         * coverage WINDOW, not the thing — the product, quantity and price are untouched.
+         *
+         * Why it matters rather than being a nicety: `ConfirmEligibility` refuses to confirm a line
+         * whose product has `RequiresServicePeriod` until it has BOTH a start and an end. Sales can
+         * state a term START on a deal line (golive#32) and nothing else — `DealLine` carries no date
+         * columns at all — so the end can only be set on the order. With the lock covering every
+         * field, a perfectly ordinary Won deal could not have its order confirmed without reopening
+         * the deal, setting the dates and closing it again. That reopen is itself now refused for the
+         * confirm (golive#323), so the workaround was getting narrower, not wider.
+         *
+         * SCOPED TO AN ORDER THAT HAS NOT BOOKED. After confirm the stored period is the SETTLED term
+         * that `materializeSubscriptions` wrote, and recognition is derived from it. Trigger 51003
+         * freezes the financial columns at confirm but NOT these two, so the database would not catch
+         * a late edit — which is the reason to be explicit here rather than to rely on it.
+         */
+        if (kind === 'update' && (await this.changesOnlyTheServicePeriod())) return;
+
         const refusal = await ResolveOrderLineEditRefusal(
             veto,
             {
@@ -325,6 +354,27 @@ export class OrderLineEntityServer extends OrderLineEntity {
                 ValidationErrorType.Failure,
             ),
         );
+    }
+
+    /**
+     * Whether this update touches the service period and NOTHING else, on an order that has not booked.
+     *
+     * Deliberately "only": a save that moves the dates AND the quantity is still changing what was
+     * sold, and must meet the lock like any other. An empty dirty set returns false rather than true —
+     * a save with nothing dirty has no claim on an exemption, and reading it as one would hand every
+     * no-op edit a way past the lock.
+     *
+     * The status read is the same one `refuseNewLineOnBookedOrder` makes, through `ProviderToUse`, so
+     * inside the booking transaction it sees what the transaction has written. A status that cannot be
+     * read yields NO exemption — the lock then applies, which is the safe direction.
+     */
+    private async changesOnlyTheServicePeriod(): Promise<boolean> {
+        const dirty = this.Fields.filter((f) => f.Dirty).map((f) => f.Name);
+        if (dirty.length === 0) return false;
+        if (!dirty.every((name) => SERVICE_PERIOD_FIELDS.includes(name))) return false;
+
+        const status = await this.storedOrderStatus();
+        return !!status && !IsBooked(status);
     }
 
     /**

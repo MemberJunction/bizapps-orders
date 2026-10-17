@@ -77,6 +77,7 @@ import '../checks/term-extension.checks.js';
 import '../checks/amount-change.checks.js';
 import '../checks/term-shift.checks.js';
 import '../checks/billcom-rail.checks.js';
+import '../checks/service-period-lock.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -135,6 +136,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'amount-change': 11,
     'term-shift': 6,
     'billcom-rail': 21,
+    'service-period-lock': 3,
 };
 
 /**
