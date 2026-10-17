@@ -31,6 +31,7 @@ export * from './line-quantity';
 export * from './attendee-seats';
 export * from './order-line-edit-veto';
 export * from './order-confirm-veto';
+export * from './order-origin';
 
 /**
  * `OrderHeaderEntity` — the shared (client + server) order subclass carrying every rule decidable
