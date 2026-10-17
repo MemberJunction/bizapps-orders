@@ -187,6 +187,8 @@ Results persist as line price-component / charge / adjustment children so the bo
 
 Revenue recognition is **real forward-dated JEs written at booking**. A 12-month $1,200 subscription writes 12 × $100 Dr Deferred / Cr Revenue dated on the monthly anniversaries. Accounting's batch sweep by date is what "fires" recognition. Staged entries are never edited; corrections are reversing orders.
 
+Percentage-of-completion lines recognise nothing at booking. `Orders.RecordProgress` takes an attested percent complete on a date and posts the catch-up on that date. A date on or before the line's company's books-closed-through date (accounting's `AccountingCompanyProfile.BooksClosedThroughDate`, the last day of the latest month finance has closed) is refused, on preview and post; a failed read of that date refuses too. A supersede replaces the line's latest observation without editing it: the replaced observation's recognition is reversed on its own date, or on the first open day when finance has closed its month, and the new catch-up posts on the date entered (golive #316).
+
 ---
 
 ## 9. Reversals

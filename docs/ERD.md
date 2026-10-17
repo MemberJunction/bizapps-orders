@@ -1244,7 +1244,9 @@ code, at confirm and at invoicing. An order with no rows is billed as a whole.
 completion) releases nothing at booking. Each `OrderLineProgressMeasurement` row is an attested
 observation of cumulative percent complete on a date, and `Orders.RecordProgress` posts the catch-up
 to it with its journal entry. A posted row never changes (§5): a correction is a new row that
-supersedes it, and the superseded row's recognition is reversed.
+supersedes it, and the superseded row's recognition is reversed: on its own date, or on the first
+open day when finance has closed that month. No observation is dated on or before the company's
+`AccountingCompanyProfile.BooksClosedThroughDate`.
 
 ```mermaid
 erDiagram
