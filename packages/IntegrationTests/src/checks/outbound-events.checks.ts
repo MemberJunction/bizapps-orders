@@ -444,6 +444,13 @@ export const OutboundEventsChecks: NamedCheck[] = [
         const { performance } = await import("node:perf_hooks");
         const { fileURLToPath } = await import("node:url");
 
+        const getSaveReturnMode = (info: { Configuration?: string | null } & Record<string, unknown>): string => {
+          if (typeof info.SaveReturnMode === "string") return info.SaveReturnMode;
+          if (typeof info.Configuration === "string" && info.Configuration.trim()) {
+            return (JSON.parse(info.Configuration) as { SaveReturnMode?: string }).SaveReturnMode ?? "full";
+          }
+          return "full";
+        };
         const expectedEntities = [
           OUTBOUND_EVENT_ENTITY,
           OUTBOUND_DELIVERY_ENTITY,
@@ -453,7 +460,11 @@ export const OutboundEventsChecks: NamedCheck[] = [
         for (const name of expectedEntities) {
           const info = ctx.Provider.EntityByName(name);
           Assert(!!info, `${name} entity metadata present`);
-          AssertEqual(info!.SaveReturnMode, "datestamps_only", `${name} SaveReturnMode is datestamps_only`);
+          AssertEqual(
+            getSaveReturnMode(info! as unknown as { Configuration?: string | null } & Record<string, unknown>),
+            "datestamps_only",
+            `${name} SaveReturnMode is datestamps_only`,
+          );
         }
 
         resetProbe();
