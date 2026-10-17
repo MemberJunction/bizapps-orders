@@ -1,6 +1,8 @@
 .mjo-sc-toolbar {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
+    gap: var(--mj-space-2);
 }
 
 .mjo-sc {

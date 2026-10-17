@@ -75,17 +75,19 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
                         aria-label="Custom unit price">
                 }
             </div>
-            <label class="mjo-lpp__reason" [class.is-off]="!CanExplainOverride(Line)" [class.is-required]="NeedsOverrideReason(Line)">
-                <span>Override Explanation @if (CanExplainOverride(Line)) {<em class="mjo-lpp__req" aria-hidden="true">*</em>}</span>
-                <textarea
-                    rows="2"
-                    [disabled]="!CanExplainOverride(Line)"
-                    [required]="CanExplainOverride(Line)"
-                    [attr.aria-required]="CanExplainOverride(Line)"
-                    [value]="OverrideReasonText(Line)"
-                    (input)="SetOverrideReason(Line, $event)"
-                    placeholder="Required — why this price differs from the default"></textarea>
-            </label>
+            <!-- Shown only once the line has left its default: a disabled box on every line read as a field to fill in. -->
+            @if (CanExplainOverride(Line)) {
+                <label class="mjo-lpp__reason" [class.is-required]="NeedsOverrideReason(Line)">
+                    <span>Override Explanation <em class="mjo-lpp__req" aria-hidden="true">*</em></span>
+                    <textarea
+                        rows="2"
+                        required
+                        aria-required="true"
+                        [value]="OverrideReasonText(Line)"
+                        (input)="SetOverrideReason(Line, $event)"
+                        placeholder="Required — why this price differs from the default"></textarea>
+                </label>
+            }
         }
     `,
     styles: [
@@ -136,9 +138,6 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
                 color: var(--mj-text-muted);
                 margin-bottom: 4px;
             }
-            .mjo-lpp__reason.is-off {
-                opacity: 0.55;
-            }
             .mjo-lpp__req {
                 font-style: normal;
                 color: var(--mj-status-error-text);
@@ -153,10 +152,6 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
                 padding: 6px 8px;
                 text-align: left;
                 font-variant-numeric: normal;
-            }
-            .mjo-lpp__reason textarea:disabled {
-                cursor: not-allowed;
-                background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
             }
         `,
     ],
