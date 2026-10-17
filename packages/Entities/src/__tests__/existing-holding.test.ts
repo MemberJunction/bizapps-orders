@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import type { IRunViewProvider, RunViewParams } from '@memberjunction/core';
 import {
     EXISTING_HOLDING_STATUSES,
+    ExtendChoiceTextFor,
+    ExtendOutcomeFor,
     FindExistingHolding,
+    type ExistingHolding,
     FindUnansweredHeldLines,
     HoldingSubscriberFor,
     type HoldingLine,
@@ -172,5 +175,68 @@ describe('FindUnansweredHeldLines', () => {
 
     it('throws when the product read fails', async () => {
         await expect(FindUnansweredHeldLines(order, [line()], provider(held, 'MJ_BizApps_Orders: Products'))).rejects.toThrow(/boom/);
+    });
+});
+
+describe('a paused holding: what "extend" does (golive #339)', () => {
+    const TYPE = '55555555-5555-4555-8555-555555555555';
+    const pausedRows = (mode: string, windowDays: number | null = null): Rows => ({
+        ...held,
+        'MJ_BizApps_Orders: Subscriptions': [
+            { ...(held['MJ_BizApps_Orders: Subscriptions'][0] as object), Status: 'Paused', SubscriptionTypeID: TYPE },
+        ],
+        'MJ_BizApps_Orders: Subscription Types': [{ ReactivationMode: mode, ReactivationWindowDays: windowDays }],
+    });
+    const holding = (over: Partial<ExistingHolding>): ExistingHolding => ({
+        SubscriptionID: SUB,
+        SubscriptionNumber: 'SUB-1',
+        Status: 'Paused',
+        LatestTermEnd: new Date('2027-09-30T00:00:00Z'),
+        ...over,
+    });
+    const day = new Date('2027-10-15T00:00:00Z');
+
+    it('reads the type\'s reactivation rule for a paused holding only', async () => {
+        const p = provider(pausedRows('ReactivateExisting'));
+        const h = await FindExistingHolding(PRODUCT, { OrganizationID: ORG, PersonID: null }, p);
+        expect(h?.Reactivation).toEqual({ Mode: 'ReactivateExisting', WindowDays: null });
+
+        const active = provider(held);
+        const a = await FindExistingHolding(PRODUCT, { OrganizationID: ORG, PersonID: null }, active);
+        expect(a?.Reactivation).toBeNull();
+        expect(active.RunView.mock.calls.map(([q]) => (q as RunViewParams).EntityName)).not.toContain(
+            'MJ_BizApps_Orders: Subscription Types',
+        );
+    });
+
+    it('an active holding is extended: next term from the day after coverage ends', () => {
+        const text = ExtendChoiceTextFor(holding({ Status: 'Active' }), day);
+        expect(text.Choice).toBe('Add as next term (starts 2027-10-01)');
+        expect(text.Hint).toContain('adds a term to SUB-1');
+    });
+
+    it('a paused holding whose type reactivates is described as a reactivation, not a next term', () => {
+        const text = ExtendChoiceTextFor(holding({ Reactivation: { Mode: 'ReactivateExisting', WindowDays: null } }), day);
+        expect(text.Choice).toBe('Reactivate SUB-1');
+        expect(text.Hint).toBe("SUB-1 is paused. Confirm makes it active again and adds a term on this line's dates.");
+        expect(text.Choice).not.toMatch(/next term/);
+    });
+
+    it('a type that never reactivates says confirm starts a separate subscription', () => {
+        const outcome = ExtendOutcomeFor(holding({ Reactivation: { Mode: 'AlwaysCreateNew', WindowDays: null } }), day);
+        expect(outcome.Kind).toBe('NewSubscription');
+        expect(ExtendChoiceTextFor(holding({ Reactivation: { Mode: 'AlwaysCreateNew', WindowDays: null } }), day).Hint).toMatch(
+            /starts a separate subscription/,
+        );
+    });
+
+    it('a reactivation window is judged from the latest term end to the purchase day, as the server does', () => {
+        const rule = { Mode: 'ReactivateWithinWindow', WindowDays: 30 };
+        expect(ExtendOutcomeFor(holding({ Reactivation: rule }), day).Kind).toBe('Reactivate'); // 15 days
+        expect(ExtendOutcomeFor(holding({ Reactivation: rule }), new Date('2027-11-15T00:00:00Z')).Kind).toBe('NewSubscription'); // 46 days
+    });
+
+    it('with no rule read, says the type decides rather than promising a next term', () => {
+        expect(ExtendOutcomeFor(holding({ Reactivation: null }), day).Kind).toBe('TypeRule');
     });
 });
