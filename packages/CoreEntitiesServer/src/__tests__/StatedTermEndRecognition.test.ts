@@ -7,6 +7,9 @@
  * whole stated coverage is recognized, a month at a time, at one monthly figure.
  */
 import { describe, expect, it } from 'vitest';
+
+// West of Greenwich, where local-time month arithmetic put a UTC-midnight day on the previous evening.
+process.env.TZ = 'America/Chicago';
 import { SubscriptionBehavior, type SubscriptionTypeRules } from '../SubscriptionBehavior.js';
 import { EvenOverTimeDriver } from '../RevenueRecognition.js';
 
@@ -74,6 +77,16 @@ describe('recognition spreads over the stated months (golive #338)', () => {
         expect(total(entries)).toBe(11000);
         // Every month within a few cents of the same figure: each term puts its rounding in its first month.
         for (const e of entries) expect(Math.abs(e.Amount - monthly)).toBeLessThanOrEqual(0.1);
+    });
+
+    it('month-end windows count their months in any time zone', () => {
+        const driver = new EvenOverTimeDriver();
+        const count = (start: string, end: string) =>
+            driver.BuildSchedule({ Amount: 600, BookingDate: day(start), ServicePeriodStart: day(start), ServicePeriodEnd: day(end), PeriodMonths: 1 }).Entries;
+        expect(count('2026-07-01', '2026-12-31').map((e) => ym(e.RecognitionDate))).toEqual([
+            '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12',
+        ]);
+        expect(count('2027-07-01', '2027-07-31')).toHaveLength(1);
     });
 
     it('extension of a held product: 6 months recognized from the continuation date', () => {
