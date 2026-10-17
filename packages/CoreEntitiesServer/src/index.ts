@@ -56,6 +56,7 @@ export {
     LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    HeldManualDiscounts,
     LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
