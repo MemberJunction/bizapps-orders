@@ -56,6 +56,7 @@ import {
     type DateCell,
 } from '@mj-biz-apps/orders-entities';
 import type {
+    HoldingReactivation,
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -1787,6 +1788,8 @@ export function ContinuationStartFrom(state: MJOSubscriptionContinuation | null)
 export interface MJOExistingHolding extends MJOSubscriptionContinuation {
     SubscriptionID: string;
     SubscriptionNumber: string;
+    /** The type's reactivation rule, for a holding the server would reactivate rather than extend. */
+    Reactivation?: HoldingReactivation | null;
 }
 
 /**
