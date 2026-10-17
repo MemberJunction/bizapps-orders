@@ -13,12 +13,15 @@ import {
     CanResolveInFlight,
     CanSend,
     DispositionChipClass,
+    SendApplies,
+    SendDisabledReason,
     SendIsReissue,
     DispositionLabel,
     StateChipClass,
     StateLabel,
     type ExternalInvoiceLike,
     type PaymentExceptionDisposition,
+    type SendButtonState,
 } from '../external-invoice-view';
 
 const row = (Status: ExternalInvoiceLike['Status'], ExternalStatus: string | null = null): ExternalInvoiceLike => ({ Status, ExternalStatus });
@@ -70,6 +73,54 @@ describe('CanSend', () => {
 
     it('refuses when no company on the order has a rail', () => {
         expect(CanSend('Confirmed', [], false)).toBe(false);
+    });
+});
+
+describe('SendApplies', () => {
+    it('applies on any status, so an unconfirmed order still shows the button', () => {
+        expect(SendApplies([], true)).toBe(true);
+        expect(SendApplies([row('Failed'), row('Canceled')], true)).toBe(true);
+    });
+
+    it('does not apply without a rail, on a scheduled order, or with a unit live or in flight', () => {
+        expect(SendApplies([], false)).toBe(false);
+        expect(SendApplies([], true, true)).toBe(false);
+        expect(SendApplies([row('Sent')], true)).toBe(false);
+        expect(SendApplies([row('Sending')], true)).toBe(false);
+    });
+});
+
+describe('SendDisabledReason', () => {
+    const ready: SendButtonState = { OrderStatus: 'Confirmed', EditMode: false, Dirty: false, Busy: false, Blocked: null };
+
+    it('is enabled on a saved, confirmed order with nothing running and nothing blocking', () => {
+        expect(SendDisabledReason(ready)).toBe(false);
+    });
+
+    it('waits for confirmation on every other status', () => {
+        for (const OrderStatus of ['Draft', 'Quoted', 'Voided', '', null, undefined]) {
+            expect(SendDisabledReason({ ...ready, OrderStatus })).toBe('Available once the order is confirmed');
+        }
+    });
+
+    it('asks for edits to be saved or discarded, in edit mode or with unsaved changes', () => {
+        expect(SendDisabledReason({ ...ready, EditMode: true })).toBe('Save or discard your edits first');
+        expect(SendDisabledReason({ ...ready, Dirty: true })).toBe('Save or discard your edits first');
+    });
+
+    it('says it is working while a rail call runs', () => {
+        expect(SendDisabledReason({ ...ready, Busy: true })).toBe('Working…');
+    });
+
+    it("repeats the send preview's refusal", () => {
+        expect(SendDisabledReason({ ...ready, Blocked: 'The bill-to party has no billing email.' })).toBe('The bill-to party has no billing email.');
+    });
+
+    it('names the most fundamental reason first', () => {
+        const all: SendButtonState = { OrderStatus: 'Draft', EditMode: true, Dirty: true, Busy: true, Blocked: 'No email.' };
+        expect(SendDisabledReason(all)).toBe('Available once the order is confirmed');
+        expect(SendDisabledReason({ ...all, OrderStatus: 'Confirmed' })).toBe('Save or discard your edits first');
+        expect(SendDisabledReason({ ...all, OrderStatus: 'Confirmed', EditMode: false, Dirty: false })).toBe('Working…');
     });
 });
 

@@ -10,7 +10,18 @@ import {
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
-import { BilledOnScheduleFromRows, CanCancel, CanResolveInFlight, CanSend, SendIsReissue, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
+import {
+    BilledOnScheduleFromRows,
+    CanCancel,
+    CanResolveInFlight,
+    CanSend,
+    SendApplies,
+    SendDisabledReason,
+    SendIsReissue,
+    StateChipClass,
+    StateLabel,
+    type ExternalInvoiceLike,
+} from '../panels/external-invoice-view';
 
 /** One `ExternalInvoice` row as this panel needs it. Read by name; the panel never writes one. */
 interface ExternalInvoiceRow {
@@ -55,8 +66,10 @@ const SECTION_KEY = 'externalInvoices';
  *
  * SEND LIVES IN THE FORM TOOLBAR, NOT IN THE PANEL. Once an order is confirmed, sending it is the next
  * thing a person does with it, and the panel sits collapsed at the foot of the form. The panel
- * registers the button in the slot Confirm order held, so it sits where the eye already goes; the
- * panel keeps the rows, the warning that blocks a send, and the acts on one selected invoice.
+ * registers the button next to Confirm order, so it sits where the eye already goes; the panel keeps
+ * the rows, the warning that blocks a send, and the acts on one selected invoice. The button shows on
+ * every order the rail applies to and is greyed out, with the reason as its tooltip, until the order
+ * is confirmed and saved.
  *
  * IT HIDES ITSELF when no company on the order has an active rail, so the overwhelming majority of
  * orders — the ones invoiced natively — look exactly as they did before this feature existed.
@@ -223,42 +236,87 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      */
     public SendBlocked: string | null = null;
 
+    private sendRegistered = false;
+    private recordEvents: { unsubscribe(): void } | null = null;
+
     public readonly money = (n: number): string => FormatMoney(n);
     /** `SentAt` is a `datetimeoffset`: shown as the business day it happened on. */
     public readonly date = (iso: string): string => FormatInstantDate(iso, { Short: true });
 
     public async ngOnInit(): Promise<void> {
+        // A save changes what Send is decided from: the status, the bill-to party the preview reads,
+        // and, on a new order, whether there is a saved order to look at yet. Reloading here lets a
+        // person fix the data, save, and find Send enabled without reopening the form.
+        this.recordEvents =
+            this.Record?.RegisterEventHandler((event) => {
+                if (event.type === 'save') void this.reload();
+            }) ?? null;
+        await this.reload();
+    }
+
+    public ngOnDestroy(): void {
+        this.recordEvents?.unsubscribe();
+        this.recordEvents = null;
+        if (this.sendRegistered) this.UnregisterToolbarItem(SEND_TOOLBAR_KEY);
+    }
+
+    /** The toolbar's Refresh, or an operation that changed the order on the server (Confirm order). */
+    public override OnRecordRefreshed(): void {
+        void this.reload();
+    }
+
+    private async reload(): Promise<void> {
         await this.load();
         this.registerSendButton();
         this.cdr.detectChanges();
     }
 
-    public ngOnDestroy(): void {
-        this.UnregisterToolbarItem(SEND_TOOLBAR_KEY);
-    }
-
     /**
-     * Send, in the form toolbar. Registered after the first load because the label carries the
-     * provider's name, which is read from data. Order 5 is the slot Confirm order holds; Confirm hides
-     * once the order is booked, and Send only shows on a booked order, so the two never sit together.
+     * Send, in the form toolbar. Registered after a load finds a rail, because the label carries the
+     * provider's name, which is read from data. Order 5.5 puts it straight after Confirm order (5) and
+     * before Void (6): before the order is confirmed both show, Send greyed out beside Confirm, and
+     * once it is booked Confirm hides and Send takes its place.
+     *
+     * Shown in edit mode too, greyed out: the send uses the saved order, and a button that vanishes
+     * while editing reads as a step that went away.
      */
     private registerSendButton(): void {
-        if (!this.Visible) return;
+        if (!this.Visible || this.sendRegistered) return;
+        this.sendRegistered = true;
         this.RegisterToolbarItem({
             Key: SEND_TOOLBAR_KEY,
             Text: `Send to ${this.ProviderName}`,
             Icon: 'fa-solid fa-paper-plane',
             Variant: 'primary',
-            Mode: 'read',
-            Order: 5,
-            Visible: () => this.Sendable,
-            Disabled: () => (this.Busy ? 'Working…' : (this.SendBlocked ?? false)),
+            Mode: 'both',
+            Order: 5.5,
+            Visible: () => this.SendShown,
+            Disabled: (_record, editMode) => this.sendDisabledReason(editMode),
             IsLoading: () => this.Busy,
             OnClick: async () => this.Send(),
         });
     }
 
+    /** The Send button's tooltip when greyed out, or `false` when it can be clicked. */
+    private sendDisabledReason(editMode = this.EditMode): string | false {
+        return SendDisabledReason({
+            OrderStatus: this.Record?.Status,
+            EditMode: editMode,
+            Dirty: !!this.Record?.Dirty,
+            Busy: this.Busy,
+            Blocked: this.SendBlocked,
+        });
+    }
+
     /* ── What a person may do ───────────────────────────────────────────── */
+
+    /**
+     * Whether the toolbar shows Send at all; {@link sendDisabledReason} decides whether it is enabled.
+     * A voided order is never invoiced, so it gets no button rather than one that waits forever.
+     */
+    public get SendShown(): boolean {
+        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+    }
 
     public get Sendable(): boolean {
         return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
@@ -291,7 +349,7 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /* ── Actions ────────────────────────────────────────────────────────── */
 
     public async Send(): Promise<void> {
-        if (this.Busy || this.SendBlocked) return;
+        if (this.sendDisabledReason()) return;
         // A Failed row the rail never created an invoice for is not "on the rail before": warning about
         // billing twice there sends a person to look for an invoice that does not exist.
         const reissue = SendIsReissue(this.Rows);
@@ -473,6 +531,7 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
             this.LoadError = null;
             this.Rows = result.Results ?? [];
             if (this.Selected) this.Selected = this.Rows.find((r) => r.ID === this.Selected!.ID) ?? null;
+            this.BilledOnSchedule = BilledOnScheduleFromRows(this.Rows) || (await this.hasPaymentSchedule());
             this.SendBlocked = this.Sendable ? await this.previewBlock() : null;
         } catch (err) {
             this.LoadError = err instanceof Error ? err.message : String(err);
