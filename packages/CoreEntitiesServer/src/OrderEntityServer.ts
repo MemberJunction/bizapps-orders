@@ -86,6 +86,7 @@ import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
+import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -870,6 +871,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // written and priced, and inside the transaction: a raise that fails rolls the
                 // booking back rather than losing the exception.
                 await this.raisePriceBelowEngineExceptions(lines);
+                // A SUBSCRIPTION SOLD FOR A LENGTH OTHER THAN ITS TYPE'S TERM is recorded for finance
+                // too (golive #338), on the same terms: refuses nothing, fails the booking if the raise
+                // fails.
+                await this.raiseTermLengthExceptions(lines, decisions);
 
                 // THE SCHEDULE MUST TIE (plan §4.3). Per company, the instalments must sum to exactly
                 // what the lines just landed as — checked here, inside the transaction, because the
@@ -1258,6 +1263,54 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     PriceStated: !this.isUneditedRenewalPrice(line),
                     CompanyID: line.CompanyID,
                 })),
+                BusinessDay: () => BusinessDay(provider, user as UserInfo),
+            },
+            provider,
+            user,
+        );
+    }
+
+    /**
+     * Record every subscription line of this booking whose stated period gives it a length other than
+     * its type's term (golive #338). Refuses nothing; see `TermLengthExceptions`.
+     */
+    private async raiseTermLengthExceptions(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+    ): Promise<void> {
+        const byID = new Map(lines.map((l) => [uuidKey(l.ID), l]));
+        const stated: StatedLengthLine[] = [];
+        for (const [pending, decided] of decisions) {
+            const length = decided.Decision.StatedLength;
+            const terms = decided.Decision.Terms;
+            const line = pending.ID ? byID.get(uuidKey(pending.ID)) : undefined;
+            if (!length || !terms?.length || !line) continue;
+            stated.push({
+                ID: line.ID,
+                LineNumber: line.LineNumber ?? null,
+                ProductName: decided.Product.Name,
+                CompanyID: line.CompanyID,
+                ProductID: line.ProductID,
+                OrderHeaderID: this.ID,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                ProductPriceID: line.ProductPriceID,
+                PriceStated: !this.isUneditedRenewalPrice(line),
+                LineTotalNet: Number(line.LineTotalNet ?? 0),
+                CoverageStart: terms[0].StartDate,
+                CoverageEnd: terms[terms.length - 1].EndDate,
+                Months: length.Months,
+                TypeMonths: length.TypeMonths,
+            });
+        }
+        if (stated.length === 0) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser ?? null;
+        await RaiseTermLengthExceptions(
+            {
+                OrderHeaderID: this.ID,
+                OrderNumber: this.OrderNumber ?? null,
+                Lines: stated,
                 BusinessDay: () => BusinessDay(provider, user as UserInfo),
             },
             provider,
