@@ -1446,6 +1446,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
+                Booking: this.willBookOnThisSave(),
                 Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
                 SettledTax: this._settledTax,
                 StandingDiscounts: standingDiscounts,

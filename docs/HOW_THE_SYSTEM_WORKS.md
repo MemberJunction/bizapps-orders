@@ -103,7 +103,7 @@ Bill-to / ship-to: setting a **person** copies to the other side if that person 
 
 **Confirm Pre-Flight**: Confirm is a direct toolbar action and verb (`order.Confirm()`) that validates all conditions and books immediately in one transaction; no modal overlay is needed.
 
-**Lines at $0**: on an order a person entered (`Origin = 'Direct'`), no line confirms at a unit price of 0. Products sold at a negotiated price sit in the catalog at 0, so the person entering the order types the price; a line given away carries its price and a 100% discount, which goes through concession approval. `OrderHeaderEntity.UnpricedLinesRefusal()` gives the one message both the order form's "Before this can be confirmed" list (`ConfirmEligibility`) and the confirm save (`Validate`) show. Checkout and payment-created orders, bundle components and return lines are exempt. When accounting refuses an order's booking, the message gives each distinct error once, naming the order lines it applies to (`booking-errors.ts`).
+**Lines at $0**: on an order a person entered (`Origin = 'Direct'`), no line confirms at a unit price of 0. Products sold at a negotiated price sit in the catalog at 0, so the person entering the order types the price; a line given away carries its price and a 100% discount, which goes through concession approval. The confirm gate (`ConcessionGate`) classes a line charged nothing once its concession is taken off as a Scope concession worth its list price times quantity. A manual discount above the rep's Sales Authority is saved held, with no authority and no approver on its adjustment row, rather than refused; the gate counts it until an approved Price or Scope concession covers the line. A confirming save that brings a new held discount is refused, since the gate has already run; the rep saves first. The order-lines editor marks such a discount "Needs approval", and suggests a 100% discount beside a price typed as 0. `OrderHeaderEntity.UnpricedLinesRefusal()` gives the one message both the order form's "Before this can be confirmed" list (`ConfirmEligibility`) and the confirm save (`Validate`) show. Checkout and payment-created orders, bundle components and return lines are exempt. When accounting refuses an order's booking, the message gives each distinct error once, naming the order lines it applies to (`booking-errors.ts`).
 
 ### What is still a remote operation
 
@@ -145,7 +145,7 @@ Every order line books **its own complete, single-company journal entry**. There
 - `Product.CompanyID` is the source of truth for line ownership. `Order.CompanyID` is the originating/owning company (document, visibility, sales rep). `OrderLine.CompanyID` is a stamp of the product's company at save.
 - Intercompany legs are **not** booked at confirm. Each line's AR sits with the line's company. Cash received by one company and applied to another company's AR books due-to/due-from at **payment application** (`PaymentAllocationFactory`).
 
-A fully-comped order can produce **no** JEs. Accounting refuses an empty draft set, so `bookLines` skips the call rather than failing the order.
+A fully-comped order can produce **no** JEs. Accounting refuses an empty draft set, so `bookLines` skips the call rather than failing the order. A fully discounted deferred line stages no revenue releases either: its schedule would be built from a zero net, and accounting refuses a JE line for zero. Its discount is netted into the revenue credit, so nothing is left in Deferred Revenue (golive #328).
 
 ---
 

@@ -127,6 +127,7 @@ import {
 } from './ConcessionApprovalTask.js';
 import {
     FindConcessionTier,
+    HeldManualDiscounts,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
@@ -820,7 +821,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
-        const concession = await LinePriceConcessionFor(line, this.provider(), user);
+        // A manual discount held for approval is part of what the line gives away (golive #328).
+        const held = await HeldManualDiscounts(line.OrderHeaderID, this.provider(), user);
+        const concession = await LinePriceConcessionFor(
+            { ...line, HeldDiscount: held.get(line.ID.toLowerCase()) ?? 0 },
+            this.provider(),
+            user,
+        );
         this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
         if (!concession && this.saleApprovalRequired) {
             // Nothing given away against an engine price, often because the product has none: the approval is

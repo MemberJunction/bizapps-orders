@@ -909,6 +909,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * Checking them on screen too is not duplication for its own sake: an invalid request staged
      * against the pricing pass takes the whole line strip down with a refusal, so the number the
      * user is composing would blank the prices they are composing it against.
+     *
+     * A discount above the user's cap is not an error: it is staged and saved held for approval
+     * (golive #328) — see {@link DiscountApprovalNote}.
      */
     public DiscountError(line: mjBizAppsOrdersOrderLineEntity): string | null {
         const amount = this.DraftDiscountAmount(line);
@@ -918,14 +921,39 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (amount > base + 0.005) {
             return `That is more than the ${FormatMoney(base)} left to discount on this line.`;
         }
-        const cap = this.DiscountAuthority?.MaxDiscountPct;
-        if (cap != null && base > 0 && amount / base > cap + 1e-9) {
-            return (
-                `${round((amount / base) * 100)}% is above the ${round(cap * 100)}% on your Sales Authority. ` +
-                `Lower it, or have an approver apply it.`
-            );
-        }
         return null;
+    }
+
+    /**
+     * Why the draft needs approval, or null when the user's Sales Authority covers it.
+     *
+     * The server decides (`AuthorizeManualDiscount`, which also weighs the authority's value limit).
+     * This says up front what a percentage above the cap means: the order saves with the discount,
+     * and the confirm waits for an approved concession on the line (golive #328).
+     */
+    public DiscountApprovalNote(line: mjBizAppsOrdersOrderLineEntity): string | null {
+        const amount = this.DraftDiscountAmount(line);
+        if (amount == null || this.DiscountError(line) !== null) return null;
+        const base = this.DiscountBase(line);
+        const cap = this.DiscountAuthority?.MaxDiscountPct;
+        if (cap == null || !(base > 0) || amount / base <= cap + 1e-9) return null;
+        return (
+            `${round((amount / base) * 100)}% is above the ${round(cap * 100)}% on your Sales Authority, so it ` +
+            `needs approval. The order saves with it; record a concession for this line, and the order ` +
+            `confirms once it is approved.`
+        );
+    }
+
+    /**
+     * The hint beside a price typed as zero: a giveaway keeps the price and takes a 100% discount, so
+     * the value given away is on record and goes through approval (golive #328). A zero price on an
+     * order a person entered is refused at confirm. Bundle components and return lines are priced by
+     * what they belong to, so they get no hint.
+     */
+    public GiveawayHint(line: mjBizAppsOrdersOrderLineEntity): string | null {
+        if (!this.EditMode || line.UnitPrice == null || Number(line.UnitPrice) !== 0) return null;
+        if (line.ParentOrderLineID || line.ReversesOrderLineID) return null;
+        return 'To give this away, keep the price and set a 100% discount.';
     }
 
     /** True once an amount is valid but no reason has been given — the last thing still missing. */
