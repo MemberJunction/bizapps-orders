@@ -75,6 +75,7 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
+import { DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
@@ -3258,18 +3259,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
-            const detail = (result.Errors ?? [])
-                .map((e) => {
-                    const which =
-                        e.DraftIndex !== undefined
-                            ? ` (order line ${
-                                  unbooked.find((l) => l.ID === drafts[e.DraftIndex!]?.OrderLineID)?.LineNumber ??
-                                  e.DraftIndex
-                              })`
-                            : '';
-                    return `${e.Code}${which}: ${e.Message}`;
-                })
-                .join('; ');
+            const detail = DescribeBookingErrors(
+                result.Errors,
+                (index) => unbooked.find((l) => l.ID === drafts[index]?.OrderLineID)?.LineNumber,
+            );
             throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
         }
 

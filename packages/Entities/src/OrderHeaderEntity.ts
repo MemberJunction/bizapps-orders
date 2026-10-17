@@ -51,6 +51,7 @@ export interface OrderConfirmOutcome {
 import { OrdersEngine } from './pricing/OrdersEngine';
 import { SplitIntoSeatLines } from './attendee-seats';
 import { anyFieldIsDirty } from './field-dirty';
+import { IsHandEnteredOrigin } from './order-origin';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
 import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
 import {
@@ -343,6 +344,23 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                         'Status',
                         `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would ` +
                             `be nothing to book.`,
+                        this.Status,
+                        ValidationErrorType.Failure,
+                    ),
+                );
+            }
+
+            // NO LINE CONFIRMS AT A PRICE OF ZERO on an order a person entered. Checked here so the
+            // server refuses it before anything books, with the checklist's message, rather than
+            // accounting refusing every recognition period of the line one by one. The server's
+            // booking save loads and prices the lines before this runs.
+            const unpriced = this.UnpricedLinesRefusal();
+            if (unpriced) {
+                result.Success = false;
+                result.Errors.push(
+                    new ValidationErrorInfo(
+                        'Status',
+                        `Order ${this.OrderNumber ?? ''} cannot be confirmed: ${unpriced}`,
                         this.Status,
                         ValidationErrorType.Failure,
                     ),
@@ -649,7 +667,54 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 Reason: `${which} needs a service period (start and end date) before this can be confirmed.`,
             };
         }
+        const unpriced = this.UnpricedLinesRefusal();
+        if (unpriced) return { Allowed: false, Reason: unpriced };
         return { Allowed: true };
+    }
+
+    /**
+     * Lines that would confirm at a price of zero on an order a person entered.
+     *
+     * Products sold at a negotiated price sit in the catalog at zero on purpose, so the person
+     * entering the order has to type the price. A line left at zero would otherwise book nothing to
+     * revenue, and a deferred one fails at journal booking with one refusal per recognition period.
+     * A line given away carries its price and a 100% discount, which goes through concession approval
+     * like any other discount; only a line whose price itself is zero is caught here.
+     *
+     * Checkout orders are left out: their prices come from the catalog with no one to type one, and a
+     * free checkout product is decided by the catalog and the promotion code. Bundle components are
+     * left out because the bundle price is allocated down to them, and return lines because they
+     * mirror the line they reverse. A line with no price yet is left to the server's pricing.
+     */
+    public UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
+        if (!IsHandEnteredOrigin(this.Origin)) return [];
+        return this.Lines.Items.filter(
+            (line) =>
+                line.UnitPrice != null &&
+                Number(line.UnitPrice) === 0 &&
+                !line.ParentOrderLineID &&
+                !line.ReversesOrderLineID,
+        );
+    }
+
+    /**
+     * The one message for {@link UnpricedLines}, naming each line once, or null when there are none.
+     * Shared by the confirm checklist and the save, so both say the same thing.
+     */
+    public UnpricedLinesRefusal(): string | null {
+        const unpriced = this.UnpricedLines();
+        if (unpriced.length === 0) return null;
+        const engine = OrdersEngine.Instance;
+        const named = unpriced.map((line) => {
+            const product = line.Product ?? engine.ProductByID(line.ProductID)?.Name ?? null;
+            const number = line.LineNumber != null ? `Line ${line.LineNumber}` : 'A line';
+            return product ? `${number} (${product})` : number;
+        });
+        const verb = unpriced.length === 1 ? 'has' : 'have';
+        return (
+            `${named.join(', ')} ${verb} a price of 0. Enter the negotiated price, or to give it away, ` +
+            `enter its price with a 100% discount.`
+        );
     }
 
     /**
