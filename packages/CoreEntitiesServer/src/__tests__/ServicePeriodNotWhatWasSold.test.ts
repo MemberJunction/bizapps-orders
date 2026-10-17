@@ -27,10 +27,15 @@ afterEach(() => {
     RegisterOrderLineEditVeto(null);
 });
 
-type Dirty = { Name: string; Dirty: boolean };
+/**
+ * `OldValue` is what the column held BEFORE this save. Left off, it is `undefined` — a row that never
+ * carried the date — which is the fill case, so the stubs that predate the narrowing still describe
+ * exactly what they were written to describe.
+ */
+type Dirty = { Name: string; Dirty: boolean; OldValue?: unknown };
 
 /**
- * @param dirty which fields the save is changing.
+ * @param dirty which fields the save is changing, and what each held before.
  * @param status what the STORED order status reads, or null for a read that answered nothing.
  */
 function line(dirty: Dirty[], status: string | null = 'Quoted') {
@@ -71,9 +76,16 @@ async function run(dirty: Dirty[], status: string | null = 'Quoted', kind = 'upd
     return { refused: !r.Success, asked: asked.count, errors: r.Errors };
 }
 
+/** Both dates arriving on a line that had neither: the fill the confirm is waiting on. */
 const DATES: Dirty[] = [
-    { Name: 'ServicePeriodStart', Dirty: true },
-    { Name: 'ServicePeriodEnd', Dirty: true },
+    { Name: 'ServicePeriodStart', Dirty: true, OldValue: null },
+    { Name: 'ServicePeriodEnd', Dirty: true, OldValue: null },
+];
+
+/** Both dates MOVING off values the line already carried: a change to the agreed window. */
+const MOVED: Dirty[] = [
+    { Name: 'ServicePeriodStart', Dirty: true, OldValue: new Date('2026-01-01') },
+    { Name: 'ServicePeriodEnd', Dirty: true, OldValue: new Date('2026-12-31') },
 ];
 
 describe('setting a service period on the order of a closed deal', () => {
@@ -83,11 +95,52 @@ describe('setting a service period on the order of a closed deal', () => {
         expect(out.asked, 'not asked at all — the lock has no claim on a coverage window').toBe(0);
     });
 
-    it('is allowed when only the END moves, which is the half Sales cannot state', async () => {
+    it('is allowed when only the END is filled, which is the half Sales cannot state', async () => {
         const out = await run([
-            { Name: 'ServicePeriodStart', Dirty: false },
-            { Name: 'ServicePeriodEnd', Dirty: true },
+            { Name: 'ServicePeriodStart', Dirty: false, OldValue: new Date('2026-01-01') },
+            { Name: 'ServicePeriodEnd', Dirty: true, OldValue: null },
         ]);
+        expect(out.refused).toBe(false);
+        expect(out.asked).toBe(0);
+    });
+});
+
+describe('filling a blank is not the same as changing a date', () => {
+    /**
+     * The narrower rule asked for in review on #322. A date that was never set cannot be set anywhere
+     * else — Sales states only a term START on a deal line, so the END arrives blank and the order is
+     * the only place to put it. A date that is already there had a source, and moving it changes the
+     * coverage window that was agreed at the close, which is what the lock is for.
+     */
+    it('refuses a save that moves dates the line already carried', async () => {
+        const out = await run(MOVED);
+        expect(out.refused, 'a date with a prior value is a change, not a fill').toBe(true);
+        expect(out.asked, 'and it goes to the lock like any other edit to a closed deal').toBe(1);
+    });
+
+    it('refuses when one date is filled and the other is moved', async () => {
+        const out = await run([
+            { Name: 'ServicePeriodStart', Dirty: true, OldValue: new Date('2026-01-01') },
+            { Name: 'ServicePeriodEnd', Dirty: true, OldValue: null },
+        ]);
+        expect(out.refused, 'every dirty date has to be a fill, not just one of them').toBe(true);
+        expect(out.asked).toBe(1);
+    });
+
+    it('treats a cleared-to-empty-string prior value as blank', async () => {
+        const out = await run([{ Name: 'ServicePeriodEnd', Dirty: true, OldValue: '' }]);
+        expect(out.refused, "'' is a column holding nothing, whatever wrote it").toBe(false);
+        expect(out.asked).toBe(0);
+    });
+
+    it('treats a whitespace-only prior value as blank', async () => {
+        const out = await run([{ Name: 'ServicePeriodEnd', Dirty: true, OldValue: '   ' }]);
+        expect(out.refused).toBe(false);
+        expect(out.asked).toBe(0);
+    });
+
+    it('treats a prior value of undefined as blank — a row that never carried the date', async () => {
+        const out = await run([{ Name: 'ServicePeriodEnd', Dirty: true, OldValue: undefined }]);
         expect(out.refused).toBe(false);
         expect(out.asked).toBe(0);
     });

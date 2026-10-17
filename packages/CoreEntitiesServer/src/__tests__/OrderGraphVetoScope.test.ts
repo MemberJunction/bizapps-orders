@@ -60,7 +60,7 @@ function patchParentProto(instance: object, name: string, value: unknown): void 
 /** A real `OrderLineEntityServer` whose Save runs the REAL ValidateAsync, so the real veto decides. */
 function realLine(
     calls: { asked: number },
-    dirty: Array<{ Name: string; Dirty: boolean }> = [],
+    dirty: Array<{ Name: string; Dirty: boolean; OldValue?: unknown }> = [],
     status = 'Quoted',
 ) {
     const line = Object.create(OrderLineEntityServer.prototype) as OrderLineEntityServer & {
@@ -181,17 +181,29 @@ describe('saving the whole order, NOT booking', () => {
  */
 describe('the service-period exemption, on the whole-order path', () => {
     const DATES = [
-        { Name: 'ServicePeriodStart', Dirty: true },
-        { Name: 'ServicePeriodEnd', Dirty: true },
+        { Name: 'ServicePeriodStart', Dirty: true, OldValue: null },
+        { Name: 'ServicePeriodEnd', Dirty: true, OldValue: null },
     ];
 
-    it('lets a dates-only line through without asking the veto at all', async () => {
+    it('lets a line FILLING blank dates through without asking the veto at all', async () => {
         RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
         const calls = { asked: 0 };
         const order = orderWith(realLine(calls, DATES), false);
 
         await expect(order.savePendingLines()).resolves.toBeUndefined();
         expect(calls.asked, 'the line was saved through this path').toBe(1);
+    });
+
+    it('still meets the lock when the dates were already set and are being moved', async () => {
+        RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
+        const calls = { asked: 0 };
+        const line = realLine(calls, [
+            { Name: 'ServicePeriodStart', Dirty: true, OldValue: new Date('2026-01-01') },
+            { Name: 'ServicePeriodEnd', Dirty: true, OldValue: new Date('2026-12-31') },
+        ]);
+        const order = orderWith(line, false);
+
+        await expect(order.savePendingLines()).rejects.toThrow(new RegExp(FROZEN.slice(0, 30)));
     });
 
     it('still meets the lock when the same save moves the quantity', async () => {

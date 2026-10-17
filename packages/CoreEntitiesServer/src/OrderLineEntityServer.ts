@@ -73,6 +73,17 @@ function money(value: number): number {
  */
 const SERVICE_PERIOD_FIELDS: readonly string[] = ['ServicePeriodStart', 'ServicePeriodEnd'];
 
+/**
+ * Whether a field held NOTHING before this save.
+ *
+ * A date column reaches here as null, as undefined on a row that never carried one, or as '' from a
+ * caller that cleared it by writing an empty string. All three are "not set"; a Date or a non-empty
+ * string is a value somebody chose, and changing one is not a fill.
+ */
+function IsBlankValue(value: unknown): boolean {
+    return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends OrderLineEntity {
     /**
@@ -369,9 +380,25 @@ export class OrderLineEntityServer extends OrderLineEntity {
      * read yields NO exemption — the lock then applies, which is the safe direction.
      */
     private async changesOnlyTheServicePeriod(): Promise<boolean> {
-        const dirty = this.Fields.filter((f) => f.Dirty).map((f) => f.Name);
+        const dirty = this.Fields.filter((f) => f.Dirty);
         if (dirty.length === 0) return false;
-        if (!dirty.every((name) => SERVICE_PERIOD_FIELDS.includes(name))) return false;
+        if (!dirty.every((f) => SERVICE_PERIOD_FIELDS.includes(f.Name))) return false;
+
+        /**
+         * FILLING A BLANK, NOT CHANGING A DATE (review on golive#322).
+         *
+         * The exemption exists because a date that was never set cannot be set anywhere else: Sales
+         * states only a term START on a deal line, so the END arrives blank and the order is the only
+         * place to put it. A date that is ALREADY set had a source, and moving it is a change to the
+         * coverage window that was agreed at the close -- which is what the lock is for.
+         *
+         * So the prior value decides. Blank before, and this is the fill the confirm is waiting on;
+         * populated before, and it meets the lock like any other edit to a closed deal's line.
+         *
+         * Read from the dirty fields themselves rather than through `GetFieldByName`, so this asks the
+         * same objects the test above filtered and cannot disagree with them about which fields moved.
+         */
+        if (!dirty.every((f) => IsBlankValue(f.OldValue))) return false;
 
         const status = await this.storedOrderStatus();
         return !!status && !IsBooked(status);

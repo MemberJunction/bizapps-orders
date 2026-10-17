@@ -8,6 +8,10 @@
  * be set on the order. With the lock covering every field, an ordinary Won deal could not have its
  * order confirmed without reopening the deal.
  *
+ * The exemption is FILLING a blank date, not changing one. A date that was never set has nowhere else
+ * it could have come from; a date that is already there had a source, and moving it changes the window
+ * that was agreed at the close. So SP1 fills and lands, SP4 moves and is refused.
+ *
  * The unit suite pins the DECISION — which saves consult the veto and which skip it. What only a live
  * database can show is that the exempt save actually lands: that `ValidateAsync` lets it through, the
  * row changes, and nothing downstream rolls it back. That is the half a stubbed save cannot prove.
@@ -16,6 +20,7 @@
  *         and the stored row really changed
  *   SP2   the same edit carrying a quantity change is refused — that IS changing what was sold
  *   SP3   a dates-only edit is refused once the order is booked, where the period is the settled term
+ *   SP4   a dates-only edit that MOVES dates the line already carried is refused, and the row holds
  *
  * CONNECTS TO:
  *   CODE: OrderLineEntityServer.refuseVetoedEdit / changesOnlyTheServicePeriod
@@ -159,6 +164,38 @@ export const ServicePeriodLockChecks: NamedCheck[] = [
           const saved = await line.Save();
           AssertEqual(saved, false, "a booked line is not exempt — recognition is derived from this period");
         });
+      }),
+  },
+  {
+    Id: "service-period-lock.SP4",
+    Name: "SP4: moving dates the line already carried is refused, and the stored period holds",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const built = await BuildOrder(ctx.User, spec());
+        Assert(await built.Order.Save(), "setup: the draft must save");
+        const line = built.Lines[0];
+        const lineID = line.Get("ID") as string;
+
+        // Setup, with no veto registered: the line ends up genuinely CARRYING a period, which is the
+        // state SP1 cannot reach — there the columns were blank and stayed the thing being filled.
+        line.Set("ServicePeriodStart", START);
+        line.Set("ServicePeriodEnd", END);
+        Assert(await line.Save(), `setup: the first period must land — ${line.LatestResult?.CompleteMessage ?? ""}`);
+
+        await underAClosedDeal(async () => {
+          line.Set("ServicePeriodEnd", "2028-09-30");
+          const saved = await line.Save();
+          AssertEqual(saved, false, "a date that is already set is a change, not a fill");
+          Assert(
+            (line.LatestResult?.CompleteMessage ?? "").includes("closed"),
+            `and the lock is what says no: ${line.LatestResult?.CompleteMessage ?? "(no message)"}`,
+          );
+        });
+
+        const after = await storedPeriod(ctx, lineID);
+        AssertEqual(after.s, START, "the agreed start is untouched");
+        AssertEqual(after.e, END, "and the agreed end did not move");
       }),
   },
 ];
