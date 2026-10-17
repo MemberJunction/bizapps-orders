@@ -194,6 +194,30 @@ describe('the service-period exemption, on the whole-order path', () => {
         expect(calls.asked, 'the line was saved through this path').toBe(1);
     });
 
+    /**
+     * The reported shape, on this path too. Sales states a term START on the deal line, so the line
+     * reaches the order carrying a start and a blank end, and the rep fills only the end.
+     *
+     * Pinned HERE as well as on the line's own save because the two paths diverging is the #206
+     * defect: a rule that read blankness across every service-period field rather than only the ones
+     * the save is changing would refuse this, and without this case it would do so on the whole-order
+     * path while the grid let it through — one screen apart, exactly as before.
+     */
+    it('lets a fill through when the untouched start already carries a date', async () => {
+        RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
+        const calls = { asked: 0 };
+        const order = orderWith(
+            realLine(calls, [
+                { Name: 'ServicePeriodStart', Dirty: false, OldValue: new Date('2026-10-01') },
+                { Name: 'ServicePeriodEnd', Dirty: true, OldValue: null },
+            ]),
+            false,
+        );
+
+        await expect(order.savePendingLines()).resolves.toBeUndefined();
+        expect(calls.asked, 'the line was saved through this path, and the veto never asked').toBe(1);
+    });
+
     it('still meets the lock when the dates were already set and are being moved', async () => {
         RegisterOrderLineEditVeto({ MayEdit: async () => FROZEN });
         const calls = { asked: 0 };
