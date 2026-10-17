@@ -114,6 +114,12 @@ export interface SubscriptionDecision {
      * kept and measured from the continuation date, so the end moves with the start.
      */
     EndOverrideIgnored?: boolean;
+    /**
+     * Set when the coverage follows a stated end and its length differs from what the type's rules
+     * compute (golive #338): the length in months, and the type's term length. A length other than
+     * the type's is sold under an exception, so confirm raises it for finance review.
+     */
+    StatedLength?: { Months: number; TypeMonths: number };
     /** Populated when Action = 'Reject'. */
     RejectReason?: string;
     /**
@@ -543,6 +549,7 @@ export class SubscriptionBehavior {
                       },
                   ];
         const lastEnd = terms[terms.length - 1].EndDate;
+        const followsStatedEnd = terms.length > 1 || terms[0].EndDate.getTime() !== end.getTime();
 
         return {
             Action: action,
@@ -560,6 +567,9 @@ export class SubscriptionBehavior {
             EndOverrideIgnored: !!ctx.RequestedEndDate && lastEnd.getTime() !== ctx.RequestedEndDate.getTime(),
             Term: terms[0],
             Terms: terms,
+            ...(followsStatedEnd
+                ? { StatedLength: { Months: Math.round(MonthsCovered(start, lastEnd) * 100) / 100, TypeMonths: this.TermMonths(ctx.Rules) } }
+                : {}),
         };
     }
 
