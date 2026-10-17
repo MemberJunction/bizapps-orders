@@ -119,6 +119,12 @@ describe('what the review says', () => {
         expect(r.Summary).toContain('It is priced at 16500.00 against a list price of 11000.00 for 12 months; 18 months at that rate is 16500.00.');
     });
 
+    it('a typed price equal to the list price counts as unchanged', () => {
+        const r = ReviewTermLength(line(13, '2027-11-30'), 'ORD-1', 11000, false);
+        expect(r.PriceUnchanged).toBe(true);
+        expect(r.Difference).toBe(916.67);
+    });
+
     it('no list price: the price is reported without a comparison', () => {
         const r = ReviewTermLength(line(13, '2027-11-30'), 'ORD-1', null, false);
         expect(r.Difference).toBeNull();

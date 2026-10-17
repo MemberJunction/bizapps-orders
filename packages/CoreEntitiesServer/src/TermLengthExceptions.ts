@@ -64,7 +64,8 @@ const day = (d: Date) => d.toISOString().slice(0, 10);
  *
  * @param listPrice  the line's list price for one type term (unit price × quantity), or null when
  *                   nothing resolves one
- * @param isListPrice the line's price is a list price: the engine's own or a named list pick
+ * @param isListPrice the line's price is a list price: the engine's own or a named list pick. A price
+ *                   equal to `listPrice` counts as unchanged too.
  */
 export function ReviewTermLength(line: StatedLengthLine, orderNumber: string, listPrice: number | null, isListPrice: boolean): TermLengthReview {
     const which = `Line ${line.LineNumber ?? '?'} of order ${orderNumber} (${line.ProductName})`;
@@ -80,9 +81,12 @@ export function ReviewTermLength(line: StatedLengthLine, orderNumber: string, li
         };
     }
 
-    const atListRate = money((listPrice * line.Months) / line.TypeMonths);
+    // Unchanged when it is the engine's price, a named list pick, or simply equal to the list price.
+    // A named list pick is the list price this customer gets, so the length is measured against it.
+    const unchanged = isListPrice || money(listPrice) === charged;
+    const basis = unchanged ? charged : money(listPrice);
+    const atListRate = money((basis * line.Months) / line.TypeMonths);
     const difference = money(atListRate - charged);
-    const unchanged = isListPrice && money(listPrice) === charged;
     let price: string;
     if (unchanged) {
         const gap = Math.abs(line.Months - line.TypeMonths);
@@ -94,7 +98,7 @@ export function ReviewTermLength(line: StatedLengthLine, orderNumber: string, li
                   `${months(gap)} it does not cover (${amount(Math.abs(difference))} at the list rate).`;
     } else {
         price =
-            `It is priced at ${amount(charged)} against a list price of ${amount(money(listPrice))} for ` +
+            `It is priced at ${amount(charged)} against a list price of ${amount(basis)} for ` +
             `${months(line.TypeMonths)}; ${months(line.Months)} at that rate is ${amount(atListRate)}.`;
     }
     return { PriceUnchanged: unchanged, Difference: difference, Summary: `${which} ${length} ${price}` };

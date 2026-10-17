@@ -1534,6 +1534,8 @@ export const SubscriptionChecks: NamedCheck[] = [
                            AND fe.SourceRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')`,
                     );
 
+                // SubRolling's list price is the 1,200 the lines carry, so they are priced unchanged.
+                await CreateProductPrice(ctx, Fx().Products.SubRolling, 1200);
                 const thirteen = await buyStatedPeriod(ctx, '2026-07-01', '2027-07-31');
                 const raised = await exceptionsFor(thirteen.result.Order.ID as string);
                 AssertEqual(raised.length, 1, '13 months on a 12-month type is raised');
