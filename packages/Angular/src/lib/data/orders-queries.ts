@@ -2079,6 +2079,8 @@ export interface MJOProductOption {
      * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
      * that only apply to a term — the term start — would either have to render on every line or
      * force a per-line catalog lookup in the browser.
+     *
+     * Resolved as confirm resolves it: the product's own type, or its product type's default (#903).
      */
     SubscriptionTypeID: string | null;
 }
@@ -2098,7 +2100,10 @@ export function CatalogOptionFrom(
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
-    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
+    type:
+        | (Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> &
+              Partial<Pick<mjBizAppsOrdersProductTypeEntity, 'DefaultSubscriptionTypeID'>>)
+        | undefined,
     listPrice: number | null,
 ): MJOProductOption {
     return {
@@ -2113,7 +2118,7 @@ export function CatalogOptionFrom(
         ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
-        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
+        SubscriptionTypeID: product.SubscriptionTypeID?.trim() || type?.DefaultSubscriptionTypeID?.trim() || null,
     };
 }
 
