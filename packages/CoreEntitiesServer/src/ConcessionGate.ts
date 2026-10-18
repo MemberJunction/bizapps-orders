@@ -171,7 +171,8 @@ export interface LineConcessionFacts extends PricedLineFacts {
 /** What a line's price and discount give away, when they give anything away. */
 export interface LinePriceConcession {
     Form: 'Price' | 'Scope';
-    EngineUnitPrice: number;
+    /** Null when nothing resolves an engine price; only the `DiscountPct` is then counted (#905). */
+    EngineUnitPrice: number | null;
     Valuation: ConcessionValuation;
     /** The part given away by a stated price below the engine's. */
     PriceValue: number;
@@ -196,7 +197,8 @@ export async function LinePriceConcessionFor(
     user: UserInfo,
 ): Promise<LinePriceConcession | null> {
     const standing = await ResolveLinePriceStanding(line, provider, user);
-    if (!standing || standing.EngineUnitPrice == null) return null;
+    if (!standing) return null;
+    if (standing.EngineUnitPrice == null) return statedPriceDiscountConcession(line);
     const engine = standing.EngineUnitPrice;
     const quantity = Math.abs(Number(line.Quantity ?? 0));
     const charged = line.PriceStated === false ? engine : Number(line.UnitPrice ?? 0);
@@ -226,6 +228,32 @@ export async function LinePriceConcessionFor(
 }
 
 /**
+ * A line with no engine price can still give value away through `DiscountPct` (#905): a deal's
+ * Discount %, an import or an API call writes it straight onto the line, and products sold per
+ * engagement often have only a typed `UnitPrice`. With no engine price there is no price to fall
+ * below, so only the discount is counted, against the stated price. A line with no stated price
+ * either gives nothing away that can be valued.
+ */
+function statedPriceDiscountConcession(line: LineConcessionFacts): LinePriceConcession | null {
+    if (line.PriceStated === false) return null;
+    const charged = Number(line.UnitPrice ?? 0);
+    if (!(charged > 0)) return null;
+    const quantity = Math.abs(Number(line.Quantity ?? 0));
+    const discountPct = line.RenewsSubscriptionID ? 0 : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
+    const discountValue = Money(charged * quantity * discountPct);
+    if (!(discountValue > 0)) return null;
+    const base = charged * quantity;
+    return {
+        Form: 'Price',
+        EngineUnitPrice: null,
+        Valuation: { Value: discountValue, Percent: base > 0 ? discountValue / base : null },
+        PriceValue: 0,
+        DiscountValue: discountValue,
+        DiscountPct: discountPct,
+    };
+}
+
+/**
  * How the line gives value away — "priced at 60.00 against an engine price of 100.00", "discounted
  * 10%", or both — in the words the rep and the approver read it in.
  */
@@ -234,7 +262,7 @@ export function LineConcessionTerms(line: PricedLineFacts, concession: LinePrice
     if (concession.PriceValue > 0) {
         parts.push(
             `priced at ${Number(line.UnitPrice ?? 0).toFixed(2)} against an engine price of ` +
-                `${concession.EngineUnitPrice.toFixed(2)}`,
+                `${(concession.EngineUnitPrice ?? 0).toFixed(2)}`,
         );
     }
     if (concession.DiscountValue > 0) {

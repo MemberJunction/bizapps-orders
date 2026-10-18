@@ -401,7 +401,8 @@ function applyFields(row: ExpandableLine, fields: Partial<InheritableLineFields>
 /** What a component is, for deciding what it inherits. */
 function inheriting(productID: string, isRenewalTarget: boolean) {
     return {
-        IsSubscription: !!OrdersEngine.Instance.ProductByID(productID)?.SubscriptionTypeID,
+        // The product's own subscription type, or its type's default: the rule confirm books by (#903).
+        IsSubscription: !!OrdersEngine.Instance.SubscriptionTypeForProduct(productID),
         IsRenewalTarget: isRenewalTarget,
     };
 }

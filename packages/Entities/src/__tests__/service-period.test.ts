@@ -61,6 +61,18 @@ describe('OrdersEngine.ServicePeriodSource', () => {
         expect(e.ServicePeriodSource('p-gift')).toBe('NotRequired');
     });
 
+    it("takes the window from the term when the subscription type comes from the product's type (#903)", () => {
+        seed({
+            ...CATALOG,
+            types: [...CATALOG.types, { ID: 't-membership', Code: 'Membership', DefaultSubscriptionTypeID: 'st-rolling' }],
+            products: [
+                ...CATALOG.products,
+                { ID: 'p-legacy-member', ProductTypeID: 't-membership', RevenueRecognitionTypeID: 'rr-backend', SubscriptionTypeID: null },
+            ],
+        });
+        expect(OrdersEngine.Instance.ServicePeriodSource('p-legacy-member')).toBe('Subscription');
+    });
+
     it('asks for the window on an event-type product that has no event record', () => {
         // Nothing can stamp it: the save reads the Event Products row, not the product type.
         expect(OrdersEngine.Instance.ServicePeriodSource('p-event-unloaded')).toBe('Line');

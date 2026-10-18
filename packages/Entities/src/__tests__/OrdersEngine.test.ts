@@ -83,6 +83,24 @@ describe('OrdersEngine catalog cache', () => {
         expect(OrdersEngine.Instance.ResolveRevenueRecognitionTypeID('missing')).toBeNull();
     });
 
+    it("resolves a product's subscription type, falling back to its type's default (#903)", () => {
+        seed({
+            products: [
+                { ID: 'p-blank', ProductTypeID: 'type-mem', SubscriptionTypeID: null },
+                { ID: 'p-explicit', ProductTypeID: 'type-mem', SubscriptionTypeID: 'ST-PRODUCT' },
+                { ID: 'p-plain', ProductTypeID: 'type-goods', SubscriptionTypeID: null },
+            ],
+            types: [
+                { ID: 'type-mem', DefaultSubscriptionTypeID: 'ST-TYPE' },
+                { ID: 'type-goods', DefaultSubscriptionTypeID: null },
+            ],
+        });
+        expect(OrdersEngine.Instance.SubscriptionTypeForProduct('p-blank')).toBe('ST-TYPE');
+        expect(OrdersEngine.Instance.SubscriptionTypeForProduct('p-explicit')).toBe('ST-PRODUCT');
+        expect(OrdersEngine.Instance.SubscriptionTypeForProduct('p-plain')).toBeNull();
+        expect(OrdersEngine.Instance.SubscriptionTypeForProduct('missing')).toBeNull();
+    });
+
     it('returns active base-channel prices highest priority first', () => {
         seed({
             prices: [
