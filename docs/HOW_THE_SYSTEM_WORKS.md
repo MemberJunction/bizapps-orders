@@ -167,6 +167,7 @@ Results persist as line price-component / charge / adjustment children so the bo
 - Header rollups (`TotalGross`, `AmountPaid`, `Balance`, `FulfillmentStatus`) are materialized from lines and payment lines. Do not author them.
 - Capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross).
 - Refund and bank return are reversal payments: `Status = 'Refunded'`, positive `Amount`, negative lines, `ReversesPaymentHeaderID` set. Refund with `Orders.RefundPayment`; the ACH webhook writes bank returns. Nothing writes chargebacks yet.
+- **A refund does not end access.** Refunding is the seller's decision, so a refund on its own, even a full one, leaves the customer's entitlement grants Active. To end access, book a return of the lines or cancel the subscription (`Orders.CancelSubscription`). Only returns, cancellations and bank returns take access away (`EntitlementBehavior.ts`).
 - Over-payment is a **negative Balance** — that *is* the account credit. Spend it with `Orders.ApplyAccountCredit`.
 - Providers: `BasePaymentProvider` + `@RegisterClass`, keyed by `PaymentProviderType.Code`. **Manual** always works. **Stripe** takes cards; **StripeACH** takes US bank debits, which settle late, so the webhook books the cash. **StoredValue** spends gift cards and account credit. **BillCom** is the outbound invoice rail and refuses checkout verbs ([`billcom-invoice-rail.md`](billcom-invoice-rail.md)). **HubSpotPayments** reads the payments a company's HubSpot portal collects through the same poll, and also refuses checkout verbs ([`hubspot-payments.md`](hubspot-payments.md)). Webhooks hit an unauthenticated Express route; idempotency is `ProviderEventID`.
 
@@ -218,7 +219,7 @@ The rails are defined in `packages/Angular/src/lib/sections/section-nav.model.ts
 
 - **Order Headers**, **Payment Headers** and **Event Order Lines** have custom forms registered over the generated ones (`packages/Angular/src/lib/custom/`). **Products** renders the generated template through a registered save guard (`product-save-guard-form.component.ts`) that adds a save-time confirmation.
 - **Order Header** form: `ShowRelatedEntities: false`, leftover related blocked. Collapsible header persists in `UserInfoEngine` key `mj.orders.orderForm.headerExpanded` (`'0'`/`'1'`). New records always expand; the pref applies only when opening an existing record. Money trio (Total / Paid / Balance) shows cents on all three if any has cents.
-- Subscriptions, Subscription Terms, Price Lists and Promotions use the **generated** form plus slot contributions and `Layout: left-nav`. Custom components for them sit in `custom/` but are not registered, and tests assert the generated form stays registered.
+- Subscriptions, Subscription Terms, Price Lists and Promotions use the **generated** form plus slot contributions and `Layout: left-nav`.
 - Person / Organization **Orders** grids pass every filter join field as `NewRecordValues` so New opens an order already linked (`BillToPersonID` + `ShipToPersonID`, or org equivalents).
 
 Form chrome (Overview as a lead, rail order, user drag overlay) is MJ form chrome + `MJ: Form Chrome Rules` (L3). Contribution last-wins by `contributionKey` and ClassFactory Priority.
