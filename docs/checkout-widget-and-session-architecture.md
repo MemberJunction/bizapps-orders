@@ -209,7 +209,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `redirectUrl` | Where the public checkout sends the buyer once the order is confirmed, with `order=<order number>` appended. |
 | `sendReceipt` | Asks the payment gateway to e-mail its own receipt to the buyer (Stripe `receipt_email`). Off by default. Server-side only. |
 | `extensionEntityName` | The order-line extension entity; `/initialize` fills it from the product type when it discovers the fields. |
-| `extensionFields` | Form fields for the extension entity (`name`, `label`, `type`, `required`, `placeholder`, `options`). Discovered from metadata when not authored (see [Metadata Reflection & Auto-Discovery](#metadata-reflection--auto-discovery)). |
+| `extensionFields` | Form fields for the extension entity (`name`, `label`, `type`, `required`, `placeholder`, `options`, `perPerson`). Discovered from metadata when not authored (see [Metadata Reflection & Auto-Discovery](#metadata-reflection--auto-discovery)). |
 | `questions` | Questions the buyer answers before paying (see [Questions at Checkout](#questions-at-checkout-questions)). |
 | `choiceGroups` | "Choose N of these M options" groups (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)). |
 | `paymentProviderId` | The Payment Provider row that opens payment intents for this widget's sessions. Never taken from the client; required before a paid checkout can complete. Server-side only. |
@@ -277,7 +277,7 @@ Products represent different purchasing units:
 ### UI Behavior
 When `unitMode === 'perUnit'` (or the Angular config sets `isEvent`) and the quantity is above 1:
 - The form shows one card per unit, **Item 1** to **Item N**, under **Item Details (N)**.
-- A **Copy Primary Info to All** button copies the first card's fields, except name and e-mail, into the others.
+- A **Copy Primary Info to All** button copies the first card's shared fields (company, dietary needs) into the others. Fields that identify one attendee stay as they are: a field whose definition sets `perPerson: true`, or, when `perPerson` is unset, one whose name holds "email" or "name" or ends in "id".
 
 ### Database Persistence
 In `CheckoutSessionService.CompleteCheckout`:

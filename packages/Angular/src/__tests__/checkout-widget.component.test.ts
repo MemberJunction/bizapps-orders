@@ -3,7 +3,7 @@
  */
 import '@angular/compiler';
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
+import { IsPerPersonCheckoutField, MJCheckoutWidgetComponent, type CheckoutWidgetConfig } from '../lib/checkout-widget/checkout-widget.component';
 
 // Setup window polyfill for Node.js test runner
 if (typeof globalThis.window === 'undefined') {
@@ -139,6 +139,43 @@ describe('MJCheckoutWidgetComponent', () => {
 
             expect(component.units()[0]['company']).toBe('Global Enterprises');
             expect(component.units()[1]['company']).toBe('Global Enterprises');
+        });
+    });
+
+    describe('copy primary info to all (#780)', () => {
+        it('leaves per-person custom fields alone and copies shared detail', () => {
+            component.config = {
+                isEvent: true,
+                extensionFields: [
+                    { name: 'attendeeEmail', label: 'Attendee email', type: 'text' },
+                    { name: 'badgeName', label: 'Badge name', type: 'text' },
+                    { name: 'studentId', label: 'Student ID', type: 'text' },
+                    { name: 'dietaryPreferences', label: 'Dietary needs', type: 'text' },
+                    { name: 'seatSection', label: 'Seat section', type: 'text', perPerson: true },
+                ],
+            } as CheckoutWidgetConfig;
+            component.onQuantityChange(2);
+            for (const [field, value] of Object.entries({
+                attendeeEmail: 'a@example.com', badgeName: 'Al', studentId: 'S1', dietaryPreferences: 'Vegan', seatSection: 'B',
+            })) {
+                component.updateUnitField(0, field, value);
+            }
+
+            component.copyPrimaryToAll();
+
+            const second = component.units()[1];
+            expect(second['dietaryPreferences']).toBe('Vegan');
+            expect(second['attendeeEmail']).toBe('');
+            expect(second['badgeName']).toBe('');
+            expect(second['studentId']).toBe('');
+            expect(second['seatSection']).toBe('');
+        });
+
+        it('lets a field definition override the name rule', () => {
+            expect(IsPerPersonCheckoutField('companyName', [{ name: 'companyName', perPerson: false }])).toBe(false);
+            expect(IsPerPersonCheckoutField('companyName', [])).toBe(true);
+            expect(IsPerPersonCheckoutField('company', [])).toBe(false);
+            expect(IsPerPersonCheckoutField('FirstName', [])).toBe(true);
         });
     });
 

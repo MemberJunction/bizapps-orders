@@ -80,6 +80,27 @@ export interface ExtensionFieldDef {
     placeholder?: string;
     defaultValue?: unknown;
     options?: Array<{ label: string; value: string | number }>;
+    /**
+     * True when the field identifies one attendee (an e-mail, a name, an ID), so "Copy primary info
+     * to all" leaves it alone; false when it is shared detail it should copy. Unset, the field name
+     * decides: see {@link IsPerPersonCheckoutField}.
+     */
+    perPerson?: boolean;
+}
+
+/**
+ * Whether a unit field identifies one attendee and must not be copied from the first attendee to
+ * the others (#780). A field definition's `perPerson` decides when set; otherwise a name that holds
+ * "email" or "name", or ends in "id" (`attendeeEmail`, `badgeName`, `studentId`), is per person.
+ * Shared detail such as company or dietary needs is copied.
+ */
+export function IsPerPersonCheckoutField(key: string, defs: ReadonlyArray<Pick<ExtensionFieldDef, 'name' | 'perPerson'>>): boolean {
+    const def = defs.find((d) => d.name.toLowerCase() === key.toLowerCase());
+    if (typeof def?.perPerson === 'boolean') {
+        return def.perPerson;
+    }
+    const lower = key.toLowerCase();
+    return lower.includes('email') || lower.includes('name') || lower.endsWith('id');
 }
 
 export interface CheckoutAttendee {
@@ -716,8 +737,9 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const list = this.units().map((unit, i) => {
             if (i === 0) return unit;
             const copied: Record<string, unknown> = { ...unit };
+            const defs = this.activeFieldDefs();
             for (const [key, val] of Object.entries(primary)) {
-                if (key !== 'firstName' && key !== 'lastName' && key !== 'email' && key !== 'FirstName' && key !== 'LastName' && key !== 'Email') {
+                if (!IsPerPersonCheckoutField(key, defs)) {
                     copied[key] = val;
                 }
             }
