@@ -217,6 +217,11 @@ describe('order header link wiring', () => {
             expect(instance.Money('balance')).toBe('$895');
         });
 
+        it('shows the gross total on an unsaved draft, tax and charges included (#838)', () => {
+            const instance = form({ IsSaved: false, AmountPaid: 0, Balance: null }, priced(895, 968.84));
+            expect(instance.Money('total')).toBe('$968.84');
+        });
+
         it('keeps cents across the trio when any figure has them', () => {
             const instance = form({ IsSaved: true, TotalGross: 895.5, AmountPaid: 100, Balance: 795.5 });
             expect(instance.Money('total')).toBe('$895.50');
