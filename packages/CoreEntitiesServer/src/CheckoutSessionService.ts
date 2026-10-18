@@ -429,20 +429,10 @@ export class CheckoutSessionService {
             return { Success: false, ErrorMessage: 'The requested checkout widget is currently unavailable' };
         }
 
-        // Check for existing unexpired session for this client. An ISO-8601 literal compares
-        // correctly on both SQL Server and PostgreSQL — GETUTCDATE() is T-SQL-only.
-        const escapedKey = EscapeText(clientSessionKey.trim());
-        const nowUtc = new Date().toISOString();
-        const sessRes = await rv.RunView<mjBizAppsOrdersCheckoutSessionEntity>({
-            EntityName: CHECKOUT_SESSION_ENTITY,
-            ExtraFilter: `CheckoutWidgetID = '${widget.ID}' AND ClientSessionKey = '${escapedKey}' AND Status = 'Open' AND ExpiresAt > '${nowUtc}'`,
-            ResultType: 'entity_object'
-        }, contextUser);
-
-        let session: mjBizAppsOrdersCheckoutSessionEntity;
-        if (sessRes.Success && sessRes.Results && sessRes.Results.length > 0) {
-            session = sessRes.Results[0];
-        } else {
+        // One open sale session per widget and client key: a unique index holds it (#782), so an
+        // overlapping second call's insert fails and that call resumes the first call's session.
+        let session = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
+        if (!session) {
             session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
             session.NewRecord();
             session.CheckoutWidgetID = widget.ID;
@@ -454,9 +444,18 @@ export class CheckoutSessionService {
             expires.setHours(expires.getHours() + 2); // 2 hour checkout session TTL
             session.ExpiresAt = expires;
 
-            const saved = await session.Save();
+            let saved = false;
+            try {
+                saved = await session.Save();
+            } catch (err) {
+                LogError(`[CheckoutSessionService] Checkout session insert failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
             if (!saved) {
-                return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+                const concurrent = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
+                if (!concurrent) {
+                    return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+                }
+                session = concurrent;
             }
         }
 
@@ -498,6 +497,35 @@ export class CheckoutSessionService {
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * The open, unexpired sale session for this widget and client key, or null. A sale session has
+     * no DraftOrderID while open; a pay-renewal session for the same key is not resumed here. An
+     * open session past its expiry is marked Expired on the way, so it no longer holds the
+     * one-open-session index against the new session the caller is about to create.
+     */
+    private static async findOpenSaleSession(
+        widgetID: string,
+        clientSessionKey: string,
+        contextUser?: UserInfo
+    ): Promise<mjBizAppsOrdersCheckoutSessionEntity | null> {
+        const res = await new RunView().RunView<mjBizAppsOrdersCheckoutSessionEntity>({
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            ExtraFilter: `CheckoutWidgetID = '${EscapeText(widgetID)}' AND ClientSessionKey = '${EscapeText(clientSessionKey.trim())}' AND Status = 'Open' AND DraftOrderID IS NULL`,
+            OrderBy: 'ExpiresAt DESC',
+            ResultType: 'entity_object'
+        }, contextUser);
+        if (!res.Success) {
+            return null;
+        }
+        let open: mjBizAppsOrdersCheckoutSessionEntity | null = null;
+        for (const candidate of res.Results ?? []) {
+            if (await this.enforceSessionExpiry(candidate)) {
+                open ??= candidate;
+            }
+        }
+        return open;
     }
 
     /**

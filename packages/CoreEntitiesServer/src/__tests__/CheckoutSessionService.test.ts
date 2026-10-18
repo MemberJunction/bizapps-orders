@@ -308,6 +308,7 @@ const mocks = vi.hoisted(() => {
         mockAddressLinkInstance: new MockAddressLink(),
         lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
         sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
+        sessionRunViewQueue: [] as unknown[][],
         /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
         peopleByEmail: {} as Record<string, string>,
         personLookups: 0,
@@ -473,7 +474,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 if (params.EntityName.includes('Checkout Sessions')) {
                     return Promise.resolve({
                         Success: true,
-                        Results: mocks.sessionRunViewResults ?? [mocks.mockSessionInstance]
+                        Results: mocks.sessionRunViewQueue.shift() ?? mocks.sessionRunViewResults ?? [mocks.mockSessionInstance]
                     });
                 }
                 if (params.EntityName.includes('Address Types')) {
@@ -595,6 +596,7 @@ describe('CheckoutSessionService', () => {
         mocks.mockProductInstance.ID = 'prod-1';
         mocks.lastRunViewParams = undefined;
         mocks.sessionRunViewResults = undefined;
+        mocks.sessionRunViewQueue = [];
         mocks.peopleByEmail = {};
         mocks.personLookups = 0;
         mocks.billingLinkRows = [];
@@ -856,6 +858,50 @@ describe('CheckoutSessionService', () => {
 
             const res2 = await CheckoutSessionService.InitializeSession('summit-2026', '');
             expect(res2.Success).toBe(false);
+        });
+
+        it('resumes only an open sale session, never a pay-renewal session for the same key (#782)', async () => {
+            await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            const params = mocks.lastRunViewParams as { EntityName: string; ExtraFilter?: string } | undefined;
+            expect(params?.EntityName).toContain('Checkout Sessions');
+            expect(params?.ExtraFilter).toContain("Status = 'Open' AND DraftOrderID IS NULL");
+        });
+
+        it('resumes the session a concurrent call created when its own insert is refused (#782)', async () => {
+            const concurrent = new mocks.MockCheckoutSession();
+            concurrent.ID = 'sess-concurrent';
+            mocks.sessionRunViewQueue = [[], [concurrent]];
+            mocks.mockSessionSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(res.Success).toBe(true);
+            expect(res.SessionID).toBe('sess-concurrent');
+        });
+
+        it('fails when the insert is refused and no open session exists to resume', async () => {
+            mocks.sessionRunViewQueue = [[], []];
+            mocks.mockSessionSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Failed to initialize checkout session record');
+        });
+
+        it('expires a stale open session for the key instead of resuming it (#782)', async () => {
+            const stale = new mocks.MockCheckoutSession();
+            stale.ID = 'sess-stale';
+            stale.ExpiresAt = new Date(Date.now() - 1000);
+            stale.Save = vi.fn().mockResolvedValue(true);
+            mocks.sessionRunViewQueue = [[stale]];
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(stale.Status).toBe('Expired');
+            expect(stale.Save).toHaveBeenCalled();
+            expect(res.Success).toBe(true);
+            expect(res.SessionID).not.toBe('sess-stale');
         });
 
         it('initializes a session and extracts customUI configuration', async () => {
