@@ -115,7 +115,7 @@ describe('FilterOrderJournals — posting-date basis', () => {
             expect(result.ExcludedStoppedBatch).toBe(1);
             expect(result.ExcludedNotPosted).toBe(1);
             expect(ExcludedEntriesLabel(BuildOrderJournalRollup(withStopped, { Basis: 'posting' }))).toBe(
-                '1 entry not yet posted, 1 entry in a canceled, failed or archived batch',
+                '1 entry not yet posted; 1 entry in a canceled, failed or archived batch',
             );
         }
     });
