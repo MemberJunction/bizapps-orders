@@ -130,6 +130,27 @@ export function InstalmentsToCancel(rows: ReversalScheduleRow[]): string[] {
     return rows.filter((r) => r.Status !== 'Canceled' && !r.DocumentNumber).map((r) => r.ID);
 }
 
+/**
+ * Why a reversal may not cancel these instalments, or null when it may (#840).
+ *
+ * An instalment the customer prepaid before it was invoiced carries that cash as a deposit
+ * (`AmountPaid` on a row with no document). Cancelling the row leaves the deposit in Customer
+ * Deposits with nothing pointing at it, found only at reconciliation, so the reversal is refused
+ * and names each deposit to refund first.
+ */
+export function RefuseCancellingPaidInstalments(
+    rows: Array<{ InstallmentNumber: number; AmountPaid: number | null }>,
+    orderLabel: string,
+): string | null {
+    const paid = rows.filter((r) => Math.round(Number(r.AmountPaid ?? 0) * 100) > 0);
+    if (!paid.length) return null;
+    const each = paid.map((r) => `${Number(r.AmountPaid).toFixed(2)} on instalment ${r.InstallmentNumber}`).join(', ');
+    return (
+        `Reversing ${orderLabel} cancels its uninvoiced instalments, but the customer has already paid ` +
+        `${each}. Cancelling would leave that deposit with nothing to apply to. Refund the deposit of ${each} first, then confirm the return.`
+    );
+}
+
 /** The origin line's contract position, as one reversing line sees it (D92 §6). */
 export interface ReversalPosition {
     /** The ORIGIN line — the one whose BilledToDate the memo reduces. */

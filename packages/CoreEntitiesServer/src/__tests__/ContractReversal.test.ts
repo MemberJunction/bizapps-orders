@@ -11,6 +11,7 @@ import {
     InstalmentsToCancel,
     BuildCreditMemoLines,
     ProratedCreditMemo,
+    RefuseCancellingPaidInstalments,
     RefuseEarlierThanPriorReversal,
     RefuseEarnedNotBilled,
     StagedEarnedThrough,
@@ -296,5 +297,20 @@ describe("earned to date is measured on the origin's own window (#839)", () => {
     it("falls back to the reversing line's window when the origin carries none", async () => {
         // Over the line's 3-month window, April and May have fallen due: 2 × 4,000.
         expect(await earnedThrough({ Start: null, End: null })).toBe(8000);
+    });
+});
+
+describe('RefuseCancellingPaidInstalments (#840)', () => {
+    it('lets a reversal cancel instalments nobody has paid ahead', () => {
+        expect(RefuseCancellingPaidInstalments([{ InstallmentNumber: 3, AmountPaid: 0 }, { InstallmentNumber: 4, AmountPaid: null }], 'order ORD-1')).toBeNull();
+    });
+
+    it('refuses when a cancelled instalment carries a deposit, and names the amount to refund', () => {
+        const refusal = RefuseCancellingPaidInstalments(
+            [{ InstallmentNumber: 3, AmountPaid: 250 }, { InstallmentNumber: 4, AmountPaid: 0 }],
+            'order ORD-1',
+        );
+        expect(refusal).toMatch(/Refund the deposit of 250\.00 on instalment 3 first/);
+        expect(refusal).not.toMatch(/instalment 4/);
     });
 });

@@ -72,7 +72,7 @@ import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
+import { InstalmentsToCancel, RefuseCancellingPaidInstalments, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -2492,6 +2492,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             seen.add(originOrder);
             if (!(await IsWholeOrderReversed(originOrder, provider, user))) continue;
 
+            const toCancel: OrderHeaderPaymentScheduleEntityServer[] = [];
             for (const scheduleID of InstalmentsToCancel(context.ScheduleRows)) {
                 const row = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(
                     ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
@@ -2500,6 +2501,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 if (!(await row.Load(scheduleID))) {
                     throw new Error(`Instalment ${scheduleID} could not be loaded to cancel it for the reversal.`);
                 }
+                toCancel.push(row);
+            }
+            // A deposit paid ahead of an instalment would be stranded by cancelling it (#840).
+            const depositRefusal = RefuseCancellingPaidInstalments(
+                toCancel.map((r) => ({ InstallmentNumber: Number(r.InstallmentNumber), AmountPaid: Number(r.AmountPaid ?? 0) })),
+                `order ${context.Origin.OrderNumber ?? originOrder}`,
+            );
+            if (depositRefusal) throw new Error(depositRefusal);
+
+            for (const row of toCancel) {
+                const scheduleID = row.ID;
                 row.Status = 'Canceled';
                 if (!(await row.Save(options))) {
                     throw new Error(
