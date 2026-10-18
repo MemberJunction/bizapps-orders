@@ -87,8 +87,8 @@ interface Body {
 
 /**
  * Fields a template can actually bind to. Angular can only read public/protected members, so an
- * assignment to a PRIVATE field cannot require a repaint — `catalogCache`, `companyCache` and
- * `tenderCache` in the section shell are memoisation, not view state.
+ * assignment to a PRIVATE field cannot require a repaint — `catalogCache` and `tenderCache` in the
+ * section shell are memoisation, not view state.
  *
  * This is a narrowing on a real semantic boundary, not a way to quieten the test: anything the
  * view can see is still required to tick. Widen this at your peril — the whole point of the guard

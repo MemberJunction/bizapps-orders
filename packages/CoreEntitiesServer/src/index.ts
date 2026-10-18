@@ -817,7 +817,7 @@ export type {
 export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from '@mj-biz-apps/orders-entities';
 export type { RequestedCharge } from '@mj-biz-apps/orders-entities';
 
-// Tax resolution (D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
+// Tax resolution (D73, exemptions D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
 // jurisdiction step is a SEAM — postal/city matching is enough for many deployments and is not
 // rooftop-accurate, which is where a commercial provider earns its money.
 export { BaseTaxJurisdictionResolver, DefaultTaxJurisdictionResolver, LoadTaxResolver, ResolveTax } from '@mj-biz-apps/orders-entities';

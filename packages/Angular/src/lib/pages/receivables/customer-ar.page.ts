@@ -7,7 +7,7 @@ import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-b
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
-import { GetOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
+import { GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 import { Today, type DateCell, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
@@ -547,7 +547,7 @@ export class MJOCustomerARPageComponent implements OnInit {
      * order billed to their employer is the employer's receivable.
      */
     private async load(): Promise<void> {
-        const orders = await GetOrders({ Preset: 'all' });
+        const orders = await GetOpenBalanceOrders();
         const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && (o.Balance ?? 0) !== 0);
 
         const byCustomer = new Map<string, MJOCustomerSummary>();
