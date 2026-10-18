@@ -32,6 +32,7 @@ import {
     BaseRemotableOperation,
     CompositeKey,
     DatabaseProviderBase,
+    EntityDeleteOptions,
     EntitySaveOptions,
     IMetadataProvider,
     IRunViewProvider,
@@ -65,6 +66,7 @@ import {
     HostOrderConfirmVeto,
     ResolveOrderConfirmRefusal,
     HostOrderLineEditVeto,
+    IsEditable,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
 } from '@mj-biz-apps/orders-entities';
@@ -1554,6 +1556,133 @@ export class OrderEntityServer extends OrderHeaderEntity {
     ): Promise<void> {
         await this.savePendingLines(options, decisions);
         await this.savePriceComponents(options);
+    }
+
+    /**
+     * Delete a Draft or Quoted order with its lines and the rows its draft saves wrote (#843).
+     *
+     * `spDeleteOrderHeader` deletes only the header, and none of the foreign keys into it cascades,
+     * so a draft with lines failed on FK_OrderLine_OrderHeader. The lines go the way a removed draft
+     * line goes (`deleteLineDependents`, then the line, components before their bundle), then the
+     * order-level rows a draft's save writes, then the header, in one transaction.
+     *
+     * A Confirmed or Voided order is refused: a booked order is corrected by a reversal order, and a
+     * voided one is the record of that decision. Rows only booking or checkout writes (payment
+     * intents, a checkout session's draft link, access overrides) are not deleted here; an order that
+     * has them still fails on that row's foreign key.
+     */
+    public override async Delete(options?: EntityDeleteOptions): Promise<boolean> {
+        const status = String(this.GetFieldByName('Status')?.OldValue ?? this.Status ?? '');
+        if (this.IsSaved && !IsEditable(status)) {
+            this.RegisterResultHistoryEntry(
+                this.buildDeleteFailure(
+                    `Order ${this.OrderNumber ?? ''} is ${status}, so it cannot be deleted. Only a Draft or ` +
+                        `Quoted order can be deleted; a confirmed order is corrected with a reversal order.`,
+                ),
+            );
+            return false;
+        }
+        if (!this.IsSaved) return super.Delete(options);
+
+        const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
+        try {
+            await dbProvider.BeginTransaction();
+            await this.deleteDraftOrderRows();
+            if (!(await super.Delete(options))) {
+                await dbProvider.RollbackTransaction();
+                return false;
+            }
+            await dbProvider.CommitTransaction();
+            return true;
+        } catch (err) {
+            LogError(`OrderEntityServer.Delete failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
+            try {
+                await dbProvider.RollbackTransaction();
+            } catch (rollbackErr) {
+                LogError(`Rollback failed after OrderEntityServer.Delete error: ${rollbackErr}`);
+            }
+            this.RegisterResultHistoryEntry(this.buildDeleteFailure(err instanceof Error ? err.message : String(err)));
+            return false;
+        }
+    }
+
+    /** {@link buildFailureResult}, typed as a delete. */
+    private buildDeleteFailure(message: string): BaseEntityResult {
+        const result = this.buildFailureResult(new Error(message));
+        result.Type = 'delete';
+        return result;
+    }
+
+    /** Every row a draft order's saves wrote that points at it, children before parents. See {@link Delete}. */
+    private async deleteDraftOrderRows(): Promise<void> {
+        const orderID = RequireUUID(this.ID, 'OrderHeaderID');
+        const byOrder = `OrderHeaderID='${orderID}'`;
+
+        const lines = await this.loadRowsForDelete<mjBizAppsOrdersOrderLineEntity>('MJ_BizApps_Orders: Order Lines', byOrder);
+        for (const line of ChildLinesFirst(lines)) {
+            await this.deleteLineDependents(line);
+            if (!(await line.Delete())) {
+                throw new Error(`Failed to delete order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`);
+            }
+        }
+
+        // Order-level rows: concessions (payment terms), adjustments and charges with their
+        // allocations, checkout answers and the payment schedule.
+        await this.deleteRowsForDelete('MJ_BizApps_Orders: Order Concessions', byOrder);
+        const adjustments = await this.loadRowsForDelete<BaseEntity>('MJ_BizApps_Orders: Order Adjustments', byOrder);
+        if (adjustments.length) {
+            await this.deleteRowsForDelete(
+                'MJ_BizApps_Orders: Order Adjustment Allocations',
+                `OrderAdjustmentID IN (${adjustments.map((a) => `'${RequireUUID(String(a.Get('ID')), 'OrderAdjustmentID')}'`).join(',')})`,
+            );
+            await this.deleteEach('MJ_BizApps_Orders: Order Adjustments', adjustments);
+        }
+        const charges = await this.loadRowsForDelete<BaseEntity>('MJ_BizApps_Orders: Order Charges', byOrder);
+        if (charges.length) {
+            await this.deleteRowsForDelete(
+                'MJ_BizApps_Orders: Order Charge Allocations',
+                `OrderChargeID IN (${charges.map((c) => `'${RequireUUID(String(c.Get('ID')), 'OrderChargeID')}'`).join(',')})`,
+            );
+            await this.deleteEach('MJ_BizApps_Orders: Order Charges', charges);
+        }
+        await this.deleteRowsForDelete('MJ_BizApps_Orders: Order Checkout Answers', byOrder);
+        await this.deleteRowsForDelete('MJ_BizApps_Orders: Order Header Payment Schedules', byOrder);
+    }
+
+    private async loadRowsForDelete<T extends BaseEntity>(entityName: string, filter: string): Promise<T[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<T>(
+            { EntityName: entityName, ExtraFilter: filter, ResultType: 'entity_object', MaxRows: DEPENDENT_ROW_CAP },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Failed to read ${entityName} for order ${this.OrderNumber ?? ''}: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        const rows = result.Results ?? [];
+        // A guard, not a page size: deleting the first thousand would fail the header's delete later.
+        if (rows.length >= DEPENDENT_ROW_CAP) {
+            throw new Error(
+                `Order ${this.OrderNumber ?? ''} has ${DEPENDENT_ROW_CAP} or more ${entityName} rows; ` +
+                    `refusing to delete it rather than clearing only part of them.`,
+            );
+        }
+        return rows;
+    }
+
+    private async deleteRowsForDelete(entityName: string, filter: string): Promise<void> {
+        await this.deleteEach(entityName, await this.loadRowsForDelete<BaseEntity>(entityName, filter));
+    }
+
+    private async deleteEach(entityName: string, rows: BaseEntity[]): Promise<void> {
+        for (const row of rows) {
+            // A concession goes with its draft order, decided or not, as it goes with a draft line.
+            if ('WithdrawWithDraftLine' in row) (row as { WithdrawWithDraftLine: boolean }).WithdrawWithDraftLine = true;
+            if (!(await row.Delete())) {
+                throw new Error(
+                    `Failed to delete ${entityName} for order ${this.OrderNumber ?? ''}: ${ExtractEntityErrorMessage(row)}`,
+                );
+            }
+        }
     }
 
     /**
