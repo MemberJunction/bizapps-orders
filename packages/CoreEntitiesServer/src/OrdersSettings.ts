@@ -80,6 +80,20 @@ export const ORDERS_SETTING = {
      * link is sent: a link to the wrong host is worse than none.
      */
     RenewalPaymentLinkBaseUrl: 'RenewalPaymentLinkBaseUrl',
+    /**
+     * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
+     * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
+     * issue it. Counted per payment: what this refund brings the payment's refunds to. Empty switches
+     * the check off, so anyone who may call the operation may refund, as before. A value that is not
+     * a number of 0 or more is read as 0, so every refund needs the company approver.
+     */
+    RefundApprovalThreshold: 'RefundApprovalThreshold',
+    /**
+     * The NAME of the MJ role whose holders may issue a refund at or below `RefundApprovalThreshold`
+     * (bc-aidp-next-golive#320 §3). Unset, only the company approver may issue refunds while the
+     * threshold is set.
+     */
+    RefundApproverRole: 'RefundApproverRole',
 } as const;
 
 /**
@@ -114,6 +128,17 @@ function asDaysOrOff(raw: string | undefined, fallback: number): number | null {
     const v = raw.trim().toLowerCase();
     if (['off', 'none', 'disabled'].includes(v)) return null;
     if (!/^\d+$/.test(v)) return fallback;
+    return Number(v);
+}
+
+/**
+ * A money amount of 0 or more, `null` when absent or empty (the check is off), and 0 when unreadable:
+ * a mistyped threshold must tighten the rule, not switch it off.
+ */
+function asAmountOrOff(raw: string | undefined): number | null {
+    const v = raw?.trim();
+    if (!v) return null;
+    if (!/^\d+(\.\d{1,2})?$/.test(v)) return 0;
     return Number(v);
 }
 
@@ -266,6 +291,17 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /** The refund amount at or below which `RefundApproverRole` may refund, or `null` when the check is off. */
+    public static get RefundApprovalThreshold(): number | null {
+        return asAmountOrOff(this.raw(ORDERS_SETTING.RefundApprovalThreshold));
+    }
+
+    /** The role that may refund at or below the threshold, or `null` when none is configured. */
+    public static get RefundApproverRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.RefundApproverRole)?.trim();
+        return value ? value : null;
     }
 
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
