@@ -216,6 +216,8 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     const instance = orderWith(removed, retained);
     Object.assign(instance, {
         passesStatusTransition: () => true,
+        // Order review is its own subject (OrderReviewThroughEntity.test.ts).
+        passesOrderReviewOnChange: vi.fn().mockResolvedValue(true),
         ApplySavePartyDefaults: vi.fn().mockResolvedValue(undefined),
         willBookOnThisSave: () => false,
         deleteLineDependents: vi.fn().mockResolvedValue(undefined),

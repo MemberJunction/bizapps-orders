@@ -102,5 +102,71 @@
     "primaryKey": {
       "ID": "C3CA57CB-0C3B-450E-A294-25500B9BF3F0"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewTriggers",
+      "Value": "",
+      "Comments": "Comma-separated order review triggers that are switched on (bc-aidp-next-golive#320 section 5): any of NoDeal, PriceVariance, ChangedAfterDealOrReview, OverThreshold, ServicePeriod. A Direct order that hits one cannot confirm until the reviewer role approves its review task. Empty switches review off, so orders confirm as before. An entry that names no trigger refuses every reviewed confirm until it is corrected."
+    },
+    "primaryKey": {
+      "ID": "E0E1703F-EB3F-4FE9-A5EA-B7472F433FC2"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewTotalThreshold",
+      "Value": "",
+      "Comments": "The net order total (lines after discounts, before tax and charges) above which the OverThreshold trigger sends an order to review, for example 25000. Required when OverThreshold is listed in OrderReviewTriggers; empty or unreadable then refuses reviewed confirms."
+    },
+    "primaryKey": {
+      "ID": "CFABC5D2-09D9-467D-BEFB-028F41189DAC"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewServiceStartMonths",
+      "Value": "13",
+      "Comments": "The ServicePeriod trigger sends an order to review when a line's service starts more than this many months after today. A whole number of 1 or more; anything else falls back to 13."
+    },
+    "primaryKey": {
+      "ID": "6673D85A-ADA7-4ADA-AE6C-27FBD084CE0C"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewLineTermMonths",
+      "Value": "12",
+      "Comments": "The ServicePeriod trigger sends an order to review when a line's service period covers more than this many months (a twelve-month term runs Jan 1 to Dec 31). A whole number of 1 or more; anything else falls back to 12."
+    },
+    "primaryKey": {
+      "ID": "E243DD22-299B-4372-802D-B8B201B20D95"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewerRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders review an order that hit a review trigger. Each is assigned the ORDERS_ORDER_REVIEW task through the active Person linked to their user; the order's creator never is. Required once any trigger is switched on."
+    },
+    "primaryKey": {
+      "ID": "88AF29A8-A9DD-4AF3-A178-D683A59EA83B"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewEscalationRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders review an order that a holder of OrderReviewerRole created, since nobody reviews their own order. Empty refuses such an order's confirm."
+    },
+    "primaryKey": {
+      "ID": "CF0D3A86-3836-42D2-AFC3-69A7CD78480B"
+    }
   }
 ]

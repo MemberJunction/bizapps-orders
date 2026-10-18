@@ -103,6 +103,20 @@ Bill-to / ship-to: setting a **person** copies to the other side if that person 
 
 **Confirm Pre-Flight**: Confirm is a direct toolbar action and verb (`order.Confirm()`) that validates all conditions and books immediately in one transaction; no modal overlay is needed.
 
+### 4.2 Order review by trigger (golive #320 §5)
+
+A Direct order (hand-entered or deal-created) that hits a review trigger cannot confirm until a reviewer approves it. Every trigger is off until the host lists it in the `OrderReviewTriggers` setting, so an install that never configures review confirms as before.
+
+| Trigger | Fires when |
+|---|---|
+| `NoDeal` | No deal created the order. The deal comes from whatever app registers `RegisterOrderDealLink` (sales); with nothing registered every order counts as having no deal. |
+| `PriceVariance` | On an order with no deal, a line's stated price differs from the catalog's with no Approved Price or Scope concession on the line (a discount approved on the rep's own authority counts as covered); or a renewal line's carried-forward price is edited. |
+| `ChangedAfterDealOrReview` | Before confirm, a save changes the bill-to, company, or a line's price, discount, quantity, product, company or service dates, or adds or removes a line, on a deal-created order or one already reviewed. Decided when the change is saved. |
+| `OverThreshold` | The net total (lines after discounts, before tax and charges) is above `OrderReviewTotalThreshold`. |
+| `ServicePeriod` | A line's service starts more than `OrderReviewServiceStartMonths` (13) months after today, or covers more than `OrderReviewLineTermMonths` (12). |
+
+The review is an `ORDERS_ORDER_REVIEW` task linked to the order and assigned, by the Person linked to each user, to the active holders of `OrderReviewerRole`, or of `OrderReviewEscalationRole` when a holder of the reviewer role created the order (the creator is read from `MJ: Record Changes`). The creator is never assigned. A review nobody could receive is refused, not raised. The confirm that finds a trigger raises the task and is refused; the confirm after an approving decision by an assignee goes through. Once an order has a review, every later confirm waits on its latest one: a rejected or cancelled review is replaced at the next confirm, and a change saved after approval raises a fresh review. Checkout, provider-payment and reversal orders are never reviewed; an order of renewals only is reviewed only once its carried-forward price is edited. Code: `packages/Entities/src/order-review.ts` (rules), `packages/CoreEntitiesServer/src/OrderReview.ts` (reads, the task, and the two hooks in `OrderEntityServer.Save`).
+
 ### What is still a remote operation
 
 An operation is an **act** the entity cannot express: decide over a set, talk to a third party, or stay atomic with a write that is not "save this graph."
