@@ -300,8 +300,12 @@ export class MJOOrderDocumentPageComponent implements OnInit {
 
     public async ngOnInit(): Promise<void> {
         if (!this.OrderID) return;
-        const orders = await GetOrders({ Preset: 'all' });
-        this.Order = orders.find((o) => o.ID === this.OrderID) ?? null;
+        try {
+            const orders = await GetOrders({ OrderHeaderID: this.OrderID });
+            this.Order = orders[0] ?? null;
+        } catch {
+            this.Order = null;
+        }
         if (this.Order) this.Lines = await GetOrderLines(this.Order.ID);
         this.cdr.detectChanges();
     }
