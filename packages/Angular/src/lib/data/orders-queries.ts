@@ -775,8 +775,13 @@ export interface OrderJournalRollup {
     JournalCount: number;
     /** Entries the As-of date pushed out of view. */
     ExcludedAfterAsOf: number;
-    /** Entries excluded on the posting-date basis because their batch is not Posted (or absent). */
+    /** Entries excluded on the posting-date basis because their batch is still on its way (or absent). */
     ExcludedNotPosted: number;
+    /**
+     * Entries excluded on the posting-date basis because their batch was Cancelled, Failed or
+     * Archived: it will not post as it stands, so they are not "not yet posted" (#790).
+     */
+    ExcludedStoppedBatch: number;
     /** One line per payment whose fee entry is also carried in full on other orders. */
     SharedPaymentNotes: string[];
 }
@@ -873,6 +878,7 @@ const EMPTY_ROLLUP: OrderJournalRollup = {
     JournalCount: 0,
     ExcludedAfterAsOf: 0,
     ExcludedNotPosted: 0,
+    ExcludedStoppedBatch: 0,
     SharedPaymentNotes: [],
 };
 
@@ -911,7 +917,11 @@ export interface OrderJournalDateFilter {
     Journals: JournalHeaderRow[];
     ExcludedAfterAsOf: number;
     ExcludedNotPosted: number;
+    ExcludedStoppedBatch: number;
 }
+
+/** Batch statuses that end without posting: an entry in one is not on its way to the GL. */
+const STOPPED_BATCH_STATUSES = new Set(['Cancelled', 'Failed', 'Archived']);
 
 /**
  * Apply the As-of date and the date basis. Pure.
@@ -921,7 +931,9 @@ export interface OrderJournalDateFilter {
  *
  * On the **posting** basis an entry is dated by the `PostingDate` of the batch it belongs to, and
  * only a `Posted` batch counts: an entry sitting in a Pending, Approved or Sent batch, or in no
- * batch at all, has not reached the GL and so is excluded outright, As-of date or not.
+ * batch at all, has not reached the GL and so is excluded outright, As-of date or not. An entry in
+ * a Cancelled, Failed or Archived batch is excluded too, and counted apart from those still on
+ * their way.
  */
 export function FilterOrderJournals(
     data: OrderJournalData,
@@ -929,12 +941,13 @@ export function FilterOrderJournals(
 ): OrderJournalDateFilter {
     const asOf = options.AsOf ? ToISODate(options.AsOf) : null;
     const posting = options.Basis === 'posting';
-    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0 };
+    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0, ExcludedStoppedBatch: 0 };
 
     for (const journal of data.Journals) {
         const batch = batchOf(data, journal);
         if (posting && (batch?.Status ?? '') !== 'Posted') {
-            result.ExcludedNotPosted += 1;
+            if (STOPPED_BATCH_STATUSES.has(batch?.Status ?? '')) result.ExcludedStoppedBatch += 1;
+            else result.ExcludedNotPosted += 1;
             continue;
         }
         const day = ToISODate(posting ? batch?.PostingDate : journal.EffectiveDate);
@@ -1071,6 +1084,7 @@ export function BuildOrderJournalRollup(
             ...EMPTY_ROLLUP,
             ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
             ExcludedNotPosted: filtered.ExcludedNotPosted,
+            ExcludedStoppedBatch: filtered.ExcludedStoppedBatch,
         };
     }
 
@@ -1086,6 +1100,7 @@ export function BuildOrderJournalRollup(
         JournalCount: filtered.Journals.length,
         ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
         ExcludedNotPosted: filtered.ExcludedNotPosted,
+        ExcludedStoppedBatch: filtered.ExcludedStoppedBatch,
         SharedPaymentNotes: sharedPaymentNotes(data, filtered.Journals),
     };
 }
@@ -1141,6 +1156,10 @@ export function ExcludedEntriesLabel(rollup: OrderJournalRollup, asOf?: DateCell
     }
     if (rollup.ExcludedNotPosted > 0) {
         parts.push(`${plural(rollup.ExcludedNotPosted)} not yet posted`);
+    }
+    if (rollup.ExcludedStoppedBatch > 0) {
+        const one = rollup.ExcludedStoppedBatch === 1;
+        parts.push(`${plural(rollup.ExcludedStoppedBatch)} in ${one ? 'a canceled, failed or archived batch' : 'canceled, failed or archived batches'}`);
     }
     return parts.length ? parts.join(', ') : null;
 }
