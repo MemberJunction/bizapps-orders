@@ -341,7 +341,7 @@ migrations-pg/                    ←  PG, produced by `pnpm run mj:migrate:conv
   V<TS>__v<X.Y.x>__Bar.pg-only.sql   (PG-only patches when needed)
 ```
 
-`migrations-pg/` holds PostgreSQL counterparts for three migrations only and no baseline, so it cannot build a database yet. `pg-migrations.yml`, which applies them to a fresh `postgres:17` container, runs only when started by hand. Schema changes are new migrations, never edits to the baseline: [`docs/database-migrations.md`](docs/database-migrations.md).
+`migrations-pg/` holds PostgreSQL counterparts for three migrations only and no baseline, so it cannot build a database yet. `pnpm run mj:migrate` with `DB_PLATFORM=postgresql` reads `migrations-pg/`; that swap happens only because the script passes no `--dir`, so a hand-run `mj migrate --dir ./migrations` runs the T-SQL set on either platform. `pg-migrations.yml`, which applies them to a fresh `postgres:17` container, runs only when started by hand. Schema changes are new migrations, never edits to the baseline: [`docs/database-migrations.md`](docs/database-migrations.md).
 
 To build a new empty database from zero:
 

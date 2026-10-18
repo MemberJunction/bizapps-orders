@@ -96,7 +96,7 @@ import {
     type OrdersRecordProgressOutput,
     UserHasAuthorization,
 } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
@@ -482,13 +482,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
 
     /** Same op, same envelope-then-payload check as OrderEntityServer.submitDrafts. */
     private async createJournalEntry(draft: JEDraft, provider: IMetadataProvider, user: UserInfo): Promise<string> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>>(
-            BaseRemotableOperation,
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
             'Accounting.CreateJournalEntries',
+            'recognize progress',
         );
-        if (!op) {
-            throw new Error(`The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting server package must be loaded before progress can be recognised.`);
-        }
         const result = await op.Execute({ Drafts: [draft] }, { provider, user });
         if (!result.Success) throw new Error(`Accounting.CreateJournalEntries did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
         const payload = result.Output;

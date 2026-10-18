@@ -767,6 +767,16 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             expect(offenders, `${file}: use CalendarDayOrToday, not a clock fallback`).toEqual([]);
         });
 
+        it.each(SCANNED_FILES)('%s/%s takes no "today" from the UTC clock', (_pkg, file, path) => {
+            // The third net: `new Date().toISOString().slice(0, 10)` used as today, whatever it is
+            // assigned to. Neither net above sees a bare `const today = …` or an object literal
+            // whose key is not a date column, which is how six integration-check sites dated
+            // their fixtures a day ahead of the product every US evening (#811).
+            const pattern = /^.*new Date\(\s*\)\.toISOString\(\)\.(?:(?:slice|substring|substr)\(0,\s*10\)|split\().*$/gm;
+            const offenders = codeLines(readFileSync(path, 'utf8'), pattern);
+            expect(offenders, `${file}: use Today() / TodayAsDateValue(), not the UTC day`).toEqual([]);
+        });
+
         it('nothing is deferred: the shape net holds without exception', () => {
             // Stated as an assertion rather than left implicit, so re-adding a deferral is a
             // deliberate edit to this line with a reason beside it.
@@ -789,8 +799,8 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             // whole suite until these three assertions existed — found by mutating, not by reading.
             //
             // The general form of that idiom, `new Date().toISOString().slice(0, 10)` used as
-            // "today", is a THIRD net this guard does not yet have, because ~20 sites across the
-            // Angular pages still use it. That net belongs to the follow-up that converts them.
+            // "today", has its own net above (#811), which also sees the clock branch of that
+            // ternary. These pins stay because they hold the exact form each site was fixed to.
             expect(scannedSource('core-entities-server', 'InvoiceDisplay.ts')).toMatch(
                 /const generatedOn = options\?\.GeneratedOn \?\? Today\(\);/,
             );
