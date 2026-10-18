@@ -14,7 +14,9 @@ import {
     RefuseCancellingPaidInstalments,
     RefuseEarlierThanPriorReversal,
     RefuseEarnedNotBilled,
+    StagedDeferredAfter,
     StagedEarnedThrough,
+    TrueUpFinalMirrors,
     type DatedRelease,
     type ContractLineBalance,
     type ReversalPosition,
@@ -312,5 +314,40 @@ describe('RefuseCancellingPaidInstalments (#840)', () => {
         );
         expect(refusal).toMatch(/Refund the deposit of 250\.00 on instalment 3 first/);
         expect(refusal).not.toMatch(/instalment 4/);
+    });
+});
+
+describe('the reversal that takes the last units back empties Deferred exactly (#841)', () => {
+    let Driver: InstanceType<typeof import('../RevenueRecognition.js').EvenOverTimeDriver>;
+    beforeAll(async () => {
+        Driver = new (await import('../RevenueRecognition.js')).EvenOverTimeDriver();
+    }, 60_000);
+    const schedule = (amount: number): DatedRelease[] =>
+        Driver.BuildSchedule({
+            Amount: amount,
+            BookingDate: new Date('2026-01-01T00:00:00Z'),
+            ServicePeriodStart: new Date('2026-01-01T00:00:00Z'),
+            ServicePeriodEnd: new Date('2026-12-31T00:00:00Z'),
+            PeriodMonths: 1,
+        }).Entries.map((e) => ({ Date: e.RecognitionDate.toISOString().slice(0, 10), Amount: Number(e.Amount) }));
+    const sum = (rows: Array<{ Amount: number }>) => Math.round(rows.reduce((s, r) => s + r.Amount, 0) * 100) / 100;
+
+    it('trues the final reversal of an uneven amount so its mirrors and the earlier ones total what the origin deferred', () => {
+        // 3 units, 1,000 over 12 months; 1 reversed and then the other 2, both on 15 November.
+        const asOf = '2026-11-15';
+        const origin = schedule(1000);
+        const first = schedule(333.33).filter((r) => r.Date > asOf);
+        const last = schedule(666.67).filter((r) => r.Date > asOf);
+        const target = StagedDeferredAfter(origin, first, asOf);
+        const trued = TrueUpFinalMirrors(last.map((r) => r.Amount), target, 0.01 * origin.length * 2);
+        expect(Math.round((sum(first) + trued.reduce((s, a) => s + a, 0)) * 100) / 100).toBe(sum(origin.filter((r) => r.Date > asOf)));
+    });
+
+    it('leaves amounts alone when the gap is larger than rounding could make', () => {
+        expect(TrueUpFinalMirrors([100, 100], 250, 0.12)).toEqual([100, 100]);
+    });
+
+    it('moves only the last release, by the difference', () => {
+        expect(TrueUpFinalMirrors([27.78, 27.78], 55.54, 0.12)).toEqual([27.78, 27.76]);
     });
 });

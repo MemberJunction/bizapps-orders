@@ -222,6 +222,37 @@ export function StagedEarnedThrough(originReleases: DatedRelease[], priorMirrors
 }
 
 /**
+ * What the origin still holds in Deferred Revenue from its staged releases after `asOf`: its
+ * releases dated after that day, less the ones earlier reversals already mirrored back (#841).
+ */
+export function StagedDeferredAfter(originReleases: DatedRelease[], priorMirrors: DatedRelease[], asOf: string): number {
+    const after = (rows: DatedRelease[]) => rows.filter((r) => r.Date > asOf).reduce((s, r) => s + Number(r.Amount), 0);
+    return money(after(originReleases) - after(priorMirrors));
+}
+
+/**
+ * The mirrored release amounts of the reversal that takes the last units back, trued up so they
+ * total exactly what the origin still holds in Deferred Revenue (#841).
+ *
+ * Each reversing line's schedule puts its own rounding remainder in its first month, which falls
+ * before the reversal date and is never mirrored, so the mirrors of several partial reversals of an
+ * uneven amount can total a few cents more or less than the origin had deferred, and the difference
+ * stays in Deferred Revenue. The last mirrored release absorbs it. A difference beyond `tolerance`
+ * is not rounding (a window that differs from the origin's, say), and the amounts are returned
+ * unchanged rather than hiding it in one month.
+ */
+export function TrueUpFinalMirrors(amounts: number[], target: number, tolerance: number): number[] {
+    if (!amounts.length) return amounts;
+    const diff = money(target - amounts.reduce((s, a) => s + Number(a), 0));
+    if (diff === 0 || Math.abs(diff) > tolerance) return amounts;
+    const out = [...amounts];
+    const last = out.length - 1;
+    out[last] = money(out[last] + diff);
+    if (out[last] < 0) return amounts;
+    return out;
+}
+
+/**
  * Refuse a reversal that would strand an earned-but-unbilled balance, or `null` to proceed.
  *
  * `R − B > 0` means we delivered service the contract has not let us bill yet — a contract asset

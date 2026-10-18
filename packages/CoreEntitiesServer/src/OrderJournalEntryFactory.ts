@@ -78,7 +78,9 @@ import {
     ProratedCreditMemo,
     RefuseEarnedNotBilled,
     SplitContraLegs,
+    StagedDeferredAfter,
     StagedEarnedThrough,
+    TrueUpFinalMirrors,
     type DatedRelease,
     type ReversalPosition,
     type ReversalScheduleRow,
@@ -922,9 +924,21 @@ export class OrderJournalEntryFactory {
             // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
             // unearned part, so only the releases still to come are mirrored; mirroring the whole
             // term would also un-recognise the months already delivered and strand them in Deferred.
-            const releases = scheduledOrigin
+            let releases = scheduledOrigin
                 ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
                 : schedule.Entries;
+            // THE REVERSAL THAT TAKES THE LAST UNITS BACK EMPTIES DEFERRED EXACTLY (#841). Each
+            // reversing line's rounding remainder sits in its own first month, before its date, so
+            // partial reversals of an uneven amount mirror a few cents more or less than the origin
+            // deferred. The final one trues its last mirror to what the origin still holds.
+            if (scheduledOrigin && releases.length && Math.abs(Number(line.Quantity)) >= Number(scheduledOrigin.RemainingQuantity) - 1e-9) {
+                const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths);
+                const target = StagedDeferredAfter(Own, PriorMirrors, effectiveDate);
+                // One cent per release of the origin and of each earlier reversal is the most rounding can drift.
+                const tolerance = 0.01 * Own.length * (1 + scheduledOrigin.PriorReversals.length);
+                const amounts = TrueUpFinalMirrors(releases.map((e) => Number(e.Amount)), target, tolerance);
+                releases = releases.map((e, i) => (amounts[i] === Number(e.Amount) ? e : { ...e, Amount: amounts[i] }));
+            }
             for (const entry of releases) {
                 const releaseLines: JELineDraft[] = [
                     {
@@ -983,6 +997,21 @@ export class OrderJournalEntryFactory {
         asOf: string,
         recognitionMonths?: number,
     ): number {
+        const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, origin, asOf, recognitionMonths);
+        return StagedEarnedThrough(Own, PriorMirrors, asOf);
+    }
+
+    /**
+     * The origin's staged releases and the releases earlier reversals of it mirrored back, rebuilt
+     * as {@link stagedEarnedThrough} describes.
+     */
+    private stagedReleaseSets(
+        revRec: RevRecTypeRow,
+        line: mjBizAppsOrdersOrderLineEntity,
+        origin: CreditMemoForLine,
+        asOf: string,
+        recognitionMonths?: number,
+    ): { Own: DatedRelease[]; PriorMirrors: DatedRelease[] } {
         const releases = (amount: number, booked: string, start?: Date | string | null, end?: Date | string | null): DatedRelease[] =>
             this.driverFor(revRec)
                 .BuildSchedule({
@@ -1011,7 +1040,7 @@ export class OrderJournalEntryFactory {
         const own = hasOriginWindow
             ? releases(origin.OriginNet, asOf, origin.OriginServicePeriodStart, origin.OriginServicePeriodEnd)
             : releases(origin.OriginNet, asOf, line.ServicePeriodStart, line.ServicePeriodEnd);
-        return StagedEarnedThrough(own, priorMirrors, asOf);
+        return { Own: own, PriorMirrors: priorMirrors };
     }
 
     /**
