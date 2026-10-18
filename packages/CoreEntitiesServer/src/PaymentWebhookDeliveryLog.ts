@@ -79,6 +79,17 @@ export interface PriorDelivery {
 }
 
 /**
+ * Whether the recorded row shows this event was applied by an earlier delivery.
+ *
+ * A redelivery rewrites the row's outcome to `AlreadyApplied`, so that outcome counts as applied too:
+ * otherwise only the first redelivery is recognized from the row and every later one falls through to
+ * the intent stamp and the event-order rule (#873).
+ */
+export function PriorDeliveryWasApplied(prior: Pick<PriorDelivery, 'Outcome'> | null | undefined): boolean {
+    return prior?.Outcome === 'Applied' || prior?.Outcome === 'AlreadyApplied';
+}
+
+/**
  * The row already recorded for this event, if any. Null for an event with no id.
  *
  * Read before the decision so the duplicate check is exact: an event this table records as applied

@@ -54,6 +54,7 @@ import {
 import {
     DeliveryOutcomeFor,
     FindPriorDelivery,
+    PriorDeliveryWasApplied,
     RecordWebhookDelivery,
     type PriorDelivery,
     type WebhookDeliveryOutcome,
@@ -162,7 +163,7 @@ export async function HandlePaymentWebhook(
         EventKind: event.Kind,
         // EXACT, not "the latest": the delivery table remembers every event applied, where the intent
         // remembers only the last one stamped on it.
-        AlreadySeen: existing?.ProviderEventID === event.EventID || prior?.Outcome === 'Applied',
+        AlreadySeen: existing?.ProviderEventID === event.EventID || PriorDeliveryWasApplied(prior),
         HandledKinds: driver.HandledEventKinds,
         IntentKnown: existing != null,
         OutOfOrder:

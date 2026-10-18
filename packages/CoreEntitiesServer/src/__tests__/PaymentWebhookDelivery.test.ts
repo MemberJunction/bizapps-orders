@@ -64,7 +64,7 @@ vi.mock('../CheckoutSessionService.js', () => ({
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { HandlePaymentWebhook } from '../PaymentWebhookHandler.js';
-import { DeliveryOutcomeFor } from '../PaymentWebhookDeliveryLog.js';
+import { DeliveryOutcomeFor, PriorDeliveryWasApplied } from '../PaymentWebhookDeliveryLog.js';
 
 /** A fake entity: fields live on the object, Save records a snapshot. */
 function entity(kind: 'intent' | 'delivery'): Row {
@@ -162,6 +162,25 @@ describe('payment webhook deliveries are recorded (#474)', () => {
         expect(res.Body.outcome).toBe('AlreadyApplied');
         expect(state.saved[0]).toMatchObject({ ID: 'd1', Outcome: 'AlreadyApplied', ReasonCode: 'duplicate', DeliveryCount: 2 });
         expect(state.intent.Status).toBe('Succeeded');
+    });
+
+    it('a third delivery of an applied event is still recognized from its row (#873)', async () => {
+        // The second delivery rewrote the row to AlreadyApplied; the intent carries a later event's id.
+        state.intent = { ID: INTENT_ID, Status: 'Succeeded', ProviderEventID: 'evt_test_2', LastEventAt: null };
+        state.deliveries = [{ ID: 'd1', ProviderEventID: 'evt_test_1', Outcome: 'AlreadyApplied', DeliveryCount: 2 }];
+        state.event = event({ Status: 'Processing', Kind: 'payment_intent.processing', OccurredAt: undefined });
+        const res = await deliver();
+        expect(res.Body.outcome).toBe('AlreadyApplied');
+        expect(state.saved[0]).toMatchObject({ ID: 'd1', Outcome: 'AlreadyApplied', ReasonCode: 'duplicate', DeliveryCount: 3 });
+        expect(state.intent.Status).toBe('Succeeded');
+    });
+
+    it('treats Applied and AlreadyApplied rows as applied, and nothing else (#873)', () => {
+        expect(PriorDeliveryWasApplied({ Outcome: 'Applied' })).toBe(true);
+        expect(PriorDeliveryWasApplied({ Outcome: 'AlreadyApplied' })).toBe(true);
+        expect(PriorDeliveryWasApplied({ Outcome: 'Failed' })).toBe(false);
+        expect(PriorDeliveryWasApplied({ Outcome: 'Ignored' })).toBe(false);
+        expect(PriorDeliveryWasApplied(null)).toBe(false);
     });
 
     it('an event Orders failed to apply is recorded as Failed and the gateway is asked to retry', async () => {
