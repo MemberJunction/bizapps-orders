@@ -244,6 +244,47 @@ describe('CheckoutPublicHostComponent events', () => {
         });
     });
 
+    describe('a reload into the account step (#858)', () => {
+        const completing = (): void => {
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => (k === 'mj-checkout-completing:annual' ? 'sess-1' : null),
+                setItem: () => undefined,
+                removeItem: () => undefined,
+            });
+        };
+
+        it('shows the order number and follows the widget’s redirect once the step settles', async () => {
+            completing();
+            responses['/account'] = {
+                Success: true,
+                Account: { Outcome: 'Created', CanSetPassword: true },
+                Confirmation: { OrderNumber: 'SO-7', RedirectUrl: 'https://example.com/thanks', SuccessMessage: null },
+            };
+            const location = { href: 'https://shop.example.com/checkout/annual' };
+            vi.stubGlobal('window', { location });
+            const c = create();
+            await c.ngOnInit();
+            expect(c.orderNumber).toBe('SO-7');
+            expect(c.successMessage).toBe('Thank you. Order SO-7 is confirmed.');
+            expect(c.redirectUrl).toBe('https://example.com/thanks');
+            expect(location.href).toBe('https://shop.example.com/checkout/annual');
+
+            c.skipPassword();
+            expect(location.href).toContain('https://example.com/thanks');
+            expect(location.href).toContain('SO-7');
+        });
+
+        it('keeps the generic wording when the confirmation is missing', async () => {
+            completing();
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            const c = create();
+            await c.ngOnInit();
+            expect(c.orderNumber).toBeNull();
+            expect(c.redirectUrl).toBeNull();
+            expect(c.successMessage).toBe('Thank you. Your order is confirmed.');
+        });
+    });
+
     describe('Cancel (#297)', () => {
         it('resets the form, clears the error and tells the host page to close', async () => {
             responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };

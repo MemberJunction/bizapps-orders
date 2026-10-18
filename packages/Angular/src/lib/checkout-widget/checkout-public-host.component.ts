@@ -24,9 +24,11 @@ import {
     ACCOUNT_STEP_FAILED,
     AccountMessage,
     CheckPasswordEntry,
+    ConfirmationMessage,
     IsAccountSettled,
     MayRedirect,
     ReadCheckoutAccount,
+    ReadCheckoutConfirmation,
     VerificationNote,
     type CheckoutAccountView,
 } from './checkout-account';
@@ -168,6 +170,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public accountLoading = false;
     /** The buyer chose to leave a failed account step. */
     private accountDismissed = false;
+    /** The widget's redirect as `/account` reported it, when a reload resumed the account step. */
+    private resumedRedirectUrl: string | null = null;
 
     public get accountMessage(): string | null {
         return this.account ? AccountMessage(this.account, this.passwordSet) : null;
@@ -389,6 +393,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.successMessage = null;
         this.orderNumber = null;
+        this.resumedRedirectUrl = null;
         this.account = null;
         this.accountDismissed = false;
         this.password = '';
@@ -647,9 +652,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             throw new Error(this.str(done?.ErrorMessage, 'Could not complete checkout.'));
         }
         this.orderNumber = done.OrderNumber ? String(done.OrderNumber) : null;
-        this.successMessage =
-            this.config?.successMessage ||
-            (this.orderNumber ? `Thank you. Order ${this.orderNumber} is confirmed.` : 'Thank you. Your order is confirmed.');
+        this.successMessage = ConfirmationMessage(this.config?.successMessage, this.orderNumber);
         // Dispatched before any redirect, so a host listener sees the sale on this page.
         this.setState('SUCCESS');
         this.dispatch(
@@ -758,7 +761,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 return false;
             }
             this.sessionId = sessionId;
-            this.successMessage = 'Thank you. Your order is confirmed.';
+            // A reload skips /initialize, so the order number and the widget's redirect come with
+            // the account step (#858).
+            const confirmation = ReadCheckoutConfirmation(res.Confirmation);
+            this.orderNumber = confirmation?.OrderNumber ?? null;
+            this.resumedRedirectUrl = confirmation?.RedirectUrl ?? null;
+            this.successMessage = ConfirmationMessage(confirmation?.SuccessMessage, this.orderNumber);
             this.account = account;
             if (IsAccountSettled(account)) this.forgetCompleting();
             this.syncAccountState();
@@ -825,11 +833,17 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /** The widget's redirect: from its configuration, or from `/account` after a reload (#858). */
+    public get redirectUrl(): string | null {
+        return this.config?.redirectUrl || this.resumedRedirectUrl;
+    }
+
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */
     private leaveIfDone(): void {
-        if (this.config?.redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
+        const redirectUrl = this.redirectUrl;
+        if (redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
             // The landing page learns which order completed from `?order=` (#295).
-            window.location.href = WithOrderReference(this.config.redirectUrl, this.orderNumber, window.location.href);
+            window.location.href = WithOrderReference(redirectUrl, this.orderNumber, window.location.href);
         }
     }
 
