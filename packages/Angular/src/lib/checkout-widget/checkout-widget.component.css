@@ -45,6 +45,19 @@
     font-size: 0.875rem;
 }
 
+.mj-widget-notice-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #eff6ff;
+    border: 1px solid #93c5fd;
+    color: #1e3a8a;
+    padding: 10px 14px;
+    border-radius: 6px;
+    margin-bottom: 18px;
+    font-size: 0.875rem;
+}
+
 .mj-error-icon {
     font-size: 1rem;
 }

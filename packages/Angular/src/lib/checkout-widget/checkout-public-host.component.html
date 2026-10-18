@@ -51,7 +51,7 @@
                 @if (account?.Outcome === 'Failed') {
                     <div class="mj-checkout-account mj-checkout-account--actions">
                         <button class="mj-checkout-account__submit" type="button" (click)="retryAccount()">Try again</button>
-                        @if (config?.redirectUrl) {
+                        @if (redirectUrl) {
                             <button class="mj-checkout-account__skip" type="button" (click)="dismissAccount()">Not now</button>
                         }
                     </div>
@@ -115,6 +115,7 @@
             [stripePaymentMethodId]="stripePaymentMethodId"
             [prefillEmail]="prefillEmail"
             [errorMessage]="errorMessage"
+            [noticeMessage]="noticeMessage"
             [appliedPromotion]="appliedPromotion"
             [serverPricedTotal]="serverPricedTotal"
             [promotionError]="promotionError"

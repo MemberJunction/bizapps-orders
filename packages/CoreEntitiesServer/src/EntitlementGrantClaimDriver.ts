@@ -75,7 +75,12 @@ export class EntitlementGrantClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        const personID = await resolvePersonID(User, Claim.ProviderToUse);
+        let personID: string | null;
+        try {
+            personID = await resolvePersonID(User, Claim.ProviderToUse);
+        } catch (e) {
+            return { Success: false, ErrorMessage: e instanceof Error ? e.message : String(e) };
+        }
         if (personID && (!grant.BeneficiaryPersonID || grant.BeneficiaryPersonID !== personID)) {
             grant.BeneficiaryPersonID = personID;
         }

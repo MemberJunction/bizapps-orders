@@ -80,6 +80,27 @@ export interface ExtensionFieldDef {
     placeholder?: string;
     defaultValue?: unknown;
     options?: Array<{ label: string; value: string | number }>;
+    /**
+     * True when the field identifies one attendee (an e-mail, a name, an ID), so "Copy primary info
+     * to all" leaves it alone; false when it is shared detail it should copy. Unset, the field name
+     * decides: see {@link IsPerPersonCheckoutField}.
+     */
+    perPerson?: boolean;
+}
+
+/**
+ * Whether a unit field identifies one attendee and must not be copied from the first attendee to
+ * the others (#780). A field definition's `perPerson` decides when set; otherwise a name that holds
+ * "email" or "name", or ends in "id" (`attendeeEmail`, `badgeName`, `studentId`), is per person.
+ * Shared detail such as company or dietary needs is copied.
+ */
+export function IsPerPersonCheckoutField(key: string, defs: ReadonlyArray<Pick<ExtensionFieldDef, 'name' | 'perPerson'>>): boolean {
+    const def = defs.find((d) => d.name.toLowerCase() === key.toLowerCase());
+    if (typeof def?.perPerson === 'boolean') {
+        return def.perPerson;
+    }
+    const lower = key.toLowerCase();
+    return lower.includes('email') || lower.includes('name') || lower.endsWith('id');
 }
 
 export interface CheckoutAttendee {
@@ -164,9 +185,13 @@ export interface CheckoutAppliedPromotion {
     quantity: number;
 }
 
+/** Lifecycle hooks by name: `onInit`, `onValidate`, `onQuantityChange`, `onBeforeSubmit`, `onDestroy`. */
+export type CheckoutHookRegistry = Record<string, (arg1?: unknown, arg2?: unknown) => unknown>;
+
 declare global {
     interface Window {
-        MJCheckoutHooks?: Record<string, (arg1?: unknown, arg2?: unknown) => unknown>;
+        /** Host-level hooks, set by the host page's own script; every widget on the page falls back to them. */
+        MJCheckoutHooks?: CheckoutHookRegistry;
     }
 }
 
@@ -183,6 +208,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     private _fallbackSessionKey: string = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : 'ck_sess_' + Math.random().toString(36).substring(2, 15);
     private _config = signal<CheckoutWidgetConfig | null>(null);
     private _lastMountedJS: string | null = null;
+    /** Hooks this widget's own `customUI.js` registered; cleared on destroy (#779). */
+    private _instanceHooks: CheckoutHookRegistry = {};
     private _customStyleEl: HTMLStyleElement | null = null;
 
     constructor(
@@ -211,6 +238,20 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     public get errorMessage(): string | null {
         return this._errorMessage();
     }
+
+    private _noticeMessage = signal<string | null>(null);
+    /**
+     * Information for the buyer that is not a failure, such as the total including tax before the
+     * second press of Pay (#819). Shown in the notice style, and only while no error shows.
+     */
+    @Input()
+    public set noticeMessage(val: string | null) {
+        this._noticeMessage.set(val);
+    }
+    public get noticeMessage(): string | null {
+        return this._noticeMessage();
+    }
+    public displayNoticeMessage = computed<string | null>(() => (this.displayErrorMessage() ? null : this._noticeMessage()));
 
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
@@ -493,6 +534,9 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
 
     public ngOnDestroy(): void {
         this.executeLifecycleHook('onDestroy', { component: this });
+        // A destroyed widget's hooks must not run for the next widget on the page (#779).
+        this._instanceHooks = {};
+        this._lastMountedJS = null;
         if (this._customStyleEl && this._customStyleEl.parentNode) {
             this._customStyleEl.parentNode.removeChild(this._customStyleEl);
             this._customStyleEl = null;
@@ -550,23 +594,64 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return tagged?.nonce || tagged?.getAttribute('nonce') || '';
     }
 
+    /**
+     * Runs the widget's `customUI.js`. Its hooks belong to this widget alone (#779): the script
+     * registers them on `widgetContext.hooks`. A script written for the page-wide
+     * `window.MJCheckoutHooks` still works: whatever it assigns there while it runs is moved to this
+     * widget's registry and the page-wide object is put back, so two widgets never call each other's
+     * hooks.
+     */
     private mountCustomJS(scriptContent: string): void {
         if (!scriptContent || typeof window === 'undefined') return;
         this._lastMountedJS = scriptContent;
+        const hooks: CheckoutHookRegistry = {};
+        this._instanceHooks = hooks;
+        const pageHooks = window.MJCheckoutHooks;
+        const pageHookEntries = pageHooks ? { ...pageHooks } : undefined;
         try {
             const runner = new Function('widgetContext', scriptContent);
-            runner({ component: this, config: this.config });
+            runner({ component: this, config: this.config, hooks });
         } catch (err) {
             console.warn('[MJCheckoutWidget] CustomJS evaluation notice:', err);
             this.internalErrorMessage.set('Notice: Custom widget scripts could not be evaluated under current security policy.');
+        } finally {
+            const after = window.MJCheckoutHooks;
+            if (after && (after !== pageHooks || !this.sameHooks(after, pageHookEntries))) {
+                for (const [name, fn] of Object.entries(after)) {
+                    if (typeof fn === 'function' && pageHookEntries?.[name] !== fn && !(name in hooks)) {
+                        hooks[name] = fn;
+                    }
+                }
+                if (pageHooks) {
+                    for (const key of Object.keys(pageHooks)) delete pageHooks[key];
+                    Object.assign(pageHooks, pageHookEntries);
+                    window.MJCheckoutHooks = pageHooks;
+                } else {
+                    delete window.MJCheckoutHooks;
+                }
+            }
         }
+    }
+
+    private sameHooks(a: CheckoutHookRegistry, b: CheckoutHookRegistry | undefined): boolean {
+        const keysA = Object.keys(a);
+        return !!b && keysA.length === Object.keys(b).length && keysA.every((k) => a[k] === b[k]);
+    }
+
+    /** This widget's hook, else the host page's `window.MJCheckoutHooks` hook. */
+    private resolveHook(hookName: string): ((arg1?: unknown, arg2?: unknown) => unknown) | null {
+        const own = this._instanceHooks[hookName];
+        if (typeof own === 'function') return own;
+        const page = typeof window !== 'undefined' ? window.MJCheckoutHooks?.[hookName] : undefined;
+        return typeof page === 'function' ? page : null;
     }
 
     public executeLifecycleHook(hookName: string, payload?: unknown): unknown {
         if (typeof window === 'undefined') return undefined;
         try {
-            if (window.MJCheckoutHooks && typeof window.MJCheckoutHooks[hookName] === 'function') {
-                return window.MJCheckoutHooks[hookName](payload, { component: this, config: this.config });
+            const hook = this.resolveHook(hookName);
+            if (hook) {
+                return hook(payload, { component: this, config: this.config });
             }
         } catch (err) {
             console.warn(`[MJCheckoutWidget] Hook error in ${hookName}:`, err);
@@ -666,8 +751,9 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         const list = this.units().map((unit, i) => {
             if (i === 0) return unit;
             const copied: Record<string, unknown> = { ...unit };
+            const defs = this.activeFieldDefs();
             for (const [key, val] of Object.entries(primary)) {
-                if (key !== 'firstName' && key !== 'lastName' && key !== 'email' && key !== 'FirstName' && key !== 'LastName' && key !== 'Email') {
+                if (!IsPerPersonCheckoutField(key, defs)) {
                     copied[key] = val;
                 }
             }

@@ -964,6 +964,7 @@ export {
     type CheckoutAccountResult,
     type CheckoutAccountStatus,
     type CheckoutAccountResponse,
+    type CheckoutConfirmationView,
     type CheckoutPasswordResult,
 } from './CheckoutAccountStep.js';
 export {
