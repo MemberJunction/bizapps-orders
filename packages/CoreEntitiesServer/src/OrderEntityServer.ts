@@ -2259,6 +2259,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
                 RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
                 OriginNet: Number(context.Origin.LineTotalNet ?? 0),
+                OriginServicePeriodStart: context.Origin.ServicePeriodStart ?? null,
+                OriginServicePeriodEnd: context.Origin.ServicePeriodEnd ?? null,
                 PriorReversals: context.PriorReversals,
                 ScheduleRows: context.ScheduleRows,
                 OriginOrderNumber: context.Origin.OrderNumber ?? null,

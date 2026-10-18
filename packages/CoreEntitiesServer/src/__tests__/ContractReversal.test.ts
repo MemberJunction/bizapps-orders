@@ -6,7 +6,7 @@
  * not billed. Andrew's worked Scenario 1 — a 12,000 contract billed quarterly in advance, reversed
  * after five months — is the case these were written against and is asserted at the end.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
     InstalmentsToCancel,
     BuildCreditMemoLines,
@@ -252,5 +252,49 @@ describe('BuildCreditMemoLines', () => {
         const [debit, credit] = BuildCreditMemoLines(33.335, ACCOUNTS, 'x', DIMS);
         expect(debit.DebitAmount).toBe(33.34);
         expect(credit.CreditAmount).toBe(33.34);
+    });
+});
+
+describe("earned to date is measured on the origin's own window (#839)", () => {
+    // A 12,000 line over 2026-01-01..2026-12-31, released monthly; returned on 2026-05-15 with a
+    // stated window that is shorter than the origin's.
+    let Factory: typeof import('../OrderJournalEntryFactory.js').OrderJournalEntryFactory;
+    beforeAll(async () => {
+        await import('../RevenueRecognition.js');
+        Factory = (await import('../OrderJournalEntryFactory.js')).OrderJournalEntryFactory;
+    }, 60_000);
+
+    const earnedThrough = async (originWindow: { Start: string | null; End: string | null }): Promise<number> => {
+        const factory = new Factory({} as never, 'e', 'e', 'e', {} as never, {} as never);
+        const staged = (factory as unknown as {
+            stagedEarnedThrough: (revRec: unknown, line: unknown, origin: unknown, asOf: string, months?: number) => number;
+        }).stagedEarnedThrough.bind(factory);
+        return staged(
+            { Code: 'EOT', DriverClass: 'EvenOverTime' },
+            { ServicePeriodStart: new Date('2026-04-01T00:00:00Z'), ServicePeriodEnd: new Date('2026-06-30T00:00:00Z') },
+            {
+                OriginLineID: 'origin-1',
+                OriginNet: 12000,
+                OriginServicePeriodStart: originWindow.Start ? new Date(`${originWindow.Start}T00:00:00Z`) : null,
+                OriginServicePeriodEnd: originWindow.End ? new Date(`${originWindow.End}T00:00:00Z`) : null,
+                PriorReversals: [],
+                ScheduleRows: [],
+                BilledToDate: 0,
+                RecognizedToDate: 0,
+                RemainingQuantity: 1,
+            },
+            '2026-05-15',
+            1,
+        );
+    };
+
+    it("rebuilds the origin's releases over its own window, not the reversing line's", async () => {
+        // Five monthly releases of 1,000 (January to May) have fallen due by 15 May.
+        expect(await earnedThrough({ Start: '2026-01-01', End: '2026-12-31' })).toBe(5000);
+    });
+
+    it("falls back to the reversing line's window when the origin carries none", async () => {
+        // Over the line's 3-month window, April and May have fallen due: 2 × 4,000.
+        expect(await earnedThrough({ Start: null, End: null })).toBe(8000);
     });
 });
