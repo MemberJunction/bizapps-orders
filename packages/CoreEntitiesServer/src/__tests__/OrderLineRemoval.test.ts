@@ -201,6 +201,28 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
         expect(line.Delete).not.toHaveBeenCalled();
     });
 
+    it('removes and deletes a bundle\'s components before the bundle itself (#793)', async () => {
+        // Only the bundle was removed, as an API caller using `Lines.Remove` would. Its components
+        // still name it through FK_OrderLine_ParentOrderLine, which does not cascade, so they must
+        // leave the collection and be deleted first.
+        const log: string[] = [];
+        const bundle = fakeLine(1, log, { ID: 'AAAAAAAA-0000-0000-0000-000000000001' });
+        const child = { ...fakeLine(2, log, { ID: 'AAAAAAAA-0000-0000-0000-000000000002' }), ParentOrderLineID: bundle.ID };
+        const kept = fakeLine(3, log, { ID: 'AAAAAAAA-0000-0000-0000-000000000003' });
+        const order = orderWith([bundle], [child, kept]) as unknown as RemovalOrder & {
+            Lines: { Removed: FakeLine[]; Items: FakeLine[]; Remove: (l: FakeLine) => void };
+        };
+        order.Lines.Remove = (l: FakeLine) => {
+            order.Lines.Items = order.Lines.Items.filter((x) => x !== l);
+            order.Lines.Removed = [...order.Lines.Removed, l];
+        };
+
+        await order.deleteRemovedLines();
+
+        expect(log).toEqual(['delete-line:2', 'delete-line:1']);
+        expect(order.Lines.Items).toEqual([kept]);
+    });
+
     it('refuses rather than part-clearing when a table is at the row cap', async () => {
         mockRunView.mockResolvedValue({
             Success: true,

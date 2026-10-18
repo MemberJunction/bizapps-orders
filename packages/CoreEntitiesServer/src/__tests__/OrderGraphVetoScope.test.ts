@@ -225,16 +225,16 @@ describe('REMOVING a line through the order graph', () => {
      * Orders itself — and while booking, a refusal would block the close that creates the record the
      * freeze exists to protect.
      *
-     * A refusal still surfaces here as a THROW rather than a validation refusal. The second review
-     * called that out and called it non-blocking, and it is left alone deliberately: changing the shape
-     * of a failed removal is a different change from deciding who may make one.
+     * A refusal here still THROWS. The ordinary refusal no longer reaches this loop: `Save()` asks
+     * the veto about every removal before the transaction opens and fails the save with the vetoer's
+     * words (#799, `passesRemovalVeto` below). This loop's ask is the backstop.
      */
     function orderRemoving(line: unknown, booking: boolean) {
         const order = Object.create(OrderEntityServer.prototype) as {
             deleteRemovedLines(): Promise<boolean>;
         };
         Object.defineProperty(order, 'bookingInFlight', { value: booking, writable: true });
-        Object.defineProperty(order, 'Lines', { value: { Removed: [line] }, writable: true });
+        Object.defineProperty(order, 'Lines', { value: { Removed: [line], Items: [] }, writable: true });
         // Clearing the rows that point at a removed line is a different subject, and it runs first.
         Object.defineProperty(order, 'deleteLineDependents', { value: async () => undefined, writable: true });
         return order;
@@ -248,6 +248,7 @@ describe('REMOVING a line through the order graph', () => {
         for (const [k, v] of Object.entries({
             OrderHeaderID: ORDER,
             ID: 'b1c2d3e4-0000-4000-8000-000000000003',
+            ParentOrderLineID: null,
             IsSaved: true,
             ContextCurrentUser: { ID: 'user-1' },
             Fields: [],
@@ -300,6 +301,71 @@ describe('REMOVING a line through the order graph', () => {
         expect(line.BypassExternalEditVeto, 'booking is the one case that may claim the bypass').toBe(true);
         expect(asked, 'and the vetoer should not even be consulted').toBe(false);
         expect(track.reachedDb, 'the removal went through').toBe(1);
+    });
+});
+
+describe('a refused removal fails the save before anything is written (#799)', () => {
+    function orderRemovingLines(removed: unknown[], items: unknown[] = []) {
+        const order = Object.create(OrderEntityServer.prototype) as {
+            passesRemovalVeto(): Promise<boolean>;
+            RegisterResultHistoryEntry(r: { Message: string }): void;
+        };
+        const history: Array<{ Message: string }> = [];
+        Object.defineProperty(order, 'ID', { value: ORDER, writable: true });
+        Object.defineProperty(order, 'IsSaved', { value: true, writable: true });
+        Object.defineProperty(order, 'Fields', { value: [], writable: true });
+        Object.defineProperty(order, 'ContextCurrentUser', { value: { ID: 'user-1' }, writable: true });
+        Object.defineProperty(order, 'Lines', { value: { Removed: removed, Items: items }, writable: true });
+        Object.defineProperty(order, 'RegisterResultHistoryEntry', {
+            value: (r: { Message: string }) => history.push(r),
+            writable: true,
+        });
+        return { order, history };
+    }
+
+    const saved = (ID: string, LineNumber: number, ParentOrderLineID: string | null = null) => ({
+        ID,
+        LineNumber,
+        IsSaved: true,
+        ParentOrderLineID,
+    });
+
+    it('refuses with the vetoer\'s words, naming the line', async () => {
+        const asked: string[] = [];
+        RegisterOrderLineEditVeto({
+            MayEdit: async (ctx) => {
+                asked.push(`${ctx.Kind}:${ctx.OrderLineID}`);
+                return FROZEN;
+            },
+        });
+        const bundle = saved('b1c2d3e4-0000-4000-8000-000000000010', 2);
+        const component = saved('b1c2d3e4-0000-4000-8000-000000000011', 3, bundle.ID);
+        const { order, history } = orderRemovingLines([bundle], [component]);
+
+        await expect(order.passesRemovalVeto()).resolves.toBe(false);
+        expect(history[0].Message).toContain('Line 2: ' + FROZEN);
+        // The bundle's component is deleted with it, so it is asked about too.
+        expect(asked).toEqual([`delete:${bundle.ID}`, `delete:${component.ID}`]);
+    });
+
+    it('passes when the vetoer allows, and when no vetoer is registered', async () => {
+        const { order } = orderRemovingLines([saved('b1c2d3e4-0000-4000-8000-000000000012', 1)]);
+        await expect(order.passesRemovalVeto()).resolves.toBe(true);
+        RegisterOrderLineEditVeto({ MayEdit: async () => null });
+        await expect(order.passesRemovalVeto()).resolves.toBe(true);
+    });
+
+    it('does not ask about a line that never reached the database', async () => {
+        let asked = false;
+        RegisterOrderLineEditVeto({
+            MayEdit: async () => {
+                asked = true;
+                return FROZEN;
+            },
+        });
+        const { order } = orderRemovingLines([{ ...saved('b1c2d3e4-0000-4000-8000-000000000013', 1), IsSaved: false }]);
+        await expect(order.passesRemovalVeto()).resolves.toBe(true);
+        expect(asked).toBe(false);
     });
 });
 

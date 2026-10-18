@@ -70,7 +70,7 @@ import {
     DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import { AsDateValue, DescendantLines, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -674,9 +674,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
-        this.expandedLineIds.delete(line.ID);
-        this.overrideEditorLineIds.delete(line.ID);
-        this._order?.Lines.Remove(line);
+        const order = this._order;
+        if (!order) return;
+        // A bundle goes with its components (#793), so their panels close with it.
+        for (const removed of [line, ...DescendantLines(line, order.Lines.Items)]) {
+            this.expandedLineIds.delete(removed.ID);
+            this.overrideEditorLineIds.delete(removed.ID);
+        }
+        order.RemoveLine(line);
         this.schedulePricing();
     }
 

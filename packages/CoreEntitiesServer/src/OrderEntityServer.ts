@@ -64,6 +64,8 @@ import {
     ToISODate,
     HostOrderConfirmVeto,
     ResolveOrderConfirmRefusal,
+    HostOrderLineEditVeto,
+    ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -91,6 +93,7 @@ import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionR
 import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
 import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
+import { ChildLinesFirst, DescendantLines } from '@mj-biz-apps/orders-entities';
 import { DisplacedStartEventData } from './displaced-start-event.js';
 import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
@@ -629,6 +632,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
+
+        // A REMOVAL ANOTHER APP REFUSES FAILS THE SAVE, before anything is written (#799).
+        if (!booking && !(await this.passesRemovalVeto())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -1221,6 +1227,45 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * Ask the host's order-line edit veto about every saved line this save would delete (#799).
+     *
+     * The line's own `Delete()` asks too, but it runs inside the save's transaction, where a refusal
+     * could only surface as a thrown "Failed to delete removed order line" with the vetoer's words
+     * buried in it. Asking here, before the transaction, fails the save with those words as its
+     * message. A bundle's components count: `deleteRemovedLines` deletes them with the bundle.
+     *
+     * Not while booking: that is Orders confirming its own order, which the line loop exempts too.
+     */
+    private async passesRemovalVeto(): Promise<boolean> {
+        const veto = HostOrderLineEditVeto();
+        if (!veto || !this.ID || !this.Lines.Removed.length) return true;
+
+        const removed = new Set(this.Lines.Removed);
+        for (const parent of this.Lines.Removed) {
+            for (const child of DescendantLines(parent, this.Lines.Items)) removed.add(child);
+        }
+        const refusals: string[] = [];
+        for (const line of removed) {
+            if (!line.IsSaved || !line.ID) continue;
+            const refusal = await ResolveOrderLineEditRefusal(
+                veto,
+                {
+                    OrderHeaderID: this.ID,
+                    OrderLineID: line.ID,
+                    Kind: 'delete',
+                    ContextUser: this.ContextCurrentUser ?? null,
+                },
+                'Nothing was deleted.',
+            );
+            if (refusal) refusals.push(`Line ${line.LineNumber ?? ''}: ${refusal}`);
+        }
+        if (!refusals.length) return true;
+
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusals.join('; '))));
+        return false;
+    }
+
+    /**
      * Record every line of this booking that is priced below its engine price with no Approved
      * concession covering it (finance exception type 4, golive #279). Refuses nothing.
      *
@@ -1526,7 +1571,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * because the delete moved them on the row. See the call site.
      */
     private async deleteRemovedLines(): Promise<boolean> {
-        const removed = this.Lines.Removed.filter((line) => line.IsSaved);
+        if (!this.Lines.Removed.length) return false;
+        // A REMOVED BUNDLE TAKES ITS COMPONENTS WITH IT (#793). `OrderHeaderEntity.RemoveLine` does
+        // this for the editor; a caller that removed only the bundle through `Lines.Remove` left its
+        // components in the collection, still naming it through the non-cascading
+        // FK_OrderLine_ParentOrderLine. They are removed here too, and every delete runs child first.
+        for (const parent of [...this.Lines.Removed]) {
+            for (const child of DescendantLines(parent, this.Lines.Items)) this.Lines.Remove(child);
+        }
+        const removed = ChildLinesFirst(this.Lines.Removed.filter((line) => line.IsSaved));
         if (!removed.length) return false;
 
         for (const line of removed) {
@@ -1537,9 +1590,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
              * Orders itself — so the veto is asked. While booking it is Orders confirming its own
              * order, and a refusal there would block the close that creates the record being protected.
              *
-             * The refused case still surfaces as a THROW rather than a validation refusal, which the
-             * review called out and called non-blocking. Left as-is deliberately: changing the shape of
-             * a failed removal is a different change from deciding who may make one.
+             * `passesRemovalVeto` has already asked before the transaction opened and failed the save
+             * with the vetoer's words (#799); a refusal here is only a vetoer that changed its answer
+             * in between, and that throws.
              */
             const serverLine = line as unknown as { BypassExternalEditVeto?: boolean };
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
