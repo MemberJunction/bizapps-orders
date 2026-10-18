@@ -71,6 +71,7 @@
     "@mj-biz-apps/orders-server": "^5.0.0",
     "beasties": "0.3.5",
     "dotenv": "^17.2.3",
+    "jsdom": "^26.1.0",
     "mrmime": "2.0.1",
     "mssql": "^11.0.1",
     "playwright": "^1.50.0",
