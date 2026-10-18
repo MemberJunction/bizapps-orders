@@ -11,9 +11,10 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { views, mockRunPromotions } = vi.hoisted(() => ({
+const { views, mockRunPromotions, mockAuthorize } = vi.hoisted(() => ({
     views: [] as Array<{ params: { EntityName: string; ExtraFilter?: string }; results: unknown[] }>,
     mockRunPromotions: vi.fn(),
+    mockAuthorize: vi.fn(),
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -31,7 +32,11 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 
 vi.mock('../pricing/PromotionEngine.js', async (importOriginal) => {
     const actual = await importOriginal<typeof import('../pricing/PromotionEngine.js')>();
-    return { ...actual, RunPromotions: (...args: unknown[]) => mockRunPromotions(...args) };
+    return {
+        ...actual,
+        RunPromotions: (...args: unknown[]) => mockRunPromotions(...args),
+        AuthorizeManualDiscount: (...args: unknown[]) => mockAuthorize(...args),
+    };
 });
 
 const { DeletePromotionAdjustments, ReadStandingDiscounts } = await import('../pricing/PromotionEngine.js');
@@ -52,6 +57,8 @@ function row(id: string, deleted: string[]) {
 beforeEach(() => {
     views.length = 0;
     mockRunPromotions.mockReset();
+    mockAuthorize.mockReset();
+    mockAuthorize.mockResolvedValue({ AuthorityID: 'auth-1', ApprovedByUserID: null, Refusal: null });
 });
 
 describe('ReadStandingDiscounts', () => {
@@ -169,5 +176,24 @@ describe('OrderPricingService.decidePromotions — re-deciding a saved line', ()
         await walk([l]).decidePromotions();
 
         expect(l.DiscountAmount).toBe(150);
+    });
+});
+
+describe('OrderPricingService.decidePromotions — an order-level manual discount (#824)', () => {
+    it('is judged and allocated against what the lines have left after their own discounts', async () => {
+        // Two lines of 500; one already carries a 200 manual discount. "10% off the order" is 80
+        // against 800, not 100 against 1,000.
+        const a: Line = { ID: 'line-a', ProductID: 'p', Quantity: 1, UnitPrice: 500, DiscountPct: 0, DiscountAmount: 200 };
+        const b: Line = { ID: 'line-b', ProductID: 'p', Quantity: 1, UnitPrice: 500, DiscountPct: 0, DiscountAmount: 0 };
+        mockRunPromotions.mockResolvedValue({ Applications: [], PerLine: new Map(), Unusable: [] });
+        const w = walk([a, b]);
+        w.ctx.ManualDiscounts = [{ OrderLineID: null, Percent: 0.1, Reason: 'goodwill' }];
+
+        await w.decidePromotions();
+
+        expect(mockAuthorize.mock.calls[0][1]).toBe(800);
+        // 80 split 300 : 500 → 30 and 50, on top of what each line carried.
+        expect(a.DiscountAmount).toBe(230);
+        expect(b.DiscountAmount).toBe(50);
     });
 });
