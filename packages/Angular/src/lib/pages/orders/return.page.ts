@@ -450,8 +450,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      *
      * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
      * and nothing else. Without this the page would load an order only when it happened to be
-     * constructed with one already set, and silently keep showing the previous origin otherwise —
-     * the shape `order-document.page.ts` still has.
+     * constructed with one already set, and silently keep showing the previous origin otherwise.
+     * `order-document.page.ts` follows the same pattern.
      */
     public async ngOnChanges(changes: SimpleChanges): Promise<void> {
         if (changes['OriginOrderID'] && !changes['OriginOrderID'].firstChange) {
