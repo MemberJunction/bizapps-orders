@@ -625,6 +625,41 @@ describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
         expect(instance.CaptureError).toContain('Receiving Company cannot be null');
     });
 
+    it('shows the payment an earlier attempt saved when the idempotency key refuses a retry (#847)', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+        const loadByKey = vi.fn(async () => {
+            record.IsSaved = true;
+            record.Status = 'Captured';
+            return true;
+        });
+        Object.assign(record, { SaveRefusedAsDuplicateKey: true, LoadByIdempotencyKey: loadByKey });
+        (instance as unknown as { loadPaymentJournalRollup: () => Promise<void> }).loadPaymentJournalRollup = vi.fn(async () => undefined);
+
+        await instance.CapturePayment();
+        expect(record.Save).toHaveBeenCalledOnce();
+        expect(loadByKey).toHaveBeenCalledOnce();
+        expect(instance.CaptureError).toBeNull();
+        expect(record.Status).toBe('Captured');
+    });
+
+    it('asks for another press when the earlier attempt saved only a draft (#847)', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+        Object.assign(record, {
+            SaveRefusedAsDuplicateKey: true,
+            LoadByIdempotencyKey: vi.fn(async () => {
+                record.IsSaved = true;
+                record.Status = 'Pending';
+                return true;
+            }),
+        });
+        (instance as unknown as { populateExistingAllocations: () => void }).populateExistingAllocations = vi.fn();
+
+        await instance.CapturePayment();
+        expect(instance.CaptureError).toContain('already saved this payment as a draft');
+    });
+
     it('shows an over-applied order as a negative balance and the credit it creates', () => {
         const { instance } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 5000 }]);
         const order = instance.OpenOrders[0];

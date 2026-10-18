@@ -152,3 +152,34 @@ describe('PaymentHeaderEntity.SaveStatus', () => {
         expect(payment.Status).toBe('Captured');
     });
 });
+
+describe('PaymentHeaderEntity idempotency key (#847)', () => {
+    function payment(isSaved: boolean, key: string | null, message = ''): PaymentHeaderEntity {
+        const instance = Object.create(PaymentHeaderEntity.prototype) as PaymentHeaderEntity;
+        Object.defineProperty(instance, 'IsSaved', { value: isSaved });
+        Object.defineProperty(instance, 'IdempotencyKey', { value: key, writable: true });
+        Object.defineProperty(instance, 'LatestResult', { value: { Message: message, CompleteMessage: message } });
+        return instance;
+    }
+
+    it('stamps a key on a new payment once and keeps it across retries', () => {
+        const p = payment(false, null);
+        const first = p.EnsureIdempotencyKey('form');
+        expect(first).toMatch(/^form:.{8,}/);
+        expect(p.EnsureIdempotencyKey('form')).toBe(first);
+    });
+
+    it('keeps a key the caller already set, and leaves a saved payment alone', () => {
+        expect(payment(false, 'billcom:0rp1').EnsureIdempotencyKey()).toBe('billcom:0rp1');
+        const saved = payment(true, null);
+        expect(saved.EnsureIdempotencyKey()).toBeNull();
+        expect(saved.IdempotencyKey).toBeNull();
+    });
+
+    it('recognizes a refusal by the unique key, and only that refusal', () => {
+        const refusal = "Cannot insert duplicate key row in object 'PaymentHeader' with unique index 'UX_PaymentHeader_IdempotencyKey'.";
+        expect(payment(false, 'form:x', refusal).SaveRefusedAsDuplicateKey).toBe(true);
+        expect(payment(false, 'form:x', 'Receiving Company cannot be null.').SaveRefusedAsDuplicateKey).toBe(false);
+        expect(payment(false, null, refusal).SaveRefusedAsDuplicateKey).toBe(false);
+    });
+});

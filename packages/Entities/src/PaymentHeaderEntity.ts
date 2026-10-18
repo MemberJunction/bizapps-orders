@@ -5,8 +5,8 @@
  * instrument snapshot (D39 copy-on-use). `PaymentHeaderEntityServer` extends
  * this class. Remove the declaration when CodeGen emits it from metadata.
  */
-import { BaseEntity, EmbeddedRecord, EntitySaveOptions, ValidationErrorInfo, ValidationErrorType, ValidationResult } from '@memberjunction/core';
-import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { BaseEntity, EmbeddedRecord, EntitySaveOptions, RunView, ValidationErrorInfo, ValidationErrorType, ValidationResult } from '@memberjunction/core';
+import { EscapeSQLString, RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import {
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -14,6 +14,13 @@ import {
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 
 const ENTITY = 'MJ_BizApps_Orders: Payment Headers';
+
+/** A random id for an idempotency key; `randomUUID` needs a secure context, so it falls back. */
+function newKeyID(): string {
+    const c = (globalThis as { crypto?: { randomUUID?: () => string } }).crypto;
+    if (c?.randomUUID) return c.randomUUID();
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}${Math.random().toString(36).slice(2)}`;
+}
 const DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 
 @RegisterClass(BaseEntity, ENTITY)
@@ -68,6 +75,49 @@ export class PaymentHeaderEntity extends mjBizAppsOrdersPaymentHeaderEntity {
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         this.SyncPaymentDetailFromHeader();
         return super.Save(options);
+    }
+
+    /**
+     * Give a new payment an idempotency key, once, so a repeated insert of the same payment is
+     * refused by `UX_PaymentHeader_IdempotencyKey` (#847). Without one, a capture whose response was
+     * lost after the server committed left the object new, and pressing Capture again inserted a
+     * second payment and booked the cash twice. Keeps a key already set; does nothing once saved.
+     */
+    public EnsureIdempotencyKey(prefix = 'form'): string | null {
+        if (this.IsSaved) return this.IdempotencyKey ?? null;
+        if (!this.IdempotencyKey) this.IdempotencyKey = `${prefix}:${newKeyID()}`;
+        return this.IdempotencyKey;
+    }
+
+    /** True when the latest save was refused because a payment with this key already exists. */
+    public get SaveRefusedAsDuplicateKey(): boolean {
+        if (this.IsSaved || !this.IdempotencyKey) return false;
+        const result = this.LatestResult;
+        const text = `${result?.Message ?? ''} ${result?.CompleteMessage ?? ''}`;
+        return /UX_PaymentHeader_IdempotencyKey/i.test(text);
+    }
+
+    /**
+     * Load the payment already saved under this object's idempotency key into this object, so a
+     * retry that the key refused shows the payment the first attempt wrote (#847). False when there
+     * is no key or no such payment.
+     */
+    public async LoadByIdempotencyKey(): Promise<boolean> {
+        const key = this.IdempotencyKey;
+        if (!key) return false;
+        const rv = new RunView(this.RunViewProviderToUse);
+        const result = await rv.RunView<{ ID: string }>(
+            {
+                EntityName: ENTITY,
+                ExtraFilter: `IdempotencyKey = '${EscapeSQLString(key)}'`,
+                Fields: ['ID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        const id = result.Success ? result.Results?.[0]?.ID : undefined;
+        return id ? this.Load(id) : false;
     }
 
     /**
