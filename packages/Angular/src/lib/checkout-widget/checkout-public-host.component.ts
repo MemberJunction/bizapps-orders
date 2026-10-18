@@ -43,6 +43,8 @@ import {
     CHECKOUT_STATE_CHANGE_EVENT,
     CheckoutElementEvent,
     type CheckoutElementState,
+    type CheckoutErrorDetail,
+    type CheckoutErrorStage,
 } from './checkout-events';
 import {
     ACCESS_POLL_INTERVAL_MS,
@@ -222,13 +224,13 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         // These return before the try below, so they report the error themselves (#859).
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';
-            this.reportError(this.loadError);
+            this.reportError('initialize', this.loadError);
             return;
         }
         this.sessionKey = this.clientKey();
         if (!this.sessionKey) {
             this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
-            this.reportError(this.loadError);
+            this.reportError('initialize', this.loadError);
             return;
         }
         if (!this.renewalToken && (await this.resumeAccountStep())) {
@@ -268,7 +270,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         } catch (err) {
             this.loadError = err instanceof TurnstileError ? err.message : 'Checkout is temporarily unavailable. Please try again.';
         } finally {
-            if (this.loadError) this.reportError(this.loadError);
+            if (this.loadError) this.reportError('initialize', this.loadError);
             this.cdr.detectChanges();
         }
     }
@@ -450,6 +452,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.processing = true;
         this.errorMessage = null;
         this.setState('PROCESSING');
+        let stage: CheckoutErrorStage = 'draft';
         try {
             const line = buildCheckoutDraftLine(this.config.productId, event);
             const draft = await this.post('/draft', {
@@ -485,6 +488,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 return;
             }
             if (!draft.RequiresPayment) {
+                stage = 'complete';
                 await this.finish();
                 return;
             }
@@ -494,6 +498,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             if (this.quoteChanged(draft, event.totalGross)) {
                 return;
             }
+            stage = 'payment';
             const intent = await this.post('/payment-intent', {
                 sessionId: this.sessionId,
                 clientSessionKey: this.sessionKey,
@@ -504,6 +509,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
             }
             if (intentAlreadyCollected(intent.Status)) {
+                stage = 'complete';
                 await this.finish();
                 return;
             }
@@ -537,10 +543,11 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
                 }
             }
+            stage = 'complete';
             await this.finish();
         } catch (err) {
             this.errorMessage = err instanceof Error ? err.message : 'Checkout failed.';
-            this.reportError(this.errorMessage);
+            this.reportError(stage, this.errorMessage);
         } finally {
             this.processing = false;
             this.cdr.detectChanges();
@@ -559,6 +566,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.processing = true;
         this.errorMessage = null;
         this.setState('PROCESSING');
+        let stage: CheckoutErrorStage = 'payment';
         try {
             const intent = await this.post('/payment-intent', {
                 sessionId: this.sessionId,
@@ -588,6 +596,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     }
                 }
             }
+            stage = 'complete';
             const done = await this.post('/complete', {
                 sessionId: this.sessionId,
                 clientSessionKey: this.sessionKey,
@@ -611,7 +620,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             );
         } catch (err) {
             this.errorMessage = err instanceof Error ? err.message : 'Payment failed.';
-            this.reportError(this.errorMessage);
+            this.reportError(stage, this.errorMessage);
         } finally {
             this.processing = false;
             this.cdr.detectChanges();
@@ -857,9 +866,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.dispatch(CHECKOUT_STATE_CHANGE_EVENT, { state });
     }
 
-    private reportError(message: string): void {
+    private reportError(stage: CheckoutErrorStage, message: string): void {
         this.setState('ERROR');
-        this.dispatch(CHECKOUT_ERROR_EVENT, { message });
+        this.dispatch<CheckoutErrorDetail>(CHECKOUT_ERROR_EVENT, { stage, message });
     }
 
     /** Dispatches on the `<mj-orders-checkout>` element; bubbling and composed, so `document` hears it too. */
@@ -885,7 +894,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         } catch (err) {
             this.cardMounted = false;
             this.errorMessage = err instanceof Error ? err.message : 'Could not load card entry.';
-            this.reportError(this.errorMessage);
+            this.reportError('card', this.errorMessage);
         }
     }
 

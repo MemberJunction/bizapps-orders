@@ -691,7 +691,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 |---|---|---|
 | `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
 | `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units; `currency` is the widget's `currency` upper-cased, or `null` when the widget sets none; `coupon` is the promotion code the draft applied, or `null` when none was |
-| `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
+| `checkout-error` | the checkout could not load, or a step failed | `{ stage, message }` — `stage` is where it failed: `initialize`, `draft`, `payment`, `complete` or `card` (card entry did not load). `message` is the text shown to the buyer, which can include server or payment-gateway wording: show it, but track `stage` and do not forward `message` to analytics |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
 | `checkout-reset-refused` | a host's `checkout-reset` arrived while a payment was in flight or the account step was unsettled | `{ state }` |
@@ -701,7 +701,7 @@ With a `redirectUrl`, the page navigates away soon after `checkout-complete` (on
 
 Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
 
-No detail carries the buyer's e-mail, name or any other personal data: the events reach every script on the host page. `productName` is the widget's `productName`, which `/initialize` fills from the product's name, or else its `title`.
+No detail is built from the buyer's e-mail, name or any other personal data: the events reach every script on the host page. The one free-text field is `checkout-error`'s `message`, buyer-facing text that is not meant for analytics. `productName` is the widget's `productName`, which `/initialize` fills from the product's name, or else its `title`.
 
 ```javascript
 document.addEventListener('checkout-complete', (e) => {

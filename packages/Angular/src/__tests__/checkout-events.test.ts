@@ -117,7 +117,7 @@ describe('CheckoutPublicHostComponent events', () => {
         await create().ngOnInit();
         expect(seen.slice(-2)).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'This checkout is not available.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout is not available.' } },
         ]);
     });
 
@@ -128,7 +128,7 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(c.loadError).toBe('This checkout link is missing its reference.');
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'This checkout link is missing its reference.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout link is missing its reference.' } },
         ]);
     });
 
@@ -138,7 +138,7 @@ describe('CheckoutPublicHostComponent events', () => {
         await c.ngOnInit();
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'Checkout requires a secure random source. Open this page over HTTPS.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'Checkout requires a secure random source. Open this page over HTTPS.' } },
         ]);
     });
 
@@ -183,13 +183,28 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'Could not price this checkout.' } },
+            { type: 'checkout-error', detail: { stage: 'draft', message: 'Could not price this checkout.' } },
         ]);
         responses['/draft'] = { Success: true, RequiresPayment: false };
         seen = [];
         await c.onSubmitted(submission());
         expect(seen[0]).toEqual({ type: 'checkout-state-change', detail: { state: 'PROCESSING' } });
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
+    });
+
+    it('names the stage that failed: payment, then complete (#860)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: true, TotalGross: 0 };
+        responses['/payment-intent'] = { Success: false, ErrorMessage: 'Could not start payment.' };
+        const c = create();
+        await c.ngOnInit();
+        await c.onSubmitted(submission());
+        expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'payment', message: 'Could not start payment.' });
+
+        responses['/draft'] = { Success: true, RequiresPayment: false };
+        responses['/complete'] = { Success: false, ErrorMessage: 'Failed to complete checkout: boom' };
+        seen = [];
+        await c.onSubmitted(submission());
+        expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'complete', message: 'Failed to complete checkout: boom' });
     });
 
     describe('account step password form (#396)', () => {
