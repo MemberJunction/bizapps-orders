@@ -56,6 +56,7 @@ import {
     FindPriorDelivery,
     PriorDeliveryWasApplied,
     RecordWebhookDelivery,
+    REFUND_NOT_BOOKED_REASON_CODE,
     type PriorDelivery,
     type WebhookDeliveryOutcome,
     type WebhookDeliveryReasonCode,
@@ -250,13 +251,25 @@ async function act(
         // A refund made at the gateway is booked before the event is stamped, for the same reason as
         // settlement: a failure here answers 500 with nothing stamped, and the retry books only what is
         // still missing (#476).
+        let refundReview: string | undefined;
         if (event.Kind === REFUND_EVENT_KIND) {
-            await BookProviderRefunds(event, existing!.ID, driver, provider, user);
+            refundReview = (await BookProviderRefunds(event, existing!.ID, driver, provider, user)).ReviewReason;
         }
         await applyEvent(event, existing!.ID, provider, user);
         const booked = await bookCheckoutCaptureFromWebhook(event, existing!.ID, user);
         if (!booked) {
             return failed('the settled checkout payment did not book; the gateway will redeliver');
+        }
+        // A refund that went to review is still applied (the gateway must not resend it), but the row
+        // says so with its own reason code, so the refund shows on the "Not Applied" view whether or
+        // not the finance exception type exists on this host (#872).
+        if (refundReview) {
+            return {
+                Response: { Status: 200, Body: { received: true, outcome: 'Apply' } },
+                Outcome: 'Applied',
+                ReasonCode: REFUND_NOT_BOOKED_REASON_CODE,
+                Reason: `refund not booked: ${refundReview}`,
+            };
         }
         return {
             Response: { Status: 200, Body: { received: true, outcome: 'Apply' } },
