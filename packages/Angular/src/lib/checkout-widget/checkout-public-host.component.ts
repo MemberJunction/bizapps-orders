@@ -219,13 +219,16 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         // A reset runs this again: a failure from the previous attempt must not outlive it.
         this.loadError = null;
         this.readHostAttributes();
+        // These return before the try below, so they report the error themselves (#859).
         if (!this.slug) {
             this.loadError = 'This checkout link is missing its reference.';
+            this.reportError(this.loadError);
             return;
         }
         this.sessionKey = this.clientKey();
         if (!this.sessionKey) {
             this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
+            this.reportError(this.loadError);
             return;
         }
         if (!this.renewalToken && (await this.resumeAccountStep())) {

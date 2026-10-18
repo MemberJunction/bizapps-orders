@@ -121,6 +121,27 @@ describe('CheckoutPublicHostComponent events', () => {
         ]);
     });
 
+    it('reports ERROR for a checkout link with no reference (#859)', async () => {
+        const c = create();
+        c.slug = '';
+        await c.ngOnInit();
+        expect(c.loadError).toBe('This checkout link is missing its reference.');
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'ERROR' } },
+            { type: 'checkout-error', detail: { message: 'This checkout link is missing its reference.' } },
+        ]);
+    });
+
+    it('reports ERROR when the page has no secure random source (#859)', async () => {
+        const c = create();
+        (c as unknown as { clientKey(): string }).clientKey = () => '';
+        await c.ngOnInit();
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'ERROR' } },
+            { type: 'checkout-error', detail: { message: 'Checkout requires a secure random source. Open this page over HTTPS.' } },
+        ]);
+    });
+
     it('reports PROCESSING, SUCCESS and the sale, with no personal data', async () => {
         const c = create();
         await c.ngOnInit();
