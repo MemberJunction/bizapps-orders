@@ -2907,12 +2907,27 @@ export class CheckoutSessionService {
         };
     }
 
+    /**
+     * The buyer's Billing address for this location. Reuses a Billing-linked Address of the
+     * person's with the same country, state and postal code and no street lines, so a retried
+     * completion (a confirm that failed after the address was saved) does not add a second
+     * address and link for the same location (#817). Otherwise records a new one and links it.
+     */
     private static async recordBillingAddress(
         location: BillingLocation,
         personID: string,
         md: Metadata,
         contextUser?: UserInfo
     ): Promise<string> {
+        let existing: string | null = null;
+        try {
+            existing = await this.findBillingAddress(location, personID, md, contextUser);
+        } catch (err) {
+            LogError(`[CheckoutSessionService] Billing address lookup for person ${personID} failed; recording a new one: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (existing) {
+            return existing;
+        }
         const address = await md.GetEntityObject<mjBizAppsCommonAddressEntity>(ADDRESS_ENTITY, contextUser);
         address.NewRecord();
         address.Country = location.Country;
@@ -2925,6 +2940,61 @@ export class CheckoutSessionService {
         return address.ID;
     }
 
+    /** The ID of the Billing address type, or null when it is not defined. */
+    private static async billingAddressTypeID(contextUser?: UserInfo): Promise<string | null> {
+        const typeRes = await new RunView().RunView<{ ID: string }>({
+            EntityName: ADDRESS_TYPE_ENTITY,
+            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
+            Fields: ['ID'],
+            ResultType: 'simple'
+        }, contextUser);
+        return (typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined) ?? null;
+    }
+
+    /**
+     * A location-only Address already linked to the person as Billing that matches this location,
+     * or null. Fail-soft: a failed read means a new address is recorded, as before.
+     */
+    private static async findBillingAddress(
+        location: BillingLocation,
+        personID: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<string | null> {
+        const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
+        const addressTypeID = await this.billingAddressTypeID(contextUser);
+        if (!personEntityID || !addressTypeID) {
+            return null;
+        }
+        const rv = new RunView();
+        const links = await rv.RunView<{ AddressID: string }>({
+            EntityName: ADDRESS_LINK_ENTITY,
+            ExtraFilter: `EntityID = '${EscapeText(personEntityID)}' AND RecordID = '${EscapeText(personID)}' AND AddressTypeID = '${EscapeText(addressTypeID)}'`,
+            Fields: ['AddressID'],
+            ResultType: 'simple'
+        }, contextUser);
+        const addressIDs = links?.Success ? (links.Results ?? []).map((l) => l.AddressID).filter(Boolean) : [];
+        if (addressIDs.length === 0) {
+            return null;
+        }
+        const matches = (column: string, value: string | null) =>
+            value == null || value === '' ? `(${column} IS NULL OR ${column} = '')` : `${column} = '${EscapeText(value)}'`;
+        const addresses = await rv.RunView<{ ID: string }>({
+            EntityName: ADDRESS_ENTITY,
+            ExtraFilter: [
+                `ID IN (${addressIDs.map((id) => `'${EscapeText(id)}'`).join(',')})`,
+                matches('Country', location.Country),
+                matches('StateProvince', location.StateProvince),
+                matches('PostalCode', location.PostalCode),
+                matches('Line1', null),
+            ].join(' AND '),
+            Fields: ['ID'],
+            OrderBy: '__mj_CreatedAt ASC',
+            ResultType: 'simple'
+        }, contextUser);
+        return (addresses?.Success ? addresses.Results?.[0]?.ID : undefined) ?? null;
+    }
+
     private static async linkBillingAddress(
         addressID: string,
         personID: string,
@@ -2932,14 +3002,7 @@ export class CheckoutSessionService {
         contextUser?: UserInfo
     ): Promise<void> {
         const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
-        const rv = new RunView();
-        const typeRes = await rv.RunView<{ ID: string }>({
-            EntityName: ADDRESS_TYPE_ENTITY,
-            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
-            Fields: ['ID'],
-            ResultType: 'simple'
-        }, contextUser);
-        const addressTypeID = typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined;
+        const addressTypeID = await this.billingAddressTypeID(contextUser);
         if (!personEntityID || !addressTypeID) {
             LogError(`[CheckoutSessionService] Billing address ${addressID} not linked to person ${personID}: ${personEntityID ? `no '${BILLING_ADDRESS_TYPE}' address type` : 'Person entity not in metadata'}`);
             return;

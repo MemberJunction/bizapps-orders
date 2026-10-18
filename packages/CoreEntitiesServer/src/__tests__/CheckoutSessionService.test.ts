@@ -287,6 +287,9 @@ const mocks = vi.hoisted(() => {
         mockIntentSave,
         mockCaptureExecute,
         mockClaimCreate: vi.fn().mockResolvedValue({ ID: 'claim-1' }),
+        billingLinkRows: [] as Array<{ AddressID: string }>,
+        billingAddressRows: [] as Array<{ ID: string }>,
+        addressRunViewParams: [] as Array<{ EntityName: string; ExtraFilter?: string }>,
         mockOpenPaymentIntent: vi.fn().mockResolvedValue({
             Success: true,
             PaymentIntentID: 'pi-row-1',
@@ -476,6 +479,14 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 if (params.EntityName.includes('Address Types')) {
                     return Promise.resolve({ Success: true, Results: [{ ID: 'addrtype-billing' }] });
                 }
+                if (params.EntityName.includes('Address Links')) {
+                    mocks.addressRunViewParams.push(params);
+                    return Promise.resolve({ Success: true, Results: mocks.billingLinkRows });
+                }
+                if (params.EntityName.includes('Addresses')) {
+                    mocks.addressRunViewParams.push(params);
+                    return Promise.resolve({ Success: true, Results: mocks.billingAddressRows });
+                }
                 if (params.EntityName.includes('People') || params.EntityName.includes('Persons')) {
                     mocks.personLookups++;
                     const email = /Email = '(.*)'/.exec(params.ExtraFilter ?? '')?.[1];
@@ -586,6 +597,9 @@ describe('CheckoutSessionService', () => {
         mocks.sessionRunViewResults = undefined;
         mocks.peopleByEmail = {};
         mocks.personLookups = 0;
+        mocks.billingLinkRows = [];
+        mocks.billingAddressRows = [];
+        mocks.addressRunViewParams = [];
         mocks.subscriptionRunViewResults = [];
         mocks.eventProductsRequiringAttendees = [];
         mocks.subscriptionRunViewParams = [];
@@ -3048,6 +3062,30 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockAddressLinkInstance.AddressTypeID).toBe('addrtype-billing');
             const ctx = mocks.mockPricingPrice.mock.calls[0][0] as { ShipToAddress: unknown };
             expect(ctx.ShipToAddress).toEqual({ Country: 'US', StateProvince: 'IL', City: null, PostalCode: '60601' });
+        });
+
+        it('reuses the buyer’s Billing address for the same location on a retry, adding no address or link (#817)', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.billingLinkRows = [{ AddressID: 'addr-existing' }];
+            mocks.billingAddressRows = [{ ID: 'addr-existing' }];
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.BillToAddressID).toBe('addr-existing');
+            expect(mocks.mockOrderInstance.ShipToAddressID).toBe('addr-existing');
+            expect(mocks.mockAddressSave).not.toHaveBeenCalled();
+            expect(mocks.mockAddressLinkSave).not.toHaveBeenCalled();
+            const addressFilter = mocks.addressRunViewParams.find((p) => p.EntityName.includes('Addresses'))?.ExtraFilter ?? '';
+            expect(addressFilter).toContain("ID IN ('addr-existing')");
+            expect(addressFilter).toContain("Country = 'US'");
+            expect(addressFilter).toContain("StateProvince = 'IL'");
+            expect(addressFilter).toContain("PostalCode = '60601'");
+            expect(addressFilter).toContain('Line1 IS NULL');
         });
 
         it('does not confirm the order when the Address cannot be saved', async () => {
