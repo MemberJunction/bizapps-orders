@@ -95,13 +95,18 @@ export class PaymentHeaderEntity extends mjBizAppsOrdersPaymentHeaderEntity {
      * detail's company or tender, because a detail is a point-in-time snapshot that an order's
      * payment intent may share. When either differs, the payment gets a new detail carrying the
      * same instrument fields, and the saved one is left as it was.
+     *
+     * The same holds for any other instrument field (#867). The form's setters write a corrected
+     * reference number or instrument date straight onto the saved detail, which the database then
+     * refuses (`trg_PaymentDetail_Immutable`), so a saved detail with any edit is replaced too.
      */
     public SyncPaymentDetailFromHeader(): void {
         let detail = this.PaymentDetailID_Object;
         if (!detail) return;
         const companyChanged = Boolean(this.ReceivingCompanyID) && !UUIDsEqual(detail.CompanyID, this.ReceivingCompanyID);
         const tenderChanged = Boolean(this.PaymentTypeID) && !UUIDsEqual(detail.PaymentTypeID, this.PaymentTypeID);
-        if (!companyChanged && !tenderChanged) return;
+        const savedAndEdited = detail.IsSaved && detail.Dirty;
+        if (!companyChanged && !tenderChanged && !savedAndEdited) return;
         if (detail.IsSaved) detail = this.replacePaymentDetail(detail);
         if (companyChanged) detail.CompanyID = this.ReceivingCompanyID;
         if (tenderChanged) detail.PaymentTypeID = this.PaymentTypeID;

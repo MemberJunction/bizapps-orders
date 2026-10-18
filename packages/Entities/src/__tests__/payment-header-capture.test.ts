@@ -108,6 +108,21 @@ describe('PaymentHeaderEntity.SyncPaymentDetailFromHeader on a saved detail', ()
         expect((detail as unknown as { row: Record<string, unknown> }).row).toMatchObject({ CompanyID: 'co-a', PaymentTypeID: 'pt-wire', ReferenceNumber: '1001' });
     });
 
+    it('replaces a saved detail whose reference number was corrected, keeping the correction (#867)', () => {
+        const detail = savedDetail({ CompanyID: 'co-a', PaymentTypeID: 'pt-check', ReferenceNumber: '1001' });
+        (detail as unknown as { Dirty: boolean }).Dirty = true;
+        detail.Set('ReferenceNumber', '1010');
+        const { instance, calls } = savedHeader('co-a', 'pt-check', detail);
+        instance.SyncPaymentDetailFromHeader();
+        expect(calls).toEqual(['clear', 'ensure']);
+        expect((detail as unknown as { row: Record<string, unknown> }).row).toMatchObject({
+            ID: 'detail-2',
+            CompanyID: 'co-a',
+            PaymentTypeID: 'pt-check',
+            ReferenceNumber: '1010',
+        });
+    });
+
     it('keeps a saved detail whose company and tender already match', () => {
         const detail = savedDetail({ CompanyID: 'co-a', PaymentTypeID: 'pt-wire' });
         const { instance, calls } = savedHeader('co-a', 'pt-wire', detail);
