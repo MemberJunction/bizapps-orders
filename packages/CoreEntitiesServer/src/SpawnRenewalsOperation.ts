@@ -489,9 +489,11 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // and the ledger shows the sale in the period it belongs to — not on the day the job
             // happened to run.
             order.OrderDate = this.dayAfter(due.TermEndDate);
-            // The instalment the confirm issues is invoiced on the pass's day, the day its due date
-            // is counted from, so a catch-up run does not book it today (#831).
-            order.InstalmentInvoiceDay = invoiceDay;
+            // A catch-up run (an as-of day before today) invoices the instalment on that day, the day
+            // its due date is counted from, so it does not book it today (#831). An as-of day in the
+            // future still invoices today: AR is never dated ahead of the day it is raised.
+            const today = (await CalendarDayOrToday(null, provider, user)).toISOString().slice(0, 10);
+            order.InstalmentInvoiceDay = invoiceDay < today ? invoiceDay : null;
             order.CompanyID = due.CompanyID;
             order.BillToOrganizationID = due.HolderOrganizationID;
             order.BillToPersonID = due.BeneficiaryPersonID;
