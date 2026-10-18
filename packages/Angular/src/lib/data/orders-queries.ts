@@ -286,7 +286,7 @@ function likeText(value: string): string {
  * Renamed for what it selects rather than what it once excluded: an order that has BOOKED, which is
  * `IsBooked` in `OrderStatusBehavior` — "journal entries exist and the receivable is real".
  */
-export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'drafts' | 'credits';
+export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'returnable' | 'drafts' | 'credits';
 
 export interface MJOGetOrdersOptions {
     Preset?: MJOOrderPreset;
@@ -321,6 +321,8 @@ export interface MJOGetOrdersOptions {
  *   owes nothing yet.
  * - `booked` — the order has confirmed, so journal entries exist and the receivable is real. This
  *   is `IsBooked` in `OrderStatusBehavior`, and it is what a return reverses.
+ * - `returnable` — `booked`, minus return orders themselves (`ReversesOrderHeaderID` set). A return
+ *   cannot be returned, so the Returns picker offers only these (#835).
  * - `credits` — a NEGATIVE balance, which IS the customer's credit. There is no separate instrument
  *   to look up.
  */
@@ -344,6 +346,9 @@ export async function GetOrders(
             // imported because this builds a server-side filter string, not a client-side test —
             // but if `IsBooked` ever widens, this is the other half that has to widen with it.
             filters.push(`Status = 'Confirmed'`);
+            break;
+        case 'returnable':
+            filters.push(`Status = 'Confirmed' AND ReversesOrderHeaderID IS NULL`);
             break;
         case 'drafts':
             filters.push(`Status IN ('Draft','Quoted')`);

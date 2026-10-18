@@ -129,6 +129,13 @@ interface MJOReturnLine {
                 }
             </div>
 
+            @if (NothingLeftToReturn) {
+                <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
+                          data-testid="return-nothing-left">
+                    Everything on this order has been returned. Choose another order to start a return.
+                </mj-alert>
+            }
+
             <div class="mjo-rt__split">
                 <div class="mjo-rt__left">
                     <div class="mj-card">
@@ -384,7 +391,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      * Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is
      * "journal entries exist and the receivable is real". A Draft or Quoted order has no money to
      * give back, and `ReversalResolver` skips Draft and Voided on the server, so offering one would
-     * be offering a choice the server refuses.
+     * be offering a choice the server refuses. Return orders themselves are left out too (the
+     * `returnable` preset, #835): a return cannot be returned.
      *
      * Filtered server-side rather than fetched-and-filtered: `MJOGetOrdersOptions` records a real
      * performance bug from doing the latter, and a returns picker on a long-lived instance is
@@ -462,7 +470,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        this.PickerOrders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -616,6 +624,14 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         }
         for (const row of result.Output.Lines) out.set(row.OrderLineID, row.AlreadyReturned);
         return out;
+    }
+
+    /**
+     * Every line of the loaded order has already come back in full (#835). The confirm button is
+     * disabled then, and without saying why the page read as broken.
+     */
+    public get NothingLeftToReturn(): boolean {
+        return this.Lines.length > 0 && this.Lines.every((line) => this.remaining(line) === 0);
     }
 
     /** What may still come back — prior returns count against it. */
