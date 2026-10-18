@@ -82,6 +82,7 @@ import type {
     mjBizAppsAccountingJournalEntryEntity,
 } from '@mj-biz-apps/accounting-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
+import { FormatDate } from '../panels/money-format';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -1132,17 +1133,20 @@ export function BuildOrderJournalEntryRows(
 /**
  * The one-line "what you are not seeing" note under the rollup, or null when nothing is hidden.
  *
- * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after 2026-09-10'
+ * The As-of date is written the way the rest of the order form writes dates (#791).
+ *
+ * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after Sep 10, 2026'
  */
 export function ExcludedEntriesLabel(rollup: OrderJournalRollup, asOf?: DateCell): string | null {
     const parts: string[] = [];
     if (rollup.ExcludedAfterAsOf > 0) {
-        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ?? 'the As-of date'}`);
+        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ? FormatDate(asOf) : 'the As-of date'}`);
     }
     if (rollup.ExcludedNotPosted > 0) {
         parts.push(`${plural(rollup.ExcludedNotPosted)} not yet posted`);
     }
-    return parts.length ? parts.join(', ') : null;
+    // A semicolon, not a comma: the formatted date carries its own comma ("Sep 1, 2026").
+    return parts.length ? parts.join('; ') : null;
 }
 
 function plural(count: number): string {
