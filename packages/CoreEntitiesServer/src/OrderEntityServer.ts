@@ -1560,6 +1560,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         options?: EntitySaveOptions,
         decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
     ): Promise<void> {
+        // Before the lines save: saving them writes this save's zero-tax reason components, which a
+        // later delete would take with the superseded rows.
+        await this.deleteSupersededPriceComponents();
         await this.savePendingLines(options, decisions);
         await this.savePriceComponents(options);
     }
@@ -3045,8 +3048,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         const md = new Metadata();
-
-        await this.deleteSupersededPriceComponents();
 
         for (const [line, resolved] of this._priceComponents) {
             let seq = 0;

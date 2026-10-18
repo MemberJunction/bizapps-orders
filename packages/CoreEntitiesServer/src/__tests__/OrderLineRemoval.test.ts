@@ -249,6 +249,7 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
         // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.
         stampLineDimensions: vi.fn().mockResolvedValue(undefined),
         savePriceComponents: vi.fn().mockResolvedValue(undefined),
+        deleteSupersededPriceComponents: vi.fn().mockResolvedValue(undefined),
         // Replacing a draft's earlier tax and promotion rows is its own subject.
         deleteTaxRecords: vi.fn().mockResolvedValue(undefined),
         deletePromotionRecords: vi.fn().mockResolvedValue(undefined),
