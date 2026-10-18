@@ -163,6 +163,10 @@ export async function PaidOnBillingUnit(
     // Only money that is actually captured counts; a Pending or Failed header is not cash.
     filters.push(`PaymentHeaderID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentHeader] WHERE Status IN ('Captured','Refunded','Disputed'))`);
     const r = await rv.RunView<{ Amount: number }>({ EntityName: PAYMENT_LINE_ENTITY, ExtraFilter: filters.join(' AND '), Fields: ['Amount'], ResultType: 'simple' }, user);
+    // Read as "nothing paid", a failure would invoice a part-paid unit in full (#901).
+    if (!r.Success) {
+        throw new Error(`Could not read the payments on order ${orderHeaderID}, so nothing was sent: ${r.ErrorMessage}`);
+    }
     return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
 }
 
@@ -202,6 +206,10 @@ export async function IssueOneUnit(
         { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${unit.OrderHeaderID}'`, ResultType: 'simple' },
         user,
     );
+    // A failed read is not "no such order" (#901).
+    if (!orderResult.Success) {
+        throw new Error(`Could not read order ${unit.OrderHeaderID}, so nothing was sent: ${orderResult.ErrorMessage}`);
+    }
     const order = orderResult.Results?.[0];
     if (!order) return refuse('ERROR', `No order with ID ${unit.OrderHeaderID}.`);
 
@@ -212,6 +220,10 @@ export async function IssueOneUnit(
             { EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ExtraFilter: `OrderHeaderID = '${unit.OrderHeaderID}'`, ResultType: 'simple' },
             user,
         );
+        // Read as "no instalments", a failure would invoice a scheduled order as one whole-order document (#901).
+        if (!s.Success) {
+            throw new Error(`Could not read the payment schedule of order ${order.OrderNumber}, so nothing was sent: ${s.ErrorMessage}`);
+        }
         scheduleRows = (s.Results ?? []).filter((r) => r.Status !== 'Canceled');
     } else if (unit.OrderHeaderPaymentScheduleID) {
         return refuse('ERROR', 'This database has no payment-schedule table yet (PR #220); an instalment cannot be named.');
@@ -527,6 +539,7 @@ export async function LoadExternalInvoiceByID(id: string, provider: IMetadataPro
         { EntityName: EXTERNAL_INVOICE_ENTITY, ExtraFilter: `ID = '${RequireUUID(id, 'ExternalInvoiceID')}'`, ResultType: 'simple' },
         user,
     );
+    if (!r.Success) throw new Error(`Could not read external invoice ${id}: ${r.ErrorMessage}`);
     return r.Results?.[0] ?? null;
 }
 
@@ -580,6 +593,10 @@ export async function LoadLegacySplitInvoice(
         },
         user,
     );
+    // Read as "none", a failure would send the order company's invoice beside a live split one (#901).
+    if (!r.Success) {
+        throw new Error(`Could not read the earlier invoices of order ${orderHeaderID}, so nothing was sent: ${r.ErrorMessage}`);
+    }
     // Re-checked here as well as in the filter, so the answer does not rest on how a provider compares ids.
     return (r.Results ?? []).find((x) => !UUIDsEqual(String(x.CompanyID), orderCompanyID)) ?? null;
 }
@@ -615,6 +632,10 @@ export async function CountRailNumbersSpent(
         },
         user,
     );
+    // Read as zero, a failure would reissue the original document number instead of the next -R one (#901).
+    if (!r.Success) {
+        throw new Error(`Could not read the rail numbers already used for order ${unit.OrderHeaderID}, so nothing was sent: ${r.ErrorMessage}`);
+    }
     return (r.Results ?? []).length;
 }
 

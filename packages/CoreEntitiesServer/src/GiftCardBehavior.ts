@@ -139,6 +139,34 @@ export function PlanGiftCardVoid(reversalQuantity: number, issuedCount: number):
 }
 
 /**
+ * Why a gift-card return may not book, or null when it may (#830).
+ *
+ * A return credits the customer the reversal line's net, which mirrors the origin's full price, but
+ * it can only take back what the cards it voids still hold. A 90 card spent down to 30 returned
+ * for 90 hands back 60 the customer already spent; a card spent to zero (Depleted, so never voided)
+ * returned at all hands back the lot. So the credit may not exceed the remaining balances of the
+ * cards being voided. A stated amount is how a return settles for what is left, as for any other
+ * negotiated return.
+ *
+ * @param credit           the reversal line's net, any sign; its magnitude is what is credited
+ * @param voidedBalances   the remaining balance of each card the return voids
+ * @param returnedCards    how many cards the line sends back
+ */
+export function GiftCardReturnRefusal(credit: number, voidedBalances: number[], returnedCards: number, lineLabel: string): string | null {
+    const credited = Money(Math.abs(Number(credit ?? 0)));
+    const remaining = Money(voidedBalances.reduce((sum, b) => sum + Math.max(0, Number(b ?? 0)), 0));
+    if (credited <= remaining) return null;
+    const unvoidable = Math.max(0, Math.floor(Math.abs(returnedCards)) - voidedBalances.length);
+    return (
+        `${lineLabel} returns gift cards that hold ${remaining.toFixed(2)} between them but credits ${credited.toFixed(2)}. ` +
+        (unvoidable > 0 ? `${unvoidable} of the returned cards ${unvoidable === 1 ? 'is' : 'are'} already spent or voided. ` : '') +
+        (remaining > 0
+            ? `A return can only take back what the cards still hold: state the line's amount as ${remaining.toFixed(2)} or less.`
+            : `They hold nothing to take back, so they cannot be returned for a credit.`)
+    );
+}
+
+/**
  * A card code: `GC-` + 16 unambiguous characters in groups of four.
  *
  * The alphabet omits I, L, O, 0, 1, U — the pairs people mistype when reading a card aloud or off a

@@ -38,6 +38,7 @@ import {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
     type GiftCardLineFacts,
     type GiftCardOrderFacts,
 } from './GiftCardBehavior.js';
@@ -61,6 +62,10 @@ export interface GiftCardOrderLine {
     ProductID: string;
     Quantity: number;
     UnitPrice: number;
+    /** The line's net. On a reversal line, the credit the return books; checked against the voided cards' balances. */
+    LineTotalNet?: number | null;
+    /** For messages. */
+    LineNumber?: number | null;
     ReversesOrderLineID: string | null;
     ShipToPersonID: string | null;
     ShipToOrganizationID: string | null;
@@ -136,28 +141,43 @@ export async function IssueGiftCards(
         ...giftCardLines.map((l) => l.ID),
         ...giftCardLines.map((l) => l.ReversesOrderLineID).filter((x): x is string => !!x),
     ];
-    const existing = await rv.RunView<{ ID: string; IssuedFromOrderLineID: string; Status: string }>(
+    const existing = await rv.RunView<{ ID: string; IssuedFromOrderLineID: string; Status: string; CurrentBalance: number | null }>(
         {
             EntityName: STORED_VALUE_ACCOUNT_ENTITY,
             ExtraFilter: `IssuedFromOrderLineID IN (${quote(relevantLineIDs)})`,
+            Fields: ['ID', 'IssuedFromOrderLineID', 'Status', 'CurrentBalance'],
             ResultType: 'simple',
         },
         user,
     );
-    const issuedByLine = new Map<string, Array<{ ID: string; Status: string }>>();
+    if (!existing.Success) {
+        throw new Error(`Could not read the gift cards this order's lines issued: ${existing.ErrorMessage ?? 'no reason given'}`);
+    }
+    const issuedByLine = new Map<string, Array<{ ID: string; Status: string; Balance: number }>>();
     for (const row of existing.Results ?? []) {
         const k = key(row.IssuedFromOrderLineID);
         if (!issuedByLine.has(k)) issuedByLine.set(k, []);
-        issuedByLine.get(k)!.push({ ID: row.ID, Status: row.Status });
+        issuedByLine.get(k)!.push({ ID: row.ID, Status: row.Status, Balance: Number(row.CurrentBalance ?? 0) });
     }
 
     for (const line of giftCardLines) {
         // ── A REVERSAL: void, never mint ──────────────────────────────────────────────────────────
         if (line.ReversesOrderLineID) {
-            const originCards = (issuedByLine.get(key(line.ReversesOrderLineID)) ?? []).filter(
-                (c) => c.Status === 'Active',
-            );
+            // The fullest cards first, so a return of some of a line's cards takes back the ones
+            // with the most left, and the order is the same on every run.
+            const originCards = (issuedByLine.get(key(line.ReversesOrderLineID)) ?? [])
+                .filter((c) => c.Status === 'Active')
+                .sort((a, b) => b.Balance - a.Balance || a.ID.localeCompare(b.ID));
             const toVoid = PlanGiftCardVoid(Number(line.Quantity ?? 0), originCards.length);
+            // The credit may not exceed what the voided cards still hold (#830). Checked before
+            // anything is voided; the throw rolls the confirm back.
+            const refusal = GiftCardReturnRefusal(
+                Number(line.LineTotalNet ?? 0),
+                originCards.slice(0, toVoid).map((c) => c.Balance),
+                Number(line.Quantity ?? 0),
+                line.LineNumber != null ? `Order line ${line.LineNumber}` : `Order line ${line.ID}`,
+            );
+            if (refusal) throw new Error(refusal);
             for (let i = 0; i < toVoid; i++) {
                 const account = await provider.GetEntityObject<mjBizAppsOrdersStoredValueAccountEntity>(
                     STORED_VALUE_ACCOUNT_ENTITY,

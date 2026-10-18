@@ -75,7 +75,7 @@ import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolveAccountingOperation, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
+import { InstalmentsToCancel, RefuseCancellingPaidInstalments, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
@@ -335,6 +335,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * it now lives. Left null, nothing changes.
      */
     public ExpectedGrossTotal: number | null = null;
+
+    /**
+     * The business day the instalments this confirm issues are invoiced on, `YYYY-MM-DD` (#831).
+     * Left null they are invoiced today. `Orders.SpawnRenewals` sets its as-of day, so a catch-up
+     * run dates the instalment entry on the day the schedule row's due date was counted from.
+     */
+    public InstalmentInvoiceDay: string | null = null;
 
     /**
      * Promotion and charge decisions made by `prepareLines` and consumed by `savePendingLines`.
@@ -2197,6 +2204,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ProductID: l.ProductID,
                 Quantity: Number(l.Quantity ?? 0),
                 UnitPrice: Number(l.UnitPrice ?? 0),
+                LineTotalNet: Number(l.LineTotalNet ?? 0),
+                LineNumber: l.LineNumber ?? null,
                 ReversesOrderLineID:
                     l.ReversesOrderLineID ?? null,
                 ShipToPersonID: l.ShipToPersonID ?? null,
@@ -2431,6 +2440,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
                 RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
                 OriginNet: Number(context.Origin.LineTotalNet ?? 0),
+                OriginServicePeriodStart: context.Origin.ServicePeriodStart ?? null,
+                OriginServicePeriodEnd: context.Origin.ServicePeriodEnd ?? null,
                 PriorReversals: context.PriorReversals,
                 ScheduleRows: context.ScheduleRows,
                 OriginOrderNumber: context.Origin.OrderNumber ?? null,
@@ -2662,6 +2673,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             seen.add(originOrder);
             if (!(await IsWholeOrderReversed(originOrder, provider, user))) continue;
 
+            const toCancel: OrderHeaderPaymentScheduleEntityServer[] = [];
             for (const scheduleID of InstalmentsToCancel(context.ScheduleRows)) {
                 const row = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(
                     ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
@@ -2670,6 +2682,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 if (!(await row.Load(scheduleID))) {
                     throw new Error(`Instalment ${scheduleID} could not be loaded to cancel it for the reversal.`);
                 }
+                toCancel.push(row);
+            }
+            // A deposit paid ahead of an instalment would be stranded by cancelling it (#840).
+            const depositRefusal = RefuseCancellingPaidInstalments(
+                toCancel.map((r) => ({ InstallmentNumber: Number(r.InstallmentNumber), AmountPaid: Number(r.AmountPaid ?? 0) })),
+                `order ${context.Origin.OrderNumber ?? originOrder}`,
+            );
+            if (depositRefusal) throw new Error(depositRefusal);
+
+            for (const row of toCancel) {
+                const scheduleID = row.ID;
                 row.Status = 'Canceled';
                 if (!(await row.Save(options))) {
                     throw new Error(
@@ -5010,7 +5033,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         for (const row of due) {
-            const outcome = await IssueInstalment(String(row.ID), provider, user);
+            const outcome = await IssueInstalment(String(row.ID), provider, user, this.InstalmentInvoiceDay);
             if (!outcome.Success) {
                 throw new Error(
                     `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +

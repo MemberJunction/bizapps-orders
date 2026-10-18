@@ -215,6 +215,28 @@ interface ChainProductRow {
     ProductCategoryID: string;
     RenewalIncreasePercent: number | null;
     SuccessorProductID: string | null;
+    /** The product's subscription type, else its product type's default; null when it sells no subscription. */
+    SubscriptionTypeID: string | null;
+}
+
+/**
+ * Why a successor chain cannot be renewed onto, or null when it can (#869).
+ *
+ * A successor that resolves no subscription type would book the renewal as a plain line with no
+ * term, and every later pass would then skip the subscription as already renewed. So the candidate
+ * is skipped with this reason instead. The subscription's own product (the first entry) is not
+ * checked: it already holds the subscription.
+ */
+export function NonSubscriptionSuccessorRefusal(chain: ReadonlyArray<Pick<ChainProductRow, 'Name' | 'SubscriptionTypeID'>>): string | null {
+    for (let i = 1; i < chain.length; i++) {
+        if (chain[i].SubscriptionTypeID) continue;
+        return (
+            `${chain[i - 1].Name} names ${chain[i].Name} as its successor, but ${chain[i].Name} is not a subscription ` +
+            `product (neither it nor its product type has a subscription type), so the renewal cannot be placed on it. ` +
+            `Give ${chain[i].Name} a subscription type or change the successor.`
+        );
+    }
+    return null;
 }
 
 /** A promotion code recorded on the line that bought the expiring term. */
@@ -467,6 +489,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // and the ledger shows the sale in the period it belongs to — not on the day the job
             // happened to run.
             order.OrderDate = this.dayAfter(due.TermEndDate);
+            // The instalment the confirm issues is invoiced on the pass's day, the day its due date
+            // is counted from, so a catch-up run does not book it today (#831).
+            order.InstalmentInvoiceDay = invoiceDay;
             order.CompanyID = due.CompanyID;
             order.BillToOrganizationID = due.HolderOrganizationID;
             order.BillToPersonID = due.BeneficiaryPersonID;
@@ -620,6 +645,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         }
 
         const chain = await this.loadSuccessorChain(provider, due.ProductID);
+        const notSubscription = NonSubscriptionSuccessorRefusal(chain);
+        if (notSubscription) throw new Error(notSubscription);
         const product = chain[chain.length - 1];
         const movesToSuccessor = chain.length > 1;
         const quantity = this.renewalQuantity(due);
@@ -786,9 +813,12 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 JOIN __mj_BizAppsOrders.Product n ON n.ID = c.SuccessorProductID
                 WHERE c.Depth < 20 AND n.Status = 'Active'
             )
-            SELECT ID, Name, Status, ProductCategoryID, RenewalIncreasePercent, SuccessorProductID
-            FROM chain
-            ORDER BY Depth
+            SELECT c.ID, c.Name, c.Status, c.ProductCategoryID, c.RenewalIncreasePercent, c.SuccessorProductID,
+                   COALESCE(p.SubscriptionTypeID, pt.DefaultSubscriptionTypeID) AS SubscriptionTypeID
+            FROM chain c
+            JOIN __mj_BizAppsOrders.Product p ON p.ID = c.ID
+            LEFT JOIN __mj_BizAppsOrders.ProductType pt ON pt.ID = p.ProductTypeID
+            ORDER BY c.Depth
         `)) as ChainProductRow[];
         if (!Array.isArray(rows) || rows.length === 0) {
             throw new Error(`The subscription's product (${productID}) no longer exists, so there is nothing to renew.`);

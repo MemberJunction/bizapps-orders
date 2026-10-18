@@ -130,6 +130,27 @@ export function InstalmentsToCancel(rows: ReversalScheduleRow[]): string[] {
     return rows.filter((r) => r.Status !== 'Canceled' && !r.DocumentNumber).map((r) => r.ID);
 }
 
+/**
+ * Why a reversal may not cancel these instalments, or null when it may (#840).
+ *
+ * An instalment the customer prepaid before it was invoiced carries that cash as a deposit
+ * (`AmountPaid` on a row with no document). Cancelling the row leaves the deposit in Customer
+ * Deposits with nothing pointing at it, found only at reconciliation, so the reversal is refused
+ * and names each deposit to refund first.
+ */
+export function RefuseCancellingPaidInstalments(
+    rows: Array<{ InstallmentNumber: number; AmountPaid: number | null }>,
+    orderLabel: string,
+): string | null {
+    const paid = rows.filter((r) => Math.round(Number(r.AmountPaid ?? 0) * 100) > 0);
+    if (!paid.length) return null;
+    const each = paid.map((r) => `${Number(r.AmountPaid).toFixed(2)} on instalment ${r.InstallmentNumber}`).join(', ');
+    return (
+        `Reversing ${orderLabel} cancels its uninvoiced instalments, but the customer has already paid ` +
+        `${each}. Cancelling would leave that deposit with nothing to apply to. Refund the deposit of ${each} first, then confirm the return.`
+    );
+}
+
 /** The origin line's contract position, as one reversing line sees it (D92 §6). */
 export interface ReversalPosition {
     /** The ORIGIN line — the one whose BilledToDate the memo reduces. */
@@ -198,6 +219,37 @@ export interface DatedRelease {
 export function StagedEarnedThrough(originReleases: DatedRelease[], priorMirrors: DatedRelease[], asOf: string): number {
     const through = (rows: DatedRelease[]) => rows.filter((r) => r.Date <= asOf).reduce((s, r) => s + Number(r.Amount), 0);
     return money(through(originReleases) - through(priorMirrors));
+}
+
+/**
+ * What the origin still holds in Deferred Revenue from its staged releases after `asOf`: its
+ * releases dated after that day, less the ones earlier reversals already mirrored back (#841).
+ */
+export function StagedDeferredAfter(originReleases: DatedRelease[], priorMirrors: DatedRelease[], asOf: string): number {
+    const after = (rows: DatedRelease[]) => rows.filter((r) => r.Date > asOf).reduce((s, r) => s + Number(r.Amount), 0);
+    return money(after(originReleases) - after(priorMirrors));
+}
+
+/**
+ * The mirrored release amounts of the reversal that takes the last units back, trued up so they
+ * total exactly what the origin still holds in Deferred Revenue (#841).
+ *
+ * Each reversing line's schedule puts its own rounding remainder in its first month, which falls
+ * before the reversal date and is never mirrored, so the mirrors of several partial reversals of an
+ * uneven amount can total a few cents more or less than the origin had deferred, and the difference
+ * stays in Deferred Revenue. The last mirrored release absorbs it. A difference beyond `tolerance`
+ * is not rounding (a window that differs from the origin's, say), and the amounts are returned
+ * unchanged rather than hiding it in one month.
+ */
+export function TrueUpFinalMirrors(amounts: number[], target: number, tolerance: number): number[] {
+    if (!amounts.length) return amounts;
+    const diff = money(target - amounts.reduce((s, a) => s + Number(a), 0));
+    if (diff === 0 || Math.abs(diff) > tolerance) return amounts;
+    const out = [...amounts];
+    const last = out.length - 1;
+    out[last] = money(out[last] + diff);
+    if (out[last] < 0) return amounts;
+    return out;
 }
 
 /**

@@ -102,7 +102,7 @@ export {
     UnattestedException,
 } from './DetectUnattestedProgressOperation.js';
 
-export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export { InstalmentsToCancel, RefuseCancellingPaidInstalments, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     BackDatedWarning,
@@ -456,6 +456,7 @@ export {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
 } from './GiftCardBehavior.js';
 export type {
     GiftCardLineFacts,

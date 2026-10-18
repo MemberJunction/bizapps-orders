@@ -681,7 +681,8 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
 
         it('IssueInstalmentInvoiceOperation takes the business day and hands it to the entry', () => {
             const op = source('IssueInstalmentInvoiceOperation.ts');
-            expect(op).toMatch(/const invoiceDay = await CalendarDayOrToday\(null, provider, user\);/);
+            // A renewal run passes its as-of day (#831); absent, today's business day.
+            expect(op).toMatch(/const invoiceDay = await CalendarDayOrToday\(invoiceDayIn \?\? null, provider, user\);/);
             expect(op).toMatch(/InvoiceDay: invoiceDay,/);
             expect(op).toMatch(/BuildInstalmentLineFacts\(lineEntities\.Results \?\? \[\], company, invoiceDay\)/);
         });

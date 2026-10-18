@@ -104,6 +104,22 @@ describe('FilterOrderJournals — posting-date basis', () => {
         expect(result.ExcludedAfterAsOf).toBe(0);
     });
 
+    it('counts an entry in a Cancelled, Failed or Archived batch apart from those not yet posted (#790)', () => {
+        const base = data();
+        for (const status of ['Cancelled', 'Failed', 'Archived']) {
+            const withStopped = {
+                ...base,
+                Batches: { ...base.Batches, 'batch-pending': { ...base.Batches['batch-pending'], Status: status } },
+            };
+            const result = FilterOrderJournals(withStopped, { Basis: 'posting' });
+            expect(result.ExcludedStoppedBatch).toBe(1);
+            expect(result.ExcludedNotPosted).toBe(1);
+            expect(ExcludedEntriesLabel(BuildOrderJournalRollup(withStopped, { Basis: 'posting' }))).toBe(
+                '1 entry not yet posted, 1 entry in a canceled, failed or archived batch',
+            );
+        }
+    });
+
     it('dates a posted entry by its BATCH posting date, not its own effective date', () => {
         // je-pay is effective 9/01 but posts on 9/02, so an As-of of 9/01 must exclude it.
         expect(FilterOrderJournals(data(), { Basis: 'posting', AsOf: '2026-09-01' }).Journals).toHaveLength(0);
