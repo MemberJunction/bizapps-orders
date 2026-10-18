@@ -2842,6 +2842,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const user = this.ContextCurrentUser as UserInfo;
         const md = new Metadata();
 
+        await this.deleteSupersededPriceComponents();
+
         for (const [line, resolved] of this._priceComponents) {
             let seq = 0;
             for (const c of resolved.Components) {
@@ -2872,6 +2874,42 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
         }
         this._priceComponents.clear();
+    }
+
+    /**
+     * Delete the price breakdown a re-priced line carries from an earlier save, so the one written
+     * now replaces it (#794).
+     *
+     * A saved line priced above zero counts as stated and is not re-priced, which kept this rare;
+     * a line the engine prices at zero is re-priced on every save, and each save appended another
+     * full set of components. One read covers every line priced in this save; a line inserted by
+     * this save has no rows yet and matches nothing.
+     */
+    private async deleteSupersededPriceComponents(): Promise<void> {
+        const ids = RequireUUIDs(
+            [...new Set([...this._priceComponents.keys()].map((line) => line.ID).filter(Boolean))],
+            'OrderLineID',
+        );
+        if (!ids.length) return;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<mjBizAppsOrdersOrderLinePriceComponentEntity>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Line Price Components',
+                ExtraFilter: `OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result.Success) {
+            throw new Error(`Failed to read the earlier price breakdown: ${result.ErrorMessage}`);
+        }
+        for (const row of result.Results ?? []) {
+            if (!(await row.Delete())) {
+                throw new Error(
+                    `Failed to replace the price breakdown for an order line: ${ExtractEntityErrorMessage(row)}`,
+                );
+            }
+        }
     }
 
     /**
