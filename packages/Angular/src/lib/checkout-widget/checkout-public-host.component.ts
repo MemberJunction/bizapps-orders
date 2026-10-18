@@ -148,6 +148,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public isPaymentReady = false;
     public stripePaymentMethodId: string | null = null;
     public errorMessage: string | null = null;
+    /** Information that is not a failure, shown in the notice style (#819). */
+    public noticeMessage: string | null = null;
     public loadError: string | null = null;
     public successMessage: string | null = null;
     public orderNumber: string | null = null;
@@ -424,6 +426,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
      */
     private resetForm(): void {
         this.errorMessage = null;
+        this.noticeMessage = null;
         this.stripePaymentMethodId = null;
         this.serverPricedTotal = null;
         try {
@@ -439,6 +442,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     /** A price input changed: every total the server priced for the old inputs is stale, tax included. */
     public onQuoteInvalidated(): void {
+        // A total announced for the old inputs no longer holds.
+        this.noticeMessage = null;
         this.quotedTotal = null;
         this.quotedTax = null;
         this.serverPricedTotal = null;
@@ -451,6 +456,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.processing = true;
         this.errorMessage = null;
+        this.noticeMessage = null;
         this.setState('PROCESSING');
         let stage: CheckoutErrorStage = 'draft';
         try {
@@ -484,7 +490,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             const notice = memberDiscountNotice(draft, this.memberNoticeShown);
             if (notice) {
                 this.memberNoticeShown = true;
-                this.errorMessage = notice;
+                this.noticeMessage = notice;
+                this.setState('CHECKOUT');
                 return;
             }
             if (!draft.RequiresPayment) {
@@ -496,6 +503,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             // (tax for the location, a code typed but never applied, or a price that changed), show
             // it and ask for a second press rather than charge a different amount than the button said.
             if (this.quoteChanged(draft, event.totalGross)) {
+                this.setState('CHECKOUT');
                 return;
             }
             stage = 'payment';
@@ -647,7 +655,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
         this.quotedTotal = total;
         this.quotedTax = tax > 0 ? tax : null;
-        this.errorMessage = tax > 0
+        this.noticeMessage = tax > 0
             ? `The total is ${total.toFixed(2)}, including ${tax.toFixed(2)} sales tax. Review it and press Pay again.`
             : `The total is ${total.toFixed(2)}. Review it and press Pay again.`;
         return true;

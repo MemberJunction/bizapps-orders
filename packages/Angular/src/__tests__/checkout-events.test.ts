@@ -207,6 +207,22 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'complete', message: 'Failed to complete checkout: boom' });
     });
 
+    it('shows a changed total as a notice, not an error, and reports no error (#819)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: true, TotalGross: 107.5, Tax: 7.5 };
+        const c = create();
+        await c.ngOnInit();
+        seen = [];
+        await c.onSubmitted({ ...submission(), totalGross: 100 } as CheckoutSubmissionEvent);
+        expect(c.errorMessage).toBeNull();
+        expect(c.noticeMessage).toBe('The total is 107.50, including 7.50 sales tax. Review it and press Pay again.');
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
+            { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+        ]);
+        c.onQuoteInvalidated();
+        expect(c.noticeMessage).toBeNull();
+    });
+
     describe('account step password form (#396)', () => {
         const SALE = [
             { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },

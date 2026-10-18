@@ -142,6 +142,16 @@ describe('MJCheckoutWidgetComponent', () => {
         });
     });
 
+    describe('notice banner (#819)', () => {
+        it('shows a notice only while no error shows', () => {
+            component.noticeMessage = 'The total is 107.50, including 7.50 sales tax. Review it and press Pay again.';
+            expect(component.displayNoticeMessage()).toContain('107.50');
+            component.errorMessage = 'Your card was declined.';
+            expect(component.displayNoticeMessage()).toBeNull();
+            expect(component.displayErrorMessage()).toBe('Your card was declined.');
+        });
+    });
+
     describe('copy primary info to all (#780)', () => {
         it('leaves per-person custom fields alone and copies shared detail', () => {
             component.config = {

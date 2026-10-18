@@ -239,6 +239,20 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return this._errorMessage();
     }
 
+    private _noticeMessage = signal<string | null>(null);
+    /**
+     * Information for the buyer that is not a failure, such as the total including tax before the
+     * second press of Pay (#819). Shown in the notice style, and only while no error shows.
+     */
+    @Input()
+    public set noticeMessage(val: string | null) {
+        this._noticeMessage.set(val);
+    }
+    public get noticeMessage(): string | null {
+        return this._noticeMessage();
+    }
+    public displayNoticeMessage = computed<string | null>(() => (this.displayErrorMessage() ? null : this._noticeMessage()));
+
     @Input() public isPaymentReady: boolean = false;
     @Input() public stripePaymentMethodId: string | null = null;
     /** An e-mail the embedding host already knows. Fills the field only while it is empty. */
