@@ -29,7 +29,6 @@
 import {
     BaseEntity,
     BaseEntityResult,
-    BaseRemotableOperation,
     CompositeKey,
     DatabaseProviderBase,
     EntitySaveOptions,
@@ -70,7 +69,7 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
-import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolveAccountingOperation, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
@@ -3257,16 +3256,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CreateJournalEntriesResult> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-            BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>
-        >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-
-        if (!op) {
-            throw new Error(
-                `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps ` +
-                    `Accounting server package must be loaded before orders can book journal entries.`,
-            );
-        }
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
+            'Accounting.CreateJournalEntries',
+            'book journal entries',
+        );
 
         const result = await op.Execute({ Drafts: drafts.map((d) => d.Draft) }, { provider, user });
 
