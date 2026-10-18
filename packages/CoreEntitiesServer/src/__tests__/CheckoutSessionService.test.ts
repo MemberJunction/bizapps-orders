@@ -208,7 +208,6 @@ const mocks = vi.hoisted(() => {
         TotalGross = 0;
         AmountPaid = 0;
         OrderDate: Date | null = null;
-        PromotionCodes = { Codes: [] as string[] };
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         NewRecord = vi.fn();
         Load = mockOrderLoad;
