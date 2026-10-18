@@ -1303,6 +1303,12 @@ export class CheckoutSessionService {
                     }
                     const field = extFieldsByName.get(lowerKey);
                     if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
+                        // A blank answer to an optional field is left out, so the column keeps its
+                        // database default (or stays null) instead of holding '' (#877).
+                        const blank = rawValue == null || (typeof rawValue === 'string' && rawValue.trim() === '');
+                        if (blank && (field.HasDefaultValue || field.AllowsNull)) {
+                            continue;
+                        }
                         let coerced = rawValue;
                         if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
                             coerced = parseInt(rawValue, 10);
@@ -1310,6 +1316,10 @@ export class CheckoutSessionService {
                             coerced = parseFloat(rawValue);
                         } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
                             coerced = rawValue === 'true' || rawValue === '1';
+                        }
+                        // An unparseable number is not an answer; writing NaN fails the save after payment.
+                        if (typeof coerced === 'number' && Number.isNaN(coerced)) {
+                            continue;
                         }
                         ext.Set(field.Name, coerced);
                     }

@@ -1349,6 +1349,13 @@ describe('CheckoutSessionService', () => {
             expect(set.mock.calls.map(([name]) => name)).not.toContain('NotAColumn');
         });
 
+        it('leaves a blank optional field to its database default and drops an unparseable number (#877)', async () => {
+            const set = await draftWithFields({ AttendanceStatus: '', CustomCount: 'abc', BadgeName: 'Bob' });
+            expect(set).not.toHaveBeenCalledWith('AttendanceStatus', expect.anything());
+            expect(set).not.toHaveBeenCalledWith('CustomCount', expect.anything());
+            expect(set).toHaveBeenCalledWith('BadgeName', 'Bob');
+        });
+
         it('rejects invalid or out-of-range quantities in UpdateDraft', async () => {
             // Negative quantity
             const resNeg = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'a@b.com', [{ ProductID: 'prod-1', Quantity: -1 }], BILLING);
