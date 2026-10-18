@@ -62,6 +62,7 @@ import {
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
 import { BuildStampedTags, type MJOStampedTag } from './line-stamped-tags';
+import { ScrollPickerCursorIntoView } from './picker-scroll';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 
 import {
@@ -255,10 +256,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             case 'ArrowDown':
                 this.PickerCursor = Math.min(this.PickerCursor + 1, Math.max(results.length - 1, 0));
                 event.preventDefault();
+                this.revealPickerCursor();
                 break;
             case 'ArrowUp':
                 this.PickerCursor = Math.max(this.PickerCursor - 1, 0);
                 event.preventDefault();
+                this.revealPickerCursor();
                 break;
             case 'Enter':
                 if (results[this.PickerCursor]) {
@@ -272,6 +275,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             default:
                 break;
         }
+    }
+
+    /** Render the moved `.is-cursor` class now, then scroll that row into the list's view (#796). */
+    private revealPickerCursor(): void {
+        this.cdr.detectChanges();
+        ScrollPickerCursorIntoView(this.pickerHost?.nativeElement);
     }
 
     public async AddProduct(product: MJOProductOption): Promise<void> {

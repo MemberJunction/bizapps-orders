@@ -128,7 +128,7 @@ describe('BuildOrderJournalRollup', () => {
         expect(deferred?.Credit).toBe(895);
         expect(deferred?.Debit).toBe(0);
         expect(rollup.ExcludedAfterAsOf).toBe(1);
-        expect(ExcludedEntriesLabel(rollup, '2026-09-10')).toBe('1 entry scheduled after 2026-09-10');
+        expect(ExcludedEntriesLabel(rollup, '2026-09-10')).toBe('1 entry scheduled after Sep 10, 2026');
     });
 
     it('reports a shared payment fee in full rather than pro-rating it', () => {
@@ -145,7 +145,7 @@ describe('BuildOrderJournalRollup', () => {
     it('names both exclusion reasons when both apply', () => {
         const rollup = BuildOrderJournalRollup(data(), { Basis: 'posting', AsOf: '2026-09-01' });
         expect(ExcludedEntriesLabel(rollup, '2026-09-01')).toBe(
-            '1 entry scheduled after 2026-09-01, 2 entries not yet posted',
+            '1 entry scheduled after Sep 1, 2026; 2 entries not yet posted',
         );
     });
 

@@ -1,9 +1,10 @@
-import { Component } from '@angular/core';
+import { Component, ViewChild } from '@angular/core';
 import { RegisterClassEx } from '@memberjunction/global';
-import { BaseFormPanel } from '@memberjunction/ng-base-forms';
+import { BaseFormPanel, ExplorerEntityDataGridComponent } from '@memberjunction/ng-base-forms';
 import type { AfterDataLoadEventArgs } from '@memberjunction/ng-entity-viewer';
 import type { mjBizAppsCommonPersonEntity } from '@mj-biz-apps/common-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
+import { MJO_ORDER_HEADER_GRID_STATE } from '../data/orders-grid-state';
 
 const JOIN_FIELDS = ['BillToPersonID', 'ShipToPersonID'] as const;
 const SECTION_KEY = 'orders';
@@ -52,6 +53,22 @@ export class OrdersPersonOrdersPanel extends BaseFormPanel<mjBizAppsCommonPerson
     public readonly OrderEntity = MJO_ENTITIES.OrderHeader;
     public readonly JoinFields = JOIN_FIELDS;
     public readonly SectionKey = SECTION_KEY;
+
+    /**
+     * Give the related grid the app's Order Headers column state, so Balance renders as currency
+     * like Total instead of falling back to the grid's field-name heuristic (#798).
+     * `mj-explorer-entity-data-grid` has no `[GridState]` input, so the state goes to the grid it
+     * wraps. Deferred a microtask: this setter runs inside change detection.
+     */
+    @ViewChild(ExplorerEntityDataGridComponent)
+    public set OrdersGrid(grid: ExplorerEntityDataGridComponent | undefined) {
+        if (!grid) return;
+        queueMicrotask(() => {
+            if (grid.innerGrid && grid.innerGrid.GridState !== MJO_ORDER_HEADER_GRID_STATE) {
+                grid.innerGrid.GridState = MJO_ORDER_HEADER_GRID_STATE;
+            }
+        });
+    }
 
     public OnDataLoad(event: AfterDataLoadEventArgs): void {
         this.FormComponent.SetSectionRowCount(SECTION_KEY, event.totalRowCount);
