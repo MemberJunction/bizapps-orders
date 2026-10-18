@@ -74,8 +74,8 @@ import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJourna
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import {
-    DepositReleasedByCompany,
     PlanLineDeposits,
+    ReversalDepositWorking,
     type DepositWorking,
     type InstalmentCashFacts,
 } from './PaymentScheduleBehavior.js';
@@ -466,14 +466,20 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * Where each order's deposit planning starts: the pre-payment schedule, plus — when this payment
      * takes cash back — what that took out of the rows' deposits, read now that every line is down.
      */
-    private async depositWorkingFor(orderID: string, before: InstalmentCashFacts[], reversing: boolean): Promise<DepositWorking> {
+    private async depositWorkingFor(
+        orderID: string,
+        before: InstalmentCashFacts[],
+        reversing: boolean,
+        namedRowIDs: Iterable<string | null | undefined>,
+    ): Promise<DepositWorking> {
         if (!reversing || !before.length) return { Facts: before, Released: new Map() };
         const after = await LoadInstalmentCashFacts(
             this.ProviderToUse as unknown as IRunViewProvider,
             this.ContextCurrentUser as UserInfo,
             orderID,
         );
-        return { Facts: before, Released: DepositReleasedByCompany(before, after) };
+        // Per row as well as per company, so the line that named a row carries its release (#812).
+        return ReversalDepositWorking(before, after, namedRowIDs);
     }
 
     private async bookAllocations(
@@ -513,6 +519,12 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         }
 
         if (unbookedLines.length === 0) return;
+        // Reversing lines that name an instalment plan first, so each claims the deposit released from
+        // its own row before an unnamed line draws on what is left (#812). Lines that put cash in keep
+        // their order (the sort is stable), since the capture split depends on it.
+        const namedReversalFirst = (l: mjBizAppsOrdersPaymentLineEntity): number =>
+            (this.Status === 'Refunded' || (l.Amount ?? 0) < 0) && l.OrderHeaderPaymentScheduleID ? 0 : 1;
+        unbookedLines.sort((a, b) => namedReversalFirst(a) - namedReversalFirst(b));
 
         // Both builders configure the accounting engine on the way in, so the intercompany pairs
         // and account links are current without a separate Config call here.
@@ -557,7 +569,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 );
             }
             const isReversal = this.Status === 'Refunded' || (line.Amount ?? 0) < 0;
-            const working = workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal));
+            const namedRowIDs = unbookedLines
+                .filter((l) => String(l.OrderHeaderID).toLowerCase() === orderKey)
+                .map((l) => l.OrderHeaderPaymentScheduleID);
+            const working =
+                workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal, namedRowIDs));
             const plan = PlanLineDeposits(
                 AllocateByCompany(Math.abs(line.Amount ?? 0), orderLines, line.OrderLineID ?? null),
                 isReversal,
