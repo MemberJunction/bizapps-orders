@@ -240,10 +240,10 @@ When rendered, the checkout component applies theme tokens directly as CSS varia
 If `customUI.css` is supplied in the widget or product type configuration, the rules are injected into a custom style tag for granular design customization.
 
 ### Client-Side Lifecycle JavaScript Hooks
-Custom JS defined in `customUI.js` executes within the widget context:
+Custom JS defined in `customUI.js` executes within the widget context and registers its hooks on `widgetContext.hooks`, which belong to that widget alone:
 
 ```javascript
-window.MJCheckoutHooks = {
+Object.assign(widgetContext.hooks, {
     onInit({ config, distributionSlug }) {
         console.log("Widget initialized for distribution:", distributionSlug);
     },
@@ -261,10 +261,10 @@ window.MJCheckoutHooks = {
     onDestroy({ component }) {
         console.log("Widget instance unmounted");
     }
-};
+});
 ```
 
-The widget calls whatever `window.MJCheckoutHooks` holds, so the host page's own script can set it too. `customUI.js` runs through `new Function`, which a Content-Security-Policy without `'unsafe-eval'` blocks. The public checkout page MJAPI serves has such a policy, so there `customUI.js` does not run and the widget shows a notice instead.
+A widget calls its own hooks first, then any the host page's own script set on `window.MJCheckoutHooks`, which every widget on the page shares. A `customUI.js` written for `window.MJCheckoutHooks` still works: what it assigns there while it runs moves to its widget, and the page-wide object is put back, so two widgets on one page never call each other's hooks. A destroyed widget's hooks stop running. `customUI.js` runs through `new Function`, which a Content-Security-Policy without `'unsafe-eval'` blocks. The public checkout page MJAPI serves has such a policy, so there `customUI.js` does not run and the widget shows a notice instead.
 
 ---
 

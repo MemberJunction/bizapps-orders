@@ -162,6 +162,37 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.displayErrorMessage()).toBe('Domain @competitor.com is not allowed.');
         });
 
+        it('keeps each widget’s customUI.js hooks to that widget, and drops them on destroy (#779)', () => {
+            const first = new MJCheckoutWidgetComponent();
+            first.config = { unitPrice: 0, customJS: 'window.MJCheckoutHooks = { onValidate: () => "first" };' } as CheckoutWidgetConfig;
+            first.ngOnInit();
+            const second = new MJCheckoutWidgetComponent();
+            second.config = { unitPrice: 0, customJS: 'widgetContext.hooks.onValidate = () => "second";' } as CheckoutWidgetConfig;
+            second.ngOnInit();
+
+            // A legacy page-wide assignment is moved to its widget; the page-wide object is untouched.
+            expect(window.MJCheckoutHooks).toBeUndefined();
+            expect(first.executeLifecycleHook('onValidate', {})).toBe('first');
+            expect(second.executeLifecycleHook('onValidate', {})).toBe('second');
+
+            first.ngOnDestroy();
+            expect(first.executeLifecycleHook('onValidate', {})).toBeUndefined();
+            expect(second.executeLifecycleHook('onValidate', {})).toBe('second');
+        });
+
+        it('falls back to the host page’s own hooks and leaves them in place', () => {
+            const hostHook = vi.fn().mockReturnValue('host');
+            window.MJCheckoutHooks = { onValidate: hostHook };
+            const widget = new MJCheckoutWidgetComponent();
+            widget.config = { unitPrice: 0, customJS: 'window.MJCheckoutHooks.onQuantityChange = () => "mine";' } as CheckoutWidgetConfig;
+            widget.ngOnInit();
+
+            expect(window.MJCheckoutHooks).toEqual({ onValidate: hostHook });
+            expect(widget.executeLifecycleHook('onValidate', {})).toBe('host');
+            expect(widget.executeLifecycleHook('onQuantityChange', {})).toBe('mine');
+            expect(new MJCheckoutWidgetComponent().executeLifecycleHook('onQuantityChange', {})).toBeUndefined();
+        });
+
         it('executes onBeforeSubmit hook to enrich payload before emission', () => {
             window.MJCheckoutHooks = {
                 onBeforeSubmit: vi.fn().mockImplementation((payload: Record<string, unknown>) => {
