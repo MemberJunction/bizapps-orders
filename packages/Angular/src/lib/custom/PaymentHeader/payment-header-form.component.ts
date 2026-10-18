@@ -362,6 +362,22 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         return Boolean(this.SelectedPaymentType?.RequiresInstrument || this.PaymentTypeCode === 'card' || this.PaymentTypeCode === 'ach');
     }
 
+    /**
+     * Which instrument panel the tender shows. Decided on the type's code before `RequiresInstrument`,
+     * because Gift Card and Account Credit both require an instrument and neither is a card (#846):
+     * a gift card asks for its number, and account credit names a source order, not an instrument.
+     */
+    public get InstrumentPanel(): 'check' | 'ach' | 'giftcard' | 'card' | 'reference' | 'none' {
+        const code = this.PaymentTypeCode;
+        if (code === 'check') return 'check';
+        if (code === 'ach') return 'ach';
+        if (code === 'giftcard') return 'giftcard';
+        if (code === 'accountcredit') return 'none';
+        if (code === 'card' || this.RequiresInstrument) return 'card';
+        if (this.RequiresReference) return 'reference';
+        return 'none';
+    }
+
     public EnsurePaymentDetail(): mjBizAppsOrdersPaymentDetailEntity | null {
         if (!this.record) return null;
         const detail = this.record.PaymentDetailID_EnsureObject();

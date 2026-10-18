@@ -387,6 +387,31 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(instance.record.Amount).toBe(300);
     });
 
+    it('picks the instrument panel by tender code, so Gift Card and Account Credit are not cards (#846)', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        const types = [
+            { ID: 't-card', Code: 'CreditCard', Name: 'Credit Card', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-ach', Code: 'ACH', Name: 'ACH', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-check', Code: 'Check', Name: 'Check', RequiresInstrument: true, RequiresReference: true },
+            { ID: 't-wire', Code: 'Wire', Name: 'Wire', RequiresInstrument: false, RequiresReference: true },
+            { ID: 't-gift', Code: 'GiftCard', Name: 'Gift Card / Stored Value', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-credit', Code: 'AccountCredit', Name: 'Account Credit', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-cash', Code: 'Cash', Name: 'Cash', RequiresInstrument: false, RequiresReference: false },
+        ];
+        (instance as unknown as { PaymentTypes: unknown[] }).PaymentTypes = types;
+        const panelFor = (id: string) => {
+            instance.record = { PaymentTypeID: id } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+            return instance.InstrumentPanel;
+        };
+        expect(panelFor('t-card')).toBe('card');
+        expect(panelFor('t-ach')).toBe('ach');
+        expect(panelFor('t-check')).toBe('check');
+        expect(panelFor('t-wire')).toBe('reference');
+        expect(panelFor('t-gift')).toBe('giftcard');
+        expect(panelFor('t-credit')).toBe('none');
+        expect(panelFor('t-cash')).toBe('none');
+    });
+
     it('properly reads and writes tender-specific instrument details on PaymentDetailID_Object', () => {
         const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
         let mockDetail: mjBizAppsOrdersPaymentDetailEntity | null = null;
