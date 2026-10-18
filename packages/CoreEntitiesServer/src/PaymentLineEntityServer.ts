@@ -60,7 +60,7 @@ import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
-import { DepositReleasedByCompany, PlanLineDeposits, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
+import { PlanLineDeposits, ReversalDepositWorking, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
 
@@ -190,17 +190,18 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // what the rollup just took out of the rows' deposits — this row is saved by now — so the
         // entry says what the schedule says.
         const isReversal = payment.Status === 'Refunded' || (this.Amount ?? 0) < 0;
-        const released = isReversal && scheduleFacts.length
-            ? DepositReleasedByCompany(
+        const working = isReversal && scheduleFacts.length
+            ? ReversalDepositWorking(
                   scheduleFacts,
                   await LoadInstalmentCashFacts(provider as unknown as IRunViewProvider, user, this.OrderHeaderID),
+                  [this.OrderHeaderPaymentScheduleID],
               )
-            : new Map<string, number>();
+            : { Facts: scheduleFacts, Released: new Map<string, number>() };
         const plan = PlanLineDeposits(
             AllocateByCompany(Math.abs(this.Amount ?? 0), orderLines, this.OrderLineID ?? null),
             isReversal,
             this.OrderHeaderPaymentScheduleID ?? null,
-            { Facts: scheduleFacts, Released: released },
+            working,
         );
 
         // The intercompany lookup is accounting's (BA-D26), read from its cache — both builders

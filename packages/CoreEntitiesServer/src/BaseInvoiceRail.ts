@@ -206,6 +206,19 @@ export class BaseInvoiceRail {
         return this.notImplemented('fetching payments');
     }
 
+    /**
+     * The payment record this rail returned on an earlier pass, rebuilt from the payload the poller
+     * stored on its `ExternalPayment` row (#814). No network call.
+     *
+     * Used to re-check an open `Reapplied` exception the watermark no longer reaches: the stored
+     * payload is the rail's latest state of that payment, because any later change on the rail moves
+     * its updated time and the ordinary poll reads it again. Null when this rail cannot rebuild one
+     * (the base), which leaves such rows to be cleared by the next change on the rail.
+     */
+    public RestorePaymentRecord(_externalPaymentRef: string, _payload: Record<string, unknown>): RailPaymentRecord | null {
+        return null;
+    }
+
     protected notImplemented<T>(what: string): RailResult<T> {
         const code = this.Config?.TypeCode ?? 'unknown';
         return {
