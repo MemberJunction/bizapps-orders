@@ -467,6 +467,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // and the ledger shows the sale in the period it belongs to — not on the day the job
             // happened to run.
             order.OrderDate = this.dayAfter(due.TermEndDate);
+            // The instalment the confirm issues is invoiced on the pass's day, the day its due date
+            // is counted from, so a catch-up run does not book it today (#831).
+            order.InstalmentInvoiceDay = invoiceDay;
             order.CompanyID = due.CompanyID;
             order.BillToOrganizationID = due.HolderOrganizationID;
             order.BillToPersonID = due.BeneficiaryPersonID;

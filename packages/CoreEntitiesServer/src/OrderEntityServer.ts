@@ -333,6 +333,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
     public ExpectedGrossTotal: number | null = null;
 
     /**
+     * The business day the instalments this confirm issues are invoiced on, `YYYY-MM-DD` (#831).
+     * Left null they are invoiced today. `Orders.SpawnRenewals` sets its as-of day, so a catch-up
+     * run dates the instalment entry on the day the schedule row's due date was counted from.
+     */
+    public InstalmentInvoiceDay: string | null = null;
+
+    /**
      * Promotion and charge decisions made by `prepareLines` and consumed by `savePendingLines`.
      *
      * They are decided while the lines are still in memory — a Confirmed line is frozen by trigger
@@ -4799,7 +4806,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         for (const row of due) {
-            const outcome = await IssueInstalment(String(row.ID), provider, user);
+            const outcome = await IssueInstalment(String(row.ID), provider, user, this.InstalmentInvoiceDay);
             if (!outcome.Success) {
                 throw new Error(
                     `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +
