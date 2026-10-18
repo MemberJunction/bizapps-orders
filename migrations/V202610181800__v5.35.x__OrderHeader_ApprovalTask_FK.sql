@@ -43,3 +43,22 @@ GO
 -- This app's own CodeGen SQL for the change above: the Order Headers entity's
 -- ApprovalTaskID relationship, its FK index and the regenerated view and procs.
 -- =============================================================================
+
+
+/* SQL text to update entity field value sequence */
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=1 WHERE ID='87F5488B-1753-4D95-9AA7-9586656C10A4';
+
+/* SQL text to update entity field value sequence */
+UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=2 WHERE ID='E78A28F1-213D-40CE-BA0C-27C872DDECE3';
+
+
+/* Create Entity Relationship: MJ_BizApps_Tasks: Tasks -> MJ_BizApps_Orders: Order Headers (One To Many via ApprovalTaskID) */
+   IF NOT EXISTS (
+      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = '6e618377-1e77-4e5d-87dc-93fcf95df691'
+   )
+   BEGIN
+      INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
+                    VALUES ('6e618377-1e77-4e5d-87dc-93fcf95df691', 'B348FFA2-B1A7-4AC2-B6FD-F4E0C0697466', 'FC529BC8-FF09-44A9-B454-26EAFDAC791B', 'ApprovalTaskID', 'One To Many', 1, 1, 13, GETUTCDATE(), GETUTCDATE())
+   END;
+
+
