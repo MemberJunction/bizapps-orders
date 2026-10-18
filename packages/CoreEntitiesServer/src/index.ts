@@ -455,6 +455,7 @@ export {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
 } from './GiftCardBehavior.js';
 export type {
     GiftCardLineFacts,

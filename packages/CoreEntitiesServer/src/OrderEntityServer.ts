@@ -2016,6 +2016,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ProductID: l.ProductID,
                 Quantity: Number(l.Quantity ?? 0),
                 UnitPrice: Number(l.UnitPrice ?? 0),
+                LineTotalNet: Number(l.LineTotalNet ?? 0),
+                LineNumber: l.LineNumber ?? null,
                 ReversesOrderLineID:
                     l.ReversesOrderLineID ?? null,
                 ShipToPersonID: l.ShipToPersonID ?? null,
