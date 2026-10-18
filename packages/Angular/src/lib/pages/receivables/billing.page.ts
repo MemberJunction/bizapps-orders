@@ -77,7 +77,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
         @if (Truncated) {
             <mj-alert Variant="warning" Icon="fa-solid fa-triangle-exclamation" class="mjo-bl__note">
                 <strong>List truncated.</strong>
-                Not every due instalment is shown.
+                Not every due installment is shown.
             </mj-alert>
         }
 
@@ -90,7 +90,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
                 {{ Issuing ? 'Issuing…' : 'Issue invoice' }}
             </button>
             @if (Selected; as row) {
-                <span class="small muted">{{ row.OrderNumber }} · instalment {{ row.InstallmentNumber }} of {{ row.InstallmentCount }} · {{ money(row.Amount) }}</span>
+                <span class="small muted">{{ row.OrderNumber }} · installment {{ row.InstallmentNumber }} of {{ row.InstallmentCount }} · {{ money(row.Amount) }}</span>
             }
         </div>
 
@@ -103,7 +103,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
             RowKey="OrderHeaderPaymentScheduleID"
             [SelectedKey]="Selected?.OrderHeaderPaymentScheduleID ?? null"
             EmptyTitle="Nothing to bill"
-            EmptyHint="No scheduled instalment falls inside the window."
+            EmptyHint="No scheduled installment falls inside the window."
             EmptyIcon="fa-solid fa-file-invoice-dollar"
             (PresetChanged)="OnPreset($event)"
             (RowClicked)="Selected = $event" />
@@ -192,7 +192,7 @@ export class MJOBillingPageComponent implements OnInit {
 
     public get TotalDetail(): string {
         const orders = new Set(this.AllRows.map((r) => r.OrderHeaderID)).size;
-        return `${this.AllRows.length} instalment${this.AllRows.length === 1 ? '' : 's'} across ${orders} order${orders === 1 ? '' : 's'}`;
+        return `${this.AllRows.length} installment${this.AllRows.length === 1 ? '' : 's'} across ${orders} order${orders === 1 ? '' : 's'}`;
     }
 
     public get PastDueCount(): number {
@@ -223,9 +223,9 @@ export class MJOBillingPageComponent implements OnInit {
         const row = this.Selected;
         if (!row || this.Issuing) return;
         const proceed = await this.confirm.Confirm({
-            title: `Issue instalment ${row.InstallmentNumber} of ${row.InstallmentCount}?`,
+            title: `Issue installment ${row.InstallmentNumber} of ${row.InstallmentCount}?`,
             message: `${row.OrderNumber} · ${row.CustomerName} · ${FormatMoney(row.Amount)} due ${FormatDate(row.DueDate, { Short: true })}.`,
-            detail: 'The invoice number is frozen on the instalment and cannot be changed afterwards. Corrections go through a credit memo.',
+            detail: 'The invoice number is frozen on the installment and cannot be changed afterwards. Corrections go through a credit memo.',
             type: 'warning',
             confirmText: 'Issue invoice',
             cancelText: 'Not yet',
@@ -239,7 +239,7 @@ export class MJOBillingPageComponent implements OnInit {
             const result = await new OrdersIssueInstalmentInvoiceOperation().Execute({ OrderHeaderPaymentScheduleID: row.OrderHeaderPaymentScheduleID });
             const output = result.Output;
             if (!result.Success || !output?.Success) {
-                this.Notice = { Tone: 'error', Text: output?.Message?.trim() || result.ErrorMessage?.trim() || 'The instalment could not be issued.' };
+                this.Notice = { Tone: 'error', Text: output?.Message?.trim() || result.ErrorMessage?.trim() || 'The installment could not be issued.' };
                 return;
             }
             this.Notice = { Tone: 'success', Text: output.Message ?? `Issued as ${output.DocumentNumber}.` };
