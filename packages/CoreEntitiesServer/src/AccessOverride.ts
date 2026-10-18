@@ -23,7 +23,8 @@
  * Only an assignee may decide, never the requester, and an approval after the override's last day is
  * refused ({@link AccessOverrideDecisionRefusal}). The in-app decision refuses before it records
  * anything; a decision made in the Tasks inbox has already closed the task, so the hook closes the
- * override Withdrawn with the reason, and the requester may ask again.
+ * override Withdrawn with the reason, notes the reason on the task's activity feed, and the requester
+ * may ask again.
  *
  * FAILS CLOSED. Without the authorization rows in metadata nobody may request — an exception to a
  * payment rule is not something to hand out because a sync has not run.
@@ -76,7 +77,7 @@ import {
     type AccessOverrideType,
     type GrantTiming,
 } from './EntitlementBehavior.js';
-import { ActiveRoleHolderIDs, PERSON_ENTITY } from './ConcessionApprovalTask.js';
+import { ActiveRoleHolderIDs, PERSON_ENTITY, RecordTaskActivity } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { ACCESS_OVERRIDE_ENTITY, BusinessDay, ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
@@ -354,7 +355,18 @@ export async function ApplyAccessOverrideDecision(
         }
         const changes = status === 'Approved' ? await ReconcilePaymentGatedGrants([override.OrderHeaderID], provider, user) : [];
         await db.CommitTransaction();
-        if (refusal) return { Success: false, Status: override.Status, Message: override.DecisionNotes ?? refusal };
+        if (refusal) {
+            // The task is already closed as completed, so whoever decided it believes it took effect.
+            // The reason goes on the task's activity feed, where the tasks app shows it with the task
+            // (#875). After the commit, and logged rather than thrown: a note that fails to save must
+            // not leave the override Requested behind a closed task.
+            try {
+                await RecordTaskActivity(taskID, AccessOverrideNotAppliedNote(outcome === 'Approved', refusal), { Provider: provider, User: user });
+            } catch (err) {
+                LogError(`Access override ${override.ID} closed Withdrawn, but the reason could not be noted on task ${taskID}: ${(err as Error).message}`);
+            }
+            return { Success: false, Status: override.Status, Message: override.DecisionNotes ?? refusal };
+        }
         return {
             Success: true,
             Status: override.Status,
@@ -365,6 +377,17 @@ export async function ApplyAccessOverrideDecision(
         await rollback(db, `access override decision on task ${taskID}`);
         throw err;
     }
+}
+
+/**
+ * The note left on an approval task whose decision the override refused, after the Tasks inbox had
+ * already closed the task. Says what happened to the request and what to do next.
+ */
+export function AccessOverrideNotAppliedNote(approving: boolean, refusal: string): string {
+    return (
+        `The ${approving ? 'approval' : 'rejection'} was not applied to the access override, which is now Withdrawn: ` +
+        `${refusal} The requester may ask for the override again.`
+    );
 }
 
 // ─── approvers ─────────────────────────────────────────────────────────────────

@@ -415,6 +415,7 @@ export type {
 export {
     ACCESS_OVERRIDE_AUTH,
     ACCESS_OVERRIDE_TASK_TYPE_CODE,
+    AccessOverrideNotAppliedNote,
     ApplyAccessOverrideDecision,
     RecordAccessOverrideDecision,
     RequestAccessOverride,

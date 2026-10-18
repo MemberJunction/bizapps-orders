@@ -21,3 +21,17 @@ const requireFromTests = createRequire(
 export function importAccountingPackage(specifier) {
     return import(pathToFileURL(requireFromTests.resolve(specifier)).href);
 }
+
+const requireFromServer = createRequire(
+    path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'packages', 'Server', 'package.json'),
+);
+
+/**
+ * Resolve a package through packages/Server, which declares it as a peer. bizapps-common's server
+ * package is one: it registers the `Common.LogActivity` entity action class that common's metadata
+ * binds to People and Organizations, so a run that does not load it logs "Could not find a class"
+ * on every such save (#891).
+ */
+export function importServerPeer(specifier) {
+    return import(pathToFileURL(requireFromServer.resolve(specifier)).href);
+}

@@ -29,11 +29,14 @@ import {
     type OrdersIssueExternalInvoiceInput,
     type OrdersIssueExternalInvoiceOutput,
     type OrdersIssueExternalInvoiceResultCode,
+    ParseAddressSnapshot,
     Today,
+    type OrderAddressSnapshot,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailCustomerFacts } from './BaseInvoiceRail.js';
 import {
+    ADDRESS_ENTITY,
     EXTERNAL_CUSTOMER_ENTITY,
     EXTERNAL_INVOICE_ENTITY,
     ORDER_HEADER_ENTITY,
@@ -769,8 +772,9 @@ async function checkCustomerForRail(rail: BaseInvoiceRail, order: OrderRow, prov
     const known = existing.Results?.[0]?.ExternalCustomerRef;
     if (known) return { OK: true, Known: known, Facts: null, OrgID: orgID, PersonID: personID };
 
-    const facts = await loadPartyFacts(orgID, personID, provider, user);
-    if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
+    const party = await loadPartyFacts(orgID, personID, provider, user);
+    if (!party) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
+    const facts: RailCustomerFacts = { ...party, ...RailCustomerAddress(await orderBillToAddress(order, provider, user), party) };
     // Refused here rather than by the rail: the rail would refuse the same name, days after entry,
     // with an error that does not say which field or limit (bc-aidp-next-golive#280).
     const tooLong = await CheckRailCustomerName(rail, facts.PartyKind, facts.Name, provider, user);
@@ -818,6 +822,67 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
         if (adopted) return { OK: true, ExternalCustomerRef: adopted };
     }
     return { OK: true, ExternalCustomerRef: created.Value.ExternalCustomerRef };
+}
+
+/** The postal part of the customer a rail is asked to create. */
+export type RailCustomerAddressFacts = Pick<RailCustomerFacts, 'AddressLines' | 'City' | 'State' | 'PostalCode' | 'Country'>;
+
+/**
+ * The address a new rail customer is created with: the order's bill-to address, else the party's
+ * primary address (#754).
+ *
+ * The order's bill-to address is the one its invoice is addressed to, so the rail customer matches the
+ * document. The party's primary address is read from bizapps-common's view and is empty for a party
+ * with no address marked primary, even when the order names a billing address; a customer created from
+ * it alone had no address at all.
+ */
+export function RailCustomerAddress(orderAddress: OrderAddressSnapshot | null, party: RailCustomerAddressFacts): RailCustomerAddressFacts {
+    if (!orderAddress || !(orderAddress.Line1 || orderAddress.City || orderAddress.PostalCode)) return party;
+    return {
+        AddressLines: [orderAddress.Line1, orderAddress.Line2, orderAddress.Line3].filter((l): l is string => !!l),
+        City: orderAddress.City,
+        State: orderAddress.StateProvince,
+        PostalCode: orderAddress.PostalCode,
+        Country: orderAddress.Country,
+    };
+}
+
+/**
+ * The order's bill-to address: the snapshot taken at confirm, else the live Address row it names, the
+ * same order the invoice document reads them in (InvoiceBuilder). Null when the order names none.
+ */
+async function orderBillToAddress(order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<OrderAddressSnapshot | null> {
+    try {
+        const snapshot = ParseAddressSnapshot((order.BillToAddressSnapshot as string | null | undefined) ?? null);
+        if (snapshot) return snapshot;
+    } catch (err) {
+        LogError(`Order ${order.OrderNumber}: bill-to address snapshot unreadable, reading the address row instead: ${err}`);
+    }
+    const addressID = order.BillToAddressID as string | null | undefined;
+    if (!addressID) return null;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<Record<string, unknown>>(
+        {
+            EntityName: ADDRESS_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(addressID, 'BillToAddressID')}'`,
+            Fields: ['ID', 'Line1', 'Line2', 'Line3', 'City', 'StateProvince', 'PostalCode', 'Country'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    const a = r.Results?.[0];
+    if (!a) return null;
+    const text = (v: unknown): string | null => (v == null || String(v).trim() === '' ? null : String(v).trim());
+    return {
+        AddressID: String(a.ID),
+        Line1: text(a.Line1),
+        Line2: text(a.Line2),
+        Line3: text(a.Line3),
+        City: text(a.City),
+        StateProvince: text(a.StateProvince),
+        PostalCode: text(a.PostalCode),
+        Country: text(a.Country),
+    };
 }
 
 async function loadPartyFacts(orgID: string | null, personID: string | null, provider: IMetadataProvider, user: UserInfo): Promise<RailCustomerFacts | null> {
