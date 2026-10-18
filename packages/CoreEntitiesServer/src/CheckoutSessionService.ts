@@ -914,20 +914,7 @@ export class CheckoutSessionService {
             );
         }
 
-        const excluded = new Set(['id', 'personid', 'checkinat']);
-        const parentFields = new Set<string>();
-        if (extEntityInfo.ParentEntityFieldNames) {
-            for (const n of extEntityInfo.ParentEntityFieldNames) {
-                parentFields.add(n.toLowerCase());
-            }
-        }
-
-        for (const f of extEntityInfo.Fields) {
-            const lower = f.Name.toLowerCase();
-            if (excluded.has(lower) || parentFields.has(lower) || lower.startsWith('__mj_') || f.IsPrimaryKey || f.IsVirtual || !f.AllowUpdateAPI) {
-                continue;
-            }
-
+        for (const f of this.buyerExtensionFields(extEntityInfo)) {
             let fieldType: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select' = 'text';
             const sqlType = (f.Type || '').toLowerCase();
             const valList = (f.ValueListType || '').toLowerCase();
@@ -966,6 +953,50 @@ export class CheckoutSessionService {
         }
 
         configObj.extensionFields = discoveredFields;
+    }
+
+    /**
+     * The extension columns a buyer may fill: what discovery shows when the widget names no fields
+     * of its own. Not the key, not virtual, updatable through the API, not inherited from the
+     * parent entity, not an `__mj_` audit column, and not one the checkout sets itself.
+     */
+    private static buyerExtensionFields(extEntityInfo: { Fields: EntityFieldInfo[]; ParentEntityFieldNames?: Iterable<string> | null }): EntityFieldInfo[] {
+        const excluded = new Set(['id', 'personid', 'checkinat']);
+        const parentFields = new Set([...(extEntityInfo.ParentEntityFieldNames ?? [])].map((n) => n.toLowerCase()));
+        return (extEntityInfo.Fields ?? []).filter((f) => {
+            const lower = f.Name.toLowerCase();
+            return !excluded.has(lower) && !parentFields.has(lower) && !lower.startsWith('__mj_') && !f.IsPrimaryKey && !f.IsVirtual && f.AllowUpdateAPI;
+        });
+    }
+
+    /** The widget's own `extensionFields`, or undefined when it names none or its JSON does not parse. */
+    private static configuredExtensionFields(widget: { Configuration?: string | null }): CheckoutWidgetConfiguration['extensionFields'] | undefined {
+        if (!widget.Configuration) return undefined;
+        try {
+            const parsed: unknown = JSON.parse(widget.Configuration);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+            return (parsed as CheckoutWidgetConfiguration).extensionFields;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Lower-cased names of the extension columns a checkout writes from the buyer's input: the
+     * fields the widget presents (#781). A widget that lists its own `extensionFields` presents only
+     * those; otherwise it presents what discovery finds. Any other column (a staff-only flag, a
+     * column the widget does not list) is never written from a request.
+     */
+    private static writableExtensionFieldNames(
+        extEntityInfo: { Fields: EntityFieldInfo[]; ParentEntityFieldNames?: Iterable<string> | null },
+        configuredFields: CheckoutWidgetConfiguration['extensionFields'] | undefined
+    ): Set<string> {
+        const discovered = new Set(this.buyerExtensionFields(extEntityInfo).map((f) => f.Name.toLowerCase()));
+        if (!Array.isArray(configuredFields) || configuredFields.length === 0) {
+            return discovered;
+        }
+        const shown = new Set(configuredFields.map((f) => String(f?.name ?? '').toLowerCase()).filter(Boolean));
+        return new Set([...discovered].filter((n) => shown.has(n)));
     }
 
     /**
@@ -1215,7 +1246,8 @@ export class CheckoutSessionService {
         extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo,
-        createPersons = true
+        createPersons = true,
+        configuredFields?: CheckoutWidgetConfiguration['extensionFields']
     ): Promise<{ PersonID: string | null; Extension: BaseEntity | null }> {
         if (!fieldValues || Object.keys(fieldValues).length === 0) {
             return { PersonID: null, Extension: null };
@@ -1256,12 +1288,17 @@ export class CheckoutSessionService {
                 const extFieldsByName = new Map<string, EntityFieldInfo>(
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
                 );
+                const writable = this.writableExtensionFieldNames(
+                    { Fields: ext.EntityInfo?.Fields ?? [], ParentEntityFieldNames: ext.EntityInfo?.ParentEntityFieldNames },
+                    configuredFields
+                );
                 if (resolvedPersonID) {
                     this.setExtensionPerson(ext, resolvedPersonID);
                 }
                 for (const [key, rawValue] of Object.entries(fieldValues)) {
                     const lowerKey = key.toLowerCase();
-                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_')) {
+                    // The deny list stays as a second guard behind the writable set.
+                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_') || !writable.has(lowerKey)) {
                         continue;
                     }
                     const field = extFieldsByName.get(lowerKey);
@@ -1586,7 +1623,7 @@ export class CheckoutSessionService {
                     line.Quantity = 1;
                     line.LineNumber = sequence++;
 
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, widgetConfig.extensionFields);
                 }
             } else {
                 const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -1595,7 +1632,7 @@ export class CheckoutSessionService {
                 line.LineNumber = sequence++;
 
                 if (unitPayloads.length > 0) {
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false, widgetConfig.extensionFields);
                 }
             }
         }
@@ -2321,6 +2358,7 @@ export class CheckoutSessionService {
         try {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
             await widget.Load(session.CheckoutWidgetID);
+            const configuredExtensionFields = this.configuredExtensionFields(widget);
 
             const snapshot = this.readSnapshot(session);
             const linesInput: CheckoutLineInput[] = Array.isArray(snapshot.Lines) ? snapshot.Lines : [];
@@ -2497,7 +2535,7 @@ export class CheckoutSessionService {
                 }
 
                 const hydrate = async (line: OrderLineEntity, unitData: Record<string, unknown>): Promise<void> => {
-                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, configuredExtensionFields);
                     if (!hydrated.PersonID && hydrated.Extension) {
                         newAttendees.push({ Fields: unitData, Extension: hydrated.Extension });
                     }

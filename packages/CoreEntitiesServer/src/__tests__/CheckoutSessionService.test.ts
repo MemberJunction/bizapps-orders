@@ -156,7 +156,9 @@ const mocks = vi.hoisted(() => {
                 { Name: 'DietaryPreferences', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'Comments', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'CustomCount', Type: 'int', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
-                { Name: 'IsVIP', Type: 'bit', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false }
+                { Name: 'IsVIP', Type: 'bit', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'AttendanceStatus', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false, HasDefaultValue: true },
+                { Name: 'BadgeName', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false, HasDefaultValue: false }
             ]
         };
     }
@@ -1318,6 +1320,33 @@ describe('CheckoutSessionService', () => {
             // Assert allowed fields WERE set
             expect(orderLine.extensionInstance.Set).toHaveBeenCalledWith('CustomCount', 42);
             expect(orderLine.extensionInstance.Set).toHaveBeenCalledWith('IsVIP', true);
+        });
+
+        type ExtLine = { extensionInstance: { Set: ReturnType<typeof vi.fn> } };
+        const draftWithFields = async (fields: Record<string, unknown>) => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'bob@example.com', [
+                { ProductID: 'prod-1', Quantity: 1, ExtensionData: { Fields: fields } },
+            ], BILLING);
+            expect(res.Success).toBe(true);
+            return (mocks.mockOrderInstance.Lines.Items[0] as unknown as ExtLine).extensionInstance.Set;
+        };
+
+        it('writes only the extension fields a widget lists, when it lists its own (#781)', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                ...JSON.parse(mocks.DEFAULT_WIDGET_CONFIG),
+                extensionFields: [{ name: 'customCount', label: 'Count', type: 'number' }],
+            });
+            const set = await draftWithFields({ CustomCount: '7', IsVIP: 'true', Comments: 'staff only' });
+            expect(set).toHaveBeenCalledWith('CustomCount', 7);
+            expect(set).not.toHaveBeenCalledWith('IsVIP', expect.anything());
+            expect(set).not.toHaveBeenCalledWith('Comments', expect.anything());
+        });
+
+        it('ignores a client key that is not an extension field the checkout presents (#781)', async () => {
+            const set = await draftWithFields({ OrderLineID: 'x', NotAColumn: 'y', CustomCount: '3' });
+            expect(set).toHaveBeenCalledWith('CustomCount', 3);
+            expect(set.mock.calls.map(([name]) => name)).not.toContain('OrderLineID');
+            expect(set.mock.calls.map(([name]) => name)).not.toContain('NotAColumn');
         });
 
         it('rejects invalid or out-of-range quantities in UpdateDraft', async () => {
