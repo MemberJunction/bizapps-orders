@@ -173,7 +173,8 @@ The diagram shows a few columns; discovery lists every column the rules below ke
    - `ntext` / `text`, `nvarchar(max)` / `varchar(max)` (stored as `Length` -1), and strings longer than 255 characters (`EntityField.MaxLength`; `Length` is bytes) ➔ `textarea`
    - Any other string ➔ `text`
 3. **Exclusions**: System audit fields (`__mj_CreatedAt`, `__mj_UpdatedAt`), primary keys (`ID`), parent `OrderLine` fields, `PersonID` (replaced by the contact inputs), `CheckInAt`, virtual fields and fields the API cannot update are excluded.
-4. **Required**: a discovered field is required when its column is `NOT NULL` and has no default. A column with a default (Event Order Lines' `AttendanceStatus`, default `Registered`) is optional, since the database fills it.
+4. **Required**: a discovered field is required when its column is `NOT NULL` and has no default. A column with a default (Event Order Lines' `AttendanceStatus`, default `Registered`) is optional, since the database fills it. A blank answer to such a field, or to a nullable one, is not written, so the default applies; a number that does not parse is dropped.
+5. **What the server writes**: draft and completion write only the extension columns the widget presents: its authored `extensionFields` when it has them, otherwise the columns these rules discover. Any other key a request sends is ignored, so a column added to the extension entity later is never writable through a widget that lists its own fields.
 
 ---
 
