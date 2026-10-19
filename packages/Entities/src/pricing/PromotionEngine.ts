@@ -1015,6 +1015,10 @@ export async function DeletePromotionAdjustments(
         throw new PromotionError(`Could not read the promotion adjustments: ${adjustments?.ErrorMessage ?? 'unknown error'}`);
     }
 
+    // The server's adjustment class refuses a direct delete; this is the order's own save replacing
+    // the rows, so it says so on each one. A property of the object, not a field, so an API caller
+    // cannot send it.
+    for (const row of adjustments.Results) (row as { RemovedByOrderSave?: boolean }).RemovedByOrderSave = true;
     for (const row of [...allocations.Results, ...adjustments.Results]) {
         if (!(await row.Delete())) {
             throw new PromotionError(

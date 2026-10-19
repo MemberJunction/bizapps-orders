@@ -1659,6 +1659,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // A concession on a draft line goes with the line, decided or not: the line it priced
                 // no longer exists, and the order has committed no customer to it.
                 if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
+                // An adjustment refuses a direct delete; it goes with the line it discounted.
+                if ('RemovedByOrderSave' in row) row.RemovedByOrderSave = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +

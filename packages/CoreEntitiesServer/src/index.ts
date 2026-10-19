@@ -16,6 +16,7 @@ export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { OrderAdjustmentEntityServer, LoadOrderAdjustmentEntityServer } from './OrderAdjustmentEntityServer.js';
 export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
