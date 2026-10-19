@@ -26,6 +26,7 @@ describe('GetOrders presets', () => {
         await GetOrders({ Preset: 'returnable', MaxRows: 10, User: {} as never });
         expect(filterOf()).toContain(`Status = 'Confirmed'`);
         expect(filterOf()).toContain('ReversesOrderHeaderID IS NULL');
+        expect(filterOf()).toContain(`OrderType <> 'Return'`);
     });
 
     it('booked still includes return orders', async () => {

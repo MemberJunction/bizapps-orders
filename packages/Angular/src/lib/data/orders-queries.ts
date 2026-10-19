@@ -321,8 +321,9 @@ export interface MJOGetOrdersOptions {
  *   owes nothing yet.
  * - `booked` — the order has confirmed, so journal entries exist and the receivable is real. This
  *   is `IsBooked` in `OrderStatusBehavior`, and it is what a return reverses.
- * - `returnable` — `booked`, minus return orders themselves (`ReversesOrderHeaderID` set). A return
- *   cannot be returned, so the Returns picker offers only these (#835).
+ * - `returnable` — `booked`, minus return orders themselves. A return made on the Returns page is
+ *   typed `Return` and reverses line by line, so its header `ReversesOrderHeaderID` can be empty;
+ *   either marks it. A return cannot be returned, so the Returns picker offers only these (#835).
  * - `credits` — a NEGATIVE balance, which IS the customer's credit. There is no separate instrument
  *   to look up.
  */
@@ -348,7 +349,7 @@ export async function GetOrders(
             filters.push(`Status = 'Confirmed'`);
             break;
         case 'returnable':
-            filters.push(`Status = 'Confirmed' AND ReversesOrderHeaderID IS NULL`);
+            filters.push(`Status = 'Confirmed' AND ReversesOrderHeaderID IS NULL AND (OrderType IS NULL OR OrderType <> 'Return')`);
             break;
         case 'drafts':
             filters.push(`Status IN ('Draft','Quoted')`);
