@@ -104,6 +104,22 @@ export const ORDERS_SETTING = {
      * created, since nobody reviews their own order (#320 §5). Unset refuses such an order's confirm.
      */
     OrderReviewEscalationRole: 'OrderReviewEscalationRole',
+    /**
+     * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
+     * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
+     * issue it. Counted per payment, not per order: what this refund brings the payment's refunds to,
+     * so an order settled by several payments can be refunded a payment at a time by a role holder for
+     * more than the threshold in all. Empty switches the check off, so anyone who may call the
+     * operation may refund, as before. A value that is not a number of 0 or more is read as 0, so
+     * every refund needs the company approver.
+     */
+    RefundApprovalThreshold: 'RefundApprovalThreshold',
+    /**
+     * The NAME of the MJ role whose holders may issue a refund at or below `RefundApprovalThreshold`
+     * (bc-aidp-next-golive#320 §3). Unset, only the company approver may issue refunds while the
+     * threshold is set.
+     */
+    RefundApproverRole: 'RefundApproverRole',
 } as const;
 
 /**
@@ -153,6 +169,17 @@ function asPositiveWholeNumber(raw: string | undefined, fallback: number): numbe
 function asAmountOrNull(raw: string | undefined): number | null {
     const v = raw?.trim().replace(/,/g, '');
     return v && /^\d+(\.\d+)?$/.test(v) ? Number(v) : null;
+}
+
+/**
+ * A money amount of 0 or more, `null` when absent or empty (the check is off), and 0 when unreadable:
+ * a mistyped threshold must tighten the rule, not switch it off.
+ */
+function asAmountOrOff(raw: string | undefined): number | null {
+    const v = raw?.trim();
+    if (!v) return null;
+    if (!/^\d+(\.\d{1,2})?$/.test(v)) return 0;
+    return Number(v);
 }
 
 /** A whole number of days, or `null` when the value is absent, empty or unreadable. */
@@ -259,6 +286,28 @@ export class OrdersSettings {
         return ApplicationSettingEngine.Instance.GetSetting(key, appID);
     }
 
+    /**
+     * Like {@link raw}, but throws when the Orders application row cannot be found. Without its ID
+     * the engine consults only GLOBAL rows, so an app-scoped value would read as unset. For a
+     * control whose unset value switches it OFF, that must be loud, not silent.
+     */
+    private static rawAppScoped(key: string): string | undefined {
+        if (this._localOverrides.has(key)) {
+            return this._localOverrides.get(key);
+        }
+        const map = getOverridesMap();
+        if (map.has(key)) {
+            return map.get(key);
+        }
+        const appID = this.applicationID();
+        if (!appID) {
+            throw new Error(
+                `The Orders application (${ORDERS_APPLICATION_NAME}) is not in metadata, so the Orders setting ${key} cannot be read.`,
+            );
+        }
+        return ApplicationSettingEngine.Instance.GetSetting(key, appID);
+    }
+
     /** Stamp the organization from the person's affiliation when it was left blank (D64). */
     public static get AutoPopulateOrganizationFromPerson(): boolean {
         return asBoolean(
@@ -327,6 +376,21 @@ export class OrdersSettings {
             ReviewerRole: this.raw(ORDERS_SETTING.OrderReviewerRole)?.trim() || null,
             EscalationRole: this.raw(ORDERS_SETTING.OrderReviewEscalationRole)?.trim() || null,
         };
+    }
+
+    /**
+     * The refund amount at or below which `RefundApproverRole` may refund, or `null` when the check is off.
+     *
+     * @throws when the Orders application row is missing, rather than reading the check as off.
+     */
+    public static get RefundApprovalThreshold(): number | null {
+        return asAmountOrOff(this.rawAppScoped(ORDERS_SETTING.RefundApprovalThreshold));
+    }
+
+    /** The role that may refund at or below the threshold, or `null` when none is configured. */
+    public static get RefundApproverRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.RefundApproverRole)?.trim();
+        return value ? value : null;
     }
 
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
