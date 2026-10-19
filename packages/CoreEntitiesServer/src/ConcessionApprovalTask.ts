@@ -227,7 +227,7 @@ export async function RaiseConcessionApprovalAgain(
     const order = await loadOrder(concession.OrderHeaderID, ctx);
     const summary = linkDescriptionOf(refused.Name, order.OrderNumber);
     const newTaskID = await raiseTask(concession, roleID, refused.Name, summary, reason, order, ctx);
-    await recordActivity(
+    await RecordTaskActivity(
         refusedTaskID,
         `The decision was not applied to the concession, which is still awaiting approval: ${reason} ` +
             `A new approval task was raised for it.`,
@@ -558,7 +558,7 @@ export async function EnsureTaskAssignment(taskID: string, userEntityID: string,
 }
 
 /** A note on a task's activity feed, where the tasks app shows it with the task. */
-async function recordActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function RecordTaskActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
     const activity = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskActivityEntity>(TASK_ACTIVITY_ENTITY, ctx.User);
     requireSubclass(activity, TASK_ACTIVITY_ENTITY);
     activity.NewRecord();
@@ -566,7 +566,7 @@ async function recordActivity(taskID: string, description: string, ctx: Approval
     activity.ActivityType = 'StatusChange';
     activity.Description = description;
     if (!(await activity.Save())) {
-        throw new Error(`The refusal could not be recorded on approval task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
+        throw new Error(`The note could not be recorded on approval task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
     }
 }
 

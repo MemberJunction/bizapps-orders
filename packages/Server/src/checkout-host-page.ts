@@ -189,6 +189,8 @@ body {
 }
 .mj-co button[disabled] { opacity: 0.6; cursor: not-allowed; }
 .mj-co__total { font-weight: 600; margin-top: 1rem; }
+.mj-co__unit { border: 1px solid var(--mj-border, #d0d5dd); border-radius: 6px; margin: 1rem 0 0; padding: 0.5rem 1rem 1rem; }
+.mj-co__unit legend { font-weight: 600; padding: 0 0.25rem; }
 #mj-co-card { margin-top: 1rem; }
 `;
 
@@ -382,11 +384,15 @@ const BOOT_SCRIPT = `
     var form = document.createElement('form');
     form.setAttribute('novalidate', 'novalidate');
 
-    function addField(name, label, type, required, placeholder, options) {
+    // parent and idSuffix place a field inside one unit's fieldset; the field keeps its name, and
+    // each unit's values are read from its own fieldset.
+    function addField(name, label, type, required, placeholder, options, parent, idSuffix) {
+      var into = parent || form;
+      var id = 'mj-co-' + name + (idSuffix || '');
       var lab = document.createElement('label');
-      lab.setAttribute('for', 'mj-co-' + name);
+      lab.setAttribute('for', id);
       lab.textContent = label + (required ? ' *' : '');
-      form.appendChild(lab);
+      into.appendChild(lab);
       var input;
       if (type === 'select' && options && options.length) {
         input = document.createElement('select');
@@ -415,11 +421,11 @@ const BOOT_SCRIPT = `
         input = document.createElement('input');
         input.type = type === 'number' ? 'number' : (type === 'date' ? 'date' : 'text');
       }
-      input.id = 'mj-co-' + name;
+      input.id = id;
       input.name = name;
       if (placeholder && input.placeholder !== undefined) input.placeholder = placeholder;
       if (required && input.type !== 'checkbox') input.required = true;
-      form.appendChild(input);
+      into.appendChild(input);
       return input;
     }
 
@@ -433,10 +439,63 @@ const BOOT_SCRIPT = `
     }
 
     var extFields = Array.isArray(config.extensionFields) ? config.extensionFields : [];
-    extFields.forEach(function (f) {
-      if (!f || !f.name || f.name === 'email') return;
-      addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options);
-    });
+    // A per-unit product books one line per unit, and the server refuses a line whose number of
+    // detail sets differs from its quantity (#876). So it gets one set of fields per unit, redrawn
+    // as the quantity changes, as the Angular element does.
+    var perUnit = (config.unitMode === 'perUnit' || config.isEvent === true) && extFields.length > 0;
+    var unitsBox = null;
+    function unitCount() {
+      var n = qtyInput ? parseInt(qtyInput.value, 10) || 1 : 1;
+      var max = config.maxQuantity ? Number(config.maxQuantity) : 50;
+      return Math.max(1, Math.min(n, max));
+    }
+    function readUnit(scope) {
+      var values = {};
+      extFields.forEach(function (f) {
+        if (!f || !f.name) return;
+        var el = scope.elements.namedItem(f.name);
+        if (el && 'type' in el) values[f.name] = fieldValue(el);
+      });
+      return values;
+    }
+    function unitSets() {
+      return unitsBox ? Array.prototype.slice.call(unitsBox.querySelectorAll('fieldset.mj-co__unit')) : [];
+    }
+    function renderUnits() {
+      var kept = unitSets().map(readUnit);
+      unitsBox.innerHTML = '';
+      var n = unitCount();
+      for (var i = 0; i < n; i++) {
+        var set = document.createElement('fieldset');
+        set.className = 'mj-co__unit';
+        var legend = document.createElement('legend');
+        legend.textContent = 'Item ' + (i + 1);
+        set.appendChild(legend);
+        unitsBox.appendChild(set);
+        extFields.forEach(function (f) {
+          if (!f || !f.name) return;
+          var input = addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options, set, '-' + (i + 1));
+          var prior = kept[i] ? kept[i][f.name] : undefined;
+          if (prior === undefined || prior === '') return;
+          if (input.type === 'checkbox') input.checked = prior === true;
+          else input.value = String(prior);
+        });
+      }
+    }
+    if (perUnit) {
+      unitsBox = document.createElement('div');
+      form.appendChild(unitsBox);
+      renderUnits();
+      if (qtyInput) {
+        qtyInput.addEventListener('input', renderUnits);
+        qtyInput.addEventListener('change', renderUnits);
+      }
+    } else {
+      extFields.forEach(function (f) {
+        if (!f || !f.name || f.name === 'email') return;
+        addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options);
+      });
+    }
 
     var cardMount = document.createElement('div');
     cardMount.id = 'mj-co-card';
@@ -461,18 +520,19 @@ const BOOT_SCRIPT = `
       ev.preventDefault();
       submit.disabled = true;
       status.textContent = 'Pricing…';
-      var emailEl = form.elements.namedItem('email');
+      // By id: a per-unit form can hold an attendee field also named email.
+      var emailEl = document.getElementById('mj-co-email');
       var email = emailEl && 'value' in emailEl ? String(emailEl.value || '').trim() : '';
       var qty = qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
-      var extensionFields = {};
-      extFields.forEach(function (f) {
-        if (!f || !f.name) return;
-        var el = form.elements.namedItem(f.name);
-        if (el && 'type' in el) extensionFields[f.name] = fieldValue(el);
-      });
       var line = { ProductID: productId, Quantity: qty };
-      if (Object.keys(extensionFields).length) {
-        line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
+      if (perUnit) {
+        var units = unitSets().map(readUnit);
+        line.ExtensionData = { EntityName: config.extensionEntityName, Fields: units[0] || {}, Units: units };
+      } else {
+        var extensionFields = readUnit(form);
+        if (Object.keys(extensionFields).length) {
+          line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
+        }
       }
       post('/draft', {
         sessionId: sessionId,

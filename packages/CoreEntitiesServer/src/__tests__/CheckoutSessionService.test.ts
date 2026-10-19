@@ -156,7 +156,9 @@ const mocks = vi.hoisted(() => {
                 { Name: 'DietaryPreferences', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'Comments', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
                 { Name: 'CustomCount', Type: 'int', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
-                { Name: 'IsVIP', Type: 'bit', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false }
+                { Name: 'IsVIP', Type: 'bit', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false },
+                { Name: 'AttendanceStatus', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false, HasDefaultValue: true },
+                { Name: 'BadgeName', Type: 'nvarchar', AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false, HasDefaultValue: false }
             ]
         };
     }
@@ -208,7 +210,6 @@ const mocks = vi.hoisted(() => {
         TotalGross = 0;
         AmountPaid = 0;
         OrderDate: Date | null = null;
-        PromotionCodes = { Codes: [] as string[] };
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         NewRecord = vi.fn();
         Load = mockOrderLoad;
@@ -286,6 +287,9 @@ const mocks = vi.hoisted(() => {
         mockIntentSave,
         mockCaptureExecute,
         mockClaimCreate: vi.fn().mockResolvedValue({ ID: 'claim-1' }),
+        billingLinkRows: [] as Array<{ AddressID: string }>,
+        billingAddressRows: [] as Array<{ ID: string }>,
+        addressRunViewParams: [] as Array<{ EntityName: string; ExtraFilter?: string }>,
         mockOpenPaymentIntent: vi.fn().mockResolvedValue({
             Success: true,
             PaymentIntentID: 'pi-row-1',
@@ -304,6 +308,7 @@ const mocks = vi.hoisted(() => {
         mockAddressLinkInstance: new MockAddressLink(),
         lastRunViewParams: undefined as { EntityName?: string; MaxRows?: number; Fields?: string[]; ExtraFilter?: string } | undefined,
         sessionRunViewResults: undefined as Array<{ ID: string }> | undefined,
+        sessionRunViewQueue: [] as unknown[][],
         /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
         peopleByEmail: {} as Record<string, string>,
         personLookups: 0,
@@ -485,11 +490,19 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 if (params.EntityName.includes('Checkout Sessions')) {
                     return Promise.resolve({
                         Success: true,
-                        Results: mocks.sessionRunViewResults ?? [mocks.mockSessionInstance]
+                        Results: mocks.sessionRunViewQueue.shift() ?? mocks.sessionRunViewResults ?? [mocks.mockSessionInstance]
                     });
                 }
                 if (params.EntityName.includes('Address Types')) {
                     return Promise.resolve({ Success: true, Results: [{ ID: 'addrtype-billing' }] });
+                }
+                if (params.EntityName.includes('Address Links')) {
+                    mocks.addressRunViewParams.push(params);
+                    return Promise.resolve({ Success: true, Results: mocks.billingLinkRows });
+                }
+                if (params.EntityName.includes('Addresses')) {
+                    mocks.addressRunViewParams.push(params);
+                    return Promise.resolve({ Success: true, Results: mocks.billingAddressRows });
                 }
                 if (params.EntityName.includes('People') || params.EntityName.includes('Persons')) {
                     mocks.personLookups++;
@@ -599,8 +612,12 @@ describe('CheckoutSessionService', () => {
         mocks.mockProductInstance.ID = 'prod-1';
         mocks.lastRunViewParams = undefined;
         mocks.sessionRunViewResults = undefined;
+        mocks.sessionRunViewQueue = [];
         mocks.peopleByEmail = {};
         mocks.personLookups = 0;
+        mocks.billingLinkRows = [];
+        mocks.billingAddressRows = [];
+        mocks.addressRunViewParams = [];
         mocks.subscriptionRunViewResults = [];
         mocks.eventProductsRequiringAttendees = [];
         mocks.subscriptionRunViewParams = [];
@@ -875,6 +892,50 @@ describe('CheckoutSessionService', () => {
 
             const res2 = await CheckoutSessionService.InitializeSession('summit-2026', '');
             expect(res2.Success).toBe(false);
+        });
+
+        it('resumes only an open sale session, never a pay-renewal session for the same key (#782)', async () => {
+            await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            const params = mocks.lastRunViewParams as { EntityName: string; ExtraFilter?: string } | undefined;
+            expect(params?.EntityName).toContain('Checkout Sessions');
+            expect(params?.ExtraFilter).toContain("Status = 'Open' AND DraftOrderID IS NULL");
+        });
+
+        it('resumes the session a concurrent call created when its own insert is refused (#782)', async () => {
+            const concurrent = new mocks.MockCheckoutSession();
+            concurrent.ID = 'sess-concurrent';
+            mocks.sessionRunViewQueue = [[], [concurrent]];
+            mocks.mockSessionSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(res.Success).toBe(true);
+            expect(res.SessionID).toBe('sess-concurrent');
+        });
+
+        it('fails when the insert is refused and no open session exists to resume', async () => {
+            mocks.sessionRunViewQueue = [[], []];
+            mocks.mockSessionSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Failed to initialize checkout session record');
+        });
+
+        it('expires a stale open session for the key instead of resuming it (#782)', async () => {
+            const stale = new mocks.MockCheckoutSession();
+            stale.ID = 'sess-stale';
+            stale.ExpiresAt = new Date(Date.now() - 1000);
+            stale.Save = vi.fn().mockResolvedValue(true);
+            mocks.sessionRunViewQueue = [[stale]];
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(stale.Status).toBe('Expired');
+            expect(stale.Save).toHaveBeenCalled();
+            expect(res.Success).toBe(true);
+            expect(res.SessionID).not.toBe('sess-stale');
         });
 
         it('initializes a session and extracts customUI configuration', async () => {
@@ -1400,6 +1461,40 @@ describe('CheckoutSessionService', () => {
             // Assert allowed fields WERE set
             expect(orderLine.extensionInstance.Set).toHaveBeenCalledWith('CustomCount', 42);
             expect(orderLine.extensionInstance.Set).toHaveBeenCalledWith('IsVIP', true);
+        });
+
+        type ExtLine = { extensionInstance: { Set: ReturnType<typeof vi.fn> } };
+        const draftWithFields = async (fields: Record<string, unknown>) => {
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'bob@example.com', [
+                { ProductID: 'prod-1', Quantity: 1, ExtensionData: { Fields: fields } },
+            ], BILLING);
+            expect(res.Success).toBe(true);
+            return (mocks.mockOrderInstance.Lines.Items[0] as unknown as ExtLine).extensionInstance.Set;
+        };
+
+        it('writes only the extension fields a widget lists, when it lists its own (#781)', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                ...JSON.parse(mocks.DEFAULT_WIDGET_CONFIG),
+                extensionFields: [{ name: 'customCount', label: 'Count', type: 'number' }],
+            });
+            const set = await draftWithFields({ CustomCount: '7', IsVIP: 'true', Comments: 'staff only' });
+            expect(set).toHaveBeenCalledWith('CustomCount', 7);
+            expect(set).not.toHaveBeenCalledWith('IsVIP', expect.anything());
+            expect(set).not.toHaveBeenCalledWith('Comments', expect.anything());
+        });
+
+        it('ignores a client key that is not an extension field the checkout presents (#781)', async () => {
+            const set = await draftWithFields({ OrderLineID: 'x', NotAColumn: 'y', CustomCount: '3' });
+            expect(set).toHaveBeenCalledWith('CustomCount', 3);
+            expect(set.mock.calls.map(([name]) => name)).not.toContain('OrderLineID');
+            expect(set.mock.calls.map(([name]) => name)).not.toContain('NotAColumn');
+        });
+
+        it('leaves a blank optional field to its database default and drops an unparseable number (#877)', async () => {
+            const set = await draftWithFields({ AttendanceStatus: '', CustomCount: 'abc', BadgeName: 'Bob' });
+            expect(set).not.toHaveBeenCalledWith('AttendanceStatus', expect.anything());
+            expect(set).not.toHaveBeenCalledWith('CustomCount', expect.anything());
+            expect(set).toHaveBeenCalledWith('BadgeName', 'Bob');
         });
 
         it('rejects invalid or out-of-range quantities in UpdateDraft', async () => {
@@ -3094,6 +3189,30 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockAddressLinkInstance.AddressTypeID).toBe('addrtype-billing');
             const ctx = mocks.mockPricingPrice.mock.calls[0][0] as { ShipToAddress: unknown };
             expect(ctx.ShipToAddress).toEqual({ Country: 'US', StateProvince: 'IL', City: null, PostalCode: '60601' });
+        });
+
+        it('reuses the buyer’s Billing address for the same location on a retry, adding no address or link (#817)', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.billingLinkRows = [{ AddressID: 'addr-existing' }];
+            mocks.billingAddressRows = [{ ID: 'addr-existing' }];
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.BillToAddressID).toBe('addr-existing');
+            expect(mocks.mockOrderInstance.ShipToAddressID).toBe('addr-existing');
+            expect(mocks.mockAddressSave).not.toHaveBeenCalled();
+            expect(mocks.mockAddressLinkSave).not.toHaveBeenCalled();
+            const addressFilter = mocks.addressRunViewParams.find((p) => p.EntityName.includes('Addresses'))?.ExtraFilter ?? '';
+            expect(addressFilter).toContain("ID IN ('addr-existing')");
+            expect(addressFilter).toContain("Country = 'US'");
+            expect(addressFilter).toContain("StateProvince = 'IL'");
+            expect(addressFilter).toContain("PostalCode = '60601'");
+            expect(addressFilter).toContain('Line1 IS NULL');
         });
 
         it('does not confirm the order when the Address cannot be saved', async () => {

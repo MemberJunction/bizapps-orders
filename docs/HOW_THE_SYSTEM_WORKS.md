@@ -276,7 +276,7 @@ After `pnpm install`, `scripts/rebuild-db.sh` drops the database `.env` names an
 
 1. MJ core migrations from the MJ git tag `MJ_CORE_VERSION`. Keep it equal to the `@memberjunction/core` version `pnpm-lock.yaml` resolves, as `.env.example` does; the script's built-in default is older.
 2. bizapps-common, applied with `sqlcmd` from `BIZAPPS_COMMON_REPO` (default `../bizapps-common`).
-3. bizapps-tasks and bizapps-accounting with `mj migrate --schema`, from `BIZAPPS_TASKS_REPO` and `BIZAPPS_ACCOUNTING_REPO` (defaults `../bizapps-tasks`, `../bizapps-accounting`).
+3. bizapps-tasks and bizapps-accounting with `mj migrate --schema`, from `BIZAPPS_TASKS_REPO` and `BIZAPPS_ACCOUNTING_REPO` (defaults `../bizapps-tasks`, `../bizapps-accounting`). Tasks must be at 1.8 or later: its 1.8 metadata-sync migration seeds the actions and task types this repo's task types name, and the script refuses an older checkout before dropping anything.
 4. This repo's migrations as committed, with their CodeGen output, so no CodeGen run follows.
 5. Seed metadata: common's query categories, accounting's currencies and GL account roles, then this repo's `metadata/`.
 6. A human user (`INTEGRATION_USER_EMAIL`) and the Account Director role for the Owner, which the integration suite needs.

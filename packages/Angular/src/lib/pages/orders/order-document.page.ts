@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, Input, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnChanges, OnInit, SimpleChanges, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatDate, FormatMoney } from '../../panels/money-format';
 
@@ -270,7 +270,7 @@ export interface MJOIssuer {
         `,
     ],
 })
-export class MJOOrderDocumentPageComponent implements OnInit {
+export class MJOOrderDocumentPageComponent implements OnInit, OnChanges {
     /**
      * Render what was just loaded.
      *
@@ -298,15 +298,50 @@ export class MJOOrderDocumentPageComponent implements OnInit {
     public Lines: mjBizAppsOrdersOrderLineEntity[] = [];
     public readonly today = Today();
 
+    /** Bumped by every load; a load that is no longer the newest drops its results. */
+    private loadToken = 0;
+
     public async ngOnInit(): Promise<void> {
-        if (!this.OrderID) return;
+        await this.load();
+    }
+
+    /**
+     * THE INPUT CAN ARRIVE AFTER CONSTRUCTION, and `ngOnInit` runs once (#832).
+     *
+     * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
+     * and nothing else, so loading only in `ngOnInit` kept showing the first order.
+     */
+    public async ngOnChanges(changes: SimpleChanges): Promise<void> {
+        if (changes['OrderID'] && !changes['OrderID'].firstChange) {
+            await this.load();
+        }
+    }
+
+    /** Load `OrderID`'s order and lines by id, or clear the page when there is none. */
+    private async load(): Promise<void> {
+        // A slower earlier load must not overwrite a newer one, so every assignment after an await
+        // checks that this pass is still the newest.
+        const token = ++this.loadToken;
+        const current = (): boolean => token === this.loadToken;
+
+        this.Order = null;
+        this.Lines = [];
+        if (!this.OrderID) {
+            this.cdr.detectChanges();
+            return;
+        }
+        let order: mjBizAppsOrdersOrderHeaderEntity | null;
         try {
             const orders = await GetOrders({ OrderHeaderID: this.OrderID });
-            this.Order = orders[0] ?? null;
+            order = orders[0] ?? null;
         } catch {
-            this.Order = null;
+            order = null;
         }
-        if (this.Order) this.Lines = await GetOrderLines(this.Order.ID);
+        if (!current()) return;
+        const lines = order ? await GetOrderLines(order.ID) : [];
+        if (!current()) return;
+        this.Order = order;
+        this.Lines = lines;
         this.cdr.detectChanges();
     }
 

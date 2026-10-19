@@ -1,4 +1,7 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import type { Application, Request, Response } from 'express';
 
 const mockRunView = vi.fn();
@@ -67,7 +70,32 @@ import {
     SetCheckoutAccountPassword,
 } from '@mj-biz-apps/orders-core-entities-server';
 import { LogStatus } from '@memberjunction/core';
-import { CheckoutServerExtension, shouldServeCheckoutElementSourceMap, turnstileConfigGap } from '../CheckoutServerExtension.js';
+import {
+    CheckoutServerExtension,
+    resolveCheckoutElementDir,
+    shouldServeCheckoutElementSourceMap,
+    turnstileConfigGap,
+} from '../CheckoutServerExtension.js';
+
+// The routes the extension registers depend on whether a built element bundle exists. Point it at a
+// stub bundle so these tests do not depend on `packages/Angular` having been built (#795).
+const builtElementDir = mkdtempSync(path.join(tmpdir(), 'checkout-element-'));
+writeFileSync(path.join(builtElementDir, 'main.js'), '// stub element bundle\n');
+writeFileSync(path.join(builtElementDir, 'main.js.map'), '{}');
+const unbuiltElementDir = mkdtempSync(path.join(tmpdir(), 'checkout-element-none-'));
+const previousElementDir = process.env.CHECKOUT_ELEMENT_DIR;
+beforeAll(() => {
+    process.env.CHECKOUT_ELEMENT_DIR = builtElementDir;
+});
+afterAll(() => {
+    if (previousElementDir === undefined) {
+        delete process.env.CHECKOUT_ELEMENT_DIR;
+    } else {
+        process.env.CHECKOUT_ELEMENT_DIR = previousElementDir;
+    }
+    rmSync(builtElementDir, { recursive: true, force: true });
+    rmSync(unbuiltElementDir, { recursive: true, force: true });
+});
 
 type RouteMap = {
     get: Record<string, (req: Request, res: Response) => void>;
@@ -249,11 +277,6 @@ describe('CheckoutServerExtension', () => {
             renewalEdge.loadOrder.mockResolvedValueOnce({ SourceCheckoutWidgetID: 'widget-1' });
             mockRunView.mockResolvedValueOnce({ Success: true, Results: [{ Slug: 'annual-plan' }] });
             const res = await get(routes, 'payload.signature');
-            // Without a built element bundle the page cannot host the mode, and says so.
-            if (res.statusCode === 503) {
-                expect(res.body).toContain('not available on this server');
-                return;
-            }
             expect(res.statusCode).toBe(200);
             expect(res.body).toContain('slug="annual-plan"');
             expect(res.body).toContain('renewal-token="payload.signature"');
@@ -287,6 +310,46 @@ describe('CheckoutServerExtension', () => {
         );
         expect(CheckoutSessionService.UpdateDraft).toHaveBeenCalledWith('s-1', 'k', 'a@b.com', [], null, expect.anything(), {
             PromotionCodes: ['SAVE10'],
+        });
+    });
+
+    describe('with no element bundle built', () => {
+        beforeEach(() => {
+            process.env.CHECKOUT_ELEMENT_DIR = unbuiltElementDir;
+        });
+        afterEach(() => {
+            process.env.CHECKOUT_ELEMENT_DIR = builtElementDir;
+        });
+
+        it('resolves no element directory', () => {
+            expect(resolveCheckoutElementDir()).toBeNull();
+            expect(resolveCheckoutElementDir({ CHECKOUT_ELEMENT_DIR: builtElementDir })).toBe(builtElementDir);
+        });
+
+        it('registers no element route and serves the fallback page', async () => {
+            const { app, routes } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+            expect(Object.keys(routes.get).sort()).toEqual(['/checkout/:slug', '/checkout/renew/:token'].sort());
+            const res = mockRes();
+            await routes.get['/checkout/:slug'](
+                { params: { slug: 'summit-2027' }, headers: {}, socket: { remoteAddress: '127.0.0.1' } } as unknown as Request,
+                res as unknown as Response
+            );
+            expect(res.statusCode).toBe(200);
+            expect(res.body).not.toContain('/checkout/element/main.js');
+        });
+
+        it('answers an update-card link with 503, since only the element hosts pay-renewal mode', async () => {
+            const { app, routes } = mockApp();
+            await new CheckoutServerExtension().Initialize(app, { Enabled: true, DriverClass: 'OrdersCheckoutEdge', RootPath: '/checkout', Settings: {} });
+            renewalEdge.verify.mockResolvedValueOnce({ Valid: true, OrderID: 'aaaaaaaa-0000-4000-8000-000000000001', SubscriptionID: 's', ExpiresAt: new Date() });
+            const res = mockRes();
+            await routes.get['/checkout/renew/:token'](
+                { params: { token: 'p.s' }, headers: {}, socket: { remoteAddress: '127.0.0.9' } } as unknown as Request,
+                res as unknown as Response
+            );
+            expect(res.statusCode).toBe(503);
+            expect(res.body).toContain('not available on this server');
         });
     });
 

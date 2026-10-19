@@ -1,0 +1,36 @@
+[
+  {
+    "_comments": [
+      "A progress observation's amounts are magnitudes on every line, a reversal (negative-quantity) line",
+      "included, while the line's own RecognizedToDate carries the line's sign so it nets against the origin",
+      "(#803). Orders.RecordProgress computes the catch-up on magnitudes and a supersede reverses the replaced",
+      "row's RecognitionAmount as stored, so signing the row would change that arithmetic. The descriptions",
+      "say so. AutoUpdateDescription is off so CodeGen does not restore the extended-property text."
+    ],
+    "fields": {
+      "Description": "Revenue recognised on the line before this observation posted, as a magnitude: positive on a reversal (negative-quantity) line too, where the line's own RecognizedToDate is negative. Materialised for the audit chain; agrees with the size of the sum of posted recognition entries for the line.",
+      "AutoUpdateDescription": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Line Progress Measurements&Name=RecognizedToDateBefore"
+    }
+  },
+  {
+    "fields": {
+      "Description": "Revenue recognised on the line after this observation posted, as a magnitude: |LineTotalNet| × PercentComplete, rounded to the cent. Positive on a reversal (negative-quantity) line too, where the line's own RecognizedToDate is negative. At 100% it is the line amount's size exactly.",
+      "AutoUpdateDescription": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Line Progress Measurements&Name=RecognizedToDateAfter"
+    }
+  },
+  {
+    "fields": {
+      "Description": "The delta this observation posted: After − Before, on magnitudes. NEGATIVE on a backward slide (the entry is mirrored, Dr Sales / Cr Deferred Revenue), whatever the line's sign; on a reversal line the entry itself carries the line's sign. Zero when the observation moved nothing, in which case no entry was written.",
+      "AutoUpdateDescription": false
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.Entity=MJ_BizApps_Orders: Order Line Progress Measurements&Name=RecognitionAmount"
+    }
+  }
+]

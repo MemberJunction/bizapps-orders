@@ -82,6 +82,7 @@ import type {
     mjBizAppsAccountingJournalEntryEntity,
 } from '@mj-biz-apps/accounting-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
+import { FormatDate } from '../panels/money-format';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -285,7 +286,7 @@ function likeText(value: string): string {
  * Renamed for what it selects rather than what it once excluded: an order that has BOOKED, which is
  * `IsBooked` in `OrderStatusBehavior` — "journal entries exist and the receivable is real".
  */
-export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'drafts' | 'credits';
+export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'returnable' | 'drafts' | 'credits';
 
 export interface MJOGetOrdersOptions {
     Preset?: MJOOrderPreset;
@@ -320,6 +321,9 @@ export interface MJOGetOrdersOptions {
  *   owes nothing yet.
  * - `booked` — the order has confirmed, so journal entries exist and the receivable is real. This
  *   is `IsBooked` in `OrderStatusBehavior`, and it is what a return reverses.
+ * - `returnable` — `booked`, minus return orders themselves. A return made on the Returns page is
+ *   typed `Return` and reverses line by line, so its header `ReversesOrderHeaderID` can be empty;
+ *   either marks it. A return cannot be returned, so the Returns picker offers only these (#835).
  * - `credits` — a NEGATIVE balance, which IS the customer's credit. There is no separate instrument
  *   to look up.
  */
@@ -343,6 +347,9 @@ export async function GetOrders(
             // imported because this builds a server-side filter string, not a client-side test —
             // but if `IsBooked` ever widens, this is the other half that has to widen with it.
             filters.push(`Status = 'Confirmed'`);
+            break;
+        case 'returnable':
+            filters.push(`Status = 'Confirmed' AND ReversesOrderHeaderID IS NULL AND (OrderType IS NULL OR OrderType <> 'Return')`);
             break;
         case 'drafts':
             filters.push(`Status IN ('Draft','Quoted')`);
@@ -775,8 +782,13 @@ export interface OrderJournalRollup {
     JournalCount: number;
     /** Entries the As-of date pushed out of view. */
     ExcludedAfterAsOf: number;
-    /** Entries excluded on the posting-date basis because their batch is not Posted (or absent). */
+    /** Entries excluded on the posting-date basis because their batch is still on its way (or absent). */
     ExcludedNotPosted: number;
+    /**
+     * Entries excluded on the posting-date basis because their batch was Cancelled, Failed or
+     * Archived: it will not post as it stands, so they are not "not yet posted" (#790).
+     */
+    ExcludedStoppedBatch: number;
     /** One line per payment whose fee entry is also carried in full on other orders. */
     SharedPaymentNotes: string[];
 }
@@ -873,6 +885,7 @@ const EMPTY_ROLLUP: OrderJournalRollup = {
     JournalCount: 0,
     ExcludedAfterAsOf: 0,
     ExcludedNotPosted: 0,
+    ExcludedStoppedBatch: 0,
     SharedPaymentNotes: [],
 };
 
@@ -911,7 +924,11 @@ export interface OrderJournalDateFilter {
     Journals: JournalHeaderRow[];
     ExcludedAfterAsOf: number;
     ExcludedNotPosted: number;
+    ExcludedStoppedBatch: number;
 }
+
+/** Batch statuses that end without posting: an entry in one is not on its way to the GL. */
+const STOPPED_BATCH_STATUSES = new Set(['Cancelled', 'Failed', 'Archived']);
 
 /**
  * Apply the As-of date and the date basis. Pure.
@@ -921,7 +938,9 @@ export interface OrderJournalDateFilter {
  *
  * On the **posting** basis an entry is dated by the `PostingDate` of the batch it belongs to, and
  * only a `Posted` batch counts: an entry sitting in a Pending, Approved or Sent batch, or in no
- * batch at all, has not reached the GL and so is excluded outright, As-of date or not.
+ * batch at all, has not reached the GL and so is excluded outright, As-of date or not. An entry in
+ * a Cancelled, Failed or Archived batch is excluded too, and counted apart from those still on
+ * their way.
  */
 export function FilterOrderJournals(
     data: OrderJournalData,
@@ -929,12 +948,13 @@ export function FilterOrderJournals(
 ): OrderJournalDateFilter {
     const asOf = options.AsOf ? ToISODate(options.AsOf) : null;
     const posting = options.Basis === 'posting';
-    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0 };
+    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0, ExcludedStoppedBatch: 0 };
 
     for (const journal of data.Journals) {
         const batch = batchOf(data, journal);
         if (posting && (batch?.Status ?? '') !== 'Posted') {
-            result.ExcludedNotPosted += 1;
+            if (STOPPED_BATCH_STATUSES.has(batch?.Status ?? '')) result.ExcludedStoppedBatch += 1;
+            else result.ExcludedNotPosted += 1;
             continue;
         }
         const day = ToISODate(posting ? batch?.PostingDate : journal.EffectiveDate);
@@ -1071,6 +1091,7 @@ export function BuildOrderJournalRollup(
             ...EMPTY_ROLLUP,
             ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
             ExcludedNotPosted: filtered.ExcludedNotPosted,
+            ExcludedStoppedBatch: filtered.ExcludedStoppedBatch,
         };
     }
 
@@ -1086,6 +1107,7 @@ export function BuildOrderJournalRollup(
         JournalCount: filtered.Journals.length,
         ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
         ExcludedNotPosted: filtered.ExcludedNotPosted,
+        ExcludedStoppedBatch: filtered.ExcludedStoppedBatch,
         SharedPaymentNotes: sharedPaymentNotes(data, filtered.Journals),
     };
 }
@@ -1132,17 +1154,24 @@ export function BuildOrderJournalEntryRows(
 /**
  * The one-line "what you are not seeing" note under the rollup, or null when nothing is hidden.
  *
- * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after 2026-09-10'
+ * The As-of date is written the way the rest of the order form writes dates (#791).
+ *
+ * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after Sep 10, 2026'
  */
 export function ExcludedEntriesLabel(rollup: OrderJournalRollup, asOf?: DateCell): string | null {
     const parts: string[] = [];
     if (rollup.ExcludedAfterAsOf > 0) {
-        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ?? 'the As-of date'}`);
+        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ? FormatDate(asOf) : 'the As-of date'}`);
     }
     if (rollup.ExcludedNotPosted > 0) {
         parts.push(`${plural(rollup.ExcludedNotPosted)} not yet posted`);
     }
-    return parts.length ? parts.join(', ') : null;
+    if (rollup.ExcludedStoppedBatch > 0) {
+        const one = rollup.ExcludedStoppedBatch === 1;
+        parts.push(`${plural(rollup.ExcludedStoppedBatch)} in ${one ? 'a canceled, failed or archived batch' : 'canceled, failed or archived batches'}`);
+    }
+    // A semicolon, not a comma: the formatted date carries its own comma ("Sep 1, 2026").
+    return parts.length ? parts.join('; ') : null;
 }
 
 function plural(count: number): string {
@@ -2079,6 +2108,8 @@ export interface MJOProductOption {
      * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
      * that only apply to a term — the term start — would either have to render on every line or
      * force a per-line catalog lookup in the browser.
+     *
+     * Resolved as confirm resolves it: the product's own type, or its product type's default (#903).
      */
     SubscriptionTypeID: string | null;
 }
@@ -2098,7 +2129,10 @@ export function CatalogOptionFrom(
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
-    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
+    type:
+        | (Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> &
+              Partial<Pick<mjBizAppsOrdersProductTypeEntity, 'DefaultSubscriptionTypeID'>>)
+        | undefined,
     listPrice: number | null,
 ): MJOProductOption {
     return {
@@ -2113,7 +2147,7 @@ export function CatalogOptionFrom(
         ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
-        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
+        SubscriptionTypeID: product.SubscriptionTypeID?.trim() || type?.DefaultSubscriptionTypeID?.trim() || null,
     };
 }
 

@@ -430,20 +430,10 @@ export class CheckoutSessionService {
             return { Success: false, ErrorMessage: 'The requested checkout widget is currently unavailable' };
         }
 
-        // Check for existing unexpired session for this client. An ISO-8601 literal compares
-        // correctly on both SQL Server and PostgreSQL — GETUTCDATE() is T-SQL-only.
-        const escapedKey = EscapeText(clientSessionKey.trim());
-        const nowUtc = new Date().toISOString();
-        const sessRes = await rv.RunView<mjBizAppsOrdersCheckoutSessionEntity>({
-            EntityName: CHECKOUT_SESSION_ENTITY,
-            ExtraFilter: `CheckoutWidgetID = '${widget.ID}' AND ClientSessionKey = '${escapedKey}' AND Status = 'Open' AND ExpiresAt > '${nowUtc}'`,
-            ResultType: 'entity_object'
-        }, contextUser);
-
-        let session: mjBizAppsOrdersCheckoutSessionEntity;
-        if (sessRes.Success && sessRes.Results && sessRes.Results.length > 0) {
-            session = sessRes.Results[0];
-        } else {
+        // One open sale session per widget and client key: a unique index holds it (#782), so an
+        // overlapping second call's insert fails and that call resumes the first call's session.
+        let session = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
+        if (!session) {
             session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
             session.NewRecord();
             session.CheckoutWidgetID = widget.ID;
@@ -455,9 +445,18 @@ export class CheckoutSessionService {
             expires.setHours(expires.getHours() + 2); // 2 hour checkout session TTL
             session.ExpiresAt = expires;
 
-            const saved = await session.Save();
+            let saved = false;
+            try {
+                saved = await session.Save();
+            } catch (err) {
+                LogError(`[CheckoutSessionService] Checkout session insert failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
             if (!saved) {
-                return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+                const concurrent = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
+                if (!concurrent) {
+                    return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+                }
+                session = concurrent;
             }
         }
 
@@ -499,6 +498,35 @@ export class CheckoutSessionService {
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * The open, unexpired sale session for this widget and client key, or null. A sale session has
+     * no DraftOrderID while open; a pay-renewal session for the same key is not resumed here. An
+     * open session past its expiry is marked Expired on the way, so it no longer holds the
+     * one-open-session index against the new session the caller is about to create.
+     */
+    private static async findOpenSaleSession(
+        widgetID: string,
+        clientSessionKey: string,
+        contextUser?: UserInfo
+    ): Promise<mjBizAppsOrdersCheckoutSessionEntity | null> {
+        const res = await new RunView().RunView<mjBizAppsOrdersCheckoutSessionEntity>({
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            ExtraFilter: `CheckoutWidgetID = '${EscapeText(widgetID)}' AND ClientSessionKey = '${EscapeText(clientSessionKey.trim())}' AND Status = 'Open' AND DraftOrderID IS NULL`,
+            OrderBy: 'ExpiresAt DESC',
+            ResultType: 'entity_object'
+        }, contextUser);
+        if (!res.Success) {
+            return null;
+        }
+        let open: mjBizAppsOrdersCheckoutSessionEntity | null = null;
+        for (const candidate of res.Results ?? []) {
+            if (await this.enforceSessionExpiry(candidate)) {
+                open ??= candidate;
+            }
+        }
+        return open;
     }
 
     /**
@@ -938,20 +966,7 @@ export class CheckoutSessionService {
             );
         }
 
-        const excluded = new Set(['id', 'personid', 'checkinat']);
-        const parentFields = new Set<string>();
-        if (extEntityInfo.ParentEntityFieldNames) {
-            for (const n of extEntityInfo.ParentEntityFieldNames) {
-                parentFields.add(n.toLowerCase());
-            }
-        }
-
-        for (const f of extEntityInfo.Fields) {
-            const lower = f.Name.toLowerCase();
-            if (excluded.has(lower) || parentFields.has(lower) || lower.startsWith('__mj_') || f.IsPrimaryKey || f.IsVirtual || !f.AllowUpdateAPI) {
-                continue;
-            }
-
+        for (const f of this.buyerExtensionFields(extEntityInfo)) {
             let fieldType: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select' = 'text';
             const sqlType = (f.Type || '').toLowerCase();
             const valList = (f.ValueListType || '').toLowerCase();
@@ -990,6 +1005,50 @@ export class CheckoutSessionService {
         }
 
         configObj.extensionFields = discoveredFields;
+    }
+
+    /**
+     * The extension columns a buyer may fill: what discovery shows when the widget names no fields
+     * of its own. Not the key, not virtual, updatable through the API, not inherited from the
+     * parent entity, not an `__mj_` audit column, and not one the checkout sets itself.
+     */
+    private static buyerExtensionFields(extEntityInfo: { Fields: EntityFieldInfo[]; ParentEntityFieldNames?: Iterable<string> | null }): EntityFieldInfo[] {
+        const excluded = new Set(['id', 'personid', 'checkinat']);
+        const parentFields = new Set([...(extEntityInfo.ParentEntityFieldNames ?? [])].map((n) => n.toLowerCase()));
+        return (extEntityInfo.Fields ?? []).filter((f) => {
+            const lower = f.Name.toLowerCase();
+            return !excluded.has(lower) && !parentFields.has(lower) && !lower.startsWith('__mj_') && !f.IsPrimaryKey && !f.IsVirtual && f.AllowUpdateAPI;
+        });
+    }
+
+    /** The widget's own `extensionFields`, or undefined when it names none or its JSON does not parse. */
+    private static configuredExtensionFields(widget: { Configuration?: string | null }): CheckoutWidgetConfiguration['extensionFields'] | undefined {
+        if (!widget.Configuration) return undefined;
+        try {
+            const parsed: unknown = JSON.parse(widget.Configuration);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+            return (parsed as CheckoutWidgetConfiguration).extensionFields;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Lower-cased names of the extension columns a checkout writes from the buyer's input: the
+     * fields the widget presents (#781). A widget that lists its own `extensionFields` presents only
+     * those; otherwise it presents what discovery finds. Any other column (a staff-only flag, a
+     * column the widget does not list) is never written from a request.
+     */
+    private static writableExtensionFieldNames(
+        extEntityInfo: { Fields: EntityFieldInfo[]; ParentEntityFieldNames?: Iterable<string> | null },
+        configuredFields: CheckoutWidgetConfiguration['extensionFields'] | undefined
+    ): Set<string> {
+        const discovered = new Set(this.buyerExtensionFields(extEntityInfo).map((f) => f.Name.toLowerCase()));
+        if (!Array.isArray(configuredFields) || configuredFields.length === 0) {
+            return discovered;
+        }
+        const shown = new Set(configuredFields.map((f) => String(f?.name ?? '').toLowerCase()).filter(Boolean));
+        return new Set([...discovered].filter((n) => shown.has(n)));
     }
 
     /**
@@ -1239,7 +1298,8 @@ export class CheckoutSessionService {
         extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo,
-        createPersons = true
+        createPersons = true,
+        configuredFields?: CheckoutWidgetConfiguration['extensionFields']
     ): Promise<{ PersonID: string | null; Extension: BaseEntity | null }> {
         if (!fieldValues || Object.keys(fieldValues).length === 0) {
             return { PersonID: null, Extension: null };
@@ -1280,16 +1340,27 @@ export class CheckoutSessionService {
                 const extFieldsByName = new Map<string, EntityFieldInfo>(
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
                 );
+                const writable = this.writableExtensionFieldNames(
+                    { Fields: ext.EntityInfo?.Fields ?? [], ParentEntityFieldNames: ext.EntityInfo?.ParentEntityFieldNames },
+                    configuredFields
+                );
                 if (resolvedPersonID) {
                     this.setExtensionPerson(ext, resolvedPersonID);
                 }
                 for (const [key, rawValue] of Object.entries(fieldValues)) {
                     const lowerKey = key.toLowerCase();
-                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_')) {
+                    // The deny list stays as a second guard behind the writable set.
+                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_') || !writable.has(lowerKey)) {
                         continue;
                     }
                     const field = extFieldsByName.get(lowerKey);
                     if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
+                        // A blank answer to an optional field is left out, so the column keeps its
+                        // database default (or stays null) instead of holding '' (#877).
+                        const blank = rawValue == null || (typeof rawValue === 'string' && rawValue.trim() === '');
+                        if (blank && (field.HasDefaultValue || field.AllowsNull)) {
+                            continue;
+                        }
                         let coerced = rawValue;
                         if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
                             coerced = parseInt(rawValue, 10);
@@ -1297,6 +1368,10 @@ export class CheckoutSessionService {
                             coerced = parseFloat(rawValue);
                         } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
                             coerced = rawValue === 'true' || rawValue === '1';
+                        }
+                        // An unparseable number is not an answer; writing NaN fails the save after payment.
+                        if (typeof coerced === 'number' && Number.isNaN(coerced)) {
+                            continue;
                         }
                         ext.Set(field.Name, coerced);
                     }
@@ -1610,7 +1685,7 @@ export class CheckoutSessionService {
                     line.Quantity = 1;
                     line.LineNumber = sequence++;
 
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, widgetConfig.extensionFields);
                 }
             } else {
                 const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -1619,7 +1694,7 @@ export class CheckoutSessionService {
                 line.LineNumber = sequence++;
 
                 if (unitPayloads.length > 0) {
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false, widgetConfig.extensionFields);
                 }
             }
         }
@@ -2345,6 +2420,7 @@ export class CheckoutSessionService {
         try {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
             await widget.Load(session.CheckoutWidgetID);
+            const configuredExtensionFields = this.configuredExtensionFields(widget);
 
             const snapshot = this.readSnapshot(session);
             const linesInput: CheckoutLineInput[] = Array.isArray(snapshot.Lines) ? snapshot.Lines : [];
@@ -2521,7 +2597,7 @@ export class CheckoutSessionService {
                 }
 
                 const hydrate = async (line: OrderLineEntity, unitData: Record<string, unknown>): Promise<void> => {
-                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, configuredExtensionFields);
                     if (!hydrated.PersonID && hydrated.Extension) {
                         newAttendees.push({ Fields: unitData, Extension: hydrated.Extension });
                     }
@@ -2883,12 +2959,27 @@ export class CheckoutSessionService {
         };
     }
 
+    /**
+     * The buyer's Billing address for this location. Reuses a Billing-linked Address of the
+     * person's with the same country, state and postal code and no street lines, so a retried
+     * completion (a confirm that failed after the address was saved) does not add a second
+     * address and link for the same location (#817). Otherwise records a new one and links it.
+     */
     private static async recordBillingAddress(
         location: BillingLocation,
         personID: string,
         md: Metadata,
         contextUser?: UserInfo
     ): Promise<string> {
+        let existing: string | null = null;
+        try {
+            existing = await this.findBillingAddress(location, personID, md, contextUser);
+        } catch (err) {
+            LogError(`[CheckoutSessionService] Billing address lookup for person ${personID} failed; recording a new one: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (existing) {
+            return existing;
+        }
         const address = await md.GetEntityObject<mjBizAppsCommonAddressEntity>(ADDRESS_ENTITY, contextUser);
         address.NewRecord();
         address.Country = location.Country;
@@ -2901,6 +2992,61 @@ export class CheckoutSessionService {
         return address.ID;
     }
 
+    /** The ID of the Billing address type, or null when it is not defined. */
+    private static async billingAddressTypeID(contextUser?: UserInfo): Promise<string | null> {
+        const typeRes = await new RunView().RunView<{ ID: string }>({
+            EntityName: ADDRESS_TYPE_ENTITY,
+            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
+            Fields: ['ID'],
+            ResultType: 'simple'
+        }, contextUser);
+        return (typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined) ?? null;
+    }
+
+    /**
+     * A location-only Address already linked to the person as Billing that matches this location,
+     * or null. Fail-soft: a failed read means a new address is recorded, as before.
+     */
+    private static async findBillingAddress(
+        location: BillingLocation,
+        personID: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<string | null> {
+        const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
+        const addressTypeID = await this.billingAddressTypeID(contextUser);
+        if (!personEntityID || !addressTypeID) {
+            return null;
+        }
+        const rv = new RunView();
+        const links = await rv.RunView<{ AddressID: string }>({
+            EntityName: ADDRESS_LINK_ENTITY,
+            ExtraFilter: `EntityID = '${EscapeText(personEntityID)}' AND RecordID = '${EscapeText(personID)}' AND AddressTypeID = '${EscapeText(addressTypeID)}'`,
+            Fields: ['AddressID'],
+            ResultType: 'simple'
+        }, contextUser);
+        const addressIDs = links?.Success ? (links.Results ?? []).map((l) => l.AddressID).filter(Boolean) : [];
+        if (addressIDs.length === 0) {
+            return null;
+        }
+        const matches = (column: string, value: string | null) =>
+            value == null || value === '' ? `(${column} IS NULL OR ${column} = '')` : `${column} = '${EscapeText(value)}'`;
+        const addresses = await rv.RunView<{ ID: string }>({
+            EntityName: ADDRESS_ENTITY,
+            ExtraFilter: [
+                `ID IN (${addressIDs.map((id) => `'${EscapeText(id)}'`).join(',')})`,
+                matches('Country', location.Country),
+                matches('StateProvince', location.StateProvince),
+                matches('PostalCode', location.PostalCode),
+                matches('Line1', null),
+            ].join(' AND '),
+            Fields: ['ID'],
+            OrderBy: '__mj_CreatedAt ASC',
+            ResultType: 'simple'
+        }, contextUser);
+        return (addresses?.Success ? addresses.Results?.[0]?.ID : undefined) ?? null;
+    }
+
     private static async linkBillingAddress(
         addressID: string,
         personID: string,
@@ -2908,14 +3054,7 @@ export class CheckoutSessionService {
         contextUser?: UserInfo
     ): Promise<void> {
         const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
-        const rv = new RunView();
-        const typeRes = await rv.RunView<{ ID: string }>({
-            EntityName: ADDRESS_TYPE_ENTITY,
-            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
-            Fields: ['ID'],
-            ResultType: 'simple'
-        }, contextUser);
-        const addressTypeID = typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined;
+        const addressTypeID = await this.billingAddressTypeID(contextUser);
         if (!personEntityID || !addressTypeID) {
             LogError(`[CheckoutSessionService] Billing address ${addressID} not linked to person ${personID}: ${personEntityID ? `no '${BILLING_ADDRESS_TYPE}' address type` : 'Person entity not in metadata'}`);
             return;

@@ -12,7 +12,7 @@
  *   node test-harnesses/integration.mjs subscriptions.SB5   # a single check
  */
 import path from 'node:path';
-import { importAccountingPackage } from './resolve-app-packages.mjs';
+import { importAccountingPackage, importServerPeer } from './resolve-app-packages.mjs';
 import { fileURLToPath } from 'node:url';
 import { openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import dotenv from 'dotenv';
@@ -178,8 +178,10 @@ await UserCache.Instance.Refresh(pool);
 const user = UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owner') ?? UserCache.Users[0];
 if (!user) throw new Error('No context user in UserCache.');
 
-// Both apps' server classes: orders' entity subclasses do the booking, accounting's remote
-// operation writes the ledger. Without both, the checks would exercise generated stubs.
+// The apps' server classes: orders' entity subclasses do the booking, accounting's remote
+// operation writes the ledger. Without both, the checks would exercise generated stubs. Common's
+// registers the entity action its metadata binds to People and Organizations (#891).
+await importServerPeer('@mj-biz-apps/common-server').then((m) => m.LoadBizAppsCommonServer?.());
 await importAccountingPackage('@mj-biz-apps/accounting-server').then((m) => m.LoadBizAppsAccountingServer?.());
 await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer?.());
 

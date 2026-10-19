@@ -575,7 +575,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     private heroTotalAmount(): number | null {
         const preview = this.Pricing.Result?.Totals;
-        if (preview) return this.record?.IsSaved ? preview.GrossTotal : preview.NetTotal;
+        // Gross on an unsaved order too: tax and charges are what the order will book (#838).
+        if (preview) return preview.GrossTotal;
         if (!this.record?.IsSaved) return null;
         return this.record.TotalGross;
     }

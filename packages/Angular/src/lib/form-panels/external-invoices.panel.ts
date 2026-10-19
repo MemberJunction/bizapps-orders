@@ -399,14 +399,14 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         try {
             const result = await new OrdersCancelExternalInvoiceOperation().Execute({
                 ExternalInvoiceID: row.ID,
-                Reason: `Cancelled from the order form for ${this.Record.OrderNumber}.`,
+                Reason: `Canceled from the order form for ${this.Record.OrderNumber}.`,
             });
             const out = result.Output;
             if (!result.Success || !out?.Success) {
-                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be cancelled.' };
+                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be canceled.' };
                 return;
             }
-            this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was cancelled.' };
+            this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was canceled.' };
             this.Selected = null;
             await this.load();
         } finally {
