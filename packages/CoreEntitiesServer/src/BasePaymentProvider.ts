@@ -59,6 +59,13 @@ export interface PaymentCredentials {
     ApiKey?: string;
     /** The webhook endpoint signing secret — a DIFFERENT secret from the API key, deliberately. */
     WebhookSecret?: string;
+    /**
+     * The gateway's PUBLISHABLE key — the one a browser is meant to hold (Stripe's `pk_…`). Not a
+     * secret, but resolved from the same `CredentialsRef` so it travels with the account it belongs
+     * to: a deployment's live and test accounts each carry their own pair, and the browser's key can
+     * never drift from the server's. See `ResolveCheckoutPublishableKey`.
+     */
+    PublishableKey?: string;
     /** Anything a specific gateway needs beyond those two. */
     Extra?: Record<string, string>;
 }
