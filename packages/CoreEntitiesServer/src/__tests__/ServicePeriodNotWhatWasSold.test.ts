@@ -38,12 +38,12 @@ type Dirty = { Name: string; Dirty: boolean; OldValue?: unknown };
  * @param dirty which fields the save is changing, and what each held before.
  * @param status what the STORED order status reads, or null for a read that answered nothing.
  */
-function line(dirty: Dirty[], status: string | null = 'Quoted') {
+function line(dirty: Dirty[], status: string | null = 'Quoted', answer: string | null = FROZEN) {
     const asked = { count: 0 };
     RegisterOrderLineEditVeto({
         MayEdit: async () => {
             asked.count++;
-            return FROZEN;
+            return answer;
         },
     });
 
@@ -69,8 +69,8 @@ function line(dirty: Dirty[], status: string | null = 'Quoted') {
 
 const result = () => ({ Success: true, Errors: [] as unknown[] });
 
-async function run(dirty: Dirty[], status: string | null = 'Quoted', kind = 'update') {
-    const { entity, asked } = line(dirty, status);
+async function run(dirty: Dirty[], status: string | null = 'Quoted', kind = 'update', answer: string | null = FROZEN) {
+    const { entity, asked } = line(dirty, status, answer);
     const r = result();
     await entity.refuseVetoedEdit(r, kind);
     return { refused: !r.Success, asked: asked.count, errors: r.Errors };
@@ -172,6 +172,50 @@ describe('filling a blank is not the same as changing a date', () => {
         ]);
         expect(out.refused, 'only what the save is CHANGING can disqualify it').toBe(false);
         expect(out.asked).toBe(0);
+    });
+});
+
+/**
+ * THE PROPERTY THAT MAKES THIS CHANGE SAFE TO SHIP.
+ *
+ * Narrowing an exemption can only ever send MORE saves to the veto; it cannot refuse anything the
+ * veto itself would allow. Every other case here registers a veto that refuses everything, so none
+ * of them can show that. These register one that ALLOWS, which is what `DealLockOrderLineVeto`
+ * returns whenever the owning deal is open, or has no status, or does not own the order at all.
+ *
+ * This is the regression guard for every open deal in every app. Sales' own `term-start` TS6 writes
+ * a term start on a deal line and then CLEARS it, which is a change rather than a fill, and the only
+ * reason the narrowing does not break it is that the deal is open and the veto says yes.
+ */
+describe('a veto that allows is still the one that decides', () => {
+    it('lets a date that was already set be CHANGED when the deal does not lock', async () => {
+        const out = await run(MOVED, 'Quoted', 'update', null);
+        expect(out.refused, 'narrowing must never refuse what the veto permits').toBe(false);
+        expect(out.asked, 'the exemption no longer applies, so the veto IS asked — and it allows').toBe(1);
+    });
+
+    it('lets an already-set date be CLEARED when the deal does not lock — the reset path', async () => {
+        const out = await run([{ Name: 'ServicePeriodStart', Dirty: true, OldValue: new Date('2026-09-01') }], 'Quoted', 'update', null);
+        expect(out.refused, "sales' reset-to-order-date must keep working on an open deal").toBe(false);
+        expect(out.asked).toBe(1);
+    });
+
+    /**
+     * ⚠ THIS PINS A GAP, NOT A GUARANTEE, and it is deliberately written to fail if the gap closes.
+     *
+     * The booked bound in this file lives entirely inside the deal lock: it decides whether to SKIP
+     * the veto, so it binds only where the veto would have refused. With an allowing veto a booked
+     * line takes the edit, and trigger 51003 does not cover these two columns either. Measured, not
+     * inferred -- a live probe confirmed an order, loaded the line fresh, registered an allowing
+     * veto, and the save landed with the stored row changed.
+     *
+     * That is pre-existing on `next` and is not this change's doing. If a post-confirm freeze is
+     * ever added, this expectation SHOULD go red; flip it to `true` then rather than deleting it.
+     */
+    it('lets a booked line through when the deal does not lock — a known gap, pinned', async () => {
+        const out = await run(MOVED, 'Confirmed', 'update', null);
+        expect(out.refused, 'today nothing refuses this; see the comment above before changing it').toBe(false);
+        expect(out.asked).toBe(1);
     });
 });
 
