@@ -107,11 +107,24 @@ function findManifests(dir, depth = 0) {
   return found;
 }
 
+/** Parsed JSON of `path`, or undefined after recording an error against `file` when it does not parse. */
+function readJson(path, file, parseErrors) {
+  try {
+    return JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    parseErrors.push({ file, msg: `${file} is not valid JSON: ${err.message}` });
+    return undefined;
+  }
+}
+
 function check(root) {
-  const manifests = findManifests(root).map((path) => ({
-    file: relative(root, path).split('\\').join('/'),
-    json: JSON.parse(readFileSync(path, 'utf8')),
-  }));
+  const parseErrors = [];
+  const manifests = findManifests(root)
+    .map((path) => {
+      const file = relative(root, path).split('\\').join('/');
+      return { file, json: readJson(path, file, parseErrors) };
+    })
+    .filter((m) => m.json !== undefined);
   const local = new Set(manifests.map((m) => m.json.name).filter(Boolean));
 
   const entries = [];
@@ -124,7 +137,7 @@ function check(root) {
   }
 
   const allowPath = join(root, ALLOWLIST);
-  const rawAllow = existsSync(allowPath) ? JSON.parse(readFileSync(allowPath, 'utf8')) : [];
+  const rawAllow = existsSync(allowPath) ? (readJson(allowPath, ALLOWLIST, parseErrors) ?? []) : [];
   const allow = Array.isArray(rawAllow) ? rawAllow : [];
   const isValidEntry = (a) =>
     Boolean(a && typeof a === 'object' && typeof a.name === 'string' && a.name.trim() && typeof a.reason === 'string' && a.reason.trim());
@@ -151,19 +164,26 @@ function check(root) {
     violations.push({ ...e, why });
   }
   const stale = allow.filter((a, i) => isValidEntry(a) && !used.has(i));
-  return { violations, stale, allowErrors };
+  return { violations, stale, allowErrors, parseErrors };
 }
 
 function report(root) {
-  const { violations, stale, allowErrors } = check(root);
+  const { violations, stale, allowErrors, parseErrors } = check(root);
   for (const a of stale) {
     console.log(`::warning file=${ALLOWLIST}::Stale allowlist entry for ${a.name}: nothing matches it any more`);
+  }
+  for (const { file, msg } of parseErrors) {
+    console.log(`::error file=${file}::${msg}`);
   }
   for (const msg of allowErrors) {
     console.log(`::error file=${ALLOWLIST}::${msg}`);
   }
   for (const v of violations) {
     console.log(`::error file=${v.file}::${v.section} ${v.name}: "${v.spec}" is ${v.why}${suggest(v.spec, v.why)}`);
+  }
+  if (parseErrors.length && !violations.length && !allowErrors.length) {
+    console.log(`\n${parseErrors.length} file(s) could not be parsed; fix the JSON and re-run.`);
+    return 1;
   }
   if (violations.length || allowErrors.length) {
     console.log(
@@ -268,9 +288,33 @@ function selfTest() {
     } catch (err) {
       nonArrayRes = { threw: String(err), allowErrors: [] };
     }
-    if (!nonArrayRes.allowErrors || nonArrayRes.allowErrors.length !== 1) {
+    // ...and must not suppress violations: the fallback for a bad root is an empty allowlist.
+    if (
+      !nonArrayRes.allowErrors ||
+      nonArrayRes.allowErrors.length !== 1 ||
+      !nonArrayRes.violations?.some((v) => v.name === 'lodash')
+    ) {
       failed++;
       console.error(`non-array allowlist failed to report allowError cleanly: ${JSON.stringify(nonArrayRes)}`);
+    }
+
+    // A malformed allowlist or package.json must report a parse error naming the file instead of throwing,
+    // and the remaining manifests must still be checked.
+    write('.github/caret-pins-allow.json', '[{ "name": "lodash",');
+    write('packages/c/package.json', '{ "name": "@x/c", ');
+    let malformedRes;
+    try {
+      malformedRes = check(dir);
+    } catch (err) {
+      malformedRes = { threw: String(err) };
+    }
+    const badFiles = (malformedRes.parseErrors ?? []).map((e) => e.file).sort();
+    if (
+      JSON.stringify(badFiles) !== JSON.stringify([ALLOWLIST, 'packages/c/package.json']) ||
+      !malformedRes.violations?.some((v) => v.name === 'lodash')
+    ) {
+      failed++;
+      console.error(`malformed JSON not reported cleanly: ${JSON.stringify(malformedRes)}`);
     }
   } finally {
     rmSync(dir, { recursive: true, force: true });
