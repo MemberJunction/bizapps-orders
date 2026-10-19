@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
     threshold: null as number | null,
     roleName: null as string | null,
     companyApprover: null as string | null,
+    activeUsers: [] as string[],
+    failUserRead: false,
     roles: [] as Array<{ ID: string }>,
     userRoles: [] as Array<{ ID: string }>,
     failCompanyRead: false,
@@ -44,6 +46,10 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         return h.failCompanyRead
                             ? { Success: false, Results: [], ErrorMessage: 'database unavailable' }
                             : { Success: true, Results: [{ ApprovalCFOUserID: h.companyApprover }] };
+                    }
+                    if (p.EntityName === 'MJ: Users') {
+                        if (h.failUserRead) return { Success: false, Results: [], ErrorMessage: 'users unavailable' };
+                        return { Success: true, Results: h.activeUsers.filter((id) => p.ExtraFilter.includes(id) && p.ExtraFilter.includes('IsActive = 1')).map((ID) => ({ ID })) };
                     }
                     if (p.EntityName === 'MJ: Roles') return { Success: true, Results: h.roles };
                     if (p.EntityName === 'MJ: User Roles') return { Success: true, Results: h.userRoles };
@@ -110,6 +116,28 @@ describe('RefundAuthorityRefusal', () => {
     it('exempts a gateway refund booked by the system user', () => {
         expect(RefundAuthorityRefusal(facts({ IsProviderOriginated: true, RefundedTotalAfter: 9000, CallerHoldsApproverRole: false }))).toBeNull();
     });
+
+    it('fails closed on a threshold that is not a number: NaN refuses a role holder', () => {
+        expect(RefundAuthorityRefusal(facts({ Threshold: Number.NaN, RefundedTotalAfter: 9000 }))).toMatch(/above the 0.00 refund approval threshold, so only/);
+        expect(RefundAuthorityRefusal(facts({ Threshold: Number.NaN, RefundedTotalAfter: 0.01 }))).toMatch(/only the receiving company's approver/);
+    });
+
+    it('reads an infinite or negative threshold as 0', () => {
+        expect(RefundAuthorityRefusal(facts({ Threshold: Number.POSITIVE_INFINITY, RefundedTotalAfter: 9000 }))).toMatch(/above the 0.00/);
+        expect(RefundAuthorityRefusal(facts({ Threshold: -5, RefundedTotalAfter: 0.01 }))).toMatch(/above the 0.00/);
+    });
+
+    it('treats a total that is not a number as above the threshold', () => {
+        expect(RefundAuthorityRefusal(facts({ RefundedTotalAfter: Number.NaN }))).toMatch(/so only the receiving company's approver/);
+        expect(RefundAuthorityRefusal(facts({ RefundedTotalAfter: Number.NaN, CallerUserID: CFO }))).toBeNull();
+    });
+
+    it('rounds to the cent before comparing, so float noise at the boundary does not refuse', () => {
+        expect(RefundAuthorityRefusal(facts({ RefundedTotalAfter: 499.9 + 0.1 + 0.000000001 }))).toBeNull();
+        expect(RefundAuthorityRefusal(facts({ RefundedTotalAfter: 500.004 }))).toBeNull();
+        expect(RefundAuthorityRefusal(facts({ RefundedTotalAfter: 500.005 }))).toMatch(/would come to 500.01, above the 500.00/);
+        expect(RefundAuthorityRefusal(facts({ Threshold: 499.999, RefundedTotalAfter: 500 }))).toBeNull();
+    });
 });
 
 describe('CheckRefundAuthority', () => {
@@ -121,6 +149,8 @@ describe('CheckRefundAuthority', () => {
         h.threshold = 500;
         h.roleName = 'Refund Approver';
         h.companyApprover = CFO;
+        h.activeUsers = [CFO, CALLER, SYSTEM];
+        h.failUserRead = false;
         h.roles = [{ ID: ROLE }];
         h.userRoles = [];
         h.failCompanyRead = false;
@@ -161,6 +191,36 @@ describe('CheckRefundAuthority', () => {
     it('throws when the configured role does not exist, rather than refunding unchecked', async () => {
         h.roles = [];
         await expect(CheckRefundAuthority(request, provider, user(CALLER))).rejects.toThrow(/'Refund Approver' \(Orders setting RefundApproverRole\) does not exist/);
+    });
+
+    it('checks the named approver is active', async () => {
+        await CheckRefundAuthority(request, provider, user(CALLER));
+        expect(h.filters).toContain(`MJ: Users: ID = '${CFO}' AND IsActive = 1`);
+    });
+
+    it('treats a deactivated approver as none, so the refusal says to set one', async () => {
+        h.activeUsers = [CALLER, SYSTEM];
+        h.userRoles = [{ ID: 'ur-1' }];
+        await expect(CheckRefundAuthority({ ...request, RefundedTotalAfter: 9000 }, provider, user(CALLER))).resolves.toMatch(
+            /has no approver .* Set the company's Approval CFO first/,
+        );
+    });
+
+    it('does not let a deactivated approver refund as the approver', async () => {
+        h.activeUsers = [CALLER, SYSTEM];
+        await expect(CheckRefundAuthority({ ...request, RefundedTotalAfter: 9000 }, provider, user(CFO))).resolves.toMatch(/has no approver/);
+        await expect(CheckRefundAuthority(request, provider, user(CFO))).resolves.toMatch(/needs the 'Refund Approver' role/);
+    });
+
+    it('reads no user when the company names no approver', async () => {
+        h.companyApprover = null;
+        await CheckRefundAuthority(request, provider, user(CALLER));
+        expect(h.filters.some((f) => f.startsWith('MJ: Users'))).toBe(false);
+    });
+
+    it('throws when the approver\'s active flag cannot be read', async () => {
+        h.failUserRead = true;
+        await expect(CheckRefundAuthority(request, provider, user(CALLER))).rejects.toThrow(/users unavailable/);
     });
 
     it('throws when the company approver cannot be read', async () => {

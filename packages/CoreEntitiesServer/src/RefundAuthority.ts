@@ -8,7 +8,12 @@
  *     the receiving company's `AccountingCompanyProfile.ApprovalCFOUserID`.
  *   - Above it: only that company approver.
  * The amount compared is what the payment's refunds come to WITH this one, so a large refund cannot
- * be split into several small ones that each pass.
+ * be split into several small ones that each pass. It is counted PER PAYMENT, not per order: an order
+ * settled by several payments can be refunded one payment at a time by a role holder, each under the
+ * threshold, for more than the threshold in all.
+ *
+ * A named approver who has been deactivated counts as no approver, as in ./AccessOverride.ts, so the
+ * refusal says to set a new one rather than naming someone who cannot log in.
  *
  * The follow-up is a request-then-approve flow (a refund requested by one person and approved by
  * another, through a Tasks approval), which needs a durable refund-request record.
@@ -20,7 +25,7 @@
  * CONNECTS TO:
  *   CALLER:   ./RefundPaymentOperation.ts (before Preview and before any write)
  *   SETTINGS: ./OrdersSettings.ts (RefundApprovalThreshold, RefundApproverRole)
- *   READS:    MJ_BizApps_Accounting: Accounting Company Profiles · MJ: Roles · MJ: User Roles
+ *   READS:    MJ_BizApps_Accounting: Accounting Company Profiles · MJ: Users · MJ: Roles · MJ: User Roles
  */
 import { RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
@@ -29,6 +34,7 @@ import { OrdersSettings } from './OrdersSettings.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
+const USER_ENTITY = 'MJ: Users';
 const ROLE_ENTITY = 'MJ: Roles';
 const USER_ROLE_ENTITY = 'MJ: User Roles';
 
@@ -46,14 +52,21 @@ export interface RefundAuthorityFacts {
     IsProviderOriginated: boolean;
     /** The user issuing the refund. */
     CallerUserID: string;
-    /** The receiving company's ApprovalCFOUserID, or null. */
+    /** The receiving company's ApprovalCFOUserID, or null when it is unset or that user is inactive. */
     CompanyApproverUserID: string | null;
     /** Whether the caller holds the approver role. */
     CallerHoldsApproverRole: boolean;
 }
 
+/** Round to the cent, so float noise on either side of the comparison cannot move the boundary. */
+const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
+
 /**
  * Why the caller may not issue this refund, or null when they may.
+ *
+ * Defensive about its input, since it is exported: both amounts are rounded to the cent, a threshold
+ * that is not a finite number of 0 or more is read as 0, and a total that is not a finite number is
+ * treated as above any threshold. Every such case tightens the rule rather than opening it.
  *
  * @returns a sentence for the person refunding, or null.
  */
@@ -62,9 +75,11 @@ export function RefundAuthorityRefusal(facts: RefundAuthorityFacts): string | nu
     const isCompanyApprover = !!facts.CompanyApproverUserID && UUIDsEqual(facts.CompanyApproverUserID, facts.CallerUserID);
     if (isCompanyApprover) return null;
 
-    const total = facts.RefundedTotalAfter.toFixed(2);
-    const threshold = facts.Threshold.toFixed(2);
-    if (facts.RefundedTotalAfter > facts.Threshold) {
+    const thresholdAmount = Number.isFinite(facts.Threshold) && facts.Threshold > 0 ? money(facts.Threshold) : 0;
+    const totalAmount = Number.isFinite(facts.RefundedTotalAfter) ? money(facts.RefundedTotalAfter) : null;
+    const total = totalAmount == null ? String(facts.RefundedTotalAfter) : totalAmount.toFixed(2);
+    const threshold = thresholdAmount.toFixed(2);
+    if (totalAmount == null || totalAmount > thresholdAmount) {
         return facts.CompanyApproverUserID
             ? `Refunds on payment ${facts.PaymentNumber} would come to ${total}, above the ${threshold} refund approval threshold, ` +
                   `so only the receiving company's approver (the Approval CFO on its Accounting Company Profile) may issue this refund.`
@@ -138,7 +153,23 @@ async function readCompanyApprover(rv: RunView, companyID: string, user: UserInf
         user,
     );
     if (!res?.Success) throw new Error(`Could not read the receiving company's approver: ${res?.ErrorMessage ?? 'no result'}`);
-    return res.Results?.[0]?.ApprovalCFOUserID ?? null;
+    const named = res.Results?.[0]?.ApprovalCFOUserID ?? null;
+    if (!named) return null;
+
+    // A deactivated approver is no approver (the AccessOverride.ts / EntitlementBehavior contract).
+    const active = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: USER_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(named, 'ApprovalCFOUserID')}' AND IsActive = 1`,
+            Fields: ['ID'],
+            MaxRows: 1,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!active?.Success) throw new Error(`Could not read the receiving company's approver: ${active?.ErrorMessage ?? 'no result'}`);
+    return (active.Results?.length ?? 0) > 0 ? named : null;
 }
 
 async function holdsRole(rv: RunView, roleName: string, user: UserInfo): Promise<boolean> {

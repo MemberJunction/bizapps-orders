@@ -139,8 +139,9 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
             };
         }
 
-        // Who may issue it (golive #320 §3), checked before Preview so a confirmation screen shows the
-        // refusal too. Off unless the RefundApprovalThreshold setting is set; see ./RefundAuthority.ts.
+        // Who may issue it (golive #320 §3). Checked before the Preview return, so a Preview call is
+        // refused exactly as the real refund would be; the in-repo UI does not preview, and shows the
+        // refusal from the result's Message. Off unless RefundApprovalThreshold is set; see ./RefundAuthority.ts.
         const authorityRefusal = await CheckRefundAuthority(
             {
                 PaymentNumber: payment.PaymentNumber,

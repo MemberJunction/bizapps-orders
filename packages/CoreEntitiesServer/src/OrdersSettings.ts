@@ -83,9 +83,11 @@ export const ORDERS_SETTING = {
     /**
      * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
      * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
-     * issue it. Counted per payment: what this refund brings the payment's refunds to. Empty switches
-     * the check off, so anyone who may call the operation may refund, as before. A value that is not
-     * a number of 0 or more is read as 0, so every refund needs the company approver.
+     * issue it. Counted per payment, not per order: what this refund brings the payment's refunds to,
+     * so an order settled by several payments can be refunded a payment at a time by a role holder for
+     * more than the threshold in all. Empty switches the check off, so anyone who may call the
+     * operation may refund, as before. A value that is not a number of 0 or more is read as 0, so
+     * every refund needs the company approver.
      */
     RefundApprovalThreshold: 'RefundApprovalThreshold',
     /**
@@ -246,6 +248,28 @@ export class OrdersSettings {
         return ApplicationSettingEngine.Instance.GetSetting(key, appID);
     }
 
+    /**
+     * Like {@link raw}, but throws when the Orders application row cannot be found. Without its ID
+     * the engine consults only GLOBAL rows, so an app-scoped value would read as unset. For a
+     * control whose unset value switches it OFF, that must be loud, not silent.
+     */
+    private static rawAppScoped(key: string): string | undefined {
+        if (this._localOverrides.has(key)) {
+            return this._localOverrides.get(key);
+        }
+        const map = getOverridesMap();
+        if (map.has(key)) {
+            return map.get(key);
+        }
+        const appID = this.applicationID();
+        if (!appID) {
+            throw new Error(
+                `The Orders application (${ORDERS_APPLICATION_NAME}) is not in metadata, so the Orders setting ${key} cannot be read.`,
+            );
+        }
+        return ApplicationSettingEngine.Instance.GetSetting(key, appID);
+    }
+
     /** Stamp the organization from the person's affiliation when it was left blank (D64). */
     public static get AutoPopulateOrganizationFromPerson(): boolean {
         return asBoolean(
@@ -293,9 +317,13 @@ export class OrdersSettings {
         );
     }
 
-    /** The refund amount at or below which `RefundApproverRole` may refund, or `null` when the check is off. */
+    /**
+     * The refund amount at or below which `RefundApproverRole` may refund, or `null` when the check is off.
+     *
+     * @throws when the Orders application row is missing, rather than reading the check as off.
+     */
     public static get RefundApprovalThreshold(): number | null {
-        return asAmountOrOff(this.raw(ORDERS_SETTING.RefundApprovalThreshold));
+        return asAmountOrOff(this.rawAppScoped(ORDERS_SETTING.RefundApprovalThreshold));
     }
 
     /** The role that may refund at or below the threshold, or `null` when none is configured. */
