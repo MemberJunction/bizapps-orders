@@ -248,9 +248,10 @@ export class OrderLineEntityServer extends OrderLineEntity {
          *
          * ⚠ THAT BOOKED BOUND IS NOT A UNIVERSAL FREEZE, and it would be easy to read it as one. It
          * decides whether to SKIP this veto, so it only binds where the veto would have refused — a
-         * closed deal. `MayEdit` returns null for an open deal, and trigger 51003 freezes the
-         * financial columns at confirm but NOT these two, so a Confirmed order whose deal is open
-         * takes a service-period edit today. Measured against a live database, not inferred. That is
+         * closed deal. `MayEdit` returns null for an open deal, and trigger 51003 freezes the product,
+         * company, quantity, price, discount, tax, total and ship-to columns at confirm but NOT these
+         * two, so a Confirmed order whose deal is open takes a service-period edit today. Measured
+         * against a live database with the REAL deal-lock vetoer registered, not inferred. That is
          * pre-existing rather than introduced here; closing it means freezing these columns after
          * confirm independently of the deal, which has to be weighed against `materializeSubscriptions`
          * and whatever renewals and amendments legitimately rewrite.
