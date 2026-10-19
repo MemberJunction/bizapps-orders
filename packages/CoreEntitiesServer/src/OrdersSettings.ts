@@ -80,6 +80,13 @@ export const ORDERS_SETTING = {
      * link is sent: a link to the wrong host is worse than none.
      */
     RenewalPaymentLinkBaseUrl: 'RenewalPaymentLinkBaseUrl',
+    /**
+     * Who decides a concession requested by a holder of its ConcessionLimit rule's role (bc-aidp-next-golive#320).
+     * Comma-separated targets, tried in order: `CompanyCFO` (the order company's `ApprovalCFOUserID`) or an MJ
+     * role NAME (its active holders). The first that names an active user other than the requester decides it.
+     * Unset or empty keeps the requester approving their own.
+     */
+    ConcessionSelfApprovalEscalation: 'ConcessionSelfApprovalEscalation',
 } as const;
 
 /**
@@ -266,6 +273,11 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /** The escalation targets for a self-requested concession, in order; empty keeps self-approval. */
+    public static get ConcessionSelfApprovalEscalation(): string[] {
+        return asList(this.raw(ORDERS_SETTING.ConcessionSelfApprovalEscalation), []);
     }
 
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
