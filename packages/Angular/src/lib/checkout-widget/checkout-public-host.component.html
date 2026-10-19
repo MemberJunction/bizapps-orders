@@ -117,13 +117,16 @@
             [errorMessage]="errorMessage"
             [appliedPromotion]="appliedPromotion"
             [serverPricedTotal]="serverPricedTotal"
+            [memberDiscount]="memberDiscount"
+            [lockEmail]="emailLocked"
             [promotionError]="promotionError"
             (promotionCodeApplied)="onPromotionCodeApplied($event)"
             [quotedTotal]="quotedTotal"
             [quotedTax]="quotedTax"
             (submitted)="onSubmitted($event)"
             (cancelled)="onCancelled()"
-            (quoteInvalidated)="onQuoteInvalidated()">
+            (quoteInvalidated)="onQuoteInvalidated()"
+            (quoteRequested)="onQuoteRequested($event)">
         </mj-checkout-widget>
         }
     }

@@ -392,6 +392,18 @@ export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
 
 The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"` (server-side only).
 
+The buyer sees the member price before paying. With a token on the element, once the e-mail is valid and
+the billing location is complete (country, plus state and postal code where the country needs them), the
+element drafts the form in the background with the token and no typed code: 400 ms after the last change
+to the e-mail, location or quantity, and again on each later change, keeping only the newest answer. When
+the draft comes back with `MemberDiscountApplied`, the widget shows a line such as
+"ASAE10 member discount: −$59.90" (the first of `AppliedPromotionCodes`, and `Discount`), the total and
+the Pay button show the server's `TotalGross`, and the promo-code box is hidden while the discount
+applies, so one press of Pay charges the price shown. A draft with `MemberDiscountMessage`, or one that
+fails, changes nothing: the full price stays, and Pay shows the message as before. Without a token
+nothing is sent until Pay. When the host also sets the element's `email` attribute, the e-mail field is
+read-only while the token is attached, since the discount is bound to that address.
+
 The token sits in the host page, so anyone who copies it can replay it. Issue **short-lived** tokens
 (minutes, not days) and tie each to the member's email, then have the resolver compare that email with
 `ctx.Email`, the buyer email captured on the draft, as the sample does.
