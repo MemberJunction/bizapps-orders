@@ -721,8 +721,9 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     /**
      * Subscription lines whose stated end gives them a length other than their subscription type's
      * term, each as one sentence for the confirm checklist (golive #338). Confirm honors the stated
-     * dates and raises each such line for finance review (`SUBSCRIPTION_TERM_LENGTH`), so this does
-     * not block confirm; it says beforehand what will happen.
+     * dates, so this does not block confirm; it says beforehand what will happen. The
+     * `SUBSCRIPTION_TERM_LENGTH` finance exception confirm raises for such a line is recorded only
+     * where accounting has seeded that type, so the note does not promise a review.
      *
      * Draft orders only: a booked line's dates are the settled term. Reads `OrdersEngine`; the caller
      * loads it. With the cache empty nothing is reported, which leaves the question to confirm.

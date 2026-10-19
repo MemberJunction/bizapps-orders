@@ -86,7 +86,7 @@ describe('StatedTermLengthOf', () => {
 describe('DescribeStatedTermLength', () => {
     it('names the line, its length, the type term and the review', () => {
         expect(DescribeStatedTermLength({ LineNumber: 1, Product: 'Annual Membership' }, { Months: 13, TypeMonths: 12 })).toBe(
-            "Line 1 (Annual Membership) covers 13 months; its subscription type's term is 12 months. It will go to finance review.",
+            "Line 1 (Annual Membership) covers 13 months; its subscription type's term is 12 months. Confirm keeps the stated length.",
         );
     });
 });
@@ -136,8 +136,8 @@ describe('OrderHeaderEntity.StatedTermLengthNotes', () => {
             line(4, 'p-inherits', '2026-11-01', '2027-04-30'),
         ]);
         expect(o.StatedTermLengthNotes()).toEqual([
-            "Line 1 (Annual Membership) covers 13 months; its subscription type's term is 12 months. It will go to finance review.",
-            "Line 4 (Chapter Membership) covers 6 months; its subscription type's term is 12 months. It will go to finance review.",
+            "Line 1 (Annual Membership) covers 13 months; its subscription type's term is 12 months. Confirm keeps the stated length.",
+            "Line 4 (Chapter Membership) covers 6 months; its subscription type's term is 12 months. Confirm keeps the stated length.",
         ]);
     });
 

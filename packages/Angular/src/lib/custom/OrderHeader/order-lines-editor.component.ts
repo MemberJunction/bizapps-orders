@@ -635,9 +635,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /* ── Term end (golive #338) ──────────────────────────────────────────────
      *
      * Confirm honors a stated end: the coverage runs to it, as one term or as one term per type term
-     * length, and a length other than the type's term goes to finance review. NULL means "the type's
-     * term", which confirm computes, so the field shows that end as a default and Reset writes null.
-     * The stored value is `OrderLine.ServicePeriodEnd`, read at confirm as `RequestedEndDate`.
+     * length. NULL means "the type's term", which confirm computes, so the line shows that end. The
+     * stored value is `OrderLine.ServicePeriodEnd`, read at confirm as `RequestedEndDate`.
+     *
+     * Shown, not edited. A typed end changes the coverage without changing the price, and no gate
+     * or approval looks at duration yet, so the editor offers no way to set one.
      */
 
     /** The line's subscription type, as confirm resolves it. Undefined before the catalog loads. */
@@ -668,7 +670,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return start ? DefaultTermEnd(rules, start, false) : null;
     }
 
-    /** What the end input shows: the stated end, or the computed one as a default. */
+    /** What the line shows: the stated end, or the computed one as a default. */
     public TermEndValue(line: mjBizAppsOrdersOrderLineEntity): string {
         return this.dateInputValue(line.ServicePeriodEnd ?? this.ComputedTermEnd(line));
     }
@@ -708,28 +710,6 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const kept = line.ServicePeriodEnd && start ? KeptStatedEnd(start, new Date(line.ServicePeriodEnd), continuation) : null;
         if (kept) return this.dateInputValue(kept);
         return rules ? this.dateInputValue(DefaultTermEnd(rules, continuation, true)) : '';
-    }
-
-    public SetTermEnd(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
-        if (!this.CanEditServicePeriod()) return;
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) return;
-        // An emptied field is a reset, as for the term start.
-        if (!target.value) {
-            this.ResetTermEnd(line);
-            return;
-        }
-        const end = this.parseDateInput(target.value);
-        if (!end) return;
-        line.ServicePeriodEnd = end;
-        this.cdr.detectChanges();
-    }
-
-    /** Back to the type's term: the end stops being stated. */
-    public ResetTermEnd(line: mjBizAppsOrdersOrderLineEntity): void {
-        if (!this.CanEditServicePeriod()) return;
-        line.ServicePeriodEnd = null;
-        this.cdr.detectChanges();
     }
 
     private utcDay(d: Date): Date {

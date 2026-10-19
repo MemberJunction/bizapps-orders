@@ -283,36 +283,16 @@
             }
 
             <!--
-                TERM END — subscription lines only (golive #338).
-                Confirm keeps a stated end: the coverage runs to it, as one term or one term per type
-                term length. Empty means the type's term, which the field shows as a default.
+                TERM END — subscription lines only (golive #338), shown and not edited.
+                Confirm keeps an end already stated on the line: the coverage
+                runs to it, as one term or one term per type term length. Typing one here would change
+                the coverage without changing the price, and nothing reviews that yet, so the field
+                stays read-only until a stated length goes through approval.
             -->
             @if (IsSubscriptionLine(line)) {
                 <div class="mjo-ol-term">
-                    <label
-                        class="mjo-ol-term__label"
-                        [attr.for]="CanEditServicePeriod() ? 'mjo-ol-term-end-' + line.ID : null">
-                        Term end
-                    </label>
-                    @if (CanEditServicePeriod()) {
-                        <input
-                            type="date"
-                            class="mjo-ol-term__input"
-                            [class.is-default]="TermEndFollowsType(line)"
-                            [id]="'mjo-ol-term-end-' + line.ID"
-                            [value]="TermEndValue(line)"
-                            (change)="SetTermEnd(line, $event)">
-                        @if (!TermEndFollowsType(line)) {
-                            <button
-                                type="button"
-                                class="mjo-ol-term__reset"
-                                (click)="ResetTermEnd(line)">
-                                Reset to the type's term
-                            </button>
-                        }
-                    } @else {
-                        <span class="mjo-ol-term__value">{{ TermEndValue(line) }}</span>
-                    }
+                    <span class="mjo-ol-term__label">Term end</span>
+                    <span class="mjo-ol-term__value">{{ TermEndValue(line) }}</span>
                     @if (TermEndBeforeStart(line)) {
                         <span class="mjo-ol-term__hint is-error" role="alert">
                             The term end must be on or after the term start.
@@ -320,12 +300,11 @@
                     } @else if (!IsMoneyLocked) {
                         <span class="mjo-ol-term__hint">
                             @if (TermEndFollowsType(line)) {
-                                One term of the subscription type. Set an end to sell a different length.
+                                One term of the subscription type.
                             } @else if (KeptTermEndValue(line); as kept) {
                                 Confirm keeps this length from the continuation date, so the term ends {{ kept }}.
                             } @else {
-                                Stated on this line, and confirm keeps these dates. A length other than the
-                                type's term goes to finance review.
+                                Stated on this line, and confirm keeps these dates.
                             }
                         </span>
                     }

@@ -305,7 +305,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     /**
      * Subscription lines whose stated end gives them a length other than their type's term, one
-     * sentence each. Confirm sends them to finance review; they do not block it (golive #338).
+     * sentence each. Confirm keeps their stated length; they do not block it (golive #338).
      */
     public get TermLengthNotes(): string[] {
         return this.record?.StatedTermLengthNotes() ?? [];

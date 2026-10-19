@@ -2,6 +2,8 @@
 // injectables fall back to JIT. Loading the compiler is all that costs; nothing here
 // bootstraps Angular or instantiates the component.
 import '@angular/compiler';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { OrdersEngine, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 import { MJOOrderLinesEditorComponent } from '../order-lines-editor.component';
@@ -10,8 +12,7 @@ import type { MJOExistingHolding, MJOProductOption } from '../../../data/orders-
 /**
  * The line card's term fields (golive #338, u623.1).
  *
- * A subscription line shows its term end: the end the type computes until one is stated, with a
- * reset back to it. The extend-or-new choice names the end an extension would keep. A bundle line
+ * A subscription line shows its term end, read-only: the end the type computes until one is stated. The extend-or-new choice names the end an extension would keep. A bundle line
  * whose bundle contains a subscription shows the term start only, and never a dictated one.
  */
 
@@ -88,16 +89,13 @@ describe('term end on a subscription line', () => {
         expect(editor('2026-10-20').TermEndValue(line('p-member'))).toBe('2027-10-19');
     });
 
-    it('stores a typed end, and Reset clears it back to the type term', () => {
-        const c = editor();
-        const l = line('p-member', '2026-11-01');
-        const input = Object.assign(Object.create(HTMLInputElementStub.prototype), { value: '2027-11-30' });
-        c.SetTermEnd(l, { target: input } as unknown as Event);
-        expect(l.ServicePeriodEnd?.toISOString().slice(0, 10)).toBe('2027-11-30');
-        expect(c.TermEndFollowsType(l)).toBe(false);
-
-        c.ResetTermEnd(l);
-        expect(l.ServicePeriodEnd).toBeNull();
+    it('offers no way to type an end: a stated length would change coverage without changing the price', () => {
+        // Nothing gates or approves a length other than the type's term yet, so the line shows the
+        // end and the editor neither binds an input to it nor keeps a setter for one.
+        const template = readFileSync(fileURLToPath(new URL('../order-lines-editor.component.html', import.meta.url)), 'utf8');
+        expect(template).not.toMatch(/mjo-ol-term-end-|SetTermEnd|ResetTermEnd/);
+        expect('SetTermEnd' in MJOOrderLinesEditorComponent.prototype).toBe(false);
+        expect(editor().TermEndValue(line('p-member', '2026-11-01', '2027-11-30'))).toBe('2027-11-30');
     });
 
     it('flags an end before the start', () => {
@@ -126,18 +124,4 @@ describe('term start on a bundle line (u623.1)', () => {
         expect(c.IsSubscriptionLine(l)).toBe(false);
         expect(c.TermStartIsDictated(l)).toBe(false);
     });
-});
-
-/** `SetTermEnd` checks `instanceof HTMLInputElement`; node has none, so the test supplies one. */
-class HTMLInputElementStub {
-    value = '';
-}
-const globals = globalThis as unknown as Record<string, unknown>;
-let saved: unknown;
-beforeEach(() => {
-    saved = globals.HTMLInputElement;
-    globals.HTMLInputElement = HTMLInputElementStub;
-});
-afterEach(() => {
-    globals.HTMLInputElement = saved;
 });

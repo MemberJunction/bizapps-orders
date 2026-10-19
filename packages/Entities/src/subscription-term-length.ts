@@ -3,10 +3,10 @@
  * (golive #338).
  *
  * Confirm honors a subscription line's stated end: the coverage runs to it, as one term or as one
- * term per type term length, and a length other than the type's term is raised for finance review
- * (`SubscriptionBehavior.Decide`, `TermLengthExceptions` in the server package). The order screen
- * shows the same facts before confirm: the end the type would compute, the end an extension keeps,
- * and whether the line will go to finance review. Both tiers read the date arithmetic here, so the
+ * term per type term length, and a length other than the type's term is raised as a finance exception
+ * where accounting has seeded its type (`SubscriptionBehavior.Decide`, `TermLengthExceptions` in the
+ * server package). The order screen shows the same facts before confirm: the end the type would
+ * compute, the end an extension keeps, and whether the line's length differs from the type's term. Both tiers read the date arithmetic here, so the
  * screen cannot disagree with the confirm about a month.
  *
  * Pure: no database, no engine. Every date is a calendar day held as UTC midnight.
@@ -229,8 +229,8 @@ export function FormatMonths(n: number): string {
 }
 
 /**
- * One sentence for the confirm checklist: the line covers a length other than its type's term and
- * will go to finance review. Does not block confirm.
+ * One sentence for the confirm checklist: the line covers a length other than its type's term, and
+ * confirm keeps it. Does not block confirm.
  */
 export function DescribeStatedTermLength(
     line: { LineNumber: number | null; Product?: string | null },
@@ -240,6 +240,6 @@ export function DescribeStatedTermLength(
     const product = line.Product ? ` (${line.Product})` : '';
     return (
         `${which}${product} covers ${FormatMonths(length.Months)}; its subscription type's term is ` +
-        `${FormatMonths(length.TypeMonths)}. It will go to finance review.`
+        `${FormatMonths(length.TypeMonths)}. Confirm keeps the stated length.`
     );
 }
