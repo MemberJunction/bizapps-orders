@@ -44,16 +44,26 @@ const ENTITY_IDS: Record<string, string> = {
     'MJ: Users': 'E0000000-0000-0000-0000-00000000000E',
     'MJ: Record Changes': 'E0000000-0000-0000-0000-00000000000F',
 };
+const ORDER_HEADERS = 'MJ_BizApps_Orders: Order Headers';
+const ORDER_LINES = 'MJ_BizApps_Orders: Order Lines';
 let tables: Record<string, Row[]>;
 let seq = 0;
 const uuid = () => `F0000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`;
+/** The database clock: every write is stamped a second after the last. */
+let clock = 0;
+const stamp = () => new Date(Date.UTC(2026, 9, 18, 9, 0, ++clock)).toISOString();
+/** Entities whose record changes are not tracked, and entities whose saves fail. */
+let untracked: Set<string>;
+let failingSaves: Set<string>;
 
-/** Enough of an ExtraFilter to answer this module's reads: `Field = 'x'`, `Field = 1`, `Field IN (...)`, joined by AND. */
+/** Enough of an ExtraFilter to answer this module's reads: `Field = 'x'`, `Field = 1`, `Field > 'x'`, `Field IN (...)`, joined by AND. */
 function matches(row: Row, filter: string | undefined): boolean {
     if (!filter) return true;
     return filter.split(/\s+AND\s+/i).every((clause) => {
         const eq = /^\(?\s*(\w+)\s*=\s*'?([^']*?)'?\s*\)?$/.exec(clause.trim());
         if (eq) return String(row[eq[1]] ?? '').toLowerCase() === eq[2].toLowerCase() || (eq[2] === '1' && row[eq[1]] === true);
+        const gt = /^(\w+)\s*>\s*'([^']*)'$/.exec(clause.trim());
+        if (gt) return String(row[gt[1]] ?? '') > gt[2];
         const inList = /^(\w+)\s+IN\s+\((.*)\)$/i.exec(clause.trim());
         if (inList) {
             const values = inList[2].split(',').map((v) => v.trim().replace(/^'|'$/g, '').toLowerCase());
@@ -64,13 +74,21 @@ function matches(row: Row, filter: string | undefined): boolean {
 }
 
 function fakeEntity(name: string): Row {
+    let stored: Row | null = null;
     const entity: Row = {
         NewRecord: () => undefined,
         Save: async () => {
+            if (failingSaves.has(name)) {
+                entity.LatestResult = { CompleteMessage: `${name} refused the write` };
+                return false;
+            }
             entity.ID = entity.ID ?? uuid();
-            entity.__mj_CreatedAt = ++seq;
+            const at = stamp();
+            entity.__mj_CreatedAt = entity.__mj_CreatedAt ?? at;
+            entity.__mj_UpdatedAt = at;
             const { NewRecord: _n, Save: _s, LatestResult: _l, ...fields } = entity;
-            (tables[name] ??= []).push(fields);
+            if (stored) Object.assign(stored, fields);
+            else (tables[name] ??= []).push((stored = { ...fields }));
             return true;
         },
         LatestResult: null,
@@ -79,7 +97,7 @@ function fakeEntity(name: string): Row {
 }
 
 const provider = {
-    EntityByName: (name: string) => (ENTITY_IDS[name] ? { ID: ENTITY_IDS[name], Name: name } : undefined),
+    EntityByName: (name: string) => (ENTITY_IDS[name] ? { ID: ENTITY_IDS[name], Name: name, TrackRecordChanges: !untracked.has(name) } : undefined),
     GetEntityObject: async (name: string) => fakeEntity(name),
 } as unknown as IMetadataProvider;
 const USER = { ID: 'AAAAAAAA-0000-0000-0000-0000000000A1', Name: 'confirmer' } as UserInfo;
@@ -97,8 +115,12 @@ const CFO = 'AAAAAAAA-0000-0000-0000-0000000000C1';
 const PERSON = (userID: string) => `P${userID.slice(1)}`;
 const OUTCOME_APPROVED = 'O0000000-0000-4000-8000-000000000001';
 const OUTCOME_REJECTED = 'O0000000-0000-4000-8000-000000000002';
+const LINE_ID = 'ABCD0000-0000-4000-8000-000000000001';
+const OTHER_ORDER_ID = 'B0000000-0000-4000-8000-000000000002';
 
 function seed(creatorUserID: string = USER.ID): void {
+    untracked = new Set();
+    failingSaves = new Set();
     tables = {
         'MJ_BizApps_Tasks: Task Types': [{ ID: REVIEW_TYPE, Code: 'ORDERS_ORDER_REVIEW' }],
         'MJ_BizApps_Tasks: Task Decision Outcomes': [
@@ -116,19 +138,56 @@ function seed(creatorUserID: string = USER.ID): void {
         ],
         'MJ: Users': [REVIEWER_1, REVIEWER_2, CFO, USER.ID].map((ID) => ({ ID, IsActive: true, Name: ID })),
         'MJ: Record Changes': [
-            { EntityID: ENTITY_IDS['MJ_BizApps_Orders: Order Headers'], RecordID: `ID|${ORDER_ID}`, Type: 'Create', UserID: creatorUserID, ChangedAt: 1 },
+            { EntityID: ENTITY_IDS['MJ_BizApps_Orders: Order Headers'], RecordID: `ID|${ORDER_ID}`, Type: 'Create', UserID: creatorUserID, ChangedAt: stamp() },
+        ],
+        'MJ_BizApps_Orders: Order Lines': [
+            { ID: LINE_ID, OrderHeaderID: ORDER_ID, LineNumber: 1, __mj_CreatedAt: stamp(), __mj_UpdatedAt: stamp() },
         ],
     };
     people.byUser = new Map([REVIEWER_1, REVIEWER_2, CFO].map((id) => [id.toLowerCase(), PERSON(id)]));
 }
 
-/** An existing review task on the order, decided or not. */
-function existingReview(status: string, decision?: { outcome: string; by: string }, assignees: string[] = [PERSON(REVIEWER_1)]): string {
+/** A record change, written now by `userID`. */
+function recordChange(entity: string, recordID: string, type: 'Create' | 'Update', userID: string, changes: Record<string, unknown> = {}): void {
+    tables['MJ: Record Changes'].push({
+        EntityID: ENTITY_IDS[entity],
+        RecordID: `ID|${recordID}`,
+        Type: type,
+        UserID: userID,
+        ChangedAt: stamp(),
+        ChangesJSON: JSON.stringify(Object.fromEntries(Object.entries(changes).map(([field, newValue]) => [field, { field, newValue }]))),
+    });
+}
+
+/** A review task linked to `orderID`, now. */
+function reviewTask(status: string, assignees: string[] = [PERSON(REVIEWER_1)], orderID: string = ORDER_ID): string {
     const taskID = uuid();
-    tables['MJ_BizApps_Tasks: Tasks'] = [...(tables['MJ_BizApps_Tasks: Tasks'] ?? []), { ID: taskID, Name: 'ORD-1: order review', Status: status, TypeID: REVIEW_TYPE, __mj_CreatedAt: ++seq }];
-    (tables['MJ_BizApps_Tasks: Task Links'] ??= []).push({ TaskID: taskID, EntityID: ENTITY_IDS['MJ_BizApps_Orders: Order Headers'], RecordID: ORDER_ID });
+    const at = stamp();
+    (tables['MJ_BizApps_Tasks: Tasks'] ??= []).push({ ID: taskID, Name: 'ORD-1: order review', Status: status, TypeID: REVIEW_TYPE, __mj_CreatedAt: at });
+    linkTask(taskID, orderID);
     for (const p of assignees) (tables['MJ_BizApps_Tasks: Task Assignments'] ??= []).push({ TaskID: taskID, AssigneeEntityID: ENTITY_IDS['MJ_BizApps_Common: People'], AssigneeRecordID: p });
-    if (decision) (tables['MJ_BizApps_Tasks: Task Decisions'] ??= []).push({ TaskID: taskID, OutcomeID: decision.outcome, DecidedByPersonID: decision.by, DecidedAt: ++seq });
+    return taskID;
+}
+
+function linkTask(taskID: string, orderID: string): void {
+    const at = stamp();
+    (tables['MJ_BizApps_Tasks: Task Links'] ??= []).push({ TaskID: taskID, EntityID: ENTITY_IDS['MJ_BizApps_Orders: Order Headers'], RecordID: orderID, __mj_CreatedAt: at, __mj_UpdatedAt: at });
+}
+
+/**
+ * A decision on a task, written now by `writer` (the user the record-change log names). `personID` is
+ * the row's own DecidedByPersonID, which its writer sets to anything.
+ */
+function decide(taskID: string, outcome: string, writer: string, personID: string = PERSON(writer)): void {
+    const id = uuid();
+    (tables['MJ_BizApps_Tasks: Task Decisions'] ??= []).push({ ID: id, TaskID: taskID, OutcomeID: outcome, DecidedByPersonID: personID, __mj_CreatedAt: stamp() });
+    recordChange('MJ_BizApps_Tasks: Task Decisions', id, 'Create', writer);
+}
+
+/** An existing review task on the order, decided (by `by`, a user) or not. */
+function existingReview(status: string, decision?: { outcome: string; by: string }, assignees: string[] = [PERSON(REVIEWER_1)]): string {
+    const taskID = reviewTask(status, assignees);
+    if (decision) decide(taskID, decision.outcome, decision.by);
     return taskID;
 }
 
@@ -191,7 +250,7 @@ beforeEach(() => {
     vi.spyOn(RunView.prototype, 'RunView').mockImplementation(async (params) => {
         let rows = (tables[params.EntityName ?? ''] ?? []).filter((r) => matches(r, params.ExtraFilter));
         const order = /^(\w+)(\s+DESC)?$/i.exec(params.OrderBy ?? '');
-        if (order) rows = [...rows].sort((a, b) => (Number(a[order[1]] ?? 0) - Number(b[order[1]] ?? 0)) * (order[2] ? -1 : 1));
+        if (order) rows = [...rows].sort((a, b) => String(a[order[1]] ?? '').localeCompare(String(b[order[1]] ?? '')) * (order[2] ? -1 : 1));
         if (params.MaxRows) rows = rows.slice(0, params.MaxRows);
         return { Success: true, Results: rows, ErrorMessage: '' } as never;
     });
@@ -230,7 +289,8 @@ describe('CheckOrderReviewAtConfirm: configuration', () => {
 
     it('leaves checkout, provider-payment and reversal orders alone', async () => {
         settings({ OrderReviewTriggers: 'NoDeal' });
-        expect(await CheckOrderReviewAtConfirm(order({ Origin: 'CheckoutWidget' }), ctx)).toBeNull();
+        expect(await CheckOrderReviewAtConfirm(order({ Origin: 'Widget' }), ctx)).toBeNull();
+        expect(await CheckOrderReviewAtConfirm(order({ Origin: 'ProviderPayment' }), ctx)).toBeNull();
         expect(await CheckOrderReviewAtConfirm(order({ ReversesOrderHeaderID: 'B0000000-0000-4000-8000-000000000009' }), ctx)).toBeNull();
         expect(reviewTasks()).toHaveLength(0);
     });
@@ -350,8 +410,8 @@ describe('CheckOrderReviewAtConfirm: an order that already has a review', () => 
         expect(reviewTasks()).toHaveLength(1);
     });
 
-    it('confirms on an approval by an assignee', async () => {
-        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: PERSON(REVIEWER_1) });
+    it('confirms on an approval by a holder of the reviewer role', async () => {
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
         expect(await CheckOrderReviewAtConfirm(order(), ctx)).toBeNull();
     });
 
@@ -362,15 +422,194 @@ describe('CheckOrderReviewAtConfirm: an order that already has a review', () => 
     });
 
     it('replaces a rejected review with a fresh one and refuses', async () => {
-        existingReview('Completed', { outcome: OUTCOME_REJECTED, by: PERSON(REVIEWER_1) });
+        existingReview('Completed', { outcome: OUTCOME_REJECTED, by: REVIEWER_1 });
         const refusal = await CheckOrderReviewAtConfirm(order(), ctx);
         expect(refusal).toMatch(/its last review was decided 'Rejected'\. It was sent for review/);
         expect(reviewTasks()).toHaveLength(2);
     });
 
-    it('does not take an approval recorded by someone the review was not assigned to', async () => {
-        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: PERSON(CFO) });
-        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/approved by someone it was not assigned to/);
+    it('does not take an approval by someone outside the routed role, and replaces the review', async () => {
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: CFO });
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/approved by someone who does not hold the role 'Senior Finance \(AR\)'/);
+        expect(reviewTasks()).toHaveLength(2);
+    });
+});
+
+describe('CheckOrderReviewAtConfirm: an approval the order\'s creator could forge (PR #912 review, required 1)', () => {
+    // USER created the order (seed's default) and can write tasks, links, assignments and decisions.
+    beforeEach(() => settings({ OrderReviewTriggers: 'NoDeal' }));
+
+    it('does not take the creator self-assigning to the genuine review and approving it', async () => {
+        const genuine = reviewTask('Open');
+        (tables['MJ_BizApps_Tasks: Task Assignments'] ??= []).push({ TaskID: genuine, AssigneeEntityID: ENTITY_IDS['MJ_BizApps_Common: People'], AssigneeRecordID: 'P-creator' });
+        decide(genuine, OUTCOME_APPROVED, USER.ID, 'P-creator');
+        tables['MJ_BizApps_Tasks: Tasks'].find((t) => t.ID === genuine)!.Status = 'Completed';
+
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/approved by the order's creator.*It was sent for review/);
+        expect(reviewTasks()).toHaveLength(2);
+    });
+
+    it("does not take a decision row that names a reviewer's Person but was written by someone else", async () => {
+        const task = reviewTask('Completed');
+        decide(task, OUTCOME_APPROVED, USER.ID, PERSON(REVIEWER_1));
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/approved by the order's creator/);
+    });
+
+    it('does not take an approval by a Person holding no reviewer role', async () => {
+        const outsider = 'AAAAAAAA-0000-0000-0000-0000000000D1';
+        const task = reviewTask('Completed', [PERSON(outsider)]);
+        decide(task, OUTCOME_APPROVED, outsider);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/does not hold the role 'Senior Finance \(AR\)'/);
+    });
+
+    it('keeps refusing while the genuine review is open, however new a forged, approved task is', async () => {
+        reviewTask('Open');
+        const forged = reviewTask('Completed', ['P-creator']);
+        decide(forged, OUTCOME_APPROVED, USER.ID, 'P-creator');
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/cannot be confirmed until its review is approved/);
+        expect(reviewTasks()).toHaveLength(2);
+    });
+
+    it("does not take another order's approved review pointed at this order after it was approved", async () => {
+        const borrowed = reviewTask('Completed', [PERSON(REVIEWER_1)], OTHER_ORDER_ID);
+        decide(borrowed, OUTCOME_APPROVED, REVIEWER_1);
+        tables['MJ_BizApps_Tasks: Task Links'].find((l) => l.TaskID === borrowed)!.RecordID = ORDER_ID;
+        tables['MJ_BizApps_Tasks: Task Links'].find((l) => l.TaskID === borrowed)!.__mj_UpdatedAt = stamp();
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/linked to this order only after it was approved/);
+
+        seed();
+        const shared = reviewTask('Completed', [PERSON(REVIEWER_1)], OTHER_ORDER_ID);
+        decide(shared, OUTCOME_APPROVED, REVIEWER_1);
+        linkTask(shared, ORDER_ID);
+        // A second link, the first left in place: still the other order's review.
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/linked to another order as well/);
+    });
+
+    it('does not take an approval of a task that covers another order as well', async () => {
+        const task = reviewTask('Completed');
+        linkTask(task, OTHER_ORDER_ID);
+        decide(task, OUTCOME_APPROVED, REVIEWER_1);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/linked to another order as well/);
+    });
+
+    it('counts only reviews linked to this order: an approved review of another order is not this one\'s', async () => {
+        const elsewhere = reviewTask('Completed', [PERSON(REVIEWER_1)], OTHER_ORDER_ID);
+        decide(elsewhere, OUTCOME_APPROVED, REVIEWER_1);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/needs a review before it can be confirmed/);
+    });
+
+    it('takes the newest decision by when it was written, not by the DecidedAt its writer sets', async () => {
+        const task = reviewTask('Completed');
+        decide(task, OUTCOME_APPROVED, REVIEWER_1);
+        decide(task, OUTCOME_REJECTED, REVIEWER_2);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/decided 'Rejected'/);
+    });
+
+    it('on an escalated review takes only the escalation role, never a fellow reviewer', async () => {
+        seed(REVIEWER_1);
+        const task = reviewTask('Completed', [PERSON(CFO)]);
+        decide(task, OUTCOME_APPROVED, REVIEWER_2);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/does not hold the role 'CFO'/);
+
+        seed(REVIEWER_1);
+        decide(reviewTask('Completed', [PERSON(CFO)]), OUTCOME_APPROVED, CFO);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toBeNull();
+    });
+
+    it('refuses an approval whose writer the record-change log does not name', async () => {
+        const task = reviewTask('Completed');
+        decide(task, OUTCOME_APPROVED, REVIEWER_1);
+        tables['MJ: Record Changes'] = tables['MJ: Record Changes'].filter((r) => r.EntityID !== ENTITY_IDS['MJ_BizApps_Tasks: Task Decisions']);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/record-change log/);
+    });
+});
+
+describe('CheckOrderReviewAtConfirm: Origin is not a way out of review (PR #912 review, required 2)', () => {
+    it('reviews an order whose Origin is anything but what a system process writes', async () => {
+        settings({ OrderReviewTriggers: 'NoDeal,OverThreshold', OrderReviewTotalThreshold: '10' });
+        for (const origin of ['Direct', 'x', 'DIRECT-ish', ' Direct x', 'widget', 'Widget ']) {
+            seed();
+            expect(await CheckOrderReviewAtConfirm(order({ Origin: origin }), ctx)).toMatch(/needs a review before it can be confirmed/);
+        }
+    });
+
+    it('agrees with the provider-payment process on the Origin it writes', async () => {
+        const { PROVIDER_PAYMENT_ORDER_ORIGIN } = await import('../ProviderPaymentOrder.js');
+        const { SYSTEM_ORDER_ORIGINS } = await import('@mj-biz-apps/orders-entities');
+        expect(SYSTEM_ORDER_ORIGINS).toContain(PROVIDER_PAYMENT_ORDER_ORIGIN);
+    });
+});
+
+describe('CheckOrderReviewAtConfirm: an approval covers the order as it was approved (PR #912 review, required 3)', () => {
+    beforeEach(() => settings({ OrderReviewTriggers: 'OverThreshold', OrderReviewTotalThreshold: '25000' }));
+    const big = () => order({ Lines: [reviewLine({ LineTotalNet: 30000, ID: null })] });
+
+    it('confirms an approved order still over the threshold: the trigger is not re-run, so approval can release it', async () => {
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toBeNull();
+    });
+
+    it('refuses, and raises a fresh review, when a line\'s price was written after the approval by any path', async () => {
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        // A line saved on its own: the order's save, and so its change hook, never ran.
+        recordChange(ORDER_LINES, LINE_ID, 'Update', USER.ID, { UnitPrice: 1000000 });
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toMatch(/changed after its review was approved \(line 1's price changed\)\. It was sent for review/);
+        expect(reviewTasks()).toHaveLength(2);
+    });
+
+    it('refuses when a line was added, or the bill-to changed, after the approval', async () => {
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        const added = 'ABCD0000-0000-4000-8000-000000000002';
+        tables[ORDER_LINES].push({ ID: added, OrderHeaderID: ORDER_ID, LineNumber: 2, __mj_CreatedAt: stamp(), __mj_UpdatedAt: stamp() });
+        recordChange(ORDER_LINES, added, 'Create', USER.ID, { UnitPrice: 5 });
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toMatch(/1 line was added/);
+
+        seed();
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        recordChange(ORDER_HEADERS, ORDER_ID, 'Update', USER.ID, { BillToOrganizationID: 'x', Notes: 'y' });
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toMatch(/the bill-to organization changed/);
+    });
+
+    it('confirms when only fields nobody reviews changed after the approval, or the changes came before it', async () => {
+        recordChange(ORDER_LINES, LINE_ID, 'Update', USER.ID, { UnitPrice: 900 });
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        recordChange(ORDER_LINES, LINE_ID, 'Update', USER.ID, { Description: 'reworded' });
+        recordChange(ORDER_HEADERS, ORDER_ID, 'Update', USER.ID, { Notes: 'chased' });
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toBeNull();
+    });
+
+    it('counts any write to a line as a change where line record changes are not tracked', async () => {
+        untracked.add(ORDER_LINES);
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        tables[ORDER_LINES][0].__mj_UpdatedAt = stamp();
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toMatch(/line 1 was changed/);
+    });
+
+    it('counts a record change whose fields cannot be read as a change', async () => {
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        recordChange(ORDER_LINES, LINE_ID, 'Update', USER.ID);
+        tables['MJ: Record Changes'].at(-1)!.ChangesJSON = '{not json';
+        expect(await CheckOrderReviewAtConfirm(big(), ctx)).toMatch(/which fields could not be read/);
+    });
+});
+
+describe('RaiseOrderReview: a review that fails part-way is not left undecidable (PR #912 review)', () => {
+    beforeEach(() => settings({ OrderReviewTriggers: 'NoDeal' }));
+
+    it('closes the task when an assignment cannot be written, and the next confirm raises a new one', async () => {
+        failingSaves.add('MJ_BizApps_Tasks: Task Assignments');
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/could not be decided.*refused the write/);
+        expect(reviewTasks()).toHaveLength(1);
+        expect(reviewTasks()[0]).toMatchObject({ Status: 'Cancelled', CompletionNotes: expect.stringMatching(/could not be fully raised/) });
+
+        failingSaves.clear();
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/its last review was cancelled\. It was sent for review/);
+        expect(reviewTasks().filter((t) => t.Status === 'Open')).toHaveLength(1);
+    });
+
+    it('replaces an open review assigned to nobody instead of waiting on it forever', async () => {
+        reviewTask('Open', []);
+        expect(await CheckOrderReviewAtConfirm(order(), ctx)).toMatch(/assigned to nobody.*It was sent for review/);
         expect(reviewTasks()).toHaveLength(2);
     });
 });
@@ -402,10 +641,18 @@ describe('CheckOrderReviewOnChange', () => {
 
     it('sends an approved order back to review when a price changes', async () => {
         settings({ OrderReviewTriggers: 'ChangedAfterDealOrReview' });
-        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: PERSON(REVIEWER_1) });
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
         expect(await CheckOrderReviewOnChange(order(), priceChange, ctx)).toBeNull();
         expect(reviewTasks()).toHaveLength(2);
         expect(reviewTasks()[1].Description).toContain("line 1's price changed after the order was reviewed");
+    });
+
+    it('sends an approved order back to review on a reviewed change even with ChangedAfterDealOrReview off (PR #912 review, required 3)', async () => {
+        settings({ OrderReviewTriggers: 'OverThreshold', OrderReviewTotalThreshold: '25000' });
+        existingReview('Completed', { outcome: OUTCOME_APPROVED, by: REVIEWER_1 });
+        expect(await CheckOrderReviewOnChange(order(), priceChange, ctx)).toBeNull();
+        expect(reviewTasks()).toHaveLength(2);
+        expect(await CheckOrderReviewAtConfirm(order({ Lines: [reviewLine({ LineTotalNet: 1000000 })] }), ctx)).toMatch(/until its review is approved/);
     });
 
     it('notes a change on an open review instead of raising a second', async () => {
@@ -422,7 +669,7 @@ describe('CheckOrderReviewOnChange', () => {
         settings({ OrderReviewTriggers: 'ChangedAfterDealOrReview' });
         RegisterOrderDealLink(dealLink('D-1'));
         expect(await CheckOrderReviewOnChange(order(), { ...NO_CHANGE, HeaderFieldsChanged: ['Notes'] }, ctx)).toBeNull();
-        expect(await CheckOrderReviewOnChange(order({ Origin: 'CheckoutWidget' }), billToChange, ctx)).toBeNull();
+        expect(await CheckOrderReviewOnChange(order({ Origin: 'Widget' }), billToChange, ctx)).toBeNull();
         expect(reviewTasks()).toHaveLength(0);
     });
 

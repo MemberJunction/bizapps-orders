@@ -9,15 +9,20 @@ import {
     OrderReviewConfigProblem,
     OrderReviewEnabled,
     OrderReviewExemption,
+    IsSystemOrderOrigin,
     ParseOrderReviewTriggers,
     RegisterOrderDealLink,
     RenewalPriceEdits,
     ResolveOrderDeal,
+    ReviewedFieldsInChanges,
     ReviewerUserIDs,
+    SYSTEM_ORDER_ORIGINS,
     ServiceMonthsExceed,
     type OrderDealLink,
     type OrderReviewConfig,
     type OrderReviewFacts,
+    type ReviewAuthority,
+    type ReviewDecisionFacts,
     type OrderReviewLineFacts,
     type ReviewTaskFacts,
 } from '../order-review';
@@ -114,9 +119,19 @@ describe('OrderReviewExemption', () => {
         expect(OrderReviewExemption({ Origin: null, ReversesOrderHeaderID: null, Lines: [sale] })).toBeNull();
     });
 
-    it('leaves checkout and provider-payment orders alone', () => {
-        expect(OrderReviewExemption({ Origin: 'CheckoutWidget', ReversesOrderHeaderID: null, Lines: [sale] })?.Kind).toBe('NotDirect');
+    it('leaves checkout and provider-payment orders alone, by the exact Origin those processes write', () => {
+        expect(OrderReviewExemption({ Origin: 'Widget', ReversesOrderHeaderID: null, Lines: [sale] })?.Kind).toBe('NotDirect');
         expect(OrderReviewExemption({ Origin: 'ProviderPayment', ReversesOrderHeaderID: null, Lines: [sale] })?.Kind).toBe('NotDirect');
+    });
+
+    it('reviews any Origin it does not know, rather than reading "not Direct" as exempt (PR #912 review)', () => {
+        // Origin is free text with no CHECK constraint; each of these used to skip review.
+        for (const origin of ['x', 'DIRECT-ish', ' Direct x', 'widget', ' Widget', 'CheckoutWidget', 'Deal']) {
+            expect(OrderReviewExemption({ Origin: origin, ReversesOrderHeaderID: null, Lines: [sale] })).toBeNull();
+        }
+        expect(IsSystemOrderOrigin('Widget')).toBe(true);
+        expect(IsSystemOrderOrigin('Direct')).toBe(false);
+        expect([...SYSTEM_ORDER_ORIGINS]).toEqual(['Widget', 'ProviderPayment']);
     });
 
     it('leaves a reversal alone', () => {
@@ -273,33 +288,111 @@ describe('OrderReviewChanges and RenewalPriceEdits', () => {
 
 describe('DecideReviewStanding', () => {
     const REVIEWER = 'AAAAAAAA-0000-0000-0000-000000000001';
-    const task = (over: Partial<ReviewTaskFacts> = {}): ReviewTaskFacts => ({
-        Status: 'Completed',
-        DecisionOutcome: 'Approved',
-        DecidedByPersonID: REVIEWER,
-        AssigneePersonIDs: [REVIEWER],
+    const OTHER_REVIEWER = 'AAAAAAAA-0000-0000-0000-000000000002';
+    const CREATOR = 'AAAAAAAA-0000-0000-0000-0000000000C0';
+    const decision = (over: Partial<ReviewDecisionFacts> = {}): ReviewDecisionFacts => ({
+        Outcome: 'Approved',
+        WrittenByUserID: REVIEWER,
+        LinkedBeforeDecision: true,
+        LinksAnotherOrder: false,
+        ChangesSinceDecision: [],
         ...over,
     });
+    const task = (over: Partial<ReviewTaskFacts> = {}): ReviewTaskFacts => ({
+        Status: 'Completed',
+        AssigneePersonIDs: ['person-1'],
+        Decision: decision(),
+        ...over,
+    });
+    const authority: ReviewAuthority = {
+        Role: 'Senior Finance (AR)',
+        EligibleUserIDs: [REVIEWER, OTHER_REVIEWER],
+        CreatorUserID: CREATOR,
+        Refusal: null,
+    };
+    const standing = (t: ReviewTaskFacts | null, a: ReviewAuthority | null = authority) => DecideReviewStanding(t, a);
 
     it('has no standing with no review', () => {
-        expect(DecideReviewStanding(null)).toEqual({ Standing: 'None' });
+        expect(standing(null)).toEqual({ Standing: 'None' });
     });
 
     it('is open while the task is', () => {
-        for (const status of ['Open', 'InProgress', 'Blocked']) expect(DecideReviewStanding(task({ Status: status, DecisionOutcome: null })).Standing).toBe('Open');
+        for (const status of ['Open', 'InProgress', 'Blocked']) expect(standing(task({ Status: status, Decision: null })).Standing).toBe('Open');
     });
 
-    it('is approved on an approving decision by an assignee, whatever the ID case', () => {
-        expect(DecideReviewStanding(task()).Standing).toBe('Approved');
-        expect(DecideReviewStanding(task({ DecisionOutcome: 'ApprovedWithConditions', DecidedByPersonID: REVIEWER.toLowerCase() })).Standing).toBe('Approved');
+    it('reads an open review assigned to nobody as not approved, so it is replaced rather than holding the order forever', () => {
+        expect(standing(task({ Status: 'Open', Decision: null, AssigneePersonIDs: [] }))).toMatchObject({
+            Standing: 'NotApproved',
+            Reason: expect.stringMatching(/assigned to nobody/),
+        });
     });
 
-    it('is not approved when rejected, cancelled, closed with no decision, or approved by someone not assigned', () => {
-        expect(DecideReviewStanding(task({ DecisionOutcome: 'Rejected' }))).toEqual({ Standing: 'NotApproved', Reason: "its last review was decided 'Rejected'" });
-        expect(DecideReviewStanding(task({ Status: 'Cancelled' }))).toMatchObject({ Standing: 'NotApproved', Reason: expect.stringMatching(/cancelled/) });
-        expect(DecideReviewStanding(task({ DecisionOutcome: null }))).toMatchObject({ Reason: expect.stringMatching(/without an approving decision/) });
-        expect(DecideReviewStanding(task({ DecidedByPersonID: 'someone-else' }))).toMatchObject({ Reason: expect.stringMatching(/not assigned/) });
-        expect(DecideReviewStanding(task({ DecidedByPersonID: null }))).toMatchObject({ Standing: 'NotApproved' });
+    it('is approved on an approving decision written by a holder of the routed role, whatever the ID case', () => {
+        expect(standing(task()).Standing).toBe('Approved');
+        expect(standing(task({ Decision: decision({ Outcome: 'ApprovedWithConditions', WrittenByUserID: REVIEWER.toLowerCase() }) })).Standing).toBe('Approved');
+    });
+
+    it('is not approved when rejected, cancelled or closed with no decision', () => {
+        expect(standing(task({ Decision: decision({ Outcome: 'Rejected' }) }))).toEqual({ Standing: 'NotApproved', Reason: "its last review was decided 'Rejected'" });
+        expect(standing(task({ Status: 'Cancelled' }))).toMatchObject({ Standing: 'NotApproved', Reason: expect.stringMatching(/cancelled/) });
+        expect(standing(task({ Decision: null }))).toMatchObject({ Reason: expect.stringMatching(/without an approving decision/) });
+    });
+
+    it("does not take the order's creator's own approval, even when they hold the role (PR #912 review)", () => {
+        const creatorIsReviewer = { ...authority, EligibleUserIDs: [REVIEWER, CREATOR] };
+        expect(standing(task({ Decision: decision({ WrittenByUserID: CREATOR }) }), creatorIsReviewer)).toMatchObject({
+            Standing: 'NotApproved',
+            Reason: expect.stringMatching(/approved by the order's creator/),
+        });
+    });
+
+    it('does not take an approval written by someone outside the routed role, whatever the task says (PR #912 review)', () => {
+        expect(standing(task({ Decision: decision({ WrittenByUserID: 'AAAAAAAA-0000-0000-0000-0000000000FF' }) }))).toMatchObject({
+            Standing: 'NotApproved',
+            Reason: expect.stringMatching(/does not hold the role 'Senior Finance \(AR\)'/),
+        });
+    });
+
+    it('does not take an approval whose writer the record-change log does not name', () => {
+        expect(standing(task({ Decision: decision({ WrittenByUserID: null }) }))).toMatchObject({ Reason: expect.stringMatching(/record-change log/) });
+    });
+
+    it('does not take an approval without knowing who may give one, or when no one may', () => {
+        expect(standing(task(), null)).toMatchObject({ Standing: 'NotApproved' });
+        expect(standing(task(), { Role: null, EligibleUserIDs: [], CreatorUserID: CREATOR, Refusal: 'no escalation role is set' })).toMatchObject({
+            Reason: expect.stringMatching(/no escalation role is set/),
+        });
+    });
+
+    it('does not take an approval given to a task that was pointed at this order afterwards, or that covers another order too', () => {
+        expect(standing(task({ Decision: decision({ LinkedBeforeDecision: false }) }))).toMatchObject({ Reason: expect.stringMatching(/linked to this order only after/) });
+        expect(standing(task({ Decision: decision({ LinksAnotherOrder: true }) }))).toMatchObject({ Reason: expect.stringMatching(/linked to another order/) });
+    });
+
+    it('does not take an approval the order has changed since (PR #912 review, required 3)', () => {
+        expect(standing(task({ Decision: decision({ ChangesSinceDecision: ["line 1's price changed"] }) }))).toEqual({
+            Standing: 'NotApproved',
+            Reason: "it changed after its review was approved (line 1's price changed)",
+        });
+    });
+
+    it('does not ask for authority unless the decision approves', () => {
+        expect(standing(task({ Decision: decision({ Outcome: 'Rejected' }) }), null).Standing).toBe('NotApproved');
+        expect(standing(task({ Status: 'Open', Decision: null }), null).Standing).toBe('Open');
+    });
+});
+
+describe('ReviewedFieldsInChanges', () => {
+    it('names the reviewed fields a record change touched', () => {
+        const json = JSON.stringify({ UnitPrice: { field: 'UnitPrice', oldValue: 1, newValue: 2 }, Description: { field: 'Description' } });
+        expect(ReviewedFieldsInChanges(json, ['UnitPrice', 'Quantity'])).toEqual({ Fields: ['UnitPrice'] });
+    });
+
+    it('reads an empty record as no change, and an unreadable one as unreadable, which the caller counts as a change', () => {
+        expect(ReviewedFieldsInChanges('', ['UnitPrice'])).toEqual({ Fields: [] });
+        expect(ReviewedFieldsInChanges(null, ['UnitPrice'])).toEqual({ Fields: [] });
+        expect(ReviewedFieldsInChanges('{not json', ['UnitPrice'])).toHaveProperty('Unreadable');
+        expect(ReviewedFieldsInChanges('[1,2]', ['UnitPrice'])).toHaveProperty('Unreadable');
     });
 });
 

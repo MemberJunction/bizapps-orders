@@ -91,6 +91,7 @@ import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAt
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -626,6 +627,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // rule that holds until somebody saves an entity directly, which is the failure this codebase
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
+
+        // ORIGIN IS SET BY THE PROCESS THAT CREATES THE ORDER, never by the person saving it. Order
+        // review exempts the system origins (golive #320 §5), so a writable Origin was a way round it.
+        if (!this.passesOriginGuard()) return false;
 
         // A CHANGE THAT SENDS THE ORDER TO REVIEW (golive #320 §5) is read before the party defaults
         // below fill anything in, so it sees only what the caller changed. It raises the review before
@@ -1218,10 +1223,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * Refuse a write of `Origin` that no system process made (./SystemOrderOrigin.ts). Applies with or
+     * without review switched on: an Origin written while review was off would be trusted once it is on.
+     */
+    private passesOriginGuard(): boolean {
+        const stored = this.GetFieldByName('Origin')?.OldValue;
+        const refusal = OriginWriteRefusal({
+            IsSaved: this.IsSaved,
+            Origin: this.Origin ?? null,
+            StoredOrigin: typeof stored === 'string' ? stored : null,
+            MarkedBySystem: IsSystemOriginWrite(this),
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /**
      * Refuse the confirm while the order's review is outstanding, and send an order that hit a review
-     * trigger with no review to one (golive #320 §5). Like the concession gate, the order itself saves;
-     * only the move to Confirmed waits. A save with no context user is not reviewed: there is nobody to
-     * route the review as, and the processes that save without one are not direct entry.
+     * trigger with no review to one (golive #320 §5). Like the concession gate, a refusal refuses the
+     * whole save, not only the move to Confirmed: nothing else the save carried is written either. A
+     * save with no context user is not reviewed: there is nobody to route the review as, and the
+     * processes that save without one are not direct entry.
      */
     private async passesOrderReviewGate(): Promise<boolean> {
         const user = this.ContextCurrentUser;

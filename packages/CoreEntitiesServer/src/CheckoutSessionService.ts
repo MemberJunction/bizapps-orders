@@ -79,6 +79,7 @@ import {
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
 import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
+import { SetSystemOrderOrigin } from './SystemOrderOrigin.js';
 import {
     LoadRenewalPaymentOrder,
     PayerOwnsRenewalCustomer,
@@ -1480,7 +1481,7 @@ export class CheckoutSessionService {
         order.NewRecord();
         order.CompanyID = widget.CompanyID;
         order.Status = 'Draft';
-        order.Origin = 'Widget';
+        SetSystemOrderOrigin(order, 'Widget');
         order.SourceCheckoutWidgetID = widget.ID;
         // Defence-in-depth: the server pre-warms this engine at startup (@RegisterForStartup),
         // but that pre-warm only reaches modules already evaluated when Startup() runs, which
@@ -2403,7 +2404,7 @@ export class CheckoutSessionService {
             order.CompanyID = widget.CompanyID;
             order.BillToPersonID = session.PersonID ?? null;
             order.ShipToPersonID = session.PersonID ?? null;
-            order.Origin = 'Widget';
+            SetSystemOrderOrigin(order, 'Widget');
             order.OrderType = 'Sale';
             order.SourceCheckoutWidgetID = widget.ID;
             // VAT location evidence beside the billing address (#480). Null when the edge has no

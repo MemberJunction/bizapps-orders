@@ -24,6 +24,12 @@
  * WHY BEFORE THE WRITE. A review raised for a save that then fails is a spare task; a change saved
  * whose review then failed to raise is a confirm on a stale approval. The first is the safe one.
  *
+ * WHAT IS TRUSTED. The tasks rows are writable by the order's creator through the ordinary tasks
+ * surface, so the gate reads who decided, and whether the order changed since, from `MJ: Record
+ * Changes`, and re-applies the routing rules (the routed role, never the creator) when it reads the
+ * decision. The rules are `DecideReviewStanding` in order-review.ts; {@link LatestReviewTask} gathers
+ * what they read.
+ *
  * The creator is read from `MJ: Record Changes` (Order Headers tracks record changes); with no Create
  * row it is the user saving.
  *
@@ -32,9 +38,10 @@
  *   RULES:  @mj-biz-apps/orders-entities order-review.ts
  *   WRITES: Tasks · Task Links · Task Assignments · Task Activities
  *   READS:  Task Types · Task Decisions · Task Decision Outcomes · MJ: Roles · MJ: User Roles · MJ: Users
- *           · MJ: Record Changes · MJ_BizApps_Common: People · Order Concessions · the registered deal link
+ *           · MJ: Record Changes · MJ_BizApps_Common: People · Order Concessions · Order Lines
+ *           · the registered deal link
  */
-import { LogStatus, RunView } from '@memberjunction/core';
+import { LogError, LogStatus, RunView } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 // Imported for its side effect: it registers the tasks entities' generated subclasses.
 import '@mj-biz-apps/tasks-entities';
@@ -44,6 +51,7 @@ import {
     DecideReviewStanding,
     EvaluateOrderReviewTriggers,
     HostOrderDealLink,
+    IsApprovingReviewOutcome,
     ORDER_REVIEW_TASK_TYPE_CODE,
     OrderReviewChanges,
     OrderReviewConfigProblem,
@@ -52,12 +60,17 @@ import {
     RenewalPriceEdits,
     ResolveLinePriceStanding,
     ResolveOrderDeal,
+    REVIEWED_HEADER_FIELDS,
+    REVIEWED_LINE_FIELDS,
+    ReviewedFieldsInChanges,
     ReviewerUserIDs,
     type OrderReviewChangeFacts,
     type OrderReviewConfig,
     type OrderReviewHit,
     type OrderReviewLineFacts,
     type OrderReviewScopeFacts,
+    type ReviewAuthority,
+    type ReviewDecisionFacts,
     type ReviewStanding,
     type ReviewTaskFacts,
 } from '@mj-biz-apps/orders-entities';
@@ -77,7 +90,7 @@ import {
     type ApprovalTaskContext,
 } from './ConcessionApprovalTask.js';
 import { OrderNetTotal, type ConcessionLineFacts } from './ConcessionGate.js';
-import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { ResolvePersonIDsForUsers } from './person-user-link.js';
 import { BusinessDay } from './PaymentGatedAccess.js';
@@ -142,12 +155,14 @@ export async function CheckOrderReviewOnChange(
     const exemption = OrderReviewExemption(scopeOf(order));
     if (exemption && exemption.Kind !== 'RenewalOnly') return null;
 
-    const changes = config.Triggers.includes('ChangedAfterDealOrReview') && !exemption ? OrderReviewChanges(change) : [];
+    // A reviewed change voids an APPROVED review whichever triggers are on: the approval was given to
+    // the order as it was. ChangedAfterDealOrReview adds only the deal-created case below.
+    const changes = OrderReviewChanges(change);
     const renewalEdits = config.Triggers.includes('PriceVariance') ? RenewalPriceEdits(change) : [];
     if (changes.length === 0 && renewalEdits.length === 0) return null;
 
     try {
-        const latest = await LatestReviewTask(order.OrderHeaderID, ctx);
+        const latest = await LatestReviewTask(order.OrderHeaderID, config, ctx);
         if (latest?.Standing.Standing === 'Open') {
             await RecordTaskActivity(
                 latest.Task.ID,
@@ -161,7 +176,7 @@ export async function CheckOrderReviewOnChange(
         if (changes.length > 0) {
             if (latest?.Standing.Standing === 'Approved') {
                 reasons.push(...changes.map((c) => `${c} after the order was reviewed`));
-            } else if (!latest) {
+            } else if (!latest && !exemption && config.Triggers.includes('ChangedAfterDealOrReview')) {
                 const deal = await ResolveOrderDeal(HostOrderDealLink(), order.OrderHeaderID, ctx.User);
                 if (deal) reasons.push(...changes.map((c) => `${c} on an order deal ${deal.DealNumber ?? deal.DealID} created`));
             }
@@ -195,10 +210,12 @@ export async function CheckOrderReviewAtConfirm(order: ReviewOrderInput, ctx: Ap
     if (exemption && exemption.Kind !== 'RenewalOnly') return null;
 
     try {
-        const latest = order.OrderHeaderID ? await LatestReviewTask(order.OrderHeaderID, ctx) : null;
+        const latest = order.OrderHeaderID ? await LatestReviewTask(order.OrderHeaderID, config, ctx) : null;
         if (!latest && exemption) return null;
 
         switch (latest?.Standing.Standing) {
+            // Approved already means "and nothing reviewed changed since" (DecideReviewStanding), so the
+            // triggers are not re-run here: an order over the threshold would match again and never confirm.
             case 'Approved':
                 return null;
             case 'Open':
@@ -301,17 +318,28 @@ function scopeOf(order: ReviewOrderInput): OrderReviewScopeFacts {
 // ─── The review task ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * The order's most recent review task and where it stands, or null when it has none (or the tasks app,
- * or the review task type, is not installed, in which case no review can exist).
+ * The order's review and where it stands, or null when it has none (or the tasks app, or the review
+ * task type, is not installed, in which case no review can exist).
+ *
+ * WHICH TASK. Every review task linked to the order is read. An open one that is assigned to someone
+ * wins, newest first, so a newer closed task (which anyone who can write task links can point at the
+ * order) never outranks an open review. With none open, the newest task decides. An open task assigned
+ * to nobody is passed over and reads as not approved, so it is replaced rather than holding the order
+ * forever.
  */
-export async function LatestReviewTask(orderHeaderID: string, ctx: ApprovalTaskContext): Promise<LatestReview | null> {
+export async function LatestReviewTask(
+    orderHeaderID: string,
+    config: OrderReviewConfig,
+    ctx: ApprovalTaskContext,
+): Promise<LatestReview | null> {
     if (!ctx.Provider.EntityByName(TASK_LINK_ENTITY)) return null;
     const typeID = await reviewTaskTypeID(ctx);
     if (!typeID) return null;
+    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
 
     const links = await view<{ TaskID: string }>(ctx, {
         EntityName: TASK_LINK_ENTITY,
-        ExtraFilter: `EntityID = '${entityID(ORDER_HEADER_ENTITY, ctx)}' AND RecordID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+        ExtraFilter: `EntityID = '${entityID(ORDER_HEADER_ENTITY, ctx)}' AND RecordID = '${orderID}'`,
         Fields: ['TaskID'],
         ResultType: 'simple',
     });
@@ -323,25 +351,59 @@ export async function LatestReviewTask(orderHeaderID: string, ctx: ApprovalTaskC
             `AND TypeID = '${RequireUUID(typeID, 'TypeID')}'`,
         Fields: ['ID', 'Name', 'Status'],
         OrderBy: '__mj_CreatedAt DESC',
-        MaxRows: 1,
         ResultType: 'simple',
     });
-    const task = tasks[0];
-    if (!task) return null;
+    if (tasks.length === 0) return null;
 
-    const facts = await reviewTaskFacts(task, ctx);
-    return { Task: task, Facts: facts, Standing: DecideReviewStanding(facts) };
+    const open = tasks.filter((t) => !isClosed(t.Status));
+    const assignees = await personAssignees([...new Set([...open.map((t) => t.ID), tasks[0].ID])], ctx);
+    const assigneesOf = (taskID: string) => assignees.get(taskID.toLowerCase()) ?? [];
+    const task = open.find((t) => assigneesOf(t.ID).length > 0) ?? tasks[0];
+
+    const decision = task.Status === 'Completed' ? await reviewDecision(task.ID, orderID, ctx) : null;
+    const facts: ReviewTaskFacts = { Status: task.Status, AssigneePersonIDs: assigneesOf(task.ID), Decision: decision };
+    const authority = decision && IsApprovingReviewOutcome(decision.Outcome) ? await reviewAuthority(orderID, config, ctx) : null;
+    return { Task: task, Facts: facts, Standing: DecideReviewStanding(facts, authority) };
 }
 
-/** The task's most recent terminal decision and its Person assignees. */
-async function reviewTaskFacts(task: { ID: string; Status: string }, ctx: ApprovalTaskContext): Promise<ReviewTaskFacts> {
-    const taskID = RequireUUID(task.ID, 'TaskID');
-    const [decisions, outcomes, assignments] = await Promise.all([
-        view<{ OutcomeID: string; DecidedByPersonID: string | null }>(ctx, {
+function isClosed(status: string): boolean {
+    return status === 'Completed' || status === 'Cancelled';
+}
+
+/** Each task's Person assignees, by lower-cased task ID. */
+async function personAssignees(taskIDs: readonly string[], ctx: ApprovalTaskContext): Promise<Map<string, string[]>> {
+    const rows = await view<{ TaskID: string; AssigneeRecordID: string }>(ctx, {
+        EntityName: TASK_ASSIGNMENT_ENTITY,
+        ExtraFilter:
+            `TaskID IN (${RequireUUIDs([...taskIDs], 'TaskID').map((id) => `'${id}'`).join(', ')}) ` +
+            `AND AssigneeEntityID = '${entityID(PERSON_ENTITY, ctx)}'`,
+        Fields: ['TaskID', 'AssigneeRecordID'],
+        ResultType: 'simple',
+    });
+    const out = new Map<string, string[]>();
+    for (const row of rows) {
+        const key = String(row.TaskID).toLowerCase();
+        out.set(key, [...(out.get(key) ?? []), row.AssigneeRecordID]);
+    }
+    return out;
+}
+
+/**
+ * The task's most recently written terminal decision, with what the gate needs to trust it: who wrote
+ * the row and when (its newest `MJ: Record Changes` entry), whether the task was linked to this order
+ * (and only this order) before then, and what reviewed on the order was written since.
+ *
+ * Decisions are ordered by when the row was written (`__mj_CreatedAt`), not by `DecidedAt`, which the
+ * writer sets.
+ */
+async function reviewDecision(taskID: string, orderID: string, ctx: ApprovalTaskContext): Promise<ReviewDecisionFacts | null> {
+    const id = RequireUUID(taskID, 'TaskID');
+    const [decisions, outcomes] = await Promise.all([
+        view<{ ID: string; OutcomeID: string }>(ctx, {
             EntityName: TASK_DECISION_ENTITY,
-            ExtraFilter: `TaskID = '${taskID}'`,
-            Fields: ['OutcomeID', 'DecidedByPersonID'],
-            OrderBy: 'DecidedAt DESC',
+            ExtraFilter: `TaskID = '${id}'`,
+            Fields: ['ID', 'OutcomeID'],
+            OrderBy: '__mj_CreatedAt DESC',
             ResultType: 'simple',
         }),
         view<{ ID: string; Code: string; IsTerminal: boolean }>(ctx, {
@@ -349,21 +411,174 @@ async function reviewTaskFacts(task: { ID: string; Status: string }, ctx: Approv
             Fields: ['ID', 'Code', 'IsTerminal'],
             ResultType: 'simple',
         }),
-        view<{ AssigneeRecordID: string }>(ctx, {
-            EntityName: TASK_ASSIGNMENT_ENTITY,
-            ExtraFilter: `TaskID = '${taskID}' AND AssigneeEntityID = '${entityID(PERSON_ENTITY, ctx)}'`,
-            Fields: ['AssigneeRecordID'],
-            ResultType: 'simple',
-        }),
     ]);
-    const outcomeOf = (id: string) => outcomes.find((o) => UUIDsEqual(o.ID, id));
+    const outcomeOf = (outcomeID: string) => outcomes.find((o) => UUIDsEqual(o.ID, outcomeID));
     const decision = decisions.find((d) => !!outcomeOf(d.OutcomeID)?.IsTerminal);
-    return {
-        Status: task.Status,
-        DecisionOutcome: decision ? (outcomeOf(decision.OutcomeID)?.Code ?? null) : null,
-        DecidedByPersonID: decision?.DecidedByPersonID ?? null,
-        AssigneePersonIDs: assignments.map((a) => a.AssigneeRecordID),
+    if (!decision) return null;
+    const outcome = outcomeOf(decision.OutcomeID)?.Code ?? '';
+    const unread: ReviewDecisionFacts = {
+        Outcome: outcome,
+        WrittenByUserID: null,
+        LinkedBeforeDecision: false,
+        LinksAnotherOrder: false,
+        ChangesSinceDecision: [],
     };
+    if (!IsApprovingReviewOutcome(outcome)) return unread;
+
+    const written = await lastWrite(TASK_DECISION_ENTITY, decision.ID, ctx);
+    if (!written) return unread;
+
+    const links = await view<{ RecordID: string; __mj_UpdatedAt: unknown }>(ctx, {
+        EntityName: TASK_LINK_ENTITY,
+        ExtraFilter: `TaskID = '${id}' AND EntityID = '${entityID(ORDER_HEADER_ENTITY, ctx)}'`,
+        Fields: ['RecordID', '__mj_UpdatedAt'],
+        ResultType: 'simple',
+    });
+    return {
+        Outcome: outcome,
+        WrittenByUserID: written.UserID,
+        // `__mj_UpdatedAt` is the database's own stamp, so a link re-pointed at this order after the
+        // decision, or created for it after the decision, reads as later than the decision.
+        LinkedBeforeDecision: links.some((l) => UUIDsEqual(l.RecordID, orderID) && timeOf(l.__mj_UpdatedAt) <= written.At),
+        LinksAnotherOrder: links.some((l) => !UUIDsEqual(l.RecordID, orderID)),
+        ChangesSinceDecision: await reviewedChangesSince(orderID, written.At, ctx),
+    };
+}
+
+/** The newest `MJ: Record Changes` entry for a row: who wrote it last, and when. Null when none is recorded. */
+async function lastWrite(entityName: string, recordID: string, ctx: ApprovalTaskContext): Promise<{ UserID: string; At: number } | null> {
+    if (!ctx.Provider.EntityByName(RECORD_CHANGE_ENTITY)) return null;
+    const id = RequireUUID(recordID, 'RecordID');
+    const rows = await view<{ UserID: string; ChangedAt: unknown }>(ctx, {
+        EntityName: RECORD_CHANGE_ENTITY,
+        ExtraFilter: `EntityID = '${entityID(entityName, ctx)}' AND RecordID IN ('ID|${id.toUpperCase()}', 'ID|${id.toLowerCase()}')`,
+        Fields: ['UserID', 'ChangedAt'],
+        OrderBy: 'ChangedAt DESC',
+        MaxRows: 1,
+        ResultType: 'simple',
+    });
+    const row = rows[0];
+    const at = row ? timeOf(row.ChangedAt) : NaN;
+    return row?.UserID && Number.isFinite(at) ? { UserID: row.UserID, At: at } : null;
+}
+
+/**
+ * What reviewed on the order was written after `since`, in words: a line added, a reviewed field of a
+ * line or of the header changed. Read from `MJ: Record Changes`, so it covers every path that writes
+ * the order, a line saved on its own included, and not only the order's own save.
+ *
+ * Lines removed since are not looked for: removing a line cannot make an order hit a trigger it did
+ * not, and a removal through the order's save raises a fresh review there. For an entity whose record
+ * changes are not tracked, the line's own `__mj_UpdatedAt` stands in, which counts any write to it.
+ */
+async function reviewedChangesSince(orderID: string, since: number, ctx: ApprovalTaskContext): Promise<string[]> {
+    const lineEntity = ctx.Provider.EntityByName(ORDER_LINE_ENTITY);
+    const headerEntity = ctx.Provider.EntityByName(ORDER_HEADER_ENTITY);
+    const tracks = (e: { TrackRecordChanges?: boolean } | undefined) => !!e?.TrackRecordChanges && !!ctx.Provider.EntityByName(RECORD_CHANGE_ENTITY);
+    const sinceISO = new Date(since).toISOString();
+    const headerFields = new Set<string>();
+    const linesChanged: Array<{ LineNumber: number | null; Fields: readonly string[]; RenewsSubscriptionID: null }> = [];
+    let linesAdded = 0;
+    const untracked: string[] = [];
+
+    const lines = await view<{ ID: string; LineNumber: number | null; __mj_CreatedAt: unknown; __mj_UpdatedAt: unknown }>(ctx, {
+        EntityName: ORDER_LINE_ENTITY,
+        ExtraFilter: `OrderHeaderID = '${orderID}'`,
+        Fields: ['ID', 'LineNumber', '__mj_CreatedAt', '__mj_UpdatedAt'],
+        ResultType: 'simple',
+    });
+    if (lines.length > 0 && tracks(lineEntity)) {
+        const lineOf = (recordID: string) => lines.find((l) => UUIDsEqual(l.ID, recordID.replace(/^ID\|/, '')));
+        const rows = await recordChangesSince(ORDER_LINE_ENTITY, lines.map((l) => l.ID), sinceISO, ctx);
+        for (const row of rows) {
+            const line = lineOf(row.RecordID);
+            if (row.Type === 'Create') {
+                linesAdded++;
+                continue;
+            }
+            const fields = ReviewedFieldsInChanges(row.ChangesJSON, REVIEWED_LINE_FIELDS);
+            if ('Unreadable' in fields) {
+                untracked.push(`line ${line?.LineNumber ?? '?'} was changed, and which fields could not be read (${fields.Unreadable})`);
+            } else if (fields.Fields.length > 0) {
+                linesChanged.push({ LineNumber: line?.LineNumber ?? null, Fields: fields.Fields, RenewsSubscriptionID: null });
+            }
+        }
+    } else {
+        for (const line of lines) {
+            if (timeOf(line.__mj_CreatedAt) > since) linesAdded++;
+            else if (timeOf(line.__mj_UpdatedAt) > since) untracked.push(`line ${line.LineNumber ?? '?'} was changed`);
+        }
+    }
+
+    if (tracks(headerEntity)) {
+        for (const row of await recordChangesSince(ORDER_HEADER_ENTITY, [orderID], sinceISO, ctx)) {
+            if (row.Type !== 'Update') continue;
+            const fields = ReviewedFieldsInChanges(row.ChangesJSON, REVIEWED_HEADER_FIELDS);
+            if ('Unreadable' in fields) untracked.push(`the order was changed, and which fields could not be read (${fields.Unreadable})`);
+            else for (const field of fields.Fields) headerFields.add(field);
+        }
+    }
+    const changes: OrderReviewChangeFacts = {
+        HeaderFieldsChanged: [...headerFields],
+        LinesChanged: linesChanged,
+        LinesAdded: linesAdded,
+        LinesRemoved: 0,
+    };
+    return [...OrderReviewChanges(changes), ...untracked];
+}
+
+async function recordChangesSince(
+    entityName: string,
+    recordIDs: readonly string[],
+    sinceISO: string,
+    ctx: ApprovalTaskContext,
+): Promise<Array<{ RecordID: string; Type: string; ChangesJSON: string | null }>> {
+    const keys = RequireUUIDs([...recordIDs], 'RecordID').flatMap((id) => [`'ID|${id.toUpperCase()}'`, `'ID|${id.toLowerCase()}'`]);
+    return view<{ RecordID: string; Type: string; ChangesJSON: string | null }>(ctx, {
+        EntityName: RECORD_CHANGE_ENTITY,
+        ExtraFilter:
+            `EntityID = '${entityID(entityName, ctx)}' AND RecordID IN (${keys.join(', ')}) ` +
+            `AND ChangedAt > '${EscapeText(sinceISO)}'`,
+        Fields: ['RecordID', 'Type', 'ChangesJSON'],
+        OrderBy: 'ChangedAt',
+        ResultType: 'simple',
+    });
+}
+
+/** Milliseconds since the epoch for a date the database returned, or NaN when it cannot be read. */
+function timeOf(value: unknown): number {
+    if (value instanceof Date) return value.getTime();
+    if (typeof value === 'string') return Date.parse(value);
+    if (typeof value === 'number') return value;
+    return NaN;
+}
+
+/**
+ * Who may decide the order's review, by the rule that routed it: the reviewer role, or the escalation
+ * role when a holder of the reviewer role created the order, less the creator.
+ */
+async function reviewAuthority(orderID: string, config: OrderReviewConfig, ctx: ApprovalTaskContext): Promise<ReviewAuthority> {
+    const route = await routeReview(orderID, config, ctx);
+    if ('Refusal' in route) return { Role: null, EligibleUserIDs: [], CreatorUserID: route.CreatorUserID, Refusal: route.Refusal };
+    return { Role: route.Role, EligibleUserIDs: route.UserIDs, CreatorUserID: route.CreatorUserID, Refusal: null };
+}
+
+/** The role an order's review goes to, and its active holders other than the creator; or why it cannot go anywhere. */
+async function routeReview(
+    orderID: string,
+    config: OrderReviewConfig,
+    ctx: ApprovalTaskContext,
+): Promise<{ Role: string; Escalated: boolean; UserIDs: string[]; CreatorUserID: string } | { Refusal: string; CreatorUserID: string }> {
+    const creatorUserID = await OrderCreatorUserID(orderID, ctx);
+    const reviewerHolders = config.ReviewerRole ? await roleHolders(config.ReviewerRole, ctx) : [];
+    const routed = DecideReviewRole({
+        ReviewerRole: config.ReviewerRole,
+        EscalationRole: config.EscalationRole,
+        CreatorHoldsReviewerRole: reviewerHolders.some((id) => UUIDsEqual(id, creatorUserID)),
+    });
+    if ('Refusal' in routed) return { Refusal: routed.Refusal, CreatorUserID: creatorUserID };
+    const holders = routed.Escalated ? await roleHolders(routed.Role, ctx) : reviewerHolders;
+    return { Role: routed.Role, Escalated: routed.Escalated, UserIDs: ReviewerUserIDs(holders, creatorUserID), CreatorUserID: creatorUserID };
 }
 
 /**
@@ -383,17 +598,10 @@ export async function RaiseOrderReview(
     const typeID = await reviewTaskTypeID(ctx);
     if (!typeID) throw new Error(`The tasks app has no '${ORDER_REVIEW_TASK_TYPE_CODE}' task type, so no order review can be raised.`);
 
-    const creatorUserID = await OrderCreatorUserID(order.OrderHeaderID, ctx);
-    const reviewerHolders = config.ReviewerRole ? await roleHolders(config.ReviewerRole, ctx) : [];
-    const routed = DecideReviewRole({
-        ReviewerRole: config.ReviewerRole,
-        EscalationRole: config.EscalationRole,
-        CreatorHoldsReviewerRole: reviewerHolders.some((id) => UUIDsEqual(id, creatorUserID)),
-    });
-    if ('Refusal' in routed) throw new Error(`The review cannot be routed: ${routed.Refusal}.`);
-
-    const holders = routed.Escalated ? await roleHolders(routed.Role, ctx) : reviewerHolders;
-    const userIDs = ReviewerUserIDs(holders, creatorUserID);
+    const route = await routeReview(order.OrderHeaderID, config, ctx);
+    if ('Refusal' in route) throw new Error(`The review cannot be routed: ${route.Refusal}.`);
+    const routed = { Role: route.Role, Escalated: route.Escalated };
+    const userIDs = route.UserIDs;
     if (userIDs.length === 0) {
         throw new Error(
             `No active user other than the order's creator holds the role '${routed.Role}', so no one could review the order. ` +
@@ -428,11 +636,29 @@ export async function RaiseOrderReview(
     if (!(await task.Save())) {
         throw new Error(`The review task for order ${order.OrderNumber ?? ''} could not be created: ${task.LatestResult?.CompleteMessage}`);
     }
-    await CreateTaskLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.OrderHeaderID, `Order ${order.OrderNumber ?? ''}`, ctx);
-    const personEntityID = entityID(PERSON_ENTITY, ctx);
-    for (const personID of personIDs) await CreateTaskAssignment(task.ID, personEntityID, personID, ctx);
+    // NOT ONE TRANSACTION: the order's save that raises this is not in one yet. So a link or an
+    // assignment that fails closes the task as Cancelled, which reads as "not approved" and is replaced
+    // at the next confirm. Should even that fail, an open review assigned to nobody also reads as not
+    // approved (DecideReviewStanding), so the order is never left waiting on a task nobody can decide.
+    try {
+        await CreateTaskLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.OrderHeaderID, `Order ${order.OrderNumber ?? ''}`, ctx);
+        const personEntityID = entityID(PERSON_ENTITY, ctx);
+        for (const personID of personIDs) await CreateTaskAssignment(task.ID, personEntityID, personID, ctx);
+    } catch (err) {
+        await cancelUnraisedReview(task, messageOf(err));
+        throw err;
+    }
 
     return { TaskID: task.ID, TaskName: task.Name, Role: routed.Role, Escalated: routed.Escalated, AssigneeCount: personIDs.length };
+}
+
+/** Close a review task whose link or assignments could not be written, so it is replaced rather than left undecidable. */
+async function cancelUnraisedReview(task: mjBizAppsTasksTaskEntity, why: string): Promise<void> {
+    task.Status = 'Cancelled';
+    task.CompletionNotes = `This review could not be fully raised and was closed; the order's next confirm raises a new one. ${why}`;
+    if (!(await task.Save())) {
+        LogError(`${LOG_PREFIX} review task ${task.ID} could not be closed after it failed to raise: ${task.LatestResult?.CompleteMessage}`);
+    }
 }
 
 /**

@@ -10,7 +10,10 @@
  *   PriceVariance             a line's price differs from the catalog's with no approved concession
  *                             covering it, or a renewal's carried-forward price was edited;
  *   ChangedAfterDealOrReview  before confirm, its bill-to, company, prices or service dates changed on
- *                             an order a deal created, or on one already reviewed;
+ *                             an order a deal created. Until the sales app registers its deal link
+ *                             (bizapps-sales#462) no order has a deal, so this trigger fires on nothing.
+ *                             A change after an APPROVED review voids that approval whether or not this
+ *                             trigger is on (the "OrReview" in its name predates that);
  *   OverThreshold             its net total is above a configured amount;
  *   ServicePeriod             a line's service starts more than N months out, or covers more than M.
  *
@@ -19,10 +22,24 @@
  *
  * The review is a task in the tasks app, assigned to the holders of the reviewer role (or, when a
  * holder of that role created the order, the escalation role), each reached through the Person linked
- * to their user. The order's confirm is refused until the order's most recent review task carries an
- * approving decision. Once an order has been reviewed, every later confirm goes through review: a
- * rejected or cancelled review is replaced by a fresh one, and a change after approval raises a fresh
- * one.
+ * to their user. The order's confirm is refused until the order's review carries an approving decision
+ * written by a holder of that role who is not the order's creator. Once an order has been reviewed,
+ * every later confirm goes through review: a rejected or cancelled review is replaced by a fresh one,
+ * and a reviewed change after approval voids the approval, whichever triggers are on.
+ *
+ * ── WHAT THE GATE TRUSTS ────────────────────────────────────────────────────────────────────────
+ *
+ * The order's creator can write tasks, task links, assignments and decisions through the ordinary
+ * tasks surface, so none of what those rows SAY about who decided is believed. An approval counts
+ * only when (see {@link DecideReviewStanding}):
+ *
+ *   - the user who WROTE the decision row, read from `MJ: Record Changes` (not the row's own
+ *     `DecidedByPersonID`, which its writer sets), holds the routed role and is not the creator;
+ *   - the task's link to this order was in place, unchanged, before the decision was written, and
+ *     the task links no other order, so an approval given to another order cannot be pointed here;
+ *   - nothing reviewed on the order was written after the decision (`MJ: Record Changes` again),
+ *     so an approval covers the order as it stood when it was given;
+ *   - no other review of the order is still open: a newer closed task cannot outrank an open one.
  *
  * This file holds the decisions that need no database, so both tiers and the unit tests can use them.
  * The reads, the task writes and the hooks into the order's save are in
@@ -30,10 +47,15 @@
  *
  * ── WHICH ORDERS ARE REVIEWED AT ALL ────────────────────────────────────────────────────────────
  *
- * Only hand-entered and deal-created orders (`Origin` = `Direct`). A checkout or provider-payment order
- * is paid before anyone could look at it, a reversal has its own cancellation approval, and a renewal
- * the renewal job books is covered by the renewal register review. A renewal whose carried-forward
- * price someone edits is still raised for review when the edit is saved.
+ * Every order except those this app's own processes create. A checkout (`Origin` = `Widget`) or
+ * provider-payment (`ProviderPayment`) order is paid before anyone could look at it, a reversal has its
+ * own cancellation approval, and a renewal the renewal job books is covered by the renewal register
+ * review. A renewal whose carried-forward price someone edits is still raised for review when the edit
+ * is saved.
+ *
+ * `Origin` is plain text, so the exemption is an allow-list of the exact values those processes write
+ * ({@link SYSTEM_ORDER_ORIGINS}); any other value, including a misspelt `Direct`, is reviewed. The order's
+ * server save also refuses a write of `Origin` that did not come from one of those processes.
  *
  * ── WHERE THE DEAL COMES FROM ───────────────────────────────────────────────────────────────────
  *
@@ -140,6 +162,20 @@ export interface OrderReviewScopeFacts {
     Lines: ReadonlyArray<{ RenewsSubscriptionID: string | null }>;
 }
 
+/**
+ * The `Origin` values only this app's own processes write, exactly as they write them: `Widget` by
+ * checkout (`CheckoutSessionService`) and `ProviderPayment` by `CreateOrderFromProviderPaymentOperation`.
+ * The only origins exempt from review.
+ */
+export const SYSTEM_ORDER_ORIGINS = ['Widget', 'ProviderPayment'] as const;
+
+export type SystemOrderOrigin = (typeof SYSTEM_ORDER_ORIGINS)[number];
+
+/** True for an `Origin` only one of this app's own processes writes. Exact match: `' Widget'` is not one. */
+export function IsSystemOrderOrigin(origin: string | null | undefined): origin is SystemOrderOrigin {
+    return (SYSTEM_ORDER_ORIGINS as readonly string[]).includes(origin ?? '');
+}
+
 /** Why an order is outside review: `NotDirect` and `Reversal` are never reviewed; see {@link OrderReviewExemption}. */
 export interface OrderReviewExemptionReason {
     Kind: 'NotDirect' | 'Reversal' | 'RenewalOnly';
@@ -147,14 +183,13 @@ export interface OrderReviewExemptionReason {
 }
 
 /**
- * Why an order is outside review, or null when it is reviewed. Only `Direct` orders (hand-entered or
- * deal-created) are reviewed; see the file header for why the others are not. A `RenewalOnly` order is
- * not reviewed by trigger, but an edit to its carried-forward price still raises a review, and once it
- * has one its confirm waits for it.
+ * Why an order is outside review, or null when it is reviewed. Every order is reviewed except one a
+ * system process created ({@link SYSTEM_ORDER_ORIGINS}), a reversal, and a renewal-only order; see the
+ * file header for why. A `RenewalOnly` order is not reviewed by trigger, but an edit to its
+ * carried-forward price still raises a review, and once it has one its confirm waits for it.
  */
 export function OrderReviewExemption(facts: OrderReviewScopeFacts): OrderReviewExemptionReason | null {
-    const origin = (facts.Origin ?? 'Direct').trim() || 'Direct';
-    if (origin.toLowerCase() !== 'direct') return { Kind: 'NotDirect', Reason: `it came from ${origin}, not direct entry` };
+    if (IsSystemOrderOrigin(facts.Origin)) return { Kind: 'NotDirect', Reason: `it came from ${facts.Origin}, not direct entry` };
     if (facts.ReversesOrderHeaderID) return { Kind: 'Reversal', Reason: 'it reverses another order, which has its own approval' };
     if (facts.Lines.length > 0 && facts.Lines.every((l) => !!l.RenewsSubscriptionID)) {
         return { Kind: 'RenewalOnly', Reason: 'it renews subscriptions, which the renewal register review covers' };
@@ -337,15 +372,40 @@ export function RenewalPriceEdits(facts: OrderReviewChangeFacts): string[] {
 
 // ─── The review task's standing ───────────────────────────────────────────────────────────────────
 
-/** The order's most recent review task, as the gate reads it. */
+/** The order's review task, as the gate reads it. Every field comes from rows the gate can trust; see the file header. */
 export interface ReviewTaskFacts {
     Status: string;
-    /** The outcome code of the task's most recent terminal decision, or null when none is recorded. */
-    DecisionOutcome: string | null;
-    /** The Person who recorded that decision. */
-    DecidedByPersonID: string | null;
-    /** The Persons the task is assigned to. */
+    /** The Persons the task is assigned to. An open review assigned to nobody can never be decided. */
     AssigneePersonIDs: readonly string[];
+    /** The task's most recently written terminal decision, or null when none is recorded. */
+    Decision: ReviewDecisionFacts | null;
+}
+
+/** A terminal decision on a review task. */
+export interface ReviewDecisionFacts {
+    /** The outcome's code. */
+    Outcome: string;
+    /**
+     * The user who wrote the decision row, from its newest `MJ: Record Changes` entry. Not the row's
+     * `DecidedByPersonID`: whoever writes the row sets that. Null when no record change names one.
+     */
+    WrittenByUserID: string | null;
+    /** The task's link to this order was in place, unchanged, before the decision was written. */
+    LinkedBeforeDecision: boolean;
+    /** The task links an order other than this one. */
+    LinksAnotherOrder: boolean;
+    /** Reviewed changes to the order written after the decision, in words. */
+    ChangesSinceDecision: readonly string[];
+}
+
+/** Who may decide the order's review, worked out the way the review was routed. */
+export interface ReviewAuthority {
+    /** The role whose holders may decide it; null when no role can ({@link Refusal} says why). */
+    Role: string | null;
+    /** The role's active holders other than the order's creator. */
+    EligibleUserIDs: readonly string[];
+    CreatorUserID: string | null;
+    Refusal: string | null;
 }
 
 export type ReviewStanding =
@@ -354,26 +414,81 @@ export type ReviewStanding =
     | { Standing: 'Approved' }
     | { Standing: 'NotApproved'; Reason: string };
 
+const APPROVING_OUTCOMES: readonly string[] = ['Approved', 'ApprovedWithConditions'];
+
+/** True for a decision outcome that approves. */
+export function IsApprovingReviewOutcome(outcome: string | null | undefined): boolean {
+    return APPROVING_OUTCOMES.includes(outcome ?? '');
+}
+
 /**
- * Where the order's review stands. Approved only on an approving decision recorded by one of the
- * task's assignees: completing the task without a decision, or a decision by someone it was not
- * routed to, is not a review.
+ * Where the order's review stands. Approved only on an approving decision written by an active holder
+ * of the routed role who is not the order's creator, on a task that was linked to this order (and no
+ * other) before the decision, with nothing reviewed written to the order since. Completing the task
+ * without a decision, or a decision by anyone else, is not a review.
+ *
+ * `authority` is needed only for an approving decision; without it one is not taken.
  */
-export function DecideReviewStanding(task: ReviewTaskFacts | null): ReviewStanding {
+export function DecideReviewStanding(task: ReviewTaskFacts | null, authority: ReviewAuthority | null): ReviewStanding {
     if (!task) return { Standing: 'None' };
-    if (task.Status !== 'Completed' && task.Status !== 'Cancelled') return { Standing: 'Open' };
+    if (task.Status !== 'Completed' && task.Status !== 'Cancelled') {
+        if (task.AssigneePersonIDs.length === 0) {
+            return { Standing: 'NotApproved', Reason: 'its last review was assigned to nobody, so nobody could decide it' };
+        }
+        return { Standing: 'Open' };
+    }
     if (task.Status === 'Cancelled') return { Standing: 'NotApproved', Reason: 'its last review was cancelled' };
-    const outcome = task.DecisionOutcome;
-    if (outcome !== 'Approved' && outcome !== 'ApprovedWithConditions') {
+    const decision = task.Decision;
+    if (!decision || !IsApprovingReviewOutcome(decision.Outcome)) {
         return {
             Standing: 'NotApproved',
-            Reason: outcome ? `its last review was decided '${outcome}'` : 'its last review was closed without an approving decision',
+            Reason: decision ? `its last review was decided '${decision.Outcome}'` : 'its last review was closed without an approving decision',
         };
     }
-    if (!task.DecidedByPersonID || !task.AssigneePersonIDs.some((id) => UUIDsEqual(id, task.DecidedByPersonID))) {
-        return { Standing: 'NotApproved', Reason: 'its last review was approved by someone it was not assigned to' };
+    const notApproved = (reason: string): ReviewStanding => ({ Standing: 'NotApproved', Reason: reason });
+    if (!decision.WrittenByUserID) {
+        return notApproved(
+            'who recorded its last review\'s approval cannot be read from the record-change log (MJ: Record Changes on Task Decisions)',
+        );
+    }
+    if (!authority) return notApproved('who may approve its review could not be worked out');
+    if (authority.CreatorUserID && UUIDsEqual(decision.WrittenByUserID, authority.CreatorUserID)) {
+        return notApproved("its last review was approved by the order's creator, who may not review their own order");
+    }
+    if (!authority.Role) return notApproved(`no one may approve its review: ${authority.Refusal ?? 'no reviewer role applies'}`);
+    if (!authority.EligibleUserIDs.some((id) => UUIDsEqual(id, decision.WrittenByUserID))) {
+        return notApproved(`its last review was approved by someone who does not hold the role '${authority.Role}'`);
+    }
+    if (decision.LinksAnotherOrder) return notApproved('its last review task is linked to another order as well');
+    if (!decision.LinkedBeforeDecision) {
+        return notApproved('its last review task was linked to this order only after it was approved');
+    }
+    if (decision.ChangesSinceDecision.length > 0) {
+        return notApproved(`it changed after its review was approved (${decision.ChangesSinceDecision.join('; ')})`);
     }
     return { Standing: 'Approved' };
+}
+
+/**
+ * The reviewed field names a record change's `ChangesJSON` names (`{ [field]: { field, oldValue,
+ * newValue } }`), among `reviewed`; or, for a value that cannot be read, why. The caller counts an
+ * unreadable record as a change: a write whose fields cannot be read is not shown to have left the
+ * reviewed fields alone.
+ */
+export function ReviewedFieldsInChanges(
+    changesJSON: string | null | undefined,
+    reviewed: readonly string[],
+): { Fields: string[] } | { Unreadable: string } {
+    if (!changesJSON) return { Fields: [] };
+    let parsed: unknown;
+    try {
+        parsed = JSON.parse(changesJSON);
+    } catch (err: unknown) {
+        return { Unreadable: err instanceof Error ? err.message : String(err) };
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { Unreadable: 'it is not an object of changed fields' };
+    const names = Object.keys(parsed);
+    return { Fields: reviewed.filter((field) => names.includes(field)) };
 }
 
 // ─── Routing ──────────────────────────────────────────────────────────────────────────────────────

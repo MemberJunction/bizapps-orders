@@ -14,10 +14,13 @@ vi.mock('../OrderReview.js', () => ({
 
 import { OrderEntityServer } from '../OrderEntityServer.js';
 import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange } from '../OrderReview.js';
+import { OriginWriteRefusal, SetSystemOrderOrigin } from '../SystemOrderOrigin.js';
+import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 type ReviewHooks = {
     passesOrderReviewOnChange(): Promise<boolean>;
     passesOrderReviewGate(): Promise<boolean>;
+    passesOriginGuard(): boolean;
     MarkRenewalPriced(line: unknown): void;
 };
 
@@ -68,6 +71,8 @@ function order(opts: {
     lines?: FakeLine[];
     removed?: FakeLine[];
     user?: { ID: string } | null;
+    origin?: string;
+    storedOrigin?: string | null;
 }): OrderEntityServer & ReviewHooks {
     const o = Object.create(OrderEntityServer.prototype) as OrderEntityServer & ReviewHooks;
     const failures: Error[] = [];
@@ -76,7 +81,7 @@ function order(opts: {
         ID: 'B0000000-0000-4000-8000-000000000001',
         OrderNumber: 'ORD-1',
         Status: opts.savedStatus ?? 'Draft',
-        Origin: 'Direct',
+        Origin: opts.origin ?? 'Direct',
         ReversesOrderHeaderID: null,
         ContextCurrentUser: opts.user === undefined ? { ID: 'user-1' } : opts.user,
         ProviderToUse: {},
@@ -88,7 +93,11 @@ function order(opts: {
     }
     Object.defineProperty(o, 'GetFieldByName', {
         value: (name: string) =>
-            name === 'Status' ? { Dirty: false, OldValue: opts.savedStatus ?? 'Draft' } : { Dirty: (opts.headerDirty ?? []).includes(name) },
+            name === 'Status'
+                ? { Dirty: false, OldValue: opts.savedStatus ?? 'Draft' }
+                : name === 'Origin'
+                  ? { Dirty: (opts.origin ?? 'Direct') !== (opts.storedOrigin ?? 'Direct'), OldValue: opts.storedOrigin === undefined ? 'Direct' : opts.storedOrigin }
+                  : { Dirty: (opts.headerDirty ?? []).includes(name) },
     });
     Object.defineProperty(o, 'pendingLineNet', { value: () => 0 });
     Object.defineProperty(o, 'RegisterResultHistoryEntry', { value: (entry: Error) => failures.push(entry) });
@@ -171,5 +180,81 @@ describe('the confirm gate', () => {
     it('is not consulted on a save with no user', async () => {
         expect(await order({ user: null }).passesOrderReviewGate()).toBe(true);
         expect(CheckOrderReviewAtConfirm).not.toHaveBeenCalled();
+    });
+});
+
+/** The order's own Save, with everything around the review stubbed, so these tests fail if the hooks are unwired. */
+function savable(o: OrderEntityServer & ReviewHooks, booking: boolean): { partyDefaults: ReturnType<typeof vi.fn> } {
+    const partyDefaults = vi.fn().mockResolvedValue(undefined);
+    Object.assign(o, {
+        passesStatusTransition: () => true,
+        ApplySavePartyDefaults: partyDefaults,
+        willBookOnThisSave: () => booking,
+        passesConcessionGate: vi.fn().mockResolvedValue(true),
+    });
+    return { partyDefaults };
+}
+const failuresOf = (o: unknown) => (o as { failures: Error[] }).failures.map((f) => f.message);
+
+describe('Save (PR #912 review: the hooks are driven through Save, not only called directly)', () => {
+    it('refuses the save on the change hook\'s refusal, before filling anything in', async () => {
+        vi.mocked(CheckOrderReviewOnChange).mockResolvedValueOnce('Order ORD-1 was not saved: no reviewer.');
+        const o = order({ headerDirty: ['CompanyID'] });
+        const { partyDefaults } = savable(o, false);
+        expect(await o.Save()).toBe(false);
+        expect(CheckOrderReviewOnChange).toHaveBeenCalledTimes(1);
+        expect(partyDefaults).not.toHaveBeenCalled();
+        expect(failuresOf(o)).toEqual(['Order ORD-1 was not saved: no reviewer.']);
+    });
+
+    it('refuses a booking save on the confirm gate\'s refusal', async () => {
+        vi.mocked(CheckOrderReviewAtConfirm).mockResolvedValueOnce('Order ORD-1 cannot be confirmed until its review is approved.');
+        const o = order({ savedStatus: 'Draft' });
+        savable(o, true);
+        expect(await o.Save()).toBe(false);
+        expect(CheckOrderReviewAtConfirm).toHaveBeenCalledTimes(1);
+        expect(failuresOf(o)).toEqual(['Order ORD-1 cannot be confirmed until its review is approved.']);
+    });
+
+    it('refuses a save that writes Origin itself, before order review is asked anything (required 2)', async () => {
+        const o = order({ origin: 'Widget', storedOrigin: 'Direct', headerDirty: ['CompanyID'] });
+        savable(o, true);
+        expect(await o.Save()).toBe(false);
+        expect(failuresOf(o)[0]).toMatch(/Origin cannot be changed from 'Direct' to 'Widget'/);
+        expect(CheckOrderReviewOnChange).not.toHaveBeenCalled();
+        expect(CheckOrderReviewAtConfirm).not.toHaveBeenCalled();
+    });
+
+    it('refuses a new order created claiming a system Origin', async () => {
+        const o = order({ saved: false, origin: 'ProviderPayment' });
+        savable(o, true);
+        expect(await o.Save()).toBe(false);
+        expect(failuresOf(o)[0]).toMatch(/cannot be created with Origin 'ProviderPayment'/);
+    });
+
+    it('lets a system process set the Origin it writes', () => {
+        const o = order({ saved: false });
+        SetSystemOrderOrigin(o as unknown as OrderHeaderEntity, 'Widget');
+        expect(o.Origin).toBe('Widget');
+        expect(o.passesOriginGuard()).toBe(true);
+        expect(order({ saved: false, origin: 'Widget' }).passesOriginGuard()).toBe(false);
+    });
+});
+
+describe('OriginWriteRefusal', () => {
+    const facts = { IsSaved: true, Origin: 'Direct', StoredOrigin: 'Direct', MarkedBySystem: false };
+
+    it('lets a new order be Direct or unset, and an Origin that does not change', () => {
+        expect(OriginWriteRefusal({ ...facts, IsSaved: false, StoredOrigin: null })).toBeNull();
+        expect(OriginWriteRefusal({ ...facts, IsSaved: false, Origin: null, StoredOrigin: null })).toBeNull();
+        expect(OriginWriteRefusal(facts)).toBeNull();
+        expect(OriginWriteRefusal({ ...facts, Origin: 'Widget', StoredOrigin: 'Widget' })).toBeNull();
+    });
+
+    it('refuses any other write unless a system process made it', () => {
+        expect(OriginWriteRefusal({ ...facts, IsSaved: false, Origin: 'x', StoredOrigin: null })).toMatch(/cannot be created with Origin 'x'/);
+        expect(OriginWriteRefusal({ ...facts, Origin: 'Widget' })).toMatch(/cannot be changed/);
+        expect(OriginWriteRefusal({ ...facts, Origin: 'Direct', StoredOrigin: 'Widget' })).toMatch(/cannot be changed/);
+        expect(OriginWriteRefusal({ ...facts, Origin: 'Widget', MarkedBySystem: true })).toBeNull();
     });
 });
