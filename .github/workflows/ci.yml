@@ -30,4 +30,4 @@ jobs:
 
       - name: State plainly what CI does not cover
         run: |
-          echo "::notice title=Integration checks are not run in CI::The database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging."
+          echo "::notice title=Integration checks are not run in CI::The database checks need a local environment. Run 'RUN_MUTATION_TESTS=1 node test-harnesses/integration.mjs' before merging. When a migration touches an order guard or address-snapshot trigger, also run 'node test-harnesses/order-guard-triggers.mjs' and 'node test-harnesses/address-snapshot-triggers.mjs'."

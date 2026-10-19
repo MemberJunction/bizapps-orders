@@ -37,4 +37,8 @@
             <span class="mjo-doc-stat__value">{{ Beneficiary }}</span>
         </div>
     </div>
+    <mjo-subscription-cancel
+        [Record]="Record"
+        [Provider]="FormComponent.ProviderToUse"
+        (Canceled)="OnCanceled()" />
 </div>
