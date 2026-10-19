@@ -24,6 +24,7 @@
 import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
 import { GetGlobalObjectStore } from '@memberjunction/global';
+import { ParseOrderReviewTriggers, type OrderReviewConfig, type ParsedOrderReviewTriggers } from '@mj-biz-apps/orders-entities';
 
 /** The `MJ: Applications` row this app's settings hang off. */
 const ORDERS_APPLICATION_NAME = '__mj_BizAppsOrders';
@@ -81,6 +82,29 @@ export const ORDERS_SETTING = {
      */
     RenewalPaymentLinkBaseUrl: 'RenewalPaymentLinkBaseUrl',
     /**
+     * Comma-separated order review triggers that are switched on (bc-aidp-next-golive#320 §5): any of
+     * `NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`. Empty or
+     * unset switches review off, so an order confirms as it always has. An entry that names no trigger
+     * refuses every reviewed confirm until it is corrected.
+     */
+    OrderReviewTriggers: 'OrderReviewTriggers',
+    /** The net order total above which `OverThreshold` sends an order to review (#320 §5). */
+    OrderReviewTotalThreshold: 'OrderReviewTotalThreshold',
+    /** `ServicePeriod` reviews a line whose service starts more than this many months out (default 13). */
+    OrderReviewServiceStartMonths: 'OrderReviewServiceStartMonths',
+    /** `ServicePeriod` reviews a line whose service covers more than this many months (default 12). */
+    OrderReviewLineTermMonths: 'OrderReviewLineTermMonths',
+    /**
+     * The NAME of the MJ role whose active holders review an order that hit a trigger (#320 §5). Each is
+     * assigned the review task through the Person linked to their user. Required once a trigger is on.
+     */
+    OrderReviewerRole: 'OrderReviewerRole',
+    /**
+     * The NAME of the MJ role whose active holders review an order that a holder of `OrderReviewerRole`
+     * created, since nobody reviews their own order (#320 §5). Unset refuses such an order's confirm.
+     */
+    OrderReviewEscalationRole: 'OrderReviewEscalationRole',
+    /**
      * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
      * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
      * issue it. Counted per payment, not per order: what this refund brings the payment's refunds to,
@@ -110,6 +134,8 @@ const DEFAULTS = {
     OrganizationAffiliationRelationshipTypes: ['Employee'],
     RenewalAccessCutoffDaysPastDue: 14,
     RenewalChargeRetryDays: [3, 7, 11],
+    OrderReviewServiceStartMonths: 13,
+    OrderReviewLineTermMonths: 12,
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
@@ -131,6 +157,18 @@ function asDaysOrOff(raw: string | undefined, fallback: number): number | null {
     if (['off', 'none', 'disabled'].includes(v)) return null;
     if (!/^\d+$/.test(v)) return fallback;
     return Number(v);
+}
+
+/** A whole number of 1 or more, or the fallback when the value is absent or unreadable. */
+function asPositiveWholeNumber(raw: string | undefined, fallback: number): number {
+    const v = raw?.trim();
+    return v && /^\d+$/.test(v) && Number(v) >= 1 ? Number(v) : fallback;
+}
+
+/** A non-negative amount ("25000", "25,000.00"), or `null` when the value is absent, empty or unreadable. */
+function asAmountOrNull(raw: string | undefined): number | null {
+    const v = raw?.trim().replace(/,/g, '');
+    return v && /^\d+(\.\d+)?$/.test(v) ? Number(v) : null;
 }
 
 /**
@@ -315,6 +353,29 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /** The order review triggers switched on, and any entry that names no trigger (#320 §5). */
+    public static get OrderReviewTriggers(): ParsedOrderReviewTriggers {
+        return ParseOrderReviewTriggers(this.raw(ORDERS_SETTING.OrderReviewTriggers));
+    }
+
+    /** The order review configuration as one value (#320 §5). */
+    public static get OrderReview(): OrderReviewConfig {
+        return {
+            Triggers: this.OrderReviewTriggers.Enabled,
+            TotalThreshold: asAmountOrNull(this.raw(ORDERS_SETTING.OrderReviewTotalThreshold)),
+            MaxMonthsToServiceStart: asPositiveWholeNumber(
+                this.raw(ORDERS_SETTING.OrderReviewServiceStartMonths),
+                DEFAULTS.OrderReviewServiceStartMonths,
+            ),
+            MaxLineServiceMonths: asPositiveWholeNumber(
+                this.raw(ORDERS_SETTING.OrderReviewLineTermMonths),
+                DEFAULTS.OrderReviewLineTermMonths,
+            ),
+            ReviewerRole: this.raw(ORDERS_SETTING.OrderReviewerRole)?.trim() || null,
+            EscalationRole: this.raw(ORDERS_SETTING.OrderReviewEscalationRole)?.trim() || null,
+        };
     }
 
     /**
