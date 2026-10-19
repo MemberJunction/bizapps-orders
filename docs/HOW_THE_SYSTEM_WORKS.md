@@ -103,6 +103,24 @@ Bill-to / ship-to: setting a **person** copies to the other side if that person 
 
 **Confirm Pre-Flight**: Confirm is a direct toolbar action and verb (`order.Confirm()`) that validates all conditions and books immediately in one transaction; no modal overlay is needed.
 
+### 4.2 Order review by trigger (golive #320 §5)
+
+A Direct order (hand-entered or deal-created) that hits a review trigger cannot confirm until a reviewer approves it. Every trigger is off until the host lists it in the `OrderReviewTriggers` setting, so an install that never configures review confirms as before.
+
+| Trigger | Fires when |
+|---|---|
+| `NoDeal` | No deal created the order. The deal comes from whatever app registers `RegisterOrderDealLink` (sales); with nothing registered every order counts as having no deal. |
+| `PriceVariance` | On an order with no deal, a line's stated price differs from the catalog's with no Approved Price or Scope concession on the line (a discount approved on the rep's own authority counts as covered); or a renewal line's carried-forward price is edited. |
+| `ChangedAfterDealOrReview` | Before confirm, a save changes the bill-to, company, or a line's price, discount, quantity, product, company or service dates, or adds or removes a line, on a deal-created order. Decided when the change is saved. Fires on nothing until the sales app registers `RegisterOrderDealLink` (bizapps-sales#462), so leave it off until then, as with `NoDeal`. A change after an approved review voids the approval whether or not this trigger is on (below). |
+| `OverThreshold` | The net total (lines after discounts, before tax and charges) is above `OrderReviewTotalThreshold`. |
+| `ServicePeriod` | A line's service starts more than `OrderReviewServiceStartMonths` (13) months after today, or covers more than `OrderReviewLineTermMonths` (12). |
+
+The review is an `ORDERS_ORDER_REVIEW` task linked to the order and assigned, by the Person linked to each user, to the active holders of `OrderReviewerRole`, or of `OrderReviewEscalationRole` when a holder of the reviewer role created the order (the creator is read from `MJ: Record Changes`). The creator is never assigned. A review nobody could receive is refused, not raised; one whose link or assignments fail part-way is closed as Cancelled and replaced at the next confirm, and an open review assigned to nobody is likewise replaced rather than waited on. The confirm that finds a trigger raises the task and is refused. Once an order has a review, every later confirm waits on it: an open review blocks the confirm whatever newer closed task is linked; a rejected or cancelled review is replaced at the next confirm.
+
+**What counts as an approval.** The order's creator can write tasks, links, assignments and decisions through the ordinary tasks surface, so the gate believes none of what those rows say about who decided. An approval counts only when the user who *wrote* the decision row, read from `MJ: Record Changes` on Task Decisions (not the row's `DecidedByPersonID`), is an active holder of the routed role and is not the order's creator; the task was linked to this order, and no other, before the decision was written (a link's `__mj_UpdatedAt` is the database's own); and nothing reviewed on the order (a line added, a reviewed line or header field changed) was written after the decision, again from `MJ: Record Changes`, which catches a line saved on its own as well as the order's save. A reviewed change saved through the order after approval also raises a fresh review at once. An approved order is not re-run against the triggers at confirm, since an order over the threshold would match again and never confirm.
+
+**Which orders.** Every order is reviewed except a checkout order (`Origin` = `Widget`), a provider-payment order (`ProviderPayment`), a reversal, and an order of renewals only (reviewed only once its carried-forward price is edited). `Origin` is free text, so the exemption is an exact allow-list (`SYSTEM_ORDER_ORIGINS`) and any other value is reviewed; and `OrderEntityServer.Save` refuses any write of `Origin` (a new order claiming anything but `Direct`, or a change to a saved order's) that the creating process did not make through `SetSystemOrderOrigin`. That guard applies whether or not review is on. Code: `packages/Entities/src/order-review.ts` (rules), `packages/CoreEntitiesServer/src/OrderReview.ts` (reads, the task, and the two hooks in `OrderEntityServer.Save`), `packages/CoreEntitiesServer/src/SystemOrderOrigin.ts` (the Origin guard).
+
 ### What is still a remote operation
 
 An operation is an **act** the entity cannot express: decide over a set, talk to a third party, or stay atomic with a write that is not "save this graph."
