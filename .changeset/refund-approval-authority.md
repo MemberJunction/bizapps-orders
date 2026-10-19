@@ -1,0 +1,5 @@
+---
+"@mj-biz-apps/orders-core-entities-server": minor
+---
+
+Add an optional refund authority check to `Orders.RefundPayment` (bc-aidp-next-golive#320 §3). With the new `RefundApprovalThreshold` setting set, a refund that brings the payment's refunds to at most the threshold may be issued by a holder of the role named by the new `RefundApproverRole` setting, and anything above it only by the receiving company's `AccountingCompanyProfile.ApprovalCFOUserID`, who may always refund. A deactivated approver counts as none, so the refusal asks for a new one. The amount is counted per payment, not per order. The check runs before Preview and before any write, and refuses with a message. A gateway refund booked by the system user (a webhook) is exempt. Empty, the default, leaves refunds as before; an unreadable value is read as 0, and if the Orders application row cannot be found the refund fails loudly rather than running unchecked. This is an interim shape: the performer is the approver until a request-then-approve flow lands.

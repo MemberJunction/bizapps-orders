@@ -62,6 +62,10 @@ import {
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
     ToISODate,
+    IsEditable,
+    REVIEWED_HEADER_FIELDS,
+    REVIEWED_LINE_FIELDS,
+    type OrderReviewChangeFacts,
     HostOrderConfirmVeto,
     ResolveOrderConfirmRefusal,
     RunAlongsideRefusal,
@@ -88,6 +92,8 @@ import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAt
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
+import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -630,6 +636,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
 
+        // ORIGIN IS SET BY THE PROCESS THAT CREATES THE ORDER, never by the person saving it. Order
+        // review exempts the system origins (golive #320 §5), so a writable Origin was a way round it.
+        if (!this.passesOriginGuard()) return false;
+
+        // A CHANGE THAT SENDS THE ORDER TO REVIEW (golive #320 §5) is read before the party defaults
+        // below fill anything in, so it sees only what the caller changed. It raises the review before
+        // the write: a spare task for a save that then fails is the safe side of the trade.
+        if (!(await this.passesOrderReviewOnChange())) return false;
+
         await this.ApplySavePartyDefaults();
 
         const booking = this.willBookOnThisSave();
@@ -637,6 +652,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
+
+        // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
+        // reviewer sees the order as it will book. Off until a host switches a trigger on.
+        if (booking && !(await this.passesOrderReviewGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -1194,24 +1213,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async passesConcessionGate(): Promise<boolean> {
         const user = this.ContextCurrentUser;
         if (!user) return true;
-        const lines: ConcessionLineFacts[] = this.Lines.Items.map((line) => ({
-            ID: line.IsSaved ? line.ID : null,
-            LineNumber: line.LineNumber ?? null,
-            ParentOrderLineID: line.ParentOrderLineID ?? null,
-            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
-            ProductID: line.ProductID,
-            OrderHeaderID: this.IsSaved ? this.ID : null,
-            Quantity: line.Quantity,
-            UnitPrice: line.UnitPrice,
-            ProductPriceID: line.ProductPriceID,
-            DiscountPct: line.DiscountPct,
-            RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
-            // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
-            PriceStated:
-                !this.isUneditedRenewalPrice(line) &&
-                (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
-            LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
-        }));
+        const lines = this.concessionLineFacts();
         const problems = await FindUnapprovedConcessions(
             this.IsSaved ? this.ID : null,
             lines,
@@ -1230,6 +1232,123 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ),
         );
         return false;
+    }
+
+    /**
+     * Refuse a write of `Origin` that no system process made (./SystemOrderOrigin.ts). Applies with or
+     * without review switched on: an Origin written while review was off would be trusted once it is on.
+     */
+    private passesOriginGuard(): boolean {
+        const stored = this.GetFieldByName('Origin')?.OldValue;
+        const refusal = OriginWriteRefusal({
+            IsSaved: this.IsSaved,
+            Origin: this.Origin ?? null,
+            StoredOrigin: typeof stored === 'string' ? stored : null,
+            MarkedBySystem: IsSystemOriginWrite(this),
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /**
+     * Refuse the confirm while the order's review is outstanding, and send an order that hit a review
+     * trigger with no review to one (golive #320 §5). Like the concession gate, a refusal refuses the
+     * whole save, not only the move to Confirmed: nothing else the save carried is written either. A
+     * save with no context user is not reviewed: there is nobody to route the review as, and the
+     * processes that save without one are not direct entry.
+     */
+    private async passesOrderReviewGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const refusal = await CheckOrderReviewAtConfirm(this.reviewOrderInput(), {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /**
+     * A save of an unconfirmed order that changes its bill-to, company, prices or service dates sends a
+     * deal-created or already-reviewed order (back) to review, and an edit to a renewal's carried-forward
+     * price sends any order there (golive #320 §5). Refuses the save only when such a review could not be
+     * raised.
+     */
+    private async passesOrderReviewOnChange(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user || !this.IsSaved) return true;
+        const savedStatus = String(this.GetFieldByName('Status')?.OldValue ?? this.Status ?? '');
+        if (!IsEditable(savedStatus)) return true;
+
+        const change: OrderReviewChangeFacts = {
+            HeaderFieldsChanged: REVIEWED_HEADER_FIELDS.filter((f) => this.GetFieldByName(f)?.Dirty === true),
+            // A renewal line still at the price the renewal pass wrote is not a hand edit (golive #304).
+            LinesChanged: this.Lines.Items.filter((line) => line.IsSaved && !this.isUneditedRenewalPrice(line))
+                .map((line) => ({
+                    LineNumber: line.LineNumber ?? null,
+                    Fields: REVIEWED_LINE_FIELDS.filter((f) => line.GetFieldByName(f)?.Dirty === true),
+                    RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+                }))
+                .filter((line) => line.Fields.length > 0),
+            LinesAdded: this.Lines.Items.filter((line) => !line.IsSaved && !line.ParentOrderLineID && !line.ReversesOrderLineID).length,
+            LinesRemoved: this.Lines.Removed.filter((line) => line.IsSaved).length,
+        };
+        if (change.HeaderFieldsChanged.length === 0 && change.LinesChanged.length === 0 && change.LinesAdded === 0 && change.LinesRemoved === 0) {
+            return true;
+        }
+        const refusal = await CheckOrderReviewOnChange(this.reviewOrderInput(), change, {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /** The order as the review reads it (golive #320 §5). */
+    private reviewOrderInput(): ReviewOrderInput {
+        const items = this.Lines.Items;
+        return {
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            OrderNumber: this.OrderNumber ?? null,
+            Origin: this.Origin ?? null,
+            ReversesOrderHeaderID: this.ReversesOrderHeaderID ?? null,
+            Lines: this.concessionLineFacts().map((facts, i) => ({
+                ...facts,
+                ServicePeriodStart: ToISODate(items[i].ServicePeriodStart),
+                ServicePeriodEnd: ToISODate(items[i].ServicePeriodEnd),
+                RenewalPriceEdited: this.isEditedRenewalPrice(items[i]),
+            })),
+        };
+    }
+
+    /** True for a line the renewal pass priced in this object whose price has since been changed. */
+    private isEditedRenewalPrice(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this._renewalPricedLines.has(line) && !this.isUneditedRenewalPrice(line);
+    }
+
+    /** The lines in memory as the concession gate and the order review read them, in `Lines.Items` order. */
+    private concessionLineFacts(): ConcessionLineFacts[] {
+        return this.Lines.Items.map((line) => ({
+            ID: line.IsSaved ? line.ID : null,
+            LineNumber: line.LineNumber ?? null,
+            ParentOrderLineID: line.ParentOrderLineID ?? null,
+            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+            ProductID: line.ProductID,
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            Quantity: line.Quantity,
+            UnitPrice: line.UnitPrice,
+            ProductPriceID: line.ProductPriceID,
+            DiscountPct: line.DiscountPct,
+            RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+            // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
+            PriceStated:
+                !this.isUneditedRenewalPrice(line) &&
+                (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
+            LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
+        }));
     }
 
     /**

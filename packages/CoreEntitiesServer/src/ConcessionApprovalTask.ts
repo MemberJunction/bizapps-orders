@@ -227,7 +227,7 @@ export async function RaiseConcessionApprovalAgain(
     const order = await loadOrder(concession.OrderHeaderID, ctx);
     const summary = linkDescriptionOf(refused.Name, order.OrderNumber);
     const newTaskID = await raiseTask(concession, roleID, refused.Name, summary, reason, order, ctx);
-    await recordActivity(
+    await RecordTaskActivity(
         refusedTaskID,
         `The decision was not applied to the concession, which is still awaiting approval: ${reason} ` +
             `A new approval task was raised for it.`,
@@ -355,12 +355,12 @@ async function raiseTask(
     const approverPersonIDs = await approverPersons(roleID, concession.RequestedByUserID, ctx);
     const task = await createTask(order, name, refusal, ctx);
 
-    await createLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, `Order ${order.OrderNumber}`, ctx);
-    await createLink(task.ID, entityID(ORDER_CONCESSION_ENTITY, ctx), concession.ID, linkDescription, ctx);
+    await CreateTaskLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, `Order ${order.OrderNumber}`, ctx);
+    await CreateTaskLink(task.ID, entityID(ORDER_CONCESSION_ENTITY, ctx), concession.ID, linkDescription, ctx);
 
     const personEntityID = entityID(PERSON_ENTITY, ctx);
     for (const personID of approverPersonIDs) {
-        await createAssignment(task.ID, personEntityID, personID, ctx);
+        await CreateTaskAssignment(task.ID, personEntityID, personID, ctx);
     }
 
     order.ApprovalTaskID = task.ID;
@@ -478,7 +478,7 @@ async function createTask(
     return task;
 }
 
-async function createLink(
+export async function CreateTaskLink(
     taskID: string,
     linkEntityID: string,
     recordID: string,
@@ -497,7 +497,7 @@ async function createLink(
     }
 }
 
-async function createAssignment(taskID: string, personEntityID: string, personID: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function CreateTaskAssignment(taskID: string, personEntityID: string, personID: string, ctx: ApprovalTaskContext): Promise<void> {
     const assignment = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskAssignmentEntity>(TASK_ASSIGNMENT_ENTITY, ctx.User);
     requireSubclass(assignment, TASK_ASSIGNMENT_ENTITY);
     assignment.NewRecord();
@@ -558,7 +558,7 @@ export async function EnsureTaskAssignment(taskID: string, userEntityID: string,
 }
 
 /** A note on a task's activity feed, where the tasks app shows it with the task. */
-async function recordActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function RecordTaskActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
     const activity = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskActivityEntity>(TASK_ACTIVITY_ENTITY, ctx.User);
     requireSubclass(activity, TASK_ACTIVITY_ENTITY);
     activity.NewRecord();
@@ -566,7 +566,7 @@ async function recordActivity(taskID: string, description: string, ctx: Approval
     activity.ActivityType = 'StatusChange';
     activity.Description = description;
     if (!(await activity.Save())) {
-        throw new Error(`The refusal could not be recorded on approval task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
+        throw new Error(`A note could not be recorded on task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
     }
 }
 
