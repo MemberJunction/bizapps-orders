@@ -60,7 +60,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
                 Label="Window"
                 Icon="fa-regular fa-calendar"
                 [Value]="WindowDisplay"
-                Detail="Scheduled instalments only" />
+                Detail="Scheduled installments only" />
         </div>
 
         @if (LoadError) {
