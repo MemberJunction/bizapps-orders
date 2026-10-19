@@ -276,6 +276,22 @@ describe('FindUnapprovedConcessions — giveaways and held discounts (golive #32
 
         expect(await FindUnapprovedConcessions(ORDER_ID, [{ ...listLine, PriceStated: true }], true, provider, user)).toHaveLength(1);
     });
+
+    // A renewal line kept at the renewal pass's price is not a stated price, and the discount it
+    // carries forward is not counted, so a held discount is the only thing that makes it a candidate.
+    it('holds a renewal line at its renewal price that carries a held manual discount', async () => {
+        database([], [], [], [heldRow(50)]);
+        const renewal = {
+            ...listLine,
+            DiscountPct: 0,
+            RenewsSubscriptionID: '3f2504e0-4f89-41d3-9a0c-0305e82c3305',
+            PriceStated: false,
+        };
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [renewal], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is given a manual discount of 50\.00 that needs approval, a concession worth 50\.00 with no approved Price/),
+        ]);
+    });
 });
 
 /**
