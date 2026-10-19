@@ -239,10 +239,21 @@ export class OrderLineEntityServer extends OrderLineEntity {
          * the deal, setting the dates and closing it again. That reopen is itself now refused for the
          * confirm (golive#323), so the workaround was getting narrower, not wider.
          *
+         * NARROWED TO FILLING A BLANK. Only a save whose every dirty field is one of those two columns
+         * AND was empty beforehand is exempt; correcting a date that is already set still meets the
+         * lock. `changesOnlyTheServicePeriod` below carries the reasoning.
+         *
          * SCOPED TO AN ORDER THAT HAS NOT BOOKED. After confirm the stored period is the SETTLED term
-         * that `materializeSubscriptions` wrote, and recognition is derived from it. Trigger 51003
-         * freezes the financial columns at confirm but NOT these two, so the database would not catch
-         * a late edit — which is the reason to be explicit here rather than to rely on it.
+         * that `materializeSubscriptions` wrote, and recognition is derived from it.
+         *
+         * ⚠ THAT BOOKED BOUND IS NOT A UNIVERSAL FREEZE, and it would be easy to read it as one. It
+         * decides whether to SKIP this veto, so it only binds where the veto would have refused — a
+         * closed deal. `MayEdit` returns null for an open deal, and trigger 51003 freezes the
+         * financial columns at confirm but NOT these two, so a Confirmed order whose deal is open
+         * takes a service-period edit today. Measured against a live database, not inferred. That is
+         * pre-existing rather than introduced here; closing it means freezing these columns after
+         * confirm independently of the deal, which has to be weighed against `materializeSubscriptions`
+         * and whatever renewals and amendments legitimately rewrite.
          */
         if (kind === 'update' && (await this.changesOnlyTheServicePeriod())) return;
 
