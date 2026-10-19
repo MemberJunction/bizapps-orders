@@ -504,9 +504,10 @@ const BOOT_SCRIPT = `
           if (!intent || !intent.Success || !intent.ClientSecret) {
             throw new Error((intent && intent.ErrorMessage) || 'Could not start payment.');
           }
+          // Resolved server-side by ResolveCheckoutPublishableKey: the provider's env key, else the widget's.
           var pk = config.stripePublishableKey;
           if (!pk) {
-            throw new Error('This checkout requires card payment. Configure stripePublishableKey on the widget, or embed the checkout widget on a site that already loads Stripe.');
+            throw new Error('This checkout requires card payment, but no Stripe publishable key is configured. Set <CredentialsRef>_PUBLISHABLE_KEY for the payment provider of the widget on the server, or stripePublishableKey on the widget.');
           }
           return loadStripe(pk).then(function (stripeInst) {
             stripe = stripeInst;
