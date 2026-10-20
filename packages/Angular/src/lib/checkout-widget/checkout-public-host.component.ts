@@ -164,8 +164,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private quoteTimer: ReturnType<typeof setTimeout> | null = null;
     /** Bumped by every price change; a background answer for an older generation is dropped. */
     private quoteGeneration = 0;
-    /** The background draft in flight, which Pay and Apply wait for so their own draft is the last word. */
-    private backgroundQuote: Promise<void> | null = null;
+    /**
+     * Every background draft still in flight. Pay and Apply wait for all of them, not only the latest: an older
+     * one that lands after Pay's own draft would replace it on the session, and `/payment-intent` charges the
+     * total the session's last draft saved.
+     */
+    private readonly backgroundQuotes = new Set<Promise<void>>();
 
     /**
      * The e-mail is locked while a member token is attached and the host supplied the address (#919):
@@ -461,10 +465,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.quoteTimer = setTimeout(() => {
             this.quoteTimer = null;
             const run = this.priceInBackground(event, generation);
-            this.backgroundQuote = run;
-            void run.finally(() => {
-                if (this.backgroundQuote === run) this.backgroundQuote = null;
-            });
+            this.backgroundQuotes.add(run);
+            void run.finally(() => this.backgroundQuotes.delete(run));
         }, this.quoteDebounceMs);
     }
 
@@ -508,12 +510,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     /**
-     * Before Pay or Apply drafts: no background draft may start after it, and one already sent is
-     * waited for, so the server's session holds the buyer's draft rather than the background one.
+     * Before Pay or Apply drafts: no background draft may start after it, and every one already sent is
+     * waited for, so the server's session holds the buyer's draft rather than a background one.
      */
     private async settleBackgroundQuote(): Promise<void> {
         this.cancelBackgroundQuote();
-        await this.backgroundQuote;
+        await Promise.all([...this.backgroundQuotes]);
     }
 
     /** The `/draft` body for a widget submission, priced with the given typed codes. */

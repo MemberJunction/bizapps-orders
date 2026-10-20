@@ -208,6 +208,29 @@ describe('CheckoutPublicHostComponent background member quote', () => {
         expect(c.memberDiscount).toEqual({ code: 'ASAE10', discount: 119.8, total: 1078.2, quantity: 2 });
     });
 
+    it('Pay waits for every background draft already sent, not only the latest, before its own draft', async () => {
+        const c = await create({ 'member-token': 'tok-1' });
+        let releaseOld!: (v: Record<string, unknown>) => void;
+        draftReplies.push(new Promise((resolve) => (releaseOld = resolve)));
+        c.onQuoteRequested(submission());
+        await vi.advanceTimersByTimeAsync(400);
+        draftReplies.push(DISCOUNTED);
+        c.onQuoteRequested(submission({ quantity: 2 }));
+        await vi.advanceTimersByTimeAsync(400);
+        expect(draftPosts()).toHaveLength(2);
+
+        // The first background draft is still on the server when the buyer presses Pay.
+        const pay = c.onSubmitted(submission({ totalGross: 539.1 }));
+        await vi.advanceTimersByTimeAsync(0);
+        expect(draftPosts()).toHaveLength(2);
+
+        releaseOld(DISCOUNTED);
+        await pay;
+        const paths = posts.map((p) => p.path);
+        expect(paths.filter((p) => p === '/draft')).toHaveLength(3);
+        expect(paths.indexOf('/payment-intent')).toBeGreaterThan(paths.lastIndexOf('/draft'));
+    });
+
     it('locks the e-mail only when a token is attached and the host supplied the address', async () => {
         expect((await create({ 'member-token': 'tok-1', email: 'jane@example.com' })).emailLocked).toBe(true);
         expect((await create({ 'member-token': 'tok-1' })).emailLocked).toBe(false);
