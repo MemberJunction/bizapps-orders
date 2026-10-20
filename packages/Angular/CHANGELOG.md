@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-ng
 
+## 5.36.1
+
+### Patch Changes
+
+- 0c499b2: A paid checkout no longer shows a parser error when `/complete` outlasts the CDN or proxy in front of the server. The checkout element and the fallback host page read only JSON replies; a gateway error page or no reply becomes "Checkout could not reach the server". After payment, a reply like that, or a session still `Processing`, means the server may still be booking the order, so the checkout shows "Payment received. Finishing your order…" and sends `/complete` again every 3 s for up to 2 minutes. `/complete` is replay-safe, so the retry returns the confirmed order. If the wait runs out, the buyer is told the payment went through and not to pay again.
+  - @mj-biz-apps/orders-entities@5.36.1
+
 ## 5.36.0
 
 ### Patch Changes
@@ -817,8 +824,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                      "FK_EntityFieldValue_EntityField"
+                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                        "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
