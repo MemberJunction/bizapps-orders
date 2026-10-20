@@ -2,8 +2,9 @@
 
 **Short version:** BizApps Orders cannot book an order or a payment without BizApps Accounting. Every
 package that uses accounting declares it as a mandatory peer dependency. Accounting has been on npm
-since 2026-08-21, so a plain `pnpm install` resolves it from the registry. Part of the old "when
-accounting publishes" to-do is still open; see [what is left](#what-is-left-of-the-publish-to-do).
+since 2026-08-21, so a plain `pnpm install` resolves it from the registry. The old "when accounting
+publishes" to-do is closed; see [what is left](#what-is-left-of-the-publish-to-do) for how each item
+ended.
 
 ---
 
@@ -67,15 +68,13 @@ reads accounting's tax entities by name, so it needs accounting's schema, not it
 This doc used to carry a to-do for the day accounting published. Accounting has published; this is
 where each item stands:
 
-1. **Re-declare accounting in the root `devDependencies`.** Not done: the root `package.json`
-   declares no `@mj-biz-apps/accounting-*` package.
+1. **Re-declare accounting in the root `devDependencies`.** Not needed: with the helper kept (item
+   2), the root harnesses resolve accounting through `packages/IntegrationTests`, which declares it.
 2. **Delete `test-harnesses/resolve-app-packages.mjs`** and return its callers to bare imports. Not
-   done: `integration.mjs`, `booking-live.mjs`, `invoice-live.mjs`, `seed-demo-data.mjs` and
-   `seed-review-data.mjs` still import accounting through it. The shim's own header now says keeping
-   the declaration on `packages/IntegrationTests` is still the right shape, which argues against
-   items 1 and 2.
-3. **Set `auto-install-peers=true` in `.npmrc`**, the common/accounting family baseline. Not done:
-   `.npmrc` still sets `false`, and its comment says to flip it when accounting publishes.
+   doing, by decision (#583): the helper stays, and `integration.mjs`, `booking-live.mjs`,
+   `invoice-live.mjs`, `stripe-live.mjs`, `seed-demo-data.mjs` and `seed-review-data.mjs` keep importing accounting
+   through it.
+3. **Set `auto-install-peers=true` in `.npmrc`**, the common/accounting family baseline. Done.
 4. **Confirm a bare checkout installs from the registry.** Done in practice: the lockfile resolves
    accounting from npm, and CI runs `pnpm install --frozen-lockfile` and `build:packages` on a fresh
    runner.

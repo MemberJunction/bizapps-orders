@@ -227,10 +227,12 @@ module.exports = {
        * of CheckoutSessionService, mounted pre-auth like the webhook. Access control is the
        * distribution slug + per-session client key, layered with rate limiting, a per-widget
        * origin allowlist (`Configuration.allowedOrigins`), and optional Cloudflare Turnstile
-       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar).
+       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar and its TurnstileSiteKey).
        * Settings:
        *   ServiceUserEmail      — named checkout principal for writes (falls back to system user)
        *   TurnstileSecretEnvVar — env var holding the Turnstile secret (e.g. 'CHECKOUT_TURNSTILE_SECRET')
+       *   TurnstileSiteKey      — public Turnstile site key paired with that secret; sent to the
+       *                           checkout clients so they can render the challenge
        *   RateLimitWindowMs / RateLimitMax — fixed-window limits per client IP (defaults 60000 / 30)
        */
       Enabled: true,

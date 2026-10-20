@@ -9,8 +9,8 @@ import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabCon
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { GetOrders } from '../../data/orders-queries';
-import { OverdueFilter, ToISODate, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { GetDashboardOrders, type MJODashboardOrderRow } from '../../data/orders-queries';
+import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
@@ -45,7 +45,7 @@ interface MJOQueue {
 
 /** Something specific worth acting on, with the order it concerns. */
 interface MJOAttentionItem {
-    Order: mjBizAppsOrdersOrderHeaderEntity;
+    Order: MJODashboardOrderRow;
     Tone: MJAlertVariant;
     Icon: string;
     Headline: string;
@@ -549,7 +549,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     private readonly navigationService = inject(NavigationService, { optional: true });
 
     @Output() NavigateRequested = new EventEmitter<string>();
-    @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
+    @Output() OrderOpened = new EventEmitter<MJODashboardOrderRow>();
 
     public ActiveTab = 'overview';
     public Tabs: TabConfig[] = [
@@ -570,7 +570,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     /** Set when the working view cannot be loaded; the Order Headers grids show it instead. */
     public ViewError: string | null = null;
 
-    private orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
+    private orders: MJODashboardOrderRow[] = [];
     /** Bumped per preset request, so a slow earlier request cannot land after a later one. */
     private presetRequest = 0;
 
@@ -583,7 +583,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     private async loadOrders(): Promise<void> {
-        this.orders = await GetOrders({ Preset: 'all' });
+        this.orders = await GetDashboardOrders();
         this.cdr.detectChanges();
     }
 
@@ -598,7 +598,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         try {
             this.WorkingView = await LoadOrdersWorkingView();
             if (this.OrderEntityInfo) {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = Today();
                 this.AgingOverdueView = await NewPresetView(this.OrderEntityInfo, 'Overdue Collections', OverdueFilter(today), this.WorkingView.GridState);
             }
         } catch (e) {
@@ -616,7 +616,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public async OpenExplorerPreset(preset: string): Promise<void> {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         let whereClause: string | null = null;
         let presetName = 'All Orders';
         switch (preset) {
@@ -663,7 +663,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
             if (match) {
                 this.OrderOpened.emit(match);
             } else {
-                const surrogate = { ID: id } as mjBizAppsOrdersOrderHeaderEntity;
+                const surrogate = { ID: id } as MJODashboardOrderRow;
                 this.OrderOpened.emit(surrogate);
             }
         }
@@ -675,7 +675,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return BuildDayBars((iso) => this.orders.filter((o) => ToISODate(o.OrderDate) === iso).length);
     }
 
-    public get LatestOrders(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get LatestOrders(): MJODashboardOrderRow[] {
         return [...this.orders]
             .sort((a, b) => String(b.OrderDate ?? '').localeCompare(String(a.OrderDate ?? '')))
             .slice(0, 7);
@@ -752,14 +752,16 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get WorthALook(): MJOAttentionItem[] {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const items: MJOAttentionItem[] = [];
 
         const worst = this.overdue
             .slice()
-            .sort((a, b) => DaysSince(String(b.DueDate), today) - DaysSince(String(a.DueDate), today))[0];
+            .sort((a, b) => DaysSince(b.DueDate, today) - DaysSince(a.DueDate, today))[0];
         if (worst) {
-            const days = DaysSince(String(worst.DueDate), today);
+            // The cell itself, never `String(cell)`: on a `Date` that is the long human form, which
+            // no day reader can parse, and the headline read "0 days past due".
+            const days = DaysSince(worst.DueDate, today);
             items.push({
                 Order: worst,
                 Tone: 'error',
@@ -785,11 +787,11 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return items;
     }
 
-    public customerOf(order: mjBizAppsOrdersOrderHeaderEntity): string {
+    public customerOf(order: MJODashboardOrderRow): string {
         return (order.BillToOrganization ?? order.BillToPerson ?? '—') as string;
     }
 
-    protected statusClass(order: mjBizAppsOrdersOrderHeaderEntity): string {
+    protected statusClass(order: MJODashboardOrderRow): string {
         switch (order.Status) {
             case 'Confirmed':
                 return 'mj-chip--success';
@@ -802,25 +804,25 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         }
     }
 
-    protected openFrom(event: Event, order: mjBizAppsOrdersOrderHeaderEntity): void {
+    protected openFrom(event: Event, order: MJODashboardOrderRow): void {
         event.preventDefault();
         this.OrderOpened.emit(order);
     }
 
-    public get open(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get open(): MJODashboardOrderRow[] {
         return this.orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status));
     }
 
-    public get owing(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get owing(): MJODashboardOrderRow[] {
         return this.open.filter((o) => (o.Balance ?? 0) > 0);
     }
 
-    public get overdue(): mjBizAppsOrdersOrderHeaderEntity[] {
-        const today = new Date().toISOString().slice(0, 10);
+    public get overdue(): MJODashboardOrderRow[] {
+        const today = Today();
         return this.owing.filter((o) => o.DueDate && DaysSince(o.DueDate, today) > 0);
     }
 
-    public get credits(): mjBizAppsOrdersOrderHeaderEntity[] {
+    public get credits(): MJODashboardOrderRow[] {
         return this.open.filter((o) => (o.Balance ?? 0) < 0);
     }
 
@@ -851,13 +853,13 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get AgingCurrentDisplay(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const current = this.owing.filter((o) => !o.DueDate || DaysSince(o.DueDate, today) <= 30);
         return FormatMoney(current.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
     }
 
     public get Aging30Display(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const b30 = this.owing.filter((o) => {
             if (!o.DueDate) return false;
             const days = DaysSince(o.DueDate, today);
@@ -867,7 +869,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get Aging60Display(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const b60 = this.owing.filter((o) => {
             if (!o.DueDate) return false;
             const days = DaysSince(o.DueDate, today);
@@ -877,7 +879,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get Aging90Display(): string {
-        const today = new Date().toISOString().slice(0, 10);
+        const today = Today();
         const b90 = this.owing.filter((o) => {
             if (!o.DueDate) return false;
             const days = DaysSince(o.DueDate, today);

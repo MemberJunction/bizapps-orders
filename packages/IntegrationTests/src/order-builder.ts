@@ -56,6 +56,8 @@ export interface LineSpec {
     RenewsSubscriptionID?: string;
     /** `OrderLine.AcknowledgesCoverageOverlap` — the line is meant to run alongside another band. */
     AcknowledgesCoverageOverlap?: boolean;
+    /** `OrderLine.CoverageOverlapReason` — why it runs alongside; confirm needs it with the acknowledgment. */
+    CoverageOverlapReason?: string;
     /**
      * The line this one UNWINDS (D16). Required for a negative quantity — `OrderLineEntityServer`
      * refuses one without it, because a negative line with no origin is indistinguishable from a
@@ -101,6 +103,8 @@ export interface OrderSpec {
     ShipToAddressID?: string;
     /** The order this one reverses — a return names it, and takes its addresses from it. */
     ReversesOrderHeaderID?: string;
+    /** The order's searchable memo (D29). The review-data seeder opens it with its run marker. */
+    Description?: string;
     /** D42 initial-payment intent, captured at order entry and turned into a real payment at confirm. */
     InitialPaymentTypeID?: string;
     InitialPaymentAmount?: number;
@@ -190,6 +194,7 @@ export async function BuildOrder(
     if (spec.ShipToPersonID) order.ShipToPersonID = spec.ShipToPersonID;
     if (spec.ShipToAddressID) order.ShipToAddressID = spec.ShipToAddressID;
     if (spec.ReversesOrderHeaderID) order.ReversesOrderHeaderID = spec.ReversesOrderHeaderID;
+    if (spec.Description) order.Description = spec.Description;
     if (spec.InitialPaymentTypeID) order.InitialPaymentTypeID = spec.InitialPaymentTypeID;
 
     // A REFERENCE-REQUIRING TENDER GETS AN INSTRUMENT, because a real one always would.
@@ -240,6 +245,7 @@ export async function BuildOrder(
         if (ls.ShipToAddressID) line.ShipToAddressID = ls.ShipToAddressID;
         if (ls.RenewsSubscriptionID) line.RenewsSubscriptionID = ls.RenewsSubscriptionID;
         if (ls.AcknowledgesCoverageOverlap) line.AcknowledgesCoverageOverlap = true;
+        if (ls.CoverageOverlapReason) line.CoverageOverlapReason = ls.CoverageOverlapReason;
         if (ls.ReversesOrderLineID) line.ReversesOrderLineID = ls.ReversesOrderLineID;
         for (const c of ls.Choices ?? []) {
             const row = await line.Choices.Create();

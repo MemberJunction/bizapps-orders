@@ -245,7 +245,7 @@ async function runRows<T>(
             EntityName: entityName,
             ExtraFilter: filters.filter(Boolean).join(' AND '),
             OrderBy: orderBy,
-            MaxRows: maxRows,
+            ...(maxRows > 0 ? { MaxRows: maxRows } : { IgnoreMaxRows: true }),
             Fields: fields,
             ResultType: 'simple',
         },
@@ -327,7 +327,7 @@ export async function GetOrders(
     options: MJOGetOrdersOptions = {},
 ): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
     const filters: string[] = [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = Today();
 
     switch (options.Preset) {
         case 'overdue':
@@ -431,6 +431,75 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
             credits: credits.length,
         },
     };
+}
+
+/**
+ * Lightweight projection of `MJ_BizApps_Orders: Order Headers` for the Orders executive dashboard.
+ *
+ * Derived directly from {@link mjBizAppsOrdersOrderHeaderEntity} so value-list unions (`Status`,
+ * `FulfillmentStatus`) stay in lockstep with CodeGen.
+ */
+export type MJODashboardOrderRow = Pick<
+    mjBizAppsOrdersOrderHeaderEntity,
+    | 'ID'
+    | 'OrderNumber'
+    | 'OrderDate'
+    | 'DueDate'
+    | 'Status'
+    | 'FulfillmentStatus'
+    | 'TotalGross'
+    | 'Balance'
+    | 'BillToOrganizationID'
+    | 'BillToOrganization'
+    | 'BillToPersonID'
+    | 'BillToPerson'
+>;
+
+const DASHBOARD_ORDER_FIELDS: Array<keyof MJODashboardOrderRow & string> = [
+    'ID',
+    'OrderNumber',
+    'OrderDate',
+    'DueDate',
+    'Status',
+    'FulfillmentStatus',
+    'TotalGross',
+    'Balance',
+    'BillToOrganizationID',
+    'BillToOrganization',
+    'BillToPersonID',
+    'BillToPerson',
+];
+
+/**
+ * Uncapped `'simple'` read of non-voided order headers for the Orders executive dashboard.
+ *
+ * Avoids both the 500-row entity cap on `GetOrders({ Preset: 'all' })` (which truncated KPIs and
+ * logged a console.error on datasets > 500 orders) and the cost of instantiating thousands of full
+ * `BaseEntity` objects when only summary columns are needed.
+ */
+export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardOrderRow[]> {
+    return runRows<MJODashboardOrderRow>(
+        MJO_ENTITIES.OrderHeader,
+        [`Status <> 'Voided'`],
+        'OrderDate DESC',
+        0,
+        user,
+        DASHBOARD_ORDER_FIELDS,
+    );
+}
+
+/**
+ * Settled/confirmed orders with a non-zero balance (open receivables or customer credit balances)
+ * for the Customer AR screen. Filters server-side instead of fetching every historical paid order.
+ */
+export async function GetOpenBalanceOrders(user?: UserInfo): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
+    return run<mjBizAppsOrdersOrderHeaderEntity>(
+        MJO_ENTITIES.OrderHeader,
+        [`Status NOT IN ('Draft','Quoted','Voided')`, `Balance <> 0`],
+        'OrderDate DESC',
+        5000,
+        user,
+    );
 }
 
 /** Lines belonging to one order. */
@@ -1424,6 +1493,79 @@ export async function GetDimensionOptions(
         DisplayOrder: dimension.DisplayOrder,
         Values: byDimension.get(dimension.ID.toLowerCase()) ?? [],
     }));
+}
+
+/** The MJ entity a company-level Dimension Default hangs off. */
+const COMPANY_ENTITY_NAME = 'MJ: Companies';
+
+/** The fields of a Dimension Default row the company scoping reads. */
+export interface MJODimensionDefaultScopeRow {
+    Entity: string;
+    RecordID: string;
+    DimensionValueID: string;
+}
+
+/**
+ * The dimension values a company's own Dimension Defaults use.
+ *
+ * WHY THIS IS THE SOURCE. Dimensions and their values are shared by every company — accounting has
+ * no company on either — so there is nothing on a value that says which company sells under it. The
+ * defaults do: each hangs off a company, or a product or category that belongs to one. A value one
+ * of those uses is a value that company books under.
+ *
+ * PRODUCT TYPES ARE LEFT OUT. A type is shared by every company, so a default on one says nothing
+ * about which company's lines it is meant for.
+ */
+export function CompanyDimensionValueIDs(
+    defaults: readonly MJODimensionDefaultScopeRow[],
+    companyID: string,
+    companyProductIDs: readonly string[],
+    companyCategoryIDs: readonly string[],
+): Set<string> {
+    const key = (id: string) => id.toLowerCase();
+    const products = new Set(companyProductIDs.map(key));
+    const categories = new Set(companyCategoryIDs.map(key));
+    const company = key(companyID);
+
+    const out = new Set<string>();
+    for (const row of defaults) {
+        const record = key(row.RecordID);
+        const belongs =
+            (row.Entity === COMPANY_ENTITY_NAME && record === company) ||
+            (row.Entity === MJO_ENTITIES.Product && products.has(record)) ||
+            (row.Entity === MJO_ENTITIES.ProductCategory && categories.has(record));
+        if (belongs) out.add(key(row.DimensionValueID));
+    }
+    return out;
+}
+
+/**
+ * Read the dimension values the given company's active Dimension Defaults use, lower-cased.
+ * An id that is not a UUID returns an empty set rather than reaching a filter.
+ */
+export async function GetCompanyDimensionValueIDs(companyID: string, user?: UserInfo): Promise<Set<string>> {
+    const company = uuidList([companyID]);
+    if (!company) return new Set();
+
+    const [defaults, products, categories] = await Promise.all([
+        runRows<MJODimensionDefaultScopeRow>(
+            MJO_ENTITIES.DimensionDefault,
+            [`Status = 'Active'`],
+            'Entity',
+            5000,
+            user,
+            ['Entity', 'RecordID', 'DimensionValueID'],
+        ),
+        runRows<{ ID: string }>(MJO_ENTITIES.Product, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
+        runRows<{ ID: string }>(MJO_ENTITIES.ProductCategory, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
+    ]);
+
+    return CompanyDimensionValueIDs(
+        defaults,
+        companyID,
+        products.map((p) => p.ID),
+        categories.map((c) => c.ID),
+    );
 }
 
 /** Dimension tags on an order's lines — the analysis axes a line was filed under. */

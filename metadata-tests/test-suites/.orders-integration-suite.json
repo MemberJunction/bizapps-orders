@@ -595,6 +595,50 @@
           "primaryKey": {
             "ID": "E261B03C-0C83-4297-B5B4-A6F0C69EFA2B"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-43 - Amount Change",
+            "Sequence": 43,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "28808448-F93E-4C40-8727-EE66C20A0A3C"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-44 - Term Shift",
+            "Sequence": 44,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "1D98BFEE-AB44-4FCC-80C9-233EF4FF4D1B"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-45 - Bill.com Invoice Rail",
+            "Sequence": 45,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "67B1A23A-B0FD-4951-AEEA-5EEC7702D553"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-46 - Service Period Lock",
+            "Sequence": 46,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "5E7C2B94-16AD-4C3F-9D20-8A41E6F35B72"
+          }
         }
       ]
     },

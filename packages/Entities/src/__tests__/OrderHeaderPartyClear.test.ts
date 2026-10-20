@@ -10,11 +10,16 @@
  * person's employer is cleared by the rule that stamps it, and the form offers an undo
  * (bizapps-orders#356).
  *
+ * A writer other than the form that replaces a person gets the same rule from the server save,
+ * unless it sets or keeps the organization (bizapps-orders#542).
+ *
  * Each test drives the real entity methods in the order the form and the server call them:
  * pick → (clear | replace) → server save.
  */
 import { describe, expect, it, vi } from 'vitest';
+import { EntitySavePlan } from '@memberjunction/core';
 import { DescribeClearedEmployers, OrderHeaderEntity, type PartyOrganizationClear } from '../OrderHeaderEntity';
+import { KeptPartyOrganizationsCompanion } from '../KeptPartyOrganizationsCompanion';
 
 const PERSON = 'aaaaaaaa-0000-4000-8000-000000000001';
 const OTHER_PERSON = 'aaaaaaaa-0000-4000-8000-000000000002';
@@ -28,21 +33,31 @@ type Values = Record<string, unknown>;
  * An order with the real prototype over a plain value store. `onDisk` is what a loaded order
  * read from the database, and is what each field reports as its `OldValue`.
  */
-function order(options: { onDisk?: Values; employers?: Record<string, string> } = {}) {
+function order(options: { onDisk?: Values; employers?: Record<string, string>; unsaved?: boolean } = {}) {
     const onDisk: Values = { Status: 'Draft', OrderDate: '2026-09-25', ...options.onDisk };
     const values: Values = { ...onDisk };
+    // `unsaved` models a record MemberJunction has never saved: the first value set on a field
+    // becomes its OldValue, so that field is not Dirty.
+    const firstSet: Values = {};
     const employers = options.employers ?? { [PERSON]: EMPLOYER, [OTHER_PERSON]: OTHER_EMPLOYER };
 
     const o = Object.create(OrderHeaderEntity.prototype) as OrderHeaderEntity;
     Object.defineProperty(o, 'partyFills', { value: new Map() });
     Object.defineProperty(o, 'partyCopiesCleared', { value: new Set() });
     Object.defineProperty(o, 'Get', { value: (f: string) => values[f] ?? null });
-    Object.defineProperty(o, 'Set', { value: (f: string, v: unknown) => { values[f] = v; } });
+    Object.defineProperty(o, 'Set', {
+        value: (f: string, v: unknown) => {
+            if (options.unsaved && !(f in firstSet) && v != null) firstSet[f] = v;
+            values[f] = v;
+        },
+    });
+    Object.defineProperty(o, 'IsSaved', { value: !options.unsaved });
+    const oldValue = (f: string) => (f in firstSet ? firstSet[f] : onDisk[f]) ?? null;
     Object.defineProperty(o, 'GetFieldByName', {
         value: (f: string) => ({
             Value: values[f] ?? null,
-            OldValue: onDisk[f] ?? null,
-            Dirty: (values[f] ?? null) !== (onDisk[f] ?? null),
+            OldValue: oldValue(f),
+            Dirty: (values[f] ?? null) !== oldValue(f),
         }),
     });
     Object.defineProperty(o, 'ProviderToUse', {
@@ -55,6 +70,7 @@ function order(options: { onDisk?: Values; employers?: Record<string, string> } 
         },
     });
     Object.defineProperty(o, 'ContextCurrentUser', { value: { ID: 'user-1' } });
+    Object.defineProperty(o, 'KeptPartyOrganizations', { value: new KeptPartyOrganizationsCompanion(o) });
     /** What a successful save leaves behind: the values are now what is on disk. */
     const commit = () => Object.assign(onDisk, values);
     return { o, values, commit };
@@ -153,8 +169,8 @@ describe('clearing the bill-to person on a saved order', () => {
 
         expect(values).toMatchObject({ BillToOrganizationID: null, ShipToOrganizationID: null });
         expect(cleared).toEqual([
-            { Field: 'BillToOrganizationID', OrganizationID: EMPLOYER },
-            { Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER },
+            { Field: 'BillToOrganizationID', OrganizationID: EMPLOYER, FromPersonID: PERSON },
+            { Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER, FromPersonID: PERSON },
         ]);
     });
 
@@ -163,7 +179,7 @@ describe('clearing the bill-to person on a saved order', () => {
         const cleared = await changePerson(o, 'BillTo', null);
 
         expect(values.BillToOrganizationID).toBe(CHOSEN_ORG);
-        expect(cleared).toEqual([{ Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER }]);
+        expect(cleared).toEqual([{ Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER, FromPersonID: PERSON }]);
     });
 
     it('keeps the ship-to organization while the ship-to holds someone else', async () => {
@@ -190,12 +206,12 @@ describe('the cleared-employer notice', () => {
     const names = { BillToOrganizationID: 'Example Co', ShipToOrganizationID: 'Example Co' };
 
     it('names the organization and the sides it left', () => {
-        expect(DescribeClearedEmployers([{ Field: 'BillToOrganizationID', OrganizationID: EMPLOYER }], names)).toBe(
+        expect(DescribeClearedEmployers([{ Field: 'BillToOrganizationID', OrganizationID: EMPLOYER, FromPersonID: PERSON }], names)).toBe(
             "Removed Example Co as the bill-to organization: it is the previous person's employer.",
         );
         expect(DescribeClearedEmployers([
-            { Field: 'BillToOrganizationID', OrganizationID: EMPLOYER },
-            { Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER },
+            { Field: 'BillToOrganizationID', OrganizationID: EMPLOYER, FromPersonID: PERSON },
+            { Field: 'ShipToOrganizationID', OrganizationID: EMPLOYER, FromPersonID: PERSON },
         ], names)).toBe("Removed Example Co as the bill-to and ship-to organization: it is the previous person's employer.");
     });
 });
@@ -221,6 +237,17 @@ describe('the server save', () => {
     it('still fills an empty ship-to from the bill-to on a new order', async () => {
         const { o, values } = order();
         o.Set('BillToPersonID', PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ ShipToPersonID: PERSON, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
+    });
+
+    it('fills the ship-to and stamps the employer on a record never saved, whose person field is not Dirty', async () => {
+        // A writer that creates the order (an API call, a GraphQL create) sets the person once
+        // before the first save, so MemberJunction records it as the field's old value.
+        const { o, values } = order({ unsaved: true });
+        o.Set('BillToPersonID', PERSON);
+        expect(o.GetFieldByName('BillToPersonID')?.Dirty).toBe(false);
         await serverSave(o);
 
         expect(values).toMatchObject({ ShipToPersonID: PERSON, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER });
@@ -311,5 +338,154 @@ describe('replacing the bill-to person on a saved order', () => {
         await serverSave(o);
 
         expect(values).toMatchObject({ BillToPersonID: OTHER_PERSON, ShipToPersonID: null });
+    });
+});
+
+describe('a writer other than the form replacing the person on a saved order (#542)', () => {
+    const saved = { BillToPersonID: PERSON, ShipToPersonID: PERSON, BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER };
+
+    it('bills the new person\'s employer, not the previous person\'s', async () => {
+        const { o, values } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: OTHER_PERSON, BillToOrganizationID: OTHER_EMPLOYER });
+    });
+
+    it('leaves the organization empty when the new person has no employer', async () => {
+        const { o, values } = order({
+            onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER },
+            employers: { [PERSON]: EMPLOYER },
+        });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values.BillToOrganizationID).toBeNull();
+    });
+
+    it('applies the rule on the ship-to side too, and leaves the side it did not replace', async () => {
+        const { o, values } = order({ onDisk: saved });
+        o.Set('ShipToPersonID', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values).toMatchObject({
+            BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER,
+            ShipToPersonID: OTHER_PERSON, ShipToOrganizationID: OTHER_EMPLOYER,
+        });
+    });
+
+    it('keeps an organization that is not the previous person\'s employer', async () => {
+        const { o, values } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: CHOSEN_ORG } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        await serverSave(o);
+
+        expect(values.BillToOrganizationID).toBe(CHOSEN_ORG);
+    });
+
+    it('keeps an organization the writer sets in the same save', async () => {
+        const { o, values } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.Set('BillToOrganizationID', CHOSEN_ORG);
+        await serverSave(o);
+
+        expect(values.BillToOrganizationID).toBe(CHOSEN_ORG);
+    });
+
+    it('keeps the previous person\'s employer when the writer says so', async () => {
+        const { o, values } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.KeepPartyOrganization('BillToOrganizationID');
+        await serverSave(o);
+
+        expect(values.BillToOrganizationID).toBe(EMPLOYER);
+    });
+
+    it('leaves the organization when the person is only cleared: an order may bill an organization alone', async () => {
+        const { o, values } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', null);
+        await serverSave(o);
+
+        expect(values).toMatchObject({ BillToPersonID: null, BillToOrganizationID: EMPLOYER });
+    });
+
+    it('keeps the organizations the form\'s undo put back', async () => {
+        const { o, values } = order({ onDisk: saved });
+        const cleared = await changePerson(o, 'BillTo', OTHER_PERSON);
+        o.RestorePartyOrganizations(cleared);
+        await serverSave(o);
+
+        expect(values).toMatchObject({
+            BillToPersonID: OTHER_PERSON, ShipToPersonID: OTHER_PERSON,
+            BillToOrganizationID: EMPLOYER, ShipToOrganizationID: EMPLOYER,
+        });
+    });
+
+    it('does not keep an organization through a later replacement', async () => {
+        const THIRD_PERSON = 'aaaaaaaa-0000-4000-8000-000000000003';
+        const { o, values, commit } = order({
+            onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER },
+            employers: { [PERSON]: EMPLOYER, [OTHER_PERSON]: EMPLOYER, [THIRD_PERSON]: OTHER_EMPLOYER },
+        });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.KeepPartyOrganization('BillToOrganizationID');
+        await serverSave(o);
+        commit();
+
+        o.Set('BillToPersonID', THIRD_PERSON);
+        await serverSave(o);
+
+        expect(values.BillToOrganizationID).toBe(OTHER_EMPLOYER);
+    });
+});
+
+describe('the kept-organizations companion', () => {
+    it('ships only while a kept side\'s person is changing', () => {
+        const { o, commit } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.KeepPartyOrganization('BillToOrganizationID');
+        expect(o.KeptPartyOrganizations.Dirty).toBe(true);
+
+        commit();
+        expect(o.KeptPartyOrganizations.Dirty).toBe(false);
+    });
+
+    it('routes a client save that carries a keep through the graph save, the one that carries companions', () => {
+        const { o } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        const plan = new EntitySavePlan(o);
+        plan.AddSave(o, 'root', undefined, true);
+
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(1);
+
+        o.KeepPartyOrganization('BillToOrganizationID');
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(2);
+    });
+
+    it('adds no node where the save runs in this process, so the order saves once', () => {
+        const { o } = order({ onDisk: { BillToPersonID: PERSON, BillToOrganizationID: EMPLOYER } });
+        Object.assign(o.ProviderToUse, { SupportsEntityTransactions: true });
+        o.Set('BillToPersonID', OTHER_PERSON);
+        o.KeepPartyOrganization('BillToOrganizationID');
+        const plan = new EntitySavePlan(o);
+        plan.AddSave(o, 'root', undefined, true);
+
+        o.KeptPartyOrganizations.ContributeSaveWork(plan);
+        expect(plan.NodeCount).toBe(1);
+    });
+
+    it('reads back what it wrote and drops entries it cannot read', async () => {
+        const { o } = order();
+        o.KeptPartyOrganizations.Keep('ShipToOrganizationID', PERSON);
+        const wire = await o.KeptPartyOrganizations.Serialize();
+
+        const { o: other } = order();
+        await other.KeptPartyOrganizations.Deserialize(
+            { Kept: [...wire!.Kept, { Field: 'Notes', FromPersonID: PERSON } as never] },
+            'request',
+        );
+        expect(other.KeptPartyOrganizations.Items).toEqual([{ Field: 'ShipToOrganizationID', FromPersonID: PERSON }]);
+        expect(other.KeptPartyOrganizations.IsKept('ShipToOrganizationID', PERSON.toUpperCase())).toBe(true);
     });
 });

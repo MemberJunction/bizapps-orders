@@ -106,7 +106,8 @@ export interface CheckedTermExtension {
     AcknowledgerIDs: string[];
 }
 
-interface TermRow {
+/** A term as the amendment checks read it. */
+export interface TermRow {
     ID: string;
     SubscriptionID: string;
     TermNumber: number;
@@ -127,7 +128,7 @@ export async function CheckTermExtension(
     if (!Number.isInteger(days) || days <= 0) return 'A term extension must add a whole number of days.';
 
     const term = (
-        await view<TermRow>(ctx, {
+        await ReadRows<TermRow>(ctx, {
             EntityName: SUBSCRIPTION_TERM_ENTITY,
             ExtraFilter: `ID = '${RequireUUID(request.SubscriptionTermID, 'SubscriptionTermID')}'`,
             Fields: ['ID', 'SubscriptionID', 'TermNumber', 'OrderLineID', 'StartDate', 'EndDate', 'Amount', 'Status', 'RevenueRecognitionTypeID'],
@@ -139,11 +140,11 @@ export async function CheckTermExtension(
         return `Term ${term.TermNumber} is ${term.Status}; only a Scheduled or Active term can be extended.`;
     }
 
-    const renewal = await renewalAlreadyPlaced(term, ctx);
+    const renewal = await RenewalAlreadyPlaced(term, ctx);
     if (renewal) return renewal;
 
     const subscription = (
-        await view<{ SubscriptionNumber: string; SubscriptionTypeID: string; ProductID: string }>(ctx, {
+        await ReadRows<{ SubscriptionNumber: string; SubscriptionTypeID: string; ProductID: string }>(ctx, {
             EntityName: SUBSCRIPTION_ENTITY,
             ExtraFilter: `ID = '${RequireUUID(term.SubscriptionID, 'SubscriptionID')}'`,
             Fields: ['SubscriptionNumber', 'SubscriptionTypeID', 'ProductID'],
@@ -153,7 +154,7 @@ export async function CheckTermExtension(
     if (!subscription) return `The subscription of term ${term.TermNumber} was not found.`;
 
     const line = (
-        await view<{ OrderHeaderID: string }>(ctx, {
+        await ReadRows<{ OrderHeaderID: string }>(ctx, {
             EntityName: ORDER_LINE_ENTITY,
             ExtraFilter: `ID = '${RequireUUID(term.OrderLineID, 'OrderLineID')}'`,
             Fields: ['OrderHeaderID'],
@@ -163,7 +164,7 @@ export async function CheckTermExtension(
     if (!line) return `The order line that bought term ${term.TermNumber} was not found.`;
 
     const product = (
-        await view<{ Name: string }>(ctx, {
+        await ReadRows<{ Name: string }>(ctx, {
             EntityName: PRODUCT_ENTITY,
             ExtraFilter: `ID = '${RequireUUID(subscription.ProductID, 'ProductID')}'`,
             Fields: ['Name'],
@@ -171,16 +172,16 @@ export async function CheckTermExtension(
         })
     )[0];
 
-    const acknowledgers = await acknowledgerIDs(request.RequestedByUserID, ctx);
+    const acknowledgers = await AcknowledgerIDs(request.RequestedByUserID, ctx);
     if (typeof acknowledgers === 'string') return acknowledgers;
 
-    const currentEnd = asDay(term.EndDate);
-    const newEnd = addDays(currentEnd, days);
+    const currentEnd = AsDay(term.EndDate);
+    const newEnd = AddDays(currentEnd, days);
     const effective = await CalendarDayOrToday(undefined, ctx.Provider, ctx.User);
-    const label = `term ${term.TermNumber} of ${subscription.SubscriptionNumber} extended to ${isoDay(newEnd)}`;
+    const label = `term ${term.TermNumber} of ${subscription.SubscriptionNumber} extended to ${IsoDay(newEnd)}`;
 
-    const recognition = await recognitionFor(term, subscription.SubscriptionTypeID, ctx);
-    const entries = recognition ? await stagedEntries(term.ID, ctx) : [];
+    const recognition = await TermRecognition(term, subscription.SubscriptionTypeID, ctx);
+    const entries = recognition ? await StagedRecognitionEntries(term.ID, ctx) : [];
     const plan = PlanTermExtension({
         Entries: entries,
         EffectiveDate: effective,
@@ -203,7 +204,7 @@ export async function CheckTermExtension(
         OrderLineID: term.OrderLineID,
         OrderHeaderID: line.OrderHeaderID,
         ProductName: product?.Name ?? 'subscription',
-        TermStartDate: asDay(term.StartDate),
+        TermStartDate: AsDay(term.StartDate),
         TermAmount: Number(term.Amount),
         CurrentEndDate: currentEnd,
         NewEndDate: newEnd,
@@ -256,16 +257,16 @@ export async function ApplyTermExtension(concession: ApprovedDurationConcession,
 // ─── Checks ─────────────────────────────────────────────────────────────────
 
 /** A later term, or a renewal line that has not booked one yet, means this term's renewal is already placed. */
-async function renewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Promise<string | null> {
+export async function RenewalAlreadyPlaced(term: Pick<TermRow, 'SubscriptionID' | 'TermNumber'>, ctx: ApprovalTaskContext): Promise<string | null> {
     const subscriptionID = RequireUUID(term.SubscriptionID, 'SubscriptionID');
-    const later = await view<{ ID: string }>(ctx, {
+    const later = await ReadRows<{ ID: string }>(ctx, {
         EntityName: SUBSCRIPTION_TERM_ENTITY,
         ExtraFilter: `SubscriptionID = '${subscriptionID}' AND TermNumber > ${Number(term.TermNumber)}`,
         Fields: ['ID'],
         ResultType: 'simple',
         MaxRows: 1,
     });
-    const pendingRenewal = await view<{ ID: string }>(ctx, {
+    const pendingRenewal = await ReadRows<{ ID: string }>(ctx, {
         EntityName: ORDER_LINE_ENTITY,
         ExtraFilter:
             `RenewsSubscriptionID = '${subscriptionID}' AND OrderHeaderID IN (SELECT ID FROM __mj_BizAppsOrders.OrderHeader WHERE Status <> 'Voided') ` +
@@ -277,12 +278,12 @@ async function renewalAlreadyPlaced(term: TermRow, ctx: ApprovalTaskContext): Pr
     if (later.length === 0 && pendingRenewal.length === 0) return null;
     return (
         `Term ${term.TermNumber}'s renewal order has already been placed, and it was priced and dated from the ` +
-        `term's current end. Reverse the renewal first, then extend the term.`
+        `term's current end and amount. Reverse the renewal first, then amend the term.`
     );
 }
 
 /** Every active holder of the acknowledgment role except the requester, or why there are none. */
-async function acknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): Promise<string[] | string> {
+export async function AcknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): Promise<string[] | string> {
     await OrdersSettings.Load(ctx.Provider, ctx.User);
     const roleName = OrdersSettings.AmendmentAcknowledgmentRole;
     if (!roleName) {
@@ -295,7 +296,7 @@ async function acknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): P
         return 'Accounting is told of an amendment through the tasks app, and the tasks app is not installed.';
     }
     const role = (
-        await view<{ ID: string }>(ctx, {
+        await ReadRows<{ ID: string }>(ctx, {
             EntityName: ROLE_ENTITY,
             ExtraFilter: `Name = '${EscapeText(roleName)}'`,
             Fields: ['ID'],
@@ -316,7 +317,7 @@ async function acknowledgerIDs(requesterID: string, ctx: ApprovalTaskContext): P
 // ─── Recognition ────────────────────────────────────────────────────────────
 
 /** The term's driver and cadence, or null when its recognition type defers nothing. */
-async function recognitionFor(
+export async function TermRecognition(
     term: TermRow,
     subscriptionTypeID: string,
     ctx: ApprovalTaskContext,
@@ -343,9 +344,9 @@ async function recognitionFor(
 }
 
 /** Every `RevenueRecognition` entry linked to the term, with its lines and their dimensions. */
-async function stagedEntries(termID: string, ctx: ApprovalTaskContext): Promise<StagedEntry[]> {
+export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTaskContext): Promise<StagedEntry[]> {
     const type = (
-        await view<{ ID: string }>(ctx, {
+        await ReadRows<{ ID: string }>(ctx, {
             EntityName: JE_TYPE_ENTITY,
             ExtraFilter: `Code = 'RevenueRecognition'`,
             Fields: ['ID'],
@@ -354,7 +355,7 @@ async function stagedEntries(termID: string, ctx: ApprovalTaskContext): Promise<
     )[0];
     if (!type) throw new Error("Accounting has no 'RevenueRecognition' journal entry type.");
 
-    const entries = await view<{ ID: string; EntryNumber: string; EffectiveDate: Date | string; Status: string; JournalEntryBatchID: string | null }>(ctx, {
+    const entries = await ReadRows<{ ID: string; EntryNumber: string; EffectiveDate: Date | string; Status: string; JournalEntryBatchID: string | null }>(ctx, {
         EntityName: JE_ENTITY,
         ExtraFilter:
             `LinkedEntityID = '${EntityIDFor(SUBSCRIPTION_TERM_ENTITY)}' AND LinkedRecordID = '${RequireUUID(termID, 'SubscriptionTermID')}' ` +
@@ -365,7 +366,7 @@ async function stagedEntries(termID: string, ctx: ApprovalTaskContext): Promise<
     if (entries.length === 0) return [];
 
     const entryIDs = RequireUUIDs(entries.map((e) => e.ID), 'JournalEntryID');
-    const lines = await view<{ ID: string; JournalEntryID: string; LineNumber: number; GLAccountID: string; DebitAmount: number | null; CreditAmount: number | null; Description: string | null }>(ctx, {
+    const lines = await ReadRows<{ ID: string; JournalEntryID: string; LineNumber: number; GLAccountID: string; DebitAmount: number | null; CreditAmount: number | null; Description: string | null }>(ctx, {
         EntityName: JE_LINE_ENTITY,
         ExtraFilter: `JournalEntryID IN (${entryIDs.map((id) => `'${id}'`).join(', ')})`,
         Fields: ['ID', 'JournalEntryID', 'LineNumber', 'GLAccountID', 'DebitAmount', 'CreditAmount', 'Description'],
@@ -374,7 +375,7 @@ async function stagedEntries(termID: string, ctx: ApprovalTaskContext): Promise<
     });
     const lineIDs = RequireUUIDs(lines.map((l) => l.ID), 'JournalEntryLineID');
     const dims = lineIDs.length
-        ? await view<{ JournalEntryLineID: string; DimensionID: string; DimensionValueID: string }>(ctx, {
+        ? await ReadRows<{ JournalEntryLineID: string; DimensionID: string; DimensionValueID: string }>(ctx, {
               EntityName: JE_LINE_DIMENSION_ENTITY,
               ExtraFilter: `JournalEntryLineID IN (${lineIDs.map((id) => `'${id}'`).join(', ')})`,
               Fields: ['JournalEntryLineID', 'DimensionID', 'DimensionValueID'],
@@ -385,7 +386,7 @@ async function stagedEntries(termID: string, ctx: ApprovalTaskContext): Promise<
     return entries.map((e) => ({
         ID: e.ID,
         EntryNumber: e.EntryNumber,
-        EffectiveDate: asDay(e.EffectiveDate),
+        EffectiveDate: AsDay(e.EffectiveDate),
         Status: e.Status,
         JournalEntryBatchID: e.JournalEntryBatchID,
         Lines: lines
@@ -427,7 +428,7 @@ async function moveLineServicePeriodEnd(checked: CheckedTermExtension, ctx: Appr
 
 /** A grant that follows the term ran to its old end; it now runs to the new one. */
 async function extendTermGrants(checked: CheckedTermExtension, ctx: ApprovalTaskContext): Promise<void> {
-    const grants = await view<mjBizAppsOrdersEntitlementGrantEntity>(ctx, {
+    const grants = await ReadRows<mjBizAppsOrdersEntitlementGrantEntity>(ctx, {
         EntityName: ENTITLEMENT_GRANT_ENTITY,
         ExtraFilter: `SubscriptionTermID = '${RequireUUID(checked.TermID, 'SubscriptionTermID')}' AND ValidityModeApplied = 'SubscriptionTerm'`,
         ResultType: 'entity_object',
@@ -470,9 +471,9 @@ async function logExtended(
             Action: 'Amendment',
             OrderConcessionID: concession.ID,
             ReasonCategory: concession.ReasonCategory,
-            PreviousEndDate: isoDay(checked.CurrentEndDate),
-            NewEndDate: isoDay(checked.NewEndDate),
-            EffectiveDate: isoDay(checked.EffectiveDate),
+            PreviousEndDate: IsoDay(checked.CurrentEndDate),
+            NewEndDate: IsoDay(checked.NewEndDate),
+            EffectiveDate: IsoDay(checked.EffectiveDate),
             Value: concession.ComputedValue,
             Respread: checked.Plan.Remaining,
             Offsets: offsets,
@@ -496,7 +497,36 @@ export async function RaiseAmendmentAcknowledgment(
     concession: ApprovedDurationConcession,
     ctx: ApprovalTaskContext,
 ): Promise<string> {
-    const types = await view<mjBizAppsTasksTaskTypeEntity>(ctx, {
+    return RaiseRecutAcknowledgment(
+        {
+            Name: `Confirm the recognition re-cut: ${label(checked)}`,
+            Description: acknowledgmentDescription(checked, concession),
+            TermID: checked.TermID,
+            OrderConcessionID: concession.ID,
+            OrderHeaderID: checked.OrderHeaderID,
+            AcknowledgerIDs: checked.AcknowledgerIDs,
+        },
+        ctx,
+    );
+}
+
+/** What an acknowledgment task for a re-cut term says and links. */
+export interface RecutAcknowledgment {
+    Name: string;
+    Description: string;
+    TermID: string;
+    OrderConcessionID: string;
+    OrderHeaderID: string;
+    /** Every active holder of the acknowledgment role except the requester. */
+    AcknowledgerIDs: string[];
+}
+
+/**
+ * Raise the acknowledgment task for any amendment that re-cuts a term's recognition: one task, linked to the
+ * term, the concession and the order, assigned to each acknowledger. Returns the task's ID.
+ */
+export async function RaiseRecutAcknowledgment(facts: RecutAcknowledgment, ctx: ApprovalTaskContext): Promise<string> {
+    const types = await ReadRows<mjBizAppsTasksTaskTypeEntity>(ctx, {
         EntityName: TASK_TYPE_ENTITY,
         ExtraFilter: `Code = '${EscapeText(ACKNOWLEDGMENT_TASK_TYPE_CODE)}'`,
         ResultType: 'entity_object',
@@ -509,19 +539,19 @@ export async function RaiseAmendmentAcknowledgment(
     requireSubclass(task, TASK_ENTITY);
     task.NewRecord();
     task.TypeID = typeID;
-    task.Name = `Confirm the recognition re-cut: ${label(checked)}`;
-    task.Description = acknowledgmentDescription(checked, concession);
+    task.Name = facts.Name;
+    task.Description = facts.Description;
     task.Priority = 'High';
     task.Status = 'Open';
     if (!(await task.Save())) {
-        throw new Error(`The acknowledgment task for ${label(checked)} could not be created: ${task.LatestResult?.CompleteMessage}`);
+        throw new Error(`The acknowledgment task "${facts.Name}" could not be created: ${task.LatestResult?.CompleteMessage}`);
     }
 
-    await EnsureTaskLink(task.ID, EntityIDFor(SUBSCRIPTION_TERM_ENTITY), checked.TermID, ctx);
-    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_CONCESSION_ENTITY), concession.ID, ctx);
-    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_HEADER_ENTITY), checked.OrderHeaderID, ctx);
+    await EnsureTaskLink(task.ID, EntityIDFor(SUBSCRIPTION_TERM_ENTITY), facts.TermID, ctx);
+    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_CONCESSION_ENTITY), facts.OrderConcessionID, ctx);
+    await EnsureTaskLink(task.ID, EntityIDFor(ORDER_HEADER_ENTITY), facts.OrderHeaderID, ctx);
     const userEntityID = EntityIDFor(USER_ENTITY);
-    for (const userID of checked.AcknowledgerIDs) {
+    for (const userID of facts.AcknowledgerIDs) {
         await EnsureTaskAssignment(task.ID, userEntityID, userID, ctx);
     }
     return task.ID;
@@ -529,15 +559,15 @@ export async function RaiseAmendmentAcknowledgment(
 
 function acknowledgmentDescription(checked: CheckedTermExtension, concession: ApprovedDurationConcession): string {
     const plan = checked.Plan;
-    const before = plan.Targets.map((t) => `  ${isoDay(t.EffectiveDate)}  ${t.EntryNumber}  ${releaseAmount(t)}`).join('\n');
+    const before = plan.Targets.map((t) => `  ${IsoDay(t.EffectiveDate)}  ${t.EntryNumber}  ${releaseAmount(t)}`).join('\n');
     const after = plan.Respread.map((d) => `  ${d.EffectiveDate}  ${d.Lines[0].DebitAmount ?? 0}`).join('\n');
     return [
-        `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} now ends ${isoDay(checked.NewEndDate)} instead of ` +
-            `${isoDay(checked.CurrentEndDate)}, at no additional charge (${concession.ReasonCategory}: ${concession.Reason}). ` +
+        `Term ${checked.TermNumber} of ${checked.SubscriptionNumber} now ends ${IsoDay(checked.NewEndDate)} instead of ` +
+            `${IsoDay(checked.CurrentEndDate)}, at no additional charge (${concession.ReasonCategory}: ${concession.Reason}). ` +
             `No invoice or receivable changed. Confirm that the recognition schedule below was re-cut, then complete this task.`,
         '',
         plan.Targets.length
-            ? `Replaced from ${isoDay(checked.EffectiveDate)}: ${plan.Targets.length} staged entries, each offset on its own date.\n${before}`
+            ? `Replaced from ${IsoDay(checked.EffectiveDate)}: ${plan.Targets.length} staged entries, each offset on its own date.\n${before}`
             : 'No staged recognition entries were dated on or after the effective date, so the schedule did not change.',
         '',
         plan.Respread.length ? `New schedule, ${plan.Remaining} over ${plan.Respread.length} entries:\n${after}` : '',
@@ -554,24 +584,27 @@ function releaseAmount(entry: StagedEntry): number {
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 function label(checked: CheckedTermExtension): string {
-    return `term ${checked.TermNumber} of ${checked.SubscriptionNumber} extended to ${isoDay(checked.NewEndDate)}`;
+    return `term ${checked.TermNumber} of ${checked.SubscriptionNumber} extended to ${IsoDay(checked.NewEndDate)}`;
 }
 
 /** A `date` column as midnight UTC, the shape it round-trips in. */
-function asDay(value: Date | string): Date {
+export function AsDay(value: Date | string): Date {
     const d = new Date(value);
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
 
-function addDays(day: Date, days: number): Date {
+/** `day` moved by whole `days`, at midnight UTC. */
+export function AddDays(day: Date, days: number): Date {
     return new Date(Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate() + days));
 }
 
-function isoDay(day: Date): string {
+/** A day as `yyyy-mm-dd`. */
+export function IsoDay(day: Date): string {
     return day.toISOString().slice(0, 10);
 }
 
-async function view<T>(ctx: ApprovalTaskContext, params: Parameters<RunView['RunView']>[0]): Promise<T[]> {
+/** Read rows past the cache, throwing when the read fails. */
+export async function ReadRows<T>(ctx: ApprovalTaskContext, params: Parameters<RunView['RunView']>[0]): Promise<T[]> {
     const rv = new RunView(ctx.Provider as unknown as IRunViewProvider);
     const res = await rv.RunView<T>({ ...params, BypassCache: true }, ctx.User);
     if (!res.Success) throw new Error(`Reading ${params.EntityName} failed: ${res.ErrorMessage}`);

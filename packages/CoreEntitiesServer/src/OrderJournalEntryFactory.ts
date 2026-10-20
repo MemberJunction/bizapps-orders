@@ -65,6 +65,7 @@
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import {
+    LineGross,
     LoadOrdersEngine,
     OrdersEngine,
     type mjBizAppsOrdersOrderHeaderEntity,
@@ -198,9 +199,16 @@ function isoDate(d: Date): string {
  * non-scheduled order cannot disagree about what a line is worth.
  */
 export function LineAmounts(line: mjBizAppsOrdersOrderLineEntity): ValueEntryAmounts {
-    const grossFromRate = money(Math.abs(line.Quantity) * line.UnitPrice);
-    const pctDiscount = money(grossFromRate * (line.DiscountPct ?? 0));
-    const amountDiscount = money(Math.min(Math.max(0, grossFromRate - pctDiscount), line.DiscountAmount ?? 0));
+    // The discount is split off the same gross the line computed its total from: the rule's stored
+    // figure when a rule priced the line (#579), quantity × unit price otherwise. Off the re-multiplied
+    // rate, a Flat line's percentage discount could come out a cent away from the one the line took.
+    const listGross = LineGross(
+        Math.abs(line.Quantity),
+        line.UnitPrice,
+        line.ExtendedAmount === null || line.ExtendedAmount === undefined ? null : Math.abs(line.ExtendedAmount),
+    );
+    const pctDiscount = money(listGross * (line.DiscountPct ?? 0));
+    const amountDiscount = money(Math.min(Math.max(0, listGross - pctDiscount), line.DiscountAmount ?? 0));
     const discount = money(pctDiscount + amountDiscount);
     const net = money(Math.abs(Number(line.LineTotalNet ?? 0)));
     return {
@@ -368,6 +376,19 @@ export class OrderJournalEntryFactory {
     public DrainBilled(): Map<string, number> {
         const out = new Map(this._billedByLine);
         this._billedByLine.clear();
+        return out;
+    }
+
+    /**
+     * The credit memo each reversing line of a scheduled origin booked, zero when it credited nothing,
+     * keyed by the REVERSING line's id (#661). The return order's balance is this, not its lines' value.
+     */
+    private readonly _creditMemoByLine = new Map<string, number>();
+
+    /** Take the credit memos this build booked, per reversing line, and clear them. */
+    public DrainCreditMemos(): Map<string, number> {
+        const out = new Map(this._creditMemoByLine);
+        this._creditMemoByLine.clear();
         return out;
     }
 
@@ -743,6 +764,7 @@ export class OrderJournalEntryFactory {
         // moved by the memo alone — and the origin's BilledToDate falls by it, so the next partial
         // reversal prorates what is actually left and the totals still sum to the ledger.
         if (scheduledOrigin) {
+            this._creditMemoByLine.set(line.ID, memo);
             if (memo > 0) {
                 const origin = scheduledOrigin.OriginLineID;
                 this._billedByLine.set(origin, money((this._billedByLine.get(origin) ?? 0) - memo));
@@ -1303,7 +1325,7 @@ export class OrderJournalEntryFactory {
         line: mjBizAppsOrdersOrderLineEntity,
         companyID: string,
         asOf: Date,
-    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string }>> {
+    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }>> {
         const total = money(Math.abs(line.LineTax ?? 0)) + money(Math.abs(line.ChargeAmount ?? 0));
         if (total === 0) return [];
 
@@ -1347,7 +1369,7 @@ export class OrderJournalEntryFactory {
             byType.set(parent.ChargeTypeID, cur);
         }
 
-        const out: Array<{ GLAccountID: string; Amount: number; Label: string }> = [];
+        const out: Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }> = [];
         for (const [chargeTypeID, info] of byType) {
             if (info.Amount === 0) continue;
             const account = await this._resolver.ResolveForRecord(
@@ -1367,7 +1389,7 @@ export class OrderJournalEntryFactory {
                         `and never recorded in the ledger.`,
                 );
             }
-            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label });
+            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label, ChargeTypeID: chargeTypeID });
         }
         return out;
     }

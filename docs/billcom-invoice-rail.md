@@ -59,6 +59,10 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
 - **Re-issue.** A cancelled whole-order unit is sent again only on request (`AllowReissue`), as
   `ORD-1234-R1`, `-R2` and so on, since BILL would accept the archived number and the customer would
   hold two different `ORD-1234`s. An instalment is never re-issued; a new schedule row replaces it.
+- **A send refused before BILL created anything** is not a re-issue. A `Failed` row with no
+  `ExternalInvoiceRef` (no customer email, a number too long, BILL answering no) leaves nothing on the
+  rail, so the next send needs no `AllowReissue` and keeps the order's number. Once any row for the
+  unit holds a reference, sending again is a re-issue.
 - **Invoices sent per product company before 5.27.0** block the order's own invoice:
   `Orders.IssueExternalInvoice` names the one to cancel first. Schedule rows written per product company
   stay units on that company's rail.
@@ -66,7 +70,9 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
 ## The rail seam
 
 `BaseInvoiceRail` is the outbound counterpart of `BasePaymentProvider`, registered under
-`PaymentProviderType.Code`. It defines `CheckConfiguration`, `EnsureCustomer`, `IssueInvoice`,
+`PaymentProviderType.Code`. It defines `CheckConfiguration`, `CheckCustomer` (what the rail refuses
+about a new customer, decided without calling it: BILL needs an email; a preview reports it as
+`NO_CUSTOMER_EMAIL` and the order form disables Send), `EnsureCustomer`, `IssueInvoice`,
 `GetInvoice`, `CancelInvoice` and `FetchPaymentsSince`, plus `CustomerNameTargets` and
 `InvoiceNumberTargets`, the rail fields a customer name and a document number must fit
 (bc-aidp-next-golive#280); a refusal is a `RailResult` with a `Transient` flag for failures a retry
@@ -91,8 +97,11 @@ added to `INVOICE_RAIL_TYPE_CODES` and the two Angular copies (`RAIL_TYPE_CODES`
 | Native email refusal (`EXTERNALLY_INVOICED`) | [`DeliveryBehavior.ts`](../packages/CoreEntitiesServer/src/DeliveryBehavior.ts), `DeliveryRecipientResolver.ts`, `packages/Server/src/custom/send-document.action.ts` |
 | Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Then sends via" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
 
-Screens take their labels from `PaymentProvider.Name`. Tests are unit tests only, in the `__tests__`
-folders beside this code; [`billcom-live.mjs`](../test-harnesses/billcom-live.mjs) probes a BILL sandbox by hand.
+Screens take their labels from `PaymentProvider.Name`. Unit tests sit in the `__tests__` folders beside
+this code. The `billcom-rail` integration bundle
+([`billcom-rail.checks.ts`](../packages/IntegrationTests/src/checks/billcom-rail.checks.ts)) runs the
+send, cancel, poll and webhook paths against a real database with Bill.com stubbed behind the gateway
+seam. [`billcom-live.mjs`](../test-harnesses/billcom-live.mjs) probes a BILL sandbox by hand.
 
 ## Remote operations
 
@@ -107,7 +116,7 @@ needs `orders:read`, the others `orders:write`.
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
 | `Orders.SendExternalInvoices` | The sweep: sends worklist units up to `MaxCount` (default 25) and retries transient failures, never cancelled or in-flight units. |
-| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. |
+| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. It also reads HubSpot Payments provider rows ([hubspot-payments.md](hubspot-payments.md)). |
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
@@ -125,12 +134,22 @@ job notifies.
 - [`metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-billcom-scheduled-jobs.json)
   runs the send at `0 */30 13-23 * * 1-5` UTC (`MaxCount` 25) and the poll at `0 15 * * * *` UTC
   (`MaxCount` 100). Both ship `Disabled` with `Preview` true: enable a job, read one preview run, then
-  set `Preview` to false. The Invoicing queue page runs either with `Preview` false, whatever their state.
+  set `Preview` to false. The Invoicing queue page runs the send with `Preview` false, whatever its state.
+- **The poll job is the switch for recording cash, whoever runs the poll.** `Orders.PollExternalPayments`
+  reads the installed poll jobs before a run that would write, and gates each provider by the jobs
+  governing it: the jobs whose `PaymentProviderID` names that provider, or, when none does, the jobs
+  that name no provider (the shipped one). Among those the most restrictive wins. None installed or
+  not `Active` skips that provider with nothing recorded; in Preview that provider runs as a preview
+  and the message says so; `Active` and out of Preview records. The run fails only when every
+  provider was skipped. A run that asks for `Preview` is always allowed. The queue page's "Check for
+  payments now" follows the most permissive job: disabled while every job is off, labelled as a
+  preview while none is live, and asks for confirmation before a run that may record; when the jobs
+  differ its hint says some providers are previewed or skipped.
 - [`V202609291003__v5.20.0__BillCom_Metadata_Sync.sql`](../migrations/V202609291003__v5.20.0__BillCom_Metadata_Sync.sql)
   installs the provider type, the six operations, both Actions and both jobs on a host.
 - `POST /webhooks/billcom/:providerId` (declared in `packages/Server/package.json`) checks the
-  HMAC-SHA256 signature in `x-bill-sha-signature`, answers 202, and polls that provider only when every
-  installed poll job is `Active` and out of Preview.
+  HMAC-SHA256 signature in `x-bill-sha-signature`, answers 202, and polls that provider only when the
+  poll jobs governing it are `Active` and out of Preview.
 
 ## Tables
 
@@ -187,8 +206,9 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The
   instalment stamp and `ExternalDocumentNumber` are best effort, so `ExternalInvoice` is the record to
   trust. `PAYPAL`, `WALLET` and `UNDEFINED` are recorded as ACH. A zero-value unit cannot be sent.
-- **BILL words in shared code.** `BILLCOM_PAYMENT_STATUS`, `TenderFor` and some messages name Bill.com
-  in provider-neutral files (design §13.8).
+- **BILL words in shared code.** `TenderFor`, the invoice allocation and the re-application messages
+  name Bill.com in provider-neutral files (design §13.8). Status tables are per rail
+  (`PaymentStatusVocabularyFor`).
 
 ## Open questions
 

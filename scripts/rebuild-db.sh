@@ -17,7 +17,7 @@
 #   5. bizapps-accounting — `mj migrate --schema`, pointed at the sibling checkout
 #   6. this app's migrations, as committed (they carry their CodeGen output)
 #   7. seed metadata: common's query categories, accounting's currencies and GL account roles,
-#      then this app's metadata/
+#      tasks' actions and task types, then this app's metadata/
 #   8. integration-suite users: a human user, and the Account Director role for the Owner
 #
 # Usage: scripts/rebuild-db.sh
@@ -25,14 +25,30 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$PWD"
-set -a; . ./.env; set +a
+# Load .env without overriding variables already set in the environment, as mj.config.cjs's dotenv
+# does: a caller's `DB_DATABASE=other scripts/rebuild-db.sh` must target the same database the CLI
+# will. The file is still sourced (same quoting, comments and expansion); values set beforehand are
+# saved first and restored after.
+load_env_defaults() {
+    local key saved=""
+    for key in $(sed -n 's/^[[:space:]]*\(export[[:space:]][[:space:]]*\)\{0,1\}\([A-Za-z_][A-Za-z0-9_]*\)=.*/\2/p' "$1"); do
+        if [ -n "${!key+x}" ]; then
+            saved="${saved}${key}=$(printf '%q' "${!key}")
+"
+        fi
+    done
+    set -a; . "$1"; set +a
+    eval "$saved"
+}
+load_env_defaults ./.env
 
 # The LTS release (npm dist-tag lts-6.1). It must satisfy every repo's mjVersionRange; accounting's
 # starts at 6.1.0-edge.7, and common's migrations call core procedures with parameters older tags lack.
-# Bump this when the lts-6.1 dist-tag moves. `mj migrate -t` takes a git ref of the MJ repo, not an
-# npm dist-tag, so `-t lts-6.1` cannot resolve; the lts/6.1 branch would, but its tip can carry
-# migrations no published release has yet.
-MJ_VERSION="${MJ_CORE_VERSION:-v6.1.4}"
+# It must also match the @memberjunction/* version the lockfile and mj-app.json require (6.1.6), so
+# the schema is the one the installed packages expect. Bump this when the lts-6.1 dist-tag moves.
+# `mj migrate -t` takes a git ref of the MJ repo, not an npm dist-tag, so `-t lts-6.1` cannot
+# resolve; the lts/6.1 branch would, but its tip can carry migrations no published release has yet.
+MJ_VERSION="${MJ_CORE_VERSION:-v6.1.6}"
 COMMON_REPO="${BIZAPPS_COMMON_REPO:-$ROOT/../bizapps-common}"
 ACCOUNTING_REPO="${BIZAPPS_ACCOUNTING_REPO:-$ROOT/../bizapps-accounting}"
 TASKS_REPO="${BIZAPPS_TASKS_REPO:-$ROOT/../bizapps-tasks}"
@@ -88,10 +104,10 @@ for f in "$COMMON_REPO"/migrations/*.sql; do
 done
 
 say "4/8  bizapps-tasks"
-# Orders never names a tasks entity, so this looks unnecessary from here. It is not: accounting's
-# TasksAppApprovalGate resolves 'MJ_BizApps_Tasks: Task Types' / 'Task Links' / 'Task Decisions' /
-# 'Task Decision Outcomes' through the metadata layer, so without these tables every accounting
-# approval path fails at runtime with an entity that does not exist.
+# Orders' approval task types name a tasks action (step 7 pushes tasks' actions and task types).
+# Accounting needs the tables too: its TasksAppApprovalGate resolves 'MJ_BizApps_Tasks: Task Types' /
+# 'Task Links' / 'Task Decisions' / 'Task Decision Outcomes' through the metadata layer, so without
+# them every accounting approval path fails at runtime with an entity that does not exist.
 $MJ migrate --schema __mj_BizAppsTasks --dir "$TASKS_REPO/migrations"
 
 say "5/8  bizapps-accounting"
@@ -108,13 +124,29 @@ say "7/8  Seed metadata"
 # both (a company profile names a functional currency; the resolver looks up roles by name), so a
 # rebuild that stops at the migrations produces a database where every confirm fails at fixture time.
 # Common's query categories come first because this app's queries look up 'Party Signals' by name.
+# Accounting's roles and authorizations come along so the suite can clear a finance exception, which
+# requires MJ.BizApps.Accounting.FinanceExceptions.Clear (held by the Finance role).
+# Tasks' actions come before this app's task types, whose OnAssignActionID looks up 'Post Task
+# Assignment to Teams' by name; that action's category and credential type come with it. Tasks' own
+# task types include 'Approval Request', which accounting's TasksAppApprovalGate looks up by name.
 #
 # Only these folders are pushed from the dependencies. Pushing their whole metadata/ fails on a fresh
 # database: https://github.com/MemberJunction/bizapps-accounting/issues/222 (ML folders out of order)
 # and https://github.com/MemberJunction/bizapps-common/issues/196 (Tag records without DisplayName).
 $MJ sync push --ci --dir "$COMMON_REPO/metadata" --include query-categories
-$MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-account-roles
+$MJ sync push --ci --dir "$ACCOUNTING_REPO/metadata" --include currencies,gl-account-roles,roles,authorizations,authorization-roles
+$MJ sync push --ci --dir "$TASKS_REPO/metadata" --include action-categories,credential-types,actions,task-types
+# The push writes primary keys and sync blocks for this throwaway database back into the metadata
+# files. Those values mean nothing anywhere else, so the checkout is put back afterwards. Only when
+# metadata/ was clean before the push: otherwise the restore would also discard uncommitted edits.
+METADATA_DIRTY=$(git -C "$ROOT" status --porcelain -- metadata)
 $MJ sync push --ci --dir "$ROOT/metadata"
+if [ -z "$METADATA_DIRTY" ]; then
+    git -C "$ROOT" checkout -- metadata
+    git -C "$ROOT" clean -fq -- metadata    # files the push created; ignored files (sql_logging/) stay
+else
+    printf 'metadata/ had uncommitted changes before the push; not restoring it. Review its diff.\n' >&2
+fi
 
 say "8/8  Integration-suite users"
 # The suite runs as the Owner (System) and needs two things a fresh database does not have:
@@ -122,6 +154,8 @@ say "8/8  Integration-suite users"
 #     creates one at first sign-in; a database built here has only System and Anonymous.
 #   - the price-override grant. Its fixtures place lines at stated prices, and only Account
 #     Director holds MJ.BizApps.Orders.Price.OverrideAny.
+#   - the Finance role, which holds the authorization to clear a finance exception
+#     (payment-providers PV19-PV20 resolve one).
 $SQLCMD -b -d "${DB_DATABASE}" -Q "
     SET NOCOUNT ON;
     INSERT INTO __mj.[User] (Name, FirstName, LastName, Email, Type, IsActive, LinkedRecordType)
@@ -129,7 +163,11 @@ $SQLCMD -b -d "${DB_DATABASE}" -Q "
     INSERT INTO __mj.UserRole (UserID, RoleID)
     SELECT u.ID, r.ID FROM __mj.[User] u CROSS JOIN __mj.Role r
     WHERE u.Type = N'Owner' AND r.Name = N'Account Director';
-    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Account Director role', 1;"
+    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Account Director role', 1;
+    INSERT INTO __mj.UserRole (UserID, RoleID)
+    SELECT u.ID, r.ID FROM __mj.[User] u CROSS JOIN __mj.Role r
+    WHERE u.Type = N'Owner' AND r.Name = N'Finance';
+    IF @@ROWCOUNT <> 1 THROW 50000, 'expected one Owner and one Finance role', 1;"
 
 say "Done"
 cat <<'NEXT'

@@ -129,9 +129,13 @@ const ALL_BUNDLES = [
     'contract-reversal',
     'concessions',
     'term-extension',
+    'amount-change',
+    'term-shift',
     'party-roster',
     'progress-measurement',
     'outbound-events',
+    'billcom-rail',
+    'service-period-lock',
     'volume',
 ];
 

@@ -3,11 +3,12 @@
 # findWorkspacePackageJsonFiles, and the publish workflow's jq steps) — pnpm itself
 # ignores it and uses this file. Keep the two glob lists in sync.
 
-# LOAD-BEARING. pnpm 10 defaults this to false, which makes internal deps pinned at
-# an exact version resolve from the REGISTRY instead of linking to the local package.
-# For an unpublished version that fails loudly; for a published one it silently
-# installs a stale copy. This repo pins its own workspace packages at exact
-# versions, so without this every workspace link becomes a registry download.
+# LOAD-BEARING. pnpm 10 defaults this to false, which makes internal deps declared at
+# a plain version range (here ^x.y.z) resolve from the REGISTRY instead of linking to
+# the local package. For an unpublished version that fails loudly; for a published one
+# it silently installs a stale copy. This repo declares its own workspace packages by
+# caret range rather than `workspace:`, so without this every workspace link becomes a
+# registry download.
 linkWorkspacePackages: true
 
 # Peer handling (strict-peer-dependencies, auto-install-peers) lives in .npmrc.
@@ -38,3 +39,28 @@ onlyBuiltDependencies:
 
 packages:
   - 'packages/*'
+
+# Dependency overrides. They live here, not under package.json `pnpm.overrides`: pnpm 10.33
+# warns that it no longer reads the `pnpm` field there (it still applies overrides from it today,
+# but the field is deprecated). npm reads neither location. Overrides are workspace-local and never
+# published. @memberjunction/core and @memberjunction/global carry the same caret floor as every
+# other MJ range so the graph resolves one copy of each (CLAUDE.md, "MemberJunction versions").
+overrides:
+  '@angular/animations': '21.1.3'
+  '@angular/build': '21.1.3'
+  '@angular/cli': '21.1.3'
+  '@angular/common': '21.1.3'
+  '@angular/compiler': '21.1.3'
+  '@angular/compiler-cli': '21.1.3'
+  '@angular/core': '21.1.3'
+  '@angular/forms': '21.1.3'
+  '@angular/localize': '21.1.3'
+  '@angular/platform-browser': '21.1.3'
+  '@angular/platform-browser-dynamic': '21.1.3'
+  '@angular/router': '21.1.3'
+  '@angular-devkit/build-angular': '21.1.3'
+  '@memberjunction/core': '^6.1.6'
+  '@memberjunction/global': '^6.1.6'
+  graphql: '16.14.2'
+  type-graphql: '2.0.0-beta.3'
+  reflect-metadata: '0.2.2'

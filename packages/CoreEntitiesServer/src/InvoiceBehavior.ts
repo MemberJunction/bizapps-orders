@@ -63,7 +63,6 @@ export interface InvoiceOrderFacts {
     AmountPaid: number;
     Balance: number;
     DueDate: string | null;
-    PaymentStatus: string | null;
     /** The customer's own PO/reference, printed so their AP department can match it. */
     ExternalDocumentNumber: string | null;
     /** Set when this order reverses another — the document is then a credit memo. */
@@ -88,6 +87,9 @@ export interface InvoiceLineFacts {
     CompanyName: string;
     Quantity: number;
     UnitPrice: number;
+    /** What the price rule set for the line before discount; null when no rule priced it, or on a line written before the column existed. */
+    ExtendedAmount: number | null;
+    DiscountPct: number;
     DiscountAmount: number;
     LineTotalNet: number;
     ChargeAmount: number;
@@ -218,8 +220,22 @@ export interface InvoiceInstalmentFacts {
     AmountPaid: number;
     /** Frozen at invoicing; null while Scheduled, when the number is derived from position instead. */
     DocumentNumber: string | null;
-    /** What prints between the total and the amount due. */
+    /**
+     * What credit memos took off this instalment (#684). The instalment keeps its amount, since the customer
+     * holds that invoice, and what is due falls by the credit.
+     */
+    AmountCredited?: number;
+    /** What prints between the total and the amount due: payments, then credits. */
     Payments: Array<{ Label: string; Amount: number }>;
+}
+
+/**
+ * What an approved amount change took off a whole-order document (#684): its credit memo, and what it took off
+ * the instalments not yet invoiced. The order's balance subtracts both, so the document's amount due does too.
+ */
+export interface InvoiceCreditFacts {
+    Label: string;
+    Amount: number;
 }
 
 /** The whole of one company's share, as one instalment: what every order without a schedule bills. */
@@ -555,10 +571,28 @@ export function BuildRows(lines: InvoiceLineFacts[]): InvoiceRow[] {
  * well inflates the subtotal by a whole bundle. The discount line below would then absorb the
  * difference and the ladder would still reach the right total, while showing the customer a
  * fictional list price and a fictional saving.
+ *
+ * THE LINE'S OWN GROSS, NOT `Quantity × UnitPrice`. A Flat price that does not divide by the quantity
+ * stores a rounded unit rate — Flat 100.00 at quantity 3 is 33.33 — and re-multiplying it lists the
+ * line at 99.99, so the discount derived below comes out −0.01 and the ladder prints a one-cent
+ * Adjustment nobody gave (#579). The rule's figure is stored on the line, and the line's total was
+ * computed from it, so the invoice lists that.
+ *
+ * A line written before that figure was stored has none. When it records no discount and its net is
+ * within rounding of quantity × unit price, the net is its list amount: a unit price rounded to
+ * cents is off by at most half a cent per unit, so a gap that small is the rounding, not a saving. A
+ * larger gap is a discount the columns do not show (see {@link LineDiscountOf}), and quantity × unit
+ * price stays the list amount so the ladder still prints it.
  */
 export function ListAmountOf(line: InvoiceLineFacts): number {
     if (line.IsRollupParent) return 0;
-    return Money(Number(line.Quantity) * Number(line.UnitPrice));
+    if (line.ExtendedAmount !== null && line.ExtendedAmount !== undefined) return Money(Number(line.ExtendedAmount));
+    const fromRate = Money(Number(line.Quantity) * Number(line.UnitPrice));
+    const net = Money(Number(line.LineTotalNet ?? 0));
+    const undiscounted = !Number(line.DiscountPct ?? 0) && !Number(line.DiscountAmount ?? 0);
+    // In whole cents, so a gap of exactly half a cent per unit is not lost to floating point.
+    if (undiscounted && Math.round(Math.abs(fromRate - net) * 100) <= 0.5 * Math.abs(Number(line.Quantity))) return net;
+    return fromRate;
 }
 
 /**
@@ -678,6 +712,11 @@ export function BuildDocuments(input: {
      * the header's date — which is what every order without a schedule bills.
      */
     Instalment?: InvoiceInstalmentFacts | null;
+    /**
+     * Approved amount changes' credits on the order (#684). They lower what the whole-order document asks for;
+     * an instalment's own credits come with the instalment instead.
+     */
+    Credits?: InvoiceCreditFacts[];
 }): InvoiceDocument[] {
     const { Order: order, Charges: charges, Adjustments: adjustments, Payments: payments } = input;
 
@@ -806,18 +845,27 @@ export function BuildDocuments(input: {
         const amountPaid = Money(myPayments.reduce((s, p) => s + p.Amount, 0));
 
         // What this document demands. An explicit instalment for another company is not this
-        // document's business; anything else is the whole of this company's share.
+        // document's business; anything else is the whole of this company's share, less what approved amount
+        // changes credited the order, which belongs to the order's own company.
+        const orderCredits = UUIDsEqual(companyID, order.CompanyID) ? (input.Credits ?? []).filter((c) => Money(c.Amount) !== 0) : [];
         const instalment =
             input.Instalment && input.Instalment.CompanyID.toLowerCase() === companyID.toLowerCase()
                 ? input.Instalment
-                : ImplicitInstalment({
-                      CompanyID: companyID,
-                      Gross: gross,
-                      AmountPaid: amountPaid,
-                      DueDate: dueDate,
-                      Payments: myPayments.map(({ Payment, Amount }) => ({ Label: `Payment ${Payment.PaymentNumber}`, Amount })),
-                  });
-        const amountDue = Money(instalment.Amount - instalment.AmountPaid);
+                : {
+                      ...ImplicitInstalment({
+                          CompanyID: companyID,
+                          Gross: gross,
+                          AmountPaid: amountPaid,
+                          DueDate: dueDate,
+                          Payments: [
+                              ...myPayments.map(({ Payment, Amount }) => ({ Label: `Payment ${Payment.PaymentNumber}`, Amount })),
+                              ...orderCredits.map((c) => ({ Label: c.Label, Amount: Money(c.Amount) })),
+                          ],
+                      }),
+                      AmountCredited: Money(orderCredits.reduce((s, c) => s + c.Amount, 0)),
+                  };
+        const credited = Money(instalment.AmountCredited ?? 0);
+        const amountDue = Money(instalment.Amount - instalment.AmountPaid - credited);
 
         const ladderCharges = myCharges
             .filter((c) => c.Charge.Category !== 'Tax')
@@ -889,7 +937,7 @@ export function BuildDocuments(input: {
             DueDate: instalment.DueDate,
             DaysUntilDue: instalment.DueDate && amountDue > 0 ? DaysBetween(input.AsOf, instalment.DueDate) : null,
             Status: order.Status,
-            PaymentStatusLabel: PaymentStatusLabel(instalment.Amount, instalment.AmountPaid),
+            PaymentStatusLabel: PaymentStatusLabel(instalment.Amount, Money(instalment.AmountPaid + credited)),
 
             CompanyID: companyID,
             CompanyName: companyName(companyID),
@@ -940,4 +988,130 @@ export function BuildDocuments(input: {
     // copies, and a case-sensitive match here drops every document and reports the order as having no
     // lines for the company — a wrong answer that looks like a data problem.
     return input.OnlyCompanyID ? documents.filter((d) => UUIDsEqual(d.CompanyID, input.OnlyCompanyID!)) : documents;
+}
+
+// ── The credit memo of an amount change (#684) ──────────────────────────────────────────────────
+
+/** Where an amount change's credit memo was applied: an invoiced instalment, or the order billed as a whole. */
+export interface CreditMemoApplicationFacts {
+    /** The instalment's frozen invoice number; null when the memo credited the order itself. */
+    DocumentNumber: string | null;
+    Amount: number;
+}
+
+/** The credit memo an approved amount change issued, as its approval recorded it. */
+export interface AmountChangeMemoFacts {
+    DocumentNumber: string;
+    /** `YYYY-MM-DD`: the day the change took effect, which is the day the memo is dated. */
+    IssuedOn: string;
+    Net: number;
+    Tax: number;
+    Gross: number;
+    TermNumber: number;
+    SubscriptionNumber: string | null;
+    PreviousAmount: number;
+    NewAmount: number;
+    Applied: CreditMemoApplicationFacts[];
+    /** The part the customer asked to have back, which finance refunds. */
+    Refund: number;
+    /** The part applied to nothing yet: the customer's credit on account. */
+    OpenCredit: number;
+    /** The line the term was bought on, as the order's own document prints it. */
+    LineNumber: number;
+    ProductName: string;
+    ProductSKU: string | null;
+}
+
+/**
+ * The customer's document for an amount change's credit memo, built on the order's own document so the issuer,
+ * the parties and the order number are the ones the customer already holds.
+ *
+ * NOT AN ORDER RENDERED. The memo is the approved change itself (#662): no order or instalment carries it, so it
+ * is built from what the approval recorded, never recomputed. One row for the term's line, negative; the ladder
+ * runs from its net through its tax to its total, then what was applied to an invoice the customer holds; what
+ * is left is the credit due to the customer, refunded when they asked for it and otherwise held on account.
+ */
+export function BuildAmountChangeCreditMemo(orderDocument: InvoiceDocument, memo: AmountChangeMemoFacts): InvoiceDocument {
+    const net = Money(memo.Net);
+    const tax = Money(memo.Tax);
+    const gross = Money(memo.Gross);
+    if (Money(net + tax) !== gross) {
+        throw new Error(`Credit memo ${memo.DocumentNumber} records ${net.toFixed(2)} and ${tax.toFixed(2)} of tax, which is not its ${gross.toFixed(2)}.`);
+    }
+    const applied = memo.Applied.filter((a) => Money(a.Amount) !== 0);
+    const appliedTotal = Money(applied.reduce((s, a) => s + a.Amount, 0));
+    const due = Money(gross - appliedTotal);
+    if (due !== Money(memo.Refund + memo.OpenCredit)) {
+        throw new Error(
+            `Credit memo ${memo.DocumentNumber} is for ${gross.toFixed(2)}, applies ${appliedTotal.toFixed(2)} and leaves ` +
+                `${Money(memo.Refund + memo.OpenCredit).toFixed(2)}; those do not add up.`,
+        );
+    }
+    // Negated amounts go through Money so a zero prints as 0, not -0.
+    const credit = (n: number): number => Money(-n);
+    const term = memo.SubscriptionNumber ? `term ${memo.TermNumber} of ${memo.SubscriptionNumber}` : `term ${memo.TermNumber}`;
+    const description = [
+        `Credit on order ${orderDocument.OrderNumber}: ${term} lowered from ${Money(memo.PreviousAmount).toFixed(2)} to ` +
+            `${Money(memo.NewAmount).toFixed(2)}, from ${memo.IssuedOn}.`,
+        memo.Refund > 0 ? `${Money(memo.Refund).toFixed(2)} of it is refunded to you.` : null,
+    ]
+        .filter(Boolean)
+        .join(' ');
+
+    const ladder = BuildLadder({
+        ListSubtotal: credit(net),
+        Discounts: [],
+        DiscountTotal: 0,
+        Charges: [{ Label: 'Tax', Note: null, Amount: credit(tax), IsTax: true }],
+        Gross: credit(gross),
+        // Applied credit walks the total back towards zero, the way a payment walks an invoice down.
+        Payments: applied.map((a) => ({
+            Label: a.DocumentNumber ? `Applied to invoice ${a.DocumentNumber}` : `Applied to order ${orderDocument.OrderNumber}`,
+            Amount: credit(a.Amount),
+        })),
+        AmountDue: credit(due),
+        DueLabel: 'Credit due you',
+    });
+
+    return {
+        ...orderDocument,
+        Kind: 'Credit Memo',
+        DocumentNumber: memo.DocumentNumber,
+        OrderDate: memo.IssuedOn,
+        DueDate: null,
+        DaysUntilDue: null,
+        PaymentStatusLabel: 'Credit',
+        ReversesOrderNumber: null,
+        ReversalReason: null,
+        Description: description,
+        Rows: [
+            {
+                LineID: `${memo.DocumentNumber}-1`,
+                LineNumber: memo.LineNumber,
+                ProductName: memo.ProductName,
+                ProductSKU: memo.ProductSKU,
+                Description: `Lower amount on ${term}`,
+                Quantity: 1,
+                UnitPrice: credit(net),
+                DiscountAmount: 0,
+                Amount: credit(net),
+                IncludedInParent: false,
+                ServicePeriodStart: null,
+                ServicePeriodEnd: null,
+                ReversesOrderLineID: null,
+                Children: [],
+            },
+        ],
+        Ladder: ladder,
+        ListSubtotal: credit(net),
+        DiscountTotal: 0,
+        NetTotal: credit(net),
+        ChargeTotal: 0,
+        TaxTotal: credit(tax),
+        Gross: credit(gross),
+        AmountPaid: credit(appliedTotal),
+        AmountDue: credit(due),
+        Payments: [],
+        Notes: [],
+    };
 }

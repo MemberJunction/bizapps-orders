@@ -10,9 +10,10 @@
  * at the order's most recent open approval task.
  *
  * ASSIGNED TO THE ROLE'S HOLDERS, BY PERSON. The tasks app has no group assignee, and it notifies and lists
- * an assignee through a `MJ_BizApps_Common: People` record (its `LinkedUserID` is the user told). So the
+ * an assignee through a `MJ_BizApps_Common: People` record (the user bound to it is the user told). So the
  * ConcessionLimit rule's role is expanded here: each active holder other than the requester is assigned
- * through the active person record linked to their user. A holder with no such record is skipped and
+ * through the active person record linked to their user (./person-user-link.ts: the user's People link,
+ * else the deprecated `People.LinkedUserID`). A holder with no such record is skipped and
  * logged; when no holder is left, recording is refused, for the reason a missing rule is — nobody would be
  * told the concession is waiting.
  *
@@ -48,6 +49,7 @@ import type {
 } from '@mj-biz-apps/tasks-entities';
 import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY } from './entity-names.js';
+import { ResolvePersonIDsForUsers } from './person-user-link.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
@@ -61,8 +63,12 @@ export const TASK_DECISION_OUTCOME_ENTITY = 'MJ_BizApps_Tasks: Task Decision Out
 /** The entity the tasks app resolves an assignee through, for its notices and its approvals inbox. */
 export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
-/** The tasks app's seeded approval type, resolved by Code — the type its approvals inbox lists. */
-export const APPROVAL_TASK_TYPE_CODE = 'APPROVAL_REQUEST';
+/**
+ * The concession approval task type, resolved by Code. Shipped in this app's metadata. It is its own type,
+ * not the tasks app's generic Approval Request, so that its OnAssign action (a Teams channel post) fires for
+ * concessions only. It is flagged IsApproval, so the tasks app's approvals inbox lists its tasks.
+ */
+export const APPROVAL_TASK_TYPE_CODE = 'ORDERS_CONCESSION_APPROVAL';
 
 const USER_ENTITY = 'MJ: Users';
 const USER_ROLE_ENTITY = 'MJ: User Roles';
@@ -82,7 +88,7 @@ export interface ConcessionForApproval {
 }
 
 export type ConcessionDecision = 'Approved' | 'Rejected';
-export type ConcessionTaskClosing = ConcessionDecision | 'Withdrawn';
+export type ConcessionTaskClosing = ConcessionDecision | 'Withdrawn' | 'Escalated';
 
 /**
  * The concession status a terminal task outcome decides, or null for an outcome this app does not know.
@@ -134,6 +140,11 @@ export function ConcessionSummary(facts: ConcessionSummaryFacts): string {
         case 'Seats': {
             const seats = Number(facts.AddedQuantity ?? 0);
             return `${seats} added seat${seats === 1 ? '' : 's'}, ${amount}`;
+        }
+        case 'Shift': {
+            // Valued at nothing: AddedDays carries how far the term moves.
+            const days = Number(facts.AddedDays ?? 0);
+            return `term moved ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days < 0 ? 'earlier' : 'later'}`;
         }
         case 'Terms': {
             // Valued in days to payment, not currency: AddedDays holds the change.
@@ -216,7 +227,7 @@ export async function RaiseConcessionApprovalAgain(
     const order = await loadOrder(concession.OrderHeaderID, ctx);
     const summary = linkDescriptionOf(refused.Name, order.OrderNumber);
     const newTaskID = await raiseTask(concession, roleID, refused.Name, summary, reason, order, ctx);
-    await recordActivity(
+    await RecordTaskActivity(
         refusedTaskID,
         `The decision was not applied to the concession, which is still awaiting approval: ${reason} ` +
             `A new approval task was raised for it.`,
@@ -226,8 +237,8 @@ export async function RaiseConcessionApprovalAgain(
 }
 
 /**
- * Close a concession's open approval task once it is decided on its own record or withdrawn: Completed
- * when approved, Cancelled otherwise. The order moves on to its most recent other open task, unless
+ * Close a concession's open approval task once it is decided on its own record, withdrawn, or escalated to
+ * another approver (`note` says why): Completed when approved, Cancelled otherwise. The order moves on to its most recent other open task, unless
  * `releaseOrder` is false: a draft-line removal runs inside the order's own save, where a second save of
  * the same header would race it, so there the order keeps its pointer.
  */
@@ -237,6 +248,7 @@ export async function CloseConcessionTasks(
     closing: ConcessionTaskClosing,
     ctx: ApprovalTaskContext,
     releaseOrder = true,
+    note?: string,
 ): Promise<void> {
     if (!ctx.Provider.EntityByName(TASK_LINK_ENTITY)) return; // without the tasks app nothing was ever raised
     const closed: string[] = [];
@@ -247,7 +259,9 @@ export async function CloseConcessionTasks(
         task.CompletionNotes =
             closing === 'Withdrawn'
                 ? 'The concession was withdrawn.'
-                : `The concession was ${closing.toLowerCase()} on its own record.`;
+                : closing === 'Escalated'
+                  ? `Escalated to the ConcessionLimit approver: ${note ?? ''}`.trim()
+                  : `The concession was ${closing.toLowerCase()} on its own record.`;
         if (!(await task.Save())) {
             throw new Error(`Approval task ${task.ID} could not be closed: ${task.LatestResult?.CompleteMessage}`);
         }
@@ -341,12 +355,12 @@ async function raiseTask(
     const approverPersonIDs = await approverPersons(roleID, concession.RequestedByUserID, ctx);
     const task = await createTask(order, name, refusal, ctx);
 
-    await createLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, `Order ${order.OrderNumber}`, ctx);
-    await createLink(task.ID, entityID(ORDER_CONCESSION_ENTITY, ctx), concession.ID, linkDescription, ctx);
+    await CreateTaskLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, `Order ${order.OrderNumber}`, ctx);
+    await CreateTaskLink(task.ID, entityID(ORDER_CONCESSION_ENTITY, ctx), concession.ID, linkDescription, ctx);
 
     const personEntityID = entityID(PERSON_ENTITY, ctx);
     for (const personID of approverPersonIDs) {
-        await createAssignment(task.ID, personEntityID, personID, ctx);
+        await CreateTaskAssignment(task.ID, personEntityID, personID, ctx);
     }
 
     order.ApprovalTaskID = task.ID;
@@ -370,17 +384,10 @@ async function approverPersons(roleID: string, requesterUserID: string, ctx: App
         );
     }
 
-    const persons = await view<{ ID: string; LinkedUserID: string }>(ctx, {
-        EntityName: PERSON_ENTITY,
-        ExtraFilter:
-            `Status = 'Active' AND LinkedUserID IN (${RequireUUIDs(others, 'UserID').map((id) => `'${id}'`).join(', ')})`,
-        Fields: ['ID', 'LinkedUserID'],
-        OrderBy: '__mj_CreatedAt',
-        ResultType: 'simple',
-    });
+    const persons = await ResolvePersonIDsForUsers(RequireUUIDs(others, 'UserID'), ctx.Provider, ctx.User, { ActiveOnly: true });
     const holders: RoleHolder[] = others.map((userID) => ({
         UserID: userID,
-        PersonID: persons.find((p) => UUIDsEqual(p.LinkedUserID, userID))?.ID ?? null,
+        PersonID: persons.get(userID.toLowerCase()) ?? null,
     }));
     const { PersonIDs, WithoutPerson } = ApproverAssignees(holders, requesterUserID);
     if (PersonIDs.length === 0) {
@@ -471,7 +478,7 @@ async function createTask(
     return task;
 }
 
-async function createLink(
+export async function CreateTaskLink(
     taskID: string,
     linkEntityID: string,
     recordID: string,
@@ -490,7 +497,7 @@ async function createLink(
     }
 }
 
-async function createAssignment(taskID: string, personEntityID: string, personID: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function CreateTaskAssignment(taskID: string, personEntityID: string, personID: string, ctx: ApprovalTaskContext): Promise<void> {
     const assignment = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskAssignmentEntity>(TASK_ASSIGNMENT_ENTITY, ctx.User);
     requireSubclass(assignment, TASK_ASSIGNMENT_ENTITY);
     assignment.NewRecord();
@@ -551,7 +558,7 @@ export async function EnsureTaskAssignment(taskID: string, userEntityID: string,
 }
 
 /** A note on a task's activity feed, where the tasks app shows it with the task. */
-async function recordActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function RecordTaskActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
     const activity = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskActivityEntity>(TASK_ACTIVITY_ENTITY, ctx.User);
     requireSubclass(activity, TASK_ACTIVITY_ENTITY);
     activity.NewRecord();
@@ -559,7 +566,7 @@ async function recordActivity(taskID: string, description: string, ctx: Approval
     activity.ActivityType = 'StatusChange';
     activity.Description = description;
     if (!(await activity.Save())) {
-        throw new Error(`The refusal could not be recorded on approval task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
+        throw new Error(`A note could not be recorded on task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
     }
 }
 

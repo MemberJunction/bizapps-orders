@@ -17,6 +17,8 @@ import './lib/generated/generated-forms.module';
 import './lib/custom/custom-forms.module';
 import { LoadCustomForms } from './lib/custom/custom-forms.module';
 import './lib/form-panels/party-headers.module';
+// Staff section contributor (Common's Organization form): importing fires @RegisterClass.
+import './lib/form-panels/organization-staff-orders.contributor';
 import './lib/form-panels/document-forms.module';
 
 // Import generated class registrations manifest
@@ -40,7 +42,6 @@ import {
 export { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifest';
 export { GeneratedFormsModule } from './lib/generated/generated-forms.module';
 export { CustomFormsModule } from './lib/custom/custom-forms.module';
-export { BizAppsProductFormComponent } from './lib/custom/Product/product-form.component';
 export {
     BizAppsProductSaveGuardFormComponent,
     ShouldConfirmEventRevRec,
@@ -52,14 +53,11 @@ export { BizAppsProductPromotionsWidgetComponent } from './lib/custom/Product/wi
 export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/widgets/product-accounting-widget.component';
 export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
 export { BizAppsProductSubscriptionWidgetComponent } from './lib/custom/Product/widgets/product-subscription-widget.component';
-export { BizAppsPriceListFormComponent } from './lib/custom/PriceList/price-list-form.component';
-export { BizAppsPromotionFormComponent } from './lib/custom/Promotion/promotion-form.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
-export { BizAppsSubscriptionFormComponent } from './lib/custom/Subscription/subscription-form.component';
-export { BizAppsSubscriptionTermFormComponent } from './lib/custom/SubscriptionTerm/subscription-term-form.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 
 export { OrdersPartyHeadersModule } from './lib/form-panels/party-headers.module';
+export { OrdersStaffContributor, BuildStaffOrderContribution, QuotedStaffIDs, type StaffOrderRow, type StaffSubscriptionRow } from './lib/form-panels/organization-staff-orders.contributor';
 export { PersonOrdersOverviewPanel } from './lib/form-panels/person-orders-overview.panel';
 export { OrganizationOrdersOverviewPanel } from './lib/form-panels/organization-orders-overview.panel';
 export { PartyOrdersOverviewComponent } from './lib/panels/party-orders-overview.component';

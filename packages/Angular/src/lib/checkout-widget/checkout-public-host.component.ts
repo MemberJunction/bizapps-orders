@@ -67,6 +67,18 @@ import {
     memberDiscountNotice,
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
+import { PostWithTurnstile, TurnstileError, TurnstileWidget, type TurnstileState } from './checkout-turnstile';
+import {
+    CheckoutTransportError,
+    COMPLETE_DELAYED_MESSAGE,
+    COMPLETE_FINISHING_MESSAGE,
+    COMPLETE_RETRY_INTERVAL_MS,
+    COMPLETE_RETRY_TIMEOUT_MS,
+    CompleteWithRetry,
+    ReadCheckoutReply,
+} from './checkout-complete';
+
+import { FormatRenewalAmount, ReadRenewalPayment, RenewalPaidMessage, type CheckoutRenewalPaymentView } from './checkout-renewal';
 
 export { buildCheckoutDraftLine } from './checkout-draft-line';
 
@@ -114,6 +126,19 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     @Input() public apiRoot = '/checkout';
     /** A host-signed membership token, verified server-side on /draft and never stored (#324). */
     @Input() public memberToken = '';
+    /**
+     * A signed update-card link token (#289). Set, the checkout pays the open renewal order the token
+     * names — no product, no re-pricing — and keeps the card it is paid with for future renewals.
+     */
+    @Input() public renewalToken = '';
+
+    /** The renewal order being paid, in the pay-renewal mode; null for an ordinary checkout. */
+    public renewal: CheckoutRenewalPaymentView | null = null;
+
+    /** The renewal's amount as the page shows it. */
+    public get renewalAmount(): string {
+        return this.renewal ? FormatRenewalAmount(this.renewal.Amount, this.config?.currency) : '';
+    }
 
     /**
      * The buyer already subscribes to what they tried to buy (#323). As the `<mj-orders-checkout>`
@@ -169,11 +194,23 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     /** True while access is being asked for; the redirect waits on it. */
     private accessTracking = false;
 
+    /**
+     * Shown in place of the form once the buyer has paid and `/complete` has not given a final
+     * answer (the reply was a gateway error page, or the session is still Processing).
+     */
+    public finishingMessage: string | null = null;
+    /** How often, and for how long, `/complete` is asked again. Fields so a test can shorten them. */
+    public completeRetryIntervalMs = COMPLETE_RETRY_INTERVAL_MS;
+    public completeRetryTimeoutMs = COMPLETE_RETRY_TIMEOUT_MS;
+
     public get accessMessage(): string | null {
         return AccessMessage(this.accessState, this.config?.accessMessages);
     }
 
     private stripe: StripeInstance | null = null;
+    /** Turnstile for a widget that sets `requireTurnstile` (#592); idle until the edge asks for it. */
+    private readonly turnstile = new TurnstileWidget(() => this.turnstileContainer());
+    private readonly turnstileState: TurnstileState = { siteKey: null };
     private card: StripeCard | null = null;
     private cardMounted = false;
     private destroyed = false;
@@ -205,14 +242,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             this.loadError = 'Checkout requires a secure random source. Open this page over HTTPS.';
             return;
         }
-        if (await this.resumeAccountStep()) {
+        if (!this.renewalToken && (await this.resumeAccountStep())) {
             return;
         }
         this.setState('LOADING');
         try {
-            const init = await this.post('/initialize', {
+            const init = await this.postGated('/initialize', {
                 slug: this.slug,
                 clientSessionKey: this.sessionKey,
+                ...(this.renewalToken ? { renewalToken: this.renewalToken } : {}),
             });
             if (!init?.Success) {
                 this.loadError = this.str(init?.ErrorMessage, 'This checkout is not available.');
@@ -226,14 +264,20 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             if (typeof init.CustomJS === 'string' && init.CustomJS && !cfg.customUI?.js) {
                 cfg.customUI = { ...(cfg.customUI || {}), js: init.CustomJS };
             }
-            if (!cfg.productId) {
+            if (this.renewalToken) {
+                this.renewal = ReadRenewalPayment(init);
+                if (!this.renewal) {
+                    this.loadError = 'This renewal cannot be paid here.';
+                    return;
+                }
+            } else if (!cfg.productId) {
                 this.loadError = 'This checkout is not configured with a product.';
                 return;
             }
             this.config = cfg;
             this.setState('CHECKOUT');
-        } catch {
-            this.loadError = 'Checkout is temporarily unavailable. Please try again.';
+        } catch (err) {
+            this.loadError = err instanceof TurnstileError ? err.message : 'Checkout is temporarily unavailable. Please try again.';
         } finally {
             if (this.loadError) this.reportError(this.loadError);
             this.cdr.detectChanges();
@@ -256,6 +300,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     public ngOnDestroy(): void {
         this.destroyed = true;
+        this.turnstile.Destroy();
         (this.hostEl?.nativeElement as HTMLElement | undefined)?.removeEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
         try {
             this.card?.unmount?.();
@@ -512,6 +557,82 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /**
+     * Pay the open renewal order (#289): an intent for its balance, confirmed with the card entered
+     * here, then `/complete`, which books the payment against the renewal order and makes this card
+     * the subscription's renewal card.
+     */
+    public async payRenewal(): Promise<void> {
+        if (this.processing || !this.renewal) {
+            return;
+        }
+        this.processing = true;
+        this.errorMessage = null;
+        this.setState('PROCESSING');
+        try {
+            const intent = await this.post('/payment-intent', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+            });
+            if (!intent?.Success) {
+                throw new Error(this.str(intent?.ErrorMessage, 'Could not start payment.'));
+            }
+            if (!intentAlreadyCollected(intent.Status)) {
+                if (!intent.ClientSecret) {
+                    throw new Error('Could not start payment.');
+                }
+                if (!this.stripe || !this.card) {
+                    throw new Error('Card entry is not ready.');
+                }
+                const result = await this.stripe.confirmCardPayment(String(intent.ClientSecret), {
+                    payment_method: { card: this.card },
+                });
+                if (result.error) {
+                    if (!stripeConfirmAlreadyCollected(result.error)) {
+                        throw new Error(formatStripeError(result.error));
+                    }
+                } else {
+                    const stripeStatus = (result.paymentIntent?.status || '').toLowerCase();
+                    if (stripeStatus && stripeStatus !== 'succeeded' && stripeStatus !== 'processing') {
+                        throw new Error(`Payment was not confirmed (Stripe status: ${result.paymentIntent?.status}).`);
+                    }
+                }
+            }
+            const done = await this.completeAfterPayment(() =>
+                this.post('/complete', {
+                    sessionId: this.sessionId,
+                    clientSessionKey: this.sessionKey,
+                })
+            );
+            if (!done) {
+                return;
+            }
+            if (!done.Success) {
+                throw new Error(this.str(done.ErrorMessage, 'Could not complete the payment.'));
+            }
+            this.orderNumber = this.renewal.OrderNumber;
+            this.successMessage = RenewalPaidMessage(this.renewal);
+            this.setState('SUCCESS');
+            this.dispatch(
+                CHECKOUT_COMPLETE_EVENT,
+                BuildCheckoutCompleteDetail({
+                    sessionId: this.sessionId,
+                    productName: this.renewal.Description,
+                    productId: undefined,
+                    totalGross: this.renewal.Amount,
+                    currency: this.config?.currency,
+                    coupon: null,
+                })
+            );
+        } catch (err) {
+            this.errorMessage = err instanceof Error ? err.message : 'Payment failed.';
+            this.reportError(this.errorMessage);
+        } finally {
+            this.processing = false;
+            this.cdr.detectChanges();
+        }
+    }
+
     private emitIfAlreadySubscribed(response: Record<string, unknown> | null | undefined): void {
         const detail = alreadySubscribedDetail(response);
         if (detail) {
@@ -541,12 +662,17 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private async finish(): Promise<void> {
         // Remembered before completing, so a reload after payment returns to the account step.
         this.rememberCompleting(this.sessionId);
-        const done = await this.post('/complete', {
-            sessionId: this.sessionId,
-            clientSessionKey: this.sessionKey,
-        });
-        if (!done?.Success) {
-            throw new Error(this.str(done?.ErrorMessage, 'Could not complete checkout.'));
+        const done = await this.completeAfterPayment(() =>
+            this.postGated('/complete', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+            })
+        );
+        if (!done) {
+            return;
+        }
+        if (!done.Success) {
+            throw new Error(this.str(done.ErrorMessage, 'Could not complete checkout.'));
         }
         this.orderNumber = done.OrderNumber ? String(done.OrderNumber) : null;
         this.successMessage =
@@ -562,8 +688,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 productId: this.config?.productId,
                 totalGross: done.TotalGross,
                 currency: this.config?.currency,
-                // The applied promotion code, once the checkout takes one.
-                coupon: null,
+                coupon: this.appliedPromotion?.code ?? null,
             })
         );
         this.cdr.detectChanges();
@@ -816,6 +941,10 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         if (memberToken) {
             this.memberToken = memberToken;
         }
+        const renewalToken = el.getAttribute('renewal-token') || el.getAttribute('data-renewal-token');
+        if (renewalToken) {
+            this.renewalToken = renewalToken;
+        }
         this.readConversationAttributes();
         el.addEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
     }
@@ -834,16 +963,21 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.attributionReference = el.getAttribute('source-ref') || el.getAttribute('data-source-ref') || null;
     }
 
+    /** Session storage is scoped per slug, and apart for the pay-renewal mode so the two never share a session. */
+    private get storageScope(): string {
+        return this.renewalToken ? `renew:${this.slug}` : this.slug;
+    }
+
     private forgetClientKey(): void {
         try {
-            sessionStorage.removeItem(`mj-checkout-key:${this.slug}`);
+            sessionStorage.removeItem(`mj-checkout-key:${this.storageScope}`);
         } catch {
             /* private mode */
         }
     }
 
     private clientKey(): string {
-        const storageKey = `mj-checkout-key:${this.slug}`;
+        const storageKey = `mj-checkout-key:${this.storageScope}`;
         try {
             const existing = sessionStorage.getItem(storageKey);
             if (existing) {
@@ -874,7 +1008,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     private get completingKey(): string {
-        return `mj-checkout-completing:${this.slug}`;
+        return `mj-checkout-completing:${this.storageScope}`;
     }
 
     private rememberCompleting(sessionId: string): void {
@@ -901,16 +1035,65 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
-    private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
-        const res = await fetch(`${this.apiRoot}${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
+    /**
+     * Sends `/complete` for a checkout the buyer has paid for, asking again while the server may
+     * still be finishing. Returns the server's final answer, or null when the wait ran out; the
+     * buyer then sees that the payment went through, never a failure.
+     */
+    private async completeAfterPayment(send: () => Promise<Record<string, unknown>>): Promise<Record<string, unknown> | null> {
+        const done = await CompleteWithRetry(send, {
+            intervalMs: this.completeRetryIntervalMs,
+            timeoutMs: this.completeRetryTimeoutMs,
+            onWaiting: () => {
+                this.finishingMessage = COMPLETE_FINISHING_MESSAGE;
+                this.cdr.detectChanges();
+            },
         });
-        const json = (await res.json()) as Record<string, unknown>;
-        json._httpStatus = res.status;
-        return json;
+        this.finishingMessage = done ? null : COMPLETE_DELAYED_MESSAGE;
+        return done;
+    }
+
+    /** Throws {@link CheckoutTransportError}, whose message is written for the buyer, when no JSON reply arrives. */
+    private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
+        let res: Response;
+        try {
+            res = await fetch(`${this.apiRoot}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+        } catch {
+            throw new CheckoutTransportError(null);
+        }
+        return ReadCheckoutReply(res);
+    }
+
+    /** `/initialize` and `/complete`: sends a Turnstile token when the widget requires one. */
+    private postGated(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+        return PostWithTurnstile(
+            (p, b) => this.post(p, b),
+            path,
+            body,
+            (siteKey) => this.turnstile.Token(siteKey),
+            this.turnstileState,
+        );
+    }
+
+    /** Where Turnstile renders: outside the template's state branches, so it survives every redraw. */
+    private turnstileContainer(): HTMLElement | null {
+        const el = this.hostEl?.nativeElement as HTMLElement | undefined;
+        if (!el) {
+            return null;
+        }
+        const existing = el.querySelector<HTMLElement>('.mj-checkout-public__turnstile');
+        if (existing) {
+            return existing;
+        }
+        const created = document.createElement('div');
+        created.className = 'mj-checkout-public__turnstile';
+        el.appendChild(created);
+        return created;
     }
 
     private str(value: unknown, fallback = ''): string {

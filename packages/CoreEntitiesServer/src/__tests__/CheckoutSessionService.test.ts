@@ -116,6 +116,7 @@ const mocks = vi.hoisted(() => {
         OrderHeaderID: string | null = null;
         BillToPersonID: string | null = null;
         BillToOrganizationID: string | null = null;
+        LastEventAt: Date | null = null;
         LatestResult = { Success: true, Message: '', CompleteMessage: '' };
         Load = mockIntentLoad;
         Save = mockIntentSave;
@@ -306,7 +307,10 @@ const mocks = vi.hoisted(() => {
         /** Existing Person rows the e-mail lookup finds, keyed by normalized e-mail. */
         peopleByEmail: {} as Record<string, string>,
         personLookups: 0,
+        /** Replaces the Event Order Lines fields the discovery reads, for one test. */
+        extensionFieldsOverride: undefined as Array<Record<string, unknown>> | undefined,
         subscriptionRunViewResults: [] as Array<{ ProductID: string; Product: string }>,
+        eventProductsRequiringAttendees: [] as string[],
         subscriptionRunViewParams: [] as Array<{ ExtraFilter?: string }>,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
@@ -321,12 +325,10 @@ const mocks = vi.hoisted(() => {
     };
 });
 
-// The engine import moved to the local fallback module (see identityClaimContracts.ts);
-// partial-mock it so the real contracts stay live and only the engine is overridden.
-vi.mock('../identityClaimContracts.js', async (importOriginal) => ({
-    ...(await importOriginal<typeof import('../identityClaimContracts.js')>()),
+vi.mock('@memberjunction/core-entities-server', () => ({
     IdentityClaimEngineServer: {
         Instance: {
+            Config: () => Promise.resolve(),
             CreateClaim: (params: unknown, user?: unknown) => mocks.mockClaimCreate(params, user)
         }
     }
@@ -393,6 +395,40 @@ vi.mock('../PaymentProviderResolver.js', async (importOriginal) => {
     };
 });
 
+// The browser's publishable key (ResolveCheckoutPublishableKey has its own suite). Null runs the real one.
+const publishableKeyMocks = vi.hoisted(() => ({
+    resolve: null as null | ((...args: unknown[]) => unknown),
+}));
+
+vi.mock('../CheckoutPublishableKey.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../CheckoutPublishableKey.js')>();
+    return {
+        ...actual,
+        ResolveCheckoutPublishableKey: (...args: unknown[]) =>
+            publishableKeyMocks.resolve
+                ? publishableKeyMocks.resolve(...args)
+                : (actual.ResolveCheckoutPublishableKey as (...a: unknown[]) => unknown)(...args),
+    };
+});
+
+// The update-card link's reads (#289). Null by default: an ordinary checkout's order is not a renewal.
+const renewalPayMocks = vi.hoisted(() => ({
+    verify: vi.fn(),
+    loadOrder: vi.fn().mockResolvedValue(null),
+    alreadyConfirmed: vi.fn().mockResolvedValue(false),
+}));
+
+vi.mock('../CheckoutRenewalPayment.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../CheckoutRenewalPayment.js')>();
+    return {
+        ...actual,
+        VerifyRenewalPaymentToken: (...args: unknown[]) => renewalPayMocks.verify(...args),
+        LoadRenewalPaymentOrder: (...args: unknown[]) => renewalPayMocks.loadOrder(...args),
+        RenewalPaymentAlreadyConfirmed: (...args: unknown[]) => renewalPayMocks.alreadyConfirmed(...args),
+        RenewalPaymentLinkSecret: () => 'test-secret',
+    };
+});
+
 vi.mock('../CapturePaymentOperation.js', () => ({
     CapturePaymentOperation: class {
         ExecuteServer = (...args: unknown[]) => mocks.mockCaptureExecute(...args);
@@ -419,6 +455,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 { Name: 'MJ_BizApps_Common: People', ID: 'entity-people-id', Fields: [] }
             ];
             EntityByName = vi.fn().mockImplementation((name: string) => {
+                if (mocks.extensionFieldsOverride && name === 'MJ_BizApps_Orders: Event Order Lines') {
+                    return { Name: name, Fields: mocks.extensionFieldsOverride, ParentEntityFieldNames: new Set<string>() };
+                }
                 return this.Entities.find((e: { Name: string }) => e.Name.toLowerCase() === name.toLowerCase());
             });
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
@@ -466,6 +505,12 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     return Promise.resolve({
                         Success: true,
                         Results: mocks.subscriptionRunViewResults
+                    });
+                }
+                if (params.EntityName.includes('Event Products')) {
+                    return Promise.resolve({
+                        Success: true,
+                        Results: mocks.eventProductsRequiringAttendees.map((ID) => ({ ID }))
                     });
                 }
                 if (params.EntityName.includes('Products') && !params.EntityName.includes('Product Types')) {
@@ -557,12 +602,14 @@ describe('CheckoutSessionService', () => {
         mocks.peopleByEmail = {};
         mocks.personLookups = 0;
         mocks.subscriptionRunViewResults = [];
+        mocks.eventProductsRequiringAttendees = [];
         mocks.subscriptionRunViewParams = [];
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
         mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
         mocks.mockPaymentIntentInstance.OrderHeaderID = null;
         mocks.mockPaymentIntentInstance.BillToPersonID = null;
+        mocks.mockPaymentIntentInstance.LastEventAt = null;
         mocks.mockOrderInstance.AmountPaid = 0;
         mocks.mockIntentSave.mockResolvedValue(true);
         mocks.mockCaptureExecute.mockResolvedValue({
@@ -584,6 +631,240 @@ describe('CheckoutSessionService', () => {
             const wanted = sku?.trim().toLowerCase();
             if (wanted === 'conf-2027') return { ID: 'prod-1', SKU: 'CONF-2027' };
             return undefined;
+        });
+    });
+
+    describe('pay-renewal mode — the update-card link (#289)', () => {
+        const SUB = '11111111-2222-4333-8444-555555555555';
+        const ORDER_ID = 'aaaaaaaa-0000-4000-8000-000000000999';
+        const RENEWAL = {
+            OrderID: ORDER_ID,
+            OrderNumber: 'ORD-000123',
+            Status: 'Confirmed',
+            CompanyID: 'comp-10',
+            TotalGross: 1200,
+            AmountPaid: 0,
+            Balance: 1200,
+            BillToPersonID: 'person-7',
+            BillToOrganizationID: null,
+            NextDueDate: '2027-01-01',
+            SubscriptionIDs: [SUB],
+            Description: 'Annual Plan',
+            SubscriptionNumber: 'SUB-000045',
+            SourceCheckoutWidgetID: 'widget-1',
+            RenewalCardProviderCustomerRef: 'cus_old',
+            RenewalCardPaymentProviderID: 'pp-1',
+            RenewalCardOwnerPersonID: 'person-7',
+            RenewalCardOwnerOrganizationID: null,
+            Subscriptions: [{ ID: SUB, Status: 'Active', AutoRenew: true }],
+            PayerPersonID: 'person-7',
+            PayerOrganizationID: null,
+        };
+        /** A gift: the renewal bills the beneficiary, person-7; the card is the buyer's, person-3. */
+        const GIFT = { ...RENEWAL, RenewalCardOwnerPersonID: 'person-3', PayerPersonID: 'person-3' };
+        const LINK_EXPIRES = new Date(Date.now() + 30 * 60_000);
+
+        beforeEach(() => {
+            renewalPayMocks.verify.mockReset().mockResolvedValue({ Valid: true, OrderID: ORDER_ID, SubscriptionID: SUB, ExpiresAt: LINK_EXPIRES });
+            renewalPayMocks.loadOrder.mockReset().mockResolvedValue({ ...RENEWAL });
+            renewalPayMocks.alreadyConfirmed.mockReset().mockResolvedValue(false);
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ paymentProviderId: 'pp-1', productId: 'prod-1' });
+            mocks.sessionRunViewResults = [];
+        });
+
+        afterEach(() => {
+            renewalPayMocks.loadOrder.mockReset().mockResolvedValue(null);
+        });
+
+        it('refuses a link whose token does not check out, saying only that it is invalid or expired', async () => {
+            renewalPayMocks.verify.mockResolvedValue({ Valid: false, Reason: 'signature' });
+            const res = await CheckoutSessionService.InitializeRenewalPaymentSession('bad.token', KEY, testUser);
+            expect(res).toEqual({ Success: false, ErrorMessage: 'This payment link is not valid.' });
+            renewalPayMocks.verify.mockResolvedValue({ Valid: false, Reason: 'expired' });
+            expect((await CheckoutSessionService.InitializeRenewalPaymentSession('old.token', KEY, testUser)).ErrorMessage).toContain('expired');
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('refuses an order that is already paid, or already paid through a link', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, Balance: 0 });
+            expect((await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser)).ErrorMessage).toBe('This renewal is already paid.');
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL });
+            renewalPayMocks.alreadyConfirmed.mockResolvedValue(true);
+            expect((await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser)).ErrorMessage).toBe(
+                'This renewal has already been paid through this link.'
+            );
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+        });
+
+        it('opens a session on the renewal order, in the widget that sold it, ending no later than the link', async () => {
+            Object.assign(mocks.mockPersonInstance, { Load: vi.fn().mockResolvedValue(true), Email: 'buyer@example.com' });
+            const res = await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser);
+            expect(mocks.mockSessionInstance.Email).toBe('buyer@example.com');
+            expect(res.Success).toBe(true);
+            expect(mocks.mockSessionInstance.DraftOrderID).toBe(ORDER_ID);
+            expect(mocks.mockSessionInstance.CheckoutWidgetID).toBe('widget-1');
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-7');
+            expect(mocks.mockSessionInstance.ExpiresAt.getTime()).toBeLessThanOrEqual(LINK_EXPIRES.getTime());
+            expect(res.RenewalPayment).toEqual({ OrderNumber: 'ORD-000123', Amount: 1200, Description: 'Annual Plan', SubscriptionNumber: 'SUB-000045', DueDate: '2027-01-01' });
+            // The browser gets the public configuration only.
+            expect(res.Configuration?.paymentProviderId).toBeUndefined();
+        });
+
+        it("hands the renewal browser the same resolved publishable key as an ordinary checkout", async () => {
+            const resolve = vi.fn().mockResolvedValue({ Key: 'pk_test_from_env', Source: 'environment' });
+            publishableKeyMocks.resolve = resolve;
+            try {
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                    paymentProviderId: 'pp-1',
+                    productId: 'prod-1',
+                    stripePublishableKey: 'pk_test_from_widget',
+                });
+                const res = await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(res.Configuration?.stripePublishableKey).toBe('pk_test_from_env');
+                expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ paymentProviderId: 'pp-1' }), expect.any(String), testUser);
+            } finally {
+                publishableKeyMocks.resolve = null;
+            }
+        });
+
+        it('a pay-renewal session cannot be drafted: the order is not re-priced', async () => {
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            const res = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'buyer@example.com', [{ ProductID: 'prod-1', Quantity: 1 }], BILLING, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('This checkout pays an existing renewal order and cannot be changed.');
+        });
+
+        it('opens the intent for the open balance on the renewal order, keeping the card under the old card\'s customer', async () => {
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, AmountPaid: 200, Balance: 1000 });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.Amount).toBe(1000);
+            const request = mocks.mockOpenPaymentIntent.mock.calls[0][0] as Record<string, unknown>;
+            expect(request).toMatchObject({
+                PaymentProviderID: 'pp-1',
+                Amount: 1000,
+                OrderHeaderID: ORDER_ID,
+                BillToPersonID: 'person-7',
+                ProviderCustomerRef: 'cus_old',
+                SaveInstrumentForReuse: true,
+            });
+            expect(String(request.IdempotencyKey)).toMatch(/^renewal-pay-sess-123-100000-k/);
+            expect(mocks.mockSessionInstance.PaymentIntentID).toBe('pi-row-1');
+        });
+
+        it('refuses to open an intent once the renewal is paid', async () => {
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, Balance: 0 });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res).toMatchObject({ Success: false, ErrorMessage: 'This renewal is already paid.' });
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('completing refuses an unsettled payment and leaves the session open', async () => {
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockPaymentIntentInstance.Status = 'Processing';
+            mocks.mockPaymentIntentInstance.ProviderIntentID = '';
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('has not settled');
+            expect(mocks.mockCaptureExecute).not.toHaveBeenCalled();
+            mocks.mockPaymentIntentInstance.ProviderIntentID = 'pi_gw_1';
+        });
+
+        it('completing books the payment against the renewal order and replaces the renewal card, creating no order', async () => {
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockPaymentIntentInstance.Amount = 1200;
+            mocks.mockOrderInstance.Status = 'Confirmed';
+            mocks.mockOrderInstance.TotalGross = 1200;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-7';
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res).toMatchObject({ Success: true, Status: 'Confirmed', OrderID: ORDER_ID, OrderNumber: 'ORD-000123' });
+            expect(mocks.mockOrderSave).not.toHaveBeenCalled();
+            const capture = mocks.mockCaptureExecute.mock.calls[0][0] as { Amount: number; Allocations: Array<{ OrderHeaderID: string; Amount: number }>; IdempotencyKey: string };
+            expect(capture.Amount).toBe(1200);
+            expect(capture.Allocations).toEqual([{ OrderHeaderID: 'order-999', Amount: 1200 }]);
+            expect(capture.IdempotencyKey).toBe('checkout-complete:sess-123');
+            expect(renewalMocks.saveInstrument).toHaveBeenCalledWith(
+                expect.objectContaining({ OrderHeaderID: 'order-999', OwnerPersonID: 'person-7', ReplaceCardOnSubscriptionIDs: [SUB] }),
+                expect.anything(),
+                testUser
+            );
+        });
+
+        it('refuses a cancelled subscription, or one no longer set to renew, on open and on pay (#683)', async () => {
+            const refused = 'This subscription is no longer set to renew, so this renewal cannot be paid here. Contact us to renew.';
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, Subscriptions: [{ ID: SUB, Status: 'Canceled', AutoRenew: true }] });
+            expect((await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser)).ErrorMessage).toBe(refused);
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, Subscriptions: [{ ID: SUB, Status: 'Active', AutoRenew: false }] });
+            expect(await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser)).toMatchObject({ Success: false, ErrorMessage: refused });
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('on a gift, the session, the intent and the payment are the buyer\'s, who owns the declined card (#683)', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...GIFT });
+            Object.assign(mocks.mockPersonInstance, { Load: vi.fn().mockResolvedValue(true), Email: 'gift-buyer@example.com' });
+            await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser);
+            expect(mocks.mockSessionInstance.PersonID).toBe('person-3');
+            expect(mocks.mockSessionInstance.Email).toBe('gift-buyer@example.com');
+
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            // The old card's customer is the buyer's own, so the new card joins it.
+            expect(mocks.mockOpenPaymentIntent.mock.calls[0][0]).toMatchObject({ BillToPersonID: 'person-3', ProviderCustomerRef: 'cus_old' });
+        });
+
+        it('completing a gift renewal books the payment to the buyer and files the card in the buyer\'s wallet (#683)', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...GIFT });
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockPaymentIntentInstance.Amount = 1200;
+            mocks.mockOrderInstance.Status = 'Confirmed';
+            mocks.mockOrderInstance.TotalGross = 1200;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-7';
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(mocks.mockCaptureExecute.mock.calls[0][0]).toMatchObject({ BillToPersonID: 'person-3', BillToOrganizationID: null });
+            expect(renewalMocks.saveInstrument).toHaveBeenCalledWith(
+                expect.objectContaining({ OwnerPersonID: 'person-3', ReplaceCardOnSubscriptionIDs: [SUB] }),
+                expect.anything(),
+                testUser
+            );
+        });
+
+        it('a card the payer does not own never joins its gateway customer: the payer gets their own (#683)', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, RenewalCardOwnerPersonID: null, RenewalCardOwnerOrganizationID: 'org-1' });
+            renewalMocks.resolveProvider = async () => ({ EnsureCustomer: renewalMocks.ensureCustomer });
+            try {
+                mocks.mockSessionInstance.DraftOrderID = 'order-999';
+                await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+                expect(renewalMocks.ensureCustomer).toHaveBeenCalledWith(expect.objectContaining({ BillToPersonID: 'person-7' }));
+                expect(mocks.mockOpenPaymentIntent.mock.calls[0][0]).toMatchObject({ BillToPersonID: 'person-7', ProviderCustomerRef: 'cus_new' });
+            } finally {
+                renewalMocks.resolveProvider = null;
+            }
+        });
+
+        it('an ordinary checkout capture passes no card to replace', async () => {
+            renewalPayMocks.loadOrder.mockResolvedValue({ ...RENEWAL, SubscriptionIDs: [] });
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.Status = 'Confirmed';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.BillToPersonID = 'person-7';
+            await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(renewalMocks.saveInstrument).toHaveBeenCalledWith(
+                expect.objectContaining({ ReplaceCardOnSubscriptionIDs: undefined }),
+                expect.anything(),
+                testUser
+            );
         });
     });
 
@@ -634,6 +915,59 @@ describe('CheckoutSessionService', () => {
             expect(names).toContain('dietaryPreferences');
             expect(names).toContain('comments');
             expect(names).toContain('customCount');
+        });
+
+        describe('field mapping (#583)', () => {
+            type Discovered = { name: string; type: string; required: boolean; options?: Array<{ label: string; value: string }> };
+            const discover = async (fields: Array<Record<string, unknown>>): Promise<Discovered[]> => {
+                mocks.extensionFieldsOverride = fields;
+                try {
+                    const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+                    return res.Configuration?.extensionFields as Discovered[];
+                } finally {
+                    mocks.extensionFieldsOverride = undefined;
+                }
+            };
+            const base = { AllowUpdateAPI: true, IsPrimaryKey: false, IsVirtual: false, AllowsNull: false };
+
+            it('sends a value-list field its values as options, in sequence order', async () => {
+                const fields = await discover([{
+                    ...base, Name: 'AttendanceStatus', Type: 'nvarchar', Length: 40, MaxLength: 20, ValueListType: 'List',
+                    EntityFieldValues: [
+                        { Value: 'Attended', Sequence: 2 },
+                        { Value: 'Registered', Sequence: 1 },
+                        { Value: 'No Show', Sequence: 3 },
+                    ],
+                }]);
+                const status = fields.find(f => f.name === 'attendanceStatus');
+                expect(status?.type).toBe('select');
+                expect(status?.options).toEqual([
+                    { label: 'Registered', value: 'Registered' },
+                    { label: 'Attended', value: 'Attended' },
+                    { label: 'No Show', value: 'No Show' },
+                ]);
+            });
+
+            it('does not require a NOT NULL field the database defaults', async () => {
+                const fields = await discover([
+                    { ...base, Name: 'AttendanceStatus', Type: 'nvarchar', MaxLength: 20, DefaultValue: 'Registered', HasDefaultValue: true },
+                    { ...base, Name: 'BadgeName', Type: 'nvarchar', MaxLength: 100, DefaultValue: null, HasDefaultValue: false },
+                ]);
+                expect(fields.find(f => f.name === 'attendanceStatus')?.required).toBe(false);
+                expect(fields.find(f => f.name === 'badgeName')?.required).toBe(true);
+            });
+
+            it('maps NVARCHAR(MAX) (Length -1) and long columns to a textarea, judged in characters', async () => {
+                const fields = await discover([
+                    { ...base, Name: 'Notes', Type: 'nvarchar', Length: -1, MaxLength: 0 },
+                    { ...base, Name: 'Bio', Type: 'nvarchar', Length: 1000, MaxLength: 500 },
+                    { ...base, Name: 'Nickname', Type: 'nvarchar', Length: 400, MaxLength: 200 },
+                ]);
+                expect(fields.find(f => f.name === 'notes')?.type).toBe('textarea');
+                expect(fields.find(f => f.name === 'bio')?.type).toBe('textarea');
+                expect(fields.find(f => f.name === 'nickname')?.type).toBe('text');
+                expect(fields.find(f => f.name === 'nickname')?.options).toBeUndefined();
+            });
         });
 
         it('writes a SKU-resolved productId onto Configuration so the public host can draft a line', async () => {
@@ -705,6 +1039,53 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.paymentProviderId).toBeUndefined();
             expect(res.Configuration?.signingKey).toBeUndefined();
             expect(res.Configuration?.allowAnyProduct).toBeUndefined();
+        });
+
+        it('replaces the widget publishable key with the resolved one (the env key wins)', async () => {
+            const resolve = vi.fn().mockResolvedValue({ Key: 'pk_live_from_env', Source: 'environment' });
+            publishableKeyMocks.resolve = resolve;
+            try {
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                    productId: 'prod-1',
+                    paymentProviderId: '88eb5f2e-3005-4cab-ae24-a4fd48876e7b',
+                    stripePublishableKey: 'pk_test_from_widget',
+                });
+                const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(res.Configuration?.stripePublishableKey).toBe('pk_live_from_env');
+                expect(res.Configuration?.paymentProviderId).toBeUndefined();
+                // The resolver sees the full server-side configuration, provider id included.
+                expect(resolve).toHaveBeenCalledWith(
+                    expect.objectContaining({ paymentProviderId: '88eb5f2e-3005-4cab-ae24-a4fd48876e7b' }),
+                    'Annual AI Summit Registration',
+                    testUser
+                );
+            } finally {
+                publishableKeyMocks.resolve = null;
+            }
+        });
+
+        it('omits stripePublishableKey when no key resolves', async () => {
+            publishableKeyMocks.resolve = vi.fn().mockResolvedValue({ Key: undefined, Source: 'none' });
+            try {
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', stripePublishableKey: '   ' });
+                const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(res.Configuration && 'stripePublishableKey' in res.Configuration).toBe(false);
+            } finally {
+                publishableKeyMocks.resolve = null;
+            }
+        });
+
+        it('still loads the checkout with the widget key when the provider id is unusable', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productId: 'prod-1',
+                paymentProviderId: 'not-a-uuid',
+                stripePublishableKey: 'pk_test_from_widget',
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.stripePublishableKey).toBe('pk_test_from_widget');
         });
     });
 
@@ -1292,6 +1673,40 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('OpenPaymentIntentForSession — event attendees', () => {
+        const EVENT_ID = 'e1c2d3e4-0000-4000-8000-000000000001';
+        const open = async (line: Record<string, unknown>) => {
+            mocks.eventProductsRequiringAttendees = [EVENT_ID];
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING, Lines: [{ ProductID: EVENT_ID, ...line }] });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: EVENT_ID, paymentProviderId: 'pp-1', currency: 'USD' });
+            mocks.mockOpenPaymentIntent.mockClear();
+            return CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+        };
+
+        it('refuses to take payment for tickets without an attendee each', async () => {
+            const res = await open({ Quantity: 3, ExtensionData: { Fields: { email: 'a@example.com' } } });
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('each of the 3 attendees');
+            expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('opens the intent when every ticket has an attendee with an e-mail', async () => {
+            const res = await open({
+                Quantity: 2,
+                ExtensionData: { Units: [{ email: 'a@example.com', FirstName: 'A' }, { Email: 'b@example.com', FirstName: 'B' }] },
+            });
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOpenPaymentIntent).toHaveBeenCalledTimes(1);
+        });
+
+        it('leaves an event that does not require attendees alone', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING, Lines: [{ ProductID: EVENT_ID, Quantity: 3 }] });
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: EVENT_ID, paymentProviderId: 'pp-1', currency: 'USD' });
+            const res = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+        });
+    });
+
     describe('OpenPaymentIntentForSession — automatic renewal', () => {
         const CONSENT = 'I agree this plan renews automatically every year until I cancel.';
 
@@ -1459,6 +1874,95 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('CompleteCheckout — Persons after payment and per-unit details (#583)', () => {
+        const pricedAt = (amount: number) =>
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = amount;
+                    line.LineTotalGross = amount * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+        const snapshot = (lines: unknown[]) => JSON.stringify({ BillingAddress: BILLING, Lines: lines });
+        const attendee = { FirstName: 'Ada', LastName: 'Attendee', Email: 'ada@example.com' };
+
+        it('creates no Person when the payment is refused', async () => {
+            mocks.mockSessionInstance.Email = 'new-buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = null;
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+        });
+
+        it('creates the new payer and attendee once payment checks out, pricing the new buyer with no Person', async () => {
+            mocks.mockSessionInstance.Email = 'new-buyer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(priceCtx.BillToPersonID).toBeNull();
+            expect(mocks.mockPersonSave).toHaveBeenCalledTimes(2);
+            expect(mocks.mockOrderInstance.BillToPersonID).toBe('person-new-1');
+            expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
+            const ext = mocks.mockOrderInstance.Lines.Items[0].extensionInstance;
+            expect(ext.Set).toHaveBeenCalledWith('PersonID', 'person-new-1');
+        });
+
+        it('prices an existing buyer with their Person and creates nothing', async () => {
+            mocks.peopleByEmail = { 'member@example.com': 'person-1', 'ada@example.com': 'person-ada' };
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([{ ProductID: 'prod-1', Quantity: 1, Units: [attendee] }]);
+            pricedAt(100);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            const priceCtx = mocks.mockPricingPrice.mock.calls[0][0] as { BillToPersonID: string | null };
+            expect(priceCtx.BillToPersonID).toBe('person-1');
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+            expect(mocks.mockOrderInstance.Lines.Items[0].extensionInstance.Set).toHaveBeenCalledWith('PersonID', 'person-ada');
+        });
+
+        it('refuses a per-unit line whose quantity differs from its sets of unit details', async () => {
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
+            const lines = [{ ProductID: 'prod-1', Quantity: 3, Units: [attendee] }];
+
+            const draft = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', lines, BILLING);
+            expect(draft.Success).toBe(false);
+            expect(draft.ErrorMessage).toContain('each of the 3 items');
+
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.MetadataJSON = snapshot(lines);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(false);
+            expect(res.Status).toBe('Open');
+            expect(res.ErrorMessage).toContain('each of the 3 items');
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockPersonSave).not.toHaveBeenCalled();
+        });
+
+        it('still splits a per-unit line whose quantity matches its sets of unit details', async () => {
+            mocks.mockProductTypeInstance.Configuration = JSON.stringify({ unitMode: 'perUnit' });
+            mocks.peopleByEmail = { 'member@example.com': 'person-1' };
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.MetadataJSON = snapshot([
+                { ProductID: 'prod-1', Quantity: 2, Units: [attendee, { ...attendee, FirstName: 'Bo', Email: 'bo@example.com' }] },
+            ]);
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockOrderInstance.Lines.Items.map((l) => l.Quantity)).toEqual([1, 1]);
+        });
+    });
+
     describe('CompleteCheckout', () => {
         it('rejects a mismatched client session key', async () => {
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', 'wrong-key');
@@ -1501,8 +2005,10 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockOrderInstance.ShipToPersonID).toBe('person-new-1');
             // The claim ships the entity GUID (not the entity name) and the buyer email
             expect(mocks.mockClaimCreate).toHaveBeenCalled();
-            const claimParams = mocks.mockClaimCreate.mock.calls[0][0] as { ClaimTypeName: string; EntityID: string; NormalizedEmail: string };
+            const claimParams = mocks.mockClaimCreate.mock.calls[0][0] as { ClaimTypeName: string; EntityID: string; NormalizedEmail: string; SendEmail: boolean };
             expect(claimParams.ClaimTypeName).toBe('GuestOrder');
+            // Claim e-mails stay off until a template and the portal base URL are configured (#583).
+            expect(claimParams.SendEmail).toBe(false);
             expect(claimParams.EntityID).toBe('entity-order-headers-id');
             expect(claimParams.NormalizedEmail).toBe('guest@example.com');
             expect(res.ClaimToken).toBe('claim-1');
@@ -1586,6 +2092,156 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(true);
             expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
             expect(describeMocks.mockSendOrderDescription).not.toHaveBeenCalled();
+        });
+
+        describe('VAT location evidence (#480)', () => {
+            const paidSession = () => {
+                mocks.mockSessionInstance.Email = 'payer@example.com';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                    BillingAddress: BILLING,
+                    Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+                });
+                mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+                mocks.mockPaymentIntentInstance.Amount = 100;
+                mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                    for (const line of ctx.Lines) {
+                        line.UnitPrice = 100;
+                        line.LineTotalGross = 100 * line.Quantity;
+                    }
+                    return Promise.resolve({});
+                });
+            };
+            const order = () => mocks.mockOrderInstance as unknown as { IPCountry: string | null; CardIssuingCountry: string | null };
+            let retrieve: ReturnType<typeof vi.fn>;
+
+            beforeEach(() => {
+                retrieve = vi.fn().mockResolvedValue({
+                    Success: true,
+                    Status: 'Succeeded',
+                    Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1', IssuingCountry: 'DE' },
+                });
+                renewalMocks.resolveProvider = async () => ({ RetrieveIntent: retrieve });
+            });
+            afterEach(() => {
+                renewalMocks.resolveProvider = null;
+            });
+
+            it('records the IP country the edge passed and the issuing country of the card that paid', async () => {
+                paidSession();
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser, { IPCountry: 'fr' });
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBe('FR');
+                expect(order().CardIssuingCountry).toBe('DE');
+                // The webhook had already settled the intent, so the gateway is read once, for the card.
+                expect(retrieve).toHaveBeenCalledTimes(1);
+                expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalled();
+            });
+
+            it('completes with both null when the IP country is unknown and the gateway reports no card country', async () => {
+                paidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1' } });
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser, { IPCountry: 'XX' });
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBeNull();
+                expect(order().CardIssuingCountry).toBeNull();
+            });
+
+            it('completes with no card country when the gateway read fails', async () => {
+                paidSession();
+                retrieve.mockRejectedValue(new Error('gateway down'));
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(order().IPCountry).toBeNull();
+                expect(order().CardIssuingCountry).toBeNull();
+            });
+
+            it('reuses the read that settled the intent rather than reading the gateway twice', async () => {
+                paidSession();
+                mocks.mockPaymentIntentInstance.Status = 'RequiresPayment';
+                retrieve.mockResolvedValue({
+                    Success: true,
+                    Status: 'Succeeded',
+                    Amount: 100,
+                    Instrument: { ProviderCustomerRef: null, ProviderInstrumentRef: 'pm_1', IssuingCountry: 'GB' },
+                });
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(order().CardIssuingCountry).toBe('GB');
+                // Once in the paid gate; the capture path finds the intent settled and does not read again.
+                expect(retrieve).toHaveBeenCalledTimes(1);
+            });
+        });
+
+        describe('gateway read stamps the intent (#475)', () => {
+            const unpaidSession = () => {
+                mocks.mockSessionInstance.Email = 'payer@example.com';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                    BillingAddress: BILLING,
+                    Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+                });
+                mocks.mockPaymentIntentInstance.Status = 'RequiresPayment';
+                mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                    for (const line of ctx.Lines) {
+                        line.UnitPrice = 100;
+                        line.LineTotalGross = 100 * line.Quantity;
+                    }
+                    return Promise.resolve({});
+                });
+            };
+            const intent = () => mocks.mockPaymentIntentInstance as unknown as { Status: string; LastEventAt: Date | null };
+            let retrieve: ReturnType<typeof vi.fn>;
+
+            beforeEach(() => {
+                retrieve = vi.fn();
+                renewalMocks.resolveProvider = async () => ({ RetrieveIntent: retrieve });
+            });
+            afterEach(() => {
+                renewalMocks.resolveProvider = null;
+            });
+
+            it('saves a changed status with LastEventAt at or after the read, so an older webhook event cannot move it back', async () => {
+                unpaidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Amount: 100 });
+                const stampedAtSave: Array<Date | null> = [];
+                mocks.mockIntentSave.mockImplementation(async () => {
+                    stampedAtSave.push(intent().LastEventAt);
+                    return true;
+                });
+                const before = new Date();
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(true);
+                expect(intent().Status).toBe('Succeeded');
+                expect(stampedAtSave[0]).toBeInstanceOf(Date);
+                expect(stampedAtSave[0]!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+            });
+
+            it('does not save or stamp when the gateway reports the same status and no amount', async () => {
+                unpaidSession();
+                retrieve.mockResolvedValue({ Success: true, Status: 'RequiresPayment' });
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(false);
+                expect(retrieve).toHaveBeenCalled();
+                expect(mocks.mockIntentSave).not.toHaveBeenCalled();
+                expect(intent().LastEventAt).toBeNull();
+            });
+
+            it('leaves the intent unchanged when the gateway read fails', async () => {
+                unpaidSession();
+                retrieve.mockRejectedValue(new Error('gateway down'));
+
+                const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                expect(res.Success).toBe(false);
+                expect(intent().Status).toBe('RequiresPayment');
+                expect(intent().LastEventAt).toBeNull();
+                expect(mocks.mockIntentSave).not.toHaveBeenCalled();
+            });
         });
 
         it('still confirms the order when CapturePayment fails after commit', async () => {
@@ -1803,11 +2459,27 @@ describe('CheckoutSessionService', () => {
         });
 
         it('rejects duplicate or concurrent CompleteCheckout calls when status is not Open', async () => {
-            mocks.mockSessionInstance.Status = 'Processing';
+            mocks.mockSessionInstance.Status = 'Abandoned';
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('Session is not in an Open status');
+        });
+
+        it('refuses a session still Processing once the wait for the other completion runs out', async () => {
+            vi.useFakeTimers();
+            try {
+                mocks.mockSessionInstance.Status = 'Processing';
+
+                const pending = CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+                await vi.advanceTimersByTimeAsync(31_000);
+                const res = await pending;
+                expect(res.Success).toBe(false);
+                expect(res.ErrorMessage).toContain('Session is not in an Open status');
+                expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
         });
 
         it('creates a single order line with Quantity 3 when unitMode is perLine', async () => {
@@ -2714,7 +3386,159 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('completion from the payment webhook (#724)', () => {
+        const pricedAt100 = (ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 100;
+                line.LineTotalGross = 100 * line.Quantity;
+            }
+            return Promise.resolve({});
+        };
+
+        beforeEach(() => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 100;
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockSessionLoad.mockResolvedValue(true);
+        });
+
+        it('confirms the order and books the payment for an Open session the browser never completed', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+            // Past its expiry: the buyer paid inside it, so the paid session is still booked.
+            mocks.mockSessionInstance.ExpiresAt = new Date(Date.now() - 60_000);
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toEqual({ Attempted: true, Booked: true });
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
+            expect(mocks.mockSessionInstance.Status).toBe('Confirmed');
+            expect(mocks.mockSessionInstance.DraftOrderID).toBe('order-999');
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            // Both post-payment steps are recorded as the webhook's.
+            const sources = stepMocks.Begin.mock.calls.map((call) => [call[1], (call as unknown[])[2]]);
+            expect(sources).toEqual([['Confirm', 'Webhook'], ['Capture', 'Webhook']]);
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
+        });
+
+        it('returns the same order to a browser complete arriving after the webhook completed the session', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+
+            await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.OrderID).toBe('order-999');
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
+        });
+
+        it('makes a browser complete wait for the webhook holding the session and answer with its order', async () => {
+            vi.useFakeTimers();
+            try {
+                mocks.mockSessionInstance.Status = 'Processing';
+                let loads = 0;
+                mocks.mockSessionLoad.mockImplementation(async () => {
+                    loads++;
+                    if (loads === 3) {
+                        mocks.mockSessionInstance.Status = 'Confirmed';
+                        mocks.mockSessionInstance.DraftOrderID = 'order-999';
+                    }
+                    return true;
+                });
+
+                const pending = CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                await vi.advanceTimersByTimeAsync(5_000);
+                const res = await pending;
+                expect(res.Success).toBe(true);
+                expect(res.OrderID).toBe('order-999');
+                expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('raises the alert and books nothing when the re-priced order costs more than was paid', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+            mocks.mockPaymentIntentInstance.Amount = 40;
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book.Attempted).toBe(true);
+            expect(book.Booked).toBe(false);
+            // A refusal will not pass on a Stripe retry: answer 200 and leave it to staff.
+            expect(book.Retryable).toBe(false);
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockSessionInstance.Status).toBe('Open');
+            // Raised once, by the completion's own price check.
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            expect(mocks.mockSettledNotBookedAlert.mock.calls[0][2]).toContain('does not cover');
+        });
+
+        it('raises the alert for any other refusal, since nobody is on the page to see it', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: false, Retryable: false });
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            const [sessionArg, intentArg] = mocks.mockSettledNotBookedAlert.mock.calls[0];
+            expect(sessionArg).toBe('sess-123');
+            expect(intentArg).toBe('pi-row-1');
+        });
+
+        it('asks for a retry, without an alert, when the completion throws', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+            mocks.mockOrderInstance.Confirm.mockRejectedValueOnce(new Error('deadlock'));
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: false, Retryable: true });
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
+        });
+
+        it('raises the alert for a session that expired before its payment was completed', async () => {
+            mocks.mockSessionInstance.Status = 'Expired';
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: false, Retryable: false });
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+        });
+    });
+
     describe('ReapExpiredOpenSessions', () => {
+        it('raises the "settled with no order" alert for an expiring session whose payment settled (#724)', async () => {
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                return true;
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+
+            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
+            expect(n).toBe(1);
+            expect(mocks.mockSessionInstance.Status).toBe('Expired');
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            expect(mocks.mockSettledNotBookedAlert.mock.calls[0][1]).toBe('pi-row-1');
+        });
+
+        it('expires an unpaid session without an alert', async () => {
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                return true;
+            });
+            mocks.mockPaymentIntentInstance.Status = 'RequiresPaymentMethod';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+
+            await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
+        });
+
         it('passes MaxRows so the bound is in the query, not after an unbounded fetch', async () => {
             mocks.mockSessionLoad.mockImplementation(async () => {
                 mocks.mockSessionInstance.Status = 'Open';
