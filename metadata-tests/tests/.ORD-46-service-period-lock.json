@@ -1,0 +1,24 @@
+{
+  "fields": {
+    "TypeID": "@lookup:MJ: Test Types.Name=Integration Test",
+    "Name": "ORD-46 - Service Period Lock",
+    "Description": "A blank service period may be FILLED IN on the order of a CLOSED deal, while a date that is already set still meets the lock (SP1-SP6). The deal lock refuses order-line edits while the deal is closed, and its refusal names what it protects: what was sold. Service dates are the coverage window rather than the thing, and a blank one is the field a rep must be able to set on a Won deal's order — ConfirmEligibility will not confirm a line whose product requires a service period until it carries both a start and an end, while Sales can state only a term start on a deal line, so the end can only be set here. A date that is already set had a source, and moving it changes the window agreed at the close, so it still goes through reopening. The unit suite pins which saves consult the veto; this bundle proves the exempt save actually lands against a live database, and that each bound holds.",
+    "InputDefinition": {},
+    "ExpectedOutcomes": {
+      "summary": "With a veto registered that refuses every edit: SP1 a save filling ServicePeriodStart and ServicePeriodEnd on an unbooked order goes through and the stored row really carries the new dates. SP2 the same save carrying a quantity change is refused, says the deal is closed, and leaves no part of itself behind — neither the quantity nor the dates. SP3 a dates-only save on a line whose order has booked is refused, because by then the stored period is the settled term recognition is derived from; the line is reloaded rather than reused, so the check meets the lock rather than the bypass Orders' own write paths set. SP4 a save that MOVES dates the line already carried is refused and the stored period is unchanged, which is the fill-versus-change bound proved on the row rather than on the verdict. SP5 the reported shape — the line already carries the start and only the end is filled — goes through, and the start is untouched. SP6 drives the whole report in order on one order whose line needs a window the line itself must supply: the confirm is refused and names the service period, the period is then filled in with the deal still closed, and the confirm goes through — the stored row carries the dates and the order really books, with no reopen anywhere."
+    },
+    "Configuration": {
+      "tier": "deterministic",
+      "transport": "server",
+      "checks": [
+        {
+          "type": "service-period-lock"
+        }
+      ]
+    },
+    "Status": "Active"
+  },
+  "primaryKey": {
+    "ID": "3C2A9E51-7B4D-4E06-9A18-5F2D7C8B0431"
+  }
+}
