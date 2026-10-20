@@ -19,7 +19,7 @@ on:
     inputs:
       mj_tag:
         description: 'MJ core tag to install (the floor of mjVersionRange in mj-app.json)'
-        default: 'v6.1.5'
+        default: 'v6.1.6'
       common_ref:
         description: 'bizapps-common ref whose migrations-pg/ is applied (blank = latest v* tag)'
         default: ''
@@ -149,7 +149,7 @@ jobs:
       - name: Install MJ core
         if: steps.detect.outputs.pg_count != '0'
         env:
-          MJ_TAG: ${{ inputs.mj_tag || 'v6.1.5' }}
+          MJ_TAG: ${{ inputs.mj_tag || 'v6.1.6' }}
         run: pnpm exec mj migrate --tag "$MJ_TAG"
 
       # Install order follows each app's mj-app.json dependencies:

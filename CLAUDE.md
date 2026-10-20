@@ -114,7 +114,7 @@ schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branc
 ## SQL Safety — NO MANUAL REGEX ESCAPING IN FILTERS
 
 **Never use plain inline regex like `.replace(/'/g, "''")` when constructing SQL `ExtraFilter` or `Where` clauses.**
-- For SQL string escaping, always use `EscapeSQLString` from `@memberjunction/global` (published from 6.1.5, this repo's floor). `EscapeText` in `packages/CoreEntitiesServer/src/sql-guards.ts` remains for values already known non-null.
+- For SQL string escaping, always use `EscapeSQLString` from `@memberjunction/global` (published from 6.1.5; this repo's floor is 6.1.6). `EscapeText` in `packages/CoreEntitiesServer/src/sql-guards.ts` remains for values already known non-null.
 - For IDs, use `RequireUUID` and `RequireUUIDs`, exported by `@mj-biz-apps/orders-entities` (`packages/Entities/src/sql-guards.ts`) so code on either tier can use them, and re-exported by `CoreEntitiesServer/src/sql-guards.ts`.
 - For boundary validation of IDs and dates from remote callers, use `RequireUUID`, `RequireUUIDs`, and `RequireDate` from `CoreEntitiesServer/src/sql-guards.ts`.
 - For a caller-supplied day typed `Date | string` (an optional as-of or request day), use `RequireOptionalDay` from `sql-guards.ts`. It refuses an invalid `Date` as well as a malformed string; checking only the string form lets `new Date('garbage')` reach `CalendarDayOrToday`, which silently reads it as today.
