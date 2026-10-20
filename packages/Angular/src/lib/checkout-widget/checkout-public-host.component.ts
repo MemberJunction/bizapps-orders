@@ -69,6 +69,15 @@ import {
     stripeConfirmAlreadyCollected,
 } from './checkout-draft-line';
 import { PostWithTurnstile, TurnstileError, TurnstileWidget, type TurnstileState } from './checkout-turnstile';
+import {
+    CheckoutTransportError,
+    COMPLETE_DELAYED_MESSAGE,
+    COMPLETE_FINISHING_MESSAGE,
+    COMPLETE_RETRY_INTERVAL_MS,
+    COMPLETE_RETRY_TIMEOUT_MS,
+    CompleteWithRetry,
+    ReadCheckoutReply,
+} from './checkout-complete';
 
 import { FormatRenewalAmount, ReadRenewalPayment, RenewalPaidMessage, type CheckoutRenewalPaymentView } from './checkout-renewal';
 
@@ -206,6 +215,15 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     public accessPollTimeoutMs = ACCESS_POLL_TIMEOUT_MS;
     /** True while access is being asked for; the redirect waits on it. */
     private accessTracking = false;
+
+    /**
+     * Shown in place of the form once the buyer has paid and `/complete` has not given a final
+     * answer (the reply was a gateway error page, or the session is still Processing).
+     */
+    public finishingMessage: string | null = null;
+    /** How often, and for how long, `/complete` is asked again. Fields so a test can shorten them. */
+    public completeRetryIntervalMs = COMPLETE_RETRY_INTERVAL_MS;
+    public completeRetryTimeoutMs = COMPLETE_RETRY_TIMEOUT_MS;
 
     public get accessMessage(): string | null {
         return AccessMessage(this.accessState, this.config?.accessMessages);
@@ -675,12 +693,17 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                     }
                 }
             }
-            const done = await this.post('/complete', {
-                sessionId: this.sessionId,
-                clientSessionKey: this.sessionKey,
-            });
-            if (!done?.Success) {
-                throw new Error(this.str(done?.ErrorMessage, 'Could not complete the payment.'));
+            const done = await this.completeAfterPayment(() =>
+                this.post('/complete', {
+                    sessionId: this.sessionId,
+                    clientSessionKey: this.sessionKey,
+                })
+            );
+            if (!done) {
+                return;
+            }
+            if (!done.Success) {
+                throw new Error(this.str(done.ErrorMessage, 'Could not complete the payment.'));
             }
             this.orderNumber = this.renewal.OrderNumber;
             this.successMessage = RenewalPaidMessage(this.renewal);
@@ -734,12 +757,17 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     private async finish(): Promise<void> {
         // Remembered before completing, so a reload after payment returns to the account step.
         this.rememberCompleting(this.sessionId);
-        const done = await this.postGated('/complete', {
-            sessionId: this.sessionId,
-            clientSessionKey: this.sessionKey,
-        });
-        if (!done?.Success) {
-            throw new Error(this.str(done?.ErrorMessage, 'Could not complete checkout.'));
+        const done = await this.completeAfterPayment(() =>
+            this.postGated('/complete', {
+                sessionId: this.sessionId,
+                clientSessionKey: this.sessionKey,
+            })
+        );
+        if (!done) {
+            return;
+        }
+        if (!done.Success) {
+            throw new Error(this.str(done.ErrorMessage, 'Could not complete checkout.'));
         }
         this.orderNumber = done.OrderNumber ? String(done.OrderNumber) : null;
         this.successMessage =
@@ -1102,16 +1130,38 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
-    private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
-        const res = await fetch(`${this.apiRoot}${path}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            credentials: 'same-origin',
-            body: JSON.stringify(body),
+    /**
+     * Sends `/complete` for a checkout the buyer has paid for, asking again while the server may
+     * still be finishing. Returns the server's final answer, or null when the wait ran out; the
+     * buyer then sees that the payment went through, never a failure.
+     */
+    private async completeAfterPayment(send: () => Promise<Record<string, unknown>>): Promise<Record<string, unknown> | null> {
+        const done = await CompleteWithRetry(send, {
+            intervalMs: this.completeRetryIntervalMs,
+            timeoutMs: this.completeRetryTimeoutMs,
+            onWaiting: () => {
+                this.finishingMessage = COMPLETE_FINISHING_MESSAGE;
+                this.cdr.detectChanges();
+            },
         });
-        const json = (await res.json()) as Record<string, unknown>;
-        json._httpStatus = res.status;
-        return json;
+        this.finishingMessage = done ? null : COMPLETE_DELAYED_MESSAGE;
+        return done;
+    }
+
+    /** Throws {@link CheckoutTransportError}, whose message is written for the buyer, when no JSON reply arrives. */
+    private async post(path: string, body: unknown): Promise<Record<string, unknown>> {
+        let res: Response;
+        try {
+            res = await fetch(`${this.apiRoot}${path}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                credentials: 'same-origin',
+                body: JSON.stringify(body),
+            });
+        } catch {
+            throw new CheckoutTransportError(null);
+        }
+        return ReadCheckoutReply(res);
     }
 
     /** `/initialize` and `/complete`: sends a Turnstile token when the widget requires one. */
