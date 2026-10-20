@@ -58,6 +58,10 @@
                 }
             }
         </div>
+    } @else if (finishingMessage) {
+        <div class="mj-checkout-success" role="status" aria-live="polite">
+            <p class="mj-checkout-success__msg">{{ finishingMessage }}</p>
+        </div>
     } @else if (!config) {
         <p class="mj-checkout-public__status" role="status">Loading checkout…</p>
     } @else if (renewal) {
@@ -117,13 +121,16 @@
             [errorMessage]="errorMessage"
             [appliedPromotion]="appliedPromotion"
             [serverPricedTotal]="serverPricedTotal"
+            [memberDiscount]="memberDiscount"
+            [lockEmail]="emailLocked"
             [promotionError]="promotionError"
             (promotionCodeApplied)="onPromotionCodeApplied($event)"
             [quotedTotal]="quotedTotal"
             [quotedTax]="quotedTax"
             (submitted)="onSubmitted($event)"
             (cancelled)="onCancelled()"
-            (quoteInvalidated)="onQuoteInvalidated()">
+            (quoteInvalidated)="onQuoteInvalidated()"
+            (quoteRequested)="onQuoteRequested($event)">
         </mj-checkout-widget>
         }
     }
