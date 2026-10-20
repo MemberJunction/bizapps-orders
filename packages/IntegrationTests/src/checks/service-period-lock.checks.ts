@@ -22,6 +22,8 @@
  *   SP3   a dates-only edit is refused once the order is booked, where the period is the settled term
  *   SP4   a dates-only edit that MOVES dates the line already carried is refused, and the row holds
  *   SP5   the reported shape: the START is already set, only the END is filled, and that goes through
+ *   SP6   the reported OUTCOME end to end: a confirm refused for want of a period, the period filled
+ *         on the closed deal's order, and the confirm then going through
  *
  * CONNECTS TO:
  *   CODE: OrderLineEntityServer.refuseVetoedEdit / changesOnlyTheServicePeriod
@@ -59,6 +61,23 @@ function spec(): OrderSpec {
     BillToOrganizationID: f.Customers.OrganizationID,
     Lines: [{ ProductID: f.Products["WidgetA"], Quantity: 1 }],
   };
+}
+
+/**
+ * An order whose line NEEDS a service period and has nowhere else to get one.
+ *
+ * `DeferredA` is the straight-line editorial course: its recognition type requires a window, it
+ * carries no subscription type and is not an event product, so `ServicePeriodSource` answers `Line`
+ * — "nothing supplies it: the person entering the order has to". That is the shape golive#322 is
+ * about, and `spec()` above cannot reach it because WidgetA recognises Up Front.
+ */
+function needsPeriodSpec(): OrderSpec {
+    const f = Fx();
+    return {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products['DeferredA'], Quantity: 1 }],
+    };
 }
 
 /** Runs `body` with a veto that refuses EVERYTHING, then takes it back off. */
@@ -234,12 +253,70 @@ export const ServicePeriodLockChecks: NamedCheck[] = [
         AssertEqual(after.s, START, "and the start it already carried is untouched");
       }),
   },
+  {
+    Id: "service-period-lock.SP6",
+    Name: "SP6: a confirm blocked for want of a period, the period filled, and the confirm going through",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        /**
+         * THE WHOLE REPORT, IN ORDER. SP1 proves the exempt save lands; this proves the save was
+         * worth making. Closing a deal Won leaves an order that cannot be confirmed — "Line 1 needs
+         * a service period" — and before this change the only way to supply one was to reopen the
+         * deal. Here the deal stays closed throughout.
+         */
+        const built = await BuildOrder(ctx.User, needsPeriodSpec());
+        Assert(
+          await built.Order.Save(),
+          `setup: the draft must save — ${built.Order.LatestResult?.CompleteMessage ?? "no reason given"}`,
+        );
+        const line = built.Lines[0];
+        const lineID = line.Get("ID") as string;
+
+        await underAClosedDeal(async () => {
+          // 1. The reported symptom: the order will not confirm, and it says why.
+          const verdict = built.Order.ConfirmEligibility();
+          AssertEqual(verdict.Allowed, false, "a line that needs a period must not be confirmable without one");
+          Assert(
+            (verdict.Reason ?? "").toLowerCase().includes("service period"),
+            `and the reason must name the period: ${verdict.Reason ?? "(none)"}`,
+          );
+
+          // 2. The fix: the period can be filled in WITHOUT reopening the deal.
+          line.Set("ServicePeriodStart", START);
+          line.Set("ServicePeriodEnd", END);
+          Assert(
+            await line.Save(),
+            `filling the period on a closed deal's order must go through — ${line.LatestResult?.CompleteMessage ?? ""}`,
+          );
+
+          // 3. The outcome: with the period stored, the confirm is now offered AND lands.
+          Assert(built.Order.ConfirmEligibility().Allowed, "the period is set, so the confirm must be offered");
+          built.Order.Status = "Confirmed";
+          Assert(
+            await built.Order.Save(),
+            `the confirm must go through — ${built.Order.LatestResult?.CompleteMessage ?? "no reason given"}`,
+          );
+        });
+
+        const after = await storedPeriod(ctx, lineID);
+        AssertEqual(after.s, START, "the stored start is the one that was filled in");
+        AssertEqual(after.e, END, "and the stored end with it");
+        const status = await TxQuery<{ Status: string }>(
+          ctx,
+          `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`,
+        );
+        AssertEqual(status[0]?.Status, "Confirmed", "and the order really booked, with the deal still closed");
+      }),
+  },
 ];
 
 IntegrationCheckRegistry.Instance.RegisterLifecycle("service-period-lock", {
   Setup: async (ctx) => {
     await CreateOrdersFixture(ctx);
     await CreateProductPrice(ctx, Fx().Products.WidgetA, 200);
+    // SP6's line: a product whose recognition type demands a window the LINE has to supply.
+    await CreateProductPrice(ctx, Fx().Products.DeferredA, 500);
   },
   Teardown: TeardownOrdersFixture,
 });
