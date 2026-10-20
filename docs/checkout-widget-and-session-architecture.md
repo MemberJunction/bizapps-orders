@@ -127,6 +127,8 @@ In **MemberJunction Explorer** (or via code/migrations):
 
    A paid product needs the three keys after `productSku`: without `unitPrice` the widget shows the item as free and renders no card form, without `stripePublishableKey` no card form is mounted, and without `paymentProviderId` `/checkout/payment-intent` refuses. A free product needs none of them.
 
+   **Where the publishable key comes from.** `/initialize` resolves it on the server (`ResolveCheckoutPublishableKey`): when the widget names a `paymentProviderId` and that provider's `CredentialsRef` resolves to a publishable key — the default secret resolver reads `<CredentialsRef>_PUBLISHABLE_KEY`, beside `<CredentialsRef>_API_KEY` — that key wins over the widget's `stripePublishableKey`; otherwise the widget's value is used. Set the environment variable when widget metadata is shared between environments: each server then hands the browser the publishable key of the same Stripe account its secret key belongs to, and the widget's value can be left out. A key whose test/live mode disagrees with the account's (its API key's mode, or `IsLiveMode` when the API key is not recognisable) is logged as a warning, by prefix only.
+
 ### Step 3: Create a Distribution (Public Vanity URL)
 1. In the Checkout Widget form, open the **Checkout Widget Distributions** section and add a record.
 2. Enter:
@@ -201,7 +203,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode`. When the product type is `'perUnit'`, a line that sends unit details must send one set per unit, so a `'perLine'` widget on a per-unit product is refused at quantity above 1 (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
 | `allowQuantity` | Shows the quantity selector. |
 | `maxQuantity` | Highest quantity the selector offers (default 50). The server's cap comes from the product and product type instead. |
-| `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. |
+| `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. The payment provider's `<CredentialsRef>_PUBLISHABLE_KEY`, when the server has it, takes its place (see [Step 2](#step-2-create-a-checkout-widget-record)). |
 | `autoRenewConsentText` | Wording of the automatic-renewal agreement. When set, the buyer must tick it, the server refuses to open a payment intent without that agreement, and the session records the text and the time. |
 | `allowCoupons` | Shows a promotion-code field and lets the draft take a code. Otherwise codes are refused. |
 | `successMessage` | Success-screen text in place of the default confirmation line. |
@@ -695,6 +697,8 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
 | `checkout-reset-refused` | a host's `checkout-reset` arrived while a payment was in flight or the account step was unsettled | `{ state }` |
 | `checkout-access-state` | after the sale, each change in whether the buyer's access is ready, while the success screen polls `access-status` ([Outbound events](outbound-events.md#access-status-on-the-checkouts-success-screen)) | `{ state }`: `Ready`, `Pending` or `Failed` |
+
+With a `redirectUrl`, the page navigates away soon after `checkout-complete` (once the account step and access status settle). A listener's own `fetch` can be cancelled by that navigation, so a listener should finish synchronously, push to `dataLayer`, or send with `navigator.sendBeacon`.
 
 Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
 

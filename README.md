@@ -26,7 +26,7 @@
 
 <p align="center">
   <img alt="Status" src="https://img.shields.io/badge/Status-Engine%20shipped-green?style=flat-square" />
-  <img alt="MJ Version" src="https://img.shields.io/badge/MemberJunction-6.1.5%2B-blue?style=flat-square" />
+  <img alt="MJ Version" src="https://img.shields.io/badge/MemberJunction-6.1.6%2B-blue?style=flat-square" />
   <img alt="Angular" src="https://img.shields.io/badge/Angular-21-DD0031?style=flat-square&logo=angular&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="SQL Server" src="https://img.shields.io/badge/SQL%20Server-2019%2B-CC2927?style=flat-square&logo=microsoftsqlserver&logoColor=white" />
@@ -488,7 +488,7 @@ Future bolt-on apps layer on via seams Orders already ships (`FulfillmentStatus`
 
 | Layer | Technology | Version |
 |---|---|---|
-| **Platform** | [MemberJunction](https://github.com/MemberJunction/MJ) | 6.1.5+ (below 7) |
+| **Platform** | [MemberJunction](https://github.com/MemberJunction/MJ) | 6.1.6+ (below 7) |
 | **Runtime** | Node.js | 18+ |
 | **Language** | TypeScript | 5.9 (strict) |
 | **Database (primary)** | SQL Server / Azure SQL | 2019+ |
@@ -497,7 +497,7 @@ Future bolt-on apps layer on via seams Orders already ships (`FulfillmentStatus`
 | **UI Framework** | Angular | 21 |
 | **Build** | Turborepo | 2.7 |
 | **Validation** | Zod | 3.25 |
-| **SQL Conversion** | [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) | with the MJ CLI, 6.1.5+ |
+| **SQL Conversion** | [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) | with the MJ CLI, 6.1.6+ |
 
 ---
 

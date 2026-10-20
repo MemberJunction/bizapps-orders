@@ -57,6 +57,7 @@ import { ExplainMissingCheckoutAttendees, LoadProductsRequiringAttendees } from 
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import { ResolveCheckoutPublishableKey } from './CheckoutPublishableKey.js';
 import {
     FindReusableProviderCustomerRef,
     SnapshotSellsSubscription,
@@ -79,6 +80,7 @@ import {
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
 import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
+import { SetSystemOrderOrigin } from './SystemOrderOrigin.js';
 import {
     LoadRenewalPaymentOrder,
     PayerOwnsRenewalCustomer,
@@ -493,7 +495,7 @@ export class CheckoutSessionService {
             WidgetID: widget.ID,
             WidgetName: widget.Name,
             CompanyID: widget.CompanyID,
-            Configuration: this.sanitizeConfigurationForClient(configObj),
+            Configuration: await this.clientConfiguration(configObj, widget.Name, contextUser),
             CustomCSS: configObj.customUI.css || widget.CustomCSS,
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
@@ -600,7 +602,7 @@ export class CheckoutSessionService {
             WidgetID: widget.ID,
             WidgetName: widget.Name,
             CompanyID: widget.CompanyID,
-            Configuration: this.sanitizeConfigurationForClient(configObj),
+            Configuration: await this.clientConfiguration(configObj, widget.Name, contextUser),
             CustomCSS: configObj.customUI.css || widget.CustomCSS,
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString(),
@@ -643,7 +645,8 @@ export class CheckoutSessionService {
      * anonymous caller. `Configuration` is admin-authored JSON with an open index signature,
      * so a future secret-shaped key (a webhook secret, an API credential, a server-side
      * payment provider ref) must never ride along to the browser. `stripePublishableKey`
-     * is publishable by definition and survives.
+     * is publishable by definition and survives — but its VALUE is decided by
+     * `ResolveCheckoutPublishableKey` (see `clientConfiguration`), not taken from here as is.
      */
     /**
      * Keys that may cross to an unauthenticated browser. Anything else in the
@@ -676,6 +679,28 @@ export class CheckoutSessionService {
         'questions',
         'choiceGroups',
     ]);
+
+    /**
+     * The Configuration an anonymous browser receives: the allowlisted keys, with
+     * `stripePublishableKey` replaced by the resolved key — the payment provider's
+     * `<CredentialsRef>_PUBLISHABLE_KEY` when the server has one, else the widget's own value.
+     * Every path that hands a browser a widget Configuration goes through here, so the session API
+     * and the server-rendered host page cannot disagree about which key to load Stripe.js with.
+     */
+    private static async clientConfiguration(
+        configObj: CheckoutWidgetConfiguration,
+        widgetName: string,
+        contextUser: UserInfo | undefined
+    ): Promise<CheckoutWidgetConfiguration> {
+        const client = this.sanitizeConfigurationForClient(configObj);
+        const publishable = await ResolveCheckoutPublishableKey(configObj, widgetName, contextUser);
+        if (publishable.Key) {
+            client.stripePublishableKey = publishable.Key;
+        } else {
+            delete client.stripePublishableKey;
+        }
+        return client;
+    }
 
     private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
         const sanitized: CheckoutWidgetConfiguration = {};
@@ -1480,7 +1505,7 @@ export class CheckoutSessionService {
         order.NewRecord();
         order.CompanyID = widget.CompanyID;
         order.Status = 'Draft';
-        order.Origin = 'Widget';
+        SetSystemOrderOrigin(order, 'Widget');
         order.SourceCheckoutWidgetID = widget.ID;
         // Defence-in-depth: the server pre-warms this engine at startup (@RegisterForStartup),
         // but that pre-warm only reaches modules already evaluated when Startup() runs, which
@@ -2403,7 +2428,7 @@ export class CheckoutSessionService {
             order.CompanyID = widget.CompanyID;
             order.BillToPersonID = session.PersonID ?? null;
             order.ShipToPersonID = session.PersonID ?? null;
-            order.Origin = 'Widget';
+            SetSystemOrderOrigin(order, 'Widget');
             order.OrderType = 'Sale';
             order.SourceCheckoutWidgetID = widget.ID;
             // VAT location evidence beside the billing address (#480). Null when the edge has no
