@@ -2072,6 +2072,44 @@ describe('CheckoutSessionService', () => {
             expect(describeMocks.mockSendOrderDescription.mock.calls[0][1]).toBe('order-999');
         });
 
+        it('captures on its own provider, not the shared Metadata.Provider, and releases it (#927)', async () => {
+            // The page and the webhook capture the same session within a second. On the one shared
+            // provider their transactions nest, and a rollback on one side undid the other's payment.
+            const release = vi.fn().mockResolvedValue(undefined);
+            const isolated = { ReleaseIndependentInstance: release };
+            const shared = Metadata.Provider as unknown as Record<string, unknown>;
+            shared.CreateIndependentInstance = vi.fn().mockResolvedValue(isolated);
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 100;
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 100;
+                    line.LineTotalGross = 100 * line.Quantity;
+                }
+                return Promise.resolve({});
+            });
+            let releasedDuringCapture: boolean | undefined;
+            mocks.mockCaptureExecute.mockImplementationOnce(async () => {
+                releasedDuringCapture = release.mock.calls.length > 0;
+                return { Success: true, Output: { Success: true } };
+            });
+
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            const ctx = mocks.mockCaptureExecute.mock.calls[0][1] as { provider: unknown };
+            expect(ctx.provider).toBe(isolated);
+            expect(ctx.provider).not.toBe(Metadata.Provider);
+            expect(releasedDuringCapture).toBe(false);
+            expect(release).toHaveBeenCalledTimes(1);
+        });
+
         it('does not resend the gateway description for an intent already stamped with its order (#327)', async () => {
             mocks.mockSessionInstance.Email = 'payer@example.com';
             mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
