@@ -10,7 +10,7 @@ import {
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
-import { BilledOnScheduleFromRows, CanCancel, CanResolveInFlight, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
+import { BilledOnScheduleFromRows, CanCancel, CanResolveInFlight, CanSend, SendIsReissue, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
 
 /** One `ExternalInvoice` row as this panel needs it. Read by name; the panel never writes one. */
 interface ExternalInvoiceRow {
@@ -140,9 +140,16 @@ const RAIL_TYPE_CODES = ['BillCom'];
                     </div>
                 }
 
+                @if (Sendable && SendBlocked) {
+                    <mj-alert Variant="warning" Icon="fa-solid fa-envelope-circle-check" class="mjo-xi__note">
+                        <strong>Not ready to send.</strong>
+                        {{ SendBlocked }}
+                    </mj-alert>
+                }
+
                 <div class="row mjo-xi__actions">
                     @if (Sendable) {
-                        <button type="button" mjButton variant="primary" [disabled]="Busy" (click)="Send()">
+                        <button type="button" mjButton variant="primary" [disabled]="Busy || !!SendBlocked" (click)="Send()">
                             <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
                             {{ Busy ? 'Working…' : 'Send to ' + ProviderName }}
                         </button>
@@ -203,6 +210,12 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public ProviderName = 'the invoicing rail';
     /** True when the order bills in instalments; the whole-order Send does not apply to it. */
     public BilledOnSchedule = false;
+    /**
+     * Why Send would be refused before anything reached the rail — today, a bill-to party the rail
+     * cannot take as a customer (no billing email). Read from the operation's own preview on load, so
+     * the rule lives on the server and the panel only repeats its answer. Null when nothing blocks.
+     */
+    public SendBlocked: string | null = null;
 
     public readonly money = (n: number): string => FormatMoney(n);
     /** `SentAt` is a `datetimeoffset`: shown as the business day it happened on. */
@@ -246,12 +259,14 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /* ── Actions ────────────────────────────────────────────────────────── */
 
     public async Send(): Promise<void> {
-        if (this.Busy) return;
-        const failed = this.Rows.find((r) => r.Status === 'Failed' || r.Status === 'Canceled');
+        if (this.Busy || this.SendBlocked) return;
+        // A Failed row the rail never created an invoice for is not "on the rail before": warning about
+        // billing twice there sends a person to look for an invoice that does not exist.
+        const reissue = SendIsReissue(this.Rows);
         const proceed = await this.confirm.Confirm({
             title: `Send ${this.Record.OrderNumber} to ${this.ProviderName}?`,
             message: `The customer receives an invoice for ${FormatMoney(Number(this.Record.TotalGross ?? 0))}.`,
-            detail: failed
+            detail: reissue
                 ? 'This unit has been on the rail before. Check there first: re-issuing when an invoice already exists bills the customer twice.'
                 : 'The scheduled send would do this within the half hour anyway; this sends it now.',
             type: 'warning',
@@ -266,12 +281,14 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         try {
             const result = await new OrdersIssueExternalInvoiceOperation().Execute({
                 OrderHeaderID: this.Record.ID,
-                // A previously failed or cancelled unit is only re-sent deliberately.
-                AllowReissue: !!failed,
+                // Only a unit the rail has held an invoice for is re-sent deliberately.
+                AllowReissue: reissue,
             });
             const out = result.Output;
             if (!result.Success || !out?.Success) {
                 this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be sent.' };
+                // The failed attempt is a new row; show it, with the rail's error under it.
+                await this.load();
                 return;
             }
             this.Notice = { Tone: 'success', Text: out.Message ?? `Sent as ${out.ExternalInvoiceRef}.` };
@@ -422,6 +439,7 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
             this.LoadError = null;
             this.Rows = result.Results ?? [];
             if (this.Selected) this.Selected = this.Rows.find((r) => r.ID === this.Selected!.ID) ?? null;
+            this.SendBlocked = this.Sendable ? await this.previewBlock() : null;
         } catch (err) {
             this.LoadError = err instanceof Error ? err.message : String(err);
         }
@@ -429,6 +447,27 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         // app is zoneless, so an assignment across a check boundary aborts the update and freezes the
         // panel — showing an empty list, which reads as "nothing was sent" rather than as a fault.
         this.cdr.detectChanges();
+    }
+
+    /**
+     * What the operation's preview says would stop a send before the rail is called.
+     *
+     * Only the refusals a person fixes on the bill-to party are surfaced: those are the ones the rail
+     * would otherwise reject after the click, leaving a Failed row behind. Anything else the preview
+     * reports (or a preview that cannot run) leaves Send enabled, and the send itself says why.
+     */
+    private async previewBlock(): Promise<string | null> {
+        try {
+            const result = await new OrdersIssueExternalInvoiceOperation().Execute({
+                OrderHeaderID: this.Record.ID,
+                Preview: true,
+                AllowReissue: SendIsReissue(this.Rows),
+            });
+            const out = result.Output;
+            return result.Success && out?.ResultCode === 'NO_CUSTOMER_EMAIL' ? (out.Message ?? 'The bill-to party has no billing email.') : null;
+        } catch {
+            return null;
+        }
     }
 
     /**
