@@ -69,8 +69,9 @@ export class BaseSecretResolver {
 /**
  * The default: `CredentialsRef` is an environment-variable PREFIX.
  *
- * `STRIPE_BLUECYPRESS` reads `STRIPE_BLUECYPRESS_API_KEY` and `STRIPE_BLUECYPRESS_WEBHOOK_SECRET`.
- * Prefixed rather than a single variable because one deployment routinely holds several configured
+ * `STRIPE_BLUECYPRESS` reads `STRIPE_BLUECYPRESS_API_KEY` and `STRIPE_BLUECYPRESS_WEBHOOK_SECRET`,
+ * plus `STRIPE_BLUECYPRESS_PUBLISHABLE_KEY` — the browser's key, not secret, but it belongs to the same
+ * account, so it is found the same way. Prefixed rather than a single variable because one deployment routinely holds several configured
  * accounts — a live one and a test one at minimum — and they need separate keys.
  *
  * Registered with NO key, so it is the fallback a deployment replaces by registering its own against
@@ -87,6 +88,7 @@ export class EnvironmentSecretResolver extends BaseSecretResolver {
         // and produces an authorization header of `Bearer `, which fails confusingly.
         credentials.ApiKey = env[`${prefix}_API_KEY`] || undefined;
         credentials.WebhookSecret = env[`${prefix}_WEBHOOK_SECRET`] || undefined;
+        credentials.PublishableKey = env[`${prefix}_PUBLISHABLE_KEY`]?.trim() || undefined;
         return credentials;
     }
 }
@@ -213,15 +215,24 @@ export async function BuildPaymentProvider(
         );
     }
 
-    const secrets =
-        MJGlobal.Instance.ClassFactory.CreateInstance<BaseSecretResolver>(BaseSecretResolver) ??
-        new EnvironmentSecretResolver();
-
     driver.Config = config;
-    driver.Credentials = await secrets.Resolve(config.CredentialsRef);
+    driver.Credentials = await ResolvePaymentCredentials(config.CredentialsRef);
     driver.Provider = provider;
     driver.User = user;
     return driver;
+}
+
+/**
+ * Resolve a `CredentialsRef` through whichever secret resolver the deployment registered (the
+ * environment-variable default otherwise). Exposed for callers that need an account's keys without a
+ * driver — the checkout reads the publishable key this way. Fetched per call and never cached, like
+ * every other credential read here.
+ */
+export async function ResolvePaymentCredentials(credentialsRef: string | null | undefined): Promise<PaymentCredentials> {
+    const secrets =
+        MJGlobal.Instance.ClassFactory.CreateInstance<BaseSecretResolver>(BaseSecretResolver) ??
+        new EnvironmentSecretResolver();
+    return secrets.Resolve(credentialsRef);
 }
 
 /**

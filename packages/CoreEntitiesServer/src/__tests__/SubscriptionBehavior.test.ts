@@ -617,6 +617,63 @@ describe('cancellation policy', () => {
         });
     });
 
+    describe('a timing chosen at cancellation (RulesForTiming)', () => {
+        /** The type an annual rolling product carries: ride the term out, no refund, 30 days' grace. */
+        const rolling: Partial<SubscriptionTypeRules> = {
+            CancellationMode: 'EndOfTerm',
+            CancellationRefundMode: 'NoRefund',
+            GracePeriodDays: 30,
+        };
+        const cancelTimed = (timing: 'Immediate' | 'EndOfTerm' | undefined, request: string) => {
+            const behavior = new SubscriptionBehavior();
+            return behavior.DecideCancellation({
+                Rules: behavior.RulesForTiming(rules(rolling), timing),
+                RequestDate: new Date(`${request}T00:00:00Z`),
+                Term: term,
+            });
+        };
+
+        it('leaves the type\'s rules alone when no timing is chosen', () => {
+            const base = rules(rolling);
+            expect(new SubscriptionBehavior().RulesForTiming(base, undefined)).toBe(base);
+            const d = cancelTimed(undefined, '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2027-01-30');
+        });
+
+        it('Immediate ends coverage AND access on the request day, dropping the grace', () => {
+            const d = cancelTimed('Immediate', '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-07-01');
+            expect(iso(d.AccessThroughDate)).toBe('2026-07-01');
+            expect(d.TermStatus).toBe('Canceled');
+        });
+
+        it('EndOfTerm on the type\'s own mode still drops its grace: access ends on the term\'s last day', () => {
+            const d = cancelTimed('EndOfTerm', '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
+            expect(d.TermStatus).toBe('Completed');
+        });
+
+        it('Immediate keeps the type\'s refund mode: NoRefund reverses nothing', () => {
+            const d = cancelTimed('Immediate', '2026-07-01');
+            expect(d.RefundAmount).toBe(0);
+            expect(d.ReversalFraction).toBe(0);
+        });
+
+        it('EndOfTerm on an Immediate type rides the term out and drops the type\'s grace', () => {
+            const behavior = new SubscriptionBehavior();
+            const d = behavior.DecideCancellation({
+                Rules: behavior.RulesForTiming(rules({ CancellationMode: 'Immediate', GracePeriodDays: 10 }), 'EndOfTerm'),
+                RequestDate: new Date('2026-07-01T00:00:00Z'),
+                Term: term,
+            });
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
+            expect(d.TermStatus).toBe('Completed');
+        });
+    });
+
     describe('a later term that never started (#406)', () => {
         const renewal = {
             StartDate: new Date('2027-01-01T00:00:00Z'),

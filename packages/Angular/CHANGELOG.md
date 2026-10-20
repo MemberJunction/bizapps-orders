@@ -1,5 +1,35 @@
 # @mj-biz-apps/orders-ng
 
+## 5.36.0
+
+### Patch Changes
+
+- 7af3d40: The subscription form has a Cancel subscription control (#702). The person cancelling keeps the subscription type's own rule (the default, which sends no timing) or overrides it with end of term or immediately, adds a reason, previews what `Orders.CancelSubscription` would do (coverage end, access end, refund, later terms), and then confirms; changing the choice discards the preview. It is offered to a viewer who may update subscriptions, on an Active, Trialing or Paused subscription.
+- 5a511c5: Call NotifyLoadComplete() when the initial Orders section page finishes mounting, and replace capped 500-row entity_object GetOrders({ Preset: 'all' }) reads on the Orders dashboard, order document, and Customer AR pages with targeted/uncapped queries.
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+  - @mj-biz-apps/orders-entities@5.35.1
+
+## 5.35.0
+
+### Minor Changes
+
+- 303849b: Checkout account step: a host can set or remove the verification wording. `CheckoutAccountResult` takes `VerificationNote` (text, or `null` for none) and `PasswordSetMessage` on a `Created` answer; the widget shows them in place of its default verification text, and keeps the default when a host gives none. The contract now lets a host allow sign-in before verification as its own choice, while still not linking the login to the matched Person until the e-mail is verified.
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-entities@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes
@@ -787,8 +817,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

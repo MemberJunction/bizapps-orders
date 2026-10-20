@@ -127,6 +127,8 @@ In **MemberJunction Explorer** (or via code/migrations):
 
    A paid product needs the three keys after `productSku`: without `unitPrice` the widget shows the item as free and renders no card form, without `stripePublishableKey` no card form is mounted, and without `paymentProviderId` `/checkout/payment-intent` refuses. A free product needs none of them.
 
+   **Where the publishable key comes from.** `/initialize` resolves it on the server (`ResolveCheckoutPublishableKey`): when the widget names a `paymentProviderId` and that provider's `CredentialsRef` resolves to a publishable key — the default secret resolver reads `<CredentialsRef>_PUBLISHABLE_KEY`, beside `<CredentialsRef>_API_KEY` — that key wins over the widget's `stripePublishableKey`; otherwise the widget's value is used. Set the environment variable when widget metadata is shared between environments: each server then hands the browser the publishable key of the same Stripe account its secret key belongs to, and the widget's value can be left out. A key whose test/live mode disagrees with the account's (its API key's mode, or `IsLiveMode` when the API key is not recognisable) is logged as a warning, by prefix only.
+
 ### Step 3: Create a Distribution (Public Vanity URL)
 1. In the Checkout Widget form, open the **Checkout Widget Distributions** section and add a record.
 2. Enter:
@@ -201,7 +203,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `unitMode` | `'perUnit'` collects details for each unit; `'perLine'` collects one set for the line. Booking splits by the product type's `unitMode` and the unit details sent, not by the widget's `unitMode`. When the product type is `'perUnit'`, a line that sends unit details must send one set per unit, so a `'perLine'` widget on a per-unit product is refused at quantity above 1 (see [Multi-Unit Discrete Expansion](#multi-unit-discrete-expansion-unitmode)). |
 | `allowQuantity` | Shows the quantity selector. |
 | `maxQuantity` | Highest quantity the selector offers (default 50). The server's cap comes from the product and product type instead. |
-| `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. |
+| `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. The payment provider's `<CredentialsRef>_PUBLISHABLE_KEY`, when the server has it, takes its place (see [Step 2](#step-2-create-a-checkout-widget-record)). |
 | `autoRenewConsentText` | Wording of the automatic-renewal agreement. When set, the buyer must tick it, the server refuses to open a payment intent without that agreement, and the session records the text and the time. |
 | `allowCoupons` | Shows a promotion-code field and lets the draft take a code. Otherwise codes are refused. |
 | `successMessage` | Success-screen text in place of the default confirmation line. |
@@ -592,6 +594,7 @@ export class MyAccountStep extends CheckoutAccountStep {
         // find or create the login for ctx.Email; never change an existing one
         // create it unable to sign in, and send a verification link to ctx.Email
         // 'NotApplicable' when this checkout is not one you make logins for (another company's widget)
+        // optional on 'Created': VerificationNote (string, or null for none) and PasswordSetMessage
         return { Outcome: 'Created' }; // or 'Exists' / 'Failed', with an optional buyer-facing Message
     }
     public override async SetPassword(ctx: CheckoutAccountContext & { Password: string }): Promise<CheckoutPasswordResult> {
@@ -603,15 +606,16 @@ export class MyAccountStep extends CheckoutAccountStep {
 
 Reference the class from the server bootstrap so the decorator is not tree-shaken away. With nothing registered the step is off and checkout behaves as before.
 
-**The host must verify the e-mail.** The checkout never proves the buyer owns the e-mail they typed. Anyone can check out with someone else's e-mail, for the price of the widget or for nothing on a free one, and set the password in the widget. So:
-- An account answered `Created` must not be able to sign in until the host has verified the e-mail, for example with a link sent to it. The widget tells the buyer of every `Created` account to use that link before signing in. `CheckoutAccountResult.VerificationRequired` is deprecated and ignored.
-- Until the e-mail is verified, do not link the new login to `ctx.PersonID`. That Person was matched by e-mail alone, and may be an existing member whose orders and memberships would come with the login.
+**The host should verify the e-mail.** The checkout never proves the buyer owns the e-mail they typed. Anyone can check out with someone else's e-mail, for the price of the widget or for nothing on a free one, and set the password in the widget. So:
+- An account answered `Created` should not be able to sign in until the host has verified the e-mail, for example with a link sent to it. By default the widget tells the buyer of every `Created` account to use that link before signing in.
+- A host may let the account sign in before verification, as its own choice and risk: whoever typed the e-mail gets a working login under it. That host words the step itself, since the default wording promises a link. On a `Created` answer, `VerificationNote` replaces the note shown with the password form (`null` or an empty string shows none), and `PasswordSetMessage` replaces the message shown once the password is set. Either one left out keeps the default. `CheckoutAccountResult.VerificationRequired` is deprecated and ignored.
+- Until the e-mail is verified, do not link the new login to `ctx.PersonID`, even when the login can already sign in. That Person was matched by e-mail alone, and may be an existing member whose orders and memberships would come with the login.
 - Never change an account the checkout did not create, in either method.
 
 **Flow.**
 1. `POST /checkout/complete` confirms the order and answers straight away, without calling the host. When a step is registered the response carries `AccountStep: true`.
-2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired }`, where `VerificationRequired` is true for every `Created` account. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
-3. `Created`: the widget shows a password form with the verification note, and after the password is set tells the buyer to verify the e-mail before signing in. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
+2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired, VerificationNote?, PasswordSetMessage? }`, where `VerificationRequired` is true for every `Created` account and the last two carry the host's wording when it gave any. The wording is kept with the session, so a reload shows the same text. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
+3. `Created`: the widget shows a password form with the verification note, and after the password is set tells the buyer to verify the e-mail before signing in, or shows the host's wording instead. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
 4. `Exists`: the widget shows the step's message, or a default telling the buyer to sign in.
 5. `Failed`: the widget says the order is confirmed and offers "Try again", which calls `/checkout/account` again. "Not now" follows the redirect.
 6. `NotApplicable`: the session has no account step. The response carries no `Account`, exactly as when no step is registered.
@@ -703,6 +707,8 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
 | `checkout-reset-refused` | a host's `checkout-reset` arrived while a payment was in flight or the account step was unsettled | `{ state }` |
 | `checkout-access-state` | after the sale, each change in whether the buyer's access is ready, while the success screen polls `access-status` ([Outbound events](outbound-events.md#access-status-on-the-checkouts-success-screen)) | `{ state }`: `Ready`, `Pending` or `Failed` |
+
+With a `redirectUrl`, the page navigates away soon after `checkout-complete` (once the account step and access status settle). A listener's own `fetch` can be cancelled by that navigation, so a listener should finish synchronously, push to `dataLayer`, or send with `navigator.sendBeacon`.
 
 Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
 

@@ -395,6 +395,22 @@ vi.mock('../PaymentProviderResolver.js', async (importOriginal) => {
     };
 });
 
+// The browser's publishable key (ResolveCheckoutPublishableKey has its own suite). Null runs the real one.
+const publishableKeyMocks = vi.hoisted(() => ({
+    resolve: null as null | ((...args: unknown[]) => unknown),
+}));
+
+vi.mock('../CheckoutPublishableKey.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../CheckoutPublishableKey.js')>();
+    return {
+        ...actual,
+        ResolveCheckoutPublishableKey: (...args: unknown[]) =>
+            publishableKeyMocks.resolve
+                ? publishableKeyMocks.resolve(...args)
+                : (actual.ResolveCheckoutPublishableKey as (...a: unknown[]) => unknown)(...args),
+    };
+});
+
 // The update-card link's reads (#289). Null by default: an ordinary checkout's order is not a renewal.
 const renewalPayMocks = vi.hoisted(() => ({
     verify: vi.fn(),
@@ -692,6 +708,24 @@ describe('CheckoutSessionService', () => {
             expect(res.RenewalPayment).toEqual({ OrderNumber: 'ORD-000123', Amount: 1200, Description: 'Annual Plan', SubscriptionNumber: 'SUB-000045', DueDate: '2027-01-01' });
             // The browser gets the public configuration only.
             expect(res.Configuration?.paymentProviderId).toBeUndefined();
+        });
+
+        it("hands the renewal browser the same resolved publishable key as an ordinary checkout", async () => {
+            const resolve = vi.fn().mockResolvedValue({ Key: 'pk_test_from_env', Source: 'environment' });
+            publishableKeyMocks.resolve = resolve;
+            try {
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                    paymentProviderId: 'pp-1',
+                    productId: 'prod-1',
+                    stripePublishableKey: 'pk_test_from_widget',
+                });
+                const res = await CheckoutSessionService.InitializeRenewalPaymentSession('t.s', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(res.Configuration?.stripePublishableKey).toBe('pk_test_from_env');
+                expect(resolve).toHaveBeenCalledWith(expect.objectContaining({ paymentProviderId: 'pp-1' }), expect.any(String), testUser);
+            } finally {
+                publishableKeyMocks.resolve = null;
+            }
         });
 
         it('a pay-renewal session cannot be drafted: the order is not re-priced', async () => {
@@ -1005,6 +1039,53 @@ describe('CheckoutSessionService', () => {
             expect(res.Configuration?.paymentProviderId).toBeUndefined();
             expect(res.Configuration?.signingKey).toBeUndefined();
             expect(res.Configuration?.allowAnyProduct).toBeUndefined();
+        });
+
+        it('replaces the widget publishable key with the resolved one (the env key wins)', async () => {
+            const resolve = vi.fn().mockResolvedValue({ Key: 'pk_live_from_env', Source: 'environment' });
+            publishableKeyMocks.resolve = resolve;
+            try {
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                    productId: 'prod-1',
+                    paymentProviderId: '88eb5f2e-3005-4cab-ae24-a4fd48876e7b',
+                    stripePublishableKey: 'pk_test_from_widget',
+                });
+                const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(res.Configuration?.stripePublishableKey).toBe('pk_live_from_env');
+                expect(res.Configuration?.paymentProviderId).toBeUndefined();
+                // The resolver sees the full server-side configuration, provider id included.
+                expect(resolve).toHaveBeenCalledWith(
+                    expect.objectContaining({ paymentProviderId: '88eb5f2e-3005-4cab-ae24-a4fd48876e7b' }),
+                    'Annual AI Summit Registration',
+                    testUser
+                );
+            } finally {
+                publishableKeyMocks.resolve = null;
+            }
+        });
+
+        it('omits stripePublishableKey when no key resolves', async () => {
+            publishableKeyMocks.resolve = vi.fn().mockResolvedValue({ Key: undefined, Source: 'none' });
+            try {
+                mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', stripePublishableKey: '   ' });
+                const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY, testUser);
+                expect(res.Success).toBe(true);
+                expect(res.Configuration && 'stripePublishableKey' in res.Configuration).toBe(false);
+            } finally {
+                publishableKeyMocks.resolve = null;
+            }
+        });
+
+        it('still loads the checkout with the widget key when the provider id is unusable', async () => {
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({
+                productId: 'prod-1',
+                paymentProviderId: 'not-a-uuid',
+                stripePublishableKey: 'pk_test_from_widget',
+            });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.Configuration?.stripePublishableKey).toBe('pk_test_from_widget');
         });
     });
 

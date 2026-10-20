@@ -44,11 +44,11 @@ load_env_defaults ./.env
 
 # The LTS release (npm dist-tag lts-6.1). It must satisfy every repo's mjVersionRange; accounting's
 # starts at 6.1.0-edge.7, and common's migrations call core procedures with parameters older tags lack.
-# It must also match the @memberjunction/* version the lockfile and mj-app.json require (6.1.5), so
+# It must also match the @memberjunction/* version the lockfile and mj-app.json require (6.1.6), so
 # the schema is the one the installed packages expect. Bump this when the lts-6.1 dist-tag moves.
 # `mj migrate -t` takes a git ref of the MJ repo, not an npm dist-tag, so `-t lts-6.1` cannot
 # resolve; the lts/6.1 branch would, but its tip can carry migrations no published release has yet.
-MJ_VERSION="${MJ_CORE_VERSION:-v6.1.5}"
+MJ_VERSION="${MJ_CORE_VERSION:-v6.1.6}"
 COMMON_REPO="${BIZAPPS_COMMON_REPO:-$ROOT/../bizapps-common}"
 ACCOUNTING_REPO="${BIZAPPS_ACCOUNTING_REPO:-$ROOT/../bizapps-accounting}"
 TASKS_REPO="${BIZAPPS_TASKS_REPO:-$ROOT/../bizapps-tasks}"
