@@ -1,5 +1,20 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.36.0
+
+### Minor Changes
+
+- 4aa6783: Checkout: the Stripe publishable key the browser gets can come from the server environment. When a widget names a `paymentProviderId` and that provider's `CredentialsRef` resolves to a publishable key (the default secret resolver reads `<CredentialsRef>_PUBLISHABLE_KEY`, beside `<CredentialsRef>_API_KEY`), `/checkout/initialize` hands that key to the browser in place of the widget's `stripePublishableKey`, on both the ordinary and the renewal-payment session, so the host page and the Angular widget load Stripe.js with the same account's key as the server. Without the variable the widget's value is used as before. A key whose test/live mode disagrees with the account's (its API key's mode, else `IsLiveMode`) is logged as a warning by prefix only, and a provider that cannot be read is logged and falls back to the widget's key rather than failing the checkout. New exports: `ResolveCheckoutPublishableKey`, `ChooseCheckoutPublishableKey`, `StripeKeyModeOf`, `ResolvePaymentCredentials`; `PaymentCredentials` gains `PublishableKey`.
+- db3aef7: Order review by trigger (bc-aidp-next-golive#320 §5). A Direct order that hits a switched-on trigger (`NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`) cannot confirm until the reviewer role approves its `ORDERS_ORDER_REVIEW` task; an order a reviewer created goes to the escalation role. Routing is to the role holders' linked Persons, never the order's creator. Configured by the new `OrderReview*` settings, all off by default, so hosts that set nothing are unaffected. Adds the `RegisterOrderDealLink` seam for the sales app to say which deal created an order; the `ORDERS_ORDER_REVIEW` task type and the settings rows ship in metadata. An approval counts only when the user who wrote the decision (from `MJ: Record Changes`) holds the routed role and is not the creator, the task was linked to this order alone before it was decided, and nothing reviewed on the order was written since. `OrderHeader.Origin` can now be written only by the process that creates the order (checkout, provider payment); any other write of it is refused on save.
+- 5a490c4: Add an optional refund authority check to `Orders.RefundPayment` (bc-aidp-next-golive#320 §3). With the new `RefundApprovalThreshold` setting set, a refund that brings the payment's refunds to at most the threshold may be issued by a holder of the role named by the new `RefundApproverRole` setting, and anything above it only by the receiving company's `AccountingCompanyProfile.ApprovalCFOUserID`, who may always refund. A deactivated approver counts as none, so the refusal asks for a new one. The amount is counted per payment, not per order. The check runs before Preview and before any write, and refuses with a message. A gateway refund booked by the system user (a webhook) is exempt. Empty, the default, leaves refunds as before; an unreadable value is read as 0, and if the Orders application row cannot be found the refund fails loudly rather than running unchecked. This is an interim shape: the performer is the approver until a request-then-approve flow lands.
+
+### Patch Changes
+
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+  - @mj-biz-apps/orders-entities@5.36.0
+
 ## 5.35.1
 
 ### Patch Changes
@@ -948,8 +963,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                    "FK_EntityFieldValue_EntityField"
+                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
