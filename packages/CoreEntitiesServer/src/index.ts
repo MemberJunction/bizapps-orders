@@ -729,7 +729,19 @@ export {
     ResolvePaymentProvider,
     LoadPaymentProviderConfig,
     BuildPaymentProvider,
+    ResolvePaymentCredentials,
 } from './PaymentProviderResolver.js';
+export {
+    ResolveCheckoutPublishableKey,
+    ChooseCheckoutPublishableKey,
+    StripeKeyModeOf,
+} from './CheckoutPublishableKey.js';
+export type {
+    CheckoutPublishableKey,
+    CheckoutPublishableKeyInputs,
+    CheckoutPublishableKeySource,
+    StripeKeyMode,
+} from './CheckoutPublishableKey.js';
 
 // Document delivery (§4.4) — the pure decisions, the channel seam, and the one shipped channel.
 // Document-AGNOSTIC: nothing below knows what an invoice is, which is what makes it reusable for

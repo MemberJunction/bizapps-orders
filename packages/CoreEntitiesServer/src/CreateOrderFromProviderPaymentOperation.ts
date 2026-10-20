@@ -66,6 +66,7 @@ import {
     ProviderPaymentLineReason,
 } from './ProviderPaymentOrder.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
+import { SetSystemOrderOrigin } from './SystemOrderOrigin.js';
 import { UnitPriceForCharge } from './UnmatchedChargeRules.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
@@ -219,7 +220,7 @@ async function createOrderAndIntent(
         order.ShipToPersonID = args.BillToPersonID;
         order.BillToOrganizationID = args.BillToOrganizationID;
         order.ShipToOrganizationID = args.BillToOrganizationID;
-        order.Origin = PROVIDER_PAYMENT_ORDER_ORIGIN;
+        SetSystemOrderOrigin(order, PROVIDER_PAYMENT_ORDER_ORIGIN);
         order.OrderType = 'Sale';
         order.OrderDate = orderDay;
         order.Description = `Created from provider payment ${args.ProviderChargeID}`;
