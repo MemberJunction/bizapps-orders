@@ -238,6 +238,14 @@ const BOOT_SCRIPT = `
     try { sessionStorage.setItem(storageKey, key); } catch (e) {}
     return key;
   }
+  // A reply that is not the edge's JSON: a gateway error page (a 504 when /complete outlasts the
+  // proxy in front of the server) or no reply at all. Its message is for the buyer, never a parser error.
+  function transportError(httpStatus) {
+    var e = new Error('Checkout could not reach the server. Please try again.');
+    e.transport = true;
+    e.httpStatus = httpStatus;
+    return e;
+  }
   function post(path, body) {
     return fetch(apiRoot + path, {
       method: 'POST',
@@ -246,10 +254,11 @@ const BOOT_SCRIPT = `
       body: JSON.stringify(body)
     }).then(function (res) {
       return res.json().then(function (json) {
+        if (!json || typeof json !== 'object') throw transportError(res.status);
         json._httpStatus = res.status;
         return json;
-      });
-    });
+      }, function () { throw transportError(res.status); });
+    }, function () { throw transportError(null); });
   }
   // Turnstile (#592): the edge's 403 names the site key, since the widget configuration only
   // arrives with /initialize. Render the challenge, retry once; a token works once, so every
@@ -317,6 +326,27 @@ const BOOT_SCRIPT = `
       turnstileSiteKey = siteKey;
       return turnstileToken(siteKey).then(function (token) { return post(path, withToken(body, token)); });
     });
+  }
+  // /complete once the buyer has paid. The server may still be booking the order when the reply is
+  // a gateway error, or when it answers that the session is Processing; it is replay-safe, so ask
+  // again every 3 s for up to 2 min. Resolves { _delayed: true } when the wait runs out.
+  function completeCheckout(body, onWaiting) {
+    var deadline = Date.now() + 120000;
+    var waiting = false;
+    function attempt() {
+      return postGated('/complete', body).then(function (reply) {
+        return reply && reply.Success !== true && reply.Status === 'Processing' ? null : reply;
+      }, function (err) {
+        if (err && err.transport) return null;
+        throw err;
+      }).then(function (reply) {
+        if (reply) return reply;
+        if (!waiting) { waiting = true; onWaiting(); }
+        if (Date.now() >= deadline) return { _delayed: true };
+        return new Promise(function (resolve) { setTimeout(resolve, 3000); }).then(attempt);
+      });
+    }
+    return attempt();
   }
   function fieldValue(el) {
     if (el.type === 'checkbox') return el.checked;
@@ -474,6 +504,7 @@ const BOOT_SCRIPT = `
       if (Object.keys(extensionFields).length) {
         line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
       }
+      var finishing = function () { status.textContent = 'Payment received. Finishing your order…'; };
       post('/draft', {
         sessionId: sessionId,
         clientSessionKey: sessionKey,
@@ -487,7 +518,7 @@ const BOOT_SCRIPT = `
         totalEl.textContent = 'Total: ' + total.toFixed(2);
         if (!draft.RequiresPayment) {
           status.textContent = 'Completing…';
-          return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+          return completeCheckout({ sessionId: sessionId, clientSessionKey: sessionKey }, finishing);
         }
         status.textContent = 'Opening payment…';
         return post('/payment-intent', { sessionId: sessionId, clientSessionKey: sessionKey }).then(function (intent) {
@@ -517,12 +548,22 @@ const BOOT_SCRIPT = `
             }).then(function (result) {
               if (result.error) throw new Error(result.error.message || 'Payment failed.');
               status.textContent = 'Completing…';
-              return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+              return completeCheckout({ sessionId: sessionId, clientSessionKey: sessionKey }, finishing);
             });
           });
         });
       }).then(function (done) {
         if (!done || done._waitForCard) return;
+        if (done._delayed) {
+          // Paid, but not confirmed within the wait: the form goes, so the buyer cannot pay twice.
+          host.innerHTML = '';
+          var late = document.createElement('p');
+          late.className = 'mj-co__ok';
+          late.setAttribute('role', 'status');
+          late.textContent = 'Your payment went through, but confirming your order is taking longer than usual. Please do not pay again. Contact support if you need your order confirmation.';
+          host.appendChild(late);
+          return;
+        }
         if (!done.Success) {
           throw new Error(done.ErrorMessage || 'Could not complete checkout.');
         }
