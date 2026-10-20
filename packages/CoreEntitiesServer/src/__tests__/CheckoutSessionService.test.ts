@@ -2459,11 +2459,27 @@ describe('CheckoutSessionService', () => {
         });
 
         it('rejects duplicate or concurrent CompleteCheckout calls when status is not Open', async () => {
-            mocks.mockSessionInstance.Status = 'Processing';
+            mocks.mockSessionInstance.Status = 'Abandoned';
 
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('Session is not in an Open status');
+        });
+
+        it('refuses a session still Processing once the wait for the other completion runs out', async () => {
+            vi.useFakeTimers();
+            try {
+                mocks.mockSessionInstance.Status = 'Processing';
+
+                const pending = CheckoutSessionService.CompleteCheckout('sess-123', KEY);
+                await vi.advanceTimersByTimeAsync(31_000);
+                const res = await pending;
+                expect(res.Success).toBe(false);
+                expect(res.ErrorMessage).toContain('Session is not in an Open status');
+                expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
         });
 
         it('creates a single order line with Quantity 3 when unitMode is perLine', async () => {
@@ -3370,7 +3386,159 @@ describe('CheckoutSessionService', () => {
         });
     });
 
+    describe('completion from the payment webhook (#724)', () => {
+        const pricedAt100 = (ctx: { Lines: Array<{ UnitPrice: number; LineTotalGross: number; Quantity: number }> }) => {
+            for (const line of ctx.Lines) {
+                line.UnitPrice = 100;
+                line.LineTotalGross = 100 * line.Quantity;
+            }
+            return Promise.resolve({});
+        };
+
+        beforeEach(() => {
+            mocks.mockSessionInstance.Email = 'payer@example.com';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({
+                BillingAddress: BILLING,
+                Lines: [{ ProductID: 'prod-1', Quantity: 1 }]
+            });
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.mockPaymentIntentInstance.Amount = 100;
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockSessionLoad.mockResolvedValue(true);
+        });
+
+        it('confirms the order and books the payment for an Open session the browser never completed', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+            // Past its expiry: the buyer paid inside it, so the paid session is still booked.
+            mocks.mockSessionInstance.ExpiresAt = new Date(Date.now() - 60_000);
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toEqual({ Attempted: true, Booked: true });
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
+            expect(mocks.mockSessionInstance.Status).toBe('Confirmed');
+            expect(mocks.mockSessionInstance.DraftOrderID).toBe('order-999');
+            expect(mocks.mockCaptureExecute).toHaveBeenCalledTimes(1);
+            // Both post-payment steps are recorded as the webhook's.
+            const sources = stepMocks.Begin.mock.calls.map((call) => [call[1], (call as unknown[])[2]]);
+            expect(sources).toEqual([['Confirm', 'Webhook'], ['Capture', 'Webhook']]);
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
+        });
+
+        it('returns the same order to a browser complete arriving after the webhook completed the session', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+
+            await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(res.OrderID).toBe('order-999');
+            expect(mocks.mockOrderInstance.Confirm).toHaveBeenCalledTimes(1);
+        });
+
+        it('makes a browser complete wait for the webhook holding the session and answer with its order', async () => {
+            vi.useFakeTimers();
+            try {
+                mocks.mockSessionInstance.Status = 'Processing';
+                let loads = 0;
+                mocks.mockSessionLoad.mockImplementation(async () => {
+                    loads++;
+                    if (loads === 3) {
+                        mocks.mockSessionInstance.Status = 'Confirmed';
+                        mocks.mockSessionInstance.DraftOrderID = 'order-999';
+                    }
+                    return true;
+                });
+
+                const pending = CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+                await vi.advanceTimersByTimeAsync(5_000);
+                const res = await pending;
+                expect(res.Success).toBe(true);
+                expect(res.OrderID).toBe('order-999');
+                expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            } finally {
+                vi.useRealTimers();
+            }
+        });
+
+        it('raises the alert and books nothing when the re-priced order costs more than was paid', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+            mocks.mockPaymentIntentInstance.Amount = 40;
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book.Attempted).toBe(true);
+            expect(book.Booked).toBe(false);
+            // A refusal will not pass on a Stripe retry: answer 200 and leave it to staff.
+            expect(book.Retryable).toBe(false);
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockSessionInstance.Status).toBe('Open');
+            // Raised once, by the completion's own price check.
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            expect(mocks.mockSettledNotBookedAlert.mock.calls[0][2]).toContain('does not cover');
+        });
+
+        it('raises the alert for any other refusal, since nobody is on the page to see it', async () => {
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: false, Retryable: false });
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            const [sessionArg, intentArg] = mocks.mockSettledNotBookedAlert.mock.calls[0];
+            expect(sessionArg).toBe('sess-123');
+            expect(intentArg).toBe('pi-row-1');
+        });
+
+        it('asks for a retry, without an alert, when the completion throws', async () => {
+            mocks.mockPricingPrice.mockImplementationOnce(pricedAt100);
+            mocks.mockOrderInstance.Confirm.mockRejectedValueOnce(new Error('deadlock'));
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: false, Retryable: true });
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
+        });
+
+        it('raises the alert for a session that expired before its payment was completed', async () => {
+            mocks.mockSessionInstance.Status = 'Expired';
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: false, Retryable: false });
+            expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+        });
+    });
+
     describe('ReapExpiredOpenSessions', () => {
+        it('raises the "settled with no order" alert for an expiring session whose payment settled (#724)', async () => {
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                return true;
+            });
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+
+            const n = await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
+            expect(n).toBe(1);
+            expect(mocks.mockSessionInstance.Status).toBe('Expired');
+            expect(mocks.mockSettledNotBookedAlert).toHaveBeenCalledTimes(1);
+            expect(mocks.mockSettledNotBookedAlert.mock.calls[0][1]).toBe('pi-row-1');
+        });
+
+        it('expires an unpaid session without an alert', async () => {
+            mocks.mockSettledNotBookedAlert.mockClear();
+            mocks.mockSessionLoad.mockImplementation(async () => {
+                mocks.mockSessionInstance.Status = 'Open';
+                mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+                return true;
+            });
+            mocks.mockPaymentIntentInstance.Status = 'RequiresPaymentMethod';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+
+            await CheckoutSessionService.ReapExpiredOpenSessions(testUser, 50);
+            expect(mocks.mockSettledNotBookedAlert).not.toHaveBeenCalled();
+        });
+
         it('passes MaxRows so the bound is in the query, not after an unbounded fetch', async () => {
             mocks.mockSessionLoad.mockImplementation(async () => {
                 mocks.mockSessionInstance.Status = 'Open';

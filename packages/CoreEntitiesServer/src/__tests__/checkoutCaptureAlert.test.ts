@@ -123,7 +123,16 @@ describe('raiseCheckoutSettledNotBookedAlert', () => {
         expect(mockGetEntityObject).not.toHaveBeenCalled();
     });
 
+    /** The Task Types lookup finds GENERAL; the Tasks lookup finds the given rows. */
+    const existingTasks = (rows: Array<{ ID: string }>) =>
+        mockRunView.mockImplementation(async (params: { EntityName: string }) =>
+            params.EntityName === CHECKOUT_CAPTURE_TASK_ENTITY
+                ? { Success: true, Results: rows }
+                : { Success: true, Results: [{ ID: GENERAL_TYPE_ID }] },
+        );
+
     it('raises a typed Task naming the session and payment intent for a refund', async () => {
+        existingTasks([]);
         await raiseCheckoutSettledNotBookedAlert('sess-4', 'pi-4', 'member code declined', user);
 
         expect(mockTask.TypeID).toBe(GENERAL_TYPE_ID);
@@ -133,5 +142,17 @@ describe('raiseCheckoutSettledNotBookedAlert', () => {
         expect(mockTask.Description).toContain('Payment intent: pi-4');
         expect(mockTask.Description).toContain('member code declined');
         expect(mockTask.Save).toHaveBeenCalledTimes(1);
+    });
+
+    it('raises one Task per session: a second report of the same session writes nothing (#724)', async () => {
+        existingTasks([{ ID: 'task-1' }]);
+        await raiseCheckoutSettledNotBookedAlert('sess-4', 'pi-4', 'the checkout expired', user);
+
+        const lookup = mockRunView.mock.calls[0][0] as { EntityName: string; ExtraFilter: string };
+        expect(lookup.EntityName).toBe(CHECKOUT_CAPTURE_TASK_ENTITY);
+        expect(lookup.ExtraFilter).toContain('sess-4');
+        expect(mockTask.Save).not.toHaveBeenCalled();
+        // The log marker is still written for every report.
+        expect(String(mockLogError.mock.calls[0][0])).toContain(CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER);
     });
 });
