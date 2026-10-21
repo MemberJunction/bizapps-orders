@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB38).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB39).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -46,6 +46,7 @@
  *   SB36  a stated 18-month period is a 12-month and a 6-month term
  *   SB37  a stated 24-month period is two 12-month terms, and the line keeps the stated end
  *   SB38  a stated 6-month line for a held product extends it by 6 months from the continuation date
+ *   SB39  a length other than the type's term is raised for finance review; the type's own length is not
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -62,11 +63,13 @@ import {
     CreateBundleItem,
     CreateOrdersFixture,
     CreateProductPrice,
+    createViaEntity,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
     SameID,
     TeardownOrdersFixture,
+    TxMaybeOne,
     TxOne,
     TxQuery,
 } from '../fixture.js';
@@ -1501,6 +1504,48 @@ export const SubscriptionChecks: NamedCheck[] = [
                 AssertEqual(data.TermEndDate, '2027-12-31', 'and the end it got');
             }),
     },
+    {
+        Id: 'subscriptions.SB39',
+        Name: "SB39: a length other than the type's term is raised for finance review; the type's own length is not",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Accounting seeds its finance exception types as metadata; create this one when the
+                // database has not got it yet. Its Code is all the raise looks for.
+                const existing = await TxMaybeOne<{ ID: string }>(
+                    ctx,
+                    `SELECT ID FROM ${ACCT_SCHEMA}.FinanceExceptionType WHERE Code='SUBSCRIPTION_TERM_LENGTH'`,
+                );
+                if (!existing) {
+                    await createViaEntity(ctx, FINANCE_EXCEPTION_TYPE_ENTITY, {
+                        Code: 'SUBSCRIPTION_TERM_LENGTH',
+                        Name: 'IT subscription term length',
+                        OwningApp: 'orders',
+                        IsActive: 1,
+                        Configuration: '{}',
+                    });
+                }
+                const exceptionsFor = (orderID: string) =>
+                    TxQuery<{ Amount: number; Summary: string; DedupeKey: string }>(
+                        ctx,
+                        `SELECT fe.Amount, fe.Summary, fe.DedupeKey FROM ${ACCT_SCHEMA}.FinanceException fe
+                         JOIN ${ACCT_SCHEMA}.FinanceExceptionType t ON t.ID = fe.FinanceExceptionTypeID
+                         WHERE t.Code = 'SUBSCRIPTION_TERM_LENGTH'
+                           AND fe.SourceRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')`,
+                    );
+
+                // SubRolling's list price is the 1,200 the lines carry, so they are priced unchanged.
+                await CreateProductPrice(ctx, Fx().Products.SubRolling, 1200);
+                const thirteen = await buyStatedPeriod(ctx, '2026-07-01', '2027-07-31');
+                const raised = await exceptionsFor(thirteen.result.Order.ID as string);
+                AssertEqual(raised.length, 1, '13 months on a 12-month type is raised');
+                AssertEqual(Number(raised[0].Amount), 100, 'the month given away, at the list rate');
+                Assert(raised[0].Summary.includes('1 month is not charged for'), `summary: ${raised[0].Summary}`);
+
+                const twelve = await buyStatedPeriod(ctx, '2027-08-01', '2028-07-31');
+                AssertEqual((await exceptionsFor(twelve.result.Order.ID as string)).length, 0, '12 months raises nothing');
+            }),
+    },
 ];
 
 for (const check of SubscriptionChecks) {
@@ -1517,4 +1562,5 @@ import {
   ORDER_LINE_ENTITY,
   PRODUCT_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
+  FINANCE_EXCEPTION_TYPE_ENTITY,
 } from "../entity-names.js";
