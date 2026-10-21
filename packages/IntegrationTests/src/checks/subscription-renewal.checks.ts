@@ -1897,6 +1897,48 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 }),
             ),
     },
+    {
+        Id: 'subscription-renewal.SR53',
+        Name: 'SR53: a link payment the browser never completed is completed by the payment webhook, and a late complete returns the same order (#724)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withRenewalLinks(async () => {
+                    const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                    await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                    await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+
+                    const key = 'it-renew-closed-tab';
+                    const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
+                    Assert(init.Success, `the link opens a session: ${init.ErrorMessage}`);
+                    const sessionID = init.SessionID!;
+                    const opened = await CheckoutSessionService.OpenPaymentIntentForSession(sessionID, key, ctx.User);
+                    Assert(opened.Success, `an intent opens: ${opened.ErrorMessage}`);
+                    await settleSessionIntent(ctx, sessionID);
+
+                    // The page closed after the payment succeeded: only the webhook's booking step runs.
+                    const intentID = (await TxOne<{ PaymentIntentID: string }>(ctx, `SELECT PaymentIntentID FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${sessionID}'`)).PaymentIntentID;
+                    const booked = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded(intentID, ctx.User);
+                    Assert(booked.Booked, `the webhook completes the payment: ${booked.ErrorMessage}`);
+
+                    const session = await TxOne<{ Status: string; DraftOrderID: string }>(ctx, `SELECT Status, DraftOrderID FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${sessionID}'`);
+                    AssertEqual(session.Status, 'Confirmed', 'the session is confirmed');
+                    const order = await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${r.OrderID}'`);
+                    AssertEqual(Number(order.Balance), 0, 'the renewal is paid');
+                    const step = await TxOne<{ LastAttemptSource: string; Status: string }>(
+                        ctx,
+                        `SELECT LastAttemptSource, Status FROM ${ORDERS_SCHEMA}.CheckoutSessionStep WHERE CheckoutSessionID = '${sessionID}' AND StepName = 'Capture'`,
+                    );
+                    AssertEqual(step.LastAttemptSource, 'Webhook', 'the capture is recorded as the webhook\'s');
+                    AssertEqual(step.Status, 'Succeeded', 'and it succeeded');
+
+                    const late = await CheckoutSessionService.CompleteCheckout(sessionID, key, ctx.User);
+                    Assert(late.Success, `a late complete succeeds: ${late.ErrorMessage}`);
+                    Assert(SameID(late.OrderID, r.OrderID), 'with the same order');
+                    AssertEqual((await paymentsFor(ctx, r.OrderID)).length, 1, 'and the payment is booked once');
+                }),
+            ),
+    },
 
 ];
 

@@ -248,6 +248,19 @@
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
 }
 
+/* The e-mail a member token was signed for (#919): shown, not editable. */
+.mj-input[readonly] {
+    background: #f1f5f9;
+    color: #475569;
+    cursor: default;
+}
+
+.mj-field-hint {
+    font-size: 0.8rem;
+    color: #64748b;
+    margin: 0.25rem 0 0;
+}
+
 .mj-multi-attendee-header {
     display: flex;
     justify-content: space-between;
@@ -452,6 +465,9 @@
     color: var(--mj-success-color, #15803d);
     font-size: 0.875rem;
     margin: 0.35rem 0 0;
+}
+.mj-checkout-member-discount {
+    margin: 0.75rem 0;
 }
 .mj-checkout-promo__apply {
     flex: 0 0 auto;
