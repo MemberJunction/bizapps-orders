@@ -110,6 +110,14 @@ describe('page outputs are wired to the section', () => {
         expect(missing, `primary actions point at unknown pages: ${missing.join(', ')}`).toEqual([]);
     });
 
+    it('reaches a subscription\'s form, and so its Cancel button, from the Subscriptions page (#932)', () => {
+        // Cancel lives on the Subscription form. The Subscriptions page had no output at all, so the
+        // guard above had nothing to check and passed while support could not reach Cancel. Pin the
+        // output by name, and that the shell sends it to the Subscription entity's form.
+        expect(pageOutputs.get('receivables/subscriptions.page.ts') ?? []).toContain('SubscriptionOpened');
+        expect(shell).toMatch(/'SubscriptionOpened',[^\n]*openEntity\(MJO_ENTITIES\.Subscription,/);
+    });
+
     it('reaches the confirm from the UI', () => {
         // The specific regression: this is the only path to the code that writes journal entries,
         // and it was once unreachable.
