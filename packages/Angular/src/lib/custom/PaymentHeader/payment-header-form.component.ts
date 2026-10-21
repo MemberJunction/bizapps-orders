@@ -9,8 +9,9 @@ import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
     AsDateValue,
     PaymentHeaderEntity,
-    DaysLate,
+    DaysOverdue,
     Today,
+    ToISODate,
     TodayAsDateValue,
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -988,11 +989,18 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
      * beside a due date that still read today. The due dates themselves were already on the
      * business calendar; only this counter was not.
      *
-     * `DaysLate` is the counter that goes with `IsBefore`, which is what the grids filter on, so
-     * the badge and the overdue filter cannot disagree about what is late.
+     * `DaysOverdue` is what "overdue" MEANS in this app, stated once in `overdue.ts` beside the rule
+     * the grids filter on and the SQL the view is built from. Counting days here instead would be a
+     * second spelling of it, and the two would drift: this one would still call a voided order late.
+     *
+     * Counted against the header's own `DueDate` because that is the date displayed beside the badge
+     * by `FormatOrderDueDate`. The row has to agree with itself first.
      */
     public GetOrderDaysOverdue(order: mjBizAppsOrdersOrderHeaderEntity): number {
-        return DaysLate(order.DueDate, Today());
+        return DaysOverdue(
+            { Status: order.Status, Balance: order.Balance, DueDateISO: ToISODate(order.DueDate) },
+            Today(),
+        );
     }
 
     public OpenOrderRecord(order: mjBizAppsOrdersOrderHeaderEntity, event: MouseEvent): void {

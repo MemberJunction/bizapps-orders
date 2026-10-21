@@ -120,31 +120,6 @@ export function IsBefore(value: unknown, day: string): boolean {
 }
 
 /**
- * How many WHOLE DAYS late a cell is against `day`, or 0 when it is not late at all.
- *
- * The counter beside {@link IsBefore}, and it has to agree with it: a cell that is not `IsBefore`
- * must count 0, or a row reads "due today" and "1d overdue" at the same time.
- *
- * COUNTED IN CALENDAR DAYS, NOT IN ELAPSED TIME (bc-aidp-next-golive#341). Subtracting instants
- * counts a day as soon as 24 hours have passed, so an order due today was reported "1d overdue"
- * from the moment the UTC date rolled over -- 7pm in Chicago, with the due date itself still
- * reading today beside it. Both sides are pinned to midnight UTC here, so the difference is whole
- * days and carries no time of day to round up.
- *
- * A cell with no readable date is not late, for the reason `IsBefore` gives: absence is not
- * evidence of lateness.
- *
- * @param day - The reference day as `YYYY-MM-DD`, normally {@link Today}.
- */
-export function DaysLate(value: unknown, day: string): number {
-    if (!IsBefore(value, day)) return 0;
-    const due = Date.parse(`${ToISODate(value)}T00:00:00Z`);
-    const ref = Date.parse(`${day}T00:00:00Z`);
-    if (Number.isNaN(due) || Number.isNaN(ref)) return 0;
-    return Math.round((ref - due) / 86_400_000);
-}
-
-/**
  * Today on the BUSINESS calendar as `YYYY-MM-DD`.
  *
  * Not the UTC day (`toISOString().slice(0, 10)` is already tomorrow for the whole American evening)

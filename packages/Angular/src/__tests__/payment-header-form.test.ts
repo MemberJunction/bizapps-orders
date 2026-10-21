@@ -614,13 +614,15 @@ describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
 });
 
 /**
- * THE BADGE IS ON THE BUSINESS CALENDAR (bc-aidp-next-golive#341).
+ * THE BADGE IS ON THE BUSINESS CALENDAR, AND ON THE APP'S OWN OVERDUE RULE (golive#341).
  *
- * `DaysLate` is pinned in `date-cell.test.ts`; this pins that the FORM asks it. Without this the
- * middle link is unheld — someone can inline the instant arithmetic back into the component and
- * every helper test still passes, which is how the bug reached QA in the first place.
+ * Two things are pinned here. The counter used to subtract instants, so after 7pm in Chicago an
+ * order due TODAY reported "1d overdue" beside a due date still reading today. And the form has to
+ * ASK `DaysOverdue` rather than count for itself: that function is where this app says what overdue
+ * means, next to the predicate the grids filter on and the SQL the view is built from. A second
+ * spelling here would drift from it, and nothing in `overdue.ts`'s own tests would notice.
  */
-describe('the open-orders overdue badge counts calendar days', () => {
+describe('the open-orders overdue badge', () => {
     const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
     const original = { rows: engine._configurations, loaded: engine._loaded };
     beforeEach(() => {
@@ -637,17 +639,30 @@ describe('the open-orders overdue badge counts calendar days', () => {
     });
 
     const form = () => Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
-    const order = (due: string | null) => ({ DueDate: due }) as never;
+    const owing = (due: string | null) => ({ DueDate: due, Balance: 250, Status: 'Confirmed' }) as never;
 
     it('shows nothing for an order due today, where it used to show 1d', () => {
-        expect(form().GetOrderDaysOverdue(order('2026-10-13'))).toBe(0);
+        expect(form().GetOrderDaysOverdue(owing('2026-10-13'))).toBe(0);
     });
 
     it('counts 6 for an order due 10/7, where it used to count 7', () => {
-        expect(form().GetOrderDaysOverdue(order('2026-10-07'))).toBe(6);
+        expect(form().GetOrderDaysOverdue(owing('2026-10-07'))).toBe(6);
     });
 
     it('counts nothing for an order with no due date', () => {
-        expect(form().GetOrderDaysOverdue(order(null))).toBe(0);
+        expect(form().GetOrderDaysOverdue(owing(null))).toBe(0);
+    });
+
+    /**
+     * These two come from asking `DaysOverdue` rather than counting dates here. A date-only counter
+     * would call both of them late, and the row would wear an overdue badge while the overdue
+     * filter left it out.
+     */
+    it('shows nothing once the balance is settled, however old the date', () => {
+        expect(form().GetOrderDaysOverdue({ DueDate: '2026-01-01', Balance: 0, Status: 'Confirmed' } as never)).toBe(0);
+    });
+
+    it('shows nothing for a voided order', () => {
+        expect(form().GetOrderDaysOverdue({ DueDate: '2026-01-01', Balance: 250, Status: 'Voided' } as never)).toBe(0);
     });
 });

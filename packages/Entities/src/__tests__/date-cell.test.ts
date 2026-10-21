@@ -1,6 +1,6 @@
 import { afterEach, describe, it, expect, vi } from 'vitest';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
-import { ToISODate, ISOYear, IsBefore, DaysLate, Today, LocalDay, TodayAsDateValue, AsDateValue, type DateCell } from '../date-cell';
+import { ToISODate, ISOYear, IsBefore, Today, LocalDay, TodayAsDateValue, AsDateValue, type DateCell } from '../date-cell';
 
 /**
  * Tier 1 for reading a date cell.
@@ -240,67 +240,3 @@ describe('AsDateValue', () => {
     });
 });
 
-/**
- * THE OVERDUE COUNTER COUNTS CALENDAR DAYS (bc-aidp-next-golive#341).
- *
- * The payment screen subtracted instants, so a day was counted the moment 24 hours had elapsed.
- * On 13 Oct at 7:43pm Central the UTC date has already rolled to the 14th, and an order due that
- * same day reported "1d overdue" beside a due date still reading 10/13. The numbers below are the
- * ones from the report: due today must read 0, and an order due 10/7 must read 6 rather than 7.
- */
-describe('DaysLate counts whole calendar days, not elapsed time', () => {
-    it('is 0 for a cell due on the reference day', () => {
-        expect(DaysLate('2026-10-13', '2026-10-13')).toBe(0);
-    });
-
-    it('is 0 for a cell due after the reference day', () => {
-        expect(DaysLate('2026-10-20', '2026-10-13')).toBe(0);
-    });
-
-    it('counts 1 for the day before', () => {
-        expect(DaysLate('2026-10-12', '2026-10-13')).toBe(1);
-    });
-
-    it('counts 6 for 10/7 against 10/13 — the report said 7', () => {
-        expect(DaysLate('2026-10-07', '2026-10-13')).toBe(6);
-    });
-
-    it('never disagrees with IsBefore, which is what the grids filter on', () => {
-        for (const day of ['2026-10-11', '2026-10-12', '2026-10-13', '2026-10-14']) {
-            expect(DaysLate(day, '2026-10-13') > 0).toBe(IsBefore(day, '2026-10-13'));
-        }
-    });
-
-    it('counts a cell with no readable date as not late', () => {
-        for (const cell of [null, undefined, '', 'not a date']) {
-            expect(DaysLate(cell, '2026-10-13')).toBe(0);
-        }
-    });
-
-    it('crosses a month boundary by the calendar, not by 30', () => {
-        expect(DaysLate('2026-09-28', '2026-10-02')).toBe(4);
-    });
-
-    /**
-     * The whole point, driven at the reported instant: 7:43pm Chicago on 13 Oct, which is already
-     * 14 Oct in UTC. A counter reading instants says 1; the calendar says 0, because the order is
-     * due today and today is not over.
-     */
-    it('reads 0 for an order due today, in the evening, once UTC has rolled over', () => {
-        const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
-        const original = { rows: engine._configurations, loaded: engine._loaded };
-        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
-        engine._loaded = true;
-        vi.useFakeTimers();
-        vi.setSystemTime(new Date('2026-10-14T00:43:00Z'));
-        try {
-            expect(Today()).toBe('2026-10-13');
-            expect(DaysLate('2026-10-13', Today())).toBe(0);
-            expect(DaysLate('2026-10-07', Today())).toBe(6);
-        } finally {
-            vi.useRealTimers();
-            engine._configurations = original.rows;
-            engine._loaded = original.loaded;
-        }
-    });
-});
