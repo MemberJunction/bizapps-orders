@@ -71,6 +71,7 @@ import {
     type CheckoutTypedCodePrecedence,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 import { ToIsoCountryCode, type CheckoutLocationEvidence } from './VatLocationEvidence.js';
 import type { RetrieveIntentResult } from './BasePaymentProvider.js';
 import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
@@ -3328,7 +3329,10 @@ export class CheckoutSessionService {
 
         try {
             const op = new CapturePaymentOperation();
-            const result = await op.ExecuteServer(
+            // On its own transaction, never the shared provider's (#927): the page and the webhook
+            // capture the same session within a second of each other, and on one provider their
+            // transactions nest, so a rollback on one side undid the other's payment.
+            const result = await WithIsolatedProvider((captureProvider) => op.ExecuteServer(
                 {
                     PaymentIntentID: intent.ID,
                     Amount: due,
@@ -3347,11 +3351,11 @@ export class CheckoutSessionService {
                     IdempotencyKey: `checkout-complete:${session.ID}`,
                 },
                 {
-                    provider: mdProvider,
+                    provider: captureProvider,
                     user: contextUser,
                     emitProgress: () => undefined,
                 }
-            );
+            ), mdProvider);
             const output = result.Output;
             if (!result.Success || !output?.Success) {
                 const detail = result.ErrorMessage
