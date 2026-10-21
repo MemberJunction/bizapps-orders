@@ -15,8 +15,9 @@ import { LogError, Metadata, type DatabaseProviderBase, type IMetadataProvider }
  * transaction state is new, so the cost is a provider object, not a connection or a metadata load.
  * Release never closes the pool, and rolls back anything `work` left open.
  *
- * A provider that cannot make an independent instance (a non-database provider, or a test double)
- * falls back to the shared one, which is today's behaviour.
+ * A provider with no `CreateIndependentInstance` method falls back to the shared one, which is today's
+ * behaviour. (A `DatabaseProviderBase` subclass that inherits the base class's throwing stub throws
+ * instead; SQL Server and PostgreSQL both implement it.)
  */
 export async function WithIsolatedProvider<T>(
     work: (provider: IMetadataProvider) => Promise<T>,
