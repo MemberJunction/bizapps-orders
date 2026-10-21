@@ -1,7 +1,0 @@
----
-"@mj-biz-apps/orders-core-entities-server": minor
----
-
-Confirm honors a subscription line's stated service period end (golive #338). It used to build one term of the type's default length whatever end the line stated, then overwrite the line's end to match, so a 13-, 18- or 24-month sale became 12 months and its revenue spread over 12. Now a shorter period is one short term; a longer one is one term per type term length with a final partial term (13 months on an annual type: 12 + 1; 24 months: 12 + 12), all on one subscription, each with its share of the line amount by months and its own recognition schedule, so every stated month recognizes the same amount. A stated period is not prorated. A line extending a held subscription keeps its stated length from the continuation date. Entitlement grants that follow the term are written per term. `SubscriptionBehavior.Decide` takes `RequestedEndDate` and returns every planned term in `Terms`, with `EndOverrideIgnored` when a stated end could not be used.
-
-Recognition schedules count months in UTC. Service periods are calendar days stored as UTC midnight, and the EvenOverTime driver's local-time month arithmetic put them on the previous evening on a server west of Greenwich, so a July-to-December window produced seven monthly entries and a one-month term two.
