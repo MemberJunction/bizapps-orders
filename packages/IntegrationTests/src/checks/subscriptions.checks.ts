@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB33).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB38).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -41,6 +41,11 @@
  *   SB31  a subscription bought at quantity 10 records 10 seats on its term, prorated or not (#589)
  *   SB32  a fractional quantity is refused; a one-person type records more than one seat on its term
  *   SB33  a confirmed subscription line keeps its subscription link and its term's service period
+ *   SB34  a stated 6-month period is one 6-month term at the line price, recognized over 6 months (golive #338)
+ *   SB35  a stated 13-month period is a 12-month and a 1-month term, recognized evenly over 13 months
+ *   SB36  a stated 18-month period is a 12-month and a 6-month term
+ *   SB37  a stated 24-month period is two 12-month terms, and the line keeps the stated end
+ *   SB38  a stated 6-month line for a held product extends it by 6 months from the continuation date
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -214,6 +219,80 @@ interface OverlapPreview {
         Message: string;
         Overlaps: { SubscriptionID: string | null; CoverageStart: string; CoverageEnd: string }[];
     }[];
+}
+
+/**
+ * Confirm one SubRolling line (annual, 12-month terms, monthly recognition) at its engine price of
+ * 1,200 with a stated service period, and read back what the confirm made of it (golive #338).
+ */
+async function buyStatedPeriod(ctx: IntegrationCheckContext, start: string, end: string) {
+    const f = Fx();
+    const result = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        OrderDate: JULY_1,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: start, ServicePeriodEnd: end }],
+    });
+    Assert(result.Saved, `confirm failed: ${result.Message}`);
+    const orderID = result.Order.ID as string;
+    const terms = await termsForOrder(ctx, orderID);
+    const line = await TxOne<{ ServicePeriodStart: string; ServicePeriodEnd: string; LineTotalNet: number }>(
+        ctx,
+        `SELECT ServicePeriodStart, ServicePeriodEnd, LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`,
+    );
+    const releases = await TxQuery<{ EffectiveDate: string; TermID: string; D: number }>(
+        ctx,
+        `SELECT je.EffectiveDate, je.LinkedRecordID AS TermID,
+                (SELECT SUM(DebitAmount) FROM ${ACCT_SCHEMA}.JournalEntryLine WHERE JournalEntryID = je.ID) AS D
+         FROM ${ACCT_SCHEMA}.vwJournalEntries je
+         WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition'
+           AND je.LinkedRecordID IN (${terms.map((t) => `'${t.ID}'`).join(',') || "''"})
+         ORDER BY je.EffectiveDate`,
+    );
+    return { result, terms, line, releases };
+}
+
+/** The stated period's terms, recognition and line, checked against what was asked for. */
+function assertStatedPeriod(
+    got: Awaited<ReturnType<typeof buyStatedPeriod>>,
+    expectedTerms: string[],
+    months: number,
+): void {
+    AssertEqual(
+        JSON.stringify(got.terms.map((t) => `${isoDate(t.StartDate)}..${isoDate(t.EndDate)}`)),
+        JSON.stringify(expectedTerms),
+        'one term per year of the stated period, the last one partial',
+    );
+    AssertEqual(
+        JSON.stringify(got.terms.map((t) => Number(t.TermNumber))),
+        JSON.stringify(expectedTerms.map((_, i) => i + 1)),
+        'term numbers in sequence',
+    );
+    Assert(got.terms.every((t) => !t.IsProrated), 'a stated period is not prorated');
+    AssertEqual(Number(got.line.LineTotalNet), 1200, 'the line keeps its price');
+    AssertEqual(
+        Math.round(got.terms.reduce((a, t) => a + Number(t.Amount), 0) * 100) / 100,
+        1200,
+        "the terms' amounts add up to the line",
+    );
+    AssertEqual(isoDate(got.line.ServicePeriodStart), isoDate(got.terms[0].StartDate), 'the line starts with its first term');
+    AssertEqual(
+        isoDate(got.line.ServicePeriodEnd),
+        isoDate(got.terms[got.terms.length - 1].EndDate),
+        'the line ends with its last term, on the stated end',
+    );
+    AssertEqual(got.releases.length, months, 'one recognition entry for each stated month');
+    AssertEqual(new Set(got.releases.map((r) => isoDate(r.EffectiveDate).slice(0, 7))).size, months, 'in distinct months');
+    AssertEqual(
+        Math.round(got.releases.reduce((a, r) => a + Number(r.D), 0) * 100) / 100,
+        1200,
+        'recognition adds up to the line',
+    );
+    const monthly = 1200 / months;
+    Assert(
+        got.releases.every((r) => Math.abs(Number(r.D) - monthly) <= 0.1),
+        `every month recognizes about ${monthly.toFixed(2)}: ${JSON.stringify(got.releases.map((r) => Number(r.D)))}`,
+    );
 }
 
 export const SubscriptionChecks: NamedCheck[] = [
@@ -566,9 +645,8 @@ export const SubscriptionChecks: NamedCheck[] = [
                 // onto the order date and recognition began in the wrong month; the stated dates
                 // were read by nobody and overwritten twice.
                 //
-                // Note the stated END is deliberately absurd: term length belongs to the type, and
-                // a stated end has no rule to reconcile it against, so it must be ignored while the
-                // stated START is obeyed.
+                // The stated end is the type's own twelve months; a different stated end is honored
+                // too (SB34-SB38, golive #338).
                 const result = await ConfirmOrder(ctx.User, {
                     CompanyID: f.CoA.ID,
                     OrderDate: BOOKED_AUG_27,
@@ -579,7 +657,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                             Quantity: 1,
                             UnitPrice: 1200,
                             ServicePeriodStart: '2026-08-01',
-                            ServicePeriodEnd: '2030-12-31',
+                            ServicePeriodEnd: '2027-07-31',
                         },
                     ],
                 });
@@ -590,7 +668,7 @@ export const SubscriptionChecks: NamedCheck[] = [
                 AssertEqual(isoDate(term.EndDate), '2027-07-31', 'twelve months measured from the stated start');
 
                 // The line ends up holding the SETTLED term, which here begins on the very date
-                // that was typed. The stated 2030 end is gone.
+                // that was typed.
                 const line = await TxOne<{ ServicePeriodStart: string; ServicePeriodEnd: string }>(
                     ctx,
                     `SELECT ServicePeriodStart, ServicePeriodEnd FROM ${ORDERS_SCHEMA}.OrderLine
@@ -1334,6 +1412,93 @@ export const SubscriptionChecks: NamedCheck[] = [
                     Assert(SameID(held!.JournalEntryID, r.JournalEntryID), 'the held line carries the booking entry');
                     Assert(!held!.Dirty, 'the held line is not dirty after the confirm');
                 }
+            }),
+    },
+    {
+        Id: 'subscriptions.SB34',
+        Name: 'SB34: a stated 6-month period is one 6-month term at the line price, recognized over 6 months',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const got = await buyStatedPeriod(ctx, '2026-07-01', '2026-12-31');
+                assertStatedPeriod(got, ['2026-07-01..2026-12-31'], 6);
+            }),
+    },
+    {
+        Id: 'subscriptions.SB35',
+        Name: 'SB35: a stated 13-month period is a 12-month and a 1-month term, recognized evenly over 13 months',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const got = await buyStatedPeriod(ctx, '2026-07-01', '2027-07-31');
+                assertStatedPeriod(got, ['2026-07-01..2027-06-30', '2027-07-01..2027-07-31'], 13);
+                AssertEqual(
+                    JSON.stringify(got.terms.map((t) => Number(t.Amount))),
+                    JSON.stringify([1107.69, 92.31]),
+                    'each term carries its months of the price',
+                );
+            }),
+    },
+    {
+        Id: 'subscriptions.SB36',
+        Name: 'SB36: a stated 18-month period is a 12-month and a 6-month term',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const got = await buyStatedPeriod(ctx, '2026-07-01', '2027-12-31');
+                assertStatedPeriod(got, ['2026-07-01..2027-06-30', '2027-07-01..2027-12-31'], 18);
+            }),
+    },
+    {
+        Id: 'subscriptions.SB37',
+        Name: 'SB37: a stated 24-month period is two 12-month terms, and the subscription runs to the stated end',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const got = await buyStatedPeriod(ctx, '2026-07-01', '2028-06-30');
+                assertStatedPeriod(got, ['2026-07-01..2027-06-30', '2027-07-01..2028-06-30'], 24);
+                Assert(SameID(got.terms[0].SubscriptionID, got.terms[1].SubscriptionID), 'both terms belong to one subscription');
+
+                // Each term recognizes its own year, anchored to it.
+                for (const term of got.terms) {
+                    AssertEqual(got.releases.filter((r) => SameID(r.TermID, term.ID)).length, 12, `term ${term.TermNumber} recognizes 12 months`);
+                }
+            }),
+    },
+    {
+        Id: 'subscriptions.SB38',
+        Name: 'SB38: a stated 6-month line for a held product extends it by 6 months from the continuation date',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const first = await buySubscription(ctx, 'SubRolling', 1200);
+                Assert(first.Saved, `first confirm failed: ${first.Message}`);
+                const [held] = await termsForOrder(ctx, first.Order.ID as string);
+                AssertEqual(isoDate(held.EndDate), '2027-06-30', 'the held coverage');
+
+                // Stated 2026-07-01 to 2026-12-31: six months. The subscriber already holds the
+                // product, so the line extends it; it used to become a 12-month term a year later.
+                const got = await buyStatedPeriod(ctx, '2026-07-01', '2026-12-31');
+                AssertEqual(got.terms.length, 1, 'one term');
+                const [term] = got.terms;
+                Assert(SameID(term.SubscriptionID, held.SubscriptionID), 'it extends the held subscription');
+                AssertEqual(Number(term.TermNumber), 2, 'as term 2');
+                AssertEqual(isoDate(term.StartDate), '2027-07-01', 'starting the day after the held coverage');
+                AssertEqual(isoDate(term.EndDate), '2027-12-31', 'and running the six months stated');
+                AssertEqual(got.releases.length, 6, 'recognized over those six months');
+                AssertEqual(isoDate(got.line.ServicePeriodEnd), '2027-12-31', 'the line shows the moved end');
+
+                // The moved dates are on the subscription's Extended event, where the order reads them.
+                const event = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT TOP 1 EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent
+                     WHERE SubscriptionID = '${held.SubscriptionID}' AND EventType = 'Extended'
+                       AND RelatedOrderHeaderID = '${got.result.Order.ID}'`,
+                );
+                const data = JSON.parse(event.EventData) as { RequestedStartDate?: string; TermStartDate?: string; TermEndDate?: string };
+                AssertEqual(data.RequestedStartDate, '2026-07-01', 'the stated start is recorded');
+                AssertEqual(data.TermStartDate, '2027-07-01', 'with the start it got');
+                AssertEqual(data.TermEndDate, '2027-12-31', 'and the end it got');
             }),
     },
 ];

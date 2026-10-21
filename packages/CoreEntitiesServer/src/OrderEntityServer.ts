@@ -134,6 +134,7 @@ import {
     type SubscriptionDecision,
     type SubscriptionTypeRules,
     OverlappingCoverage,
+    CoverageEndOf,
     type CoverageOverlap,
     type CoverageOverlapDecision,
     type FamilyCoverageTerm,
@@ -157,9 +158,12 @@ export interface LineCoverageOverlap {
     Overlaps: CoverageOverlap[];
 }
 
-/** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
+/**
+ * Terms created during a confirm, and the recognition cadence each line inherits from its type. A line
+ * that states an end past its first term has several terms, in order (golive #338).
+ */
 interface SubscriptionMaterialization {
-    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>;
+    TermsByLine: Map<string, Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>>;
     RecognitionMonthsByLine: Map<string, number>;
 }
 
@@ -259,6 +263,8 @@ interface SubscriptionDecisionForLine {
      * subscription's `Extended` event (golive #299).
      */
     RequestedStart: Date | null;
+    /** The end the line stated before the confirm, or null; kept for the same reason (golive #338). */
+    RequestedEnd: Date | null;
     /**
      * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
      * the term, where entitlement grants and renewals read it.
@@ -1441,7 +1447,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
             if (term) {
                 if (term.StartDate) line.ServicePeriodStart = term.StartDate;
-                if (term.EndDate) line.ServicePeriodEnd = term.EndDate;
+                // The end of the whole coverage: a line that states an end past its first term buys
+                // several terms, and the line covers all of them (golive #338).
+                const coverageEnd = CoverageEndOf(decided!.Decision);
+                if (coverageEnd) line.ServicePeriodEnd = coverageEnd;
             }
 
             // Events carry their own service period — the event happens when it happens.
@@ -3610,50 +3619,61 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Remember it so a later line for the same subscription resolves above.
             if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
 
-            const term = decision.Term!;
+            const planned = decision.Terms ?? [decision.Term!];
 
             // The LINE is the authority on price — `savePendingLines` already inserted it at the
-            // prorated quantity. Taking the term's amount from it makes booking (line net), the
-            // term, and the recognition schedule reconcile exactly; three numbers that must agree
-            // or deferred revenue never clears to zero.
-            term.Amount = line.LineTotalNet ?? term.Amount;
+            // prorated quantity. Taking the terms' amounts from it makes booking (line net), the
+            // terms, and the recognition schedules reconcile exactly; numbers that must agree or
+            // deferred revenue never clears to zero. Several terms split it by their shares, the
+            // last taking the rounding, so they still add up to the line (golive #338).
+            const lineNet = Number(line.LineTotalNet ?? planned.reduce((a, t) => a + t.Amount, 0));
+            let allocated = 0;
+            const written: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }> = [];
+            for (const [i, term] of planned.entries()) {
+                term.Amount =
+                    i === planned.length - 1
+                        ? Math.round((lineNet - allocated) * 100) / 100
+                        : Math.round(lineNet * term.Share * 100) / 100;
+                allocated = Math.round((allocated + term.Amount) * 100) / 100;
 
-            const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
-                SUBSCRIPTION_TERM_ENTITY,
-                user,
-            );
-            termEntity.NewRecord();
-            termEntity.SubscriptionID = subscriptionID;
-            termEntity.TermNumber = term.TermNumber;
-            termEntity.OrderLineID = line.ID;
-            termEntity.StartDate = term.StartDate;
-            termEntity.EndDate = term.EndDate;
-            termEntity.Amount = term.Amount;
-            termEntity.IsProrated = term.IsProrated;
-            termEntity.ProrationFactor = term.ProrationFactor;
-            // The seats bought, not `line.Quantity`: by now that is prorated (#589).
-            termEntity.Quantity = decided.Seats;
-            // Frozen at purchase: later changes to the product's rules must never restate a
-            // term that has already been booked.
-            termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
-            termEntity.Status = 'Active';
-
-            if (!(await termEntity.Save(options))) {
-                throw new Error(
-                    `Failed to create the subscription term for order line ${line.LineNumber}: ` +
-                        `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
+                    SUBSCRIPTION_TERM_ENTITY,
+                    user,
                 );
+                termEntity.NewRecord();
+                termEntity.SubscriptionID = subscriptionID;
+                termEntity.TermNumber = term.TermNumber;
+                termEntity.OrderLineID = line.ID;
+                termEntity.StartDate = term.StartDate;
+                termEntity.EndDate = term.EndDate;
+                termEntity.Amount = term.Amount;
+                termEntity.IsProrated = term.IsProrated;
+                termEntity.ProrationFactor = term.ProrationFactor;
+                // The seats bought, not `line.Quantity`: by now that is prorated (#589).
+                termEntity.Quantity = decided.Seats;
+                // Frozen at purchase: later changes to the product's rules must never restate a
+                // term that has already been booked.
+                termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
+                termEntity.Status = 'Active';
+
+                if (!(await termEntity.Save(options))) {
+                    throw new Error(
+                        `Failed to create subscription term ${term.TermNumber} for order line ${line.LineNumber}: ` +
+                            `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+                written.push({
+                    ID: termEntity.ID,
+                    StartDate: term.StartDate,
+                    EndDate: term.EndDate,
+                    Amount: term.Amount,
+                    Quantity: decided.Seats,
+                });
             }
 
-            // The term is the coverage window the schedule must follow, and its cadence decides
-            // how many slices that window produces.
-            out.TermsByLine.set(line.ID, {
-                ID: termEntity.ID,
-                StartDate: term.StartDate,
-                EndDate: term.EndDate,
-                Amount: term.Amount,
-                Quantity: decided.Seats,
-            });
+            // The terms are the coverage windows the schedules must follow, and the cadence decides
+            // how many slices each window produces.
+            out.TermsByLine.set(line.ID, written);
             out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
             // The line's stored service period is the SETTLED term — the coverage actually sold.
@@ -3664,10 +3684,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // continuing existing coverage), the stored period must follow the term rather than the
             // request, or the line would advertise coverage the subscription does not have.
             //
-            // The END is always the computed one: term length, anchor and proration are the type's
-            // to decide, and a stated end has no rule to reconcile it against.
-            line.ServicePeriodStart = term.StartDate;
-            line.ServicePeriodEnd = term.EndDate;
+            // The END is the last term's. A stated end is honored (golive #338), so it changes only
+            // when an extension moved the start, and then the stated length moves with it.
+            line.ServicePeriodStart = planned[0].StartDate;
+            line.ServicePeriodEnd = planned[planned.length - 1].EndDate;
             // The forward link, which nothing was writing. Subscription.OrderLineID
             // recorded the reverse, so the subscription knew its line while the line
             // did not know its subscription — and PreviewConfirmOperation reads
@@ -3829,6 +3849,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // locked afterward. That lock is load-bearing for this design: were an order ever made
             // re-confirmable, the second pass would read the first pass's term as a stated start.
             const requestedStart = line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null;
+            // The stated END, read under the same rule and for the same reason (golive #338): the
+            // coverage runs to it, as one term or one per type term length.
+            const requestedEnd = line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null;
 
             const decision = behavior.Decide({
                 Rules: rules,
@@ -3842,6 +3865,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
                 RequestedStartDate: requestedStart,
+                RequestedEndDate: requestedEnd,
                 // The line's answer to "the subscriber already holds this product" (golive #299).
                 RequestedAction: line.SubscriptionAction,
             });
@@ -3859,7 +3883,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // product, so a holder with coverage under a sibling band found nothing and a second
             // subscription for the same dates was created and billed. A renewal names its target
             // outright, so it continues that subscription and is not checked.
-            if (decision.Term && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
+            // The whole coverage the line buys, which spans several terms when it states an end past
+            // the first (golive #338).
+            const coverageEnd = CoverageEndOf(decision);
+            if (decision.Term && coverageEnd && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
                 const familyKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
                 const noPersonKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|`;
                 const siblings = [
@@ -3869,7 +3896,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 const overlaps = OverlappingCoverage(
                     [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate))],
                     decision.Term.StartDate,
-                    decision.Term.EndDate,
+                    coverageEnd,
                 );
                 const verdict = behavior.DecideCoverageOverlap({
                     Rules: rules,
@@ -3905,7 +3932,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         SubscriptionNumber: null,
                         ProductName: product.Name,
                         StartDate: decision.Term.StartDate,
-                        EndDate: decision.Term.EndDate,
+                        EndDate: coverageEnd,
                         ConcurrencyMode: rules.ConcurrencyMode,
                         SubscriptionTypeCode: rules.Code,
                         CancellationMode: rules.CancellationMode,
@@ -3929,6 +3956,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         `${decision.Term.StartDate.toISOString().slice(0, 10)}.`,
                 );
             }
+            // Its end moves with it: the stated length is kept from the new start (golive #338).
+            if (!preview && decision.EndOverrideIgnored && coverageEnd && requestedEnd) {
+                LogStatus(
+                    `Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber} (${product.Name}): the coverage end ` +
+                        `${requestedEnd.toISOString().slice(0, 10)} stated on the line was not used; coverage ends ` +
+                        `${coverageEnd.toISOString().slice(0, 10)}.`,
+                );
+            }
 
             // Record what this line will produce, so a LATER line covering the same
             // subscription extends it (or is refused) instead of creating a second.
@@ -3947,8 +3982,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     Status: 'Active',
                     HolderOrganizationID: subscriber.OrganizationID,
                     BeneficiaryPersonID: subscriber.PersonID,
-                    LatestTermEnd: decision.Term.EndDate,
-                    LatestTermNumber: decision.Term.TermNumber,
+                    LatestTermEnd: coverageEnd,
+                    LatestTermNumber: decision.Terms ? decision.Terms[decision.Terms.length - 1].TermNumber : decision.Term.TermNumber,
                 });
             }
 
@@ -3960,6 +3995,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
                 RequestedStart: requestedStart,
+                RequestedEnd: requestedEnd,
                 Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
         }
