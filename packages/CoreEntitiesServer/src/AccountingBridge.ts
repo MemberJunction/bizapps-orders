@@ -1,17 +1,16 @@
 /**
- * The one place orders reaches into accounting.
+ * Where orders' booking paths reach into accounting.
  *
  * Both booking paths — order confirm (`Dr AR / Cr Revenue`) and payment capture
  * (`Dr Cash / Cr AR`) — need the same two things: a `GLAccountResolver` wired to the accounting
  * engine, and the MJ entity IDs the polymorphic `GLAccountLink` rows hang off. This module owns
  * both so there is exactly one copy of the coupling rather than one per entity server.
  *
- * `@mj-biz-apps/accounting-engine-base` is a real `dependencies` entry on this package and a
- * static import, like every other import in the repo (CLAUDE.md forbids dynamic require/import).
- * This file used to load the engine through `await import(...)` so the package could stay a peer;
- * `pickActiveLinkIndex` below has always been a static import from the same package, so the
- * dynamic form never kept it out of the graph. It is now declared in `package.json` so pnpm
- * resolves it as an owned dependency instead of a host-provided peer.
+ * `@mj-biz-apps/accounting-engine-base` is a static import, like every other import in the repo
+ * (CLAUDE.md forbids dynamic require/import). It is not in `dependencies`: like every other app's
+ * package it is a host-provided peer (`>=0.21.0`, the 0.x floor) with an exact devDependency, so the
+ * host installs one copy. This is not the only importer — `DimensionDefaultResolver.ts` also imports
+ * `pickActiveLinkIndex` from it.
  *
  * Load ORDER still matters — accounting's server package registers the remote operation this class
  * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's

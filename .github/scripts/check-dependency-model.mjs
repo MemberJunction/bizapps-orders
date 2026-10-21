@@ -108,7 +108,7 @@ function report(root) {
     }
   }
   if (failures.length > 0) {
-    console.log('\nSee the "Angular pinning model" / dependency rules in CLAUDE.md: host-provided packages are caret peers.');
+    console.log('\nSee "MemberJunction versions — the LTS line AIDP Next runs" in CLAUDE.md: host-provided packages are caret peers.');
     return 1;
   }
   console.log('✓ Dependency model: MemberJunction and other apps\' packages are caret peers only.');
