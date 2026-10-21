@@ -239,4 +239,3 @@ describe('AsDateValue', () => {
         expect([v.getUTCHours(), v.getUTCMinutes(), v.getUTCSeconds(), v.getUTCMilliseconds()]).toEqual([0, 0, 0, 0]);
     });
 });
-
