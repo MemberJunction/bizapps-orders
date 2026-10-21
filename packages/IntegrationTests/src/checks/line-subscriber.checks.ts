@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS17).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS19).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -30,6 +30,9 @@
  *   LS15 a Holder type keeps the person: two people at one org are two subscriptions, and each re-order extends its own
  *   LS16 …but an org's Holder subscription bought with no contact is found when a re-order names one
  *   LS17 …only when the org is stated: an org inferred from the person's employer is not the holder
+ *   LS18 a subscription sold to start in the future counts as held: the deal line's lookup and the
+ *        close's unanswered-line check both find it (golive #339)
+ *   LS19 a paused subscription counts as held; a canceled one does not
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -54,6 +57,8 @@ import {
 } from "../fixture.js";
 import { ConfirmOrder, type LineSpec } from "../order-builder.js";
 import { OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import { FindExistingHolding, FindUnansweredHeldLines, type HoldingLine } from "@mj-biz-apps/orders-entities";
+import type { IRunViewProvider } from "@memberjunction/core";
 
 /** Create a person to receive a seat, returning its ID. */
 async function makePerson(ctx: IntegrationCheckContext, label: string): Promise<string> {
@@ -794,6 +799,97 @@ LineSubscriberChecks.push({
       const [ownSub] = await subscriptionsOf(ctx, own.Order.ID as string);
       Assert(!SameID(ownSub.ID, orgSub.ID), "the employee gets their own subscription");
       Assert(SameID(ownSub.BeneficiaryPersonID, employee), "and it is stored for them");
+    }),
+});
+
+/** A new, unanswered line for `productID` with no ship-to, as a deal line or draft order holds it. */
+const newLineFor = (productID: string): HoldingLine => ({
+  ID: randomUUID(),
+  LineNumber: 1,
+  ProductID: productID,
+  ShipToOrganizationID: null,
+  ShipToPersonID: null,
+  RenewsSubscriptionID: null,
+  SubscriptionAction: null,
+});
+
+/** The first day of the month after next, so the term has not started whenever the suite runs. */
+function futureStart(): string {
+  const now = new Date();
+  return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 1)).toISOString().slice(0, 10);
+}
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS18",
+  Name: "LS18: a subscription sold to start in the future is found as held by the deal line and at close",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const start = futureStart();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, ServicePeriodStart: start }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+      const facts = await TxOne<{ Status: string; StartDate: string | Date }>(
+        ctx,
+        `SELECT s.Status, MIN(t.StartDate) AS StartDate
+         FROM ${ORDERS_SCHEMA}.Subscription s
+         JOIN ${ORDERS_SCHEMA}.SubscriptionTerm t ON t.SubscriptionID = s.ID
+         WHERE s.ID = '${sub.ID}'
+         GROUP BY s.Status`,
+      );
+      Assert(new Date(facts.StartDate).getTime() > Date.now(), `the term starts in the future (${String(facts.StartDate)})`);
+
+      const rv = ctx.Provider as unknown as IRunViewProvider;
+      const subscriber = { OrganizationID: f.Customers.OrganizationID, PersonID: null };
+      // The deal line editor's lookup.
+      const holding = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
+      Assert(
+        SameID(holding?.SubscriptionID ?? null, sub.ID),
+        `the deal line finds ${sub.SubscriptionNumber} (status ${facts.Status}) as held`,
+      );
+
+      // Close Won's check: a new line for the same product on the customer's next order is asked.
+      const order = {
+        ShipToOrganizationID: null,
+        ShipToPersonID: null,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: null,
+      };
+      const unanswered = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
+      AssertEqual(unanswered.length, 1, "the close finds the unanswered line");
+      Assert(SameID(unanswered[0].Holding.SubscriptionID, sub.ID), "and names the future-start subscription");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS19",
+  Name: "LS19: a paused subscription counts as held and a canceled one does not",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      const sold = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+      });
+      Assert(sold.Saved, `confirm failed: ${sold.Message}`);
+      const [sub] = await subscriptionsOf(ctx, sold.Order.ID as string);
+      const rv = ctx.Provider as unknown as IRunViewProvider;
+      const subscriber = { OrganizationID: f.Customers.OrganizationID, PersonID: null };
+
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET Status = 'Paused' WHERE ID = '${sub.ID}'`);
+      const paused = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
+      Assert(SameID(paused?.SubscriptionID ?? null, sub.ID), "a paused subscription is still held");
+
+      await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET Status = 'Canceled' WHERE ID = '${sub.ID}'`);
+      const canceled = await FindExistingHolding(f.Products.SubRolling, subscriber, rv, ctx.User);
+      Assert(!canceled || !SameID(canceled.SubscriptionID, sub.ID), "a canceled subscription is not held");
     }),
 });
 
