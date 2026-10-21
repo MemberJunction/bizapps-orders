@@ -528,6 +528,37 @@
 .mjo-ol-overlap__reason.is-required textarea {
     border-color: var(--mj-status-danger-text, #b42318);
 }
+.mjo-ol-lock {
+    display: flex;
+    gap: var(--mj-space-2);
+    align-items: flex-start;
+    margin-bottom: var(--mj-space-2);
+    padding: var(--mj-space-2) var(--mj-space-3);
+    border: 1px solid var(--mj-status-warning-border);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-status-warning-bg);
+    color: var(--mj-status-warning-text);
+    font-size: var(--mj-text-xs);
+}
+.mjo-ol-lock i {
+    margin-top: 2px;
+}
+.mjo-ol-lock__retry {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding: 2px var(--mj-space-2);
+    border: 1px solid var(--mj-status-warning-border);
+    border-radius: var(--mj-radius-sm);
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+.mjo-ol-lock__retry:hover {
+    background: var(--mj-bg-surface-hover);
+}
+
 .mjo-ol-overlap-err {
     margin-bottom: var(--mj-space-2);
     font-size: var(--mj-text-xs);

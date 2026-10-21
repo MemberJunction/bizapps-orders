@@ -20,6 +20,7 @@ import {
     OrderHeaderEntity,
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
+    OrdersCheckOrderLinesEditableOperation,
     ClampLineQuantity,
     CoverageOverlapReasonMissing,
     ExtraSeatLinesNeeded,
@@ -70,6 +71,7 @@ import {
     DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
+import { LINE_EDIT_CHECKING, LineEditCheckFailed, LineEditRefusals } from './line-edit-lock';
 import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -155,13 +157,31 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public SeatSplitNotice: string | null = null;
 
     @Input() public Provider: IMetadataProvider | null = null;
-    @Input() public EditMode = true;
+
+    /**
+     * Whether the lines can be changed: what the form asked for, unless a registered veto refuses
+     * (see {@link LineEditLockReasons}). Every input, the picker and Remove read this, so a vetoed
+     * order is read-only through the same switch a booked one is.
+     */
+    @Input()
+    public set EditMode(value: boolean) {
+        this.editModeRequested = value;
+    }
+    public get EditMode(): boolean {
+        return this.editModeRequested && this.LineEditLockReasons.length === 0;
+    }
+    private editModeRequested = true;
 
     @Input()
     public set Order(value: OrderHeaderEntity | null) {
         this.unbindOrder();
         this._order = value;
-        if (value) void this.onOrderBound();
+        // Locked from the moment a saved order is bound, so nothing is typed before the answer.
+        this.lineEditCheckPending = !!value?.IsSaved;
+        if (value) {
+            void this.refreshLineEditLock();
+            void this.onOrderBound();
+        }
     }
     public get Order(): OrderHeaderEntity | null {
         return this._order;
@@ -502,6 +522,90 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         } else {
             this.CoverageCheckError = null;
             for (const row of result.Output.Lines) this.coverageByLine.set(row.OrderLineID.toLowerCase(), row);
+        }
+        this.cdr.detectChanges();
+    }
+
+    /* ── Lines another app has frozen (bizapps-sales#328) ──
+     *
+     * A registered order-line veto refuses line edits on the server — Sales refuses them while the
+     * deal behind the order is closed. The browser has no vetoer, so the editor asks the server
+     * through `Orders.CheckOrderLinesEditable` when an order is bound and after each save, and shows
+     * the lines read-only with the vetoer's own words. Until the first answer arrives, and when the
+     * check fails, the lines are read-only too: the save asks the same veto and may refuse. A failed
+     * check offers Retry; a refusal does not, since asking again gets the same answer.
+     */
+
+    /** Sentences explaining why the lines are read-only; empty when nothing refuses. */
+    private lineEditRefusals: string[] = [];
+    /** True until the first answer for the bound order has arrived, and while a retry is in flight. */
+    private lineEditCheckPending = false;
+
+    /**
+     * True when the last check could not run, as opposed to a host refusing. Kept apart from the
+     * refusals so the template offers Retry only for a failure.
+     */
+    public LineEditCheckFailed = false;
+
+    /** Whether to show Retry: the check failed and no new one is in flight. */
+    public get CanRetryLineEditCheck(): boolean {
+        return this.LineEditCheckFailed && !this.lineEditCheckPending;
+    }
+
+    /**
+     * Ask again after a failed check. The lines stay read-only while it runs, showing the
+     * checking message in place of the failure.
+     */
+    public RetryLineEditCheck(): void {
+        if (!this.CanRetryLineEditCheck) return;
+        this.lineEditCheckPending = true;
+        this.cdr.detectChanges();
+        void this.refreshLineEditLock();
+    }
+
+    /** Why the lines are read-only although the form allows editing; empty when they are not. */
+    public get LineEditLockReasons(): string[] {
+        return this.lineEditCheckPending ? [LINE_EDIT_CHECKING] : this.lineEditRefusals;
+    }
+
+    /** Shown only when the form is in edit mode — otherwise the lines are read-only anyway. */
+    public get ShowsLineEditLock(): boolean {
+        return this.editModeRequested && this.LineEditLockReasons.length > 0;
+    }
+
+    /**
+     * Ask the server whether the lines may be changed.
+     *
+     * An unsaved order has no id to ask about and nothing outside Orders can claim it yet, so it is
+     * left editable. After a save the previous answer stands until the new one arrives, so the
+     * editor does not flicker read-only on every save.
+     */
+    private async refreshLineEditLock(): Promise<void> {
+        const order = this._order;
+        if (!order?.IsSaved) {
+            this.lineEditCheckPending = false;
+            this.LineEditCheckFailed = false;
+            this.lineEditRefusals = [];
+            return;
+        }
+        let refusals: string[];
+        let failed: boolean;
+        try {
+            const result = await new OrdersCheckOrderLinesEditableOperation().Execute({ OrderHeaderID: order.ID });
+            refusals = LineEditRefusals(result);
+            failed = LineEditCheckFailed(result);
+        } catch (err) {
+            refusals = LineEditRefusals(null, err);
+            failed = true;
+        }
+        // The order may have been swapped while the call was in flight.
+        if (this._order !== order) return;
+        this.lineEditRefusals = refusals;
+        this.LineEditCheckFailed = failed;
+        this.lineEditCheckPending = false;
+        if (refusals.length) {
+            this.PickerOpen = false;
+            this.overrideEditorLineIds.clear();
         }
         this.cdr.detectChanges();
     }
@@ -1054,6 +1158,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * `Adjustments.Remove` — the rows this map points at are already gone by the time it runs.
      */
     private onOrderSaved(): void {
+        void this.refreshLineEditLock();
         void this.refreshCoverage();
         void this.loadStampedTags();
         if (!this.stagedDiscounts.size) return;
@@ -1318,6 +1423,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.continuationStarts.clear();
         this.coverageByLine.clear();
         this.CoverageCheckError = null;
+        this.lineEditRefusals = [];
+        this.lineEditCheckPending = false;
+        this.LineEditCheckFailed = false;
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
         this.defaultUnitByLine.clear();
