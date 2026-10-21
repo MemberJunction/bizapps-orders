@@ -121,13 +121,19 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
         return [BILLCOM_INVOICE_NUMBER];
     }
 
+    /** BILL creates no customer without an email; the invoice is emailed to it. */
+    public override CheckCustomer(f: RailCustomerFacts): { Code: 'NO_CUSTOMER_EMAIL'; Reason: string } | null {
+        if (f.Email?.trim()) return null;
+        return {
+            Code: 'NO_CUSTOMER_EMAIL',
+            Reason: `Bill.com requires a customer email and ${f.Name} has none. Add a billing email to the ${f.PartyKind.toLowerCase()} and send again.`,
+        };
+    }
+
     public override async EnsureCustomer(f: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {
         try {
-            if (!f.Email) {
-                return this.fail(
-                    `Bill.com requires a customer email and ${f.Name} has none. Add a billing email to the ${f.PartyKind.toLowerCase()} and send again.`,
-                );
-            }
+            const missing = this.CheckCustomer(f);
+            if (missing) return this.fail(missing.Reason);
             const { gw, ci } = await this.session();
             const attrs: Record<string, unknown> = {
                 name: f.Name,

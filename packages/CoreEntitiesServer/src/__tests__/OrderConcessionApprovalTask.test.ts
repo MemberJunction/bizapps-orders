@@ -39,6 +39,7 @@ function concession(opts: { saved: boolean; status: string; statusDirty?: boolea
     Object.defineProperty(instance, 'ID', { value: CONCESSION_ID });
     Object.defineProperty(instance, 'OrderHeaderID', { value: ORDER_ID });
     Object.defineProperty(instance, 'RequestedByUserID', { value: USER.ID });
+    Object.defineProperty(instance, 'SalesRuleID', { value: 'rule-1' });
     Object.defineProperty(instance, 'IsSaved', { value: opts.saved });
     Object.defineProperty(instance, 'Fields', { value: [] });
     Object.defineProperty(instance, 'ContextCurrentUser', { value: USER });
@@ -68,7 +69,7 @@ describe('OrderConcessionEntityServer.Save and the approval task', () => {
         expect(await row.Save()).toBe(true);
         expect(base).toHaveBeenCalledTimes(1);
         expect(approval.RouteConcessionToApproval).toHaveBeenCalledWith(
-            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: USER.ID },
+            { ID: CONCESSION_ID, OrderHeaderID: ORDER_ID, RequestedByUserID: USER.ID, SalesRuleID: 'rule-1' },
             'role-1',
             '25% discount, 3,000.00',
             expect.objectContaining({ User: USER }),

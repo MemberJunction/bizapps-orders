@@ -1,5 +1,24 @@
 # @mj-biz-apps/orders-entities
 
+## 5.36.1
+
+## 5.36.0
+
+### Minor Changes
+
+- db3aef7: Order review by trigger (bc-aidp-next-golive#320 §5). A Direct order that hits a switched-on trigger (`NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`) cannot confirm until the reviewer role approves its `ORDERS_ORDER_REVIEW` task; an order a reviewer created goes to the escalation role. Routing is to the role holders' linked Persons, never the order's creator. Configured by the new `OrderReview*` settings, all off by default, so hosts that set nothing are unaffected. Adds the `RegisterOrderDealLink` seam for the sales app to say which deal created an order; the `ORDERS_ORDER_REVIEW` task type and the settings rows ship in metadata. An approval counts only when the user who wrote the decision (from `MJ: Record Changes`) holds the routed role and is not the creator, the task was linked to this order alone before it was decided, and nothing reviewed on the order was written since. `OrderHeader.Origin` can now be written only by the process that creates the order (checkout, provider payment); any other write of it is refused on save.
+- 4a7fbb0: Build and run on MemberJunction 6.1.6, the current 6.1 LTS release. Every `@memberjunction/*` peer, devDependency and the `@memberjunction/core` / `@memberjunction/global` overrides move from `^6.1.5` to `^6.1.6`, and `mj-app.json` requires a host at `>=6.1.6 <7.0.0`. `scripts/rebuild-db.sh` and the PostgreSQL parity workflow install MJ core `v6.1.6`. One copy of `@memberjunction/core` and `@memberjunction/global` resolves.
+- eeb9cd5: The 5.36 Metadata_Sync ships the eight settings and the task type that metadata/ added since 5.35: the order review settings (`OrderReviewTriggers`, `OrderReviewTotalThreshold`, `OrderReviewServiceStartMonths`, `OrderReviewLineTermMonths`, `OrderReviewerRole`, `OrderReviewEscalationRole`), the refund approval settings (`RefundApprovalThreshold`, `RefundApproverRole`) and the `ORDERS_ORDER_REVIEW` task type. A host that upgrades by migration gets the same rows as one that ran `mj sync push`, with the checks off until the settings are filled in. It has a Postgres counterpart.
+
+## 5.35.1
+
+## 5.35.0
+
+### Minor Changes
+
+- 8a9d2f9: `Orders.CancelSubscription` takes an optional `Timing` (#702). `Immediate` ends coverage and access on the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's grace period, so access ends on the day chosen. Without it the type's `CancellationMode` decides, as before. The refund mode always comes from the type. The policy is `SubscriptionBehavior.RulesForTiming` and can be overridden; an unknown timing is refused before anything is written, and the lifecycle event records the timing chosen.
+- 48ea049: The 5.35 Metadata_Sync ships the Cancel Subscription input contract that metadata/ changed since 5.34, so a host that upgrades by migration describes the operation's new cancellation-timing input the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+
 ## 5.34.1
 
 ## 5.34.0
@@ -691,8 +710,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                        "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

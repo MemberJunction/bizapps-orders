@@ -157,6 +157,41 @@ describe('checkout account step', () => {
             expect((await EnsureCheckoutAccount(SID, KEY)).Account?.VerificationRequired).toBe(false);
         });
 
+        it("passes the host's wording for a created account through, and keeps it for a reload", async () => {
+            host.ensure.mockResolvedValue({
+                Outcome: 'Created',
+                VerificationNote: null,
+                PasswordSetMessage: '  Your password is set. Sign in at the portal.  ',
+            });
+            const first = await EnsureCheckoutAccount(SID, KEY);
+            expect(first.Account).toMatchObject({ VerificationNote: null, PasswordSetMessage: 'Your password is set. Sign in at the portal.' });
+            expect(stored()).toMatchObject({ VerificationNote: null, PasswordSetMessage: 'Your password is set. Sign in at the portal.' });
+            const reload = await EnsureCheckoutAccount(SID, KEY);
+            expect(host.ensure).toHaveBeenCalledTimes(1);
+            expect(reload.Account).toMatchObject({ VerificationNote: null, PasswordSetMessage: 'Your password is set. Sign in at the portal.' });
+        });
+
+        it('reads an empty verification note as none, and leaves out wording the host did not give', async () => {
+            host.ensure.mockResolvedValue({ Outcome: 'Created', VerificationNote: '  ', PasswordSetMessage: '' });
+            const res = await EnsureCheckoutAccount(SID, KEY);
+            expect(res.Account?.VerificationNote).toBeNull();
+            expect(res.Account).not.toHaveProperty('PasswordSetMessage');
+
+            host.ensure.mockResolvedValue({ Outcome: 'Created' });
+            mocks.persisted = JSON.stringify({});
+            const plain = await EnsureCheckoutAccount(SID, KEY);
+            expect(plain.Account).not.toHaveProperty('VerificationNote');
+            expect(plain.Account).not.toHaveProperty('PasswordSetMessage');
+        });
+
+        it('ignores wording on an answer that is not Created', async () => {
+            host.ensure.mockResolvedValue({ Outcome: 'Exists', VerificationNote: 'Verify first.', PasswordSetMessage: 'Set.' });
+            const res = await EnsureCheckoutAccount(SID, KEY);
+            expect(res.Account).not.toHaveProperty('VerificationNote');
+            expect(res.Account).not.toHaveProperty('PasswordSetMessage');
+            expect(stored()).not.toHaveProperty('VerificationNote');
+        });
+
         it('records a host that does not answer in time as Failed, and asks again later', async () => {
             class SlowStep extends TestAccountStep {
                 public override get HostTimeoutSeconds(): number {

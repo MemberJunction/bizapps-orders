@@ -175,6 +175,15 @@ export class BaseInvoiceRail {
         return [];
     }
 
+    /**
+     * What this rail will refuse about a NEW customer, decided from the facts alone with no network
+     * call. Run before `EnsureCustomer` and by a preview, so a party the rail cannot take is named
+     * before anything is sent. Null when the facts are acceptable; the base accepts everything.
+     */
+    public CheckCustomer(_facts: RailCustomerFacts): { Code: 'NO_CUSTOMER_EMAIL' | 'RAIL_REFUSED'; Reason: string } | null {
+        return null;
+    }
+
     public async EnsureCustomer(_facts: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {
         return this.notImplemented('ensuring a customer');
     }

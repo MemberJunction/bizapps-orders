@@ -1,5 +1,50 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.36.1
+
+### Patch Changes
+
+- Updated dependencies [0c499b2]
+- Updated dependencies [0e3b9fd]
+- Updated dependencies [7756bb0]
+  - @mj-biz-apps/orders-server@5.36.1
+  - @mj-biz-apps/orders-core-entities-server@5.36.1
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- Updated dependencies [4aa6783]
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+- Updated dependencies [5a490c4]
+  - @mj-biz-apps/orders-core-entities-server@5.36.0
+  - @mj-biz-apps/orders-server@5.36.0
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+- Updated dependencies [82fa9ea]
+  - @mj-biz-apps/orders-core-entities-server@5.35.1
+  - @mj-biz-apps/orders-entities@5.35.1
+  - @mj-biz-apps/orders-server@5.35.1
+
+## 5.35.0
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [303849b]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-core-entities-server@5.35.0
+  - @mj-biz-apps/orders-entities@5.35.0
+  - @mj-biz-apps/orders-server@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes

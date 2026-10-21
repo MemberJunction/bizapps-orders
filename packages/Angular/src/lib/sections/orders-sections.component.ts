@@ -147,6 +147,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         setTimeout(async () => {
             await this.showPage(this.ActivePageId!);
             this.LoadedAt = new Date();
+            this.NotifyLoadComplete();
             // Mounting the page and stamping the timestamp both change what the
             // header and the rail render. Writing the DOM here keeps that inside
             // one pass — without it the nav's active index is read as -1 before

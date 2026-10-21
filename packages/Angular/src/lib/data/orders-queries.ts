@@ -56,6 +56,7 @@ import {
     type DateCell,
 } from '@mj-biz-apps/orders-entities';
 import type {
+    HoldingReactivation,
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -245,7 +246,7 @@ async function runRows<T>(
             EntityName: entityName,
             ExtraFilter: filters.filter(Boolean).join(' AND '),
             OrderBy: orderBy,
-            MaxRows: maxRows,
+            ...(maxRows > 0 ? { MaxRows: maxRows } : { IgnoreMaxRows: true }),
             Fields: fields,
             ResultType: 'simple',
         },
@@ -431,6 +432,75 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
             credits: credits.length,
         },
     };
+}
+
+/**
+ * Lightweight projection of `MJ_BizApps_Orders: Order Headers` for the Orders executive dashboard.
+ *
+ * Derived directly from {@link mjBizAppsOrdersOrderHeaderEntity} so value-list unions (`Status`,
+ * `FulfillmentStatus`) stay in lockstep with CodeGen.
+ */
+export type MJODashboardOrderRow = Pick<
+    mjBizAppsOrdersOrderHeaderEntity,
+    | 'ID'
+    | 'OrderNumber'
+    | 'OrderDate'
+    | 'DueDate'
+    | 'Status'
+    | 'FulfillmentStatus'
+    | 'TotalGross'
+    | 'Balance'
+    | 'BillToOrganizationID'
+    | 'BillToOrganization'
+    | 'BillToPersonID'
+    | 'BillToPerson'
+>;
+
+const DASHBOARD_ORDER_FIELDS: Array<keyof MJODashboardOrderRow & string> = [
+    'ID',
+    'OrderNumber',
+    'OrderDate',
+    'DueDate',
+    'Status',
+    'FulfillmentStatus',
+    'TotalGross',
+    'Balance',
+    'BillToOrganizationID',
+    'BillToOrganization',
+    'BillToPersonID',
+    'BillToPerson',
+];
+
+/**
+ * Uncapped `'simple'` read of non-voided order headers for the Orders executive dashboard.
+ *
+ * Avoids both the 500-row entity cap on `GetOrders({ Preset: 'all' })` (which truncated KPIs and
+ * logged a console.error on datasets > 500 orders) and the cost of instantiating thousands of full
+ * `BaseEntity` objects when only summary columns are needed.
+ */
+export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardOrderRow[]> {
+    return runRows<MJODashboardOrderRow>(
+        MJO_ENTITIES.OrderHeader,
+        [`Status <> 'Voided'`],
+        'OrderDate DESC',
+        0,
+        user,
+        DASHBOARD_ORDER_FIELDS,
+    );
+}
+
+/**
+ * Settled/confirmed orders with a non-zero balance (open receivables or customer credit balances)
+ * for the Customer AR screen. Filters server-side instead of fetching every historical paid order.
+ */
+export async function GetOpenBalanceOrders(user?: UserInfo): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
+    return run<mjBizAppsOrdersOrderHeaderEntity>(
+        MJO_ENTITIES.OrderHeader,
+        [`Status NOT IN ('Draft','Quoted','Voided')`, `Balance <> 0`],
+        'OrderDate DESC',
+        5000,
+        user,
+    );
 }
 
 /** Lines belonging to one order. */
@@ -1787,6 +1857,8 @@ export function ContinuationStartFrom(state: MJOSubscriptionContinuation | null)
 export interface MJOExistingHolding extends MJOSubscriptionContinuation {
     SubscriptionID: string;
     SubscriptionNumber: string;
+    /** The type's reactivation rule, for a holding the server would reactivate rather than extend. */
+    Reactivation?: HoldingReactivation | null;
 }
 
 /**

@@ -232,6 +232,12 @@ export function DecideInvoiceable(i: {
     ScheduleRowStatus: string | null;
     ScheduleRowNamed: boolean;
     ExistingStatus: ExternalInvoiceStatus | null;
+    /**
+     * Whether any row for this unit holds a rail invoice reference — whether the rail has ever held
+     * an invoice for it. A send refused before the rail created anything (no customer email, a number
+     * too long) leaves a `Failed` row with no reference, and sending after that is not a re-issue.
+     */
+    UnitReachedRail: boolean;
     AllowReissue: boolean;
 }): InvoiceableDecision {
     switch (i.ExistingStatus) {
@@ -278,6 +284,12 @@ export function DecideInvoiceable(i: {
             }
             break;
         case 'Failed':
+            // NOTHING ON THE RAIL, NOTHING TO BILL TWICE. A Failed row without a reference is a send
+            // refused before the rail created an invoice — by this module, or by the rail answering
+            // no — so the next send is a first send and needs no AllowReissue. A timed-out send does
+            // not land here: it keeps its `Sending` claim until a person resolves it. (Before
+            // 2026-09-22 a timeout was written Failed; such a row could have an invoice on the rail.)
+            if (!i.UnitReachedRail) break;
             if (!i.AllowReissue) {
                 return {
                     Verdict: 'Refuse',

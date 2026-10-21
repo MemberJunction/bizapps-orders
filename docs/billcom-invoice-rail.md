@@ -62,6 +62,10 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
 - **Re-issue.** A cancelled whole-order unit is sent again only on request (`AllowReissue`), as
   `ORD-1234-R1`, `-R2` and so on, since BILL would accept the archived number and the customer would
   hold two different `ORD-1234`s. An instalment is never re-issued; a new schedule row replaces it.
+- **A send refused before BILL created anything** is not a re-issue. A `Failed` row with no
+  `ExternalInvoiceRef` (no customer email, a number too long, BILL answering no) leaves nothing on the
+  rail, so the next send needs no `AllowReissue` and keeps the order's number. Once any row for the
+  unit holds a reference, sending again is a re-issue.
 - **Invoices sent per product company before 5.27.0** block the order's own invoice:
   `Orders.IssueExternalInvoice` names the one to cancel first. Schedule rows written per product company
   stay units on that company's rail.
@@ -69,7 +73,9 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
 ## The rail seam
 
 `BaseInvoiceRail` is the outbound counterpart of `BasePaymentProvider`, registered under
-`PaymentProviderType.Code`. It defines `CheckConfiguration`, `EnsureCustomer`, `IssueInvoice`,
+`PaymentProviderType.Code`. It defines `CheckConfiguration`, `CheckCustomer` (what the rail refuses
+about a new customer, decided without calling it: BILL needs an email; a preview reports it as
+`NO_CUSTOMER_EMAIL` and the order form disables Send), `EnsureCustomer`, `IssueInvoice`,
 `GetInvoice`, `CancelInvoice` and `FetchPaymentsSince`, plus `CustomerNameTargets` and
 `InvoiceNumberTargets`, the rail fields a customer name and a document number must fit
 (bc-aidp-next-golive#280); a refusal is a `RailResult` with a `Transient` flag for failures a retry
