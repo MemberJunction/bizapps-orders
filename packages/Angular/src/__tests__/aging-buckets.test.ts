@@ -115,3 +115,75 @@ describe('the dashboard aging tiles split not-yet-due from overdue', () => {
         expect(summed).toBe(285 + 6519 + 369);
     });
 });
+
+/**
+ * THE INVARIANT THE ISSUE ITSELF USED TO FIND THE BUG.
+ *
+ * The reporter noticed that the dashboard's own Overdue tile ($6,889,525) equalled Receivables'
+ * 1-30 + 31-60 + 61+ buckets, while the dashboard's aging tiles did not -- which is how they knew
+ * the aging tab was mislabelling rather than miscounting. Two tiles on the SAME page disagreeing
+ * about what is overdue is the defect in its smallest form, so it is worth holding directly.
+ *
+ * `overdue` is the orders past their due day; the three past-due buckets are the same money split
+ * by how far past. They have to sum to each other, whatever the data.
+ */
+describe('the Overdue tile and the past-due buckets are the same money', () => {
+    const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+    const original = { rows: engine._configurations, loaded: engine._loaded };
+    beforeEach(() => {
+        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
+        engine._loaded = true;
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-10-18T15:00:00Z'));
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+        engine._configurations = original.rows;
+        engine._loaded = original.loaded;
+    });
+
+    const dashboardWith = (rows: unknown[]) => {
+        const page = Object.create(MJOOrdersDashboardPageComponent.prototype) as MJOOrdersDashboardPageComponent & { orders: unknown[] };
+        Object.defineProperty(page, 'orders', { value: rows, writable: true });
+        return page;
+    };
+    const order = (balance: number, due: string | null) => ({ Status: 'Confirmed', Balance: balance, DueDate: due });
+
+    const pastDue = (page: MJOOrdersDashboardPageComponent): number => {
+        const b = page.AgingBuckets;
+        return b.Days1To30 + b.Days31To60 + b.Days61Plus;
+    };
+    const overdueTotal = (page: MJOOrdersDashboardPageComponent): number =>
+        page.overdue.reduce((s, o) => s + (o.Balance ?? 0), 0);
+
+    it('agrees on a mix spanning every bucket', () => {
+        const page = dashboardWith([
+            order(285, '2026-11-15'),
+            order(6519, '2026-10-10'),
+            order(1200, '2026-09-05'),
+            order(369, '2026-07-01'),
+            order(50, null),
+        ]);
+        expect(pastDue(page)).toBe(overdueTotal(page));
+    });
+
+    it('agrees when nothing is late', () => {
+        const page = dashboardWith([order(100, '2026-12-01'), order(50, null)]);
+        expect(pastDue(page)).toBe(0);
+        expect(overdueTotal(page)).toBe(0);
+    });
+
+    it('agrees when everything is late', () => {
+        const page = dashboardWith([order(100, '2026-01-01'), order(200, '2026-10-17')]);
+        expect(pastDue(page)).toBe(300);
+        expect(overdueTotal(page)).toBe(300);
+    });
+
+    /** A balance due exactly today sits in Current and is not overdue, on both readings. */
+    it('puts money due today on the not-overdue side of both', () => {
+        const page = dashboardWith([order(999, '2026-10-18')]);
+        expect(page.AgingBuckets.Current).toBe(999);
+        expect(pastDue(page)).toBe(0);
+        expect(overdueTotal(page)).toBe(0);
+    });
+});
