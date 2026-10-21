@@ -1,5 +1,17 @@
 # @mj-biz-apps/orders-entities
 
+## 5.37.0
+
+### Minor Changes
+
+- 336603c: The 5.37 Metadata_Sync ships the one setting metadata/ added since 5.36: `ConcessionSelfApprovalEscalation` (#913). A host that upgrades by migration gets the same row as one that ran `mj sync push`, created empty, so a holder of a ConcessionLimit rule's role still approves their own concession until the setting is filled in. It has a Postgres counterpart.
+
+### Patch Changes
+
+- 1cf9fa1: `FindExistingHolding` and `FindUnansweredHeldLines` count every subscription that has not ended (Active, Trialing, Paused) as held, so the extend-or-new question is asked for a paused subscription too. The status set is exported as `EXISTING_HOLDING_STATUSES`.
+
+  The order screen's "extend" choice now says what confirm will do: a next term for an active holding, or the subscription type's reactivation rule (reactivate, or a separate subscription) for a paused one. `ExtendOutcomeFor` and `ExtendChoiceTextFor` give the same wording to other screens.
+
 ## 5.36.1
 
 ## 5.36.0
@@ -710,8 +722,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                        "FK_EntityFieldValue_EntityField"
+                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

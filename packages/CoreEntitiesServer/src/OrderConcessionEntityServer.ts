@@ -7,7 +7,10 @@
  * the order's concessions now come to, the requester, and its status. Within the
  * requester's `SalesAuthority` it is Approved on save; outside it, it is Pending, stamped with the
  * active ConcessionLimit rule whose role decides it. A requester who holds that role approves their
- * own, and the record shows that it went through the rule rather than through their authority.
+ * own, and the record shows that it went through the rule rather than through their authority — unless
+ * the Orders setting `ConcessionSelfApprovalEscalation` is set (bc-aidp-next-golive#320). Then it is Pending
+ * for the next approver up that the setting names (the order company's CFO approver, or a role's holders),
+ * only they decide it, and when no one other than the requester is there it is refused.
  *
  * TIERS (#308). Several active ConcessionLimit rules are approval tiers: the concession goes to the
  * highest-ranked one whose thresholds it meets (value, share of the order, term-date change), and only
@@ -122,8 +125,10 @@ import {
     CloseConcessionTasks,
     ConcessionSummary,
     RouteConcessionToApproval,
+    SelfApprovalEscalation,
     UnlinkConcession,
     type ApprovalTaskContext,
+    type SelfApprovalEscalationResult,
 } from './ConcessionApprovalTask.js';
 import {
     FindConcessionTier,
@@ -217,7 +222,12 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             const summary = this.approvalSummary;
             return this.withApprovalTask('create', () => super.Save(options), async (ctx) => {
                 await RouteConcessionToApproval(
-                    { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+                    {
+                        ID: this.ID,
+                        OrderHeaderID: this.OrderHeaderID,
+                        RequestedByUserID: this.RequestedByUserID,
+                        SalesRuleID: this.SalesRuleID,
+                    },
                     roleID,
                     summary,
                     ctx,
@@ -553,11 +563,34 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
         this.SalesRuleID = rule.ID;
         if (await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID)) {
-            this.decide('Approved', user);
+            // A holder's own concession: approved by them, unless the setting sends it to the next approver up.
+            const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
+            if (!escalation) {
+                this.decide('Approved', user);
+            } else if ('Refusal' in escalation) {
+                return escalation.Refusal;
+            } else {
+                this.pend(rule.ID, rule.ApprovalRequiredRoleID);
+            }
         } else {
             this.pend(rule.ID, rule.ApprovalRequiredRoleID);
         }
         return null;
+    }
+
+    /**
+     * Who decides a concession its requester would otherwise decide as a holder of `roleID`
+     * (bc-aidp-next-golive#320): null when `ConcessionSelfApprovalEscalation` is unset or the requester does not
+     * hold the role, else the escalation's approvers or why there are none.
+     */
+    private async selfApprovalEscalation(roleID: string, user: UserInfo): Promise<SelfApprovalEscalationResult | null> {
+        await OrdersSettings.Load(this.provider(), user);
+        if (OrdersSettings.ConcessionSelfApprovalEscalation.length === 0) return null;
+        return SelfApprovalEscalation(
+            roleID,
+            { OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+            { Provider: this.provider(), User: user },
+        );
     }
 
     /** Pending under a tier: stamped with its rule, routed to its role, and summarised for the approval task. */
@@ -595,12 +628,19 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     }
 
     /**
-     * Pending under `rule`, for a holder of its role other than the requester. Refused up front, with
-     * `why` leading the message, when the requester is the only active holder.
+     * Pending under `rule`, for a holder of its role other than the requester, or for the next approver up
+     * when the requester holds the role and `ConcessionSelfApprovalEscalation` is set. Refused up front, with
+     * `why` leading the message, when no one other than the requester could decide it.
      */
     private async pendForAnotherHolder(rule: ConcessionTierRule, user: UserInfo, why: string): Promise<string | null> {
         if (!rule.ApprovalRequiredRoleID) {
             return `${why}, and ConcessionLimit rule '${rule.Name}' names no approving role, so no one could decide it.`;
+        }
+        const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
+        if (escalation) {
+            if ('Refusal' in escalation) return `${why}. ${escalation.Refusal}`;
+            this.pend(rule.ID, rule.ApprovalRequiredRoleID);
+            return null;
         }
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
@@ -690,7 +730,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return this.withApprovalTask('update', () => super.Save(options), async (ctx) => {
             await CloseConcessionTasks(this.ID, this.OrderHeaderID, 'Escalated', ctx, true, Note);
             await RouteConcessionToApproval(
-                { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+                { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID, SalesRuleID: Rule.ID },
                 Rule.ApprovalRequiredRoleID!,
                 ConcessionSummary({ DeliveryForm: 'Shift', ComputedValue: 0, AddedDays: this.shiftDays() }),
                 ctx,
@@ -971,11 +1011,29 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!rule?.ApprovalRequiredRoleID) {
             return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
         }
-        if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
-            return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
-        }
-        if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
-            return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+        // A holder's own concession, under ConcessionSelfApprovalEscalation: only the escalation decides it.
+        const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
+        if (escalation) {
+            if (UUIDsEqual(user.ID, this.RequestedByUserID)) {
+                return (
+                    'This concession was requested by a holder of the role that approves it, so it goes to the next ' +
+                    'approver up (Orders setting ConcessionSelfApprovalEscalation), and its requester cannot decide it.'
+                );
+            }
+            if ('Refusal' in escalation) return escalation.Refusal;
+            if (!escalation.UserIDs.some((id) => UUIDsEqual(id, user.ID))) {
+                return (
+                    `This concession was requested by a holder of the role that approves it, so only '${escalation.Target}' ` +
+                    `can decide it (Orders setting ConcessionSelfApprovalEscalation).`
+                );
+            }
+        } else {
+            if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
+                return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+            }
+            if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
+                return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+            }
         }
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
         // record should show the share the decision was made at.

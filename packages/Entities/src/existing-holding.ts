@@ -25,14 +25,131 @@ const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
-/** A live subscription the subscriber already holds for a product, with where its coverage ends. */
+/**
+ * The subscription statuses that count as "the customer already holds this": every sold
+ * subscription that has not ended (golive #339). `Canceled` ended it and `Migrated` moved it to another
+ * subscription; every other status (`Active`, `Trialing`, `Paused`) is still held.
+ *
+ * Start date does not matter. A subscription sold to start next month is `Active` from the day it
+ * is booked, and a line for the same product is as much its next term as one bought mid-term.
+ *
+ * Wider than the server's own extend test (`Active`/`Trialing`): a `Paused` holding is still the
+ * customer's, so the line is asked about it, and the server applies its reactivation rule to the
+ * answer. Asking when it did not need to costs a click.
+ */
+export const EXISTING_HOLDING_STATUSES: readonly string[] = ['Active', 'Trialing', 'Paused'];
+
+const HELD_STATUS_FILTER = `Status IN (${EXISTING_HOLDING_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+
+/** A held subscription the subscriber already has for a product, with where its coverage ends. */
 export interface ExistingHolding {
     SubscriptionID: string;
     SubscriptionNumber: string;
     Status: string;
     /** End of the LATEST coverage term — not `Subscription.EndDate`, which is the final service date. */
     LatestTermEnd: Date | null;
+    /**
+     * The subscription type's reactivation rule, read only for a holding the server would not
+     * extend (any status but `Active`/`Trialing`): for those, the server answers "extend" with this
+     * rule instead. Absent or null for an extendable holding, and from `FindUnansweredHeldLines`.
+     */
+    Reactivation?: HoldingReactivation | null;
+}
+
+/** `SubscriptionType.ReactivationMode` and its window, as the server's extend decision reads them. */
+export interface HoldingReactivation {
+    Mode: 'ReactivateExisting' | 'AlwaysCreateNew' | 'ReactivateWithinWindow' | string;
+    WindowDays: number | null;
+}
+
+/**
+ * What the server does with a line that answers "extend" for this holding, mirroring its
+ * `ChooseAction` for a requested `ExtendExisting`:
+ *
+ * - `NextTerm`: an `Active`/`Trialing` holding gets a new term starting the day after its coverage
+ *   ends (`StartsOn`; null when it has no term yet, and the type's start rules apply).
+ * - `Reactivate`: any other holding whose type reactivates it (`ReactivateExisting`, or
+ *   `ReactivateWithinWindow` with the latest term end within the window of `purchaseDay`) is set
+ *   `Active` again and gets a term on the line's own dates.
+ * - `NewSubscription`: a type that never reactivates (`AlwaysCreateNew`), or a window that has
+ *   passed, starts a separate subscription on the line's dates.
+ * - `TypeRule`: the type's rule was not read; the server decides.
+ */
+export type ExtendOutcome =
+    | { Kind: 'NextTerm'; StartsOn: Date | null }
+    | { Kind: 'Reactivate' }
+    | { Kind: 'NewSubscription' }
+    | { Kind: 'TypeRule' };
+
+/** Statuses the server extends. Every other held status goes through the reactivation rule. */
+const EXTENDABLE_STATUSES: readonly string[] = ['Active', 'Trialing'];
+
+export function ExtendOutcomeFor(holding: ExistingHolding, purchaseDay: Date): ExtendOutcome {
+    if (EXTENDABLE_STATUSES.includes(holding.Status)) {
+        const end = holding.LatestTermEnd;
+        // UTC parts: a SQL `date` arrives as UTC midnight (see `ContinuationStartFrom`).
+        const startsOn =
+            end && !Number.isNaN(end.getTime())
+                ? new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1))
+                : null;
+        return { Kind: 'NextTerm', StartsOn: startsOn };
+    }
+    const rule = holding.Reactivation;
+    if (!rule) return { Kind: 'TypeRule' };
+    switch (rule.Mode) {
+        case 'ReactivateExisting':
+            return { Kind: 'Reactivate' };
+        case 'AlwaysCreateNew':
+            return { Kind: 'NewSubscription' };
+        case 'ReactivateWithinWindow': {
+            const end = holding.LatestTermEnd;
+            const days = end ? Math.round((purchaseDay.getTime() - end.getTime()) / 86400000) : null;
+            return days !== null && days <= (rule.WindowDays ?? 0) ? { Kind: 'Reactivate' } : { Kind: 'NewSubscription' };
+        }
+        default:
+            return { Kind: 'TypeRule' };
+    }
+}
+
+/** The extend choice's label and the hint shown once it is chosen, for the order screen and the deal line. */
+export interface ExtendChoiceText {
+    Choice: string;
+    Hint: string;
+}
+
+/** Wording for the "extend" answer that says what the server will do with it. */
+export function ExtendChoiceTextFor(holding: ExistingHolding, purchaseDay: Date): ExtendChoiceText {
+    const sub = holding.SubscriptionNumber;
+    const status = holding.Status.toLowerCase();
+    const outcome = ExtendOutcomeFor(holding, purchaseDay);
+    switch (outcome.Kind) {
+        case 'NextTerm': {
+            const starts = outcome.StartsOn ? ` (starts ${outcome.StartsOn.toISOString().slice(0, 10)})` : '';
+            return {
+                Choice: `Add as next term${starts}`,
+                Hint: `Confirm adds a term to ${sub}, starting the day after its coverage ends.`,
+            };
+        }
+        case 'Reactivate':
+            return {
+                Choice: `Reactivate ${sub}`,
+                Hint: `${sub} is ${status}. Confirm makes it active again and adds a term on this line's dates.`,
+            };
+        case 'NewSubscription':
+            return {
+                Choice: `Continue ${sub} (starts a new subscription)`,
+                Hint:
+                    `${sub} is ${status} and its subscription type does not reactivate it here, so confirm ` +
+                    `starts a separate subscription on this line's dates.`,
+            };
+        case 'TypeRule':
+            return {
+                Choice: `Continue ${sub}`,
+                Hint: `${sub} is ${status}. Its subscription type's reactivation rule decides at confirm.`,
+            };
+    }
 }
 
 /** Who a line's subscription would be for. */
@@ -73,8 +190,8 @@ export function HoldingSubscriberFor(line: HoldingLine, order: HoldingOrder | nu
 }
 
 /**
- * The live (`Active`/`Trialing`) subscription to `productID` held by this organization or naming
- * this person, newest first, or null.
+ * The held subscription (status in `EXISTING_HOLDING_STATUSES`) to `productID` held by this
+ * organization or naming this person, newest first, or null.
  *
  * Broader than the server's duplicate test, which keys on the type's `BenefitModel`: matching on
  * either side means a caller may ask about a subscription the server would not extend, never the
@@ -100,13 +217,13 @@ export async function FindExistingHolding(
     if (holder.length === 0) return null;
 
     const rv = new RunView(provider);
-    const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; Status: string }>(
+    const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; Status: string; SubscriptionTypeID: string | null }>(
         {
             EntityName: SUBSCRIPTION_ENTITY,
-            ExtraFilter: `ProductID = '${productID}' AND Status IN ('Active', 'Trialing') AND (${holder.join(' OR ')})`,
+            ExtraFilter: `ProductID = '${productID}' AND ${HELD_STATUS_FILTER} AND (${holder.join(' OR ')})`,
             OrderBy: '__mj_CreatedAt DESC',
             MaxRows: 1,
-            Fields: ['ID', 'SubscriptionNumber', 'Status'],
+            Fields: ['ID', 'SubscriptionNumber', 'Status', 'SubscriptionTypeID'],
             ResultType: 'simple',
         },
         user,
@@ -139,7 +256,32 @@ export async function FindExistingHolding(
         SubscriptionNumber: sub.SubscriptionNumber,
         Status: sub.Status,
         LatestTermEnd: end === null ? null : end instanceof Date ? end : new Date(end),
+        Reactivation: EXTENDABLE_STATUSES.includes(sub.Status) ? null : await reactivationOf(rv, sub, user),
     };
+}
+
+/** The reactivation rule of a held subscription's type, or null when it names no type. */
+async function reactivationOf(
+    rv: RunView,
+    sub: { SubscriptionNumber: string; SubscriptionTypeID: string | null },
+    user?: UserInfo,
+): Promise<HoldingReactivation | null> {
+    if (!sub.SubscriptionTypeID || !UUID_PATTERN.test(sub.SubscriptionTypeID)) return null;
+    const types = await rv.RunView<{ ReactivationMode: string; ReactivationWindowDays: number | null }>(
+        {
+            EntityName: SUBSCRIPTION_TYPE_ENTITY,
+            ExtraFilter: `ID = '${sub.SubscriptionTypeID}'`,
+            MaxRows: 1,
+            Fields: ['ReactivationMode', 'ReactivationWindowDays'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!types.Success) {
+        throw new Error(`Could not read the subscription type of ${sub.SubscriptionNumber}: ${types.ErrorMessage}`);
+    }
+    const type = types.Results[0];
+    return type ? { Mode: type.ReactivationMode, WindowDays: type.ReactivationWindowDays ?? null } : null;
 }
 
 /**
@@ -160,7 +302,7 @@ export async function FindUnansweredHeldLines(
     const asked = await subscriptionLinesToAsk(rv, order, lines, user);
     if (asked.length === 0) return [];
 
-    const subs = await liveSubscriptionsFor(rv, asked, user);
+    const subs = await heldSubscriptionsFor(rv, asked, user);
     if (subs.length === 0) return [];
     const termEnds = await latestTermEnds(rv, subs.map((s) => s.ID), user);
 
@@ -235,8 +377,8 @@ async function subscriptionLinesToAsk(
     return asked;
 }
 
-/** Live subscriptions to any asked product held by any asked subscriber, newest first. */
-async function liveSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], user?: UserInfo): Promise<SubscriptionRow[]> {
+/** Held subscriptions to any asked product held by any asked subscriber, newest first. */
+async function heldSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], user?: UserInfo): Promise<SubscriptionRow[]> {
     const orgs = asked.map((a) => a.Subscriber.OrganizationID).filter((id): id is string => !!id && UUID_PATTERN.test(id));
     const people = asked.map((a) => a.Subscriber.PersonID).filter((id): id is string => !!id && UUID_PATTERN.test(id));
     const holder = [
@@ -249,7 +391,7 @@ async function liveSubscriptionsFor(rv: RunView, asked: readonly AskedLine[], us
         {
             EntityName: SUBSCRIPTION_ENTITY,
             ExtraFilter:
-                `ProductID IN (${inList(asked.map((a) => a.Line.ProductID))}) AND Status IN ('Active', 'Trialing') ` +
+                `ProductID IN (${inList(asked.map((a) => a.Line.ProductID))}) AND ${HELD_STATUS_FILTER} ` +
                 `AND (${holder.join(' OR ')})`,
             OrderBy: '__mj_CreatedAt DESC',
             Fields: ['ID', 'SubscriptionNumber', 'Status', 'ProductID', 'HolderOrganizationID', 'BeneficiaryPersonID'],
