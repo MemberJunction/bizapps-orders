@@ -9,6 +9,8 @@ import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
     AsDateValue,
     PaymentHeaderEntity,
+    DaysLate,
+    Today,
     TodayAsDateValue,
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -978,12 +980,19 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         return FormatDate(order.DueDate);
     }
 
+    /**
+     * Whole days late on the BUSINESS calendar (bc-aidp-next-golive#341).
+     *
+     * This subtracted instants, so it counted a day as soon as 24 hours had elapsed: after 7pm in
+     * Chicago the UTC date has rolled over, and an order due TODAY reported "1d overdue" right
+     * beside a due date that still read today. The due dates themselves were already on the
+     * business calendar; only this counter was not.
+     *
+     * `DaysLate` is the counter that goes with `IsBefore`, which is what the grids filter on, so
+     * the badge and the overdue filter cannot disagree about what is late.
+     */
     public GetOrderDaysOverdue(order: mjBizAppsOrdersOrderHeaderEntity): number {
-        if (!order.DueDate) return 0;
-        const due = new Date(order.DueDate).getTime();
-        const now = Date.now();
-        if (now <= due) return 0;
-        return Math.floor((now - due) / (1000 * 60 * 60 * 24));
+        return DaysLate(order.DueDate, Today());
     }
 
     public OpenOrderRecord(order: mjBizAppsOrdersOrderHeaderEntity, event: MouseEvent): void {

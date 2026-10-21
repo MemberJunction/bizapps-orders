@@ -612,3 +612,42 @@ describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
         expect(instance.FormatLeavesCredit(order)).toBe('');
     });
 });
+
+/**
+ * THE BADGE IS ON THE BUSINESS CALENDAR (bc-aidp-next-golive#341).
+ *
+ * `DaysLate` is pinned in `date-cell.test.ts`; this pins that the FORM asks it. Without this the
+ * middle link is unheld — someone can inline the instant arithmetic back into the component and
+ * every helper test still passes, which is how the bug reached QA in the first place.
+ */
+describe('the open-orders overdue badge counts calendar days', () => {
+    const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+    const original = { rows: engine._configurations, loaded: engine._loaded };
+    beforeEach(() => {
+        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
+        engine._loaded = true;
+        vi.useFakeTimers();
+        // 7:43pm in Chicago on 13 Oct, which is already 14 Oct in UTC — the reported instant.
+        vi.setSystemTime(new Date('2026-10-14T00:43:00Z'));
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+        engine._configurations = original.rows;
+        engine._loaded = original.loaded;
+    });
+
+    const form = () => Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+    const order = (due: string | null) => ({ DueDate: due }) as never;
+
+    it('shows nothing for an order due today, where it used to show 1d', () => {
+        expect(form().GetOrderDaysOverdue(order('2026-10-13'))).toBe(0);
+    });
+
+    it('counts 6 for an order due 10/7, where it used to count 7', () => {
+        expect(form().GetOrderDaysOverdue(order('2026-10-07'))).toBe(6);
+    });
+
+    it('counts nothing for an order with no due date', () => {
+        expect(form().GetOrderDaysOverdue(order(null))).toBe(0);
+    });
+});
