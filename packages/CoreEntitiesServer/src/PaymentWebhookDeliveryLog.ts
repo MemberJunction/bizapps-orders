@@ -17,6 +17,13 @@
  * its audit row, and a 500 caused by the audit row alone would make the gateway redeliver an event
  * that was applied correctly.
  *
+ * ITS OWN PROVIDER (#939). The row is written on an isolated provider (`WithIsolatedProvider`). On
+ * the shared `Metadata.Provider` the insert ran inside whatever transaction another request had
+ * open on it at that moment, and was committed or rolled back with that request's work. When the
+ * page finished the same purchase in the same second, the webhook answered 2xx and left no row, so
+ * the gateway did not redeliver and nothing showed the event had been applied. On its own instance
+ * the insert commits by itself.
+ *
  * CONNECTS TO:
  *   ROUTE:  ./PaymentWebhookHandler.ts
  *   TABLE:  __mj_BizAppsOrders.PaymentWebhookDelivery
@@ -31,6 +38,7 @@ import {
 import { mjBizAppsOrdersPaymentWebhookDeliveryEntity } from '@mj-biz-apps/orders-entities';
 import type { WebhookAction, WebhookReasonCode } from './PaymentProviderBehavior.js';
 import { EscapeSQLString } from './sql-guards.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 
 const DELIVERY_ENTITY = 'MJ_BizApps_Orders: Payment Webhook Deliveries';
 
@@ -112,9 +120,11 @@ export async function FindPriorDelivery(
 }
 
 /**
- * Write or update the row for one delivery. Never throws — see the header.
+ * Write or update the row for one delivery, on its own provider. Never throws — see the header.
  *
  * @param prior the row `FindPriorDelivery` returned for this event, so the common case is one write
+ * @param provider the caller's provider; the row is written on an independent instance of it, or on
+ *   it directly when it cannot make one
  */
 export async function RecordWebhookDelivery(
     record: WebhookDeliveryRecord,
@@ -123,12 +133,17 @@ export async function RecordWebhookDelivery(
     user: UserInfo,
 ): Promise<void> {
     try {
-        if (await saveDelivery(record, prior, provider, user)) return;
-        // Two deliveries of the same new event raced and the other one inserted first; the unique key
-        // refused ours. Update the row it wrote.
-        const raced = await FindPriorDelivery(record.PaymentProviderID, record.ProviderEventID, provider, user);
-        if (!prior && raced && (await saveDelivery(record, raced, provider, user))) return;
-        LogError(`Could not record webhook delivery ${record.ProviderEventID ?? '(no event id)'} as ${record.Outcome}.`);
+        const failure = await WithIsolatedProvider(async (own): Promise<string | null> => {
+            const first = await saveDelivery(record, prior, own, user);
+            if (first === null) return null;
+            // Two deliveries of the same new event raced and the other one inserted first; the unique
+            // key refused ours. Update the row it wrote.
+            const raced = await FindPriorDelivery(record.PaymentProviderID, record.ProviderEventID, own, user);
+            if (!prior && raced && (await saveDelivery(record, raced, own, user)) === null) return null;
+            return first;
+        }, provider);
+        if (failure === null) return;
+        LogError(`Could not record webhook delivery ${record.ProviderEventID ?? '(no event id)'} as ${record.Outcome}: ${failure}`);
     } catch (err) {
         LogError(
             `Could not record webhook delivery ${record.ProviderEventID ?? '(no event id)'} as ${record.Outcome}: ` +
@@ -137,16 +152,17 @@ export async function RecordWebhookDelivery(
     }
 }
 
+/** Write the row. Null when it saved, otherwise why it did not, for the log line. */
 async function saveDelivery(
     record: WebhookDeliveryRecord,
     prior: PriorDelivery | null,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<boolean> {
+): Promise<string | null> {
     const row = await provider.GetEntityObject<mjBizAppsOrdersPaymentWebhookDeliveryEntity>(DELIVERY_ENTITY, user);
     const now = new Date();
     if (prior) {
-        if (!(await row.Load(prior.ID))) return false;
+        if (!(await row.Load(prior.ID))) return `the earlier row ${prior.ID} could not be read`;
         row.DeliveryCount = (row.DeliveryCount ?? 0) + 1;
     } else {
         row.NewRecord();
@@ -165,5 +181,6 @@ async function saveDelivery(
     if (record.ProviderIntentID) row.ProviderIntentID = record.ProviderIntentID;
     if (record.ProviderChargeID) row.ProviderChargeID = record.ProviderChargeID;
     if (record.OccurredAt) row.OccurredAt = record.OccurredAt;
-    return row.Save();
+    if (await row.Save()) return null;
+    return row.LatestResult?.CompleteMessage || 'the save gave no reason';
 }

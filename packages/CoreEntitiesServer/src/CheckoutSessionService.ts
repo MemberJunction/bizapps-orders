@@ -3286,11 +3286,19 @@ export class CheckoutSessionService {
         }
 
         if (!intent.OrderHeaderID) {
-            intent.OrderHeaderID = order.ID;
             // Second step of the gateway description: the intent was opened before the order existed.
             const mdForGateway = Metadata.Provider as IMetadataProvider | undefined;
             if (mdForGateway) {
                 await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
+            }
+            // Re-read after the gateway call, before the save below (#939). The save writes every
+            // field of this object, and a webhook event can land on the same row while the
+            // description is on its way, so a copy read before the call would put its stamp back.
+            if (!(await intent.Load(intent.ID))) {
+                LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} before stamping order ${order.ID}; saving the copy read before the gateway call`);
+            }
+            if (!intent.OrderHeaderID) {
+                intent.OrderHeaderID = order.ID;
             }
         }
         // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
@@ -3455,6 +3463,14 @@ export class CheckoutSessionService {
      * Pull the gateway's current intent status onto our row, and return what the gateway said.
      * Fail-soft: a retrieve error leaves the local status unchanged and the paid gate still
      * refuses.
+     *
+     * The row is re-read after the gateway call and before it is written (#939). MJ's `Save()`
+     * sends every field of the object, not only the changed ones, and the webhook writes the same
+     * row while the page waits on the gateway: saving the copy read before the call put the
+     * webhook's `ProviderEventID` back to null, which is the stamp its duplicate check reads. When
+     * the fresh row already holds what the gateway said, the webhook recorded it first, and the row
+     * is left as it wrote it, event time included. The re-read narrows the window to milliseconds;
+     * it does not lock the row.
      */
     private static async refreshIntentFromGateway(
         intent: mjBizAppsOrdersPaymentIntentEntity,
@@ -3467,12 +3483,20 @@ export class CheckoutSessionService {
         if (retrieved.Status === intent.Status && retrieved.Amount == null) {
             return retrieved;
         }
+        if (!(await intent.Load(intent.ID))) {
+            LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} to stamp retrieved status ${retrieved.Status}`);
+            return retrieved;
+        }
+        const amount = typeof retrieved.Amount === 'number' && retrieved.Amount > 0 ? retrieved.Amount : null;
+        if (retrieved.Status === intent.Status && (amount === null || amount === intent.Amount)) {
+            return retrieved;
+        }
         intent.Status = retrieved.Status;
         // The gateway's state as of this read, so any webhook event created before now is older
         // than this status and is not allowed to move it backwards (#475).
         intent.LastEventAt = new Date();
-        if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
-            intent.Amount = retrieved.Amount;
+        if (amount !== null) {
+            intent.Amount = amount;
         }
         try {
             if (!(await intent.Save())) {
