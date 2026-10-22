@@ -767,6 +767,7 @@ export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } fr
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
 export { DeliveryOutcomeFor, FindPriorDelivery, RecordWebhookDelivery } from './PaymentWebhookDeliveryLog.js';
+export { JoinCallerTransaction } from './isolatedProvider.js';
 export type {
     PriorDelivery,
     WebhookDeliveryOutcome,

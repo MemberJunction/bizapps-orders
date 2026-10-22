@@ -80,6 +80,13 @@ This works because the booking path's own transaction and accounting's `CreateJo
 savepoints nest correctly three deep — verified by a spike before any check was written
 (`plans/archive/integration-testing-plan.md` §0).
 
+Work the product runs on an isolated provider (`WithIsolatedProvider` in CoreEntitiesServer: the
+checkout capture, the webhook's delivery row) would write on another pooled connection, outside the
+check's transaction, and wait on that transaction's locks until the request timeout (#947).
+`InRolledBackTransaction` runs its body inside `JoinCallerTransaction`, so that work joins the check's
+transaction instead. A check therefore proves what isolated work writes, not that it writes on its own
+transaction; the isolation itself is covered by `isolatedProvider.test.ts`.
+
 Apart from those two teardowns, removing committed data is a separate, manual step.
 `node test-harnesses/purge-fixture-data.mjs` deletes what older per-run fixtures left behind
 (companies named `IT-ORD-…` and everything hanging off them), and `seed-review-data.mjs` runs the

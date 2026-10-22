@@ -1,4 +1,8 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { LogError, Metadata, type DatabaseProviderBase, type IMetadataProvider } from '@memberjunction/core';
+
+/** The provider a test seam asked isolated work to join, per async call chain. Empty in production. */
+const joinedCaller = new AsyncLocalStorage<IMetadataProvider>();
 
 /**
  * Runs `work` on a provider with its OWN transaction stack, then releases it (#927).
@@ -22,11 +26,18 @@ import { LogError, Metadata, type DatabaseProviderBase, type IMetadataProvider }
  * A provider with no `CreateIndependentInstance` method falls back to the shared one, which is today's
  * behaviour. (A `DatabaseProviderBase` subclass that inherits the base class's throwing stub throws
  * instead; SQL Server and PostgreSQL both implement it.)
+ *
+ * Inside {@link JoinCallerTransaction} (a test seam) `work` runs on the joined provider instead, and
+ * nothing is made or released. Nothing in production enters it.
  */
 export async function WithIsolatedProvider<T>(
     work: (provider: IMetadataProvider) => Promise<T>,
     shared: IMetadataProvider | undefined = Metadata.Provider as IMetadataProvider | undefined,
 ): Promise<T> {
+    const joined = joinedCaller.getStore();
+    if (joined) {
+        return work(joined);
+    }
     const db = shared as unknown as Partial<DatabaseProviderBase> | undefined;
     if (!db || typeof db.CreateIndependentInstance !== 'function') {
         return work(shared as IMetadataProvider);
@@ -41,4 +52,26 @@ export async function WithIsolatedProvider<T>(
             LogError(`WithIsolatedProvider: releasing the isolated provider failed: ${e}`);
         }
     }
+}
+
+/**
+ * TEST SEAM (#947). Inside `fn`, {@link WithIsolatedProvider} runs its work on `provider` rather than on
+ * a new instance, so the work joins the transaction `provider` holds. Production code never calls it.
+ *
+ * It exists for the integration harness, which wraps each check in a transaction it rolls back
+ * (`InRolledBackTransaction`). An isolated instance writes on another pooled connection, outside that
+ * transaction, so its first read of a row the check wrote waits on the check's own locks while the
+ * check waits for it, until the request timeout ends the read. That is how SR46, SR52 and SR53 failed
+ * after #928 moved the checkout capture onto an isolated provider.
+ *
+ * Scoped to the async call chain that `fn` starts (`AsyncLocalStorage`), not to the module: a request
+ * that runs at the same time in the same process, outside `fn`, still gets its own instance. A nested
+ * call joins the inner provider until it returns.
+ *
+ * What it gives up: inside `fn`, the isolated work shares the caller's transaction, so a check run
+ * this way proves what the work writes, not that it writes on its own transaction. The isolation keeps
+ * its unit tests (`isolatedProvider.test.ts`).
+ */
+export async function JoinCallerTransaction<T>(provider: IMetadataProvider, fn: () => Promise<T>): Promise<T> {
+    return joinedCaller.run(provider, fn);
 }
