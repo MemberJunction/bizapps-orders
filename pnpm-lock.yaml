@@ -299,13 +299,13 @@ importers:
         version: 0.21.2(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)(@mj-biz-apps/common-entities@5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6))
       '@mj-biz-apps/accounting-ng':
         specifier: 0.21.2
-        version: 0.21.2(0d7cca823a9ec8a089ae2e0b92bdf6f4)
+        version: 0.21.2(a7461891dcf241c157a873131264e0ef)
       '@mj-biz-apps/common-entities':
         specifier: 5.53.0
         version: 5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)
       '@mj-biz-apps/common-ng':
-        specifier: 5.53.0
-        version: 5.53.0(ac405eb54a11a94bbc5599130f5481b5)
+        specifier: 5.56.0
+        version: 5.56.0(bbeeb91bbea468819b183442f5ab6a0f)
       esbuild:
         specifier: ^0.25.0
         version: 0.25.12
@@ -2903,25 +2903,32 @@ packages:
       '@memberjunction/core': ^6.1.6
       '@memberjunction/global': ^6.1.6
 
-  '@mj-biz-apps/common-ng@5.53.0':
-    resolution: {integrity: sha512-P20Fyuqx+28Lglgzp+GWBXMqHXkIKZIds6lJLUgHHYWkXPx4+LJ/QsihFWdfmn/fv5dACK8TERqmHTn6MMDoJQ==}
+  '@mj-biz-apps/common-entities@5.56.0':
+    resolution: {integrity: sha512-fzPvFoD5VDKubpk8hSuNu6eVLR3fMo69v2mgEGZ9iZyOsZ0tpDR+Ayr3/2mcsyndzBMEPsMW66UGYQcRhgrZ+g==}
+    peerDependencies:
+      '@memberjunction/core': ^6.1.6
+      '@memberjunction/global': ^6.1.6
+
+  '@mj-biz-apps/common-ng@5.56.0':
+    resolution: {integrity: sha512-TbC+lmsDgt11B9LIxHOpWLI7bbZfKYGn/7mQoWV/cKG66og2zBnScGUyPMY1NYjF6i/iC4Z5Uxz9fmo4DQW96w==}
     peerDependencies:
       '@angular/animations': 21.1.3
       '@angular/common': 21.1.3
       '@angular/core': 21.1.3
       '@angular/forms': 21.1.3
-      '@memberjunction/actions-base': ^6.1.5
+      '@memberjunction/actions-base': ^6.1.6
       '@memberjunction/core': ^6.1.6
-      '@memberjunction/core-entities': ^6.1.5
+      '@memberjunction/core-entities': ^6.1.6
       '@memberjunction/global': ^6.1.6
-      '@memberjunction/graphql-dataprovider': ^6.1.5
-      '@memberjunction/ng-base-forms': ^6.1.5
-      '@memberjunction/ng-entity-viewer': ^6.1.5
-      '@memberjunction/ng-graph-view': ^6.1.5
-      '@memberjunction/ng-hierarchy-tree': ^6.1.5
-      '@memberjunction/ng-link-directives': ^6.1.5
-      '@memberjunction/ng-shared': ^6.1.5
-      '@memberjunction/ng-ui-components': ^6.1.5
+      '@memberjunction/graphql-dataprovider': ^6.1.6
+      '@memberjunction/ng-base-forms': ^6.1.6
+      '@memberjunction/ng-entity-viewer': ^6.1.6
+      '@memberjunction/ng-graph-view': ^6.1.6
+      '@memberjunction/ng-hierarchy-tree': ^6.1.6
+      '@memberjunction/ng-link-directives': ^6.1.6
+      '@memberjunction/ng-shared': ^6.1.6
+      '@memberjunction/ng-ui-components': ^6.1.6
+      rxjs: ^7.8.2
 
   '@mj-biz-apps/common-server@5.53.0':
     resolution: {integrity: sha512-HrOEgNpgnqfwNdU9+gNXu+7qNt3qyd4t3ggDjGLe7xSaWijxAPMsNoIjSkaodU7P22xbcHS6jkmsjNS5+rubfg==}
@@ -15734,7 +15741,7 @@ snapshots:
       '@mj-biz-apps/common-entities': 5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)
       zod: 3.25.76
 
-  '@mj-biz-apps/accounting-ng@0.21.2(0d7cca823a9ec8a089ae2e0b92bdf6f4)':
+  '@mj-biz-apps/accounting-ng@0.21.2(a7461891dcf241c157a873131264e0ef)':
     dependencies:
       '@angular/animations': 21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))
       '@angular/cdk': 21.2.14(@angular/common@21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))(@angular/platform-browser@21.1.3(@angular/animations@21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2)))(@angular/common@21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2)))(rxjs@7.8.2)
@@ -15757,7 +15764,7 @@ snapshots:
       '@mj-biz-apps/accounting-engine-base': 0.21.2(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)(@mj-biz-apps/common-entities@5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6))
       '@mj-biz-apps/accounting-entities': 0.21.2(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)(@mj-biz-apps/common-entities@5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6))
       '@mj-biz-apps/common-entities': 5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)
-      '@mj-biz-apps/common-ng': 5.53.0(ac405eb54a11a94bbc5599130f5481b5)
+      '@mj-biz-apps/common-ng': 5.56.0(bbeeb91bbea468819b183442f5ab6a0f)
       ag-grid-angular: 35.3.1(@angular/common@21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2))(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))
       ag-grid-community: 35.3.1
       rxjs: 7.8.2
@@ -15819,7 +15826,13 @@ snapshots:
       '@memberjunction/global': 6.1.6
       zod: 3.25.76
 
-  '@mj-biz-apps/common-ng@5.53.0(ac405eb54a11a94bbc5599130f5481b5)':
+  '@mj-biz-apps/common-entities@5.56.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)':
+    dependencies:
+      '@memberjunction/core': 6.1.6
+      '@memberjunction/global': 6.1.6
+      zod: 3.25.76
+
+  '@mj-biz-apps/common-ng@5.56.0(bbeeb91bbea468819b183442f5ab6a0f)':
     dependencies:
       '@angular/animations': 21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))
       '@angular/common': 21.1.3(@angular/core@21.1.3(@angular/compiler@21.1.3)(rxjs@7.8.2)(zone.js@0.16.2))(rxjs@7.8.2)
@@ -15837,7 +15850,8 @@ snapshots:
       '@memberjunction/ng-link-directives': 6.1.6(b14ec32a77e1d61aee8a0029e59eeb48)
       '@memberjunction/ng-shared': 6.1.6(b14ec32a77e1d61aee8a0029e59eeb48)
       '@memberjunction/ng-ui-components': 6.1.6(610289ac184a44301c32f86c35b57a20)
-      '@mj-biz-apps/common-entities': 5.53.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)
+      '@mj-biz-apps/common-entities': 5.56.0(@memberjunction/core@6.1.6)(@memberjunction/global@6.1.6)
+      rxjs: 7.8.2
 
   '@mj-biz-apps/common-server@5.53.0(2698178e3053aa2ea1b1bcedcee51fb2)':
     dependencies:
