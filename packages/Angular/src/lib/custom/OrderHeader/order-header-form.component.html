@@ -81,7 +81,7 @@
                         @if (ShipToIsSame) {
                             <span class="mjo-oh-bubble__name">{{ ShipToName }}</span>
                         } @else {
-                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" (click)="OpenShipTo($event)">{{ ShipToName }}</button>
+                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" [mjRecordLink]="record" [FieldName]="ShipToFieldName" [HandleClick]="false" (click)="OpenShipTo($event)">{{ ShipToName }}</button>
                         }
                         <span class="mjo-oh-bubble__detail">{{ ShipToDetail }}</span>
                     </span>
@@ -115,7 +115,7 @@
                     <span class="mjo-oh-bubble__copy">
                         <span class="mjo-oh-bubble__role">Bill to</span>
                         @if (hasBillTo) {
-                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" (click)="OpenBillTo($event)">{{ BillToName }}</button>
+                            <button type="button" class="mjo-oh-link mjo-oh-bubble__name" [mjRecordLink]="record" [FieldName]="BillToFieldName" [HandleClick]="false" (click)="OpenBillTo($event)">{{ BillToName }}</button>
                         } @else {
                             <span class="mjo-oh-bubble__name">{{ BillToName }}</span>
                         }
@@ -432,7 +432,7 @@
                             </thead>
                             <tbody>
                                 @for (row of JournalRows; track row.ID) {
-                                    <tr class="is-clickable" (click)="OnJournalRowSelected(row.ID)">
+                                    <tr class="is-clickable" mjRecordLink [EntityName]="JournalEntryEntity" [RecordID]="row.ID" [DisplayName]="row.EntryNumber" [HandleClick]="false" (click)="OnJournalRowSelected(row.ID)">
                                         <td>
                                             <div class="mjo-oh-acctline__name">{{ row.EntryNumber }}</div>
                                             <div class="mjo-oh-acctline__meta">

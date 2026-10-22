@@ -134,6 +134,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     /** Template access to the shared date formatter: an `EffectiveTo` is a calendar day, not an instant. */
     public readonly FormatDate = FormatDate;
+    public readonly ProductPricesEntity = PRODUCT_PRICES_ENTITY;
+    public readonly PriceListsEntity = PRICE_LISTS_ENTITY;
 
     public IsLoading = false;
     public IsSaving = false;
