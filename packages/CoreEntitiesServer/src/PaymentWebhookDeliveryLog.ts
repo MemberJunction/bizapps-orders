@@ -123,8 +123,9 @@ export async function FindPriorDelivery(
  * Write or update the row for one delivery, on its own provider. Never throws — see the header.
  *
  * @param prior the row `FindPriorDelivery` returned for this event, so the common case is one write
- * @param provider the caller's provider; the row is written on an independent instance of it, or on
- *   it directly when it cannot make one
+ * @param provider the caller's provider; the row is written on an independent instance of it. Only a
+ *   provider with no `CreateIndependentInstance` is written on directly; when making the instance
+ *   throws, the error is logged and no row is written
  */
 export async function RecordWebhookDelivery(
     record: WebhookDeliveryRecord,
@@ -139,7 +140,11 @@ export async function RecordWebhookDelivery(
             // Two deliveries of the same new event raced and the other one inserted first; the unique
             // key refused ours. Update the row it wrote.
             const raced = await FindPriorDelivery(record.PaymentProviderID, record.ProviderEventID, own, user);
-            if (!prior && raced && (await saveDelivery(record, raced, own, user)) === null) return null;
+            if (!prior && raced) {
+                const retry = await saveDelivery(record, raced, own, user);
+                if (retry === null) return null;
+                return `${first}; then, as an update of ${raced.ID}: ${retry}`;
+            }
             return first;
         }, provider);
         if (failure === null) return;

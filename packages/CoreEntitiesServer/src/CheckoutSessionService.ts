@@ -3470,7 +3470,7 @@ export class CheckoutSessionService {
      * webhook's `ProviderEventID` back to null, which is the stamp its duplicate check reads. When
      * the fresh row already holds what the gateway said, the webhook recorded it first, and the row
      * is left as it wrote it, event time included. The re-read narrows the window to milliseconds;
-     * it does not lock the row.
+     * it does not lock the row (#943). MJ #4339 tracks the every-field save upstream.
      */
     private static async refreshIntentFromGateway(
         intent: mjBizAppsOrdersPaymentIntentEntity,
@@ -3484,6 +3484,9 @@ export class CheckoutSessionService {
             return retrieved;
         }
         if (!(await intent.Load(intent.ID))) {
+            // Deliberate: this call then refuses (the status stays unsettled), and the caller can retry
+            // while the webhook still books the payment. Setting `Status` from `retrieved` on this copy
+            // instead would let a later save in capture write the stale copy back, the overwrite #939 fixes.
             LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} to stamp retrieved status ${retrieved.Status}`);
             return retrieved;
         }

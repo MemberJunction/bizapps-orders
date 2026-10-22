@@ -22,6 +22,8 @@ const state = vi.hoisted(() => ({
     /** Runs when the handler books the checkout capture: stands for the page's work happening then. */
     onBook: null as null | (() => void),
     errors: [] as string[],
+    /** The provider each delivery-row lookup ran on, in order. */
+    deliveryLookups: [] as unknown[],
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -33,11 +35,13 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
             state.errors.push(String(message));
         },
         RunView: class {
+            constructor(private readonly provider?: unknown) {}
             async RunView(params: { EntityName: string; ExtraFilter?: string }) {
                 if (params.EntityName.endsWith('Payment Intents')) {
                     return { Success: true, Results: state.intent ? [state.intent] : [] };
                 }
                 if (params.EntityName.endsWith('Payment Webhook Deliveries')) {
+                    state.deliveryLookups.push(this.provider);
                     const id = /ProviderEventID = '([^']*)'/.exec(params.ExtraFilter ?? '')?.[1];
                     return { Success: true, Results: state.deliveries.filter((d) => d.ProviderEventID === id) };
                 }
@@ -120,6 +124,7 @@ const event = (over: Partial<WebhookEvent> = {}): WebhookEvent => ({
 });
 
 beforeEach(() => {
+    state.deliveryLookups = [];
     state.verified = true;
     state.event = null;
     state.intent = null;
@@ -271,9 +276,7 @@ describe('the delivery row survives the page finishing the same purchase (#939)'
         const release = vi.fn(async () => undefined);
         const sharedGetEntityObject = vi.fn();
         let inserts = 0;
-        const shared = {
-            GetEntityObject: sharedGetEntityObject,
-            CreateIndependentInstance: vi.fn(async () => ({
+        const own = {
                 GetEntityObject: async (name: string) => {
                     const row = entity(name.endsWith('Payment Intents') ? 'intent' : 'delivery');
                     if (name.endsWith('Payment Intents')) return row;
@@ -287,7 +290,10 @@ describe('the delivery row survives the page finishing the same purchase (#939)'
                     return row;
                 },
                 ReleaseIndependentInstance: release,
-            })),
+        };
+        const shared = {
+            GetEntityObject: sharedGetEntityObject,
+            CreateIndependentInstance: vi.fn(async () => own),
         };
         state.event = event();
 
@@ -303,6 +309,8 @@ describe('the delivery row survives the page finishing the same purchase (#939)'
         expect(sharedGetEntityObject).not.toHaveBeenCalled();
         expect(release).toHaveBeenCalledTimes(1);
         expect(state.errors.filter((e) => e.includes('Could not record webhook delivery'))).toHaveLength(0);
+        // The retry's lookup of the row that won the race runs on the same isolated instance.
+        expect(state.deliveryLookups.at(-1)).toBe(own);
     });
 
     it('when no isolated instance can be made, the failure is logged and the answer is unchanged', async () => {
@@ -355,5 +363,32 @@ describe('the delivery row survives the page finishing the same purchase (#939)'
         const line = state.errors.find((e) => e.includes('Could not record webhook delivery evt_test_1'));
         expect(line).toBeDefined();
         expect(line).toContain('FK_PaymentWebhookDelivery_PaymentIntent violated');
+    });
+
+    it('when the raced retry also fails, the log line carries the retry\'s reason too', async () => {
+        let saves = 0;
+        const failing = {
+            GetEntityObject: async () => {
+                const row = entity('delivery');
+                row.Load = async () => true;
+                row.Save = async () => {
+                    if (saves++ === 0) {
+                        state.deliveries.push({ ID: 'd-raced', ProviderEventID: 'evt_test_1', Outcome: 'Ignored', DeliveryCount: 1 });
+                        row.LatestResult = { CompleteMessage: 'UQ_PaymentWebhookDelivery_Event violated' };
+                    } else {
+                        row.LatestResult = { CompleteMessage: 'deadlock victim' };
+                    }
+                    return false;
+                };
+                return row;
+            },
+        } as unknown as IMetadataProvider;
+        state.event = event();
+
+        await HandlePaymentWebhook({ RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID }, failing, user);
+
+        const line = state.errors.find((e) => e.includes('Could not record webhook delivery evt_test_1'));
+        expect(line).toContain('UQ_PaymentWebhookDelivery_Event violated');
+        expect(line).toContain('as an update of d-raced: deadlock victim');
     });
 });
