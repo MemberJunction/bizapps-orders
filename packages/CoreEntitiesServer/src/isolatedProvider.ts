@@ -11,6 +11,10 @@ import { LogError, Metadata, type DatabaseProviderBase, type IMetadataProvider }
  * left a charged buyer with no payment and no access. MJ fixed the same hazard in its own code
  * (MJ #5059, `CreateIsolatedProvider`).
  *
+ * Also used for the webhook's delivery row (#939, `PaymentWebhookDeliveryLog.ts`): written on the
+ * shared provider, it joined whatever transaction another request had open and could be rolled
+ * back with it.
+ *
  * `CreateIndependentInstance()` shares the connection pool and the metadata cache; only the
  * transaction state is new, so the cost is a provider object, not a connection or a metadata load.
  * Release never closes the pool, and rolls back anything `work` left open.

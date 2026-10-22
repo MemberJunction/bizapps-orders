@@ -2280,6 +2280,151 @@ describe('CheckoutSessionService', () => {
                 expect(intent().LastEventAt).toBeNull();
                 expect(mocks.mockIntentSave).not.toHaveBeenCalled();
             });
+
+            describe('the webhook stamps the intent while the page is at the gateway (#939)', () => {
+                // The stored PaymentIntent row. MJ's Save sends EVERY updatable field of the entity
+                // object to spUpdate, not only the dirty ones, and a null nullable field goes with
+                // its _Clear flag (SQLServerDataProvider.RenderSaveCallBinding). So a save of an
+                // object loaded before someone else's write puts the old values back. This fake
+                // table does the same: Load copies the row in, Save copies every field out.
+                const FIELDS = ['Status', 'Amount', 'OrderHeaderID', 'BillToPersonID', 'BillToOrganizationID', 'ProviderEventID', 'LastEventAt'] as const;
+                type IntentRow = Record<(typeof FIELDS)[number], unknown>;
+                let stored: IntentRow;
+                /** The next Load reads nothing, as when the database read fails. */
+                let failNextLoad = false;
+                const pi = () => mocks.mockPaymentIntentInstance as unknown as IntentRow;
+                const EVENT_AT = new Date('2026-10-21T21:45:03Z');
+                /** What applyEvent writes for payment_intent.succeeded (PaymentWebhookHandler.applyEvent). */
+                const webhookStamps = () => {
+                    stored.Status = 'Succeeded';
+                    stored.LastEventAt = EVENT_AT;
+                    stored.ProviderEventID = 'evt_page_race';
+                };
+
+                beforeEach(() => {
+                    stored = {
+                        Status: 'RequiresPayment',
+                        Amount: 100,
+                        OrderHeaderID: null,
+                        BillToPersonID: null,
+                        BillToOrganizationID: null,
+                        ProviderEventID: null,
+                        LastEventAt: null,
+                    };
+                    failNextLoad = false;
+                    mocks.mockIntentLoad.mockImplementation(async () => {
+                        if (failNextLoad) {
+                            failNextLoad = false;
+                            return false;
+                        }
+                        for (const f of FIELDS) pi()[f] = stored[f];
+                        return true;
+                    });
+                    mocks.mockIntentSave.mockImplementation(async () => {
+                        for (const f of FIELDS) stored[f] = pi()[f] ?? null;
+                        return true;
+                    });
+                });
+                afterEach(() => {
+                    delete (mocks.mockPaymentIntentInstance as unknown as Record<string, unknown>).ProviderEventID;
+                });
+
+                it('keeps the event id the webhook stamped during the paid-gate read (ORD-002465, ORD-002467)', async () => {
+                    unpaidSession();
+                    // The page loaded the intent as RequiresPayment, then asks the gateway; the
+                    // webhook's payment_intent.succeeded lands during that round trip.
+                    retrieve.mockImplementation(async () => {
+                        webhookStamps();
+                        return { Success: true, Status: 'Succeeded', Amount: 100 };
+                    });
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(res.Success).toBe(true);
+                    // The duplicate check reads exactly this (PaymentWebhookHandler AlreadySeen).
+                    expect(stored.ProviderEventID).toBe('evt_page_race');
+                    // And the ordering line stays the gateway's event time (#475), not the page's clock.
+                    expect(stored.LastEventAt).toEqual(EVENT_AT);
+                    expect(stored.Status).toBe('Succeeded');
+                });
+
+                it('keeps the event id when the webhook stamps while the order details go to the gateway', async () => {
+                    // The capture step loads the intent, sends the order description to the gateway,
+                    // then saves OrderHeaderID: the same load, network call, whole-row save.
+                    unpaidSession();
+                    stored.Status = 'Succeeded';
+                    describeMocks.mockSendOrderDescription.mockImplementationOnce(async () => {
+                        stored.ProviderEventID = 'evt_late_event';
+                        stored.LastEventAt = EVENT_AT;
+                    });
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(res.Success).toBe(true);
+                    expect(stored.OrderHeaderID).toBe('order-999');
+                    expect(stored.ProviderEventID).toBe('evt_late_event');
+                    expect(stored.LastEventAt).toEqual(EVENT_AT);
+                });
+
+                it('control: with no webhook in between, the page still stamps what the gateway said', async () => {
+                    unpaidSession();
+                    retrieve.mockResolvedValue({ Success: true, Status: 'Succeeded', Amount: 100 });
+                    const before = new Date();
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(res.Success).toBe(true);
+                    expect(stored.Status).toBe('Succeeded');
+                    expect(stored.ProviderEventID).toBeNull();
+                    expect((stored.LastEventAt as Date).getTime()).toBeGreaterThanOrEqual(before.getTime());
+                    expect(stored.OrderHeaderID).toBe('order-999');
+                });
+
+                it('writes only what the webhook left out: a new amount goes on the fresh row and the stamp stays', async () => {
+                    unpaidSession();
+                    retrieve.mockImplementation(async () => {
+                        webhookStamps();
+                        return { Success: true, Status: 'Succeeded', Amount: 120 };
+                    });
+
+                    await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(stored.Amount).toBe(120);
+                    expect(stored.Status).toBe('Succeeded');
+                    expect(stored.ProviderEventID).toBe('evt_page_race');
+                });
+
+                it('writes nothing when the intent cannot be re-read after the gateway read', async () => {
+                    unpaidSession();
+                    retrieve.mockImplementation(async () => {
+                        webhookStamps();
+                        failNextLoad = true;
+                        return { Success: true, Status: 'Succeeded', Amount: 100 };
+                    });
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    // The page's copy still says RequiresPayment, so the paid gate refuses this call,
+                    // as it does when the gateway read itself fails; the webhook's row is untouched.
+                    expect(res.Success).toBe(false);
+                    expect(mocks.mockIntentSave).not.toHaveBeenCalled();
+                    expect(stored.ProviderEventID).toBe('evt_page_race');
+                    expect(stored.LastEventAt).toEqual(EVENT_AT);
+                });
+
+                it('still stamps the order on the intent when it cannot be re-read after the order details go out', async () => {
+                    unpaidSession();
+                    stored.Status = 'Succeeded';
+                    describeMocks.mockSendOrderDescription.mockImplementationOnce(async () => {
+                        failNextLoad = true;
+                    });
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(res.Success).toBe(true);
+                    expect(stored.OrderHeaderID).toBe('order-999');
+                });
+            });
         });
 
         it('still confirms the order when CapturePayment fails after commit', async () => {
