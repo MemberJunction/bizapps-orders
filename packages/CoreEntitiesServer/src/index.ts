@@ -208,9 +208,10 @@ export type { AmendArrangementInput, AmendArrangementOutput } from '@mj-biz-apps
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
-// Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
-export { IsProviderBilled, NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+
+// Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
+export { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 

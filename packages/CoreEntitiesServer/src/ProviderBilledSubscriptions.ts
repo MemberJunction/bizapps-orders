@@ -13,10 +13,10 @@
  *   · `PaymentProviderType.SupportsSubscriptionBilling` — the gateway CAN bill subscriptions;
  *   · `PaymentProvider.BillsSubscriptions` — this account DOES bill the subscriptions sold through it.
  * Both govern CREATING a gateway subscription. Neither may decide whether Orders renews an existing one:
- * if Sidecar turned its switch off next year, every subscription Stripe still bills would otherwise start
- * renewing in Orders as well, and every customer would be charged twice.
+ * if a host turned an account's switch off later, every subscription the gateway still bills would
+ * otherwise start renewing in Orders as well, and every customer would be charged twice.
  *
- * Example: Jane's SUB-000110 has `ProviderSubscriptionID = 'sub_A1'` on the Sidecar Stripe account, so
+ * Example: Jane's SUB-000110 has `ProviderSubscriptionID = 'sub_A1'` on a Stripe account, so
  * neither job selects it, whatever that account's switch says. A team subscription invoiced through
  * Bill.com has no id, so both jobs treat it exactly as before.
  *
@@ -24,7 +24,7 @@
  * that holds a row. They agree by construction (both are `ProviderSubscriptionID IS NOT NULL`).
  *
  *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE)
- *   SCHEMA:  migrations/V202610221105__v5.37.x__Provider_Billed_Subscriptions.sql
+ *   SCHEMA:  migrations/V202610221105__v5.38.x__Provider_Billed_Subscriptions.sql
  */
 
 /** A plain SQL identifier, which is all a table alias here can be. */

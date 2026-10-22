@@ -31,9 +31,15 @@
 -- prices (a legacy one beside the current one) so unmatched charges at either
 -- still map to it; only one active row per provider and product may be flagged.
 --
--- Existing rows: every new column defaults to 0, no subscription carries a
--- provider id before this ships, and the flag starts unset, so the CHECK and
--- both indexes hold on existing data.
+-- Existing rows: every new column defaults to 0 and the flag starts unset.
+-- Orders itself never writes Subscription.ProviderSubscriptionID before this,
+-- but the column has been writable through the API since v0.1, so a host that
+-- imported gateway ids should check first; the CHECK and the index fail this
+-- migration on violating rows, and every subscription with an id stops being
+-- renewed by Orders. Pre-flight (expect 0 and 0):
+--   SELECT COUNT(*) FROM Subscription WHERE ProviderSubscriptionID IS NOT NULL AND PaymentProviderID IS NULL;
+--   SELECT COUNT(*) FROM (SELECT PaymentProviderID, ProviderSubscriptionID FROM Subscription
+--     WHERE ProviderSubscriptionID IS NOT NULL GROUP BY PaymentProviderID, ProviderSubscriptionID HAVING COUNT(*) > 1) d;
 --
 -- Hand-written DDL here is PLAIN: no existence guards. Migrations run once, in order.
 --
@@ -44,7 +50,9 @@ ALTER TABLE [${flyway:defaultSchema}].[PaymentProviderType]
     ADD [SupportsSubscriptionBilling] BIT NOT NULL CONSTRAINT [DF_PaymentProviderType_SupportsSubscriptionBilling] DEFAULT 0;
 GO
 
--- Stripe Billing bills subscriptions. Every host already has the Stripe type row from an earlier
+-- Stripe Billing bills subscriptions. Deliberately only the card type `Stripe`, not `StripeACH` (US bank
+-- debits, which settle late): gateway subscriptions are designed and tested for cards only.
+-- Every host already has the Stripe type row from an earlier
 -- Metadata_Sync (which creates seed rows and never updates them), so only a migration can set it.
 UPDATE [${flyway:defaultSchema}].[PaymentProviderType]
 SET [SupportsSubscriptionBilling] = 1
