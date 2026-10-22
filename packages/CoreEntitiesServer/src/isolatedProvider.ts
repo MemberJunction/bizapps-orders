@@ -27,7 +27,7 @@ const joinedCaller = new AsyncLocalStorage<IMetadataProvider>();
  * behaviour. (A `DatabaseProviderBase` subclass that inherits the base class's throwing stub throws
  * instead; SQL Server and PostgreSQL both implement it.)
  *
- * Inside {@link JoinCallerTransaction} (a test seam) `work` runs on the joined provider instead, and
+ * Inside {@link JoinCallerTransactionForTests} (a test seam) `work` runs on the joined provider instead, and
  * nothing is made or released. Nothing in production enters it.
  */
 export async function WithIsolatedProvider<T>(
@@ -72,6 +72,6 @@ export async function WithIsolatedProvider<T>(
  * this way proves what the work writes, not that it writes on its own transaction. The isolation keeps
  * its unit tests (`isolatedProvider.test.ts`).
  */
-export async function JoinCallerTransaction<T>(provider: IMetadataProvider, fn: () => Promise<T>): Promise<T> {
+export async function JoinCallerTransactionForTests<T>(provider: IMetadataProvider, fn: () => Promise<T>): Promise<T> {
     return joinedCaller.run(provider, fn);
 }

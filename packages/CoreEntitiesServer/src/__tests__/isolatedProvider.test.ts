@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { IMetadataProvider } from '@memberjunction/core';
-import { JoinCallerTransaction, WithIsolatedProvider } from '../isolatedProvider.js';
+import { JoinCallerTransactionForTests, WithIsolatedProvider } from '../isolatedProvider.js';
 
 /** A shared provider whose independent instances record what happened to them. */
 function sharedProvider() {
@@ -88,14 +88,14 @@ describe('WithIsolatedProvider (#927)', () => {
     });
 });
 
-describe('JoinCallerTransaction (#947): a harness that holds a transaction lets isolated work join it', () => {
+describe('JoinCallerTransactionForTests (#947): a harness that holds a transaction lets isolated work join it', () => {
     const callerProvider = (name: string) => ({ name }) as unknown as IMetadataProvider;
 
     it('runs the work on the caller\'s provider: no independent instance is made, so none is released', async () => {
         const { shared, made } = sharedProvider();
         const caller = callerProvider('the check\'s transaction');
         let seen: unknown;
-        const out = await JoinCallerTransaction(caller, () =>
+        const out = await JoinCallerTransactionForTests(caller, () =>
             WithIsolatedProvider(async (p) => {
                 seen = p;
                 return 'booked';
@@ -111,7 +111,7 @@ describe('JoinCallerTransaction (#947): a harness that holds a transaction lets 
     it('joins the caller\'s provider even when the call site passes its own shared provider (the delivery row, #940)', async () => {
         const { shared, made } = sharedProvider();
         const caller = callerProvider('the check\'s transaction');
-        const seen = await JoinCallerTransaction(caller, () => WithIsolatedProvider(async (p) => p, shared));
+        const seen = await JoinCallerTransactionForTests(caller, () => WithIsolatedProvider(async (p) => p, shared));
         expect(seen).toBe(caller);
         expect(made).toHaveLength(0);
     });
@@ -119,7 +119,7 @@ describe('JoinCallerTransaction (#947): a harness that holds a transaction lets 
     it('returns the result of fn, and once fn is done WithIsolatedProvider isolates again', async () => {
         const { shared, made } = sharedProvider();
         const caller = callerProvider('the check\'s transaction');
-        await expect(JoinCallerTransaction(caller, async () => 'checked')).resolves.toBe('checked');
+        await expect(JoinCallerTransactionForTests(caller, async () => 'checked')).resolves.toBe('checked');
 
         const seen = await WithIsolatedProvider(async (p) => p, shared);
         expect(seen).toBe(made[0]);
@@ -130,7 +130,7 @@ describe('JoinCallerTransaction (#947): a harness that holds a transaction lets 
         const { shared, made } = sharedProvider();
         const caller = callerProvider('the check\'s transaction');
         await expect(
-            JoinCallerTransaction(caller, async () => {
+            JoinCallerTransactionForTests(caller, async () => {
                 throw new Error('the check failed');
             }),
         ).rejects.toThrow('the check failed');
@@ -145,9 +145,9 @@ describe('JoinCallerTransaction (#947): a harness that holds a transaction lets 
         const outer = callerProvider('outer');
         const inner = callerProvider('inner');
         const seen: unknown[] = [];
-        await JoinCallerTransaction(outer, async () => {
+        await JoinCallerTransactionForTests(outer, async () => {
             seen.push(await WithIsolatedProvider(async (p) => p, shared));
-            await JoinCallerTransaction(inner, async () => {
+            await JoinCallerTransactionForTests(inner, async () => {
                 seen.push(await WithIsolatedProvider(async (p) => p, shared));
             });
             seen.push(await WithIsolatedProvider(async (p) => p, shared));
@@ -163,7 +163,7 @@ describe('JoinCallerTransaction (#947): a harness that holds a transaction lets 
         let insideSeen: unknown;
 
         // The joined call chain is suspended mid-work while another chain, never joined, runs.
-        const inside = JoinCallerTransaction(caller, async () => {
+        const inside = JoinCallerTransactionForTests(caller, async () => {
             await gate;
             insideSeen = await WithIsolatedProvider(async (p) => p, shared);
         });
@@ -187,11 +187,11 @@ describe('JoinCallerTransaction (#947): a harness that holds a transaction lets 
         const gateB = new Promise<void>((r) => (releaseB = r));
 
         // Both chains are suspended at once, and the one that joined FIRST resumes first.
-        const first = JoinCallerTransaction(a, async () => {
+        const first = JoinCallerTransactionForTests(a, async () => {
             await gateA;
             return WithIsolatedProvider(async (p) => p, shared);
         });
-        const second = JoinCallerTransaction(b, async () => {
+        const second = JoinCallerTransactionForTests(b, async () => {
             await gateB;
             return WithIsolatedProvider(async (p) => p, shared);
         });
