@@ -165,7 +165,6 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
 
     @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
 
-    public readonly LinkEntity = LINK_ENTITY;
     public Rows: ProductGLLinkRow[] = [];
     public Loading = true;
     /** Set when the links cannot be read at all. Shown instead of an empty list, which would lie. */
