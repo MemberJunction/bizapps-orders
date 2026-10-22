@@ -37,6 +37,7 @@ import {
     type JournalEntryPreview,
     type OrdersCapturePaymentInput,
     type OrdersCapturePaymentOutput,
+    DerivePaymentStatus,
 } from '@mj-biz-apps/orders-entities';
 
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -378,6 +379,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             line.OrderHeaderID = a.OrderHeaderID;
             line.Amount = money(Number(a.Amount));
             if (a.OrderLineID) line.OrderLineID = a.OrderLineID;
+            if (a.OrderHeaderPaymentScheduleID) line.OrderHeaderPaymentScheduleID = RequireUUID(a.OrderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID');
             line.AllocatedAt = new Date();
             if (user?.ID) line.AllocatedByUserID = user.ID;
             lines.push(line);
@@ -470,9 +472,9 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             const orders = await rv.RunView<{
                 ID: string;
                 OrderNumber: string;
+                TotalGross: number;
                 AmountPaid: number;
                 Balance: number;
-                PaymentStatus: string;
             }>(
                 { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${quote(orderIDs)})`, ResultType: 'simple' },
                 user,
@@ -483,7 +485,9 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                     OrderNumber: o.OrderNumber,
                     AmountPaid: money(Number(o.AmountPaid ?? 0)),
                     Balance: money(Number(o.Balance ?? 0)),
-                    PaymentStatus: o.PaymentStatus,
+                    // Derived, not read: the order stores no payment status, only the amounts the
+                    // rollup triggers keep current. Same rule the order screens and checks use.
+                    PaymentStatus: DerivePaymentStatus(o.TotalGross, o.AmountPaid, o.Balance),
                     // Over-payment is ACCEPTED (D68). The surplus is a negative balance and becomes
                     // spendable credit — the account-credit screen depends on these existing.
                     HasCredit: Number(o.Balance ?? 0) < 0,

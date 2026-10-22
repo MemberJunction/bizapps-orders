@@ -1,0 +1,427 @@
+/**
+ * What a concession is worth, and whether a rep may grant it — pure, with no database.
+ *
+ * A CONCESSION IS VALUE GIVEN AWAY, WHATEVER FORM IT TAKES. The sales guardrails used to value one
+ * only as a percentage off price, so a concession delivered any other way computed to zero and
+ * cleared every check. Three months added to an annual term at no charge leave the price, the
+ * invoice and the discount percentage untouched, while the same value taken off the price would
+ * escalate. So every form resolves here to one currency figure, at the arrangement's own rate, and
+ * authority is judged on that figure:
+ *
+ *   Price     charged below the reference price     (reference − charged) × quantity
+ *   Scope     a product added at no charge          reference price × quantity
+ *   Duration  a term extended at no charge          term amount × added days ÷ term days
+ *   Seats     quantity added at no charge           unit price × added quantity
+ *
+ * TERMS ARE THE EXCEPTION. A change to a booked order's payment terms moves when the cash arrives, not
+ * how much, so it has no currency figure: its value is the change in days to payment, and it carries no
+ * SalesAuthority limit. It always goes to approval (`ConcessionAlwaysEscalates`), whichever way the days
+ * move, and the requester cannot decide it.
+ *
+ * AUTHORITY. A percentage cap still applies to the forms that are price reductions, as it always
+ * has. The two non-percentage limits apply to every form, and for the forms a percentage cannot
+ * express at all — Duration and Seats — an unset limit is NO authority rather than an unlimited
+ * one. Absence is not permission; it is the same rule `AuthorizeManualDiscount` applies to a user
+ * with no `SalesAuthority` row.
+ *
+ * TERM DATES. A change to a term's dates splits into a shift (start and end move together) and a
+ * change of length (`SplitTermDateChange`), and each part is routed by its own rule (#507):
+ *   extension    a concession: days added count against `MaxTermExtensionDays`
+ *   shortening   an early termination, through cancellation, and always an exception: it goes to the
+ *                ConcessionLimit tier whose thresholds it meets, else to finance review
+ *   shift        a term change, not a concession: at or above the `TermShiftReviewDays` setting it goes
+ *                to finance review, under it it goes through
+ * One measure for all three (the larger of how far either date moved) sent a shift to the concession
+ * approver and let a small shortening through, so the kinds are kept apart.
+ *
+ * SHARE OF THE ORDER. A currency limit treats a small order and a large one alike, so the same
+ * concession can be trivial on one and most of the other. `MaxConcessionPctOfContract` limits every
+ * concession on the order that is not Rejected, together, as a share of the order's net total. It
+ * is cumulative so that splitting one concession into several cannot keep each under the limit.
+ * An order with nothing to measure against (a net total of zero) breaches a limit that is set.
+ *
+ * CONNECTS TO:
+ *   CALLER: ./PromotionEngine.ts (AuthorizeManualDiscount — the absolute-value trigger)
+ *   CALLER: OrderConcessionEntityServer, OrderEntityServer (confirm gate) in CoreEntitiesServer
+ */
+import { Money } from './PricingBehavior.js';
+
+/** How the value was given. Mirrors `CK_OrderConcession_DeliveryForm`. */
+export type ConcessionDeliveryForm = 'Price' | 'Duration' | 'Scope' | 'Seats' | 'Terms' | 'Shift' | 'Shorten';
+
+/** Why it was given. Mirrors `CK_OrderConcession_ReasonCategory`. */
+export type ConcessionReasonCategory = 'Retention' | 'Referral' | 'Other';
+
+/** A line charged below its reference price, or (Scope) at nothing. */
+export interface PriceConcessionFacts {
+    Form: 'Price' | 'Scope';
+    /** What the price engine would have charged per unit. */
+    ReferenceUnitPrice: number;
+    /** What the line actually charges per unit. */
+    ChargedUnitPrice: number;
+    Quantity: number;
+}
+
+/** A term extended at no charge. */
+export interface DurationConcessionFacts {
+    Form: 'Duration';
+    /** What the term was sold for. Its amount over its length is the arrangement's own rate. */
+    TermAmount: number;
+    /** The term's length in days, inclusive of both ends. */
+    TermDays: number;
+    AddedDays: number;
+}
+
+/** Quantity added at no charge. */
+export interface SeatsConcessionFacts {
+    Form: 'Seats';
+    /** What the line charges per unit — the rate the added seats would have been sold at. */
+    UnitPrice: number;
+    AddedQuantity: number;
+}
+
+export type ConcessionFacts = PriceConcessionFacts | DurationConcessionFacts | SeatsConcessionFacts;
+
+export interface ConcessionValuation {
+    /** What was given away, in currency. Never negative. */
+    Value: number;
+    /**
+     * The value as a fraction of what it reduces, for the forms that reduce a price. Null for
+     * Duration and Seats, where nothing was reduced and a percentage has no meaning.
+     */
+    Percent: number | null;
+}
+
+/** The limits a rep holds. Mirrors the relevant `SalesAuthority` columns. */
+export interface ConcessionAuthority {
+    ID: string;
+    MaxDiscountPct: number | null;
+    MaxConcessionValue: number | null;
+    MaxTermExtensionDays: number | null;
+    MaxConcessionPctOfContract: number | null;
+}
+
+export interface ConcessionAssessment {
+    WithinAuthority: boolean;
+    /** Each limit the concession exceeds, or lacks, written for the person who has to act on it. */
+    Breaches: string[];
+}
+
+/** Days from `start` to `end`, counting both — how a term's length is measured. */
+export function InclusiveDays(start: Date, end: Date): number {
+    return Math.round((utcDay(end) - utcDay(start)) / DAY_MS) + 1;
+}
+
+/** Days an end date moves later by. Zero or negative when it does not move later. */
+export function DaysAdded(previousEnd: Date, newEnd: Date): number {
+    return Math.round((utcDay(newEnd) - utcDay(previousEnd)) / DAY_MS);
+}
+
+/** A term's start and end. */
+export interface TermDates {
+    StartDate: Date;
+    EndDate: Date;
+}
+
+/** A change to a term's dates, split into the parts that are routed differently. Whole days. */
+export interface TermDateChange {
+    /** How far start and end move together; positive is later. */
+    ShiftDays: number;
+    /** Days the term gets longer. */
+    ExtensionDays: number;
+    /** Days the term gets shorter. */
+    ShorteningDays: number;
+}
+
+/**
+ * Split a change to a term's dates. The movement both dates share, in the same direction, is the shift;
+ * what is left changes the term's length. Moving start and end 30 days later is a 30-day shift; moving
+ * the start 10 days later and the end 30 days later is a 10-day shift and a 20-day extension; moving
+ * only the start later is a shortening.
+ */
+export function SplitTermDateChange(previous: TermDates, next: TermDates): TermDateChange {
+    const start = Math.round((utcDay(next.StartDate) - utcDay(previous.StartDate)) / DAY_MS);
+    const end = Math.round((utcDay(next.EndDate) - utcDay(previous.EndDate)) / DAY_MS);
+    // Opposite directions share no movement. Zero is written out so an unmoved term is never a shift of -0.
+    const shared = Math.sign(start) === Math.sign(end) ? Math.min(Math.abs(start), Math.abs(end)) : 0;
+    const length = end - start;
+    return {
+        ShiftDays: shared === 0 ? 0 : Math.sign(start) * shared,
+        ExtensionDays: Math.max(0, length),
+        ShorteningDays: Math.max(0, -length),
+    };
+}
+
+/** How many days a change moves a term's length by, either way: what ConcessionLimit tiers are met on. */
+export function TermLengthChangeDays(change: TermDateChange): number {
+    return change.ExtensionDays + change.ShorteningDays;
+}
+
+/**
+ * Whether a shift goes to finance review. At or above `reviewDays` it does, as the other day limits
+ * read. Null means no limit is configured, and every shift is reviewed: a shift nobody in finance sees
+ * is what the review exists to prevent.
+ */
+export function ShiftNeedsFinanceReview(shiftDays: number, reviewDays: number | null): boolean {
+    const days = Math.abs(Number(shiftDays));
+    if (days === 0) return false;
+    return reviewDays == null || days >= Number(reviewDays);
+}
+
+/** Who decides a shortening: the ConcessionLimit tier it meets, or finance review below the thresholds. */
+export interface ShorteningRoute {
+    /** The tier that decides it; null when it goes to finance review. */
+    Rule: ConcessionTierRule | null;
+    /** Set when two met tiers share the highest rank; see {@link PickConcessionTier}. */
+    Conflict: string | null;
+}
+
+/**
+ * Route a shortening. It is always an exception (#507): at or above a ConcessionLimit tier's thresholds
+ * it goes to that tier's approver, and below them to finance review. A tier that sets no threshold is the
+ * floor every concession meets, so it is not a threshold the shortening reached; meeting only that tier
+ * sends it to finance review.
+ */
+export function RouteTermShortening(rules: ConcessionTierRule[], measure: ConcessionTierMeasure): ShorteningRoute {
+    const withThresholds = rules.filter(
+        (r) => r.MinConcessionValue != null || r.MinConcessionPctOfContract != null || r.MinTermExtensionDays != null,
+    );
+    const choice = PickConcessionTier(withThresholds, measure);
+    return { Rule: choice.Rule, Conflict: choice.Conflict };
+}
+
+/**
+ * Concessions as a fraction of the order they are given on. Null when the order's net total is not
+ * positive, since there is then nothing to measure a share against.
+ */
+export function ConcessionShare(totalConcessionValue: number, orderNetTotal: number): number | null {
+    const net = Number(orderNetTotal);
+    if (!(net > 0)) return null;
+    return Math.max(0, Number(totalConcessionValue)) / net;
+}
+
+/**
+ * Days to payment a change of terms moves by: positive when the customer pays later, negative when sooner.
+ * Terms with no `NetDays`, or no terms at all, are due on receipt.
+ */
+export function PaymentTermsDaysChange(priorNetDays: number | null, newNetDays: number | null): number {
+    return Math.round(Number(newNetDays ?? 0)) - Math.round(Number(priorNetDays ?? 0));
+}
+
+/**
+ * Forms that go to approval whatever the requester's authority, and that the requester cannot decide
+ * even when they hold the approving role.
+ */
+export function ConcessionAlwaysEscalates(form: ConcessionDeliveryForm): boolean {
+    return form === 'Terms';
+}
+
+/** Each level's stated `RequiresSaleApproval` for one product; null or undefined means "not set here". */
+export interface SaleApprovalFacts {
+    Product: boolean | null | undefined;
+    /** The product's own category first, then each ancestor, nearest first. */
+    Categories: (boolean | null | undefined)[];
+    Type: boolean | null | undefined;
+}
+
+/**
+ * Whether a line for this product always needs an approver's sign-off (golive #281): the most specific
+ * value stated, Product -> its category -> each ancestor category -> Product Type, else false. False is a
+ * stated value, so a product or category can opt out of what it would inherit.
+ */
+export function ResolveRequiresSaleApproval(facts: SaleApprovalFacts): boolean {
+    return [facts.Product, ...facts.Categories, facts.Type].find((v) => v != null) ?? false;
+}
+
+/** One figure for a concession, whatever form it was delivered in. */
+export function ConcessionValue(facts: ConcessionFacts): ConcessionValuation {
+    switch (facts.Form) {
+        case 'Price':
+        case 'Scope': {
+            const quantity = Math.abs(Number(facts.Quantity));
+            const reference = Math.max(0, Number(facts.ReferenceUnitPrice));
+            const charged = Math.max(0, Number(facts.ChargedUnitPrice));
+            const value = Money(Math.max(0, reference - charged) * quantity);
+            const base = reference * quantity;
+            return { Value: value, Percent: base > 0 ? value / base : null };
+        }
+        case 'Duration': {
+            const termDays = Number(facts.TermDays);
+            const added = Math.max(0, Number(facts.AddedDays));
+            if (!(termDays > 0)) return { Value: 0, Percent: null };
+            return { Value: Money((Math.max(0, Number(facts.TermAmount)) * added) / termDays), Percent: null };
+        }
+        case 'Seats':
+            return {
+                Value: Money(Math.max(0, Number(facts.UnitPrice)) * Math.max(0, Number(facts.AddedQuantity))),
+                Percent: null,
+            };
+    }
+}
+
+/**
+ * Whether a rep's authority covers a concession. Every limit is checked and every breach reported,
+ * so the person asking for approval sees all of what the approver will be deciding.
+ *
+ * `extensionDays` is the days the concession adds to a term (`SplitTermDateChange`). It is checked against
+ * `MaxTermExtensionDays` for a Duration concession, and for any other form that lengthens a term. A shift
+ * or a shortening is not a concession on the rep's authority and is routed on its own (#507).
+ *
+ * @param cumulativeShare  the order's concessions, this one included, from {@link ConcessionShare}.
+ *   Omit it where no order is measured (a manual discount); null means the order has no net total.
+ */
+export function AssessConcession(
+    form: ConcessionDeliveryForm,
+    valuation: ConcessionValuation,
+    authority: ConcessionAuthority | null,
+    extensionDays?: number | null,
+    cumulativeShare?: number | null,
+): ConcessionAssessment {
+    if (!authority) {
+        return { WithinAuthority: false, Breaches: ['the requester has no active SalesAuthority'] };
+    }
+
+    const breaches: string[] = [];
+    const reducesPrice = form === 'Price' || form === 'Scope';
+
+    if (reducesPrice && authority.MaxDiscountPct != null && valuation.Percent != null) {
+        const cap = Number(authority.MaxDiscountPct);
+        if (valuation.Percent > cap + 1e-9) {
+            breaches.push(`${pct(valuation.Percent)} off is above the ${pct(cap)} cap`);
+        }
+    }
+
+    if (authority.MaxConcessionValue != null) {
+        const cap = Number(authority.MaxConcessionValue);
+        if (valuation.Value > cap + 0.005) {
+            breaches.push(`a value of ${valuation.Value.toFixed(2)} exceeds the ${cap.toFixed(2)} concession limit`);
+        }
+    } else if (!reducesPrice) {
+        breaches.push('the SalesAuthority sets no MaxConcessionValue, so it grants no authority for this concession');
+    }
+
+    const days = Math.max(0, Number(extensionDays ?? 0));
+    if (form === 'Duration' || days > 0) {
+        if (authority.MaxTermExtensionDays == null) {
+            breaches.push('the SalesAuthority sets no MaxTermExtensionDays, so it grants no authority to extend a term');
+        } else if (days >= Number(authority.MaxTermExtensionDays)) {
+            // At or above: the limit is the length that needs approval, so it reads as the policy does.
+            breaches.push(`a ${days}-day extension is at or above the ${authority.MaxTermExtensionDays}-day limit`);
+        }
+    }
+
+    const shareBreach = ShareBreach(cumulativeShare, authority.MaxConcessionPctOfContract);
+    if (shareBreach) breaches.push(shareBreach);
+
+    return { WithinAuthority: breaches.length === 0, Breaches: breaches };
+}
+
+/**
+ * The breach, if any, of a limit on the order's concessions as a share of its net total. At or
+ * above the limit breaches, as the policy reads. Null when no limit is set or the share is under it.
+ *
+ * @param share  undefined when nothing was measured, which no limit can breach.
+ */
+export function ShareBreach(share: number | null | undefined, limit: number | null | undefined): string | null {
+    if (share === undefined || limit == null) return null;
+    const cap = Number(limit);
+    if (share === null) {
+        return `the order has no net total to measure its concessions against the ${pct(cap)} share limit`;
+    }
+    if (share >= cap - 1e-9) {
+        return `concessions on the order come to ${pct(share)} of its net total, at or above the ${pct(cap)} limit`;
+    }
+    return null;
+}
+
+const DAY_MS = 86_400_000;
+
+function utcDay(d: Date): number {
+    const date = new Date(d);
+    return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function pct(fraction: number): string {
+    return `${(fraction * 100).toFixed(1)}%`;
+}
+
+// ─── Approval tiers (#308) ─────────────────────────────────────────────────────
+
+/**
+ * An active ConcessionLimit rule read as an approval tier. Several active rules are tiers; one with
+ * no rank and no thresholds is the single rule every concession went to before tiers existed.
+ */
+export interface ConcessionTierRule {
+    ID: string;
+    Name: string;
+    ApprovalRequiredRoleID: string | null;
+    /** The tier's rank; higher is more senior. NULL ranks as 0. */
+    ConcessionTier: number | null;
+    /** Thresholds, each the counterpart of a SalesAuthority limit. Meeting any one set threshold meets the tier. */
+    MinConcessionValue: number | null;
+    MinConcessionPctOfContract: number | null;
+    MinTermExtensionDays: number | null;
+    /** The tier decides a concession routed to it even inside the requester's authority, and never the requester. */
+    RequiresDecisionWithinAuthority: boolean;
+}
+
+/** What a concession is routed on: the figures its authority is judged on. */
+export interface ConcessionTierMeasure {
+    Value: number;
+    /** The order's concessions as a share of its net total; null when it has none; undefined when not measured. */
+    CumulativeShare?: number | null;
+    /** Days the term gets longer or shorter (`TermLengthChangeDays`). A shift does not count: it is not a concession. */
+    TermLengthChangeDays?: number | null;
+}
+
+/**
+ * Whether a concession meets a tier: the tier sets no threshold, or the concession is at or above any
+ * one it sets. At or above, as the matching SalesAuthority limits read. An order with no net total meets
+ * a share threshold, as it breaches a share limit.
+ */
+export function ConcessionTierMet(rule: ConcessionTierRule, measure: ConcessionTierMeasure): boolean {
+    const value = rule.MinConcessionValue == null ? null : Number(rule.MinConcessionValue);
+    const share = rule.MinConcessionPctOfContract == null ? null : Number(rule.MinConcessionPctOfContract);
+    const days = rule.MinTermExtensionDays == null ? null : Number(rule.MinTermExtensionDays);
+    if (value == null && share == null && days == null) return true;
+
+    if (value != null && measure.Value >= value - 0.005) return true;
+    if (share != null && measure.CumulativeShare !== undefined) {
+        if (measure.CumulativeShare === null || measure.CumulativeShare >= share - 1e-9) return true;
+    }
+    // A concession that leaves the term's length alone meets no term-date threshold, even one of 0 days.
+    const changed = Math.abs(Number(measure.TermLengthChangeDays ?? 0));
+    return days != null && changed > 0 && changed >= days;
+}
+
+/** The tier a concession goes to, or why none can be chosen. */
+export interface ConcessionTierChoice {
+    /** The highest-ranked tier the concession meets; null when it meets none. */
+    Rule: ConcessionTierRule | null;
+    /** Set when two met tiers share the highest rank, so neither can be chosen. */
+    Conflict: string | null;
+}
+
+/**
+ * Route a concession to the highest-ranked active ConcessionLimit rule whose thresholds it meets. Two
+ * met rules of one rank are a configuration error and are reported rather than one picked at random:
+ * which role decides a concession must not depend on the order rows come back in.
+ */
+export function PickConcessionTier(rules: ConcessionTierRule[], measure: ConcessionTierMeasure): ConcessionTierChoice {
+    const rank = (r: ConcessionTierRule) => Number(r.ConcessionTier ?? 0);
+    const met = rules.filter((r) => ConcessionTierMet(r, measure));
+    if (met.length === 0) return { Rule: null, Conflict: null };
+
+    const top = Math.max(...met.map(rank));
+    const atTop = met.filter((r) => rank(r) === top);
+    if (atTop.length > 1) {
+        return {
+            Rule: null,
+            Conflict:
+                `The active ConcessionLimit rules ${atTop.map((r) => `'${r.Name}'`).join(', ')} share tier ${top} and this ` +
+                `concession meets each of them, so which role decides it is ambiguous. Give each active ConcessionLimit ` +
+                `rule its own ConcessionTier.`,
+        };
+    }
+    return { Rule: atTop[0], Conflict: null };
+}

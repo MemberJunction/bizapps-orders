@@ -127,8 +127,15 @@ const ALL_BUNDLES = [
     'payment-schedule',
     'payment-deposit',
     'contract-reversal',
+    'concessions',
+    'term-extension',
+    'amount-change',
+    'term-shift',
     'party-roster',
     'progress-measurement',
+    'outbound-events',
+    'billcom-rail',
+    'service-period-lock',
     'volume',
 ];
 

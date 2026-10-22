@@ -16,11 +16,15 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
-import type { OrderLineShare } from './PaymentAllocationFactory.js';
+import type { GiftCardSaleLine, OrderLineShare } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
-import type { InstalmentCashFacts } from './PaymentScheduleBehavior.js';
-import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { CompanySlices, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
+
+const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
+const STORED_VALUE_ACCOUNT_ENTITY = 'MJ_BizApps_Orders: Stored Value Accounts';
+const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 
 interface OrderLineRow {
     ID: string;
@@ -139,7 +143,13 @@ async function loadLineDimensions(
 }
 
 /**
- * Every live instalment on an order, for deciding how much of a payment settles a receivable (D91).
+ * Every live instalment on an order, for deciding how much of a payment settles a receivable (D91),
+ * divided among the product companies whose lines it bills ({@link CompanySlices}, golive #311).
+ *
+ * The rows carry the order's company, but cash is split per product company (`AllocateByCompany`)
+ * and each company books its own receivable and deposits, so each row comes back as one copy per
+ * company it covers: same `ID`, that company's piece of `Amount` and `AmountPaid`. A row that covers
+ * one company comes back unchanged apart from its `CompanyID`.
  *
  * READ THIS BEFORE THE PAYMENT LINE IS SAVED. `AmountPaid` on these rows is maintained by
  * `spRecalcOrderHeaderPaymentSchedule`, which `spRecalcOrderHeaderTotals` calls from the PaymentLine
@@ -154,24 +164,127 @@ export async function LoadInstalmentCashFacts(
     user: UserInfo,
     orderHeaderID: string,
 ): Promise<InstalmentCashFacts[]> {
+    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
     const rv = new RunView(provider);
-    const res = await rv.RunView<InstalmentCashFacts>(
+    const res = await rv.RunView<InstalmentCashFacts & { InstallmentNumber: number }>(
         {
             EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-            ExtraFilter: `OrderHeaderID='${RequireUUID(orderHeaderID, 'OrderHeaderID')}' AND Status <> 'Canceled'`,
-            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'DocumentNumber'],
+            ExtraFilter: `OrderHeaderID='${orderID}' AND Status <> 'Canceled'`,
+            Fields: ['ID', 'CompanyID', 'Status', 'Amount', 'AmountPaid', 'AmountCredited', 'DocumentNumber', 'InstallmentNumber'],
             OrderBy: 'DueDate, InstallmentNumber',
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
-    return (res?.Results ?? []).map((r) => ({
+    const rows = (res?.Results ?? []).map((r) => ({
         ID: String(r.ID),
         CompanyID: String(r.CompanyID),
         Status: String(r.Status),
         Amount: Number(r.Amount ?? 0),
         AmountPaid: Number(r.AmountPaid ?? 0),
+        AmountCredited: Number(r.AmountCredited ?? 0),
         DocumentNumber: r.DocumentNumber ? String(r.DocumentNumber) : null,
+        InstallmentNumber: Number(r.InstallmentNumber ?? 0),
     }));
+    if (!rows.length) return [];
+
+    const [header, lines] = await Promise.all([
+        rv.RunView<{ CompanyID: string }>(
+            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple', BypassCache: true },
+            user,
+        ),
+        rv.RunView<{ CompanyID: string; LineTotalGross: number }>(
+            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID='${orderID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple', BypassCache: true },
+            user,
+        ),
+    ]);
+    const orderCompanyID = header?.Results?.[0]?.CompanyID;
+    if (!header?.Success || !lines?.Success || !orderCompanyID) {
+        throw new Error(
+            `Could not read order ${orderID} to divide its payment schedule among its companies: ` +
+                `${header?.ErrorMessage ?? lines?.ErrorMessage ?? 'order not found'}`,
+        );
+    }
+    return CompanySlices(
+        rows,
+        (lines.Results ?? []).map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+        orderCompanyID,
+    ).map(({ InstallmentNumber: _number, ...fact }) => fact);
+}
+
+/**
+ * The gift card a payment was tendered with, or null when the payment's instrument is not a gift
+ * card. A gift card is a `PaymentDetail` carrying `StoredValueAccountID` — the same split
+ * `StoredValuePaymentProvider` makes. Account credit (`SourceOrderHeaderID`) and every other tender
+ * come back null.
+ */
+export async function LoadGiftCardAccountID(
+    provider: IRunViewProvider,
+    user: UserInfo,
+    paymentDetailID: string | null | undefined,
+): Promise<string | null> {
+    if (!paymentDetailID) return null;
+    const detail = await readRow<{ StoredValueAccountID: string | null }>(
+        provider, user, PAYMENT_DETAIL_ENTITY, paymentDetailID, ['StoredValueAccountID'], "the payment's instrument",
+    );
+    return detail.StoredValueAccountID || null;
+}
+
+/**
+ * The product and company of the order line that sold the gift card a payment was tendered with,
+ * or null when the instrument is not a gift card (issue #300). The redemption resolves its debit
+ * from these exactly as the sale resolved its credit.
+ *
+ * A card with no selling line (issued outside an order) walks from its issuing company alone.
+ * Throws if any read fails, so a failed read can't quietly fall back to Cash.
+ */
+export async function LoadGiftCardSale(
+    provider: IRunViewProvider,
+    user: UserInfo,
+    paymentDetailID: string | null | undefined,
+): Promise<GiftCardSaleLine | null> {
+    const cardID = await LoadGiftCardAccountID(provider, user, paymentDetailID);
+    if (!cardID) return null;
+
+    const card = await readRow<{ IssuingCompanyID: string; IssuedFromOrderLineID: string | null }>(
+        provider, user, STORED_VALUE_ACCOUNT_ENTITY, cardID, ['IssuingCompanyID', 'IssuedFromOrderLineID'], `gift card ${cardID}`,
+    );
+    if (!card.IssuedFromOrderLineID) {
+        return { CompanyID: card.IssuingCompanyID, ProductID: null, ProductCategoryID: null, ProductTypeID: null };
+    }
+
+    const line = await readRow<{ ProductID: string; CompanyID: string | null }>(
+        provider, user, ORDER_LINE_ENTITY, card.IssuedFromOrderLineID, ['ProductID', 'CompanyID'], `the line that sold gift card ${cardID}`,
+    );
+    const product = await readRow<{ CompanyID: string; ProductCategoryID: string | null; ProductTypeID: string }>(
+        provider, user, PRODUCT_ENTITY, line.ProductID, ['CompanyID', 'ProductCategoryID', 'ProductTypeID'], `the product of gift card ${cardID}`,
+    );
+    return {
+        // The sale's company rule (`OrderJournalEntryFactory`): the line's stamp, else the product's.
+        CompanyID: line.CompanyID ?? product.CompanyID,
+        ProductID: line.ProductID,
+        ProductCategoryID: product.ProductCategoryID ?? null,
+        ProductTypeID: product.ProductTypeID,
+    };
+}
+
+/** One row by ID, or throw naming `what` — booking a gift card as cash on a failed read is the #300 bug. */
+async function readRow<T>(
+    provider: IRunViewProvider,
+    user: UserInfo,
+    entityName: string,
+    id: string,
+    fields: string[],
+    what: string,
+): Promise<T> {
+    const res = await new RunView(provider).RunView<T>(
+        { EntityName: entityName, ExtraFilter: `ID='${id}'`, Fields: fields, ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    const row = res?.Success ? res.Results?.[0] : undefined;
+    if (!row) {
+        throw new Error(`Could not read ${what} to book a gift card redemption: ${res?.ErrorMessage || 'no such record'}`);
+    }
+    return row;
 }

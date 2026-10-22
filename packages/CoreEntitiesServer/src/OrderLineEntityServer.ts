@@ -43,16 +43,17 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
+    DropStaleExtendedAmount,
     HostOrderLineEditVeto,
     IsBooked,
     LineGross,
-    LoadOrdersEngine,
     NetAfterDiscount,
     OrderLineEntity,
     OrdersEngine,
     PRICE_OVERRIDE_REASON_REQUIRED,
     ResolveOrderLineEditRefusal,
     priceOverrideReasonMissing,
+    type mjBizAppsOrdersProductEntity,
     type OrderLineEditKind,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
@@ -64,22 +65,40 @@ function money(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * The columns that set WHEN the thing is delivered rather than WHAT was sold (golive#322).
+ *
+ * Kept beside the class rather than inline so the exemption below reads as a list someone may extend
+ * deliberately, and so a reader can see at a glance how short it is.
+ */
+const SERVICE_PERIOD_FIELDS: readonly string[] = ['ServicePeriodStart', 'ServicePeriodEnd'];
+
+/**
+ * Whether a field held NOTHING before this save.
+ *
+ * MEASURED against the SQL provider, not assumed: a date column that was never set arrives here as
+ * `null`, and one that carries a date arrives as a real `Date`. Those are the two shapes this rule
+ * actually decides between. `undefined` and the empty string are covered because a value can also
+ * reach a field before any row exists behind it, and because treating either as "set" would refuse
+ * the fill this exemption exists for -- the failure that costs is a blank read as a value, not the
+ * reverse. A non-empty string is NOT blank, so a provider that ever hands these columns back as ISO
+ * strings still sees a set date as set.
+ */
+function IsBlankValue(value: unknown): boolean {
+    return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends OrderLineEntity {
     /**
-     * The exact extended amount the price rule computed, when a rule priced this line.
+     * Set only by bundle expansion, on the component lines it writes (bc-aidp-next-golive#292).
      *
-     * TRANSIENT — not a column, and deliberately so. It is the pricing pass handing
-     * this line the figure it already computed exactly, rather than the line
-     * re-deriving it from a unit rate that cannot always represent it (see
-     * {@link LineGross}). Persisting it would add a column whose only job is to
-     * restate `LineTotalNet` before discount, and a second stored number that can
-     * disagree with the first is the thing worth avoiding.
-     *
-     * Null means "no rule priced this" — a hand-typed unit price, where the unit
-     * rate genuinely IS the authority — and the classic quantity × price applies.
+     * TRANSIENT: not a column. A line with a `ParentOrderLineID` is a bundle
+     * component, priced at its share of the bundle, and the concession confirm gate does not re-price
+     * it. Only expansion may make a line one: a parent set any other way would let an ordinary line
+     * skip the gate. See `refuseParentNotFromExpansion`.
      */
-    public ResolvedExtendedAmount: number | null = null;
+    public WrittenByBundleExpansion = false;
 
     /**
      * `BaseEntity` skips `ValidateAsync` unless a subclass opts in, so without this the checks
@@ -131,6 +150,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
         }
 
         this.refuseUnexplainedOverride(result);
+        this.refuseParentNotFromExpansion(result);
         await this.refuseNewLineOnBookedOrder(result);
         await this.refuseVetoedEdit(result, this.IsSaved ? 'update' : 'create');
 
@@ -165,6 +185,31 @@ export class OrderLineEntityServer extends OrderLineEntity {
     }
 
     /**
+     * A parent line is written by bundle expansion and nothing else (bc-aidp-next-golive#292).
+     *
+     * The concession confirm gate skips a line with a `ParentOrderLineID`, because a bundle component
+     * is priced at its share of the bundle rather than at a concession. Set by an API caller on an
+     * ordinary line, the same field would carry a price below the engine's past the gate. So a parent
+     * is refused unless expansion wrote it. Clearing one is allowed: the line is then checked like any
+     * other. A saved component whose parent is not being changed is not affected.
+     */
+    private refuseParentNotFromExpansion(result: ValidationResult): void {
+        if (!this.ParentOrderLineID || this.WrittenByBundleExpansion) return;
+        if (this.IsSaved && !this.FieldIsDirty('ParentOrderLineID')) return;
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'ParentOrderLineID',
+                'ParentOrderLineID is set only by bundle expansion, which writes each component of a bundle ' +
+                    'line at its share of the bundle price. Leave it empty, and sell the bundle product to get ' +
+                    'its components.',
+                this.ParentOrderLineID,
+                ValidationErrorType.Failure,
+            ),
+        );
+    }
+
+    /**
      * Ask whoever else has a stake in this line whether it may change (bc-aidp-next-golive#206 item 1).
      *
      * COVERS EDITS, NOT JUST CREATES. `refuseNewLineOnBookedOrder` above returns early on `IsSaved`,
@@ -179,6 +224,39 @@ export class OrderLineEntityServer extends OrderLineEntity {
     private async refuseVetoedEdit(result: ValidationResult, kind: OrderLineEditKind): Promise<void> {
         const veto = HostOrderLineEditVeto();
         if (!veto || !this.OrderHeaderID || this.BypassExternalEditVeto) return;
+
+        /**
+         * A SERVICE PERIOD IS NOT WHAT WAS SOLD (bc-aidp-next-golive#322).
+         *
+         * The lock's own refusal says it: "before changing what was sold". Service dates are the
+         * coverage WINDOW, not the thing — the product, quantity and price are untouched.
+         *
+         * Why it matters rather than being a nicety: `ConfirmEligibility` refuses to confirm a line
+         * whose product has `RequiresServicePeriod` until it has BOTH a start and an end. Sales can
+         * state a term START on a deal line (golive#32) and nothing else — `DealLine` carries no date
+         * columns at all — so the end can only be set on the order. With the lock covering every
+         * field, a perfectly ordinary Won deal could not have its order confirmed without reopening
+         * the deal, setting the dates and closing it again. That reopen is itself now refused for the
+         * confirm (golive#323), so the workaround was getting narrower, not wider.
+         *
+         * NARROWED TO FILLING A BLANK. Only a save whose every dirty field is one of those two columns
+         * AND was empty beforehand is exempt; correcting a date that is already set still meets the
+         * lock. `changesOnlyTheServicePeriod` below carries the reasoning.
+         *
+         * SCOPED TO AN ORDER THAT HAS NOT BOOKED. After confirm the stored period is the SETTLED term
+         * that `materializeSubscriptions` wrote, and recognition is derived from it.
+         *
+         * ⚠ THAT BOOKED BOUND IS NOT A UNIVERSAL FREEZE, and it would be easy to read it as one. It
+         * decides whether to SKIP this veto, so it only binds where the veto would have refused — a
+         * closed deal. `MayEdit` returns null for an open deal, and trigger 51003 freezes the product,
+         * company, quantity, price, discount, tax, total and ship-to columns at confirm but NOT these
+         * two, so a Confirmed order whose deal is open takes a service-period edit today. Measured
+         * against a live database with the REAL deal-lock vetoer registered, not inferred. That is
+         * pre-existing rather than introduced here; closing it means freezing these columns after
+         * confirm independently of the deal, which has to be weighed against `materializeSubscriptions`
+         * and whatever renewals and amendments legitimately rewrite.
+         */
+        if (kind === 'update' && (await this.changesOnlyTheServicePeriod())) return;
 
         const refusal = await ResolveOrderLineEditRefusal(
             veto,
@@ -306,6 +384,43 @@ export class OrderLineEntityServer extends OrderLineEntity {
     }
 
     /**
+     * Whether this update touches the service period and NOTHING else, on an order that has not booked.
+     *
+     * Deliberately "only": a save that moves the dates AND the quantity is still changing what was
+     * sold, and must meet the lock like any other. An empty dirty set returns false rather than true —
+     * a save with nothing dirty has no claim on an exemption, and reading it as one would hand every
+     * no-op edit a way past the lock.
+     *
+     * The status read is the same one `refuseNewLineOnBookedOrder` makes, through `ProviderToUse`, so
+     * inside the booking transaction it sees what the transaction has written. A status that cannot be
+     * read yields NO exemption — the lock then applies, which is the safe direction.
+     */
+    private async changesOnlyTheServicePeriod(): Promise<boolean> {
+        const dirty = this.Fields.filter((f) => f.Dirty);
+        if (dirty.length === 0) return false;
+        if (!dirty.every((f) => SERVICE_PERIOD_FIELDS.includes(f.Name))) return false;
+
+        /**
+         * FILLING A BLANK, NOT CHANGING A DATE (review on golive#322).
+         *
+         * The exemption exists because a date that was never set cannot be set anywhere else: Sales
+         * states only a term START on a deal line, so the END arrives blank and the order is the only
+         * place to put it. A date that is ALREADY set had a source, and moving it is a change to the
+         * coverage window that was agreed at the close -- which is what the lock is for.
+         *
+         * So the prior value decides. Blank before, and this is the fill the confirm is waiting on;
+         * populated before, and it meets the lock like any other edit to a closed deal's line.
+         *
+         * Read from the dirty fields themselves rather than through `GetFieldByName`, so this asks the
+         * same objects the test above filtered and cannot disagree with them about which fields moved.
+         */
+        if (!dirty.every((f) => IsBlankValue(f.OldValue))) return false;
+
+        const status = await this.storedOrderStatus();
+        return !!status && !IsBooked(status);
+    }
+
+    /**
      * The parent order's status AS STORED, not as the in-memory header holds it.
      *
      * Read through `this.ProviderToUse`, so inside the booking transaction it sees the header row the
@@ -414,12 +529,26 @@ export class OrderLineEntityServer extends OrderLineEntity {
      *
      * The status is only read when the product's company actually differs from the line's, so the
      * common save — nothing moved — costs no extra query.
+     *
+     * A PRODUCT THIS PROCESS HAS NOT CACHED IS RELOADED, NOT SKIPPED (golive #301). Returning on a
+     * cache miss left `CompanyID` null for any product written outside this process after it
+     * started, and the save failed on "Company cannot be null", which names neither the product nor
+     * the cache. `RequireProduct` reloads the catalog once and throws naming the product if it is
+     * still not there.
      */
     private async stampCompanyFromProduct(): Promise<void> {
         if (!this.ProductID) return;
-        await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
-        const product = OrdersEngine.Instance.ProductByID(this.ProductID);
-        if (!product?.CompanyID || product.CompanyID === this.CompanyID) return;
+        let product: mjBizAppsOrdersProductEntity;
+        try {
+            product = await OrdersEngine.Instance.RequireProduct(
+                this.ProductID,
+                this.ContextCurrentUser,
+                this.ProviderToUse as unknown as IMetadataProvider,
+            );
+        } catch (err) {
+            throw new Error(`Order line ${this.LineNumber}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (!product.CompanyID || product.CompanyID === this.CompanyID) return;
         if (this.IsSaved && this.CompanyID && IsBooked((await this.storedOrderStatus()) ?? '')) return;
         this.CompanyID = product.CompanyID;
     }
@@ -482,8 +611,14 @@ export class OrderLineEntityServer extends OrderLineEntity {
         // `NetAfterDiscount` is shared with the charge/tax base in OrderEntityServer. It used to be
         // computed independently in both places, and both clamped a reversal line to zero — see
         // PricingBehavior for what that cost.
+        //
+        // The gross is the rule's stored figure when there is one (#579): Flat 100.00 at quantity 3
+        // is 100.00, not 3 × 33.33. A draft line saved again keeps it; one edited past it drops it
+        // and goes back to quantity × unit price, here as well as in the pricing walk, because a
+        // line can be saved on its own without the walk running.
+        DropStaleExtendedAmount(this);
         const net = NetAfterDiscount(
-            LineGross(this.Quantity, this.UnitPrice, this.ResolvedExtendedAmount),
+            LineGross(this.Quantity, this.UnitPrice, this.ExtendedAmount),
             pct,
             this.DiscountAmount ?? 0,
         );

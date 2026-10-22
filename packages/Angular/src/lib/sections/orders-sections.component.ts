@@ -50,6 +50,7 @@ import { MJOAccountCreditPageComponent } from '../pages/payments/account-credit.
 import { MJOPaymentsDashboardPageComponent } from '../pages/payments/payments-dashboard.page';
 import { MJOOverduePageComponent } from '../pages/receivables/overdue.page';
 import { MJOBillingPageComponent } from '../pages/receivables/billing.page';
+import { MJOExternalInvoicingQueuePageComponent } from '../pages/receivables/external-invoicing-queue.page';
 import { MJOProgressPageComponent } from '../pages/receivables/progress.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
 import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
@@ -146,6 +147,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         setTimeout(async () => {
             await this.showPage(this.ActivePageId!);
             this.LoadedAt = new Date();
+            this.NotifyLoadComplete();
             // Mounting the page and stamping the timestamp both change what the
             // header and the rail render. Writing the DOM here keeps that inside
             // one pass — without it the nav's active index is read as -1 before
@@ -869,6 +871,8 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
                 return MJOOverduePageComponent;
             case 'billing':
                 return MJOBillingPageComponent;
+            case 'invoicing-queue':
+                return MJOExternalInvoicingQueuePageComponent;
             case 'progress':
                 return MJOProgressPageComponent;
             case 'aging':

@@ -2,7 +2,7 @@
  * Input for `Orders.CheckEntitlement`.
  *
  * Asked by capability Code, not SKU. PersonID is authoritative; email is a convenience
- * resolution (normalised, ambiguous-if-duplicate). AsOf is diagnostics only (historical
+ * resolution (normalised; several Persons sharing it resolve by the checkout's rule). AsOf is diagnostics only (historical
  * audit). The trust path omits it. Future values are rejected. CacheUntil is always
  * issued from wall-clock now, never from AsOf.
  *
@@ -11,7 +11,7 @@
 export interface CheckEntitlementInput {
     /** Authoritative person key. When present, Email is ignored. */
     PersonID?: string;
-    /** Convenience. Normalised; more than one matching person is treated as no grant. */
+    /** Convenience. Normalised; several matching Persons resolve to one by `ResolvePersonByEmail` (Orders history, then oldest). */
     Email?: string;
     /** `ProductEntitlement.Code` — unique per product, not globally. Convention: APP_AREA_TIER. */
     Code: string;

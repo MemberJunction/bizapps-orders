@@ -65,13 +65,14 @@
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import {
+    LineGross,
     LoadOrdersEngine,
     OrdersEngine,
     type mjBizAppsOrdersOrderHeaderEntity,
     type mjBizAppsOrdersOrderLineEntity,
 } from '@mj-biz-apps/orders-entities';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
-import { ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { ScheduleCoverage, ScheduledCompanyIDs, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import {
     BuildCreditMemoLines,
     ProratedCreditMemo,
@@ -89,6 +90,7 @@ import {
     GLAccountResolver,
     GLAccountResolutionError,
     IsRoleNotLinked,
+    RefuseUntaggedLines,
     UnbilledReceivableNotLinkedError,
     type GLRole,
 } from './GLAccountResolver.js';
@@ -197,9 +199,16 @@ function isoDate(d: Date): string {
  * non-scheduled order cannot disagree about what a line is worth.
  */
 export function LineAmounts(line: mjBizAppsOrdersOrderLineEntity): ValueEntryAmounts {
-    const grossFromRate = money(Math.abs(line.Quantity) * line.UnitPrice);
-    const pctDiscount = money(grossFromRate * (line.DiscountPct ?? 0));
-    const amountDiscount = money(Math.min(Math.max(0, grossFromRate - pctDiscount), line.DiscountAmount ?? 0));
+    // The discount is split off the same gross the line computed its total from: the rule's stored
+    // figure when a rule priced the line (#579), quantity × unit price otherwise. Off the re-multiplied
+    // rate, a Flat line's percentage discount could come out a cent away from the one the line took.
+    const listGross = LineGross(
+        Math.abs(line.Quantity),
+        line.UnitPrice,
+        line.ExtendedAmount === null || line.ExtendedAmount === undefined ? null : Math.abs(line.ExtendedAmount),
+    );
+    const pctDiscount = money(listGross * (line.DiscountPct ?? 0));
+    const amountDiscount = money(Math.min(Math.max(0, listGross - pctDiscount), line.DiscountAmount ?? 0));
     const discount = money(pctDiscount + amountDiscount);
     const net = money(Math.abs(Number(line.LineTotalNet ?? 0)));
     return {
@@ -370,6 +379,19 @@ export class OrderJournalEntryFactory {
         return out;
     }
 
+    /**
+     * The credit memo each reversing line of a scheduled origin booked, zero when it credited nothing,
+     * keyed by the REVERSING line's id (#661). The return order's balance is this, not its lines' value.
+     */
+    private readonly _creditMemoByLine = new Map<string, number>();
+
+    /** Take the credit memos this build booked, per reversing line, and clear them. */
+    public DrainCreditMemos(): Map<string, number> {
+        const out = new Map(this._creditMemoByLine);
+        this._creditMemoByLine.clear();
+        return out;
+    }
+
     constructor(
         private readonly _resolver: GLAccountResolver,
         private readonly _orderLineEntityID: string,
@@ -390,9 +412,11 @@ export class OrderJournalEntryFactory {
         /**
          * Terms created for subscription lines during this confirm, keyed by OrderLineID (D46).
          * Recognition entries anchor to the TERM — the release is caused by time passing over that
-         * coverage period. The booking entry stays on the line: that is caused by the sale.
+         * coverage period. The booking entry stays on the line: that is caused by the sale. A line
+         * that states an end past its first term has several terms, each with its own schedule
+         * (golive #338).
          */
-        termsByLine?: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
+        termsByLine?: Map<string, ReadonlyArray<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>>,
         /** Months per recognition slice, per line, from the subscription type's cadence (D45). */
         recognitionMonthsByLine?: Map<string, number>,
         /**
@@ -433,32 +457,43 @@ export class OrderJournalEntryFactory {
         const dimensions = await this.loadLineDimensions(lines.map((l) => l.ID));
         const effectiveDate = await this.effectiveDateOf(order);
         const asOf = new Date(effectiveDate);
-        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? []);
+        const lineCompanies = [...new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()))];
+        const scheduledCompanies = ScheduledCompanyIDs(scheduleRows ?? [], String(order.CompanyID ?? ''), lineCompanies);
 
         // The tie check (OrderEntityServer.verifyScheduleTies) already refuses a confirm whose
-        // schedule names a company with no lines. Assert it here anyway: if it were ever false, a
-        // company's whole value would silently never reach the ledger — no confirm entry because it
-        // is scheduled, and no invoice entry because it has no lines to slice.
-        const lineCompanies = new Set(lines.map((l) => String(l.CompanyID ?? '').toLowerCase()));
-        for (const scheduled of scheduledCompanies) {
-            if (!lineCompanies.has(scheduled)) {
+        // schedule has rows covering no lines. Assert it here anyway: if it were ever false, those
+        // rows' value would silently never reach the ledger — no confirm entry because they are
+        // scheduled, and no invoice entry because they have no lines to slice.
+        const coverage = ScheduleCoverage(scheduleRows ?? [], lineCompanies, String(order.CompanyID ?? ''));
+        const covering = new Set(coverage.values());
+        for (const row of scheduleRows ?? []) {
+            if (row.Status === 'Canceled') continue;
+            const company = String(row.CompanyID).toLowerCase();
+            if (!covering.has(company)) {
                 throw new Error(
-                    `Order ${order.OrderNumber} has payment schedule rows for company ${scheduled}, ` +
-                        `which has no lines on this order. Nothing would ever book for it.`,
+                    `Order ${order.OrderNumber} has payment schedule rows for company ${company}, ` +
+                        `which covers no lines on this order. Nothing would ever book for them.`,
                 );
             }
         }
 
         const drafts: OrderLineDraft[] = [];
         for (const line of lines) {
-            drafts.push(
-                ...(await this.buildLineDrafts(
-                    order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
-                    scheduledCompanies,
-                    termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
-                    creditMemoByLine?.get(String(line.ID)),
-                )),
+            this._resolver.TakeResolved();
+            const lineDrafts = await this.buildLineDrafts(
+                order, line, products, revRecTypes, dimensions, effectiveDate, asOf, giftCardTypeIDs,
+                scheduledCompanies,
+                termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
+                creditMemoByLine?.get(String(line.ID)),
             );
+            // A LINK THAT REQUIRES A DIMENSION IS OBEYED HERE (#417), on the finished lines, after
+            // Dimension Defaults, derived tags and the line's own tag have all been merged.
+            RefuseUntaggedLines(
+                `Order ${order.OrderNumber} line ${line.LineNumber}`,
+                this._resolver.TakeResolved(),
+                lineDrafts.flatMap((d) => d.Draft.Lines),
+            );
+            drafts.push(...lineDrafts);
         }
         return drafts;
     }
@@ -524,7 +559,7 @@ export class OrderJournalEntryFactory {
         asOf: Date,
         giftCardTypeIDs: Set<string>,
         scheduledCompanies: Set<string>,
-        term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
+        terms?: ReadonlyArray<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
         recognitionMonths?: number,
         /** Present when this line reverses a line billed by instalment (D92 §6). */
         creditMemo?: CreditMemoForLine,
@@ -731,6 +766,7 @@ export class OrderJournalEntryFactory {
         // moved by the memo alone — and the origin's BilledToDate falls by it, so the next partial
         // reversal prorates what is actually left and the totals still sum to the ledger.
         if (scheduledOrigin) {
+            this._creditMemoByLine.set(line.ID, memo);
             if (memo > 0) {
                 const origin = scheduledOrigin.OriginLineID;
                 this._billedByLine.set(origin, money((this._billedByLine.get(origin) ?? 0) - memo));
@@ -869,57 +905,63 @@ export class OrderJournalEntryFactory {
         if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
-            const schedule = this.driverFor(revRec).BuildSchedule({
-                Amount: term ? term.Amount : net,
-                BookingDate: new Date(effectiveDate),
-                ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
-                ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
-                ProductName: product.Name,
-                PeriodMonths: recognitionMonths,
-            });
-
-            // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
-            // unearned part, so only the releases still to come are mirrored; mirroring the whole
-            // term would also un-recognise the months already delivered and strand them in Deferred.
-            const releases = scheduledOrigin
-                ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
-                : schedule.Entries;
-            for (const entry of releases) {
-                const releaseLines: JELineDraft[] = [
-                    {
-                        GLAccountID: bookingCreditAccount,
-                        DebitAmount: entry.Amount,
-                        Description: `Release deferred — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                    {
-                        GLAccountID: salesAccount,
-                        CreditAmount: entry.Amount,
-                        Description: `Revenue — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                ];
-                const releaseEntryLines = mirrorIf(isReversal, releaseLines);
-                this.assertBalanced(releaseEntryLines, order, line, 'recognition');
-
-                out.push({
-                    OrderLineID: line.ID,
-                    IsBooking: false,
-                    SubscriptionTermID: term?.ID,
-                    RecognitionEntry: entry,
-                    Draft: {
-                        EffectiveDate: isoDate(entry.RecognitionDate),
-                        EntryType: 'RevenueRecognition',
-                        Description:
-                            `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
-                            `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
-                        // D46: anchor to the TERM when there is one; otherwise the line (event
-                        // products are deferred but have no subscription and therefore no term).
-                        LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
-                        LinkedRecordID: term ? term.ID : line.ID,
-                        Lines: releaseEntryLines,
-                    },
+            // A line with several terms recognizes each over its own window, at its own amount, so
+            // the months of the whole coverage are recognized evenly (golive #338).
+            const windows: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number } | undefined> =
+                terms && terms.length ? [...terms] : [undefined];
+            for (const term of windows) {
+                const schedule = this.driverFor(revRec).BuildSchedule({
+                    Amount: term ? term.Amount : net,
+                    BookingDate: new Date(effectiveDate),
+                    ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
+                    ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
+                    ProductName: product.Name,
+                    PeriodMonths: recognitionMonths,
                 });
+
+                // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
+                // unearned part, so only the releases still to come are mirrored; mirroring the whole
+                // term would also un-recognise the months already delivered and strand them in Deferred.
+                const releases = scheduledOrigin
+                    ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
+                    : schedule.Entries;
+                for (const entry of releases) {
+                    const releaseLines: JELineDraft[] = [
+                        {
+                            GLAccountID: bookingCreditAccount,
+                            DebitAmount: entry.Amount,
+                            Description: `Release deferred — ${product.Name}`,
+                            Dimensions: lineDims,
+                        },
+                        {
+                            GLAccountID: salesAccount,
+                            CreditAmount: entry.Amount,
+                            Description: `Revenue — ${product.Name}`,
+                            Dimensions: lineDims,
+                        },
+                    ];
+                    const releaseEntryLines = mirrorIf(isReversal, releaseLines);
+                    this.assertBalanced(releaseEntryLines, order, line, 'recognition');
+
+                    out.push({
+                        OrderLineID: line.ID,
+                        IsBooking: false,
+                        SubscriptionTermID: term?.ID,
+                        RecognitionEntry: entry,
+                        Draft: {
+                            EffectiveDate: isoDate(entry.RecognitionDate),
+                            EntryType: 'RevenueRecognition',
+                            Description:
+                                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
+                            // D46: anchor to the TERM when there is one; otherwise the line (event
+                            // products are deferred but have no subscription and therefore no term).
+                            LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
+                            LinkedRecordID: term ? term.ID : line.ID,
+                            Lines: releaseEntryLines,
+                        },
+                    });
+                }
             }
         }
 
@@ -1045,6 +1087,7 @@ export class OrderJournalEntryFactory {
         }
         const companyID = line.CompanyID ?? product.CompanyID;
         const asOf = new Date(measurementDate);
+        this._resolver.TakeResolved();
         const resolve = (role: (typeof GL_ROLE)[keyof typeof GL_ROLE]) =>
             this._resolver.Resolve(role, product.ID, product.ProductCategoryID, companyID, asOf, product.ProductTypeID);
         const lineDims = MergeLineDimensions(
@@ -1126,6 +1169,7 @@ export class OrderJournalEntryFactory {
             { GLAccountID: await resolve(GL_ROLE.Sales), CreditAmount: salesCredit, Description: `Revenue — ${product.Name}`, Dimensions: lineDims },
         ]);
         this.assertBalanced(lines, order, line, 'progress recognition');
+        RefuseUntaggedLines(`Order ${order.OrderNumber} line ${line.LineNumber}`, this._resolver.TakeResolved(), lines);
 
         return {
             EffectiveDate: measurementDate,
@@ -1185,7 +1229,8 @@ export class OrderJournalEntryFactory {
     }
 
     private async loadProducts(productIDs: string[]): Promise<Map<string, ProductRow>> {
-        await LoadOrdersEngine(this._provider, this._contextUser);
+        // Reloaded once on a miss (golive #301); a product still missing fails the line build by name.
+        await OrdersEngine.Instance.EnsureProducts(productIDs, this._contextUser, this._provider);
         const out = new Map<string, ProductRow>();
         for (const id of productIDs) {
             const p = OrdersEngine.Instance.ProductByID(id);
@@ -1288,7 +1333,7 @@ export class OrderJournalEntryFactory {
         line: mjBizAppsOrdersOrderLineEntity,
         companyID: string,
         asOf: Date,
-    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string }>> {
+    ): Promise<Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }>> {
         const total = money(Math.abs(line.LineTax ?? 0)) + money(Math.abs(line.ChargeAmount ?? 0));
         if (total === 0) return [];
 
@@ -1332,7 +1377,7 @@ export class OrderJournalEntryFactory {
             byType.set(parent.ChargeTypeID, cur);
         }
 
-        const out: Array<{ GLAccountID: string; Amount: number; Label: string }> = [];
+        const out: Array<{ GLAccountID: string; Amount: number; Label: string; ChargeTypeID: string }> = [];
         for (const [chargeTypeID, info] of byType) {
             if (info.Amount === 0) continue;
             const account = await this._resolver.ResolveForRecord(
@@ -1352,7 +1397,7 @@ export class OrderJournalEntryFactory {
                         `and never recorded in the ledger.`,
                 );
             }
-            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label });
+            out.push({ GLAccountID: account, Amount: info.Amount, Label: info.Label, ChargeTypeID: chargeTypeID });
         }
         return out;
     }

@@ -53,6 +53,12 @@ export interface PaymentSpec {
     BillToPersonID?: string | null;
     PaymentDetailID?: string | null;
     /**
+     * A NEW instrument written by this same save, as the payment form does (`PaymentDetailID_EnsureObject`).
+     * Its fields are set on the embedded `PaymentDetail`, so the detail row does not exist until the
+     * header saves. Use `PaymentDetailID` instead to point at a detail that is already saved.
+     */
+    NewPaymentDetail?: { CompanyID: string; PaymentTypeID: string; ReferenceNumber?: string; StoredValueAccountID?: string };
+    /**
      * The configured gateway account this payment is collected through (D19/D37). Optional, and that
      * matters: a back-office correction, an account-credit transfer or a historical import has none,
      * and the capture path skips the driver entirely rather than refusing.
@@ -97,6 +103,7 @@ export async function CreatePayment(user: UserInfo, spec: PaymentSpec): Promise<
     if (spec.BillToOrganizationID) payment.BillToOrganizationID = spec.BillToOrganizationID;
     if (spec.BillToPersonID) payment.BillToPersonID = spec.BillToPersonID;
     if (spec.PaymentDetailID) payment.PaymentDetailID = spec.PaymentDetailID;
+    if (spec.NewPaymentDetail) Object.assign(payment.PaymentDetailID_EnsureObject(), spec.NewPaymentDetail);
     if (spec.PaymentProviderID) payment.PaymentProviderID = spec.PaymentProviderID;
     if (spec.PaymentIntentID) payment.PaymentIntentID = spec.PaymentIntentID;
 

@@ -13,7 +13,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { IntegrationCheckRegistry } from '@memberjunction/testing-integration';
 import * as entityNames from '../entity-names.js';
 import {
@@ -28,6 +28,10 @@ import {
 // packages to register the code under test. Those pull in @memberjunction/server's config loader and
 // would need a full server environment for what is a pure wiring test. `index.ts` is verified by
 // reading it instead, below.
+//
+// `billcom-rail` drives the webhook through `HandleBillComWebhook`, which lives in the server
+// package; importing it loads that same config. Registration never calls it, so a stub stands in.
+vi.mock('@mj-biz-apps/orders-server', () => ({ HandleBillComWebhook: vi.fn() }));
 import '../checks/catalog-world.checks.js';
 import '../checks/order-booking.checks.js';
 import '../checks/revenue-recognition.checks.js';
@@ -67,6 +71,13 @@ import '../checks/payment-deposit.checks.js';
 import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
 import '../checks/progress-measurement.checks.js';
+import '../checks/outbound-events.checks.js';
+import '../checks/concessions.checks.js';
+import '../checks/term-extension.checks.js';
+import '../checks/amount-change.checks.js';
+import '../checks/term-shift.checks.js';
+import '../checks/billcom-rail.checks.js';
+import '../checks/service-period-lock.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -81,44 +92,51 @@ const registry = IntegrationCheckRegistry.Instance;
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
-    'order-booking': 24,
+    'order-booking': 30,
     'revenue-recognition': 8,
-    subscriptions: 15,
-    'subscription-cancellation': 10,
-    'subscription-renewal': 14,
+    subscriptions: 39,
+    'subscription-cancellation': 11,
+    'subscription-renewal': 53,
     'payments-rollups': 9,
     'payment-ledger': 12,
     intercompany: 14,
-    events: 10,
-    'line-subscriber': 12,
+    events: 12,
+    'line-subscriber': 19,
     'account-credit': 11,
-    pricing: 16,
-    promotions: 24,
-    charges: 14,
-    tax: 15,
+    pricing: 23,
+    promotions: 30,
+    charges: 15,
+    tax: 18,
     composition: 10,
-    returns: 14,
-    'gift-cards': 12,
-    bundles: 12,
+    returns: 17,
+    'gift-cards': 15,
+    bundles: 14,
     fulfillment: 12,
     'capture-payment': 12,
     'advance-order-state': 11,
-    invoicing: 15,
+    invoicing: 16,
     'order-status': 8,
-    'payment-terms': 12,
+    'payment-terms': 14,
     'arithmetic-edges': 12,
     concurrency: 6,
     volume: 13,
-    entitlements: 20,
+    entitlements: 32,
     'entitlement-read': 7,
-    'payment-providers': 12,
+    'payment-providers': 20,
     'ach-settlement': 17,
-    'embedded-payment-detail': 14,
-    'payment-schedule': 22,
+    'embedded-payment-detail': 17,
+    'payment-schedule': 23,
     'payment-deposit': 15,
-    'contract-reversal': 9,
+    'contract-reversal': 12,
     'party-roster': 2,
-    'progress-measurement': 17,
+    'progress-measurement': 25,
+    'outbound-events': 8,
+    concessions: 35,
+    'term-extension': 9,
+    'amount-change': 11,
+    'term-shift': 6,
+    'billcom-rail': 21,
+    'service-period-lock': 6,
 };
 
 /**
@@ -214,8 +232,10 @@ describe('the bundle name agrees everywhere it is written down', () => {
                 suite,
                 `'${name}' has a Test record but is not a member of the suite — 'mj test suite' ` +
                     `would go green having never dispatched it`,
-            ).toContain(`Tests.Name=${name}`);
+            ).toContain(`Tests.Name=${name}"`);
         }
+        // The closing quote matters: 'ORD-43 - Amount Change' is a prefix of a stale
+        // 'ORD-43 - Amount Change Preview' lookup, which would otherwise pass here and fail the push.
     });
 
     it('index.ts exports every bundle, so importing the package registers them all', () => {
@@ -316,6 +336,27 @@ describe('no check file escapes this test', () => {
                     `bundle nobody verifies, and the rest of this file would stay green without it`,
             ).toContain(`import '../checks/${file}';`);
         }
+    });
+});
+
+describe('no two checks share an Id', () => {
+    it('declares every literal check Id once across the check files', () => {
+        // Read from SOURCE because the registry cannot show this. `Register` keys checks by Id, so a
+        // second check with the same Id replaces the first: the registry holds one, its count matches
+        // EXPECTED_BUNDLES, and the replaced check never runs and is never reported missing.
+        const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
+        const seen = new Map<string, string[]>();
+        for (const file of readdirSync(checksDir).filter((f) => f.endsWith('.checks.ts'))) {
+            const body = readFileSync(resolve(checksDir, file), 'utf8');
+            for (const m of body.matchAll(/\bId:\s*["'`]([a-z][a-z-]*\.[A-Za-z0-9_]+)["'`]/g)) {
+                seen.set(m[1], [...(seen.get(m[1]) ?? []), file]);
+            }
+        }
+        expect(seen.size, 'the pattern finds check Ids').toBeGreaterThan(0);
+        const dupes = [...seen.entries()]
+            .filter(([, files]) => files.length > 1)
+            .map(([id, files]) => `${id} (${files.join(', ')})`);
+        expect(dupes, `check Ids declared more than once: ${dupes.join('; ')}`).toEqual([]);
     });
 });
 

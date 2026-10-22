@@ -1,0 +1,42 @@
+[
+  {
+    "_comments": [
+      "THE NIGHTLY OVERLAPPING-SUBSCRIPTION CHECK (golive #279, finance exception type 5).",
+      "",
+      "IT SHIPS DISABLED, like the other orders jobs, so a lower environment does not start filling the",
+      "finance review list the moment this metadata lands. It has no Preview parameter: a run only adds",
+      "review items, is idempotent per pair, and changes no order or subscription.",
+      "",
+      "04:00 UTC, after the 03:00 renewal pass, so an overlap a renewal created tonight is found tonight.",
+      "The exceptions are dated to the business day, not to the UTC day the job runs on.",
+      "ConcurrencyMode Skip, MissedRunPolicy RunOnce: the check is idempotent, so a catch-up is one run.",
+      "RunImmediatelyIfNeverRun false: the first run waits for somebody to enable the job.",
+      "",
+      "OwnerUserID / NotifyUserID are unset: they name people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Detect Overlapping Subscriptions (daily)",
+      "Description": "Raises a finance exception for each pair of live subscriptions for one holder whose terms overlap, for finance to confirm or correct at month end. Ships disabled: enable it once the OVERLAPPING_SUBSCRIPTION exception type is active.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 0 4 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\":\"7FD8AD28-698E-4D69-85C2-190885D5664D\",\"Params\":[]}"
+    },
+    "primaryKey": {
+      "ID": "246FF2B8-0AB6-4535-86BB-7458E4A8FBBF"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T13:40:40.142Z",
+      "checksum": "db7a75bbbd16bb4a916125537a7189357fbc4266daa028d546c0fd2d8e03c559"
+    }
+  }
+]

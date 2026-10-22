@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
- * Exercise trg_OrderHeader_AddressFrozenAfterConfirm (51015) and
- * trg_OrderLine_AddressFrozenAfterConfirm (51016) against a real database (golive #263).
+ * Exercise the address checks in trg_OrderHeader_ImmutableAfterConfirm (51015) and
+ * trg_OrderLine_ImmutableAfterConfirm (51016) against a real database (golive #263). The other
+ * checks in those triggers have their own harness: order-guard-triggers.mjs.
  *
  *   node test-harnesses/address-snapshot-triggers.mjs
  *

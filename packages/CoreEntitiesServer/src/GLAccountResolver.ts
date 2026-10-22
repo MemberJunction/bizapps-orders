@@ -16,11 +16,18 @@
  * Most specific wins; the first link found at any level ends the walk. Nothing resolves → we
  * FAIL LOUDLY (plan D5: "fail loudly" — never silently book to a default account).
  *
- * COMPANY INVARIANT (plan D6): the resolved account MUST belong to the order line's company.
- * Accounting derives a JE's company from `GLAccount.CompanyID` and takes no CompanyID in its
- * contract (their CH-2), so a mis-resolved account would silently book revenue to the wrong
+ * COMPANY INVARIANT (plan D6): the resolved account MUST belong to the order line company's
+ * LEGAL ENTITY — the company itself, unless it is a Division, Department or Branch, which uses the
+ * books of the first company above it of any other type (`AccountingEngineBase.LegalEntityFor`,
+ * golive #313). Accounting derives a JE's company from `GLAccount.CompanyID` and takes no CompanyID
+ * in its contract (their CH-2), so a mis-resolved account would silently book revenue to the wrong
  * legal entity with nothing downstream to catch it. This class is therefore the ONLY place that
- * invariant can be enforced, and it hard-blocks — cross-company mapping is refused entirely.
+ * invariant can be enforced, and it hard-blocks — mapping across legal entities is refused entirely.
+ *
+ * A Division owns no accounts, so every lookup is scoped to its legal entity's accounts, and the
+ * company-level default is looked for on the Division's own company record first, then on its legal
+ * entity's. Its entries therefore carry the legal entity's accounts, and the line's dimension tags
+ * keep its revenue separable.
  *
  * CONNECTS TO:
  *   PRIMITIVE: AccountingEngineBase.ResolveLinkedAccount (@mj-biz-apps/accounting-engine-base)
@@ -111,8 +118,11 @@ export interface ResolverEntityIDs {
  *   is optional and fall back.
  * - `CrossCompany` — an account is linked but belongs to another company (plan D6). Never
  *   recoverable: the entry would book to the wrong legal entity, so no caller may fall back on it.
+ * - `MissingDimensions` — the account's link lists dimensions a journal entry line built from it
+ *   must carry, and the line does not carry them (#417). Never recoverable by falling back: the
+ *   line would reach the ledger untagged. Raised by {@link RefuseUntaggedLines}.
  */
-export type GLAccountResolutionFailure = 'NotLinked' | 'CrossCompany';
+export type GLAccountResolutionFailure = 'NotLinked' | 'CrossCompany' | 'MissingDimensions';
 
 export class GLAccountResolutionError extends Error {
     constructor(
@@ -215,6 +225,108 @@ interface CategoryRow {
     ParentProductCategoryID: string | null;
 }
 
+/** A dimension a GL account link requires, by id and by the code a person recognises. */
+export interface RequiredDimension {
+    DimensionID: string;
+    Code: string;
+}
+
+/** What the link lookup answers: the account, its company, and what the winning link requires. */
+export interface LinkedAccountHit {
+    GLAccountID: string;
+    CompanyID: string;
+    /**
+     * The winning link's `GLAccountLinkDimension` rows: the dimensions a journal entry line built
+     * from this link must carry. Empty, or absent, when the link requires none.
+     */
+    RequiredDimensions?: RequiredDimension[];
+    /** The account as a person reads it (code and name); the id when the account is not cached. */
+    AccountLabel?: string;
+}
+
+/** One successful resolution, as {@link GLAccountResolver.TakeResolved} hands it back. */
+export interface ResolvedAccountRequirement {
+    Role: string;
+    GLAccountID: string;
+    AccountLabel: string;
+    RequiredDimensions: RequiredDimension[];
+}
+
+/** The JE line fields the dimension check reads; `JELineDraft` satisfies it. */
+export interface TaggedJELine {
+    GLAccountID: string;
+    DebitAmount?: number;
+    CreditAmount?: number;
+    Dimensions?: Array<{ DimensionID: string; DimensionValueID: string }>;
+}
+
+/**
+ * Refuse journal entry lines that lack a dimension their account's link requires (#417).
+ *
+ * A GL account link can list dimensions (`GLAccountLinkDimension`) that every journal entry line
+ * built from it must carry. Accounting takes the dimensions it is handed and checks only that each
+ * value belongs to its dimension, so a line missing one posts untagged and the gap shows only in
+ * the ledger. This is the check that stops it, run on the FINISHED lines — after Dimension
+ * Defaults, the derived tags and the line's own tag are merged — so it judges exactly what would
+ * post.
+ *
+ * ONLY LINES THAT POST ARE JUDGED. A zero-amount line is dropped before submission, and an account
+ * resolved but never written to (a fully comped line's AR) posts nothing to tag.
+ *
+ * `resolved` must cover only the resolutions made for the lines being checked: the same account can
+ * be reached through different links for different products, each with its own requirement. Where
+ * one account was reached through more than one link for the same lines, the requirements are
+ * combined.
+ *
+ * @param where names the lines for the person reading the error, e.g. `Order 1042 line 2`
+ * @throws GLAccountResolutionError with `Failure: 'MissingDimensions'`, naming each role, account
+ *   and missing dimension code
+ */
+export function RefuseUntaggedLines(
+    where: string,
+    resolved: readonly ResolvedAccountRequirement[],
+    lines: readonly TaggedJELine[],
+): void {
+    const key = (v: string) => v.trim().toLowerCase();
+    const problems: string[] = [];
+    const reported = new Set<string>();
+    let firstRole = '';
+
+    for (const line of lines) {
+        if (!Number(line.DebitAmount ?? 0) && !Number(line.CreditAmount ?? 0)) continue;
+        const reqs = resolved.filter((r) => key(r.GLAccountID) === key(line.GLAccountID));
+        if (!reqs.length) continue;
+
+        const carried = new Set((line.Dimensions ?? []).filter((d) => d.DimensionValueID).map((d) => key(d.DimensionID)));
+        const missing = new Map<string, string>();
+        for (const req of reqs) {
+            for (const dim of req.RequiredDimensions) {
+                if (!carried.has(key(dim.DimensionID))) missing.set(key(dim.DimensionID), dim.Code);
+            }
+        }
+        if (!missing.size) continue;
+
+        const roles = [...new Set(reqs.map((r) => r.Role))];
+        const signature = `${key(line.GLAccountID)}|${[...missing.keys()].sort().join(',')}`;
+        if (reported.has(signature)) continue;
+        reported.add(signature);
+        firstRole ||= roles[0];
+        problems.push(
+            `the '${roles.join("' / '")}' account ${reqs[0].AccountLabel} requires dimension ` +
+                `${[...missing.values()].join(', ')}, which this line does not carry`,
+        );
+    }
+
+    if (!problems.length) return;
+    throw new GLAccountResolutionError(
+        firstRole,
+        null,
+        'MissingDimensions',
+        `${where}: ${problems.join('; ')}. Nothing was posted. Add a Dimension Default for the ` +
+            `product (or its category, product type or company), or tag the line itself, then try again.`,
+    );
+}
+
 /**
  * Resolves role→account for products, caching the category tree for the life of one booking.
  * Construct per unit of work; do not hold across requests (the category tree is read once).
@@ -235,8 +347,38 @@ export class GLAccountResolver {
             asOf: Date,
             /** When given, only links whose ACCOUNT belongs to this company are considered (D71). */
             forCompanyID?: string,
-        ) => { GLAccountID: string; CompanyID: string } | null,
+        ) => LinkedAccountHit | null,
+        /**
+         * The company whose books a company uses (`AccountingEngineBase.LegalEntityFor`). Throws,
+         * naming the company, when a Division's setup is incomplete. Defaults to the company itself,
+         * which is every company until its profile says otherwise.
+         */
+        private readonly _legalEntityFor: (companyID: string) => string = (companyID) => companyID,
     ) {}
+
+    /** Every successful resolution since the last {@link TakeResolved}, for the dimension check. */
+    private readonly _resolved: ResolvedAccountRequirement[] = [];
+
+    /**
+     * Take what this resolver has resolved since the last call, and clear it.
+     *
+     * Feed it to {@link RefuseUntaggedLines} with the lines built from those resolutions. Take once
+     * before building a unit (an order line, an instalment line) to discard earlier units' entries,
+     * and once after: an account reached through one product's link must not lend its requirement
+     * to another product that reached the same account through a different link.
+     */
+    public TakeResolved(): ResolvedAccountRequirement[] {
+        return this._resolved.splice(0, this._resolved.length);
+    }
+
+    private record(role: string, hit: LinkedAccountHit): void {
+        this._resolved.push({
+            Role: role,
+            GLAccountID: hit.GLAccountID,
+            AccountLabel: hit.AccountLabel ?? hit.GLAccountID,
+            RequiredDimensions: hit.RequiredDimensions ?? [],
+        });
+    }
 
     /**
      * Walk product → category → ancestors → product type → company for `role`.
@@ -259,44 +401,78 @@ export class GLAccountResolver {
         asOf: Date,
         productTypeID?: string | null,
     ): Promise<string> {
-        const company = expectedCompanyID;
-        const hit =
-            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, company) : null) ??
-            (await this.resolveUpCategoryTree(role, productCategoryID, asOf, company)) ??
+        // The accounts must be the legal entity's: a Division books on its parent's books.
+        const books = this._legalEntityFor(expectedCompanyID);
+        const hit: LinkedAccountHit | null =
+            (productID ? this._resolveLink(this._entityIDs.Product, productID, role, asOf, books) : null) ??
+            (await this.resolveUpCategoryTree(role, productCategoryID, asOf, books)) ??
             (productTypeID
-                ? this._resolveLink(this._entityIDs.ProductType, productTypeID, role, asOf, company)
+                ? this._resolveLink(this._entityIDs.ProductType, productTypeID, role, asOf, books)
                 : null) ??
-            this._resolveLink(this._entityIDs.Company, expectedCompanyID, role, asOf, company);
+            this.resolveCompanyDefault(role, expectedCompanyID, books, asOf);
 
         if (!hit) {
+            const where = UUIDsEqual(books, expectedCompanyID)
+                ? `company ${expectedCompanyID}`
+                : `company ${expectedCompanyID} or its legal entity ${books}`;
             throw new GLAccountResolutionError(
                 role,
                 productID,
                 'NotLinked',
                 productID
                     ? `No GL account is linked for role '${role}'. Checked the product, its category ` +
-                      `tree, its product type, and the company default for company ${expectedCompanyID}. ` +
+                      `tree, its product type, and the company default for ${where}. ` +
                       `Link an account for this role (product, category, product type, or company) before booking.`
-                    : `No GL account is linked for role '${role}' at the company level for company ` +
-                      `${expectedCompanyID}. This role is resolved company-wide (there is no product ` +
-                      `involved), so link an account to the company before booking.`,
+                    : `No GL account is linked for role '${role}' at the company level for ${where}. ` +
+                      `This role is resolved company-wide (there is no product involved), so link an ` +
+                      `account to the company before booking.`,
             );
         }
 
-        // Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company.
-        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
-            throw new GLAccountResolutionError(
-                role,
-                productID,
-                'CrossCompany',
-                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
-                    `${hit.CompanyID}, but this books to company ${expectedCompanyID}. ` +
-                    `Cross-company account mapping is refused — the journal entry would book revenue ` +
-                    `to the wrong legal entity.`,
-            );
-        }
-
+        this.refuseOtherBooks(hit, role, productID, expectedCompanyID, books);
+        this.record(role, hit);
         return hit.GLAccountID;
+    }
+
+    /**
+     * The company default: the line company's own record, then, for a Division, its legal entity's.
+     * Both are scoped to the legal entity's accounts.
+     */
+    private resolveCompanyDefault(
+        role: GLRole,
+        companyID: string,
+        books: string,
+        asOf: Date,
+    ): LinkedAccountHit | null {
+        const own = this._resolveLink(this._entityIDs.Company, companyID, role, asOf, books);
+        if (own || UUIDsEqual(books, companyID)) return own;
+        return this._resolveLink(this._entityIDs.Company, books, role, asOf, books);
+    }
+
+    /**
+     * Plan D6 — hard block. Accounting takes no CompanyID; the account IS the company, so an account
+     * outside the line company's legal entity would post to the wrong books.
+     */
+    private refuseOtherBooks(
+        hit: { GLAccountID: string; CompanyID: string },
+        role: string,
+        productID: string | null,
+        expectedCompanyID: string,
+        books: string,
+    ): void {
+        if (UUIDsEqual(hit.CompanyID, books)) return;
+        const target = UUIDsEqual(books, expectedCompanyID)
+            ? `company ${expectedCompanyID}`
+            : `company ${expectedCompanyID}, whose legal entity is ${books}`;
+        throw new GLAccountResolutionError(
+            role,
+            productID,
+            'CrossCompany',
+            `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ` +
+                `${hit.CompanyID}, but this books to ${target}. ` +
+                `Cross-company account mapping is refused — the journal entry would book revenue ` +
+                `to the wrong legal entity.`,
+        );
     }
 
     /**
@@ -317,17 +493,11 @@ export class GLAccountResolver {
         expectedCompanyID: string,
         asOf: Date,
     ): Promise<string | null> {
-        const hit = this._resolveLink(entityID, recordID, role, asOf, expectedCompanyID);
+        const books = this._legalEntityFor(expectedCompanyID);
+        const hit = this._resolveLink(entityID, recordID, role, asOf, books);
         if (!hit) return null;
-        if (!UUIDsEqual(hit.CompanyID, expectedCompanyID)) {
-            throw new GLAccountResolutionError(
-                role,
-                recordID,
-                'CrossCompany',
-                `GL account ${hit.GLAccountID} resolved for role '${role}' belongs to company ${hit.CompanyID}, ` +
-                    `but this books to company ${expectedCompanyID}. Cross-company account mapping is refused.`,
-            );
-        }
+        this.refuseOtherBooks(hit, role, recordID, expectedCompanyID, books);
+        this.record(role, hit);
         return hit.GLAccountID;
     }
 
@@ -337,7 +507,7 @@ export class GLAccountResolver {
         startCategoryID: string | null,
         asOf: Date,
         forCompanyID: string,
-    ): Promise<{ GLAccountID: string; CompanyID: string } | null> {
+    ): Promise<LinkedAccountHit | null> {
         if (!startCategoryID) return null;
         await this.ensureCategoriesLoaded();
 

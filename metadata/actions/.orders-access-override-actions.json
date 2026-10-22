@@ -1,0 +1,49 @@
+[
+  {
+    "_comments": [
+      "THE ACCESS OVERRIDE HOOK (bizapps-orders#268). The ORDERS_ACCESS_OVERRIDE task type in",
+      "metadata/task-types/ names it as its OnComplete, OnCancel and OnReject action, so a decision made in",
+      "the Tasks inbox reaches the override. The class behind it holds no override logic and is idempotent."
+    ],
+    "fields": {
+      "Name": "Apply Access Override Decision",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Apply the outcome of an access override's approval task to the override: an approval makes it Approved and re-decides the order's grants; a rejection makes it Rejected; a task closed any other way withdraws it. Idempotent.",
+      "Type": "Custom",
+      "DriverClass": "Orders.ApplyAccessOverrideDecision",
+      "IconClass": "fa-solid fa-stamp",
+      "UserPrompt": "Apply the decision on an access override approval task.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "442E3FEA-1838-42F9-AE34-72BB4E79C833"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "TaskID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The approval task whose outcome to apply. Tasks passes it when the task closes."
+          },
+          "primaryKey": {
+            "ID": "48C2C73D-3DF0-472A-9C94-8CAF6E0CB26D"
+          },
+          "sync": {
+            "lastModified": "2026-09-29T14:02:15.070Z",
+            "checksum": "6869b3dc48c389edc3cd00873c2e9e04bc22e57a6af98283f3bf01942991c6a9"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-09-29T14:02:15.036Z",
+      "checksum": "f5ebde33a58b498598450b3771e08e8ed4b887a241c1107e7dd0f3fcdb2da016"
+    }
+  }
+]

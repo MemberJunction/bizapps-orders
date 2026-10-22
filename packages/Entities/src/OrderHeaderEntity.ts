@@ -30,15 +30,26 @@
  * @module @mj-biz-apps/orders-entities
  */
 import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, RunView, type FieldValueCollection, type IRunViewProvider } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
 import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
+import { KeptPartyOrganizationsCompanion } from './KeptPartyOrganizationsCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
+import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
+
+const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+
+/** What {@link OrderHeaderEntity.Confirm} reports beyond success. */
+export interface OrderConfirmOutcome {
+    /** Subscription lines whose stated start the confirm replaced. Empty when none moved. */
+    DisplacedTermStarts: DisplacedTermStart[];
+}
 import { OrdersEngine } from './pricing/OrdersEngine';
+import { SplitIntoSeatLines } from './attendee-seats';
 import { anyFieldIsDirty } from './field-dirty';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
 import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
@@ -50,6 +61,36 @@ import {
 } from './booked-money';
 
 /** The order editor's sections, in the order the screen shows them. */
+/**
+ * An organization {@link OrderHeaderEntity.ClearPersonParty} cleared because it was the cleared
+ * person's employer, with no record that a default put it there (#356). The form offers to undo it.
+ */
+export interface PartyOrganizationClear {
+    Field: 'BillToOrganizationID' | 'ShipToOrganizationID';
+    OrganizationID: string;
+    /** The cleared person whose employer it is. */
+    FromPersonID: string;
+}
+
+/**
+ * The sentence the order form shows after {@link OrderHeaderEntity.ClearPersonParty} clears
+ * organizations by the employer rule, e.g. "Removed Example Co as the bill-to and ship-to
+ * organization: it is the previous person's employer."
+ *
+ * @param names - Each field's organization name as it read before the clear; null when unknown.
+ */
+export function DescribeClearedEmployers(
+    cleared: readonly PartyOrganizationClear[],
+    names: Readonly<Record<PartyOrganizationClear['Field'], string | null | undefined>>,
+): string {
+    const roles = cleared.map((c) => (c.Field === 'BillToOrganizationID' ? 'bill-to' : 'ship-to'));
+    const name = cleared.map((c) => names[c.Field]).find((n) => !!n) ?? 'the organization';
+    const sameOrg = cleared.every((c) => c.OrganizationID.toLowerCase() === cleared[0].OrganizationID.toLowerCase());
+    const subject = sameOrg ? name : 'the organizations';
+    return `Removed ${subject} as the ${roles.join(' and ')} organization${sameOrg ? '' : 's'}: ` +
+        `${sameOrg ? 'it is' : 'they are'} the previous person's employer.`;
+}
+
 export type OrderEditorSection = 'header' | 'parties' | 'lines' | 'charges' | 'payment';
 
 /** Statuses that mean the order has been booked to the ledger (plan D8). */
@@ -79,6 +120,12 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * and `OrderEntityServer.createInitialPayment` turns it into a `PaymentDetail`.
      */
     public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
+
+    /**
+     * Party organizations to keep through this save's replacement of that side's person. See
+     * {@link KeepPartyOrganization}.
+     */
+    public readonly KeptPartyOrganizations = this.RegisterCompanion(new KeptPartyOrganizationsCompanion(this));
 
     public ClearInitialPaymentDetail(): void {
         this.InitialPaymentIntent.Reference = null;
@@ -241,6 +288,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.dropSavePopulatedFieldErrors(result);
         this.refuseBookedMoneyEdits(result);
         this.refuseBookedAddressEdits(result);
+        this.refuseBookedPaymentTermsEdit(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -404,6 +452,37 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     /**
+     * True only for the server's own write of an approved `Terms` concession. The server subclass overrides
+     * it; here, where any caller could set a flag, nothing is sanctioned.
+     */
+    protected PaymentTermsChangeSanctioned(): boolean {
+        return false;
+    }
+
+    /**
+     * Refuse a change to a confirmed order's payment terms (#309).
+     *
+     * Terms are a commercial concession: they move when the cash arrives without changing the price. On a
+     * confirmed order they change only through an approved `Terms` concession, which the server applies.
+     * `trg_OrderHeader_ImmutableAfterConfirm` (51018) holds the same rule at the database. `DueDate`
+     * stays correctable, and MJ record-change tracking records every change to it.
+     */
+    private refuseBookedPaymentTermsEdit(result: ValidationResult): void {
+        if (!this.MoneyLocked || !this.FieldIsDirty('PaymentTermsTypeID') || this.PaymentTermsChangeSanctioned()) return;
+        const order = `Order ${this.OrderNumber ?? ''}`.trim();
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo(
+                'PaymentTermsTypeID',
+                `${order} is confirmed, so its payment terms cannot be edited directly. ` +
+                    `Amend them with Orders.AmendArrangement; the change takes effect when its Terms concession is approved.`,
+                this.PaymentTermsTypeID,
+                ValidationErrorType.Failure,
+            ),
+        );
+    }
+
+    /**
      * Set by the server subclass while it writes the address snapshots itself, so the rule below can
      * tell its own write from a caller's. Cleared once the save returns.
      */
@@ -416,8 +495,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * sale counts in is decided by where the customer was on the date of sale. An address that is
      * set cannot be replaced or cleared. An empty one may be filled, as an empty bill-to party may
      * be filled after confirm, and the server snapshots it on that save.
-     * `trg_OrderHeader_AddressFrozenAfterConfirm` (51015) and
-     * `trg_OrderLine_AddressFrozenAfterConfirm` (51016) hold the same rule at the database; this
+     * `trg_OrderHeader_ImmutableAfterConfirm` (51015) and
+     * `trg_OrderLine_ImmutableAfterConfirm` (51016) hold the same rule at the database; this
      * says so before the round trip, against the field that was changed.
      *
      * The snapshots are the server's to write, from the Address rows, so a change to one from
@@ -595,6 +674,24 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
     }
 
     /**
+     * Splits a line of an event that requires attendee information into one quantity-1 line per
+     * seat, each with its own attendee record, and returns the added lines. Returns none when the
+     * line needs no split. See {@link SplitIntoSeatLines}.
+     *
+     * Reads `OrdersEngine`; the caller loads it.
+     */
+    public async SplitLineIntoSeats(line: OrderHeaderEntity['Lines']['Items'][number]): Promise<OrderHeaderEntity['Lines']['Items']> {
+        const engine = OrdersEngine.Instance;
+        const product = engine.ProductByID(line.ProductID);
+        const extensionEntity = engine.ProductTypeByID(product?.ProductTypeID)?.OrderLineExtensionEntity ?? null;
+        return SplitIntoSeatLines(line, async () => {
+            const seat = await this.Lines.Create();
+            if (extensionEntity) await seat.EnsureISAChild(extensionEntity);
+            return seat;
+        });
+    }
+
+    /**
      * Confirm — the irreversible step.
      *
      * Setting the status and saving IS the confirm: the server subclass sees the transition into a
@@ -604,12 +701,54 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * There is no dry run in front of it. Every rule is enforced by the engine itself, and a browser
      * has already run the tier-independent ones through `Validate()`, so the user is told about a
      * missing payer without a round trip.
+     *
+     * The confirm can move a subscription line's dates: a line for a product the subscriber already
+     * holds extends that subscription, and the new term starts the day after current coverage ends,
+     * whatever start the line stated. The confirm writes the settled term onto lines it loads
+     * itself, so the lines held here still carry the stated dates; they are reloaded to show what
+     * was stored, and the lines whose stated start moved are returned for the caller to show.
      */
-    public async Confirm(): Promise<void> {
+    public async Confirm(): Promise<OrderConfirmOutcome> {
         if (this.IsSaved && !this.Lines.IsLoaded) {
             await this.Lines.Load();
         }
         await this.SaveStatus('Confirmed', 'The order could not be confirmed.');
+
+        if (!this.IsSaved) return { DisplacedTermStarts: [] };
+        await this.Lines.Load(true);
+        return { DisplacedTermStarts: await this.LoadDisplacedTermStarts() };
+    }
+
+    /**
+     * Subscription lines of this order whose stated start the confirm replaced, read from the
+     * `Extended` events the confirm recorded. Empty for an order that is not booked.
+     *
+     * Read from the events rather than worked out on the client so every path that confirms an
+     * order (the form, fast entry, a deal close, an API call) leaves the same record, and a screen
+     * opened later shows the same notice. Lines are named from `Lines` when it is loaded.
+     */
+    public async LoadDisplacedTermStarts(): Promise<DisplacedTermStart[]> {
+        if (!this.IsSaved || !this.IsBookedOrder) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return [];
+
+        const result = await new RunView(provider).RunView<{ EventData: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_EVENT_ENTITY,
+                ExtraFilter: `RelatedOrderHeaderID='${this.ID}' AND EventType='Extended'`,
+                Fields: ['EventData'],
+                OrderBy: 'OccurredAt',
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read this order's subscription events: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        const lines = this.Lines.IsLoaded ? this.Lines.Items : [];
+        return (result.Results ?? [])
+            .map((row) => ParseDisplacedTermStart(row.EventData, lines))
+            .filter((d): d is DisplacedTermStart => d !== null);
     }
 
     /**
@@ -647,30 +786,228 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
 
     /**
-     * Person-level party defaults after a bill-to / ship-to person is set.
+     * Party fields {@link ApplyPersonPartyDefaults} filled in during this edit, keyed by field
+     * name, with the person each fill came from. It is what lets {@link ClearPersonParty} take
+     * a copy away with the person it was copied from without touching a value the user chose.
+     * In memory only: an order loaded later has no record of what was filled in.
+     */
+    private readonly partyFills = new Map<string, { Value: string; FromPersonID: string }>();
+
+    /**
+     * Party fields {@link ClearPersonParty} emptied because they were copies of the person being
+     * cleared, or that person's employer. They count as filled-in, not as emptied by the user, so
+     * a replacement person can bring their own copy and employer. A person field leaves the set
+     * when the user changes it directly.
+     */
+    private readonly partyCopiesCleared = new Set<string>();
+
+    /**
+     * Person-level party defaults after the user sets a bill-to / ship-to person on the form.
      *
-     * 1. Copy person bill-to ↔ ship-to when the other side's person is null.
+     * 1. Copy the person to the other side when that side's person is null.
      * 2. For each side that has a person and no org, stamp the longest-lasting
      *    active Employee relationship's organization.
      *
-     * Does not overwrite an org the user already chose. Skips booked/voided orders.
+     * Does not overwrite an org the user already chose, and does not refill a party field the
+     * user emptied in this save. Skips booked/voided orders. The server save runs
+     * {@link ApplySavePartyDefaults} instead.
      */
-    public async ApplyPersonPartyDefaults(changed: 'BillTo' | 'ShipTo' | 'Both' = 'Both'): Promise<void> {
+    public async ApplyPersonPartyDefaults(changed: 'BillTo' | 'ShipTo'): Promise<void> {
         if (this.Status === 'Voided' || this.IsBookedOrder) return;
 
-        if (changed === 'BillTo' || changed === 'Both') {
-            if (this.BillToPersonID && !this.ShipToPersonID) {
-                this.ShipToPersonID = this.BillToPersonID;
-            }
-        }
-        if (changed === 'ShipTo' || changed === 'Both') {
-            if (this.ShipToPersonID && !this.BillToPersonID) {
-                this.BillToPersonID = this.ShipToPersonID;
-            }
-        }
+        this.copyPersonAcross(changed, changed === 'BillTo' ? 'ShipTo' : 'BillTo');
 
         await this.AutoPopulateEmployerOrganization('BillTo');
         await this.AutoPopulateEmployerOrganization('ShipTo');
+    }
+
+    /**
+     * Party defaults the server save applies, for writers that do not go through the form —
+     * checkout, renewals, a guest claim, an API call.
+     *
+     * Works only from what changed in this save, so a party field emptied by an earlier save is
+     * never refilled by a later one:
+     *
+     * 1. Copy the bill-to person into an empty ship-to when the bill-to person changed in this
+     *    save. Never the other way: an empty ship-to already means "same as bill to", while
+     *    filling an empty bill-to would change who pays.
+     * 2. On a side whose person this save replaces with another, clear the organization when it
+     *    is the previous person's employer, by the rule {@link ClearPersonParty} applies on the
+     *    form (#542). Not when this save also sets that organization, and not when the writer
+     *    kept it ({@link KeepPartyOrganization}).
+     * 3. Stamp the employer organization only on a side whose person changed in this save.
+     *
+     * Skips booked/voided orders.
+     */
+    public async ApplySavePartyDefaults(): Promise<void> {
+        if (this.Status === 'Voided' || this.IsBookedOrder) return;
+
+        if (this.isChangedThisSave('BillToPersonID')) this.copyPersonAcross('BillTo', 'ShipTo');
+
+        for (const side of ['BillTo', 'ShipTo'] as const) await this.clearReplacedPersonsEmployer(side);
+
+        for (const side of ['BillTo', 'ShipTo'] as const) {
+            if (this.isChangedThisSave(`${side}PersonID`)) await this.AutoPopulateEmployerOrganization(side);
+        }
+    }
+
+    /**
+     * Keep `field`'s organization through this save's replacement of that side's person, so the
+     * server save does not clear it as the previous person's employer. For writers that replace a
+     * person and mean the organization to stay; an organization set in the same save needs no call.
+     */
+    public KeepPartyOrganization(field: PartyOrganizationClear['Field']): void {
+        const previous = this.GetFieldByName(field === 'BillToOrganizationID' ? 'BillToPersonID' : 'ShipToPersonID')?.OldValue as string | null;
+        if (previous) this.KeptPartyOrganizations.Keep(field, previous);
+    }
+
+    /**
+     * When this save replaces `side`'s person with another, clear that side's organization if it is
+     * the previous person's employer, so the stamp that follows brings the new person's. Leaves an
+     * organization this save sets, one the writer kept, and a side whose person is only cleared:
+     * an order may bill an organization with no person.
+     */
+    private async clearReplacedPersonsEmployer(side: 'BillTo' | 'ShipTo'): Promise<void> {
+        const person = this.GetFieldByName(`${side}PersonID`);
+        const previous = person?.OldValue as string | null | undefined;
+        if (!person?.Dirty || !person.Value || !previous || UUIDsEqual(person.Value as string, previous)) return;
+
+        const orgField = `${side}OrganizationID` as PartyOrganizationClear['Field'];
+        const org = this.GetFieldByName(orgField);
+        if (!org || org.Dirty || !org.Value) return;
+        if (this.KeptPartyOrganizations.IsKept(orgField, previous)) return;
+
+        const employer = await this.employerOf(previous);
+        if (!employer || !UUIDsEqual(org.Value as string, employer)) return;
+        this.clearPartyField(orgField);
+        // A copy taken away, not the writer's empty: the new person's employer may fill it.
+        this.partyCopiesCleared.add(orgField);
+    }
+
+    /** Copy `from`'s person into `to` when `to` has none and the user did not empty it in this save. */
+    private copyPersonAcross(from: 'BillTo' | 'ShipTo', to: 'BillTo' | 'ShipTo'): void {
+        const personID = this.Get(`${from}PersonID`) as string | null;
+        const toField = `${to}PersonID`;
+        if (!personID || this.Get(toField) || this.wasClearedThisSave(toField)) return;
+        this.Set(toField, personID);
+        this.partyFills.set(toField, { Value: personID, FromPersonID: personID });
+        this.partyCopiesCleared.delete(toField);
+    }
+
+    /**
+     * Undo the party defaults a person brought with them, after that person is cleared from
+     * one side or replaced on it.
+     *
+     * - The other side's person clears when it was copied from `clearedPersonID` in this edit.
+     *   Clearing the bill-to also clears a ship-to that still holds the same person, since the
+     *   ship-to follows the bill-to even on an order loaded later.
+     * - An organization clears when it was stamped from `clearedPersonID`'s employer in this
+     *   edit and that side no longer holds the person.
+     * - On an order loaded later nothing records which organization was stamped, so an
+     *   organization also clears when it is `clearedPersonID`'s employer, by the same rule that
+     *   stamps it (#356), on the cleared side and on a side whose person was cleared with it.
+     *   That rule cannot tell a stamped employer from one the user chose to keep, so these
+     *   clears are returned for the form to offer an undo.
+     *
+     * Other values the user set are not touched. Skips booked/voided orders.
+     *
+     * @returns The organizations cleared by the employer rule alone, for {@link RestorePartyOrganizations}.
+     */
+    public async ClearPersonParty(side: 'BillTo' | 'ShipTo', clearedPersonID: string | null): Promise<PartyOrganizationClear[]> {
+        // The user changed this side directly, so an empty value here is now theirs.
+        this.partyCopiesCleared.delete(`${side}PersonID`);
+        if (!clearedPersonID || this.Status === 'Voided' || this.IsBookedOrder) return [];
+
+        const other = side === 'BillTo' ? 'ShipTo' : 'BillTo';
+        const otherPersonField = `${other}PersonID`;
+        // When the cleared person was itself the copy, the other side holds the original.
+        const clearedFill = this.partyFills.get(`${side}PersonID`);
+        const clearedWasCopy = !!clearedFill && UUIDsEqual(clearedFill.Value, clearedPersonID);
+        this.partyFills.delete(`${side}PersonID`);
+        const otherIsCopy = !clearedWasCopy && (this.wasFilledFrom(otherPersonField, clearedPersonID)
+            || (side === 'BillTo' && UUIDsEqual(this.Get(otherPersonField) as string | null, clearedPersonID)));
+        if (otherIsCopy) {
+            this.clearPartyField(otherPersonField);
+            this.partyCopiesCleared.add(otherPersonField);
+        }
+
+        const cleared: PartyOrganizationClear[] = [];
+        let employer: string | null | undefined;
+        for (const s of ['BillTo', 'ShipTo'] as const) {
+            const orgField = `${s}OrganizationID` as PartyOrganizationClear['Field'];
+            const personNow = this.Get(`${s}PersonID`) as string | null;
+            if (UUIDsEqual(personNow, clearedPersonID)) continue;
+            if (this.wasFilledFrom(orgField, clearedPersonID)) {
+                this.clearPartyField(orgField);
+                this.partyCopiesCleared.add(orgField);
+                continue;
+            }
+            // A side now held by someone else keeps its organization: it may be theirs.
+            const org = this.Get(orgField) as string | null;
+            if (!org || (s !== side && personNow)) continue;
+            if (employer === undefined) employer = await this.employerOf(clearedPersonID);
+            if (employer && UUIDsEqual(org, employer)) {
+                this.clearPartyField(orgField);
+                this.partyCopiesCleared.add(orgField);
+                cleared.push({ Field: orgField, OrganizationID: org, FromPersonID: clearedPersonID });
+            }
+        }
+        return cleared;
+    }
+
+    /**
+     * Put back organizations {@link ClearPersonParty} cleared by the employer rule, replacing any
+     * employer a new person brought since. They then count as the user's, and the server save
+     * keeps them through the replacement ({@link KeptPartyOrganizations}).
+     */
+    public RestorePartyOrganizations(cleared: readonly PartyOrganizationClear[]): void {
+        for (const c of cleared) {
+            this.Set(c.Field, c.OrganizationID);
+            this.partyFills.delete(c.Field);
+            this.partyCopiesCleared.delete(c.Field);
+            this.KeptPartyOrganizations.Keep(c.Field, c.FromPersonID);
+        }
+    }
+
+    /** `personID`'s employer by the rule {@link AutoPopulateEmployerOrganization} stamps with, or null. */
+    private async employerOf(personID: string): Promise<string | null> {
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return null;
+        const asOf = AsDateValue(this.OrderDate) ?? TodayAsDateValue();
+        return ResolveActiveEmployerOrganization(provider, personID, asOf, this.ContextCurrentUser);
+    }
+
+    /** True when `field` still holds the value {@link ApplyPersonPartyDefaults} filled in from `personID`. */
+    private wasFilledFrom(field: string, personID: string): boolean {
+        const fill = this.partyFills.get(field);
+        return !!fill && UUIDsEqual(fill.FromPersonID, personID) && UUIDsEqual(this.Get(field) as string | null, fill.Value);
+    }
+
+    /** Empty a party foreign key and forget that it was filled in. */
+    private clearPartyField(idField: string): void {
+        this.Set(idField, null);
+        this.partyFills.delete(idField);
+    }
+
+    /**
+     * True when `field` had a value on disk and this save empties it — the user cleared it. A
+     * copy {@link ClearPersonParty} took away does not count.
+     */
+    private wasClearedThisSave(field: string): boolean {
+        if (this.partyCopiesCleared.has(field)) return false;
+        const f = this.GetFieldByName(field);
+        return !!f && f.Dirty && f.Value == null && f.OldValue != null;
+    }
+
+    /**
+     * True when this save sets `field` to a value it did not have on disk. On a new record every
+     * value counts: MemberJunction records the first value set on a fresh field as its old value,
+     * so `Dirty` is false for a field set once before the first save.
+     */
+    private isChangedThisSave(field: string): boolean {
+        const f = this.GetFieldByName(field);
+        if (!f || f.Value == null) return false;
+        return f.Dirty || !this.IsSaved;
     }
 
     /**
@@ -686,6 +1023,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
         const currentOrgID = partyRole === 'ShipTo' ? this.ShipToOrganizationID : this.BillToOrganizationID;
         if (currentOrgID) return currentOrgID;
+        if (this.wasClearedThisSave(`${partyRole}OrganizationID`)) return null;
 
         const provider = this.ProviderToUse as unknown as IRunViewProvider;
         if (!provider) return null;
@@ -697,10 +1035,10 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         const orgId = await ResolveActiveEmployerOrganization(provider, targetPersonID, asOf, this.ContextCurrentUser);
         if (!orgId) return null;
 
-        if (partyRole === 'ShipTo') {
-            if (!this.ShipToOrganizationID) this.ShipToOrganizationID = orgId;
-        } else if (!this.BillToOrganizationID) {
-            this.BillToOrganizationID = orgId;
+        const orgField = `${partyRole}OrganizationID`;
+        if (!this.Get(orgField)) {
+            this.Set(orgField, orgId);
+            this.partyFills.set(orgField, { Value: orgId, FromPersonID: targetPersonID });
         }
         return orgId;
     }

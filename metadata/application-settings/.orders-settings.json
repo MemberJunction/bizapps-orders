@@ -38,6 +38,168 @@
     },
     "primaryKey": {
       "ID": "022F8FA8-D623-47BA-B9AE-FF41010868BF"
+    },
+    "sync": {
+      "lastModified": "2026-09-28T21:24:27.258Z",
+      "checksum": "8a306a2d3c2df73af1018c43dde117f7fe4a8afa7b1f673d586ce3468d45888f"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "AmendmentAcknowledgmentRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders acknowledge an amendment to a booked arrangement (bc-aidp-next-golive#221). When an amendment takes effect, every active holder except the user who requested it is assigned a task carrying the old and new recognition schedules; the re-cut counts as confirmed when that task is completed. Empty refuses every amendment, so no change to a booked arrangement takes effect without someone in accounting being told."
+    },
+    "primaryKey": {
+      "ID": "D67B8DE9-CE80-4FC7-B249-46F8D3152B10"
+    },
+    "sync": {
+      "lastModified": "2026-10-03T21:46:46.032Z",
+      "checksum": "d0f72038c563324563c232d66780903b0b7d0d45d97906c57a1a9984228ab322"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "AccessOverrideFallbackApproverRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders approve an access override (WaivePaymentHold or DeferCutoff) when the requester is the order company's ApprovalCFOUserID, who approves every other request (bizapps-orders#360). Every active holder except the requester is assigned the approval task. Empty refuses such a request, since nobody may approve their own override."
+    },
+    "primaryKey": {
+      "ID": "9DF2DE35-392B-47E2-AA91-9C948AF72DD3"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "TermShiftReviewDays",
+      "Value": "",
+      "Comments": "Days a booked term's start and end may move together before the change goes to the finance acknowledgment role for review (bizapps-orders#507). A shift is a term change, not a sales concession, so it is one figure for the app rather than a SalesAuthority limit. At or above the value, the shift is reviewed; under it, it goes through. Empty, or anything other than a whole number, reviews every shift."
+    },
+    "primaryKey": {
+      "ID": "586B7952-62A9-4121-A71B-F6EBC4A967BE"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RenewalChargeRetryDays",
+      "Value": "3,7,11",
+      "Comments": "Comma-separated days after a renewal order's due day on which the daily renewal-charge job tries a declined renewal card again (#289). The due day is always the first attempt; with the default the card is tried on the due day and 3, 7 and 11 days after it. Attempts stop at the access cutoff (RenewalAccessCutoffDaysPastDue) whatever this lists. Empty means no retries. A value with any entry that is not a whole number of 1 or more falls back to 3,7,11."
+    },
+    "primaryKey": {
+      "ID": "790CAE86-689A-4984-AF17-3200CE72D36B"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RenewalPaymentLinkBaseUrl",
+      "Value": "",
+      "Comments": "The public address of this host's checkout edge, for example https://shop.example.org/checkout (the OrdersCheckoutEdge RootPath on the public host name). When a renewal card is first declined, or the bank asks the absent buyer to authenticate, the buyer is e-mailed a link built on it, <address>/renew/<token>, that pays the renewal with a new card (#289). Empty sends no link. The link-signing secret is not a setting: the server reads it from the ORDERS_RENEWAL_LINK_SECRET environment variable."
+    },
+    "primaryKey": {
+      "ID": "C3CA57CB-0C3B-450E-A294-25500B9BF3F0"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "ConcessionSelfApprovalEscalation",
+      "Value": "",
+      "Comments": "Who decides a concession requested by a holder of its ConcessionLimit rule's role, who would otherwise approve their own (bc-aidp-next-golive#320). Comma-separated targets, tried in order: CompanyCFO (the order company's ApprovalCFOUserID in its Accounting Company Profile) or the NAME of an MJ role (its active holders). The first target that names an active user other than the requester is assigned the approval task, and only those users can decide it; the requester never is. When no target names anyone else, the concession is refused. Empty keeps the previous behavior: the requester's own concession is approved on save."
+    },
+    "primaryKey": {
+      "ID": "5C169A56-0698-49DA-A2FC-C8D1DF64FFA3"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewTriggers",
+      "Value": "",
+      "Comments": "Comma-separated order review triggers that are switched on (bc-aidp-next-golive#320 section 5): any of NoDeal, PriceVariance, ChangedAfterDealOrReview, OverThreshold, ServicePeriod. A Direct order that hits one cannot confirm until the reviewer role approves its review task. Empty switches review off, so orders confirm as before. An entry that names no trigger refuses every reviewed confirm until it is corrected."
+    },
+    "primaryKey": {
+      "ID": "E0E1703F-EB3F-4FE9-A5EA-B7472F433FC2"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewTotalThreshold",
+      "Value": "",
+      "Comments": "The net order total (lines after discounts, before tax and charges) above which the OverThreshold trigger sends an order to review, for example 25000. Required when OverThreshold is listed in OrderReviewTriggers; empty or unreadable then refuses reviewed confirms."
+    },
+    "primaryKey": {
+      "ID": "CFABC5D2-09D9-467D-BEFB-028F41189DAC"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewServiceStartMonths",
+      "Value": "13",
+      "Comments": "The ServicePeriod trigger sends an order to review when a line's service starts more than this many months after today. A whole number of 1 or more; anything else falls back to 13."
+    },
+    "primaryKey": {
+      "ID": "6673D85A-ADA7-4ADA-AE6C-27FBD084CE0C"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewLineTermMonths",
+      "Value": "12",
+      "Comments": "The ServicePeriod trigger sends an order to review when a line's service period covers more than this many months (a twelve-month term runs Jan 1 to Dec 31). A whole number of 1 or more; anything else falls back to 12."
+    },
+    "primaryKey": {
+      "ID": "E243DD22-299B-4372-802D-B8B201B20D95"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewerRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders review an order that hit a review trigger. Each is assigned the ORDERS_ORDER_REVIEW task through the active Person linked to their user; the order's creator never is. Required once any trigger is switched on."
+    },
+    "primaryKey": {
+      "ID": "88AF29A8-A9DD-4AF3-A178-D683A59EA83B"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "OrderReviewEscalationRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders review an order that a holder of OrderReviewerRole created, since nobody reviews their own order. Empty refuses such an order's confirm."
+    },
+    "primaryKey": {
+      "ID": "CF0D3A86-3836-42D2-AFC3-69A7CD78480B"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RefundApprovalThreshold",
+      "Value": "",
+      "Comments": "The amount at or below which a refund may be issued by a holder of the RefundApproverRole role (bc-aidp-next-golive#320). Above it, only the receiving company's approver (ApprovalCFOUserID on its Accounting Company Profile) may issue the refund. The amount compared is what the payment's refunds come to with the new one, so a refund cannot be split to pass. It is counted per payment, not per order: an order settled by three 400 payments under a 500 threshold can be fully refunded, 1200, by a role holder taking one payment at a time. The company approver may always refund; a deactivated approver counts as none. A refund the payment gateway already made, booked by the system user, is exempt. Empty, the default, switches the check off. A value that is not a number of 0 or more is read as 0, so every refund needs the company approver."
+    },
+    "primaryKey": {
+      "ID": "AC8E2930-5EEB-4490-986A-37E7C1B30FD8"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RefundApproverRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose holders may issue a refund at or below RefundApprovalThreshold (bc-aidp-next-golive#320). Empty, only the receiving company's approver may refund while the threshold is set. A name that is not a role refuses every refund that needs it, with a message naming this setting."
+    },
+    "primaryKey": {
+      "ID": "495299D2-D154-4F0B-9C9B-A4A3D7CDE526"
     }
   }
 ]

@@ -54,6 +54,7 @@ function lineWith(dimensionID: string | null, dimensionValueID: string | null) {
         Fields: [],
         Quantity: 1,
         ReversesOrderLineID: null,
+        ParentOrderLineID: null,
         LineNumber: 1,
         DimensionID: dimensionID,
         DimensionValueID: dimensionValueID,

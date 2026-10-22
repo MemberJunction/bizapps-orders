@@ -21,6 +21,7 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
             { sectionKey: 'financialAndAccounting', sectionName: 'Financial and Accounting', isExpanded: true },
             { sectionKey: 'catalogLifecycle', sectionName: 'Catalog Lifecycle', isExpanded: true },
             { sectionKey: 'subscriptionAndEntitlements', sectionName: 'Subscription and Entitlements', isExpanded: true },
+            { sectionKey: 'pricingAndOrdering', sectionName: 'Pricing and Ordering', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductEntitlements', sectionName: 'Entitlements', isExpanded: false },
@@ -31,7 +32,8 @@ export class mjBizAppsOrdersProductFormComponent extends BaseFormComponent {
             { sectionKey: 'mJBizAppsOrdersOrderLinesProductID', sectionName: 'Order Lines (Product)', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersSubscriptions', sectionName: 'Subscriptions', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersProductPrices', sectionName: 'Product Prices', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersPromotionTargets', sectionName: 'Promotion Targets', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersPaymentProviderPrices', sectionName: 'Payment Provider Prices', isExpanded: false }
         ]);
     }
 }

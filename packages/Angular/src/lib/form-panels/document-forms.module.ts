@@ -1,17 +1,23 @@
 import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
-import { MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJComboboxComponent } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import { RelatedChipsComponent } from '@mj-biz-apps/common-ng';
 import { CustomFormsModule } from '../custom/custom-forms.module';
+import { ExternalInvoicesPanel } from './external-invoices.panel';
+import { ChargeExceptionOrderPanel } from './charge-exception-order.panel';
 import { PaymentHeaderPanel } from './payment-header.panel';
 import { PaymentJournalsPanel } from './payment-journals.panel';
 import { SubscriptionHeaderPanel } from './subscription-header.panel';
+import { MJOSubscriptionCancelComponent } from './subscription-cancel.component';
+import { MJOMoneyPipe } from '../panels/money-format';
 import { SubscriptionTermsPanel } from './subscription-terms.panel';
 import { SubscriptionRevRecPanel } from './subscription-revrec.panel';
 import { SubscriptionTermHeaderPanel } from './subscription-term-header.panel';
 import { SubscriptionTermRevRecPanel } from './subscription-term-revrec.panel';
+import { OrderAccessOverridesPanel } from './order-access-overrides.panel';
 import { ProductHeaderPanel } from './product-header.panel';
 import {
     ProductAccountingPanel,
@@ -64,10 +70,12 @@ const PANELS = [
     PaymentHeaderPanel,
     PaymentJournalsPanel,
     SubscriptionHeaderPanel,
+    MJOSubscriptionCancelComponent,
     SubscriptionTermsPanel,
     SubscriptionRevRecPanel,
     SubscriptionTermHeaderPanel,
     SubscriptionTermRevRecPanel,
+    OrderAccessOverridesPanel,
     ProductHeaderPanel,
     ProductPricingPanel,
     ProductPromosPanel,
@@ -101,6 +109,8 @@ const PANELS = [
     StoredValueOverviewPanel,
     PaymentProviderOverviewPanel,
     PaymentTypeOverviewPanel,
+    ExternalInvoicesPanel,
+    ChargeExceptionOrderPanel,
 ];
 
 /**
@@ -111,8 +121,12 @@ const PANELS = [
     declarations: [...PANELS],
     imports: [
         CommonModule,
+        FormsModule,
         BaseFormsModule,
+        MJAlertComponent,
         MJButtonDirective,
+        MJOMoneyPipe,
+        MJComboboxComponent,
         RelatedChipsComponent,
         DeferredRevenueWaterfallModule,
         CustomFormsModule,

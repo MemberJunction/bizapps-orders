@@ -1,4 +1,4 @@
-import type { CheckoutSubmissionEvent } from './checkout-widget.component';
+import type { CheckoutAppliedPromotion, CheckoutSubmissionEvent } from './checkout-widget.component';
 
 /**
  * Maps a widget submission onto the anonymous draft line.
@@ -46,8 +46,77 @@ export function stripeConfirmAlreadyCollected(error: { code?: string; message?: 
     return msg.includes('already succeeded') || msg.includes('already been confirmed') || msg.includes('already been captured');
 }
 
-export function formatStripeError(error: { code?: string; message?: string } | null | undefined): string {
-    const msg = error?.message?.trim() || 'Payment failed.';
-    const code = error?.code?.trim();
-    return code && !msg.includes(code) ? `${msg} (${code})` : msg;
+/**
+ * Buyer-facing text for a failed Stripe confirmation: the gateway's message only.
+ * The error code is for support, and the host logs the full error to the console.
+ */
+export function formatStripeError(error: { message?: string } | null | undefined): string {
+    return error?.message?.trim() || 'Payment failed.';
+}
+
+/**
+ * Detail of the `checkout-already-subscribed` DOM event. Product ids and where the refusal came
+ * from — never the buyer's e-mail or any other personal data, because the host page may forward
+ * the event to analytics.
+ */
+export interface CheckoutAlreadySubscribedDetail {
+    productIds: string[];
+    source: 'built-in' | 'host';
+}
+
+/**
+ * The event detail when a checkout response refused the purchase because the buyer already
+ * subscribes, or null for any other response.
+ */
+export function alreadySubscribedDetail(response: Record<string, unknown> | null | undefined): CheckoutAlreadySubscribedDetail | null {
+    const refusal = response?.['Refusal'];
+    if (!refusal || typeof refusal !== 'object') {
+        return null;
+    }
+    const { Code, Source, ProductIDs } = refusal as { Code?: unknown; Source?: unknown; ProductIDs?: unknown };
+    if (Code !== 'AlreadySubscribed') {
+        return null;
+    }
+    return {
+        productIds: Array.isArray(ProductIDs) ? ProductIDs.filter((id): id is string => typeof id === 'string') : [],
+        source: Source === 'host' ? 'host' : 'built-in',
+    };
+}
+
+/**
+ * The notice to stop on before payment when a member token earned no discount (#324), or null to
+ * carry on. Shown once: the buyer sees why the member price is not used, and submitting again pays
+ * the price shown — the standard rate, or the buyer's own code when it was priced instead (#358).
+ * A buyer with no token, or whose discount applied, never stops here.
+ */
+export function memberDiscountNotice(draft: Record<string, unknown> | null | undefined, alreadyShown: boolean): string | null {
+    const message = draft?.['MemberDiscountMessage'];
+    if (alreadyShown || typeof message !== 'string' || !message) {
+        return null;
+    }
+    const applied = draft?.['AppliedPromotionCodes'];
+    const typedCodePriced = Array.isArray(applied) && applied.length > 0;
+    return typedCodePriced ? `${message} Submit again to continue.` : `${message} Submit again to continue at the standard rate.`;
+}
+
+/**
+ * The member discount a draft was priced with (#919), for the widget's discount line and total, or
+ * null when the draft failed or the token earned nothing. The code is the one the server applied
+ * (empty when it named none); the discount and total are in major units, at the quantity priced.
+ */
+export function memberDiscountFromDraft(
+    draft: Record<string, unknown> | null | undefined,
+    quantity: number
+): CheckoutAppliedPromotion | null {
+    if (!draft?.['Success'] || draft['MemberDiscountApplied'] !== true) {
+        return null;
+    }
+    const applied = draft['AppliedPromotionCodes'];
+    const code = Array.isArray(applied) && typeof applied[0] === 'string' ? applied[0] : '';
+    return {
+        code,
+        discount: Number(draft['Discount'] ?? 0),
+        total: Number(draft['TotalGross'] ?? 0),
+        quantity,
+    };
 }

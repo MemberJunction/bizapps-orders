@@ -4,6 +4,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 import { RunView, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { ToISODate, TodayAsDateValue } from './date-cell';
 
 export type ActiveEmployerRow = {
     ToOrganizationID: string;
@@ -23,17 +24,22 @@ function durationMs(row: ActiveEmployerRow, asOf: Date): number {
  * Active Employee relationship to an organization as of `asOf`.
  * Zero matches → null. One match → that org. Several → the longest-lasting
  * (earliest StartDate / longest span; a null StartDate counts as longest).
+ *
+ * `asOf` is a calendar day carried as midnight UTC (`AsDateValue` / `TodayAsDateValue`), compared
+ * against the `date` columns `StartDate` / `EndDate`. The default is today on the BUSINESS calendar —
+ * `new Date()` read back by its UTC day was already tomorrow for the whole American evening.
  */
 export async function ResolveActiveEmployerOrganization(
     provider: IRunViewProvider,
     personID: string,
-    asOf: Date = new Date(),
+    asOf: Date = TodayAsDateValue(),
     user?: UserInfo,
 ): Promise<string | null> {
     if (!personID || !provider) return null;
 
     const rv = new RunView(provider);
-    const date = asOf.toISOString().slice(0, 10);
+    const date = ToISODate(asOf);
+    if (!date) return null;
 
     try {
         const res = await rv.RunView<ActiveEmployerRow>(
@@ -66,7 +72,7 @@ export async function ResolveActiveEmployerOrganization(
 export async function ResolveSingularActiveEmployerOrganization(
     provider: IRunViewProvider,
     personID: string,
-    asOf: Date = new Date(),
+    asOf: Date = TodayAsDateValue(),
     user?: UserInfo,
 ): Promise<string | null> {
     return ResolveActiveEmployerOrganization(provider, personID, asOf, user);

@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { mjBizAppsOrdersEntitlementGrantEntity } from '@mj-biz-apps/orders-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import {  } from "@memberjunction/ng-entity-viewer"
 
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Entitlement Grants') // Tell MemberJunction about this class
 @Component({
@@ -20,7 +21,8 @@ export class mjBizAppsOrdersEntitlementGrantFormComponent extends BaseFormCompon
             { sectionKey: 'grantTerms', sectionName: 'Grant Terms', isExpanded: true },
             { sectionKey: 'statusAndLifecycle', sectionName: 'Status and Lifecycle', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersOutboundEvents', sectionName: 'Outbound Events', isExpanded: false }
         ]);
     }
 }

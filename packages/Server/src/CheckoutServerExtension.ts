@@ -30,8 +30,11 @@
  *    static code, served to every origin (`setElementAssetCorsHeaders`).
  * 4. TURNSTILE — when the widget sets `requireTurnstile`, session initialization and
  *    completion demand a Cloudflare Turnstile token, verified server-side against the secret
- *    named by `Settings.TurnstileSecretEnvVar`. Required-but-unconfigured verifies as a 503,
- *    never as a silent pass.
+ *    named by `Settings.TurnstileSecretEnvVar`. A missing or refused token answers 403 with
+ *    `TurnstileRequired` and the public `Settings.TurnstileSiteKey`: the configuration only
+ *    reaches the browser in the reply to initialize, so this refusal is how a client learns
+ *    which challenge to render before retrying. Required-but-unconfigured (no secret or no
+ *    site key) verifies as a 503, never as a silent pass.
  *
  * ═══ THE PRICING-INPUT RULE HOLDS AT THIS BOUNDARY ═══
  * The request bodies accepted here carry NO amount, price, product resolution or provider.
@@ -52,7 +55,7 @@
  */
 import BodyParser from 'body-parser';
 import type { Application, NextFunction, Request, Response } from 'express';
-import { LogError, LogStatus, RunView, UserInfo } from '@memberjunction/core';
+import { LogError, LogStatus, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { UserCache } from '@memberjunction/generic-database-provider';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -61,14 +64,28 @@ import {
     type ExtensionInitResult,
     type ServerExtensionConfig,
 } from '@memberjunction/server-extensions-core';
-import { CheckoutSessionService, EscapeText, type CheckoutLineInput } from '@mj-biz-apps/orders-core-entities-server';
-import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
+import {
+    CheckoutSessionService,
+    DispatchOutboundDeliveries,
+    EnsureCheckoutAccount,
+    EscapeText,
+    GetCheckoutAccessStatus,
+    LoadRenewalPaymentOrder,
+    RenewalPaymentLinkSecret,
+    RenewalPaymentTokenMessage,
+    VerifyRenewalPaymentToken,
+    HasCheckoutAccountStep,
+    SetCheckoutAccountPassword,
+    type CheckoutBillingAddressInput,
+    type CheckoutLineInput,
+} from '@mj-biz-apps/orders-core-entities-server';
+import type { CheckoutAnswersInput, CheckoutChoicesInput, CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { randomBytes } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp } from './checkout-edge-policy.js';
+import { isValidCheckoutSlug, originAllowed as originIsAllowed, resolveClientIp, resolveIpCountryHeader } from './checkout-edge-policy.js';
 import { checkoutHostSecurityHeaders, renderCheckoutHostErrorPage, renderCheckoutHostPage } from './checkout-host-page.js';
 
 /** Checkout request bodies are small; anything larger is abuse, not commerce. */
@@ -133,6 +150,12 @@ interface CheckoutEdgeSettings {
     ServiceUserEmail?: string;
     /** Name of the env var holding the Cloudflare Turnstile secret. */
     TurnstileSecretEnvVar?: string;
+    /**
+     * Public Cloudflare Turnstile site key paired with that secret. Sent to the browser on a
+     * Turnstile refusal so the checkout clients can render the challenge. One per edge, because
+     * Cloudflare accepts a token only under the secret of the site key that issued it.
+     */
+    TurnstileSiteKey?: string;
     /** Rate-limit window in ms (default 60000). */
     RateLimitWindowMs?: number;
     /** Max requests per window per client key (default 30). */
@@ -148,6 +171,14 @@ interface CheckoutEdgeSettings {
      * client-supplied and must not key rate limits or Turnstile.
      */
     TrustedProxyHops?: number;
+    /**
+     * Name of the request header carrying the buyer's IP country as a two-letter code, set by the
+     * proxy or CDN in front of MJAPI (for example `CF-IPCountry`). A completed checkout records it
+     * on the order as VAT location evidence (#480); the IP address itself is never stored. Unset
+     * (the default) records no IP country. Name only a header the proxy sets and overwrites on
+     * every request: anything else is whatever the browser sent.
+     */
+    IPCountryHeader?: string;
     /**
      * When true, GET `{root}/element/main.js.map` is registered. Default off —
      * the map is original TypeScript on an unauthenticated payment route.
@@ -168,6 +199,28 @@ export function shouldServeCheckoutElementSourceMap(
         return false;
     }
     return env.CHECKOUT_ELEMENT_SOURCEMAP === '1';
+}
+
+/**
+ * Which Turnstile edge setting is missing, or null when the site key and the secret both resolve.
+ * The startup warning and the per-request 503 share it, so they always name the same gap.
+ */
+export function turnstileConfigGap(
+    settings: Pick<CheckoutEdgeSettings, 'TurnstileSecretEnvVar' | 'TurnstileSiteKey'>,
+    env: NodeJS.ProcessEnv = process.env,
+): string | null {
+    const envVar = settings.TurnstileSecretEnvVar;
+    if (!envVar || !env[envVar]) {
+        return `Settings.TurnstileSecretEnvVar${envVar ? `='${envVar}' resolved empty` : ' unset'}`;
+    }
+    return settings.TurnstileSiteKey?.trim() ? null : 'Settings.TurnstileSiteKey unset';
+}
+
+/** The body of a Turnstile refusal; a 403 also names the challenge the client must render. */
+interface TurnstileRefusal {
+    ErrorMessage: string;
+    TurnstileRequired?: true;
+    TurnstileSiteKey?: string;
 }
 
 interface WidgetEdgePolicy {
@@ -209,6 +262,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
             [`${root}/draft`, (req, res) => this.handleDraft(req, res)],
             [`${root}/payment-intent`, (req, res) => this.handlePaymentIntent(req, res)],
             [`${root}/complete`, (req, res) => this.handleComplete(req, res)],
+            [`${root}/account`, (req, res) => this.handleAccount(req, res)],
+            [`${root}/account/password`, (req, res) => this.handleAccountPassword(req, res)],
+            [`${root}/access-status`, (req, res) => this.handleAccessStatus(req, res)],
         ];
 
         for (const [path, handler] of routes) {
@@ -221,14 +277,25 @@ export class CheckoutServerExtension extends BaseServerExtension {
             });
         }
 
+        // The update-card link (#289). Registered before `/:slug`, which it would otherwise never reach
+        // past: `renew` is a reserved slug, and the token is the second path segment.
+        const renewPath = `${root}/renew/:token`;
+        app.get(renewPath, (req: Request, res: Response) => this.handleGetRenewal(req, res));
+
         const hostPath = `${root}/:slug`;
         app.get(hostPath, (req: Request, res: Response) => this.handleGetHost(req, res));
 
-        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete}`);
+        LogStatus(`[Orders] Checkout edge registered at GET ${hostPath} and POST ${root}/{initialize,draft,payment-intent,complete,account,account/password,access-status}`);
+        // Widgets can't be read here (the user cache may not be loaded yet), so this names the gap
+        // for every widget: one that sets requireTurnstile answers 503 until the edge is configured.
+        const turnstileGap = turnstileConfigGap(this.settings);
+        if (turnstileGap) {
+            LogStatus(`[OrdersCheckoutEdge] Turnstile is not configured (${turnstileGap}): a widget that sets requireTurnstile answers 503 on initialize and complete. Setup: docs/checkout-widget-and-session-architecture.md#turnstile`);
+        }
         return {
             Success: true,
             Message: 'Orders anonymous checkout edge mounted (public GET host, rate-limited POSTs, origin-gated, optional Turnstile).',
-            RegisteredRoutes: [...routes.map(([path]) => `POST ${path}`), `GET ${hostPath}`],
+            RegisteredRoutes: [...routes.map(([path]) => `POST ${path}`), `GET ${renewPath}`, `GET ${hostPath}`],
         };
     }
 
@@ -255,7 +322,10 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const ip = this.clientIp(req);
             const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
             const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
-            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|${slug}`)) {
+            // The success screen polls access-status for up to a minute. It counts in its own window
+            // so that polling cannot use up the per-slug allowance the buyer's password step needs.
+            const bucket = req.path?.endsWith('/access-status') ? `${ip}|access-status|${slug}` : `${ip}|${slug}`;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(bucket)) {
                 res.status(429).json({ Success: false, ErrorMessage: 'Too many requests — slow down and try again shortly.' });
                 return;
             }
@@ -275,8 +345,8 @@ export class CheckoutServerExtension extends BaseServerExtension {
             if (policy.requireTurnstile && this.isTurnstileGatedPath(req)) {
                 const turnstileFailure = await this.verifyTurnstile(req);
                 if (turnstileFailure) {
-                    const [status, message] = turnstileFailure;
-                    res.status(status).json({ Success: false, ErrorMessage: message });
+                    const [status, body] = turnstileFailure;
+                    res.status(status).json({ Success: false, ...body });
                     return;
                 }
             }
@@ -401,20 +471,30 @@ export class CheckoutServerExtension extends BaseServerExtension {
     }
 
     /**
-     * Verifies the Cloudflare Turnstile token. Returns null on success, or [status, message]
-     * on refusal. A widget that REQUIRES Turnstile with no secret configured fails closed
-     * with a 503 — a silent pass would advertise protection that is not running.
+     * Verifies the Cloudflare Turnstile token. Returns null on success, or [status, body] on
+     * refusal. A widget that REQUIRES Turnstile with no secret or site key configured fails
+     * closed with a 503 — a silent pass would advertise protection that is not running, and
+     * without a site key no client can render the challenge. A missing or refused token is a
+     * 403 carrying the site key, which the clients answer by rendering the challenge and
+     * retrying once with a fresh token (tokens are single-use).
      */
-    private async verifyTurnstile(req: Request): Promise<[number, string] | null> {
+    private async verifyTurnstile(req: Request): Promise<[number, TurnstileRefusal] | null> {
+        const missing = turnstileConfigGap(this.settings);
         const envVar = this.settings.TurnstileSecretEnvVar;
         const secret = envVar ? process.env[envVar] : undefined;
-        if (!secret) {
-            LogError(`[OrdersCheckoutEdge] Widget requires Turnstile but no secret is configured (Settings.TurnstileSecretEnvVar${envVar ? `='${envVar}' resolved empty` : ' unset'})`);
-            return [503, 'Checkout verification is not configured — contact the site operator.'];
+        const siteKey = this.settings.TurnstileSiteKey?.trim();
+        // turnstileConfigGap already rules out an empty secret or site key; the extra checks narrow the types.
+        if (missing || !secret || !siteKey) {
+            LogError(`[OrdersCheckoutEdge] Widget requires Turnstile but it is not configured (${missing})`);
+            return [503, { ErrorMessage: 'Checkout verification is not configured — contact the site operator.' }];
         }
+        const challenge = (message: string): [number, TurnstileRefusal] => [
+            403,
+            { ErrorMessage: message, TurnstileRequired: true, TurnstileSiteKey: siteKey },
+        ];
         const token = typeof req.body?.turnstileToken === 'string' ? req.body.turnstileToken : '';
         if (!token) {
-            return [403, 'Human verification is required for this checkout.'];
+            return challenge('Human verification is required for this checkout.');
         }
         try {
             const params = new URLSearchParams({ secret, response: token, remoteip: this.clientIp(req) });
@@ -424,11 +504,11 @@ export class CheckoutServerExtension extends BaseServerExtension {
                 body: params.toString(),
             });
             const outcome = (await verifyRes.json()) as { success?: boolean };
-            return outcome?.success === true ? null : [403, 'Human verification failed — please try again.'];
+            return outcome?.success === true ? null : challenge('Human verification failed — please try again.');
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             LogError(`[OrdersCheckoutEdge] Turnstile verification call failed: ${msg}`);
-            return [503, 'Human verification is temporarily unavailable — please try again.'];
+            return [503, { ErrorMessage: 'Human verification is temporarily unavailable — please try again.' }];
         }
     }
 
@@ -481,6 +561,83 @@ export class CheckoutServerExtension extends BaseServerExtension {
                 this.sendHostError(res, 500, 'Checkout is temporarily unavailable.');
             }
         }
+    }
+
+    /**
+     * `GET /checkout/renew/:token` — the update-card link (#289). The token is checked here so an
+     * expired or forged link gets a page that says so; the page then hosts the element in its
+     * pay-renewal mode, inside the distribution of the widget that sold the subscription, so that
+     * widget's origin and Turnstile policy apply to every call it makes. The token is checked again,
+     * with the order, by `/initialize`. `Referrer-Policy: no-referrer` keeps it out of other sites'
+     * logs.
+     */
+    private async handleGetRenewal(req: Request, res: Response): Promise<void> {
+        try {
+            const token = typeof req.params?.token === 'string' ? req.params.token.trim() : '';
+            const ip = this.clientIp(req);
+            const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
+            if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|get|renew`)) {
+                this.sendHostError(res, 429, 'Too many requests — slow down and try again shortly.');
+                return;
+            }
+            const user = this.resolveActingUser();
+            if (!user) {
+                this.sendHostError(res, 503, 'Checkout is not ready — please try again shortly.');
+                return;
+            }
+            const check = await VerifyRenewalPaymentToken(token, RenewalPaymentLinkSecret());
+            if (check.Valid === false) {
+                this.sendHostError(res, check.Reason === 'not-configured' ? 503 : 404, RenewalPaymentTokenMessage(check.Reason));
+                return;
+            }
+            const elementDir = resolveCheckoutElementDir();
+            if (!elementDir) {
+                this.sendHostError(res, 503, 'Renewal payment is not available on this server.');
+                return;
+            }
+            const slug = await this.renewalDistributionSlug(check.OrderID, user);
+            if (!slug) {
+                this.sendHostError(res, 404, 'This renewal cannot be paid here.');
+                return;
+            }
+            const nonce = randomBytes(16).toString('base64url');
+            this.applyHostSecurityHeaders(res, nonce);
+            res
+                .status(200)
+                .setHeader('Content-Type', 'text/html; charset=utf-8')
+                .send(renderCheckoutHostPage({
+                    slug,
+                    apiRoot: this.rootPath,
+                    cspNonce: nonce,
+                    elementSrc: `${this.rootPath}/element/main.js`,
+                    renewalToken: token,
+                    pageTitle: 'Renew your subscription',
+                }));
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            LogError(`[OrdersCheckoutEdge] Unhandled error on GET renewal: ${msg}`);
+            if (!res.headersSent) {
+                this.sendHostError(res, 500, 'Checkout is temporarily unavailable.');
+            }
+        }
+    }
+
+    /** An active distribution slug of the widget that sold the renewed subscription, or null. */
+    private async renewalDistributionSlug(orderID: string, user: UserInfo): Promise<string | null> {
+        const provider = Metadata.Provider;
+        if (!provider) return null;
+        const order = await LoadRenewalPaymentOrder(orderID, provider, user);
+        if (!order?.SourceCheckoutWidgetID) return null;
+        const rv = new RunView();
+        const dist = await rv.RunView<{ Slug: string }>({
+            EntityName: CHECKOUT_DISTRIBUTION_ENTITY,
+            Fields: ['Slug'],
+            ExtraFilter: `CheckoutWidgetID = '${EscapeText(order.SourceCheckoutWidgetID)}' AND Status = 'Active'`,
+            MaxRows: 1,
+            ResultType: 'simple',
+        }, user);
+        const slug = dist?.Results?.[0]?.Slug ?? '';
+        return isValidCheckoutSlug(slug) ? slug : null;
     }
 
     private sendHostError(res: Response, status: number, message: string): void {
@@ -537,8 +694,13 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const renewalToken = typeof req.body?.renewalToken === 'string' ? req.body.renewalToken.trim() : '';
         this.maybeReapExpiredSessions(user);
-        const result = await CheckoutSessionService.InitializeSession(slug, clientSessionKey, user);
+        // The update-card link opens a session on the renewal order its token names (#289). The slug
+        // still went through the edge gates above; the token is the credential for the order.
+        const result = renewalToken
+            ? await CheckoutSessionService.InitializeRenewalPaymentSession(renewalToken, clientSessionKey, user)
+            : await CheckoutSessionService.InitializeSession(slug, clientSessionKey, user);
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -552,7 +714,23 @@ export class CheckoutServerExtension extends BaseServerExtension {
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
         const email = typeof req.body?.email === 'string' ? req.body.email : '';
         const lines = Array.isArray(req.body?.lines) ? (req.body.lines as CheckoutLineInput[]) : [];
-        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, user);
+        // Shape-checked by the service (CheckBillingLocation); anything that is not an object is absent.
+        const rawAddress: unknown = req.body?.billingAddress;
+        const billingAddress = rawAddress && typeof rawAddress === 'object' && !Array.isArray(rawAddress)
+            ? (rawAddress as CheckoutBillingAddressInput)
+            : null;
+        // Passed through unchecked: UpdateDraft keeps the attribution only when it reads as one, and
+        // judges the answers and choices against the widget's own questions and choice groups. The
+        // member token is verified server-side by the widget's registered resolver and never stored (#324).
+        // Promotion codes are passed as sent; the service normalises and bounds them
+        // (NormalizeCheckoutPromotionCodes).
+        const result = await CheckoutSessionService.UpdateDraft(sessionId, clientSessionKey, email, lines, billingAddress, user, {
+            Attribution: req.body?.attribution,
+            Answers: req.body?.answers as CheckoutAnswersInput | undefined,
+            Choices: req.body?.choices as CheckoutChoicesInput | undefined,
+            PromotionCodes: req.body?.promotionCodes,
+            MemberToken: typeof req.body?.memberToken === 'string' ? req.body.memberToken : undefined,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -564,7 +742,9 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user);
+        const result = await CheckoutSessionService.OpenPaymentIntentForSession(sessionId, clientSessionKey, user, {
+            AutoRenewConsent: req.body?.autoRenewConsent === true,
+        });
         res.status(result.Success ? 200 : 400).json(result);
     }
 
@@ -576,8 +756,63 @@ export class CheckoutServerExtension extends BaseServerExtension {
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
         const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
-        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user);
-        res.status(result.Success ? 200 : 409).json(result);
+        const result = await CheckoutSessionService.CompleteCheckout(sessionId, clientSessionKey, user, {
+            IPCountry: resolveIpCountryHeader(req, this.settings.IPCountryHeader),
+        });
+        if (!result.Success) {
+            res.status(409).json(result);
+            return;
+        }
+        // The confirmation is answered without waiting on the host's identity provider. When a host
+        // registered an account step, the widget asks for it next through /checkout/account.
+        res.status(200).json(HasCheckoutAccountStep() ? { ...result, AccountStep: true } : result);
+        // The order's outbound events are committed by now; send them rather than waiting for the
+        // minute job, so a buyer's access is not a minute late. After the response, and never
+        // awaited by it: a slow or failing consumer must not hold the buyer's checkout.
+        if (result.OrderID) {
+            DispatchOutboundDeliveries({ OrderHeaderID: result.OrderID }, Metadata.Provider, user).catch((err) =>
+                LogError(`[OrdersCheckoutEdge] outbound dispatch after session ${sessionId} completed failed: ${err instanceof Error ? err.message : String(err)}`)
+            );
+        }
+    }
+
+    /** The account step's outcome for a completed checkout, asking the host again only after a failure. */
+    private async handleAccount(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await EnsureCheckoutAccount(sessionId, clientSessionKey, user);
+        res.status(result.Success ? 200 : 400).json(result);
+    }
+
+    /** Sets the password of the account this checkout created. The password is passed on, never logged. */
+    private async handleAccountPassword(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await SetCheckoutAccountPassword(sessionId, clientSessionKey, req.body?.password, user);
+        res.status(result.Success ? 200 : 400).json(result);
+    }
+
+    /** Whether a completed checkout's access is ready, for the success screen to poll (#325). */
+    private async handleAccessStatus(req: Request, res: Response): Promise<void> {
+        const user = this.resolveActingUser();
+        if (!user) {
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            return;
+        }
+        const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
+        const clientSessionKey = typeof req.body?.clientSessionKey === 'string' ? req.body.clientSessionKey : '';
+        const result = await GetCheckoutAccessStatus(sessionId, clientSessionKey, user);
+        res.status(result.Success ? 200 : 400).json(result);
     }
 
     // ─── Infrastructure ──────────────────────────────────────────────────────

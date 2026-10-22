@@ -1,6 +1,6 @@
 # The Entitlement Read Contract
 
-**Status:** implemented on `an-dev-13` (`Orders.CheckEntitlement`, `Orders.ListEntitlements`, cancel-path grant honesty). LXP consumption still later.  
+**Status:** Shipped 2026-08-27. `Orders.CheckEntitlement` and `Orders.ListEntitlements` implement §4.3 and the first call in §4.4 (`packages/CoreEntitiesServer/src/CheckEntitlementOperation.ts`, `ListEntitlementsOperation.ts`, `EntitlementRead.ts`; checks in `packages/IntegrationTests/src/checks/entitlement-read.checks.ts`), with the later changes for #287, #404 and #269. Not built: `ViaOrganizationID` (§4.3), `Orders.ListBeneficiaries` (§4.4) and team inheritance (§4.5); v1 is person grants only (§6). It stays in `plans/` because source files and a released migration cite this path.  
 **Source:** design input 2026-08-26 (static reading of `origin/next` @ `ef6bd85`); built 2026-08-27.  
 **Supplements:** [`archive/bizapps-orders-master.md`](archive/bizapps-orders-master.md) D27, §13, §16, §18.
 
@@ -37,7 +37,7 @@ D27 settled the **write** side and deferred the **read** side to a poll:
 
 > Downstream apps poll grants (MJ Scheduled Job + Record-Set-Processing…) — no bespoke webhook/notification system. Provisioning/enforcement engine is later.
 
-§13 froze grant **shape** pending Ethan's answers to Robert's four questions: grant granularity · lifecycle coupling · **read contract** · team beneficiary semantics.
+§13 froze grant **shape** pending the LXP team's answers to four questions: grant granularity · lifecycle coupling · **read contract** · team beneficiary semantics.
 
 §18 still lists “entitlement read/notify poll” as outstanding. The poll was never built. This is not fighting a bad decision; it is opening a decision that was left until a real consumer existed. **The LXP is that consumer.**
 
@@ -60,6 +60,8 @@ No sweeper, no scheduled job, no write of `Status='Expired'` outside an unrelate
 **Access must be evaluated, never read off a flag:**
 
 `Status = 'Active'` **and** now within `[ValidFrom, ValidTo]` **and**, where `SubscriptionTermID` is set, that term still current.
+
+The payment rule adds two clauses, because in each case a day passes with nothing written: **and**, for an `OnFirstPayment` renewal, its order is not `RenewalAccessCutoffDaysPastDue` or more days past due, unless an approved `DeferCutoff` override runs through that day (#287); **and**, for an `OnPaidInFull` grant or an `OnFirstPayment` new purchase whose order has an approved `WaivePaymentHold` that has run out, the order has been paid as that rule requires, unless another approved waiver still runs through that day (#404). The read path decides both with the same `DecideGrantStatus` and `ApplyAccessOverrides` the nightly `EnforcePaymentGatedAccess` job uses, on the business-time-zone day, so access ends on the cutoff day or the day after the waiver's last day rather than when the job next writes the suspension. It only tightens: it can deny an `Active` row, never grant or restore one — a payment lifts a suspension when it is written. If the payment facts cannot be read, the answer fails closed. Payment facts are read as they stand now, so a historical `AsOf` is measured on today's balance.
 
 Put that evaluation in **exactly one place**. If the LXP polls raw grant rows, it must reimplement all of it — a second “is this in force” will drift from the first. That failure has already bitten this codebase twice.
 
@@ -110,6 +112,8 @@ out: {
   ValidTo?:            datetimeoffset,
   Quantity?:           decimal,          // ResourceQuantity — seats
   GrantID?:            uuid,             // audit handle
+  SuspensionReason?:   'AwaitingPayment' | 'PastDue' | 'AwaitingActivation' | null,  // only with Decision 'Suspended' (#269)
+  AccessCutoffDate?:   date,             // only while access holds on a past-due renewal: last day before the cutoff (#269)
   ViaOrganizationID?:  uuid,             // if granted through a team/site licence
   EvaluatedAt:         datetimeoffset,
   CacheUntil:          datetimeoffset    // min(effective ValidTo, wall-clock now + 60s); never from AsOf
@@ -117,6 +121,8 @@ out: {
 ```
 
 `Decision` earns its place: “expired on the 30th”, “your subscription lapsed”, and “you never bought this” are three screens and three support conversations. Orders already stores `ValidityModeApplied` and `RevocationReason` so this is answerable — surface them rather than collapsing everything to `false`.
+
+`Suspended` covers three holds, and `SuspensionReason` says which: a new purchase waiting for its first payment (`AwaitingPayment`), a renewal cut off past due (`PastDue`), or a grant waiting for activation (`AwaitingActivation`). `Decision` stays `Suspended` for all three, so a caller matching on it is unaffected. `AccessCutoffDate` lets a product warn before a past-due renewal loses access; it is the date the overdue worklist shows as `GraceThroughDate`, or an approved cutoff deferral's last day when that is later. `ListEntitlements` items carry the same two fields.
 
 ### 4.4 Companions
 
@@ -127,7 +133,7 @@ Bulk list is an optimisation for UI and sync, **not** a second source of truth f
 
 ### 4.5 Open question that blocks a full spec — team beneficiaries
 
-`BeneficiaryOrganizationID` exists, so a site licence is expressible — but nothing says whether John Doe inherits access from his organisation's grant, and if so via what membership relation, with what seat accounting against `Quantity`. This is Robert's fourth question, still unanswered, and the check API cannot be fully specified without it.
+`BeneficiaryOrganizationID` exists, so a site licence is expressible — but nothing says whether John Doe inherits access from his organisation's grant, and if so via what membership relation, with what seat accounting against `Quantity`. This is the fourth of the questions listed in §1 (team beneficiary semantics), still unanswered, and the check API cannot be fully specified without it.
 
 **v1 default to propose:** if the LXP sells only to individuals at launch, **scope v1 to person grants**. That is a fine answer, but it must be a decision rather than a silence.
 
@@ -138,6 +144,17 @@ Bulk list is an optimisation for UI and sync, **not** a second source of truth f
 A “does X have Y” endpoint answers questions about people. Answering them is itself a capability.
 
 1. **Scope it narrowly.** An MJ API key restricted to entitlement checks, not general Orders read. The LXP must not enumerate orders because it can check access.
+
+   Narrow does not mean grants alone. The check reads as the key's user, and the renewal cut-off is decided at read time from the order and its payments, so that user needs read permission on all of these:
+
+   - `MJ_BizApps_Common: People`
+   - `MJ_BizApps_Orders: Entitlement Grants`, `Product Entitlements` and `Products`
+   - `MJ_BizApps_Orders: Subscriptions` and `Subscription Terms`
+   - `MJ_BizApps_Orders: Order Headers`, `Order Lines` and `Order Header Payment Schedules`
+   - `MJ_BizApps_Orders: Payment Lines`
+   - `MJ_BizApps_Orders: Entitlement Access Overrides`
+
+   A missing one does not raise an error: the check fails closed (item 4), so a customer whose renewal is paid is reported as having no access.
 2. **Rate limit and log.** Repeated checks are a customer-list oracle. Every decision should be recorded — that log is the audit trail when someone disputes access.
 3. **Don't leak existence.** Unknown person and known-person-without-access should be indistinguishable in response shape and, ideally, timing.
 4. **Fail closed**, and make the failure mode explicit in the contract rather than incidental to a caught exception.
@@ -165,7 +182,7 @@ v1 shipped on `an-dev-13` (branch from `origin/next` @ #116; rebase after #117 m
 | 1 | Poll vs ask as source of truth | Ask. Bulk list optional. |
 | 2 | Fail mode when Orders is unreachable | Fail closed for paid content |
 | 3 | Person key | PersonID authoritative; email convenience, ambiguous-if-duplicate |
-| 4 | Does LXP have its own user id? | Ask Ethan before adding ExternalUserID |
+| 4 | Does LXP have its own user id? | Ask the LXP team before adding ExternalUserID |
 | 5 | Team / org inheritance | Person grants only unless LXP sells site licences at launch |
 | 6 | Entitlement code registry | Convention `APP_AREA_TIER` now; lookup table if codes proliferate |
 | 7 | Client `AsOf` | Diagnostics only; future values rejected; CacheUntil always from wall-clock now |
@@ -173,6 +190,8 @@ v1 shipped on `an-dev-13` (branch from `origin/next` @ #116; rebase after #117 m
 ---
 
 ## 8. How these operations reach a host
+
+> **Since v5.3.x** a release `Metadata_Sync` migration carries these rows: `migrations/V202609020400__v5.3.x__Metadata_Sync.sql` inserts `Orders.CheckEntitlement` and `Orders.ListEntitlements`, so a host installed from migrations has both. The rest of this section describes the state before that migration.
 
 The metadata JSON in this repo (`metadata/remote-operations/`) is the source of the Remote Operation rows. `mj-app.json`'s `metadata.directory` is a **dev-time pointer**, not something `mj app install` applies. There is no `*Metadata_Sync*.sql` in `migrations/`, and no migration inserts a `RemoteOperation` row.
 

@@ -81,12 +81,31 @@
         [FormContext]="formContext">
         <mj-form-field 
             [Record]="record"
-            [ShowLabel]="false"
+            [ShowLabel]="true"
             FieldName="CredentialsRef"
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="CompanyIntegrationID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+            LinkType="Record"
+        ></mj-form-field>
+
+    </mj-collapsible-panel>
+
+    <!-- Details Section -->
+    <mj-collapsible-panel
+        SectionKey="details"
+        SectionName="Details"
+        Icon="fa fa-align-left"
+        [Form]="this"
+        [FormContext]="formContext">
 
     </mj-collapsible-panel>
 
@@ -216,6 +235,156 @@
                 [ShowToolbar]="true"
                 (Navigate)="OnFormNavigate($event)"
                 (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentDetails', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Payment Provider Sync States Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentProviderSyncStates"
+        SectionName="Payment Provider Sync States"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentProviderSyncStates')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Provider Sync States','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Provider Sync States','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentProviderSyncStates')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentProviderSyncStates', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Payments Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalPayments"
+        SectionName="External Payments"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalPayments')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Payments','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Payments','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalPayments')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalPayments', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Customers Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalCustomers"
+        SectionName="External Customers"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalCustomers')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Customers','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Customers','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalCustomers')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalCustomers', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- External Invoices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersExternalInvoices"
+        SectionName="External Invoices"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersExternalInvoices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: External Invoices','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: External Invoices','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersExternalInvoices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersExternalInvoices', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Payment Webhook Deliveries Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentWebhookDeliveries"
+        SectionName="Payment Webhook Deliveries"
+        Icon="fa fa-table"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentWebhookDeliveries')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Webhook Deliveries','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Webhook Deliveries','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentWebhookDeliveries')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentWebhookDeliveries', $event.totalRowCount)"
+                >
+            </mj-explorer-entity-data-grid>
+        </div>
+        }
+    </mj-collapsible-panel>
+
+    <!-- Payment Provider Prices Section -->
+    <mj-collapsible-panel
+        SectionKey="mJBizAppsOrdersPaymentProviderPrices"
+        SectionName="Payment Provider Prices"
+        Icon="fa fa-money-bill-wave"
+        Variant="related-entity"
+        [Form]="this"
+        [FormContext]="formContext"
+        [BadgeCount]="GetSectionRowCount('mJBizAppsOrdersPaymentProviderPrices')"
+        [DefaultExpanded]="false">
+        @if (record.IsSaved) {
+        <div>
+            <mj-explorer-entity-data-grid
+                [Params]="BuildRelationshipViewParamsByEntityName('MJ_BizApps_Orders: Payment Provider Prices','PaymentProviderID')"
+                [NewRecordValues]="NewRecordValues('MJ_BizApps_Orders: Payment Provider Prices','PaymentProviderID')"
+                [AllowLoad]="IsSectionExpanded('mJBizAppsOrdersPaymentProviderPrices')"
+                [ShowToolbar]="true"
+                (Navigate)="OnFormNavigate($event)"
+                (AfterDataLoad)="SetSectionRowCount('mJBizAppsOrdersPaymentProviderPrices', $event.totalRowCount)"
                 >
             </mj-explorer-entity-data-grid>
         </div>

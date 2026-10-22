@@ -17,6 +17,8 @@
  *   - never a second full refund of the same payment
  *   - the refund's applications mirror the original's, so a payment split across three orders
  *     refunds proportionally rather than dumping the whole reversal on the first one
+ *   - the caller may issue it: at or below the RefundApprovalThreshold setting a RefundApproverRole
+ *     holder, above it the receiving company's approver (./RefundAuthority.ts; off while unset)
  *
  * FAILURE MODEL: logical refusals come back INSIDE the output as `Success: false` with a reason —
  * the same contract accounting's operations and `Orders.CancelSubscription` use. Only genuine faults
@@ -36,6 +38,7 @@ import {
     UserInfo,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { OrdersRefundPaymentOperation as OrdersRefundPaymentOperationBase } from '@mj-biz-apps/orders-entities';
 import { RequireUUID } from './sql-guards.js';
 import {
     BuildUnapplyLines,
@@ -43,6 +46,7 @@ import {
     LoadAppliedAllocations,
     type AppliedAllocation,
 } from './PaymentReversalFactory.js';
+import { CheckRefundAuthority } from './RefundAuthority.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 
@@ -86,9 +90,7 @@ interface PaymentRow {
 const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.RefundPayment')
-export class RefundPaymentOperation extends BaseRemotableOperation<RefundPaymentInput, RefundPaymentOutput> {
-    public OperationKey = 'Orders.RefundPayment';
-
+export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
     protected async InternalExecute(
         input: RefundPaymentInput,
         provider: IMetadataProvider,
@@ -135,6 +137,23 @@ export class RefundPaymentOperation extends BaseRemotableOperation<RefundPayment
                     `remains refundable (${payment.Amount} captured, ${alreadyRefunded} already refunded).`,
                 RemainingRefundable: refundable,
             };
+        }
+
+        // Who may issue it (golive #320 §3). Checked before the Preview return, so a Preview call is
+        // refused exactly as the real refund would be; the in-repo UI does not preview, and shows the
+        // refusal from the result's Message. Off unless RefundApprovalThreshold is set; see ./RefundAuthority.ts.
+        const authorityRefusal = await CheckRefundAuthority(
+            {
+                PaymentNumber: payment.PaymentNumber,
+                ReceivingCompanyID: payment.ReceivingCompanyID,
+                RefundedTotalAfter: money(alreadyRefunded + requested),
+                ProviderRefundID: input.ProviderRefundID ?? null,
+            },
+            provider,
+            user,
+        );
+        if (authorityRefusal) {
+            return { Success: false, Message: authorityRefusal, RemainingRefundable: refundable };
         }
 
         const applications = await LoadAppliedAllocations(provider, user, payment.ID);

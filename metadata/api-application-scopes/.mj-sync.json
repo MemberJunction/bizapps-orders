@@ -1,0 +1,9 @@
+{
+  "version": "1.0.0",
+  "entity": "MJ: API Application Scopes",
+  "filePattern": "**/.*.json",
+  "Pull": {
+    "excludeVirtualFields": true,
+    "excludeNullValues": true
+  }
+}

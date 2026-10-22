@@ -95,7 +95,7 @@ export class ProductPriceEntityServer extends ProductPriceEntity {
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
         if (this.Status !== 'Active') return result; // an inactive rule collides with nothing
-        const productCategoryID = this.Get('ProductCategoryID') as string | null;
+        const productCategoryID = this.ProductCategoryID;
         if (!this.ProductID && !productCategoryID) return result;
 
         await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
@@ -111,7 +111,7 @@ export class ProductPriceEntityServer extends ProductPriceEntity {
             if (Number(o.Priority) !== priority) return false;
             if ((o.PriceListID ?? '').toLowerCase() !== listKey) return false;
             if (this.ProductID) return (o.ProductID ?? '').toLowerCase() === productKey;
-            return ((o as { ProductCategoryID?: string | null }).ProductCategoryID ?? '').toLowerCase() === catKey;
+            return (o.ProductCategoryID ?? '').toLowerCase() === catKey;
         });
 
         const clash = siblings.find(
@@ -137,4 +137,9 @@ export class ProductPriceEntityServer extends ProductPriceEntity {
 
         return result;
     }
+}
+
+/** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
+export function LoadProductPriceEntityServer(): void {
+    // intentionally empty
 }

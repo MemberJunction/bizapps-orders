@@ -16,6 +16,13 @@ describe('escapeHtml / escapeAttr', () => {
 });
 
 describe('renderCheckoutHostPage', () => {
+    it('keeps the full-width field rule off checkboxes and radios', () => {
+        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
+        const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
+        expect(css).toContain('.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {');
+        expect(css).not.toMatch(/\.mj-co input\s*[,{]/);
+    });
+
     it('hosts the Angular Element when elementSrc is provided', () => {
         const html = renderCheckoutHostPage({
             slug: 'summit-2027',
@@ -29,7 +36,7 @@ describe('renderCheckoutHostPage', () => {
         expect(html).toContain('src="/checkout/element/main.js"');
         expect(html).toContain('type="module"');
         expect(html).toContain('nonce="nOnce+/1"');
-        expect(html).not.toContain("post('/initialize'");
+        expect(html).not.toContain("'/initialize'");
     });
 
     it('bakes slug and api root into data-* attributes, never into the script block', () => {
@@ -48,10 +55,10 @@ describe('renderCheckoutHostPage', () => {
 
     it('drives only the existing POST verbs (no amount/price/provider in the request shape)', () => {
         const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
-        expect(html).toContain("post('/initialize'");
+        expect(html).toContain("postGated('/initialize'");
         expect(html).toContain("post('/draft'");
         expect(html).toContain("post('/payment-intent'");
-        expect(html).toContain("post('/complete'");
+        expect(html).toContain("postGated('/complete'");
         expect(html).toContain('if (stripe) { resolve(stripe); return; }');
         expect(html).toContain('crypto.getRandomValues');
         expect(html).not.toContain('Math.random');
@@ -96,4 +103,64 @@ describe('checkoutHostSecurityHeaders', () => {
         expect(h['Content-Security-Policy']).toContain('https://js.stripe.com');
         expect(h['Content-Security-Policy']).toContain("default-src 'none'");
     });
+
+describe('the fallback host page redirect (#295)', () => {
+    it('adds the order number to the redirect, and only the order number', () => {
+        const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+        expect(html).toContain("u.searchParams.set('order', String(done.OrderNumber))");
+        expect(html).not.toMatch(/searchParams\.set\('(email|name)'/);
+    });
 });
+});
+
+describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
+    it('lets the Turnstile script and challenge frame load', () => {
+        const csp = checkoutHostSecurityHeaders('n')['Content-Security-Policy'];
+        const directive = (name: string) => csp.split('; ').find((d) => d.startsWith(`${name} `)) ?? '';
+        expect(directive('script-src')).toContain('https://challenges.cloudflare.com');
+        expect(directive('frame-src')).toContain('https://challenges.cloudflare.com');
+    });
+
+    it('answers a Turnstile refusal on initialize and complete, with a container the form redraws cannot remove', () => {
+        const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+        expect(html).toContain('<div id="mj-co-turnstile"></div>');
+        expect(html.indexOf('id="mj-co-turnstile"')).toBeGreaterThan(html.indexOf('</main>'));
+        expect(html).toContain('reply.TurnstileRequired === true');
+        expect(html).toContain('copy.turnstileToken = token');
+        expect(html).not.toContain("post('/initialize'");
+        expect(html).not.toContain("post('/complete'");
+    });
+});
+
+describe('the fallback page when /complete outlasts the gateway', () => {
+    const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+    const script = html.slice(html.lastIndexOf('<script'), html.lastIndexOf('</script>'));
+
+    it('reads only JSON replies, so a gateway error page never becomes a parser error', () => {
+        expect(script).toContain('}, function () { throw transportError(res.status); });');
+        expect(script).toContain("'Checkout could not reach the server. Please try again.'");
+    });
+
+    it('asks /complete again while the server may still be finishing, and never shows a paid buyer a failure', () => {
+        expect(script).toContain("reply.Status === 'Processing' ? null : reply");
+        expect(script).toContain('if (err && err.transport) return null;');
+        expect(script.match(/completeCheckout\(\{ sessionId: sessionId, clientSessionKey: sessionKey \}, finishing\)/g)).toHaveLength(2);
+        expect(script).toContain('Please do not pay again.');
+    });
+
+    it('is a script that parses', () => {
+        const body = script.slice(script.indexOf('>') + 1);
+        expect(() => new Function(body)).not.toThrow();
+    });
+});
+
+describe('the pay-renewal page (#289)', () => {
+    it('passes the update-card token to the element as an escaped attribute, and only when given', async () => {
+        const { renderCheckoutHostPage } = await import('../checkout-host-page.js');
+        const page = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n', elementSrc: '/checkout/element/main.js', renewalToken: 'a"b.c' });
+        expect(page).toContain('renewal-token="a&quot;b.c"');
+        const plain = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n', elementSrc: '/checkout/element/main.js' });
+        expect(plain).not.toContain('renewal-token');
+    });
+});
+

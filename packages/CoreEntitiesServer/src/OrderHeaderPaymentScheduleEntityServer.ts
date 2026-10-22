@@ -1,11 +1,12 @@
 /**
  * OrderHeaderPaymentSchedule server subclass — two rules the database cannot state (AIDP-24).
  *
- * 1. `CompanyID` IS DERIVED, NEVER AUTHORED (D86). The row bills for a selling company, and which
- *    company is a fact about the order's lines. A single-company order — nearly all of them — gets
- *    its one company stamped whatever the caller sent. A multi-company order keeps a `CompanyID`
- *    that names one of its line companies and refuses anything else, because there is no honest
- *    way to guess.
+ * 1. `CompanyID` IS THE ORDER'S, NEVER AUTHORED (D86, golive #311). An order is invoiced once per
+ *    instalment by the company that sold it, whatever company owns each product (D61), so a new row
+ *    is stamped with the order header's `CompanyID` whatever the caller sent. The ledger divides the
+ *    row among the product companies (`CompanySlices`). A row that already exists keeps its company:
+ *    an order that issued an instalment under the old per-company rows finishes on them, and moving
+ *    one of its rows would leave that schedule out of tie.
  *
  * 2. THE ROLLUPS ARE THE DATABASE'S. `AmountPaid` and `Balance` are maintained by
  *    `spRecalcOrderHeaderPaymentSchedule`, and `spUpdateOrderHeaderPaymentSchedule` would obey a
@@ -17,6 +18,10 @@
  *    route other than `Orders.IssueInstalmentInvoice`. Half-issuing a row by hand froze it with no
  *    journal entry behind it and nothing to show that anything was missing.
  *
+ * 4. ONLY A CREDIT MEMO CREDITS (#662). `AmountCredited` lowers what the customer owes on an invoice they hold,
+ *    and an approved amount change's credit memo is the only act that posts the entry behind it. So a change to
+ *    it is refused unless that application sanctioned this object (`SanctionInstalmentCredit`).
+ *
  * Everything else — immutability past Scheduled, identity set-once — is a trigger, where a bypassed
  * class cannot reach it. This one cannot be: the trigger sees the same UPDATE either way and has no
  * idea which code path sent it.
@@ -24,14 +29,16 @@
 import { BaseEntity, BaseEntityResult, EntitySaveOptions, IRunViewProvider, RunView } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
 import { RequireUUID } from './sql-guards.js';
+
+const CREDIT_SANCTIONED = new WeakSet<object>();
 
 @RegisterClass(BaseEntity, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY)
 export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrderHeaderPaymentScheduleEntity {
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-        const problem = this.checkIssuedOnlyByOperation() ?? (await this.stampCompany());
+        const problem = this.checkIssuedOnlyByOperation() ?? this.checkCreditedOnlyByMemo() ?? (await this.stampCompany());
         if (problem) {
             // Registered rather than thrown: a refusal is a business outcome the caller reads off
             // LatestResult, the same contract every other save failure in this package uses.
@@ -72,38 +79,31 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         );
     }
 
-    /** Stamp `CompanyID` from the order's lines. Returns the refusal when it cannot be derived. */
+    /** Stamp a new row with the order's `CompanyID`. Returns the refusal when the order cannot be read. */
     private async stampCompany(): Promise<string | null> {
+        if (this.IsSaved) return null;
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const orderID = RequireUUID(this.OrderHeaderID, 'OrderHeaderID');
-        const lines = await rv.RunView<{ CompanyID: string }>(
-            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
+        const header = await rv.RunView<{ CompanyID: string }>(
+            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
             this.ContextCurrentUser,
         );
-        if (!lines.Success) return `Could not read the order's lines to place the instalment: ${lines.ErrorMessage ?? 'unknown error'}`;
+        if (!header.Success) return `Could not read the order to place the instalment: ${header.ErrorMessage ?? 'unknown error'}`;
+        const companyID = header.Results?.[0]?.CompanyID;
+        if (!companyID) return `Order ${orderID} was not found, so the instalment has no company to bill from.`;
+        this.CompanyID = companyID;
+        return null;
+    }
 
-        const companies = [...new Set((lines.Results ?? []).map((l) => String(l.CompanyID).toLowerCase()))];
-        if (companies.length === 0) {
-            // No lines yet (a draft being composed): the header company is the only fact there is.
-            const header = await rv.RunView<{ CompanyID: string }>(
-                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
-                this.ContextCurrentUser,
-            );
-            const companyID = header.Results?.[0]?.CompanyID;
-            if (!companyID) return `Order ${orderID} was not found, so the instalment has no company to bill for.`;
-            this.CompanyID = companyID;
-            return null;
-        }
-        if (companies.length === 1) {
-            this.CompanyID = (lines.Results ?? [])[0].CompanyID;
-            return null;
-        }
-        const chosen = String(this.CompanyID ?? '').toLowerCase();
-        if (companies.includes(chosen)) return null;
-        // ponytail: a multi-company order needs the caller to say which company's schedule this row
-        // joins; the authoring helper does, a hand-typed row must. Splitting one row across companies
-        // is not a thing — that is two rows.
-        return `This order sells for ${companies.length} companies; the instalment must name one of them (CompanyID).`;
+    /** Refuse a change to `AmountCredited` that an amount change's credit memo did not sanction. */
+    private checkCreditedOnlyByMemo(): string | null {
+        const field = this.GetFieldByName('AmountCredited');
+        const stored = this.IsSaved ? Number(field?.OldValue ?? 0) : 0;
+        if (Number(this.AmountCredited ?? 0) === stored || CREDIT_SANCTIONED.has(this)) return null;
+        return (
+            `Instalment ${this.InstallmentNumber}'s credited amount is set only by a credit memo, which an approved amount ` +
+            `change issues. Lower the term's amount with Orders.AmendArrangement instead.`
+        );
     }
 
     /** Copy the trigger-maintained rollups back onto this object so the update cannot erase them. */
@@ -136,6 +136,17 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         result.EndedAt = new Date();
         return result;
     }
+}
+
+/**
+ * Let this instalment's next save change `AmountCredited`. Called only by an amount change applying its credit memo,
+ * where the row is loaded. Refuses an object the server subclass did not produce.
+ */
+export function SanctionInstalmentCredit(row: BaseEntity): void {
+    if (!(row instanceof OrderHeaderPaymentScheduleEntityServer)) {
+        throw new Error("The instalment was not loaded through the orders server's entity subclass, so it cannot be credited.");
+    }
+    CREDIT_SANCTIONED.add(row);
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

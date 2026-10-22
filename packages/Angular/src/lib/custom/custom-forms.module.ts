@@ -20,7 +20,6 @@ import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import { SellingCompanyFieldComponent } from '@mj-biz-apps/common-ng';
 
 // Custom Form Components
-import { BizAppsProductFormComponent, LoadProductFormComponent } from './Product/product-form.component';
 import { BizAppsProductSaveGuardFormComponent, LoadProductSaveGuardFormComponent } from './Product/product-save-guard-form.component';
 import { BizAppsProductPricingWidgetComponent } from './Product/widgets/product-pricing-widget.component';
 import { BizAppsProductPromotionsWidgetComponent } from './Product/widgets/product-promotions-widget.component';
@@ -28,19 +27,14 @@ import { BizAppsProductAccountingWidgetComponent } from './Product/widgets/produ
 import { BizAppsProductGLLinksComponent } from './Product/widgets/product-gl-links.component';
 import { BizAppsProductFulfillmentWidgetComponent } from './Product/widgets/product-fulfillment-widget.component';
 import { BizAppsProductSubscriptionWidgetComponent } from './Product/widgets/product-subscription-widget.component';
-import { BizAppsPriceListFormComponent, LoadPriceListFormComponent } from './PriceList/price-list-form.component';
-import { BizAppsPromotionFormComponent, LoadPromotionFormComponent } from './Promotion/promotion-form.component';
 import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from './OrderHeader/order-header-form.component';
 import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
 import { MJOPartyAddressPickerComponent } from './OrderHeader/party-address-picker.component';
-import { BizAppsSubscriptionFormComponent, LoadSubscriptionFormComponent } from './Subscription/subscription-form.component';
-import { BizAppsSubscriptionTermFormComponent, LoadSubscriptionTermFormComponent } from './SubscriptionTerm/subscription-term-form.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
 import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } from './EventOrderLine/event-order-line-form.component';
 
 @NgModule({
     declarations: [
-        BizAppsProductFormComponent,
         BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
@@ -48,11 +42,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         BizAppsProductGLLinksComponent,
         BizAppsProductFulfillmentWidgetComponent,
         BizAppsProductSubscriptionWidgetComponent,
-        BizAppsPriceListFormComponent,
-        BizAppsPromotionFormComponent,
         BizAppsOrderHeaderFormComponent,
-        BizAppsSubscriptionFormComponent,
-        BizAppsSubscriptionTermFormComponent,
         BizAppsPaymentHeaderFormComponent,
         BizAppsEventOrderLineFormComponent,
     ],
@@ -72,7 +62,6 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         SellingCompanyFieldComponent,
     ],
     exports: [
-        BizAppsProductFormComponent,
         BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
@@ -80,11 +69,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         BizAppsProductGLLinksComponent,
         BizAppsProductFulfillmentWidgetComponent,
         BizAppsProductSubscriptionWidgetComponent,
-        BizAppsPriceListFormComponent,
-        BizAppsPromotionFormComponent,
         BizAppsOrderHeaderFormComponent,
-        BizAppsSubscriptionFormComponent,
-        BizAppsSubscriptionTermFormComponent,
         BizAppsPaymentHeaderFormComponent,
         BizAppsEventOrderLineFormComponent,
     ],
@@ -93,13 +78,8 @@ export class CustomFormsModule {}
 
 /** Tree-shaking prevention anchor function */
 export function LoadCustomForms(): void {
-    LoadProductFormComponent();
     LoadProductSaveGuardFormComponent();
-    LoadPriceListFormComponent();
-    LoadPromotionFormComponent();
     LoadOrderHeaderFormComponent();
-    LoadSubscriptionFormComponent();
-    LoadSubscriptionTermFormComponent();
     LoadPaymentHeaderFormComponent();
     LoadEventOrderLineFormComponent();
 }

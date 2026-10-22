@@ -24,6 +24,7 @@ import {
     ResolveGrantQuantity,
     ResolveValidityWindow,
     ShouldRevokeGrantsOnCancel,
+    TemplateAppliesToLineChoices,
     type GrantAccessFacts,
     type PolicyCategoryLevel,
     type PolicyTypeDefaults,
@@ -188,6 +189,30 @@ describe('ResolveGrantQuantity', () => {
         // A Feature or AccessLevel is not countable. Zero would read as 'granted none of it'.
         expect(ResolveGrantQuantity(null, 3, 'PerUnit')).toBeNull();
         expect(ResolveGrantQuantity(null, 3, 'Flat')).toBeNull();
+    });
+});
+
+describe('TemplateAppliesToLineChoices (#291)', () => {
+    const unconditional = { ChoiceGroupKey: null, ChoiceOptionValue: null };
+    const marketing = { ChoiceGroupKey: 'department', ChoiceOptionValue: 'marketing' };
+    const picked = [
+        { GroupKey: 'department', OptionValue: 'marketing' },
+        { GroupKey: 'department', OptionValue: 'finance' },
+    ];
+
+    it('applies an unconditional template to every line, picks or none', () => {
+        expect(TemplateAppliesToLineChoices(unconditional, [])).toBe(true);
+        expect(TemplateAppliesToLineChoices(unconditional, picked)).toBe(true);
+    });
+
+    it('applies a conditional template only when the line carries its group and option', () => {
+        expect(TemplateAppliesToLineChoices(marketing, picked)).toBe(true);
+        expect(TemplateAppliesToLineChoices({ ChoiceGroupKey: 'department', ChoiceOptionValue: 'legal' }, picked)).toBe(false);
+        expect(TemplateAppliesToLineChoices(marketing, [])).toBe(false);
+    });
+
+    it('does not match the option value under a different group', () => {
+        expect(TemplateAppliesToLineChoices(marketing, [{ GroupKey: 'track', OptionValue: 'marketing' }])).toBe(false);
     });
 });
 
@@ -380,6 +405,23 @@ describe('EvaluateGrantAccess — Status is not the answer', () => {
         expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).Decision).toBe('Suspended');
     });
 
+    it('a Suspended decision carries the row\'s reason, or null when it records none (#269)', () => {
+        for (const reason of ['AwaitingPayment', 'PastDue', 'AwaitingActivation'] as const) {
+            expect(EvaluateGrantAccess(grant({ Status: 'Suspended', SuspensionReason: reason }), asOf)).toMatchObject({
+                Decision: 'Suspended',
+                SuspensionReason: reason,
+            });
+        }
+        expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).SuspensionReason).toBeNull();
+    });
+
+    it('a pending suspension reports its own reason; other decisions carry none (#269)', () => {
+        const pending = grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } });
+        expect(EvaluateGrantAccess(pending, asOf)).toMatchObject({ Decision: 'Suspended', SuspensionReason: 'PastDue' });
+        expect(EvaluateGrantAccess(grant(), asOf).SuspensionReason).toBeUndefined();
+        expect(EvaluateGrantAccess(grant({ Status: 'Revoked' }), asOf).SuspensionReason).toBeUndefined();
+    });
+
     it('stored Status=Expired is Expired even if ValidTo is still in the future', () => {
         expect(EvaluateGrantAccess(grant({ Status: 'Expired' }), asOf).Decision).toBe('Expired');
     });
@@ -390,6 +432,24 @@ describe('EvaluateGrantAccess — Status is not the answer', () => {
 
     it('a perpetual grant (null ValidTo) stays Granted', () => {
         expect(EvaluateGrantAccess(grant({ ValidTo: null }), asOf).HasAccess).toBe(true);
+    });
+
+    it('an Active row with a pending past-due suspension is Suspended (#287)', () => {
+        const r = EvaluateGrantAccess(grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }), asOf);
+        expect(r).toMatchObject({ HasAccess: false, Decision: 'Suspended' });
+    });
+
+    it('a pending decision that is not a suspension leaves access alone', () => {
+        expect(EvaluateGrantAccess(grant({ PendingSuspension: { Status: 'Active', Reason: null } }), asOf).HasAccess).toBe(true);
+        expect(EvaluateGrantAccess(grant({ PendingSuspension: null }), asOf).HasAccess).toBe(true);
+    });
+
+    it('a written Revoked still outranks a pending suspension', () => {
+        const r = EvaluateGrantAccess(
+            grant({ Status: 'Revoked', PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }),
+            asOf,
+        );
+        expect(r.Decision).toBe('Revoked');
     });
 });
 

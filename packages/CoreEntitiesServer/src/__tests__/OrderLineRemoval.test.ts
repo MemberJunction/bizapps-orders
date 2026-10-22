@@ -88,7 +88,10 @@ function dependentRow(label: string, log: string[], succeeds = true) {
 /** An order with the real prototype and only the removal seams supplied. */
 function orderWith(removed: FakeLine[], items: FakeLine[] = []) {
     const instance = Object.create(OrderEntityServer.prototype) as unknown as RemovalOrder;
-    Object.assign(instance, { Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true } });
+    Object.assign(instance, {
+        Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true },
+        CheckoutAnswers: { Items: [] },
+    });
     // `ProviderToUse` and `ContextCurrentUser` are getters on BaseEntity, so they are shadowed
     // rather than assigned.
     Object.defineProperty(instance, 'ProviderToUse', { value: {}, writable: true });
@@ -128,12 +131,33 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
 
         const swept = mockRunView.mock.calls.map((call) => (call[0] as { EntityName: string }).EntityName);
         expect(swept).toEqual([
+            'MJ_BizApps_Orders: Order Concessions',
             'MJ_BizApps_Orders: Order Line Price Components',
             'MJ_BizApps_Orders: Order Charge Allocations',
             'MJ_BizApps_Orders: Order Adjustment Allocations',
             'MJ_BizApps_Orders: Order Adjustments',
             'MJ_BizApps_Orders: Order Line Dimensions',
         ]);
+    });
+
+    it('withdraws a concession with its draft line, decided or not', async () => {
+        // A draft line typed at 60 against an engine price of 100, quantity 2, carries a Price
+        // concession approved at 80. Removing the line has to take the concession with it, or
+        // FK_OrderConcession_OrderLine refuses the line's delete and the whole order save fails.
+        const log: string[] = [];
+        const concession = { ...dependentRow('concession', log), Status: 'Approved', WithdrawWithDraftLine: false };
+        concession.Delete = vi.fn(async () => {
+            log.push(`delete-dependent:concession:${concession.WithdrawWithDraftLine}`);
+            return true;
+        });
+        mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
+            Success: true,
+            Results: params.EntityName === 'MJ_BizApps_Orders: Order Concessions' ? [concession] : [],
+        }));
+
+        await orderWith([fakeLine(1, log)]).deleteRemovedLines();
+
+        expect(log).toEqual(['delete-dependent:concession:true', 'delete-line:1']);
     });
 
     it('does no work and issues no queries when nothing was removed', async () => {
@@ -170,7 +194,7 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
         const line = fakeLine(2, log);
 
         await expect(orderWith([line]).deleteRemovedLines()).rejects.toThrow(
-            /Order Line Price Components.*order line 2/,
+            /Order Concessions.*order line 2/,
         );
         // And the line itself is left alone, so the transaction rolls back with the row intact
         // rather than half-cleared.
@@ -192,16 +216,23 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     const instance = orderWith(removed, retained);
     Object.assign(instance, {
         passesStatusTransition: () => true,
-        ApplyPersonPartyDefaults: vi.fn().mockResolvedValue(undefined),
+        // Order review and the Origin guard are their own subject (OrderReviewThroughEntity.test.ts).
+        passesOriginGuard: () => true,
+        passesOrderReviewOnChange: vi.fn().mockResolvedValue(true),
+        ApplySavePartyDefaults: vi.fn().mockResolvedValue(undefined),
         willBookOnThisSave: () => false,
         deleteLineDependents: vi.fn().mockResolvedValue(undefined),
         expandBundles: vi.fn().mockResolvedValue(undefined),
         prepareLines: vi.fn().mockResolvedValue(undefined),
+        inheritReversalAddresses: vi.fn().mockResolvedValue(undefined),
         saveTaxReasons: vi.fn().mockResolvedValue(undefined),
         // Deriving a line's GL dimensions runs after the line loop and reaches for accounting's
         // vocabulary. The removal ORDER is what this file pins; the tagging is its own subject.
         stampLineDimensions: vi.fn().mockResolvedValue(undefined),
         savePriceComponents: vi.fn().mockResolvedValue(undefined),
+        // Replacing a draft's earlier tax and promotion rows is its own subject.
+        deleteTaxRecords: vi.fn().mockResolvedValue(undefined),
+        deletePromotionRecords: vi.fn().mockResolvedValue(undefined),
         refreshRolledUpTotals: vi.fn(async () => {
             log.push('refresh-rollups');
         }),
@@ -216,6 +247,7 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     Object.defineProperty(instance, 'OrderNumber', { value: 'ORD-000003', writable: true });
     // A draft: the address-snapshot fill that a booked order's save runs is not this file's subject.
     Object.defineProperty(instance, 'IsBookedOrder', { value: false });
+    Object.defineProperty(instance, 'MoneyLocked', { value: false });
 
     const headerSave = vi.spyOn(OrderHeaderEntity.prototype, 'Save').mockImplementation(async () => {
         log.push('save-header');

@@ -1,0 +1,89 @@
+<mj-collapsible-panel
+    SectionKey="accessOverrides"
+    SectionName="Access Overrides"
+    Icon="fa-solid fa-unlock-keyhole"
+    [Form]="FormComponent"
+    [FormContext]="FormContext"
+    [DefaultExpanded]="false">
+    @if (Types.length && !ShowRequest) {
+        <div class="mjo-terms-toolbar">
+            <button type="button" mjButton variant="flat" size="sm" (click)="ShowRequest = true">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i> Request override
+            </button>
+        </div>
+    }
+    @if (ShowRequest) {
+        <form class="mjo-ao-form" (ngSubmit)="Submit()">
+            <label class="mjo-ao-field">
+                <span>Exception</span>
+                <select name="type" [(ngModel)]="NewType">
+                    @for (t of Types; track t) {
+                        <option [value]="t">{{ TypeLabels[t] }}</option>
+                    }
+                </select>
+            </label>
+            <label class="mjo-ao-field">
+                <span>Last day</span>
+                <input type="date" name="through" required [(ngModel)]="NewThrough" />
+            </label>
+            <label class="mjo-ao-field mjo-ao-field--wide">
+                <span>Reason</span>
+                <textarea name="reason" rows="2" maxlength="1000" required [(ngModel)]="NewReason"></textarea>
+            </label>
+            <div class="mjo-ao-actions">
+                <button type="button" mjButton variant="flat" size="sm" (click)="ShowRequest = false" [disabled]="Busy">Cancel</button>
+                <button type="submit" mjButton variant="primary" size="sm" [disabled]="!CanSubmit">Submit for approval</button>
+            </div>
+        </form>
+    }
+    @if (Error) {
+        <p class="mjo-ao-error" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ Error }}</p>
+    }
+    @if (Loading) {
+        <p class="mjo-term-empty">Loading access overrides…</p>
+    } @else if (!Overrides.length) {
+        <p class="mjo-term-empty">No access overrides on this order.</p>
+    } @else {
+        <ul class="mjo-ao-list">
+            @for (o of Overrides; track o.ID) {
+                <li class="mjo-ao-item">
+                    <div class="mjo-ao-head">
+                        <strong>{{ TypeLabel(o.OverrideType) }}</strong>
+                        <span [class]="ChipClass(o.Status)">{{ o.Status }}</span>
+                        <span class="mjo-ao-meta">through {{ Day(o.EffectiveThrough) }}</span>
+                    </div>
+                    <p class="mjo-ao-reason">{{ o.Reason }}</p>
+                    <p class="mjo-ao-meta">
+                        Requested by {{ o.RequestedByUser || o.RequestedByUserID }} on {{ Day(o.RequestedAt) }}
+                        @if (o.DecidedAt) {
+                            · {{ o.Status === 'Withdrawn' ? 'Closed' : 'Decided' }}
+                            @if (o.DecidedByUser) { by {{ o.DecidedByUser }} }
+                            on {{ Day(o.DecidedAt) }}
+                        }
+                    </p>
+                    @if (o.DecisionNotes) {
+                        <p class="mjo-ao-meta">{{ o.DecisionNotes }}</p>
+                    }
+                    @if (o.Status === 'Requested') {
+                        @if (CanReject(o)) {
+                            <div class="mjo-ao-decide">
+                                <input type="text" placeholder="Notes (optional)" [name]="'notes-' + o.ID" [(ngModel)]="DecisionNotes[o.ID]" />
+                                <button type="button" mjButton variant="flat" size="sm" [disabled]="Busy" (click)="Decide(o, 'Rejected')">Reject</button>
+                                @if (CanApprove(o)) {
+                                    <button type="button" mjButton variant="primary" size="sm" [disabled]="Busy" (click)="Decide(o, 'Approved')">Approve</button>
+                                }
+                            </div>
+                            @if (ApproveNote(o); as note) {
+                                <p class="mjo-ao-meta mjo-ao-waiting">{{ note }}</p>
+                            }
+                        } @else {
+                            <p class="mjo-ao-meta mjo-ao-waiting">
+                                <i class="fa-solid fa-hourglass-half" aria-hidden="true"></i> {{ WaitingOn(o) }}
+                            </p>
+                        }
+                    }
+                </li>
+            }
+        </ul>
+    }
+</mj-collapsible-panel>

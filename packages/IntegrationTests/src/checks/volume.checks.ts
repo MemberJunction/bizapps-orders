@@ -81,7 +81,7 @@ import { randomUUID } from "crypto";
 import { BaseRemotableOperation, CompositeKey } from "@memberjunction/core";
 import type { BaseEntity, IMetadataProvider, UserInfo } from "@memberjunction/core";
 import { MJGlobal } from "@memberjunction/global";
-import type { mjBizAppsOrdersOrderHeaderEntity } from "@mj-biz-apps/orders-entities";
+import { OrdersEngine, type mjBizAppsOrdersOrderHeaderEntity } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -586,7 +586,11 @@ async function withContention(
   }
 }
 
-/** Confirm a trivial CoA order through a given session. Priced inline so no committed rule is needed. */
+/**
+ * Confirm a trivial order through a given session. Priced inline so no committed rule is needed, and
+ * above the world catalog's price for either widget so the stated price is not a concession the
+ * confirm gate would hold.
+ */
 async function confirmVia(
   s: Session,
   user: UserInfo,
@@ -599,7 +603,7 @@ async function confirmVia(
     {
       CompanyID: companyID,
       BillToOrganizationID: f.Customers.OrganizationID,
-      Lines: [{ ProductID: productID, Quantity: 2, UnitPrice: 25 }],
+      Lines: [{ ProductID: productID, Quantity: 2, UnitPrice: 250 }],
     },
     s,
   );
@@ -1255,6 +1259,7 @@ export const VolumeChecks: NamedCheck[] = [
       const insert = async () => {
         priceIDs.push(await createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
           ProductID: f.Products.WidgetA,
+          Name: "VL11 base",
           PricingModel: "PerUnit",
           FeeType: "Standard",
           Amount: listPrice,
@@ -1275,6 +1280,7 @@ export const VolumeChecks: NamedCheck[] = [
         });
         priceIDs.push(await createViaEntity(ctx, PRODUCT_PRICE_ENTITY, {
           ProductID: f.Products.WidgetA,
+          Name: "VL11 member",
           PriceListID: listID,
           PricingModel: "PerUnit",
           FeeType: "Standard",
@@ -1289,6 +1295,9 @@ export const VolumeChecks: NamedCheck[] = [
           `DELETE FROM ${ORDERS_SCHEMA}.ProductPrice WHERE ID IN ('${priceIDs.join("','")}');
            DELETE FROM ${ORDERS_SCHEMA}.PriceListAssignment WHERE PriceListID='${listID}';
            DELETE FROM ${ORDERS_SCHEMA}.PriceList WHERE ID='${listID}'`).catch(() => undefined);
+        // The deletes are raw SQL, so OrdersEngine still holds the two rules this check committed.
+        // Left there, the next check prices a line with a rule that no longer exists.
+        await OrdersEngine.Instance.RefreshItem('_productPrices');
       };
 
       await insert();

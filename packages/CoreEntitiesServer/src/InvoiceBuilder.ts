@@ -21,10 +21,13 @@
 import { RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 
 import {
+    BuildAmountChangeCreditMemo,
     BuildDocuments,
     CanRender,
+    type AmountChangeMemoFacts,
     type InvoiceAdjustmentFacts,
     type InvoiceChargeFacts,
+    type InvoiceCreditFacts,
     type InvoiceDocument,
     type InvoiceInstalmentFacts,
     type InvoiceLineFacts,
@@ -32,7 +35,7 @@ import {
     type InvoicePartyFacts,
     type InvoicePaymentFacts,
 } from './InvoiceBehavior.js';
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { RequireUUID } from './sql-guards.js';
 import { LoadOrdersEngine, OrdersEngine, ParseAddressSnapshot, ToISODate, type OrderAddressSnapshot } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -49,6 +52,9 @@ const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PAYMENT_TERMS_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Terms Types';
 const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const COMPANY_ENTITY = 'MJ: Companies';
 /**
  * The selling company's accounting identity. It IS-A Company, so the row shares the company's ID —
@@ -59,6 +65,8 @@ const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Com
 /** What a render attempt produced, or why it produced nothing. */
 export interface InvoiceBuildResult {
     Success: boolean;
+    /** Set on a refusal that has its own result code: a company named that issues no document for the order. */
+    Code?: 'NOT_ORDER_COMPANY';
     Message?: string;
     Documents: InvoiceDocument[];
 }
@@ -114,11 +122,11 @@ function addressLines(row: Row | OrderAddressSnapshot | undefined): string[] {
 }
 
 /**
- * Read one order and produce its documents — one per selling company.
+ * Read one order and produce its document: one, from the order's company (golive #311).
  *
  * @param orderHeaderID The order to render.
- * @param options `AsOf` drives only the days-until-due countdown; `OnlyCompanyID` narrows a split
- *   order to a single document without changing how the others are numbered.
+ * @param options `AsOf` drives only the days-until-due countdown; `OnlyCompanyID` must name the
+ *   order's company (or, for an instalment of a pre-golive-#311 per-company schedule, that row's company).
  */
 export async function BuildInvoiceDocuments(
     orderHeaderID: string,
@@ -129,7 +137,7 @@ export async function BuildInvoiceDocuments(
         OnlyCompanyID?: string | null;
         /**
          * Render one instalment of the order's schedule: that row's frozen number, due date and
-         * balance, for its company only. Omit for the whole order — the implicit single instalment.
+         * balance. Omit for the whole order — the implicit single instalment.
          */
         PaymentScheduleID?: string | null;
     },
@@ -143,7 +151,7 @@ export async function BuildInvoiceDocuments(
     // Read first, because it decides which company's document this is.
     const instalmentResult = options?.PaymentScheduleID
         ? await readInstalment(provider, user, id, RequireUUID(options.PaymentScheduleID, 'PaymentScheduleID'))
-        : { instalment: null };
+        : { instalment: null, credited: 0 };
     if ('error' in instalmentResult) return { Success: false, Message: instalmentResult.error, Documents: [] };
     const instalment = instalmentResult.instalment;
     const onlyCompanyID = instalment?.CompanyID ?? options?.OnlyCompanyID ?? null;
@@ -163,7 +171,7 @@ export async function BuildInvoiceDocuments(
 
     // Everything below is fetched in parallel: none of it depends on any of the rest, and the
     // sequential version of this function was four times the latency for no benefit.
-    const [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult] = await Promise.all([
+    const [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult, concessionResult] = await Promise.all([
         view<Row>(provider, user, ORDER_CHARGE_ENTITY, `OrderHeaderID = '${id}'`, 'Sequence'),
         view<Row>(provider, user, ORDER_ADJUSTMENT_ENTITY, `OrderHeaderID = '${id}'`, 'Sequence'),
         view<Row>(provider, user, PAYMENT_LINE_ENTITY, `OrderHeaderID = '${id}'`),
@@ -178,9 +186,17 @@ export async function BuildInvoiceDocuments(
             const ids = uuidList([order.BillToAddressID as string | null, order.ShipToAddressID as string | null], 'AddressID');
             return ids ? view<Row>(provider, user, ADDRESS_ENTITY, `ID IN (${ids})`) : { rows: [] as Row[] };
         })(),
+        // Approved amount changes' credits (#684): what the order's balance already subtracts.
+        view<Row>(
+            provider,
+            user,
+            ORDER_CONCESSION_ENTITY,
+            `OrderHeaderID = '${id}' AND Status = 'Approved' AND (ScheduleReduction > 0 OR CreditMemoAmount > 0)`,
+            'DecidedAt',
+        ),
     ]);
 
-    const readError = [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult]
+    const readError = [chargeResult, adjustmentResult, paymentLineResult, productResult, termsResult, addressResult, concessionResult]
         .map((r) => ('error' in r ? r.error : undefined))
         .find(Boolean);
     if (readError) return { Success: false, Message: `Could not assemble the invoice — ${readError}`, Documents: [] };
@@ -306,7 +322,6 @@ export async function BuildInvoiceDocuments(
         AmountPaid: num(order.AmountPaid),
         Balance: num(order.Balance),
         DueDate: ToISODate(order.DueDate),
-        PaymentStatus: str(order.PaymentStatus),
         ExternalDocumentNumber: str(order.ExternalDocumentNumber),
         ReversesOrderHeaderID: str(order.ReversesOrderHeaderID),
         ReversesOrderNumber: str(order.ReversesOrderHeader),
@@ -331,6 +346,8 @@ export async function BuildInvoiceDocuments(
             CompanyName: str(l.Company) ?? '',
             Quantity: num(l.Quantity),
             UnitPrice: num(l.UnitPrice),
+            ExtendedAmount: l.ExtendedAmount === null || l.ExtendedAmount === undefined ? null : num(l.ExtendedAmount),
+            DiscountPct: num(l.DiscountPct),
             DiscountAmount: num(l.DiscountAmount),
             LineTotalNet: num(l.LineTotalNet),
             ChargeAmount: num(l.ChargeAmount),
@@ -431,13 +448,17 @@ export async function BuildInvoiceDocuments(
         Issuers: issuers,
         AsOf: asOf,
         OnlyCompanyID: onlyCompanyID,
-        Instalment: instalment,
+        Instalment: instalment ? withCredits(instalment, instalmentResult.credited, options?.PaymentScheduleID ?? null, concessionResult.rows) : null,
+        Credits: instalment ? [] : [...OrderCredits(concessionResult.rows), ...ReturnScheduleCredits(lineRows, orderFacts.ReversesOrderNumber)],
     });
 
     if (onlyCompanyID && !documents.length) {
         return {
             Success: false,
-            Message: `Order ${orderFacts.OrderNumber} has no lines sold by company ${onlyCompanyID}.`,
+            Code: 'NOT_ORDER_COMPANY',
+            Message:
+                `Order ${orderFacts.OrderNumber} is invoiced by its own company (${orderFacts.CompanyName || orderFacts.CompanyID}), ` +
+                `not by company ${onlyCompanyID}: an order has one document, whatever company owns each product.`,
             Documents: [],
         };
     }
@@ -445,16 +466,137 @@ export async function BuildInvoiceDocuments(
     return { Success: true, Documents: documents };
 }
 
+/** What an `AmountChanged` subscription event recorded about the change's credit memo. */
+interface AmountChangedEventData {
+    TermNumber?: number;
+    OrderConcessionID?: string;
+    PreviousAmount?: number;
+    NewAmount?: number;
+    EffectiveDate?: string;
+    CreditMemo?: {
+        DocumentNumber?: string | null;
+        Amount?: number;
+        Net?: number;
+        Tax?: number;
+        Applied?: Array<{ InstalmentID?: string | null; DocumentNumber?: string | null; Amount?: number }>;
+        Refund?: number;
+        OpenCredit?: number;
+    } | null;
+}
+
 /**
- * One schedule row as instalment facts, plus how many live instalments its company has — the count
- * is what makes `2 of 4` printable and the derived number correct when the row has no frozen one.
+ * Read an approved amount change and produce its credit memo's document (#684).
+ *
+ * The memo's figures are the ones its approval recorded on the `AmountChanged` subscription event, never
+ * recomputed: the order may have changed since, and the customer's document must say what was credited then.
+ * Everything else (issuer, parties, order number, terms) is the order's own document, read as it is rendered.
+ *
+ * @param orderConcessionID The approved amount change that issued the memo.
+ * @param orderHeaderID When given, the concession must belong to this order.
+ */
+export async function BuildCreditMemoDocuments(
+    orderConcessionID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+    options?: { AsOf?: string | null; OrderHeaderID?: string | null },
+): Promise<InvoiceBuildResult> {
+    const id = RequireUUID(orderConcessionID, 'OrderConcessionID');
+    const concessions = await view<Row>(provider, user, ORDER_CONCESSION_ENTITY, `ID = '${id}'`);
+    if (concessions.error) return { Success: false, Message: `Could not read the concession — ${concessions.error}`, Documents: [] };
+    const concession = concessions.rows[0];
+    if (!concession) return { Success: false, Message: `No concession with ID ${id}.`, Documents: [] };
+    const orderHeaderID = String(concession.OrderHeaderID);
+    if (options?.OrderHeaderID && orderHeaderID.toLowerCase() !== RequireUUID(options.OrderHeaderID, 'OrderHeaderID').toLowerCase()) {
+        return { Success: false, Message: `Concession ${id} is not on order ${options.OrderHeaderID}.`, Documents: [] };
+    }
+    const number = str(concession.CreditMemoNumber);
+    if (String(concession.Status) !== 'Approved' || !number) {
+        return {
+            Success: false,
+            Message: `Concession ${id} issued no credit memo: only an approved amount change that needed one has a memo to send.`,
+            Documents: [],
+        };
+    }
+
+    const orderDocs = await BuildInvoiceDocuments(orderHeaderID, provider, user, { AsOf: options?.AsOf ?? null });
+    if (!orderDocs.Success || !orderDocs.Documents.length) return orderDocs;
+    const orderDocument = orderDocs.Documents[0];
+
+    const [events, terms] = await Promise.all([
+        view<Row>(
+            provider,
+            user,
+            SUBSCRIPTION_EVENT_ENTITY,
+            `EventType = 'AmountChanged' AND RelatedOrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+        ),
+        view<Row>(provider, user, SUBSCRIPTION_TERM_ENTITY, `ID = '${RequireUUID(String(concession.SubscriptionTermID), 'SubscriptionTermID')}'`),
+    ]);
+    const readError = events.error ?? terms.error;
+    if (readError) return { Success: false, Message: `Could not read the amount change — ${readError}`, Documents: [] };
+
+    const recorded = events.rows
+        .map((e) => ({ Event: e, Data: parseEventData(e.EventData) }))
+        .find((e) => String(e.Data?.OrderConcessionID ?? '').toLowerCase() === id.toLowerCase());
+    const memo = recorded?.Data?.CreditMemo;
+    if (!recorded || !memo) {
+        return { Success: false, Message: `Credit memo ${number} has no record of what it credited: its amount change logged no memo.`, Documents: [] };
+    }
+    const term = terms.rows[0];
+    const subscriptions = term
+        ? await view<Row>(provider, user, SUBSCRIPTION_ENTITY, `ID = '${RequireUUID(String(term.SubscriptionID), 'SubscriptionID')}'`)
+        : { rows: [] as Row[] };
+    const row = term ? findRow(orderDocument.Rows, String(term.OrderLineID)) : null;
+
+    const facts: AmountChangeMemoFacts = {
+        DocumentNumber: number,
+        IssuedOn: ToISODate(recorded.Data?.EffectiveDate) ?? ToISODate(concession.DecidedAt) ?? orderDocument.OrderDate,
+        Net: num(memo.Net),
+        Tax: num(memo.Tax),
+        Gross: num(memo.Amount),
+        TermNumber: num(recorded.Data?.TermNumber ?? term?.TermNumber),
+        SubscriptionNumber: str(subscriptions.rows[0]?.SubscriptionNumber),
+        PreviousAmount: num(recorded.Data?.PreviousAmount),
+        NewAmount: num(recorded.Data?.NewAmount),
+        Applied: (memo.Applied ?? []).map((a) => ({ DocumentNumber: str(a.DocumentNumber), Amount: num(a.Amount) })),
+        Refund: num(memo.Refund),
+        OpenCredit: num(memo.OpenCredit),
+        LineNumber: row?.LineNumber ?? 0,
+        ProductName: row?.ProductName ?? 'Subscription',
+        ProductSKU: row?.ProductSKU ?? null,
+    };
+    return { Success: true, Documents: [BuildAmountChangeCreditMemo(orderDocument, facts)] };
+}
+
+function parseEventData(raw: unknown): AmountChangedEventData | null {
+    if (typeof raw !== 'string' || !raw.trim()) return null;
+    try {
+        return JSON.parse(raw) as AmountChangedEventData;
+    } catch {
+        return null;
+    }
+}
+
+/** A printed row by its line, including a bundle's components. */
+function findRow(rows: InvoiceDocument['Rows'], lineID: string): InvoiceDocument['Rows'][number] | null {
+    for (const row of rows) {
+        if (row.LineID.toLowerCase() === lineID.toLowerCase()) return row;
+        const child = findRow(row.Children, lineID);
+        if (child) return child;
+    }
+    return null;
+}
+
+/**
+ * One schedule row as instalment facts, plus how many live instalments share its company — the
+ * order's company for every schedule since golive #311 — which is what makes `2 of 4` printable and
+ * the derived number correct when the row has no frozen one.
  */
 async function readInstalment(
     provider: IMetadataProvider,
     user: UserInfo,
     orderHeaderID: string,
     scheduleID: string,
-): Promise<{ instalment: InvoiceInstalmentFacts } | { error: string }> {
+): Promise<{ instalment: InvoiceInstalmentFacts; credited: number } | { error: string }> {
     const rows = await view<Row>(
         provider,
         user,
@@ -480,5 +622,52 @@ async function readInstalment(
             DocumentNumber: str(row.DocumentNumber),
             Payments: paid !== 0 ? [{ Label: 'Paid on this instalment', Amount: paid }] : [],
         },
+        credited: num(row.AmountCredited),
     };
+}
+
+/**
+ * An instalment with what credit memos took off it (#684), labelled with the memos that name it. A credit
+ * no memo names, which should not happen, still prints, so what is due always matches the instalment's
+ * balance.
+ */
+function withCredits(instalment: InvoiceInstalmentFacts, credited: number, scheduleID: string | null, concessions: Row[]): InvoiceInstalmentFacts {
+    if (!credited || !scheduleID) return instalment;
+    const memos = concessions
+        .filter((c) => str(c.CreditMemoNumber) && String(c.AppliesToPaymentScheduleID ?? '').toLowerCase() === scheduleID.toLowerCase())
+        .map((c) => String(c.CreditMemoNumber));
+    const label = memos.length ? `Credit memo ${memos.join(', ')}` : 'Credited';
+    return { ...instalment, AmountCredited: credited, Payments: [...instalment.Payments, { Label: label, Amount: credited }] };
+}
+
+/**
+ * What a return against an instalment-billed order does not credit the customer (#661). A returning line that
+ * booked a credit memo is owed back only that memo; the rest of its value came off the origin's instalments not
+ * yet invoiced, so it was never billed. The order's balance counts the line at its memo, and this row makes the
+ * document ask for the same: the line's gross (negative) plus its memo, against the credit due.
+ */
+export function ReturnScheduleCredits(lines: Array<Record<string, unknown>>, originOrderNumber: string | null): InvoiceCreditFacts[] {
+    const taken = lines
+        .filter((l) => l.ReversesOrderLineID && l.CreditMemoAmount !== null && l.CreditMemoAmount !== undefined)
+        .reduce((sum, l) => sum + num(l.LineTotalGross) + num(l.CreditMemoAmount), 0);
+    const amount = Math.round(taken * 100) / 100;
+    if (amount === 0) return [];
+    const label = originOrderNumber ? `Taken off the instalments of ${originOrderNumber} not yet invoiced` : 'Taken off the instalments not yet invoiced';
+    return [{ Label: label, Amount: amount }];
+}
+
+/**
+ * What approved amount changes took off the order as a whole (#684): each credit memo, and each reduction of
+ * the instalments not yet invoiced. The order's balance subtracts the same two, so the whole-order document
+ * asks for what the order's balance says.
+ */
+export function OrderCredits(concessions: Array<Record<string, unknown>>): InvoiceCreditFacts[] {
+    const credits: InvoiceCreditFacts[] = [];
+    for (const c of concessions) {
+        const memo = num(c.CreditMemoAmount);
+        if (memo > 0 && str(c.CreditMemoNumber)) credits.push({ Label: `Credit memo ${String(c.CreditMemoNumber)}`, Amount: memo });
+        const reduced = num(c.ScheduleReduction);
+        if (reduced > 0) credits.push({ Label: 'Lower amount on instalments not yet invoiced', Amount: reduced });
+    }
+    return credits;
 }

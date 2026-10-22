@@ -38,6 +38,13 @@ export type GrantTiming = 'OnConfirm' | 'OnPaidInFull' | 'OnFirstPayment' | 'OnA
 /** Why a grant is suspended. The first two are payment facts, and lift themselves when cash arrives. */
 export type SuspensionReason = 'AwaitingPayment' | 'PastDue' | 'AwaitingActivation';
 
+const SUSPENSION_REASONS: ReadonlySet<string> = new Set<SuspensionReason>(['AwaitingPayment', 'PastDue', 'AwaitingActivation']);
+
+/** True for one of the {@link SuspensionReason} values `CK_EntitlementGrant_SuspensionReason` allows. */
+export function IsSuspensionReason(value: string | null | undefined): value is SuspensionReason {
+    return value != null && SUSPENSION_REASONS.has(value);
+}
+
 /** How the template quantity relates to the line quantity. */
 export type QuantityMode = 'PerUnit' | 'Flat';
 
@@ -131,11 +138,12 @@ export function ResolveEntitlementPolicy(
  * three packs expects. `Flat` ignores the line quantity entirely, for entitlements that are not
  * countable: "access to the member portal" does not become three portals.
  *
- * ROUNDED UP, and only ever up. A prorated subscription line carries a fractional quantity (0.5833
- * for a short first period), and 0.5833 × 5 seats is 2.9165. Rounding down hands the customer two
- * seats for a five-seat product and generates a support ticket; rounding up hands them three and
- * generates nothing. Under-granting is the expensive direction, exactly as under-collecting is with
- * tax, and for the same reason: the customer notices.
+ * ROUNDED UP, and only ever up: a fractional quantity × 5 seats can land between two whole seats.
+ * Rounding down under-grants and generates a support ticket; rounding up generates nothing.
+ * Under-granting is the expensive direction, exactly as under-collecting is with tax, and for the
+ * same reason: the customer notices. A SUBSCRIPTION line is not passed its own quantity, which a
+ * prorated first period scales (0.5833 for a short period, so 5 seats read 2.9165): the caller
+ * passes the term's seat count, because a shorter period covers fewer days, not fewer people (#589).
  *
  * A null template quantity means the entitlement is not a countable thing (a Feature or AccessLevel
  * rather than a ResourceQuantity), and stays null rather than becoming zero — zero would read as
@@ -150,6 +158,28 @@ export function ResolveGrantQuantity(
     if (mode === 'Flat') return templateQuantity;
     const scaled = templateQuantity * Math.abs(lineQuantity);
     return Math.ceil(Math.round(scaled * 1e6) / 1e6);
+}
+
+/** One option a buyer chose for a line: the group and the option value (an Order Line Choice). */
+export interface LineChoiceKey {
+    GroupKey: string;
+    OptionValue: string;
+}
+
+/**
+ * Whether an entitlement template applies to a line, given the options chosen for it.
+ *
+ * A template with no `ChoiceGroupKey` is unconditional and applies to every line of its product. A
+ * conditional one applies only when the line carries that exact group and option: a buyer who chose
+ * two of eight departments is granted those two, not all eight. Values match exactly, as they were
+ * checked against the widget's options when the buyer chose them.
+ */
+export function TemplateAppliesToLineChoices(
+    template: { ChoiceGroupKey: string | null; ChoiceOptionValue: string | null },
+    lineChoices: ReadonlyArray<LineChoiceKey>,
+): boolean {
+    if (!template.ChoiceGroupKey) return true;
+    return lineChoices.some((c) => c.GroupKey === template.ChoiceGroupKey && c.OptionValue === template.ChoiceOptionValue);
 }
 
 /** Everything a validity window might need to know, so the pure function needs no lookups. */
@@ -273,9 +303,10 @@ export interface FirstPaymentScheduleRow {
  * How much has to be paid before a new purchase counts as paid for its first payment.
  *
  * An order with no schedule is due in one amount, so its first payment is the whole order. An order
- * with a schedule carries one schedule per selling company (D86), so its first payment is the first
- * live instalment of EACH company's schedule, summed — the customer's first bill, however many
- * companies it bills for. A cancelled instalment was never due and does not count.
+ * with a schedule bills from the order's company (golive #311), so its first payment is its first
+ * live instalment. A schedule written before golive #311 may still carry rows per selling company; its first
+ * payment is then the first live instalment of EACH company's rows, summed — the customer's first
+ * bill either way. A cancelled instalment was never due and does not count.
  */
 export function FirstPaymentAmount(totalGross: number | null, schedule: FirstPaymentScheduleRow[]): number {
     const firstByCompany = new Map<string, FirstPaymentScheduleRow>();
@@ -417,6 +448,237 @@ export function ReconcileGrantStatus(current: GrantStatusFacts, decided: GrantSt
     return decided;
 }
 
+/** The two exceptions to payment-gated access a person may approve (bizapps-orders#268). */
+export type AccessOverrideType = 'WaivePaymentHold' | 'DeferCutoff';
+
+/** The suspension each override type lifts. Neither lifts anything else. */
+export const ACCESS_OVERRIDE_LIFTS: Readonly<Record<AccessOverrideType, SuspensionReason>> = {
+    WaivePaymentHold: 'AwaitingPayment',
+    DeferCutoff: 'PastDue',
+};
+
+/** An approved override on the grant's order, for {@link ApplyAccessOverrides}. */
+export interface AccessOverrideFacts {
+    OverrideType: AccessOverrideType;
+    /** Last day the override holds, `YYYY-MM-DD`, inclusive. */
+    EffectiveThrough: string;
+}
+
+/**
+ * The payment rule's decision, with any approved override on the grant's order applied.
+ *
+ * An override does not change the rule; it answers Active in place of the one suspension it names,
+ * for as long as it runs. The payment rule is still asked first, so a grant whose payment arrives
+ * needs no override, and an override that has run out leaves the rule's answer standing. The caller
+ * passes only APPROVED overrides on the grant's own order — scope is decided there.
+ *
+ * @param asOfDay - `YYYY-MM-DD`; an override is in force through its `EffectiveThrough` day.
+ */
+export function ApplyAccessOverrides(
+    decided: GrantStatusDecision,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision {
+    if (decided.Status !== 'Suspended' || decided.Reason == null) return decided;
+    const lifted = overrides.some((o) => ACCESS_OVERRIDE_LIFTS[o.OverrideType] === decided.Reason && o.EffectiveThrough >= asOfDay);
+    return lifted ? ACTIVE : decided;
+}
+
+/**
+ * The past-due cutoff as a read sees it, before the nightly job has written it (#287).
+ *
+ * A renewal crosses `RenewalAccessCutoffDaysPastDue` with nothing written, so its grant still reads
+ * `Active` until `EnforcePaymentGatedAccess` next runs. The read path asks this instead of trusting
+ * the row, and decides with the same `DecideGrantStatus` and `ApplyAccessOverrides` the job runs.
+ *
+ * TIGHTEN ONLY. It answers a `PastDue` suspension for an Active `OnFirstPayment` renewal grant, or
+ * null. It never activates a grant: lifting a suspension stays with the payment that writes it.
+ *
+ * @param asOfDay - The business-time-zone day `order.DaysPastDue` was measured on, `YYYY-MM-DD`.
+ */
+export function ReadTimeCutoffSuspension(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    cutoffDaysPastDue: number | null,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision | null {
+    if (grant.Status !== 'Active' || grant.GrantTimingApplied !== 'OnFirstPayment' || !isRenewal) return null;
+    const decided = ApplyAccessOverrides(DecideGrantStatus('OnFirstPayment', true, order, cutoffDaysPastDue), overrides, asOfDay);
+    return decided.Status === 'Suspended' && decided.Reason === 'PastDue' ? decided : null;
+}
+
+/**
+ * The last day a past-due renewal keeps its access, as a read sees it (#269), or null.
+ *
+ * Applies to an Active `OnFirstPayment` renewal grant whose order is past due and not yet cut off:
+ * the day before `cutoffDaysPastDue` is reached, the same date the overdue worklist shows as
+ * `GraceThroughDate`. An approved `DeferCutoff` in force moves it to the override's last day when
+ * that is later. Null when the cutoff is off, the order is not past due, or access is already cut
+ * off (then {@link ReadTimeCutoffSuspension} answers instead).
+ *
+ * @param asOfDay - The business-time-zone day `order.DaysPastDue` was measured on, `YYYY-MM-DD`.
+ * @returns `YYYY-MM-DD`, on or after `asOfDay`.
+ */
+export function ReadTimeAccessCutoffDay(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    cutoffDaysPastDue: number | null,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): string | null {
+    if (grant.Status !== 'Active' || grant.GrantTimingApplied !== 'OnFirstPayment' || !isRenewal) return null;
+    if (cutoffDaysPastDue == null || order.DaysPastDue <= 0) return null;
+    if (ReadTimeCutoffSuspension(grant, true, order, cutoffDaysPastDue, overrides, asOfDay)) return null;
+
+    const graceDay = new Date(`${asOfDay}T00:00:00Z`);
+    graceDay.setUTCDate(graceDay.getUTCDate() + cutoffDaysPastDue - order.DaysPastDue - 1);
+    let through = graceDay.toISOString().slice(0, 10);
+    for (const o of overrides) {
+        if (o.OverrideType === 'DeferCutoff' && o.EffectiveThrough >= asOfDay && o.EffectiveThrough > through) {
+            through = o.EffectiveThrough;
+        }
+    }
+    return through >= asOfDay ? through : null;
+}
+
+/**
+ * A lapsed payment-hold waiver as a read sees it, before the nightly job has written it (#404).
+ *
+ * An approved `WaivePaymentHold` keeps an unpaid grant Active through its `EffectiveThrough` day.
+ * The day after, nothing is written until `EnforcePaymentGatedAccess` next runs, so the row still
+ * reads `Active`. The read path asks this instead, deciding with the same `DecideGrantStatus` and
+ * `ApplyAccessOverrides` the job runs.
+ *
+ * Applies only to an order with a `WaivePaymentHold` whose last day is before `asOfDay`, and only to
+ * the grants that override can hold up: `OnPaidInFull`, and `OnFirstPayment` on a new purchase (see
+ * {@link AccessOverrideCanApply}). A later waiver still in force keeps the grant Active.
+ *
+ * TIGHTEN ONLY. It answers an `AwaitingPayment` suspension for an Active grant, or null. It never
+ * activates a grant: lifting a suspension stays with the payment that writes it.
+ *
+ * @param overrides - Every APPROVED override on the grant's order, expired or not.
+ * @param asOfDay - The business-time-zone day being decided, `YYYY-MM-DD`.
+ */
+export function ReadTimeWaiverExpirySuspension(
+    grant: { Status: string; GrantTimingApplied: string | null },
+    isRenewal: boolean,
+    order: OrderPaymentFacts,
+    overrides: readonly AccessOverrideFacts[],
+    asOfDay: string,
+): GrantStatusDecision | null {
+    if (grant.Status !== 'Active') return null;
+    const timing = grant.GrantTimingApplied;
+    if (timing !== 'OnPaidInFull' && !(timing === 'OnFirstPayment' && !isRenewal)) return null;
+    if (!overrides.some((o) => o.OverrideType === 'WaivePaymentHold' && o.EffectiveThrough < asOfDay)) return null;
+    const decided = ApplyAccessOverrides(DecideGrantStatus(timing, isRenewal, order, null), overrides, asOfDay);
+    return decided.Status === 'Suspended' && decided.Reason === 'AwaitingPayment' ? decided : null;
+}
+
+/**
+ * Whether an override of this type could lift anything on an order holding these grants: some grant
+ * must follow a rule that can impose the suspension the type names. `AwaitingPayment` comes from
+ * `OnPaidInFull`, and from `OnFirstPayment` on a new purchase; `PastDue` only from `OnFirstPayment`
+ * on a renewal. See {@link DecideGrantStatus}.
+ */
+export function AccessOverrideCanApply(
+    type: AccessOverrideType,
+    grants: ReadonlyArray<{ Timing: GrantTiming; IsRenewal: boolean }>,
+): boolean {
+    return grants.some((g) =>
+        type === 'DeferCutoff'
+            ? g.Timing === 'OnFirstPayment' && g.IsRenewal
+            : g.Timing === 'OnPaidInFull' || (g.Timing === 'OnFirstPayment' && !g.IsRenewal),
+    );
+}
+
+/** Where an override's approval task has got to, for {@link ResolveAccessOverrideOutcome}. */
+export interface AccessOverrideTaskFacts {
+    TaskStatus: string;
+    /** The most recent terminal decision on the task; null when there is none. */
+    Decision: { IsApproval: boolean } | null;
+}
+
+/**
+ * The status a Requested override moves to, given its approval task — or null while the task is open.
+ *
+ *   Completed with an approving decision   → Approved
+ *   Cancelled with a rejecting decision    → Rejected
+ *   closed any other way                   → Withdrawn
+ *
+ * A closed task always closes the override, so a task closed without a decision does not leave the
+ * order blocked for a new request.
+ */
+export function ResolveAccessOverrideOutcome(facts: AccessOverrideTaskFacts): 'Approved' | 'Rejected' | 'Withdrawn' | null {
+    if (facts.TaskStatus !== 'Completed' && facts.TaskStatus !== 'Cancelled') return null;
+    if (facts.Decision) {
+        if (facts.TaskStatus === 'Completed' && facts.Decision.IsApproval) return 'Approved';
+        if (facts.TaskStatus === 'Cancelled' && !facts.Decision.IsApproval) return 'Rejected';
+    }
+    return 'Withdrawn';
+}
+
+/** What decides who approves an access override, for {@link AccessOverrideApprovers}. */
+export interface AccessOverrideApproverFacts {
+    RequesterUserID: string;
+    /** The order company's `ApprovalCFOUserID`, or null when it is unset or that user is inactive. */
+    CompanyApproverUserID: string | null;
+    /** The `AccessOverrideFallbackApproverRole` setting, or null when it is unset. */
+    FallbackRoleName: string | null;
+    /** The fallback role's active holders. Read only when the company approver is the requester. */
+    FallbackHolderIDs: readonly string[];
+}
+
+export type AccessOverrideApproverResult =
+    | { UserIDs: string[]; Basis: 'CompanyApprover' | 'FallbackRole' }
+    | { Refusal: string };
+
+const sameUser = (a: string | null | undefined, b: string | null | undefined): boolean =>
+    !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Who an access override's approval task is assigned to (bizapps-orders#360).
+ *
+ *   the order company's ApprovalCFOUserID                    → that user
+ *   ...who is the requester                                  → the fallback role's holders, less the requester
+ *   no ApprovalCFOUserID, or no fallback holder when needed  → refused
+ *
+ * Refusing rather than raising an unassigned task: an approval nobody is asked for never happens.
+ */
+export function AccessOverrideApprovers(facts: AccessOverrideApproverFacts): AccessOverrideApproverResult {
+    const approver = facts.CompanyApproverUserID;
+    if (!approver) {
+        return {
+            Refusal:
+                "The order's company has no active approver (AccountingCompanyProfile.ApprovalCFOUserID), so no one " +
+                'could approve this override. Set the company approver first.',
+        };
+    }
+    if (!sameUser(approver, facts.RequesterUserID)) return { UserIDs: [approver], Basis: 'CompanyApprover' };
+
+    if (!facts.FallbackRoleName) {
+        return {
+            Refusal:
+                "You are the order company's approver and cannot approve your own override, and no fallback approver " +
+                'role is configured (Orders setting AccessOverrideFallbackApproverRole).',
+        };
+    }
+    const others: string[] = [];
+    for (const id of facts.FallbackHolderIDs) {
+        if (!sameUser(id, facts.RequesterUserID) && !others.some((o) => sameUser(o, id))) others.push(id);
+    }
+    if (others.length === 0) {
+        return {
+            Refusal:
+                `You are the order company's approver and cannot approve your own override, and no active holder of ` +
+                `the fallback approver role '${facts.FallbackRoleName}' other than you exists.`,
+        };
+    }
+    return { UserIDs: others, Basis: 'FallbackRole' };
+}
+
 /**
  * How much of a grant survives a partial return.
  *
@@ -465,12 +727,20 @@ export type EntitlementDecision =
 /** The facts a grant row carries that the evaluator needs — no database. */
 export interface GrantAccessFacts {
     Status: string;
+    /** `EntitlementGrant.SuspensionReason`, reported with a `Suspended` decision (#269). */
+    SuspensionReason?: string | null;
     ValidFrom: Date | null;
     ValidTo: Date | null;
     /** True when `EntitlementGrant.SubscriptionID` is set. Missing subscription row → fail closed. */
     LinkedToSubscription?: boolean;
     /** True when `EntitlementGrant.SubscriptionTermID` is set. Missing term row → fail closed. */
     LinkedToTerm?: boolean;
+    /**
+     * A suspension the payment rule has reached that the row does not show yet, from
+     * {@link ReadTimeCutoffSuspension} or {@link ReadTimeWaiverExpirySuspension}.
+     * Only ever denies: an Active row reads as Suspended.
+     */
+    PendingSuspension?: GrantStatusDecision | null;
 }
 
 /** Subscription facts that can cut access short or extend it through grace. */
@@ -494,6 +764,12 @@ export interface GrantAccessEvaluation {
     Decision: EntitlementDecision;
     ValidFrom: Date | null;
     ValidTo: Date | null;
+    /**
+     * Why access is held, set only with a `Suspended` decision (#269): waiting for a first payment,
+     * past due, or waiting for activation. Null for a suspension that records no reason, such as one
+     * a person made.
+     */
+    SuspensionReason?: SuspensionReason | null;
 }
 
 /** Subscription statuses that still confer access. Anything else is inactive. */
@@ -530,10 +806,16 @@ export function EvaluateGrantAccess(
         ValidTo: grant.ValidTo,
     });
 
+    const suspendedFor = (reason: string | null | undefined): GrantAccessEvaluation => ({
+        ...denied('Suspended'),
+        SuspensionReason: IsSuspensionReason(reason) ? reason : null,
+    });
+
     if (grant.Status === 'Revoked') return denied('Revoked');
-    if (grant.Status === 'Suspended') return denied('Suspended');
+    if (grant.Status === 'Suspended') return suspendedFor(grant.SuspensionReason);
     if (grant.Status === 'Expired') return denied('Expired');
     if (grant.Status !== 'Active') return denied('NoGrant');
+    if (grant.PendingSuspension?.Status === 'Suspended') return suspendedFor(grant.PendingSuspension.Reason);
 
     if (grant.ValidFrom && asOf.getTime() < grant.ValidFrom.getTime()) {
         return denied('NotYetValid');

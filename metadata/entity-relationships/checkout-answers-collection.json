@@ -1,0 +1,8 @@
+{
+  "Name": "CheckoutAnswers",
+  "Source": "database",
+  "Load": "explicit",
+  "OnRemove": "delete",
+  "OrderBy": "QuestionKey ASC",
+  "ClearAfterSave": false
+}

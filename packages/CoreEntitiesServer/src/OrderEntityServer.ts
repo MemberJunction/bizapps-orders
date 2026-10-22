@@ -49,6 +49,9 @@ import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
     OrderHeaderEntity,
+    OrderLineEntity,
+    mjBizAppsOrdersEventOrderLineEntity,
+    mjBizAppsOrdersOrderCheckoutAnswerEntity,
     mjBizAppsOrdersOrderLineEntity,
     type AddressLike,
     mjBizAppsOrdersOrderLinePriceComponentEntity,
@@ -59,26 +62,43 @@ import {
     mjBizAppsOrdersSubscriptionEventEntity,
     mjBizAppsOrdersSubscriptionTermEntity,
     ToISODate,
+    IsEditable,
+    REVIEWED_HEADER_FIELDS,
+    REVIEWED_LINE_FIELDS,
+    type OrderReviewChangeFacts,
+    HostOrderConfirmVeto,
+    ResolveOrderConfirmRefusal,
+    RunAlongsideRefusal,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
+import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
-import { InheritedTerms, ValidateReversal } from './ReversalBehavior.js';
-import { IsWholeOrderReversed, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
+import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
+import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
+import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
+import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
+import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
+import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
-import { MergeDerivedTags, type LineDimensionTag } from './LineDimensionMerge.js';
+import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
+import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
+import { DisplacedStartEventData } from './displaced-start-event.js';
 import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
     MergeOrderRollups,
@@ -87,11 +107,21 @@ import {
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
 import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
-import { ExplainShortfalls, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
+import { ExplainShortfalls, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
+import { LowerInstalments } from './AmountChange.js';
+import { PlanReduction } from './AmountChangePlan.js';
+import { OrderStillToBill, ReturnScheduleReduction } from './ReversalScheduleReduction.js';
 import { IssueInstalment } from './IssueInstalmentInvoiceOperation.js';
-import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import {
+    ORDER_CONCESSION_ENTITY,
+    ORDER_HEADER_ENTITY,
+    ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+    SUBSCRIPTION_FAMILY_ENTITY,
+} from './entity-names.js';
 import type { OrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
-import { Today, AllocateProRata, AuthorizeManualDiscount, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
+import { CheckOrderBillToName, LoadBillToName } from './RailCustomerNameLimit.js';
+import { Today, AllocateProRata, AuthorizeManualDiscount, DeletePromotionAdjustments, DeleteTaxCharges, LineGross, LoadOrdersEngine, NetAfterDiscount, OrderPricingService, OrdersEngine, ReadStandingDiscounts, ReadStatedTaxCharges, ResolvePrice, ResolveTax, ResolveTaxability, RunCharges, RunPromotions, SplitChargesByLine, WriteAdjustments, WriteCharges, type ComputeChargesResult, type ManualDiscountRequest, type PromotableLine, type PromotionRunResult, type RequestedCharge, type ResolvedPrice, type ResolvedTaxability, type StackingMode, type TaxAddress, type TaxabilityCategoryLevel } from '@mj-biz-apps/orders-entities';
 
 const CUSTOMER_PAYMENT_TERMS_ENTITY = 'MJ_BizApps_Orders: Customer Payment Terms';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -100,9 +130,15 @@ import {
     ResolveSubscriptionTypeID,
     SubscriptionTypeRulesFrom,
     type SubscriberIdentity,
+    type SubscriberMatch,
     type ExistingSubscription,
     type SubscriptionDecision,
     type SubscriptionTypeRules,
+    OverlappingCoverage,
+    CoverageEndOf,
+    type CoverageOverlap,
+    type CoverageOverlapDecision,
+    type FamilyCoverageTerm,
 } from './SubscriptionBehavior.js';
 
 interface ProductRow {
@@ -111,11 +147,24 @@ interface ProductRow {
     SubscriptionTypeID?: string | null;
     ProductTypeID?: string | null;
     RevenueRecognitionTypeID: string;
+    CompanyID: string;
+    /** `Product.SubscriptionFamilyID` — the bands of one offering share it (golive #276). */
+    SubscriptionFamilyID?: string | null;
 }
 
-/** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
+/** A subscription line whose term overlaps coverage in its family, as a preview reports it. */
+export interface LineCoverageOverlap {
+    Line: mjBizAppsOrdersOrderLineEntity;
+    Decision: CoverageOverlapDecision;
+    Overlaps: CoverageOverlap[];
+}
+
+/**
+ * Terms created during a confirm, and the recognition cadence each line inherits from its type. A line
+ * that states an end past its first term has several terms, in order (golive #338).
+ */
 interface SubscriptionMaterialization {
-    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>;
+    TermsByLine: Map<string, Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>>;
     RecognitionMonthsByLine: Map<string, number>;
 }
 
@@ -124,6 +173,7 @@ const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 // bizapps-common names its entities with DOTS, not the underscores the other apps use.
 const COMMON_ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ORDER_CHECKOUT_ANSWER_ENTITY = 'MJ_BizApps_Orders: Order Checkout Answers';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
 /** IsA Disjoint child of Product (BO-D37) — present only for products that ARE events. */
@@ -148,6 +198,7 @@ const BOOKED_STATUSES = new Set(['Confirmed']);
  * an allocation points at its adjustment. See `deleteLineDependents` for why the list stops here.
  */
 const REMOVED_LINE_DEPENDENT_ENTITIES = [
+    'MJ_BizApps_Orders: Order Concessions',
     'MJ_BizApps_Orders: Order Line Price Components',
     'MJ_BizApps_Orders: Order Charge Allocations',
     'MJ_BizApps_Orders: Order Adjustment Allocations',
@@ -186,6 +237,10 @@ interface AccountingEngineSurface {
  */
 const uuidKey = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 
+/** How live a subscription is, lowest first: the order a re-purchase prefers among several. */
+const subscriptionStatusRank = (status: string): number =>
+    status === 'Active' || status === 'Trialing' ? 0 : status === 'Paused' ? 1 : status === 'Canceled' ? 2 : 3;
+
 /** A line's subscription decision, carried from the pre-insert pass to the persistence pass. */
 interface SubscriptionDecisionForLine {
     Product: ProductRow;
@@ -203,6 +258,19 @@ interface SubscriptionDecisionForLine {
      * a placeholder for the second one, because the first is not written yet.
      */
     DedupeKey: string;
+    /**
+     * The start the line stated before the confirm, or null. Kept because the confirm overwrites
+     * `ServicePeriodStart` with the settled term, and a displaced start is recorded on the
+     * subscription's `Extended` event (golive #299).
+     */
+    RequestedStart: Date | null;
+    /** The end the line stated before the confirm, or null; kept for the same reason (golive #338). */
+    RequestedEnd: Date | null;
+    /**
+     * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
+     * the term, where entitlement grants and renewals read it.
+     */
+    Seats: number;
 }
 
 /**
@@ -226,8 +294,38 @@ interface CreateJournalEntriesResult {
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends OrderHeaderEntity {
+    /** An approved Terms concession, applied by ./PaymentTermsChange.ts, is the only change to a confirmed order's terms. */
+    protected override PaymentTermsChangeSanctioned(): boolean {
+        return PaymentTermsChangeGranted(this);
+    }
+
     /** Price decompositions produced during this save, written once the lines have IDs (D69). */
     private _priceComponents = new Map<mjBizAppsOrdersOrderLineEntity, ResolvedPrice>();
+    /** Lines the renewal pass priced, with the price it wrote; see {@link MarkRenewalPriced}. */
+    private _renewalPricedLines = new Map<mjBizAppsOrdersOrderLineEntity, number>();
+
+    /**
+     * Record that the renewal pass priced this line (golive #304).
+     *
+     * A renewal is priced from the prior term, not today's list: a lapsed discount, a grandfathered
+     * price raised by the annual increase. That can sit below the engine's price, and it is the
+     * price finance chose, not a concession someone typed. While the line still carries the price
+     * the pass wrote, the concession gate and the below-engine review treat it as engine-priced.
+     * Change the price and both judge it as usual.
+     */
+    public MarkRenewalPriced(line: mjBizAppsOrdersOrderLineEntity): void {
+        this._renewalPricedLines.set(line, Number(line.UnitPrice));
+    }
+
+    /** True for a line the renewal pass priced whose price is unchanged; matched by entity or saved ID. */
+    private isUneditedRenewalPrice(line: { ID?: string | null; UnitPrice: number | null }): boolean {
+        for (const [marked, price] of this._renewalPricedLines) {
+            const same =
+                marked === line || (!!line.ID && marked.IsSaved && marked.ID.toLowerCase() === String(line.ID).toLowerCase());
+            if (same) return Math.abs(Number(line.UnitPrice ?? 0) - price) < 0.005;
+        }
+        return false;
+    }
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
     private _manualDiscounts: ManualDiscountRequest[] = [];
@@ -257,9 +355,24 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private _pendingPromotions: PromotionRunResult | null = null;
     private _pendingCharges: ComputeChargesResult | null = null;
+    /**
+     * The saved lines whose promotions this save re-decides, so the saver replaces their earlier
+     * promotion rows. Empty unless `prepareLines` handed the walk their standing discounts.
+     */
+    private _promotionsReDecidedFor: string[] = [];
 
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
+
+    /** Each reversal line's tax, mirrored from its origin by `applyReversalOrigin` (D16). */
+    private _settledTax = new Map<mjBizAppsOrdersOrderLineEntity, MirroredTaxCharge[]>();
+
+    /**
+     * Addresses a reversal took from the order it reverses, with the origin's snapshot of each, keyed
+     * by the record and its snapshot field. `stampAddressSnapshots` copies the origin's snapshot
+     * rather than re-reading an Address row that may have been edited since the sale.
+     */
+    private _inheritedAddresses = new Map<BaseEntity, Map<string, { AddressID: string; Snapshot: string | null }>>();
 
     // `PromotionCodes` is not declared here any more. It is a COMPANION on the shared subclass, so
     // the browser has it too — which is the entire point: a code typed on screen used to be priced
@@ -377,7 +490,133 @@ export class OrderEntityServer extends OrderHeaderEntity {
             );
         }
 
+        for (const message of await this.checkEventAttendees()) {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo('Status', message, this.Status, ValidationErrorType.Failure));
+        }
+
+        for (const message of await this.checkBillToNameFitsRails()) {
+            result.Success = false;
+            const field = this.BillToOrganizationID ? 'BillToOrganizationID' : 'BillToPersonID';
+            result.Errors.push(new ValidationErrorInfo(field, message, this.BillToOrganizationID ?? this.BillToPersonID, ValidationErrorType.Failure));
+        }
+
+        await this.refuseVetoedConfirm(result);
+
         return result;
+    }
+
+    /**
+     * An event that requires attendee information books one seat per line, each line naming its
+     * attendee (see `AttendeeRequirement`).
+     *
+     * GATED ON `willBookOnThisSave()`, like the rules around it: a draft is saved while its
+     * attendees are still being entered, and an order that has booked is never re-judged.
+     *
+     * Reads `Lines` as held: the booking save loads the collection before validation runs, so on
+     * the save this guards the collection is the whole order. A line's attendee is the event row in
+     * memory when there is one, and otherwise the row on disk.
+     */
+    private async checkEventAttendees(): Promise<string[]> {
+        if (!this.willBookOnThisSave() || this.Lines.Count === 0) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        const lines = this.Lines.Items;
+
+        const requiring = await LoadProductsRequiringAttendees(lines.map((l) => l.ProductID), provider, this.ContextCurrentUser);
+        if (requiring.size === 0) return [];
+
+        const eventRowInMemory = (line: mjBizAppsOrdersOrderLineEntity): mjBizAppsOrdersEventOrderLineEntity | null => {
+            const child = line.ISAChild ?? (line instanceof OrderLineEntity ? line.Extension.Entity : null);
+            return child instanceof mjBizAppsOrdersEventOrderLineEntity ? child : null;
+        };
+        const onDisk = await LoadLinesWithAttendee(
+            lines.filter((l) => l.IsSaved && requiring.has(uuidKey(l.ProductID)) && !eventRowInMemory(l)).map((l) => l.ID),
+            provider,
+            this.ContextCurrentUser,
+        );
+
+        return ExplainMissingAttendees(
+            lines.map((line) => {
+                const inMemory = eventRowInMemory(line);
+                return {
+                    LineNumber: line.LineNumber,
+                    ProductID: line.ProductID,
+                    Quantity: line.Quantity,
+                    Exempt: !!line.ReversesOrderLineID || !!line.ParentOrderLineID,
+                    HasAttendee: inMemory ? !!inMemory.PersonID : onDisk.has(uuidKey(line.ID)),
+                };
+            }),
+            requiring,
+        );
+    }
+
+    /**
+     * The bill-to name must fit the customer fields of every invoice rail a selling company on
+     * this order invoices through (bc-aidp-next-golive#280). The rail creates its customer from
+     * that name, so a name it cannot hold would otherwise fail at send time, days later.
+     *
+     * Checked when the payer is set or changed and when the order books, so an existing draft
+     * edited for any other reason is not refused. The send checks again for anything saved before.
+     */
+    private async checkBillToNameFitsRails(): Promise<string[]> {
+        const payerChanged = !this.IsSaved || !!this.GetFieldByName('BillToOrganizationID')?.Dirty || !!this.GetFieldByName('BillToPersonID')?.Dirty;
+        if (!payerChanged && !this.willBookOnThisSave()) return [];
+        const companyIDs = this.sellingCompanyIDs();
+        if (companyIDs.length === 0) return [];
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const billTo = await LoadBillToName(this.BillToOrganizationID, this.BillToOrganizationID ? null : this.BillToPersonID, provider, this.ContextCurrentUser);
+        return billTo ? CheckOrderBillToName(companyIDs, billTo, provider, this.ContextCurrentUser) : [];
+    }
+
+    /**
+     * ASKS ANOTHER APP WHETHER THIS ORDER MAY BOOK (bc-aidp-next-golive#323).
+     *
+     * Orders enforces its own rules above. This is the seam for a rule it cannot know: Sales closes a
+     * deal Won, which mints this order, and the deal is then REOPENED. Twenty seconds later the order
+     * was confirmed from the order screen and booked — a booking entry, a subscription and twelve
+     * recognition entries — leaving an Open deal at 75% sitting on a booked order. Sales already
+     * refuses the reverse, so this is the direction nothing checked.
+     *
+     * GATED ON `willBookOnThisSave()`, the same gate as the no-lines check above, so an ordinary edit
+     * to a confirmed order never consults it and a host with no vetoer pays nothing.
+     *
+     * FROM the saved status, not the pending one: a vetoer asked "may this confirm" should be told
+     * where the order IS, not where this save wants it to go.
+     *
+     * Failure is a REFUSAL, decided in `ResolveOrderConfirmRefusal` rather than here — a vetoer that
+     * throws has not said yes, and booking on "could not tell" reaches the outcome this prevents by
+     * another route.
+     */
+    private async refuseVetoedConfirm(result: ValidationResult): Promise<void> {
+        if (!this.willBookOnThisSave()) return;
+        const veto = HostOrderConfirmVeto();
+        // An unsaved order has no id for a vetoer to look anything up BY, and nothing can point at
+        // it yet: the only link is `Deal.OrderID`, which a deal cannot set before this row exists.
+        // So there is nothing to ask about, rather than a question being skipped.
+        if (!veto || !this.ID) return;
+
+        const refusal = await ResolveOrderConfirmRefusal(
+            veto,
+            {
+                OrderHeaderID: this.ID,
+                FromStatus: String(this.GetFieldByName('Status')?.OldValue ?? this.Status ?? ''),
+                ContextUser: this.ContextCurrentUser ?? null,
+            },
+            `Order ${this.OrderNumber ?? ''} was not confirmed.`,
+        );
+        if (!refusal) return;
+
+        result.Success = false;
+        result.Errors.push(new ValidationErrorInfo('Status', refusal, this.Status, ValidationErrorType.Failure));
+    }
+
+    /** The header's company and every company a line in memory sells for, without duplicates. */
+    private sellingCompanyIDs(): string[] {
+        const byKey = new Map<string, string>();
+        for (const id of [this.CompanyID, ...this.Lines.Items.map((line) => line.CompanyID)]) {
+            if (id && !byKey.has(id.toLowerCase())) byKey.set(id.toLowerCase(), id);
+        }
+        return [...byKey.values()];
     }
 
     // ─── Save Override ─────────────────────────────────────────────────────────
@@ -396,9 +635,26 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // has now found three times.
         if (!this.passesStatusTransition()) return false;
 
-        await this.ApplyPersonPartyDefaults();
+        // ORIGIN IS SET BY THE PROCESS THAT CREATES THE ORDER, never by the person saving it. Order
+        // review exempts the system origins (golive #320 §5), so a writable Origin was a way round it.
+        if (!this.passesOriginGuard()) return false;
+
+        // A CHANGE THAT SENDS THE ORDER TO REVIEW (golive #320 §5) is read before the party defaults
+        // below fill anything in, so it sees only what the caller changed. It raises the review before
+        // the write: a spare task for a save that then fails is the safe side of the trade.
+        if (!(await this.passesOrderReviewOnChange())) return false;
+
+        await this.ApplySavePartyDefaults();
 
         const booking = this.willBookOnThisSave();
+
+        // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
+        // for the same reason as the status move above: a refused confirm must change nothing.
+        if (booking && !(await this.passesConcessionGate())) return false;
+
+        // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
+        // reviewer sees the order as it will book. Off until a host switches a trigger on.
+        if (booking && !(await this.passesOrderReviewGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
         //
@@ -547,15 +803,27 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             await this.expandBundles();
+            // EVERY LINE'S PRODUCT IN THE CATALOG CACHE, reloaded once if any is missing (golive #301).
+            // Subscription decisions, the company stamp, dimension tags and booking all read the
+            // product from `OrdersEngine`; a product written outside this process since it started
+            // was invisible to all of them. One reload here serves the whole save.
+            await OrdersEngine.Instance.EnsureProducts(
+                this.Lines.Items.map((l) => l.ProductID),
+                this.ContextCurrentUser as UserInfo,
+                this.ProviderToUse as unknown as IMetadataProvider,
+            );
             const decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine> =
                 booking ? await this.decideSubscriptions() : new Map();
+            // Ahead of pricing, so an ordinary line on a reversal order is taxed at the address the
+            // order will show. Reversal lines take their tax from their origin and ignore it.
+            await this.inheritReversalAddresses();
             await this.prepareLines(decisions);
 
             // THE ADDRESS AS SOLD, copied onto the order at the first confirm (golive #263).
             //
             // HERE, before either line write below: a draft's existing lines are written while the
-            // header is still Draft, and `trg_OrderLine_AddressFrozenAfterConfirm` refuses the line
-            // snapshot once the header is Confirmed. Inside the transaction, so it reads the same
+            // header is still Draft, and `trg_OrderLine_ImmutableAfterConfirm` (51016) refuses the
+            // line snapshot once the header is Confirmed. Inside the transaction, so it reads the same
             // Address rows the tax resolution in `prepareLines` just read.
             if (booking) await this.stampAddressSnapshots('confirm');
             else if (this.IsBookedOrder) await this.stampAddressSnapshots('fill');
@@ -572,7 +840,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
 
             if (booking) {
-                this.ConfirmedAt = new Date();
+                this.stampConfirmation();
             }
             if (!headerAlreadyPersisted && !this.OrderNumber) {
                 this.OrderNumber = await this.assignOrderNumber();
@@ -611,8 +879,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 }
             }
 
+            await this.saveCheckoutAnswers(options);
+
             if (booking) {
                 const lines = await this.loadLinesForBooking();
+
+                // A LINE BOOKED BELOW ITS ENGINE PRICE WITH NO APPROVED CONCESSION IS RECORDED FOR
+                // FINANCE (golive #279). The gate above refuses most of these; this catches the ones
+                // that book anyway — see `raisePriceBelowEngineExceptions`. Here, once every line is
+                // written and priced, and inside the transaction: a raise that fails rolls the
+                // booking back rather than losing the exception.
+                await this.raisePriceBelowEngineExceptions(lines);
+                // A SUBSCRIPTION SOLD FOR A LENGTH OTHER THAN ITS TYPE'S TERM is recorded for finance
+                // too (golive #338), on the same terms: refuses nothing, fails the booking if the raise
+                // fails.
+                await this.raiseTermLengthExceptions(lines, decisions);
 
                 // THE SCHEDULE MUST TIE (plan §4.3). Per company, the instalments must sum to exactly
                 // what the lines just landed as — checked here, inside the transaction, because the
@@ -629,6 +910,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 const reversals = await this.loadReversalContexts(lines);
                 const subs = await this.materializeSubscriptions(lines, decisions, reversals, options);
                 await this.bookLines(lines, options, subs, scheduleRows, reversals);
+                this.adoptBookedLineState(lines);
 
                 // ISSUE WHAT IS ALREADY DUE (D92). A company billed by instalment books no value at
                 // confirm — except the instalments whose due date has already arrived, usually the
@@ -657,6 +939,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // And the mirror: a returned line takes its access with it.
                 await this.revokeEntitlementsForReversals(lines, reversals, options);
 
+                // What a return had not yet been invoiced for comes off the origin's instalments
+                // (#661). Before the cancel below, which withdraws them all on a whole-order return:
+                // the reductions are measured against the instalments as they stand.
+                await this.reduceOriginSchedules(lines, reversals, options);
+                this.adoptBookedLineState(lines);
+
                 // A reversed order stops billing (D92 §6). Inside, for the same reason as the two
                 // above: an order that credits the customer back and keeps invoicing them every
                 // quarter has done half a reversal, and the half that is left is the half that
@@ -678,7 +966,26 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // caller carries a NULL Balance that renders as a dash and erases itself on the next save.
             await this.refreshRolledUpTotals();
 
+            // THE OUTBOUND EVENT, LAST AND INSIDE (#293). Written in this transaction so it exists
+            // exactly when the confirm commits; sent after it, by the dispatcher. First confirm only:
+            // `booking` is false on every later save of a confirmed order, so a re-save never fires.
+            // Sales only, renewals included: a return, cancellation, amendment or credit is not a
+            // purchase, and its effect on access reaches consumers as GrantStatusChanged.
+            if (booking && this.OrderType === 'Sale') await this.recordOrderConfirmedEvent(options);
+
             await dbProvider.CommitTransaction();
+            // A REQUESTED DISCOUNT IS CONSUMED BY THE SAVE THAT APPLIED IT. Its adjustment row and the
+            // line's stored discount now carry it, and the next walk starts from those. Left in place, a
+            // second save of this object (the confirm after a draft) granted it again. Cleared only once
+            // committed, so a save that rolls back can be retried with the same requests.
+            this._manualDiscounts = [];
+            // A REQUESTED CHARGE IS CONSUMED BY THE SAVE THAT APPLIED IT. Its rows now carry it: a
+            // stated tax is read back from them by `statedTaxForRePricing`, and any other charge keeps
+            // its rows and its line's `ChargeAmount`, which a walk that does not see it leaves alone.
+            // Left in place, a second save of this object (the confirm after a draft) wrote the
+            // charge again and booking credited it twice. Cleared only once committed, so a save
+            // that rolls back can be retried with the same requests.
+            this._charges = [];
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
@@ -731,8 +1038,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * A failure here does not fail the confirm. Booking is the irreversible step and money has
      * already moved in the ledger; refusing it because a lookup could not be read would be a far
      * worse outcome than an order that falls back to due-on-receipt and says so in the log.
+     *
+     * Public so `Orders.SpawnRenewals` can settle the terms on its draft before writing the renewal's
+     * schedule row, which is due on the invoice day plus these same terms (#305).
      */
-    private async resolveDueDate(): Promise<void> {
+    public async resolveDueDate(): Promise<void> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
         const orderDate = this.OrderDate ? new Date(this.OrderDate).toISOString().slice(0, 10) : null;
@@ -894,11 +1204,266 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
 
+    /**
+     * Refuse the confirm while a concession on this order awaits a decision, or a line's typed price
+     * gives away value no approved concession covers (golive #222). The order itself saves; only
+     * the move to Confirmed waits, so the work is kept and the concession stays visible as a queue.
+     */
+    private async passesConcessionGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const lines = this.concessionLineFacts();
+        const problems = await FindUnapprovedConcessions(
+            this.IsSaved ? this.ID : null,
+            lines,
+            true,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
+        if (problems.length === 0) return true;
+
+        this.RegisterResultHistoryEntry(
+            this.buildFailureResult(
+                new Error(
+                    `Order ${this.OrderNumber ?? ''} cannot be confirmed yet: ${problems.join('; ')}. A concession ` +
+                        `must be approved before the customer is committed to it.`,
+                ),
+            ),
+        );
+        return false;
+    }
+
+    /**
+     * Refuse a write of `Origin` that no system process made (./SystemOrderOrigin.ts). Applies with or
+     * without review switched on: an Origin written while review was off would be trusted once it is on.
+     */
+    private passesOriginGuard(): boolean {
+        const stored = this.GetFieldByName('Origin')?.OldValue;
+        const refusal = OriginWriteRefusal({
+            IsSaved: this.IsSaved,
+            Origin: this.Origin ?? null,
+            StoredOrigin: typeof stored === 'string' ? stored : null,
+            MarkedBySystem: IsSystemOriginWrite(this),
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /**
+     * Refuse the confirm while the order's review is outstanding, and send an order that hit a review
+     * trigger with no review to one (golive #320 §5). Like the concession gate, a refusal refuses the
+     * whole save, not only the move to Confirmed: nothing else the save carried is written either. A
+     * save with no context user is not reviewed: there is nobody to route the review as, and the
+     * processes that save without one are not direct entry.
+     */
+    private async passesOrderReviewGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const refusal = await CheckOrderReviewAtConfirm(this.reviewOrderInput(), {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /**
+     * A save of an unconfirmed order that changes its bill-to, company, prices or service dates sends a
+     * deal-created or already-reviewed order (back) to review, and an edit to a renewal's carried-forward
+     * price sends any order there (golive #320 §5). Refuses the save only when such a review could not be
+     * raised.
+     */
+    private async passesOrderReviewOnChange(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user || !this.IsSaved) return true;
+        const savedStatus = String(this.GetFieldByName('Status')?.OldValue ?? this.Status ?? '');
+        if (!IsEditable(savedStatus)) return true;
+
+        const change: OrderReviewChangeFacts = {
+            HeaderFieldsChanged: REVIEWED_HEADER_FIELDS.filter((f) => this.GetFieldByName(f)?.Dirty === true),
+            // A renewal line still at the price the renewal pass wrote is not a hand edit (golive #304).
+            LinesChanged: this.Lines.Items.filter((line) => line.IsSaved && !this.isUneditedRenewalPrice(line))
+                .map((line) => ({
+                    LineNumber: line.LineNumber ?? null,
+                    Fields: REVIEWED_LINE_FIELDS.filter((f) => line.GetFieldByName(f)?.Dirty === true),
+                    RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+                }))
+                .filter((line) => line.Fields.length > 0),
+            LinesAdded: this.Lines.Items.filter((line) => !line.IsSaved && !line.ParentOrderLineID && !line.ReversesOrderLineID).length,
+            LinesRemoved: this.Lines.Removed.filter((line) => line.IsSaved).length,
+        };
+        if (change.HeaderFieldsChanged.length === 0 && change.LinesChanged.length === 0 && change.LinesAdded === 0 && change.LinesRemoved === 0) {
+            return true;
+        }
+        const refusal = await CheckOrderReviewOnChange(this.reviewOrderInput(), change, {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /** The order as the review reads it (golive #320 §5). */
+    private reviewOrderInput(): ReviewOrderInput {
+        const items = this.Lines.Items;
+        return {
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            OrderNumber: this.OrderNumber ?? null,
+            Origin: this.Origin ?? null,
+            ReversesOrderHeaderID: this.ReversesOrderHeaderID ?? null,
+            Lines: this.concessionLineFacts().map((facts, i) => ({
+                ...facts,
+                ServicePeriodStart: ToISODate(items[i].ServicePeriodStart),
+                ServicePeriodEnd: ToISODate(items[i].ServicePeriodEnd),
+                RenewalPriceEdited: this.isEditedRenewalPrice(items[i]),
+            })),
+        };
+    }
+
+    /** True for a line the renewal pass priced in this object whose price has since been changed. */
+    private isEditedRenewalPrice(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this._renewalPricedLines.has(line) && !this.isUneditedRenewalPrice(line);
+    }
+
+    /** The lines in memory as the concession gate and the order review read them, in `Lines.Items` order. */
+    private concessionLineFacts(): ConcessionLineFacts[] {
+        return this.Lines.Items.map((line) => ({
+            ID: line.IsSaved ? line.ID : null,
+            LineNumber: line.LineNumber ?? null,
+            ParentOrderLineID: line.ParentOrderLineID ?? null,
+            ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+            ProductID: line.ProductID,
+            OrderHeaderID: this.IsSaved ? this.ID : null,
+            Quantity: line.Quantity,
+            UnitPrice: line.UnitPrice,
+            ProductPriceID: line.ProductPriceID,
+            DiscountPct: line.DiscountPct,
+            RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+            // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
+            PriceStated:
+                !this.isUneditedRenewalPrice(line) &&
+                (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
+            LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
+        }));
+    }
+
+    /**
+     * Record every line of this booking that is priced below its engine price with no Approved
+     * concession covering it (finance exception type 4, golive #279). Refuses nothing.
+     *
+     * `passesConcessionGate` already holds most such confirms. What still books: a save with no
+     * context user, which skips the gate; and a line the gate judged against state this save then
+     * changed — it runs before bundle expansion, proration and pricing, and prices a saved order
+     * against its header as last persisted, so a bill-to or order date changed in the confirming
+     * save itself is not what it saw. This runs on the lines and header as booked.
+     */
+    private async raisePriceBelowEngineExceptions(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser ?? null;
+        await RaisePriceBelowEngineExceptions(
+            {
+                OrderHeaderID: this.ID,
+                OrderNumber: this.OrderNumber ?? null,
+                Lines: lines.map((line) => ({
+                    ID: line.ID,
+                    LineNumber: line.LineNumber ?? null,
+                    ParentOrderLineID: line.ParentOrderLineID ?? null,
+                    ReversesOrderLineID: line.ReversesOrderLineID ?? null,
+                    ProductID: line.ProductID,
+                    OrderHeaderID: this.ID,
+                    Quantity: line.Quantity,
+                    UnitPrice: line.UnitPrice,
+                    ProductPriceID: line.ProductPriceID,
+                    DiscountPct: line.DiscountPct,
+                    RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+                    PriceStated: !this.isUneditedRenewalPrice(line),
+                    CompanyID: line.CompanyID,
+                })),
+                BusinessDay: () => BusinessDay(provider, user as UserInfo),
+            },
+            provider,
+            user,
+        );
+    }
+
+    /**
+     * Record every subscription line of this booking whose stated period gives it a length other than
+     * its type's term (golive #338). Refuses nothing; see `TermLengthExceptions`.
+     */
+    private async raiseTermLengthExceptions(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+    ): Promise<void> {
+        const byID = new Map(lines.map((l) => [uuidKey(l.ID), l]));
+        const stated: StatedLengthLine[] = [];
+        for (const [pending, decided] of decisions) {
+            const length = decided.Decision.StatedLength;
+            const terms = decided.Decision.Terms;
+            const line = pending.ID ? byID.get(uuidKey(pending.ID)) : undefined;
+            if (!length || !terms?.length || !line) continue;
+            stated.push({
+                ID: line.ID,
+                LineNumber: line.LineNumber ?? null,
+                ProductName: decided.Product.Name,
+                CompanyID: line.CompanyID,
+                ProductID: line.ProductID,
+                OrderHeaderID: this.ID,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                ProductPriceID: line.ProductPriceID,
+                PriceStated: !this.isUneditedRenewalPrice(line),
+                LineTotalNet: Number(line.LineTotalNet ?? 0),
+                CoverageStart: terms[0].StartDate,
+                CoverageEnd: terms[terms.length - 1].EndDate,
+                Months: length.Months,
+                TypeMonths: length.TypeMonths,
+            });
+        }
+        if (stated.length === 0) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser ?? null;
+        await RaiseTermLengthExceptions(
+            {
+                OrderHeaderID: this.ID,
+                OrderNumber: this.OrderNumber ?? null,
+                Lines: stated,
+                BusinessDay: () => BusinessDay(provider, user as UserInfo),
+            },
+            provider,
+            user,
+        );
+    }
+
     // ─── Booking ───────────────────────────────────────────────────────────────
 
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
     // because the rules that consult them — must have a payer, must have something to book — are
     // decidable without the database and now run on both tiers.
+
+    /**
+     * WHEN AND BY WHOM this order was booked, written by the booking save and by nothing else.
+     *
+     * The confirmer is the save's context user, never a value the caller sent: a graph save overlays
+     * the client's fields onto the row (`SaveEntityGraphOperation.rebuildRoot`), so a
+     * `ConfirmedByUserID` arriving on the payload is overwritten here rather than trusted. The
+     * finance exception review uses it to keep a person from clearing an exception raised against an
+     * order they confirmed themselves (golive #279).
+     *
+     * A booking run by an unattended process records whichever user that process runs as — the
+     * renewal job's user for a renewal, for instance. With no context user at all it records NULL
+     * rather than failing the booking: a reader already has to treat NULL as "not known", because
+     * every order booked before the column existed carries it.
+     *
+     * Once `ConfirmedAt` is set both are final: `ConfirmedByUserID` is refused at `Validate()`
+     * (ORDER_HEADER_MONEY_FIELDS) and by trigger 51017.
+     */
+    protected stampConfirmation(): void {
+        this.ConfirmedAt = new Date();
+        this.ConfirmedByUserID = this.ContextCurrentUser?.ID ?? null;
+    }
 
     /**
      * Settle every line's money IN MEMORY. Writes nothing.
@@ -920,6 +1485,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // Lines whose money came from the line they reverse (D16) rather than from the price table.
         // The pricing service is told to leave these alone.
         const settledFromOrigin = new Set<mjBizAppsOrdersOrderLineEntity>();
+        this._settledTax = new Map();
 
         for (const line of this.Lines.Items) {
             // Scale the QUANTITY, not DiscountPct: a short first period is not a concession, and
@@ -934,7 +1500,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
             if (term) {
                 if (term.StartDate) line.ServicePeriodStart = term.StartDate;
-                if (term.EndDate) line.ServicePeriodEnd = term.EndDate;
+                // The end of the whole coverage: a line that states an end past its first term buys
+                // several terms, and the line covers all of them (golive #338).
+                const coverageEnd = CoverageEndOf(decided!.Decision);
+                if (coverageEnd) line.ServicePeriodEnd = coverageEnd;
             }
 
             // Events carry their own service period — the event happens when it happens.
@@ -975,6 +1544,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // request arrays before pricing runs. See `drainStagedPricingRequests` for why the rows are
         // consumed rather than saved as they arrive.
         await this.drainStagedPricingRequests();
+        const standingDiscounts = await this.standingDiscountsForRePricing();
+        const restatedTax = await this.statedTaxForRePricing();
 
         // PRICING, PROMOTIONS, CHARGES AND TAX — one call to the service that also answers
         // `Orders.PriceOrder`, so the number the screen shows and the number the ledger books come
@@ -993,7 +1564,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
-                Charges: this._charges,
+                Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
+                SettledTax: this._settledTax,
+                StandingDiscounts: standingDiscounts,
             },
             settledFromOrigin,
         );
@@ -1006,13 +1579,67 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * The non-promotion discount on each saved line, when this save re-decides the order's promotions.
+     *
+     * The codes ride the order object, so a draft saved with a code and then confirmed runs the
+     * promotion engine twice. The confirm must REPLACE the draft's promotion rows rather than add a
+     * second set, and keep what is not a promotion's: manual discounts are requests consumed once and
+     * are not re-decided. Undefined, and nothing is replaced, when no code is presented, when the
+     * order is new, or when its money is frozen.
+     */
+    private async standingDiscountsForRePricing(): Promise<Map<mjBizAppsOrdersOrderLineEntity, number> | undefined> {
+        this._promotionsReDecidedFor = [];
+        if (!this.PromotionCodes.Codes.length || !this.IsSaved || this.MoneyLocked) return undefined;
+        const saved = this.Lines.Items.filter((line) => line.IsSaved);
+        if (!saved.length) return undefined;
+
+        const byID = await ReadStandingDiscounts(
+            this.ID,
+            saved.map((line) => line.ID),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        const out = new Map<mjBizAppsOrdersOrderLineEntity, number>();
+        for (const line of saved) {
+            const kept = byID.get(String(line.ID).toLowerCase());
+            if (kept === undefined) continue;
+            out.set(line, kept);
+            this._promotionsReDecidedFor.push(line.ID);
+        }
+        return out.size ? out : undefined;
+    }
+
+    /**
+     * The tax a caller stated on this saved order, as requests for this walk — see `ReadStatedTaxCharges`.
+     *
+     * The walk re-resolves tax on every save and the saver replaces the tax rows to match, so a stated
+     * or overridden tax that is not restated is lost at the next save. A request in memory does not
+     * survive a reload, so it is read back from the rows. Nothing on a new order, or on one whose
+     * money is frozen, whose tax rows are never replaced.
+     */
+    private async statedTaxForRePricing(): Promise<RequestedCharge[]> {
+        if (!this.IsSaved || this.MoneyLocked) return [];
+        const lines = this.Lines.Items;
+        if (!lines.some((line) => line.IsSaved)) return [];
+        return ReadStatedTaxCharges(
+            this.ID,
+            lines.map((line) => (line.IsSaved ? line.ID : null)),
+            [...this._settledTax.keys()].filter((line) => line.IsSaved).map((line) => line.ID),
+            this._charges.map((c) => c.Code),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+    }
+
+    /**
      * Write the lines that `prepareLines` settled, plus the adjustment rows that need their keys.
      */
     /**
      * Write the adjustment and allocation rows once the lines have real IDs.
      *
      * These only ADD rows — the frozen line is never touched again, which is what keeps this clear
-     * of the immutability trigger.
+     * of the immutability trigger. A re-decided saved line has its earlier promotion rows removed
+     * first, in `savePendingLines`.
      */
     private async writePromotionRecords(
         run: PromotionRunResult,
@@ -1048,11 +1675,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * The exact extended amount a price rule computed for this line, if one did.
      *
      * `_priceComponents` is populated by the pricing pass in this same save, so this
-     * is the authority while the line is still in flight; the line itself carries the
-     * same figure for its own totals hook, which runs outside this class.
+     * is the authority for a line priced now. A line priced on an earlier save carries
+     * its figure in `ExtendedAmount`, which the pricing walk has already cleared if the
+     * line was edited past it.
      */
     private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
-        return this._priceComponents.get(line)?.ExtendedAmount ?? null;
+        return this._priceComponents.get(line)?.ExtendedAmount ?? line.ExtendedAmount ?? null;
     }
 
     /** Persist priced lines and the component/charge rows that need their IDs. */
@@ -1145,6 +1773,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
             for (const row of rows) {
+                // A concession on a draft line goes with the line, decided or not: the line it priced
+                // no longer exists, and the order has committed no customer to it.
+                if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +
@@ -1202,7 +1833,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // The adjustment and charge rows need line IDs, so they follow the insert — but they only ADD
         // rows and never touch the frozen line again.
+        // A PROMOTION RE-DECIDED ON A SAVED LINE REPLACES ITS EARLIER ROWS, for the reason tax does
+        // below: the draft's own save wrote them, and this walk's would sit beside them. Only the
+        // lines `standingDiscountsForRePricing` named, whose discount the walk restated without the
+        // old promotion; manual discount rows stay.
+        await this.deletePromotionRecords();
         if (pending) await this.writePromotionRecords(pending, persisted);
+        // EXCEPT TAX, which this walk re-resolved for every line. A saved draft already holds the tax
+        // rows its own save wrote; adding this walk's beside them credits the tax twice at booking
+        // while the line's `LineTax` shows it once, and the confirm is refused as unbalanced. So the
+        // earlier rows go first — even when this walk found no tax at all, since an order re-priced
+        // to an exempt address owes none. Never on an order whose money is already frozen.
+        if (!this.MoneyLocked) await this.deleteTaxRecords(persisted);
         if (charges) await this.writeChargeRecords(charges, persisted);
     }
 
@@ -1210,6 +1852,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
 
 
+
+    /** Remove the promotion rows an earlier save wrote for the re-decided lines — see `DeletePromotionAdjustments`. */
+    private async deletePromotionRecords(): Promise<void> {
+        const lineIDs = this._promotionsReDecidedFor ?? [];
+        if (!lineIDs.length) return;
+        await DeletePromotionAdjustments(
+            this.ID,
+            lineIDs,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        this._promotionsReDecidedFor = [];
+    }
+
+    /** Remove the tax rows an earlier save wrote for these lines — see `DeleteTaxCharges`. */
+    private async deleteTaxRecords(persisted: mjBizAppsOrdersOrderLineEntity[]): Promise<void> {
+        await DeleteTaxCharges(
+            this.ID,
+            persisted.map((line) => line.ID),
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+    }
 
     /** Write the charge and allocation rows once the lines have real IDs. */
     private async writeChargeRecords(
@@ -1264,6 +1929,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // midnight, without one it started at whatever instant the confirm happened to run.
                 OrderDate: await CalendarDayOrToday(this.OrderDate, provider, user),
                 Payment: payment,
+                ShipToPersonID: this.ShipToPersonID ?? null,
+                ShipToOrganizationID: this.ShipToOrganizationID ?? null,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1274,6 +1941,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ShipToPersonID: l.ShipToPersonID ?? null,
                 ShipToOrganizationID: l.ShipToOrganizationID ?? null,
                 RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                // Choices added to the line in this graph are the truth before they commit; a line
+                // holding none here is left for the engine to read.
+                Choices: l.Choices?.Count
+                    ? l.Choices.Items.map((c) => ({ GroupKey: c.GroupKey, OptionValue: c.OptionValue }))
+                    : undefined,
             })),
             subs.TermsByLine,
             provider,
@@ -1515,6 +2187,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             {
                 ID: this.ID,
                 IssuingCompanyID: this.CompanyID,
+                ShipToPersonID: this.ShipToPersonID ?? null,
+                ShipToOrganizationID: this.ShipToOrganizationID ?? null,
                 BillToPersonID: this.BillToPersonID ?? null,
                 BillToOrganizationID: this.BillToOrganizationID ?? null,
             },
@@ -1601,7 +2275,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const old = t.entity.GetFieldByName(t.idField)?.OldValue;
             return typeof old === 'string' && UUIDsEqual(old, addressID(t));
         };
-        const needsRead = (t: Target): boolean => !!addressID(t) && (mode === 'confirm' || !stored(t));
+        /** The origin's snapshot, when this address was taken from the order a reversal reverses. */
+        const inherited = (t: Target): string | null => {
+            const from = this._inheritedAddresses.get(t.entity)?.get(t.snapshotField);
+            return from?.Snapshot && UUIDsEqual(from.AddressID, addressID(t)) ? from.Snapshot : null;
+        };
+        const needsRead = (t: Target): boolean =>
+            !!addressID(t) && (mode === 'confirm' ? !inherited(t) : !stored(t));
 
         const ids = targets.filter(needsRead).map((t) => addressID(t) as string);
         const byID = new Map<string, AddressLike>();
@@ -1626,7 +2306,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         for (const t of targets) {
             let value: string | null;
             if (!needsRead(t)) {
-                value = mode === 'confirm' ? null : stored(t);
+                value = mode === 'confirm' ? inherited(t) : stored(t);
             } else {
                 const id = addressID(t) as string;
                 const row = byID.get(id.toLowerCase());
@@ -1644,6 +2324,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             t.write(value);
         }
         this.addressSnapshotsStamped = true;
+        this._inheritedAddresses = new Map();
     }
 
     /** The header's rollup columns as the DATABASE now holds them, after the payment triggers ran. */
@@ -1757,6 +2438,194 @@ export class OrderEntityServer extends OrderHeaderEntity {
             });
         }
         return memos;
+    }
+
+    /**
+     * Record on each reversing line of a scheduled origin the credit memo it booked, zero when it
+     * credited nothing (#661). The return order's balance counts the line at this rather than at its
+     * own negative value: the customer was credited the memo, and what the returned units had not yet
+     * been invoiced for comes off the origin's instalments instead.
+     */
+    private async stampCreditMemos(
+        memos: Map<string, number>,
+        /** The lines booking read, as `stampJournalEntryIDs` left them. */
+        booked: mjBizAppsOrdersOrderLineEntity[],
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        for (const [lineID, memo] of memos) {
+            await this.stampReturnLine(lineID, booked, (line) => (line.CreditMemoAmount = memo), 'the credit memo it booked', provider, options);
+        }
+    }
+
+    /**
+     * Write one returning line of this order, on the copy booking read and stamped its journal entry and
+     * subscription link on (`booked`), else a fresh load. MJ's update writes every column, so writing any
+     * other copy, including the one in `this.Lines`, would send its stale JournalEntryID and SubscriptionID back.
+     */
+    private async stampReturnLine(
+        lineID: string,
+        booked: mjBizAppsOrdersOrderLineEntity[],
+        set: (line: mjBizAppsOrdersOrderLineEntity) => void,
+        what: string,
+        provider: IMetadataProvider,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        let current = booked.find((l) => UUIDsEqual(l.ID, lineID));
+        if (!current) {
+            current = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, this.ContextCurrentUser as UserInfo);
+            if (!(await current.Load(lineID))) throw new Error(`Return line ${lineID} could not be reloaded to record ${what}.`);
+        }
+        const stampTarget = this.resolveOrderLineForStamp(current);
+        MarkAsOrdersOwnWrite(stampTarget);
+        set(stampTarget);
+        const saveOptions = new EntitySaveOptions();
+        if (options) Object.assign(saveOptions, options);
+        saveOptions.IsParentEntitySave = true;
+        if (!(await stampTarget.Save(saveOptions))) {
+            throw new Error(`Failed to record ${what} on return line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`);
+        }
+    }
+
+    /**
+     * Take what each returning line had not yet been invoiced for off its origin's instalments (#661).
+     *
+     * A returning line whose origin is billed by instalment records `ScheduleReduction`: the returned
+     * units' share of what the origin line's uninvoiced instalments still bill (see
+     * `ReversalScheduleReduction`). The credit memo booked the other part, what was invoiced and not
+     * yet earned. The origin's balance, its schedule check and each later instalment invoice take the
+     * reduction off the origin's lines.
+     *
+     * A PARTIAL RETURN LOWERS THE INSTALMENTS pro rata, the way an amount change does, so what is
+     * still invoiced is what the customer still owes. A return that takes back the whole order leaves
+     * the instalments to `cancelOriginInstalments`, which withdraws every uninvoiced one; its
+     * reductions are still recorded, so the origin's balance agrees.
+     *
+     * Every returning line of one origin is measured against ONE reading of it, before anything is
+     * lowered, and against the quantity left before this order: two lines returning from the same
+     * origin line take shares that add up to what one line returning both would take.
+     */
+    private async reduceOriginSchedules(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const ctx = { Provider: provider, User: user };
+
+        const byOrigin = new Map<string, Array<{ line: mjBizAppsOrdersOrderLineEntity; context: ReversalContext }>>();
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            if (!context?.OriginScheduled) continue;
+            const originOrder = uuidKey(context.Origin.OrderHeaderID ?? '');
+            if (!originOrder) continue;
+            byOrigin.set(originOrder, [...(byOrigin.get(originOrder) ?? []), { line, context }]);
+        }
+
+        for (const [originOrder, returning] of byOrigin) {
+            const stillToBill = await OrderStillToBill(originOrder, ctx);
+            const reductions = returning.map(({ line, context }) => ({
+                line,
+                originCompanyID: String(context.Origin.CompanyID ?? ''),
+                gross: ReturnScheduleReduction(
+                    stillToBill.get(String(context.Origin.ID).toLowerCase()) ?? { Net: 0, Tax: 0 },
+                    Number(line.Quantity ?? 0),
+                    context.Origin.Quantity - context.AlreadyReversed,
+                ),
+            }));
+
+            if (!(await IsWholeOrderReversed(originOrder, provider, user))) {
+                await this.lowerOriginInstalments(originOrder, reductions, ctx, options);
+            }
+
+            for (const { line, gross } of reductions) {
+                await this.stampReturnLine(line.ID, lines, (l) => (l.ScheduleReduction = gross), "what it took off its origin's instalments", provider, options);
+            }
+        }
+    }
+
+    /**
+     * Lower one origin order's uninvoiced instalments by what its returning lines take, spread pro
+     * rata over each covering company's instalments as an amount change spreads its reduction.
+     * Refuses what only a credit memo could give back: more than the uninvoiced instalments bill, or
+     * an instalment lowered below what is already paid on it.
+     */
+    private async lowerOriginInstalments(
+        originOrder: string,
+        reductions: Array<{ originCompanyID: string; gross: number }>,
+        ctx: { Provider: IMetadataProvider; User: UserInfo },
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        const rv = new RunView(ctx.Provider as unknown as IRunViewProvider);
+        const [order, rows] = await Promise.all([
+            rv.RunView<{ OrderNumber: string | null; CompanyID: string }>(
+                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(originOrder, 'OrderHeaderID')}'`, Fields: ['OrderNumber', 'CompanyID'], ResultType: 'simple' },
+                ctx.User,
+            ),
+            rv.RunView<{ ID: string; CompanyID: string; InstallmentNumber: number; DueDate: Date | string; Amount: number; AmountPaid: number | null; Balance: number | null; Status: string; DocumentNumber: string | null }>(
+                {
+                    EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                    ExtraFilter: `OrderHeaderID = '${RequireUUID(originOrder, 'OrderHeaderID')}'`,
+                    Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Amount', 'AmountPaid', 'Balance', 'Status', 'DocumentNumber'],
+                    OrderBy: 'InstallmentNumber',
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                ctx.User,
+            ),
+        ]);
+        const origin = order.Results?.[0];
+        if (!order.Success || !rows.Success || !origin) {
+            throw new Error(`The order a return takes back from (${originOrder}) could not be read to lower its instalments.`);
+        }
+        const schedule = rows.Results ?? [];
+        const coverage = ScheduleCoverage(
+            schedule.map((r) => ({ CompanyID: r.CompanyID, Amount: Number(r.Amount), Status: r.Status })),
+            reductions.map((r) => r.originCompanyID),
+            origin.CompanyID,
+        );
+        const byCovering = new Map<string, number>();
+        for (const r of reductions) {
+            const covering = coverage.get(r.originCompanyID.toLowerCase()) ?? origin.CompanyID.toLowerCase();
+            byCovering.set(covering, (byCovering.get(covering) ?? 0) + r.gross);
+        }
+
+        for (const [covering, gross] of byCovering) {
+            if (!(Math.round(gross * 100) > 0)) continue;
+            const instalments = schedule.filter((r) => String(r.CompanyID).toLowerCase() === covering);
+            const plan = PlanReduction({
+                GrossReduction: gross,
+                Instalments: instalments.map((i) => ({
+                    ID: i.ID,
+                    InstallmentNumber: Number(i.InstallmentNumber),
+                    DueDate: new Date(i.DueDate).toISOString().slice(0, 10),
+                    Amount: Number(i.Amount),
+                    Balance: Number(i.Balance ?? i.Amount),
+                    Status: i.Status,
+                    DocumentNumber: i.DocumentNumber,
+                })),
+                OrderBalance: 0,
+            });
+            const label = `order ${origin.OrderNumber ?? originOrder}`;
+            if (typeof plan === 'string') throw new Error(`The instalments of ${label} could not be lowered for the return: ${plan}`);
+            if (plan.CreditMemo > 0) {
+                throw new Error(
+                    `The return takes ${gross.toFixed(2)} off the instalments of ${label}, but they bill only ` +
+                        `${(gross - plan.CreditMemo).toFixed(2)} not yet invoiced. The rest needs a credit memo this return cannot issue.`,
+                );
+            }
+            for (const change of plan.Instalments) {
+                const paid = Number(instalments.find((r) => r.ID === change.ID)?.AmountPaid ?? 0);
+                if (change.NewAmount < paid) {
+                    throw new Error(
+                        `Instalment ${change.InstallmentNumber} of ${label} has ${paid.toFixed(2)} paid on it and the return would ` +
+                            `lower it to ${change.NewAmount.toFixed(2)}. Giving back money already paid needs a credit memo this return cannot issue.`,
+                    );
+                }
+            }
+            await LowerInstalments(plan.Instalments, 'the return was confirmed', ctx, options);
+        }
     }
 
     /**
@@ -1901,11 +2770,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // together, are each within the original while their sum is not — and neither is in the
         // database yet for `LoadReversalContext` to have seen.
         let siblingReversed = 0;
+        // The siblings AHEAD of this line, which the tax refund's cumulative rounding counts as
+        // already taken — see `MirroredTaxCharges`.
+        let siblingsBefore = 0;
+        let ahead = true;
         for (const other of this.Lines.Items) {
-            if (other === line) continue;
+            if (other === line) {
+                ahead = false;
+                continue;
+            }
             const otherReverses = other.ReversesOrderLineID;
             if (otherReverses && uuidKey(otherReverses) === uuidKey(reverses)) {
                 siblingReversed += Math.abs(Number(other.Quantity ?? 0));
+                if (ahead) siblingsBefore += Math.abs(Number(other.Quantity ?? 0));
             }
         }
 
@@ -1955,10 +2832,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // Inherit the origin's terms, unless the caller stated their own. Same rule as pricing: a
         // stated value is a decision, and resolution only ever fills a blank.
-        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0));
+        const terms = InheritedTerms(context.Origin, Number(line.Quantity ?? 0), context.AlreadyReversed + siblingsBefore);
         const priceField = line.GetFieldByName('UnitPrice');
         if (!(priceField?.Dirty === true || (line.UnitPrice ?? 0) > 0)) {
             line.UnitPrice = terms.UnitPrice;
+        }
+        // THE ORIGIN'S EXACT AMOUNT, while the line is at the origin's unit price (#651). Without it
+        // a Flat 100.00 line at quantity 3 is returned as 3 × 33.33 = 99.99. A unit price the caller
+        // set differently is a negotiated settlement and is priced as stated; so is an amount the
+        // caller set. Recomputed on every save until booking, so a changed quantity or a return
+        // confirmed meanwhile is reflected; never after, when the line's money is frozen.
+        const exactField = line.GetFieldByName('ExtendedAmount');
+        if (!this.MoneyLocked && exactField?.Dirty !== true && Number(line.UnitPrice) === Number(terms.UnitPrice)) {
+            line.ExtendedAmount = terms.ExtendedAmount;
         }
         const discountField = line.GetFieldByName('DiscountPct');
         if (!(discountField?.Dirty === true || (line.DiscountPct ?? 0) > 0)) {
@@ -1968,10 +2854,23 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // order-level promotion — 350 actually paid — refunds 400, and the difference is simply given
         // away against a perfectly balanced journal entry. `DiscountPct` was carried through from the
         // start and this was not, which is why RT7 passed while the defect was live.
+        //
+        // Recomputed on each save until booking, so a draft return whose quantity changes carries
+        // the new quantity's share, while a discount the caller set is kept (#668) — see
+        // `RefreshedDiscountAmount`.
         const amountField = line.GetFieldByName('DiscountAmount');
-        if (!(amountField?.Dirty === true || (line.DiscountAmount ?? 0) > 0)) {
-            line.DiscountAmount = terms.DiscountAmount;
-        }
+        const previousQuantity = line.GetFieldByName('Quantity')?.OldValue;
+        const discount = RefreshedDiscountAmount({
+            Stored: line.DiscountAmount,
+            SetThisSave: amountField?.Dirty === true,
+            MoneyLocked: this.MoneyLocked,
+            PreviousShare:
+                previousQuantity === null || previousQuantity === undefined
+                    ? null
+                    : InheritedTerms(context.Origin, Number(previousQuantity), context.AlreadyReversed + siblingsBefore).DiscountAmount,
+            CurrentShare: terms.DiscountAmount,
+        });
+        if (discount !== line.DiscountAmount) line.DiscountAmount = discount as number;
 
         // THE COVERAGE WINDOW, for the same reason as the price: only the origin knows it.
         //
@@ -1993,7 +2892,80 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (!line.ServicePeriodEnd && terms.ServicePeriodEnd) {
             line.ServicePeriodEnd = new Date(terms.ServicePeriodEnd);
         }
+
+        // THE TAX IT COLLECTED, in the jurisdictions that collected it. Resolved from the return's
+        // own address and date instead, the refund was taxed wherever the customer is now, at
+        // today's rate — or not at all, since a return names no address unless someone picks one.
+        //
+        // NONE for a line billed by instalment. Its tax reaches the ledger one instalment at a time,
+        // so the tax on the line is the whole contract's, and a share of it would debit Sales Tax
+        // Payable for tax that was never invoiced. The empty entry keeps the line from being
+        // resolved from the address instead. `OriginScheduled` is the same fact the credit memo
+        // reads, so the tax refund and the memo cannot disagree about a line.
+        const byInstalment = context.OriginScheduled;
+        const originTax = byInstalment ? [] : await LoadOriginTaxCharges(context.Origin.ID, provider, user);
+        this._settledTax.set(
+            line,
+            byInstalment
+                ? []
+                : MirroredTaxCharges(context.Origin, originTax, context.AlreadyReversed + siblingsBefore, Number(line.Quantity ?? 0)),
+        );
+
+        // THE LINE'S SHIP-TO, when the origin line had its own. Filled only when blank and only
+        // before the order is booked — a booked line's address is set once.
+        if (!this.MoneyLocked && !line.ShipToAddressID && context.Origin.ShipToAddressID) {
+            line.ShipToAddressID = context.Origin.ShipToAddressID;
+            this.recordInheritedAddress(line, 'ShipToAddressSnapshot', context.Origin.ShipToAddressID, context.Origin.ShipToAddressSnapshot ?? null);
+        }
         return true;
+    }
+
+    private recordInheritedAddress(entity: BaseEntity, snapshotField: string, addressID: string, snapshot: string | null): void {
+        const fields = this._inheritedAddresses.get(entity) ?? new Map();
+        fields.set(snapshotField, { AddressID: addressID, Snapshot: snapshot });
+        this._inheritedAddresses.set(entity, fields);
+    }
+
+    /**
+     * A reversal order takes its bill-to and ship-to addresses from the order it reverses, when it
+     * states none of its own. Only before the order is booked: a booked order's addresses are set
+     * once, and the snapshot that goes with them is taken at confirm.
+     */
+    private async inheritReversalAddresses(): Promise<void> {
+        const originID = this.ReversesOrderHeaderID;
+        if (!originID || this.MoneyLocked) return;
+        if (this.BillToAddressID && this.ShipToAddressID) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<{
+            BillToAddressID: string | null;
+            ShipToAddressID: string | null;
+            BillToAddressSnapshot: string | null;
+            ShipToAddressSnapshot: string | null;
+        }>(
+            {
+                EntityName: ORDER_ENTITY,
+                ExtraFilter: `ID = '${RequireUUID(originID, 'ReversesOrderHeaderID')}'`,
+                Fields: ['BillToAddressID', 'ShipToAddressID', 'BillToAddressSnapshot', 'ShipToAddressSnapshot'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser as UserInfo,
+        );
+        if (!result.Success) {
+            throw new Error(`Could not read the addresses of the order this one reverses: ${result.ErrorMessage}`);
+        }
+        const origin = result.Results[0];
+        if (!origin) return;
+
+        if (!this.BillToAddressID && origin.BillToAddressID) {
+            this.BillToAddressID = origin.BillToAddressID;
+            this.recordInheritedAddress(this, 'BillToAddressSnapshot', origin.BillToAddressID, origin.BillToAddressSnapshot);
+        }
+        if (!this.ShipToAddressID && origin.ShipToAddressID) {
+            this.ShipToAddressID = origin.ShipToAddressID;
+            this.recordInheritedAddress(this, 'ShipToAddressSnapshot', origin.ShipToAddressID, origin.ShipToAddressSnapshot);
+        }
     }
 
 
@@ -2093,9 +3065,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * what the line itself is.
      *
      * CHILD ROWS, NOT THE COLUMNS. `OrderLine.DimensionID` / `.DimensionValueID` hold one axis, so
-     * they cannot carry five. They stay the HUMAN OVERRIDE: `MergeLineDimensions` gives the column
-     * precedence over a child row naming the same axis when the factory builds the entry, so
-     * somebody who sets a tag by hand overrules what was derived for that one axis and nothing else.
+     * they cannot carry five. They stay the HUMAN OVERRIDE: somebody who sets a tag by hand overrules
+     * what was derived for that one axis and nothing else.
+     *
+     * THE OVERRIDE IS STORED, NOT ONLY BOOKED. The column used to win only inside the journal entry
+     * factory, so the child rows kept the derived value while the ledger carried the hand-set one,
+     * and the line's own record of its tags disagreed with what it booked. `reconcileLineDimensions`
+     * now applies the column before writing, so the child rows are exactly what the entry will carry.
+     * Clearing the column puts the derived value back on the next save.
      *
      * A RULE BEATS THE PRODUCT MAPPING. They normally address different axes — Venture, Product and
      * Event come from the mapping; ARR-Type and Vintage are facts about this line — but where both
@@ -2111,7 +3088,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      *
      * NOT A PLACE THAT REFUSES. An unmapped product yields no tags, which books untagged — the state
      * every line was in before this existed. Where a GL account link REQUIRES a dimension, that is
-     * the place to refuse, and it is a separate check.
+     * the place to refuse, and it is a separate check: `RefuseUntaggedLines`, which the journal
+     * entry factory runs on each line's finished entries (#417).
      */
     private async stampLineDimensions(
         persisted: mjBizAppsOrdersOrderLineEntity[],
@@ -2229,14 +3207,22 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return out;
     }
 
-    /** Bring a line's stored tags in line with what was derived, touching only what differs. */
+    /**
+     * Bring a line's stored tags in line with what was derived plus the tag set on the line by hand,
+     * touching only what differs. The hand-set tag wins on its axis, the same rule the journal entry
+     * factory applies, so the stored rows and the booked entry cannot disagree.
+     */
     private async reconcileLineDimensions(
         line: mjBizAppsOrdersOrderLineEntity,
         derived: LineDimensionTag[],
         existing: mjBizAppsOrdersOrderLineDimensionEntity[],
         options?: EntitySaveOptions,
     ): Promise<void> {
-        const wanted = new Map(derived.map((tag) => [uuidKey(tag.DimensionID), tag]));
+        const stored = MergeLineDimensions(
+            { DimensionID: line.DimensionID, DimensionValueID: line.DimensionValueID },
+            derived,
+        );
+        const wanted = new Map(stored.map((tag) => [uuidKey(tag.DimensionID), tag]));
 
         for (const row of existing) {
             const key = uuidKey(row.DimensionID);
@@ -2379,10 +3365,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const drafts = await factory.BuildDrafts(
             this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
         );
+        const creditMemos = factory.DrainCreditMemos();
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
-        // skipped rather than the order being refused for having no ledger impact.
-        if (drafts.length === 0) return;
+        // skipped rather than the order being refused for having no ledger impact. A return that
+        // credits nothing still records that it credited nothing.
+        if (drafts.length === 0) {
+            await this.stampCreditMemos(creditMemos, lines, options);
+            return;
+        }
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
@@ -2401,7 +3392,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
         }
 
-        await this.stampJournalEntryIDs(drafts, result, options);
+        await this.stampJournalEntryIDs(lines, drafts, result, options);
+        await this.stampCreditMemos(creditMemos, lines, options);
 
         // ADVANCE BOTH TOTALS IN THIS TRANSACTION (D92) — the totals are the ledger's summary of
         // itself, and a separate writer is how they drift from the journal lines they summarise.
@@ -2417,7 +3409,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const billed = billedAtBooking.get(orderLineID) ?? 0;
             const recognized = recognizedAtBooking.get(orderLineID) ?? 0;
             if (billed === 0 && recognized === 0) continue;
-            const line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, orderLineID));
+            // The copy booking read and the subscription step saved, never `this.Lines`: that copy
+            // predates both, and a full-row save of it writes their columns back as they were.
+            const line = lines.find((l) => UUIDsEqual(l.ID, orderLineID));
             const target = line ?? (await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user));
             // Not on this order: a reversal's credit memo un-bills the ORIGIN line (D92 §6).
             if (!line) MarkAsOrdersOwnWrite(target);
@@ -2477,6 +3471,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * schedule, not to the line's booking pointer, so they are skipped here.
      */
     private async stampJournalEntryIDs(
+        /** The lines booking read, as `materializeSubscriptions` left them. */
+        lines: mjBizAppsOrdersOrderLineEntity[],
         drafts: OrderLineDraft[],
         result: CreateJournalEntriesResult,
         options?: EntitySaveOptions,
@@ -2493,9 +3489,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
-            // Prefer the in-memory line from this.Lines (already an instantiated IS-A subclass if applicable),
-            // falling back to loading through the entity's OWN provider to see uncommitted transactions.
-            let line = this.Lines.Items.find((l) => UUIDsEqual(l.ID, drafts[i].OrderLineID));
+            // THE COPY BOOKING READ, not the one in `this.Lines`. `materializeSubscriptions` set the
+            // subscription link and the term's service period on this copy and saved it; the copy in
+            // `this.Lines` was loaded before that and carries neither. MJ's update writes every
+            // column, so saving that copy here put the link back to NULL on every subscription line.
+            // Falls back to loading through the entity's OWN provider to see uncommitted transactions.
+            let line = lines.find((l) => UUIDsEqual(l.ID, drafts[i].OrderLineID));
             if (!line) {
                 const loadedLine = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(
                     ORDER_LINE_ENTITY,
@@ -2543,6 +3542,36 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 throw new Error(
                     `Failed to stamp JournalEntryID on order line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`,
                 );
+            }
+        }
+    }
+
+    /**
+     * Bring the in-memory lines up to what booking wrote, without marking them dirty.
+     *
+     * Booking writes through the copies it read (`loadLinesForBooking`), so the lines in `this.Lines`
+     * miss the subscription link, the term's service period, the booking entry and the running
+     * totals. The caller keeps this object after the confirm; a line left stale there reads as
+     * unbooked, and one left dirty would write the stale values back on the next save.
+     */
+    private adoptBookedLineState(booked: mjBizAppsOrdersOrderLineEntity[]): void {
+        const fields = [
+            'SubscriptionID',
+            'ServicePeriodStart',
+            'ServicePeriodEnd',
+            'JournalEntryID',
+            'BilledToDate',
+            'RecognizedToDate',
+            'CreditMemoAmount',
+            'ScheduleReduction',
+        ] as const;
+        for (const line of this.Lines.Items) {
+            const persisted = booked.find((b) => UUIDsEqual(b.ID, line.ID));
+            if (!persisted) continue;
+            for (const name of fields) {
+                line.Set(name, persisted.Get(name));
+                // `Set` routes an inherited field to the IS-A parent, so both copies take the new baseline.
+                for (let e: BaseEntity | null = line; e; e = e.ISAParent) e.GetFieldByName(name)?.ResetOldValue();
             }
         }
     }
@@ -2632,52 +3661,72 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const subscriptionID =
                 decision.Action === 'CreateNew'
                     ? await this.createSubscription(line, product, rules, decision, decided.Subscriber, options)
-                    : await this.touchExistingSubscription(decision, !!line.RenewsSubscriptionID, options);
+                    : await this.touchExistingSubscription(
+                          decision,
+                          !!line.RenewsSubscriptionID,
+                          options,
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
+                      );
 
             // Remember it so a later line for the same subscription resolves above.
             if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
 
-            const term = decision.Term!;
+            const planned = decision.Terms ?? [decision.Term!];
 
             // The LINE is the authority on price — `savePendingLines` already inserted it at the
-            // prorated quantity. Taking the term's amount from it makes booking (line net), the
-            // term, and the recognition schedule reconcile exactly; three numbers that must agree
-            // or deferred revenue never clears to zero.
-            term.Amount = line.LineTotalNet ?? term.Amount;
+            // prorated quantity. Taking the terms' amounts from it makes booking (line net), the
+            // terms, and the recognition schedules reconcile exactly; numbers that must agree or
+            // deferred revenue never clears to zero. Several terms split it by their shares, the
+            // last taking the rounding, so they still add up to the line (golive #338).
+            const lineNet = Number(line.LineTotalNet ?? planned.reduce((a, t) => a + t.Amount, 0));
+            let allocated = 0;
+            const written: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }> = [];
+            for (const [i, term] of planned.entries()) {
+                term.Amount =
+                    i === planned.length - 1
+                        ? Math.round((lineNet - allocated) * 100) / 100
+                        : Math.round(lineNet * term.Share * 100) / 100;
+                allocated = Math.round((allocated + term.Amount) * 100) / 100;
 
-            const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
-                SUBSCRIPTION_TERM_ENTITY,
-                user,
-            );
-            termEntity.NewRecord();
-            termEntity.SubscriptionID = subscriptionID;
-            termEntity.TermNumber = term.TermNumber;
-            termEntity.OrderLineID = line.ID;
-            termEntity.StartDate = term.StartDate;
-            termEntity.EndDate = term.EndDate;
-            termEntity.Amount = term.Amount;
-            termEntity.IsProrated = term.IsProrated;
-            termEntity.ProrationFactor = term.ProrationFactor;
-            // Frozen at purchase: later changes to the product's rules must never restate a
-            // term that has already been booked.
-            termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
-            termEntity.Status = 'Active';
-
-            if (!(await termEntity.Save(options))) {
-                throw new Error(
-                    `Failed to create the subscription term for order line ${line.LineNumber}: ` +
-                        `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
+                    SUBSCRIPTION_TERM_ENTITY,
+                    user,
                 );
+                termEntity.NewRecord();
+                termEntity.SubscriptionID = subscriptionID;
+                termEntity.TermNumber = term.TermNumber;
+                termEntity.OrderLineID = line.ID;
+                termEntity.StartDate = term.StartDate;
+                termEntity.EndDate = term.EndDate;
+                termEntity.Amount = term.Amount;
+                termEntity.IsProrated = term.IsProrated;
+                termEntity.ProrationFactor = term.ProrationFactor;
+                // The seats bought, not `line.Quantity`: by now that is prorated (#589).
+                termEntity.Quantity = decided.Seats;
+                // Frozen at purchase: later changes to the product's rules must never restate a
+                // term that has already been booked.
+                termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
+                termEntity.Status = 'Active';
+
+                if (!(await termEntity.Save(options))) {
+                    throw new Error(
+                        `Failed to create subscription term ${term.TermNumber} for order line ${line.LineNumber}: ` +
+                            `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+                written.push({
+                    ID: termEntity.ID,
+                    StartDate: term.StartDate,
+                    EndDate: term.EndDate,
+                    Amount: term.Amount,
+                    Quantity: decided.Seats,
+                });
             }
 
-            // The term is the coverage window the schedule must follow, and its cadence decides
-            // how many slices that window produces.
-            out.TermsByLine.set(line.ID, {
-                ID: termEntity.ID,
-                StartDate: term.StartDate,
-                EndDate: term.EndDate,
-                Amount: term.Amount,
-            });
+            // The terms are the coverage windows the schedules must follow, and the cadence decides
+            // how many slices each window produces.
+            out.TermsByLine.set(line.ID, written);
             out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
             // The line's stored service period is the SETTLED term — the coverage actually sold.
@@ -2688,10 +3737,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // continuing existing coverage), the stored period must follow the term rather than the
             // request, or the line would advertise coverage the subscription does not have.
             //
-            // The END is always the computed one: term length, anchor and proration are the type's
-            // to decide, and a stated end has no rule to reconcile it against.
-            line.ServicePeriodStart = term.StartDate;
-            line.ServicePeriodEnd = term.EndDate;
+            // The END is the last term's. A stated end is honored (golive #338), so it changes only
+            // when an extension moved the start, and then the stated length moves with it.
+            line.ServicePeriodStart = planned[0].StartDate;
+            line.ServicePeriodEnd = planned[planned.length - 1].EndDate;
             // The forward link, which nothing was writing. Subscription.OrderLineID
             // recorded the reverse, so the subscription knew its line while the line
             // did not know its subscription — and PreviewConfirmOperation reads
@@ -2719,9 +3768,42 @@ export class OrderEntityServer extends OrderHeaderEntity {
              * external veto, so outside booking this loop has to let the line be asked.
              */
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
-            await line.Save(options);
+            // Checked like the term save above: a refused save here left the line's link and service
+            // period unwritten while the confirm reported success.
+            if (!(await line.Save(options))) {
+                throw new Error(
+                    `Failed to link order line ${line.LineNumber} to its subscription: ` +
+                        `${line.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+
+            // `lines` were loaded for booking, so they are separate objects from `this.Lines`. Booking
+            // later saves the `this.Lines` copy (journal entry and running-total stamps), and an update
+            // writes every column, so that copy has to carry what was just written or it puts the
+            // link and the service period back to their pre-confirm values.
+            const inMemory = this.Lines.Items.find((l) => l !== line && UUIDsEqual(l.ID, line.ID));
+            if (inMemory) {
+                inMemory.SubscriptionID = line.SubscriptionID;
+                inMemory.ServicePeriodStart = line.ServicePeriodStart;
+                inMemory.ServicePeriodEnd = line.ServicePeriodEnd;
+            }
         }
 
+        return out;
+    }
+
+    /**
+     * The subscription lines of this draft whose terms overlap coverage in their family, and what
+     * confirm will do with each (golive #276). Writes nothing.
+     *
+     * Runs the same decision pass confirm runs, over the SAVED lines. A saved draft already carries
+     * its bundle children (every draft save expands bundles), so a band sold inside a bundle is
+     * reported on its own child line, and acknowledged there.
+     */
+    public async PreviewCoverageOverlaps(): Promise<LineCoverageOverlap[]> {
+        if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        const out: LineCoverageOverlap[] = [];
+        await this.decideSubscriptions(out);
         return out;
     }
 
@@ -2731,8 +3813,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * Pure with respect to this app's tables — it reads the catalog and any existing subscription,
      * then asks the behaviour what to do. Nothing is written, so a rules rejection aborts the
      * confirm before a single line exists.
+     *
+     * `preview` turns refusals into answers: a line the rules reject is skipped, and every line
+     * whose term overlaps coverage in its family is collected there instead of throwing. That is
+     * how `Orders.CheckCoverageOverlap` asks the same question confirm does without confirming.
      */
-    private async decideSubscriptions(): Promise<Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>> {
+    private async decideSubscriptions(
+        preview?: LineCoverageOverlap[],
+    ): Promise<Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>> {
         const out = new Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>();
         const subLines = await this.subscriptionLines([...this.Lines.Items]);
         if (subLines.length === 0) return out;
@@ -2746,6 +3834,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // ever see the database, so two lines for one subscription both decide
         // "create" — see PENDING_SIBLING_ID.
         const pendingSiblings = new Map<string, ExistingSubscription>();
+        // The same, for other BANDS: terms earlier lines of this order will create, keyed by
+        // family and holder, so two bands on one order are checked against each other too.
+        const pendingFamily = new Map<string, Array<FamilyCoverageTerm & { ProductID: string }>>();
+        const familyNames = await this.loadFamilyNames(subLines.map((s) => s.product.SubscriptionFamilyID));
 
         // The order's booking day, as a calendar day (#209). `Decide` reduces it with `utcDay` and
         // the settled term reaches `SubscriptionTerm.StartDate`/`EndDate`, both `DATE NOT NULL`, so
@@ -2763,17 +3855,30 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser as UserInfo,
         );
 
+        // Seats a concession added at no charge while the order was a draft (#686). The term counts
+        // them with the seats bought, so grants and renewals do too.
+        const conceded = await this.approvedSeatAdditions(subLines.map((s) => s.line.ID));
+
         for (const { line, product, rules } of subLines) {
             const behavior = this.behaviorFor(rules);
+            // Before anything else reads the quantity: `prepareLines` prorates it after this pass,
+            // and the prorated figure prices the short period but no longer counts seats (#589).
+            const seats = behavior.SeatCount(rules, Number(line.Quantity ?? 0));
+            if ('Error' in seats) {
+                if (preview) continue;
+                throw new Error(`Order line ${line.LineNumber} (${product.Name}): ${seats.Error}`);
+            }
             let subscriber = await this.withInferredOrganization(this.resolveSubscriber(line));
             const identity = behavior.DedupeIdentity(rules, subscriber);
+            const match = behavior.DedupeMatch(rules, subscriber);
             const dedupeKey = `${product.ID}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
             // An explicitly named subscription wins; then a sibling line of THIS order;
             // then one already in the database for this subscriber and product (D62).
             const existing = line.RenewsSubscriptionID
                 ? await this.loadSubscriptionState(`ID='${line.RenewsSubscriptionID}'`)
                 : (pendingSiblings.get(dedupeKey) ??
-                   (await this.findExistingSubscription(product.ID, identity)));
+                   (match.OrNoPerson ? pendingSiblings.get(`${product.ID}|${identity.OrganizationID}|`) : undefined) ??
+                   (await this.findExistingSubscription(product.ID, match)));
 
             // NAMING a subscription IS the statement of who the subscriber is. Requiring the line to
             // restate it would make renewing a seat impossible without repeating the person, and any
@@ -2797,6 +3902,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // locked afterward. That lock is load-bearing for this design: were an order ever made
             // re-confirmable, the second pass would read the first pass's term as a stated start.
             const requestedStart = line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null;
+            // The stated END, read under the same rule and for the same reason (golive #338): the
+            // coverage runs to it, as one term or one per type term length.
+            const requestedEnd = line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null;
 
             const decision = behavior.Decide({
                 Rules: rules,
@@ -2810,9 +3918,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
                 RequestedStartDate: requestedStart,
+                RequestedEndDate: requestedEnd,
+                // The line's answer to "the subscriber already holds this product" (golive #299).
+                RequestedAction: line.SubscriptionAction,
             });
 
             if (decision.Action === 'Reject') {
+                if (preview) continue;
                 // A rules violation fails the WHOLE confirm — booking is all-or-none, and a
                 // silently-dropped subscription would leave a paid-for line with no coverage.
                 throw new Error(
@@ -2820,12 +3932,76 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
+            // ANOTHER BAND of the same offering (golive #276). The lookup above matches on the
+            // product, so a holder with coverage under a sibling band found nothing and a second
+            // subscription for the same dates was created and billed. A renewal names its target
+            // outright, so it continues that subscription and is not checked.
+            // The whole coverage the line buys, which spans several terms when it states an end past
+            // the first (golive #338).
+            const coverageEnd = CoverageEndOf(decision);
+            if (decision.Term && coverageEnd && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
+                const familyKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
+                const noPersonKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|`;
+                const siblings = [
+                    ...(pendingFamily.get(familyKey) ?? []),
+                    ...(match.OrNoPerson ? (pendingFamily.get(noPersonKey) ?? []) : []),
+                ].filter((s) => !UUIDsEqual(s.ProductID, product.ID));
+                const overlaps = OverlappingCoverage(
+                    [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate))],
+                    decision.Term.StartDate,
+                    coverageEnd,
+                );
+                const verdict = behavior.DecideCoverageOverlap({
+                    Rules: rules,
+                    Family: familyNames.get(uuidKey(product.SubscriptionFamilyID)) ?? product.SubscriptionFamilyID,
+                    ProductName: product.Name,
+                    Overlaps: overlaps,
+                    Acknowledged: !!line.AcknowledgesCoverageOverlap,
+                });
+                if (preview) {
+                    if (verdict.Outcome !== 'None') preview.push({ Line: line, Decision: verdict, Overlaps: overlaps });
+                } else if (verdict.Outcome === 'Refused' || verdict.Outcome === 'NeedsAck') {
+                    throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${verdict.Message}`);
+                } else if (verdict.Outcome === 'Acknowledged') {
+                    // The acknowledgment is what lets this line through, so it needs the person
+                    // confirming to hold the grant and the line to say why (bizapps-orders#511).
+                    const refusal = RunAlongsideRefusal(
+                        line,
+                        this.ContextCurrentUser as UserInfo,
+                        this.ProviderToUse as unknown as IMetadataProvider,
+                    );
+                    if (refusal) {
+                        throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${refusal}`);
+                    }
+                    LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message} Reason: ${line.CoverageOverlapReason}`);
+                } else if (verdict.Outcome !== 'None') {
+                    LogStatus(`Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber}: ${verdict.Message}`);
+                }
+                pendingFamily.set(familyKey, [
+                    ...(pendingFamily.get(familyKey) ?? []),
+                    {
+                        ProductID: product.ID,
+                        SubscriptionID: null,
+                        SubscriptionNumber: null,
+                        ProductName: product.Name,
+                        StartDate: decision.Term.StartDate,
+                        EndDate: coverageEnd,
+                        ConcurrencyMode: rules.ConcurrencyMode,
+                        SubscriptionTypeCode: rules.Code,
+                        CancellationMode: rules.CancellationMode,
+                        GracePeriodDays: rules.GracePeriodDays,
+                        // Another line of this order has no subscription yet, so there is nothing to cancel.
+                        Cancelable: false,
+                    },
+                ]);
+            }
+
             // A stated start that existing coverage displaced. NOT an error: extending a
             // subscription mid-term and stating where the new term begins are both reasonable,
             // and only one of them can win — coverage cannot overlap or gap. Reported rather than
             // swallowed so the date's disappearance is traceable to a rule instead of looking
             // like the field was never saved.
-            if (decision.StartOverrideIgnored && decision.Term && requestedStart) {
+            if (!preview && decision.StartOverrideIgnored && decision.Term && requestedStart) {
                 LogStatus(
                     `Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber} (${product.Name}): the term start ` +
                         `${requestedStart.toISOString().slice(0, 10)} stated on the line was not used. This line ` +
@@ -2833,19 +4009,34 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         `${decision.Term.StartDate.toISOString().slice(0, 10)}.`,
                 );
             }
+            // Its end moves with it: the stated length is kept from the new start (golive #338).
+            if (!preview && decision.EndOverrideIgnored && coverageEnd && requestedEnd) {
+                LogStatus(
+                    `Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber} (${product.Name}): the coverage end ` +
+                        `${requestedEnd.toISOString().slice(0, 10)} stated on the line was not used; coverage ends ` +
+                        `${coverageEnd.toISOString().slice(0, 10)}.`,
+                );
+            }
 
             // Record what this line will produce, so a LATER line covering the same
             // subscription extends it (or is refused) instead of creating a second.
             // A real renewal target is left alone: it is already in the database, so
             // the ordinary lookup finds it.
-            if (decision.Term && !line.RenewsSubscriptionID) {
+            //
+            // Not for a line that deliberately starts a SECOND subscription beside one the subscriber
+            // already holds (`SubscriptionAction = CreateNew`). Recording it would point a later
+            // line at the existing subscription with this line's term end, pairing one
+            // subscription's id with another's coverage. A later line instead finds the existing
+            // subscription in the database, as it would on a separate order.
+            const deliberateSecond = decision.Action === 'CreateNew' && !!existing && line.SubscriptionAction === 'CreateNew';
+            if (decision.Term && !line.RenewsSubscriptionID && !deliberateSecond) {
                 pendingSiblings.set(dedupeKey, {
                     ID: existing?.ID ?? PENDING_SIBLING_ID,
                     Status: 'Active',
                     HolderOrganizationID: subscriber.OrganizationID,
                     BeneficiaryPersonID: subscriber.PersonID,
-                    LatestTermEnd: decision.Term.EndDate,
-                    LatestTermNumber: decision.Term.TermNumber,
+                    LatestTermEnd: coverageEnd,
+                    LatestTermNumber: decision.Terms ? decision.Terms[decision.Terms.length - 1].TermNumber : decision.Term.TermNumber,
                 });
             }
 
@@ -2856,7 +4047,35 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Behavior: behavior,
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
+                RequestedStart: requestedStart,
+                RequestedEnd: requestedEnd,
+                Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
+        }
+        return out;
+    }
+
+    /** Per line, the seats its approved Seats concessions added. A line not yet saved has none. */
+    private async approvedSeatAdditions(lineIDs: Array<string | null | undefined>): Promise<Map<string, number>> {
+        const out = new Map<string, number>();
+        const ids = lineIDs.filter((id): id is string => !!id);
+        if (!ids.length) return out;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ OrderLineID: string; AddedQuantity: number | null }>(
+            {
+                EntityName: ORDER_CONCESSION_ENTITY,
+                ExtraFilter:
+                    `OrderLineID IN (${RequireUUIDs(ids, 'OrderLineID').map((id) => `'${id}'`).join(',')}) ` +
+                    `AND DeliveryForm = 'Seats' AND Status = 'Approved'`,
+                Fields: ['OrderLineID', 'AddedQuantity'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        for (const c of res?.Results ?? []) {
+            const key = c.OrderLineID.toLowerCase();
+            out.set(key, (out.get(key) ?? 0) + Number(c.AddedQuantity ?? 0));
         }
         return out;
     }
@@ -2872,11 +4091,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * under the order's customer organization) and still inherit that organization from the header.
      */
     private resolveSubscriber(line: mjBizAppsOrdersOrderLineEntity): SubscriberIdentity {
-        return {
-            OrganizationID:
-                line.ShipToOrganizationID ?? this.ShipToOrganizationID ?? this.BillToOrganizationID ?? null,
-            PersonID: line.ShipToPersonID ?? this.ShipToPersonID ?? this.BillToPersonID ?? null,
-        };
+        // The same fallback entitlement grants and gift cards use, so all three name one party (#622).
+        return ResolveLineParty(line, this);
     }
 
     /**
@@ -2901,7 +4117,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser as UserInfo,
         );
         const inferred = await this.organizationAsOf(subscriber.PersonID, asOf);
-        return inferred ? { ...subscriber, OrganizationID: inferred } : subscriber;
+        return inferred ? { ...subscriber, OrganizationID: inferred, OrganizationInferred: true } : subscriber;
     }
 
     /**
@@ -2965,18 +4181,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
-        await LoadOrdersEngine(provider, user);
+        await OrdersEngine.Instance.EnsureProducts(lines.map((l) => l.ProductID), user, provider);
 
         const products = new Map<string, ProductRow>();
         for (const line of lines) {
+            if (!line.ProductID) continue;
             const p = OrdersEngine.Instance.ProductByID(line.ProductID);
-            if (!p) continue;
+            // Not skipped: a skipped line was silently treated as no subscription, so it got no term
+            // and no service period (golive #301).
+            if (!p) {
+                throw new Error(
+                    `Order line ${line.LineNumber}: product ${line.ProductID} was not found in the product catalog, ` +
+                        `even after reloading it from the database.`,
+                );
+            }
             products.set(uuidKey(p.ID), {
                 ID: p.ID,
                 Name: p.Name,
                 SubscriptionTypeID: p.SubscriptionTypeID,
                 ProductTypeID: p.ProductTypeID,
                 RevenueRecognitionTypeID: p.RevenueRecognitionTypeID,
+                CompanyID: p.CompanyID,
+                SubscriptionFamilyID: p.SubscriptionFamilyID,
             });
         }
         if (products.size === 0) return [];
@@ -3106,27 +4332,165 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async findExistingSubscription(
         productID: string,
-        identity: SubscriberIdentity,
+        match: SubscriberMatch,
     ): Promise<ExistingSubscription | null> {
-        // Match on exactly the axes the BenefitModel says define a duplicate. An org-members type
-        // ignores the person entirely (one company membership, however many employees); a seat type
-        // matches BOTH, so two seats for two people never collide.
-        const clauses: string[] = [];
-        clauses.push(
-            identity.OrganizationID
-                ? `HolderOrganizationID='${identity.OrganizationID}'`
-                : `HolderOrganizationID IS NULL`,
-        );
-        clauses.push(
-            identity.PersonID ? `BeneficiaryPersonID='${identity.PersonID}'` : `BeneficiaryPersonID IS NULL`,
-        );
-        if (!identity.OrganizationID && !identity.PersonID) return null;
-
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${clauses.join(' AND ')}`);
+        const holder = this.holderFilter(match);
+        if (!holder) return null;
+        const person = match.PersonID === 'Any' ? null : match.PersonID;
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`, person);
     }
 
-    /** Load a subscription plus the end and number of its latest term, by whatever filter. */
-    private async loadSubscriptionState(filter: string): Promise<ExistingSubscription | null> {
+    /**
+     * The subscription filter for a dedupe match, or null when it names nobody.
+     *
+     * Match on exactly the axes the BenefitModel says define a duplicate (`DedupeMatch`). An
+     * org-held type ignores the stored person entirely (one company membership, however many
+     * employees, whoever the order named as its contact); a seat type matches BOTH, so two seats
+     * for two people never collide.
+     */
+    private holderFilter(match: SubscriberMatch): string | null {
+        if (!match.OrganizationID && !match.PersonID) return null;
+        const org = match.OrganizationID
+            ? `HolderOrganizationID='${RequireUUID(match.OrganizationID, 'HolderOrganizationID')}'`
+            : `HolderOrganizationID IS NULL`;
+        if (match.PersonID === 'Any') return org;
+        if (!match.PersonID) return `${org} AND BeneficiaryPersonID IS NULL`;
+        const person = `BeneficiaryPersonID='${RequireUUID(match.PersonID, 'BeneficiaryPersonID')}'`;
+        return match.OrNoPerson
+            ? `${org} AND (${person} OR BeneficiaryPersonID IS NULL)`
+            : `${org} AND ${person}`;
+    }
+
+    /** Family names by ID, for the overlap message. One read for every family on the order. */
+    private async loadFamilyNames(ids: Array<string | null | undefined>): Promise<Map<string, string>> {
+        const unique = [...new Set(ids.filter((id): id is string => !!id).map(uuidKey))];
+        if (unique.length === 0) return new Map();
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const list = RequireUUIDs(unique, 'SubscriptionFamilyID').map((id) => `'${id}'`).join(',');
+        const res = await rv.RunView<{ ID: string; Code: string; Name: string }>(
+            {
+                EntityName: SUBSCRIPTION_FAMILY_ENTITY,
+                ExtraFilter: `ID IN (${list})`,
+                Fields: ['ID', 'Code', 'Name'],
+                ResultType: 'simple',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res?.Success) throw new Error(`Could not read subscription families: ${res?.ErrorMessage}`);
+        return new Map(res.Results.map((f) => [uuidKey(f.ID), `${f.Name} (${f.Code})`]));
+    }
+
+    /**
+     * Terms that cover this holder under OTHER bands of the product's family and end on or after
+     * `start` (golive #276). Terms after `end` are included so the caller can say when coverage
+     * runs out.
+     *
+     * Bands are the family's other products in the product's own company. A subscription counts
+     * unless it is Migrated, and its terms count unless they are Canceled or Lapsed. A Canceled
+     * subscription still counts: cancelling stamps one term and leaves the subscription's access
+     * running to `Subscription.EndDate`, so its Canceled term counts through that date, and any
+     * term it did not stamp counts in full.
+     */
+    private async loadFamilyCoverage(
+        product: ProductRow,
+        match: SubscriberMatch,
+        start: Date,
+    ): Promise<FamilyCoverageTerm[]> {
+        const holder = this.holderFilter(match);
+        const familyID = product.SubscriptionFamilyID;
+        if (!holder || !familyID) return [];
+
+        // The engine caches every product, active or not — a discontinued band still has holders.
+        const bands = new Map(
+            OrdersEngine.Instance.Products.filter(
+                (p) =>
+                    UUIDsEqual(p.SubscriptionFamilyID, familyID) &&
+                    UUIDsEqual(p.CompanyID, product.CompanyID) &&
+                    !UUIDsEqual(p.ID, product.ID),
+            ).map((p) => [uuidKey(p.ID), p.Name]),
+        );
+        if (bands.size === 0) return [];
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const bandIDs = RequireUUIDs([...bands.keys()], 'ProductID').map((id) => `'${id}'`).join(',');
+        const subs = await rv.RunView<{
+            ID: string;
+            SubscriptionNumber: string;
+            ProductID: string;
+            SubscriptionTypeID: string;
+            Status: string;
+            EndDate: string | null;
+        }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ProductID IN (${bandIDs}) AND ${holder} AND Status <> 'Migrated'`,
+                Fields: ['ID', 'SubscriptionNumber', 'ProductID', 'SubscriptionTypeID', 'Status', 'EndDate'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!subs?.Success) {
+            throw new Error(`Could not read this holder's other subscriptions in the product's family: ${subs?.ErrorMessage}`);
+        }
+        if (subs.Results.length === 0) return [];
+
+        const byID = new Map(subs.Results.map((s) => [uuidKey(s.ID), s]));
+        const subIDs = RequireUUIDs(subs.Results.map((s) => s.ID), 'SubscriptionID').map((id) => `'${id}'`).join(',');
+        const day = (d: Date) => d.toISOString().slice(0, 10);
+        const terms = await rv.RunView<{ SubscriptionID: string; StartDate: string; EndDate: string; Status: string }>(
+            {
+                EntityName: SUBSCRIPTION_TERM_ENTITY,
+                ExtraFilter: `SubscriptionID IN (${subIDs}) AND Status <> 'Lapsed' AND EndDate >= '${day(start)}'`,
+                Fields: ['SubscriptionID', 'StartDate', 'EndDate', 'Status'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!terms?.Success) {
+            throw new Error(`Could not read the terms of this holder's other subscriptions in the product's family: ${terms?.ErrorMessage}`);
+        }
+
+        const out: FamilyCoverageTerm[] = [];
+        for (const t of terms.Results) {
+            const sub = byID.get(uuidKey(t.SubscriptionID));
+            if (!sub) continue;
+            let endDate = new Date(t.EndDate);
+            if (t.Status === 'Canceled') {
+                // Only a cancelled subscription's own access window keeps a Canceled term alive.
+                if (sub.Status !== 'Canceled' || !sub.EndDate) continue;
+                const accessEnd = new Date(sub.EndDate);
+                if (accessEnd.getTime() < endDate.getTime()) endDate = accessEnd;
+            }
+            const type = OrdersEngine.Instance.SubscriptionTypeByID(sub.SubscriptionTypeID);
+            if (!type) {
+                throw new Error(`Subscription ${sub.SubscriptionNumber} names a subscription type that was not found.`);
+            }
+            const rules = SubscriptionTypeRulesFrom(type);
+            out.push({
+                SubscriptionID: t.SubscriptionID,
+                SubscriptionNumber: sub.SubscriptionNumber ?? null,
+                ProductName: bands.get(uuidKey(sub.ProductID)) ?? 'another band',
+                StartDate: new Date(t.StartDate),
+                EndDate: endDate,
+                ConcurrencyMode: rules.ConcurrencyMode,
+                SubscriptionTypeCode: rules.Code,
+                CancellationMode: rules.CancellationMode,
+                GracePeriodDays: rules.GracePeriodDays,
+                Cancelable: sub.Status !== 'Canceled',
+            });
+        }
+        return out;
+    }
+
+    /**
+     * Load a subscription plus the end and number of its latest term, by whatever filter.
+     *
+     * When the filter matches several, the most live one wins: Active or Trialing, then Paused,
+     * then Canceled, then the rest; among equals, one stored for `personID`, then the newest.
+     */
+    private async loadSubscriptionState(filter: string, personID?: string | null): Promise<ExistingSubscription | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{
             ID: string;
@@ -3139,13 +4503,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ExtraFilter: filter,
                 Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID'],
                 OrderBy: '__mj_CreatedAt DESC',
-                MaxRows: 1,
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        const sub = res?.Results?.[0];
+        // An org-held match ignores the stored person, so an org can match several, and a newer
+        // canceled one must not hide one still running or paused. Rows arrive newest first and the
+        // sort is stable, so the newest wins among equals.
+        const rows = [...(res?.Results ?? [])].sort(
+            (a, b) =>
+                subscriptionStatusRank(a.Status) - subscriptionStatusRank(b.Status) ||
+                Number(!UUIDsEqual(a.BeneficiaryPersonID, personID)) - Number(!UUIDsEqual(b.BeneficiaryPersonID, personID)),
+        );
+        const sub = rows[0];
         if (!sub) return null;
 
         const terms = await rv.RunView<{ EndDate: string; TermNumber: number }>(
@@ -3270,11 +4641,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
     }
 
-    /** Extension or reactivation — the term is what changes; the subscription just re-activates. */
+    /**
+     * Extension or reactivation — the term is what changes; the subscription just re-activates.
+     *
+     * `renewedOnto` is the product a renewal line names. When it is not the subscription's product,
+     * the subscription moved to a successor at renewal (golive #304), and from this term on it is a
+     * subscription to the successor: its product and type follow, so the next renewal, entitlement
+     * checks and reports all read the product the customer now holds.
+     */
     private async touchExistingSubscription(
         decision: SubscriptionDecision,
         isRenewal: boolean,
         options?: EntitySaveOptions,
+        displacedStart?: DisplacedTermStartEventData,
+        renewedOnto?: { ProductID: string; SubscriptionTypeID: string },
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -3282,6 +4662,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
             CompositeKey.FromID(decision.SubscriptionID!),
             this.ContextCurrentUser,
         );
+        if (renewedOnto && sub.ProductID.toLowerCase() !== renewedOnto.ProductID.toLowerCase()) {
+            sub.ProductID = renewedOnto.ProductID;
+            sub.SubscriptionTypeID = renewedOnto.SubscriptionTypeID;
+            if (!(await sub.Save(options))) {
+                throw new Error(
+                    `Failed to move subscription ${sub.SubscriptionNumber} onto its successor product: ` +
+                        `${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+        }
         if (decision.Action === 'Reactivate') {
             sub.Status = 'Active';
             sub.CanceledAt = null;
@@ -3304,7 +4694,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
                 options,
-                { TermNumber: decision.Term?.TermNumber, Action: decision.Action },
+                { TermNumber: decision.Term?.TermNumber, Action: decision.Action, ...displacedStart },
             );
         }
         return decision.SubscriptionID!;
@@ -3576,6 +4966,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const shortfalls = ScheduleShortfalls(
             rows.Results ?? [],
             lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+            String(this.CompanyID ?? ''),
         );
         if (!shortfalls.length) return rows.Results ?? [];
         const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
@@ -3624,6 +5015,52 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
     }
 
+    /** The `OrderConfirmed` outbound event: the order as consumers need it, lines included. */
+    private async recordOrderConfirmedEvent(options?: EntitySaveOptions): Promise<void> {
+        if (!HasOutboundConsumers('OrderConfirmed')) return;
+        const lines = await this.loadLinesForBooking();
+        const answers = await this.loadCheckoutAnswers();
+        const day = (d: Date | null | undefined): string | null => (d ? new Date(d).toISOString().slice(0, 10) : null);
+        await RecordOutboundEvent(
+            {
+                EventType: 'OrderConfirmed',
+                OrderHeaderID: this.ID,
+                Payload: {
+                    OrderID: this.ID,
+                    OrderNumber: this.OrderNumber ?? null,
+                    OrderType: this.OrderType ?? null,
+                    OrderDate: day(this.OrderDate),
+                    CompanyID: this.CompanyID ?? null,
+                    Origin: this.Origin ?? null,
+                    BillToPersonID: this.BillToPersonID ?? null,
+                    BillToOrganizationID: this.BillToOrganizationID ?? null,
+                    TotalGross: this.TotalGross ?? null,
+                    IsRenewal: lines.some((l) => !!l.RenewsSubscriptionID),
+                    Lines: lines.map((l) => ({
+                        OrderLineID: l.ID,
+                        ProductID: l.ProductID,
+                        Quantity: l.Quantity,
+                        UnitPrice: l.UnitPrice ?? null,
+                        LineTotalGross: l.LineTotalGross ?? null,
+                        RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                        ReversesOrderLineID: l.ReversesOrderLineID ?? null,
+                        ShipToPersonID: l.ShipToPersonID ?? null,
+                        ShipToOrganizationID: l.ShipToOrganizationID ?? null,
+                    })),
+                    CheckoutAnswers: answers.map((a) => ({
+                        QuestionKey: a.QuestionKey,
+                        QuestionLabel: a.QuestionLabel,
+                        Answer: a.Answer,
+                        OtherText: a.OtherText ?? null,
+                    })),
+                },
+            },
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser as UserInfo,
+            options,
+        );
+    }
+
     private async loadLinesForBooking(): Promise<mjBizAppsOrdersOrderLineEntity[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const result = await rv.RunView<mjBizAppsOrdersOrderLineEntity>(
@@ -3636,6 +5073,44 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ContextCurrentUser,
         );
         return result?.Results ?? [];
+    }
+
+    /**
+     * The checkout answers as written (#322), read inside the booking transaction like the lines, so
+     * the event carries what committed whether the answers came with this save or an earlier one.
+     */
+    private async loadCheckoutAnswers(): Promise<mjBizAppsOrdersOrderCheckoutAnswerEntity[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<mjBizAppsOrdersOrderCheckoutAnswerEntity>(
+            {
+                EntityName: ORDER_CHECKOUT_ANSWER_ENTITY,
+                ExtraFilter: `OrderHeaderID='${this.ID}'`,
+                OrderBy: 'QuestionKey',
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read the checkout answers of order ${this.OrderNumber}: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        return result.Results ?? [];
+    }
+
+    /**
+     * Write the checkout's answers with the order (#322). The header save skips related collections so
+     * the lines can be priced first, and that skip covers this collection too: without this the
+     * answers a checkout attached were never written.
+     */
+    private async saveCheckoutAnswers(options?: EntitySaveOptions): Promise<void> {
+        for (const answer of this.CheckoutAnswers.Items) {
+            if (answer.IsSaved && !answer.Dirty) continue;
+            answer.OrderHeaderID = this.ID;
+            if (!(await answer.Save(options))) {
+                throw new Error(
+                    `Failed to save the answer to checkout question "${answer.QuestionKey}": ${ExtractEntityErrorMessage(answer)}`,
+                );
+            }
+        }
     }
 
     private async countPersistedLines(): Promise<number> {

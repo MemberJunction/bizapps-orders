@@ -1,0 +1,8 @@
+{
+  "Name": "Choices",
+  "Source": "database",
+  "Load": "explicit",
+  "OnRemove": "delete",
+  "OrderBy": "GroupKey ASC, OptionValue ASC",
+  "ClearAfterSave": false
+}

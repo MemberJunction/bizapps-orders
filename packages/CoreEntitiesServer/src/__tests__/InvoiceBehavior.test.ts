@@ -7,7 +7,7 @@
  * clean, the arithmetic on the page is self-consistent, and the number at the bottom is wrong.
  *
  * So the assertions here are about AMOUNTS TYING, not about shapes being present, and the one that
- * matters most is the last: the documents an order produces must sum back to the order.
+ * matters most is that an order's one document, from the order's company, sums to the order.
  */
 import { describe, expect, it } from 'vitest';
 import {
@@ -23,6 +23,7 @@ import {
     DueDateFor,
     InstalmentDocumentNumber,
     LineDiscountOf,
+    ListAmountOf,
     ListSubtotalOf,
     PaymentStatusLabel,
     SpreadAcrossCompanies,
@@ -51,7 +52,6 @@ const order = (over: Partial<InvoiceOrderFacts> = {}): InvoiceOrderFacts => ({
     AmountPaid: 0,
     Balance: 0,
     DueDate: null,
-    PaymentStatus: 'Unpaid',
     ExternalDocumentNumber: null,
     ReversesOrderHeaderID: null,
     ReversesOrderNumber: null,
@@ -73,6 +73,8 @@ const line = (over: Partial<InvoiceLineFacts> = {}): InvoiceLineFacts => ({
     CompanyName: 'Acme',
     Quantity: 1,
     UnitPrice: 100,
+    ExtendedAmount: null,
+    DiscountPct: 0,
     DiscountAmount: 0,
     LineTotalNet: 100,
     ChargeAmount: 0,
@@ -138,7 +140,7 @@ describe('document kind', () => {
 describe('discount derivation', () => {
     it('finds a percentage discount that leaves DiscountAmount at zero', () => {
         // The seeded shape: 2 x 300 at 10% off. The column says nothing happened.
-        const l = line({ Quantity: 2, UnitPrice: 300, DiscountAmount: 0, LineTotalNet: 540 });
+        const l = line({ Quantity: 2, UnitPrice: 300, DiscountPct: 0.1, DiscountAmount: 0, LineTotalNet: 540 });
         expect(Number(l.DiscountAmount)).toBe(0);
         expect(LineDiscountOf(l)).toBe(60);
     });
@@ -152,6 +154,49 @@ describe('discount derivation', () => {
         const l = line({ Quantity: -1, UnitPrice: 300, DiscountAmount: 10.72, LineTotalNet: -289.28 });
         expect(LineDiscountOf(l)).toBe(-10.72);
         expect(ListSubtotalOf([l]) - DiscountTotalOf([l])).toBeCloseTo(-289.28, 2);
+    });
+
+    // #579. A Flat price that does not divide by the quantity stores a rounded unit rate, so
+    // quantity × unit price is a few cents off the amount the line was actually priced at.
+    it('lists a Flat line at the stored rule figure, with no residual row (qty 3)', () => {
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100, LineTotalNet: 100, LineTotalGross: 100 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(LineDiscountOf(l)).toBe(0);
+        const ladder = build({ Lines: [l] })[0].Ladder;
+        expect(ladder.filter((r) => r.Kind === 'Discount')).toEqual([]);
+        expect(ladder.find((r) => r.Kind === 'Subtotal')?.Amount).toBe(100);
+    });
+
+    it('lists a Flat line at the stored rule figure, with no residual row (qty 7)', () => {
+        const l = line({ Quantity: 7, UnitPrice: 14.29, ExtendedAmount: 100, LineTotalNet: 100, LineTotalGross: 100 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(build({ Lines: [l] })[0].Ladder.filter((r) => r.Kind === 'Discount')).toEqual([]);
+    });
+
+    it('derives a Flat line\'s percentage discount from the stored figure, not the re-multiplied rate', () => {
+        // Flat 100 at qty 3, 10% off: the line nets 90.00, so the discount is 10.00, not 9.99.
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100, DiscountPct: 0.1, LineTotalNet: 90, LineTotalGross: 90 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(LineDiscountOf(l)).toBe(10);
+    });
+
+    it('lists an undiscounted line written before the figure was stored at its net', () => {
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: null, LineTotalNet: 100, LineTotalGross: 100 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(LineDiscountOf(l)).toBe(0);
+    });
+
+    it('treats a gap of exactly half a cent per unit as rounding', () => {
+        // Flat 100.01 at qty 2: unit 50.01, so 2 × 50.01 = 100.02 against a net of 100.01.
+        const l = line({ Quantity: 2, UnitPrice: 50.01, ExtendedAmount: null, LineTotalNet: 100.01, LineTotalGross: 100.01 });
+        expect(ListAmountOf(l)).toBe(100.01);
+    });
+
+    it('keeps quantity × unit price when the gap is wider than rounding, so the discount still prints', () => {
+        // A discount the columns do not record: listing at the net would hide it.
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: null, LineTotalNet: 99.9, LineTotalGross: 99.9 });
+        expect(ListAmountOf(l)).toBe(99.99);
+        expect(LineDiscountOf(l)).toBe(0.09);
     });
 
     it('does not list a rollup parent, which would inflate the subtotal by a whole bundle', () => {
@@ -367,7 +412,7 @@ describe('assembling documents', () => {
         expect(docs[0].Kind).toBe('Invoice');
     });
 
-    it('splits a two-company order and the parts sum back to the order', () => {
+    it("bills a two-company order as ONE document from the order's company, totalling the order (golive #311)", () => {
         const lines = [
             line({ ID: 'l-a', LineNumber: 1, CompanyID: CO_A, CompanyName: 'Acme', LineTotalNet: 100, ChargeAmount: 6, LineTax: 8, LineTotalGross: 114 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, CompanyName: 'Beta', LineTotalNet: 200, ChargeAmount: 4, LineTax: 0, LineTotalGross: 204 }),
@@ -399,14 +444,16 @@ describe('assembling documents', () => {
             AsOf: '2026-07-01',
         });
 
-        expect(docs.map((d) => d.DocumentNumber)).toEqual(['ORD-1005-A', 'ORD-1005-B']);
-        expect(docs.reduce((s, d) => s + d.Gross, 0)).toBe(318);
-        expect(docs[0].TaxTotal).toBe(8);
-        expect(docs[1].TaxTotal).toBe(0);
-        // Beta has no nexus, and its document says so rather than staying silent about tax.
-        expect(docs[1].Ladder.some((r) => r.Kind === 'Tax')).toBe(true);
-        expect(docs.every((d) => d.Notes).valueOf()).toBe(true);
-        expect(docs.flatMap((d) => d.Notes)).toEqual([]);
+        expect(docs).toHaveLength(1);
+        const [doc] = docs;
+        expect(doc.DocumentNumber).toBe('ORD-1005');
+        expect(doc.CompanyID).toBe(CO_A);
+        expect(doc.Issuer.Name).toBe('Acme');
+        expect(doc.Rows.map((r) => r.LineID)).toEqual(['l-a', 'l-b']);
+        expect(doc.Gross).toBe(318);
+        expect(doc.ChargeTotal).toBe(10);
+        expect(doc.TaxTotal).toBe(8);
+        expect(doc.Notes).toEqual([]);
     });
 
     it('shows tax as zero when there is none, but only once', () => {
@@ -455,6 +502,25 @@ describe('assembling documents', () => {
         expect(taxRows[0].Amount).toBe(8);
     });
 
+    it('matches OnlyCompanyID regardless of UUID case', () => {
+        // SQL Server returns uppercase ids; callers routinely carry lower-cased copies. A
+        // case-sensitive match dropped every document and the caller reported the order as having no
+        // lines for that company — a wrong answer that reads like missing data. Found live, 2026-09-22.
+        const docs = BuildDocuments({
+            Order: order({ TotalGross: 200 }),
+            Lines: [line({ ID: 'l1', CompanyID: CO_A, LineTotalGross: 200 })],
+            Charges: [],
+            Adjustments: [],
+            Payments: [],
+            BillTo: party,
+            ShipTo: null,
+            AsOf: '2026-07-01',
+            OnlyCompanyID: CO_A.toUpperCase(),
+        });
+        expect(docs).toHaveLength(1);
+        expect(docs[0].CompanyID).toBe(CO_A);
+    });
+
     it('does not print a promotion code that merely repeats its own name', () => {
         // Many promotions are named after their code. "SPRING10 (SPRING10)" reads as a rendering
         // fault rather than as the reference it is meant to be.
@@ -481,7 +547,7 @@ describe('assembling documents', () => {
         expect(named.Ladder.find((r) => r.Kind === 'Discount')!.Note).toBe('SPRING10');
     });
 
-    it('keeps an unallocated charge on the bill instead of losing it between two documents', () => {
+    it('keeps an unallocated charge on the bill, without a note, when one document carries everything', () => {
         const lines = [
             line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, ChargeAmount: 10, LineTotalGross: 110 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, LineTotalNet: 200, LineTotalGross: 200 }),
@@ -496,11 +562,13 @@ describe('assembling documents', () => {
             ShipTo: null,
             AsOf: '2026-07-01',
         });
-        expect(docs.reduce((s, d) => s + d.ChargeTotal, 0)).toBe(10);
-        expect(docs[0].Notes.join(' ')).toMatch(/not allocated/i);
+        expect(docs).toHaveLength(1);
+        expect(docs[0].ChargeTotal).toBe(10);
+        expect(docs[0].Gross).toBe(310);
+        expect(docs[0].Notes).toEqual([]);
     });
 
-    it('spreads an order-level payment across both documents and neither claims to be paid', () => {
+    it('credits an order-level payment once, on the one document', () => {
         const lines = [
             line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, LineTotalGross: 100 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, LineTotalNet: 100, LineTotalGross: 100 }),
@@ -525,10 +593,9 @@ describe('assembling documents', () => {
             ShipTo: null,
             AsOf: '2026-07-05',
         });
-        expect(docs.map((d) => d.AmountPaid)).toEqual([25, 25]);
-        expect(docs.reduce((s, d) => s + d.AmountDue, 0)).toBe(150);
-        // The header says "Partly paid" for the order; neither half may claim to be settled.
-        expect(docs.every((d) => d.PaymentStatusLabel === 'Partly paid')).toBe(true);
+        expect(docs.map((d) => d.AmountPaid)).toEqual([50]);
+        expect(docs[0].AmountDue).toBe(150);
+        expect(docs[0].PaymentStatusLabel).toBe('Partly paid');
     });
 
     it('names the promotion on the ladder and still ties to the total', () => {
@@ -561,7 +628,7 @@ describe('assembling documents', () => {
         expect(doc.Notes).toEqual([]);
     });
 
-    it('narrows to one company on request without renumbering the others', () => {
+    it("yields nothing when asked for a product company's document — there is only the order's", () => {
         const lines = [
             line({ ID: 'l-a', CompanyID: CO_A, LineTotalGross: 100 }),
             line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, LineTotalGross: 100 }),
@@ -577,9 +644,7 @@ describe('assembling documents', () => {
             AsOf: '2026-07-01',
             OnlyCompanyID: CO_B,
         });
-        expect(docs).toHaveLength(1);
-        // Still -B: the suffix describes the order, not the size of this result set.
-        expect(docs[0].DocumentNumber).toBe('ORD-1005-B');
+        expect(docs).toEqual([]);
     });
 
     it('counts down to the due date only while something is owed', () => {
@@ -687,6 +752,38 @@ describe('instalment documents', () => {
         expect(doc.DocumentNumber).toBe('ORD-1005-2');
         expect(doc.Ladder.map((r) => r.Kind)).toEqual(['Subtotal', 'Total', 'Instalment', 'Due']);
         expect(doc.Ladder.find((r) => r.Kind === 'Instalment')?.Label).toBe('Instalment 2 of 4');
+    });
+
+    it("bills an order-company instalment of a two-company order as one document for every line (golive #311)", () => {
+        const lines = [
+            line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, LineTotalGross: 100 }),
+            line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, CompanyName: 'Beta', LineTotalNet: 300, LineTotalGross: 300 }),
+        ];
+        const docs = build({ Order: order({ TotalGross: 400 }), Lines: lines, Instalment: instalment({ Amount: 100 }) });
+        expect(docs).toHaveLength(1);
+        expect(docs[0].DocumentNumber).toBe('ORD-1005-2');
+        expect(docs[0].CompanyID).toBe(CO_A);
+        expect(docs[0].Gross).toBe(400);
+        expect(docs[0].AmountDue).toBe(100);
+        expect(docs[0].Rows).toHaveLength(2);
+    });
+
+    it("rebuilds a product company's own pre-golive-#311 instalment as it was issued: its lines, from it", () => {
+        const lines = [
+            line({ ID: 'l-a', CompanyID: CO_A, LineTotalNet: 100, LineTotalGross: 100 }),
+            line({ ID: 'l-b', LineNumber: 2, CompanyID: CO_B, CompanyName: 'Beta', LineTotalNet: 300, LineTotalGross: 300 }),
+        ];
+        const docs = build({
+            Order: order({ TotalGross: 400 }),
+            Lines: lines,
+            Instalment: instalment({ CompanyID: CO_B, Amount: 150, InstallmentCount: 2, InstallmentNumber: 1, DocumentNumber: 'ORD-1005-B1' }),
+            OnlyCompanyID: CO_B,
+        });
+        expect(docs).toHaveLength(1);
+        expect(docs[0].CompanyID).toBe(CO_B);
+        expect(docs[0].DocumentNumber).toBe('ORD-1005-B1');
+        expect(docs[0].Gross).toBe(300);
+        expect(docs[0].Rows.map((r) => r.LineID)).toEqual(['l-b']);
     });
 
     it('prints the FROZEN number when the row has one, never a recomputed one', () => {

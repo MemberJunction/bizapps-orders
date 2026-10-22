@@ -1,5 +1,484 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.37.0
+
+### Patch Changes
+
+- Updated dependencies [3ec257f]
+- Updated dependencies [d429e9e]
+- Updated dependencies [065481c]
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+- Updated dependencies [3982e30]
+- Updated dependencies [dfc43ea]
+  - @mj-biz-apps/orders-core-entities-server@5.37.0
+  - @mj-biz-apps/orders-entities@5.37.0
+  - @mj-biz-apps/orders-server@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- Updated dependencies [0c499b2]
+- Updated dependencies [0e3b9fd]
+- Updated dependencies [7756bb0]
+  - @mj-biz-apps/orders-server@5.36.1
+  - @mj-biz-apps/orders-core-entities-server@5.36.1
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- Updated dependencies [4aa6783]
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+- Updated dependencies [5a490c4]
+  - @mj-biz-apps/orders-core-entities-server@5.36.0
+  - @mj-biz-apps/orders-server@5.36.0
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+- Updated dependencies [82fa9ea]
+  - @mj-biz-apps/orders-core-entities-server@5.35.1
+  - @mj-biz-apps/orders-entities@5.35.1
+  - @mj-biz-apps/orders-server@5.35.1
+
+## 5.35.0
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [303849b]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-core-entities-server@5.35.0
+  - @mj-biz-apps/orders-entities@5.35.0
+  - @mj-biz-apps/orders-server@5.35.0
+
+## 5.34.1
+
+### Patch Changes
+
+- Updated dependencies [5dcc41e]
+  - @mj-biz-apps/orders-server@5.34.1
+  - @mj-biz-apps/orders-core-entities-server@5.34.1
+  - @mj-biz-apps/orders-entities@5.34.1
+
+## 5.34.0
+
+### Patch Changes
+
+- Updated dependencies [59236a8]
+  - @mj-biz-apps/orders-entities@5.34.0
+  - @mj-biz-apps/orders-core-entities-server@5.34.0
+  - @mj-biz-apps/orders-server@5.34.0
+
+## 5.33.0
+
+### Minor Changes
+
+- e384e15: An amount change that needs a credit memo is no longer refused (#662). The approved change is the credit memo: it carries the memo's amount and number (`<order number>-CM<n>`), posts its entry dated the effective day (deferred revenue and tax debited, the receivable credited), credits the invoice named in `AppliesToInvoiceID` up to its open amount, and lowers the line's `BilledToDate` by the memo's net. What no invoice takes stays on the order's balance as the customer's credit. `RefundRequested` against a paid invoice records the credit on that invoice; the acknowledgment task asks finance to pay it with `Orders.RefundPayment`. Payments landing on a credited invoice settle only what it still owes. Integration bundle `amount-change` gains AC8 and AC9, and AC7 now applies a credit on an invoice already sent.
+- 9a78b8e: `Orders.AmendArrangement` previews a lower amount on a booked term (#506). With `NewAmount` and `Preview`, it returns the reduction and its tax, the catch-up on revenue already earned, the staged recognition entries it would offset and the new schedule, the uninvoiced instalments it would reduce or cancel, and the credit memo with where it is applied (`AppliesToInvoiceID`, `RefundRequested`). It writes nothing. Recording a change of amount is still refused until its application exists. New integration bundle `amount-change` (AC1 to AC4).
+- 67e1dbd: `Orders.AmendArrangement` records a lower amount on a booked term (#506). Without `Preview`, it records a Price concession carrying `NewAmount`, routed through the ConcessionLimit rule like any other. When approved, in the same transaction: the catch-up and the re-cut recognition entries are posted, the term's amount and the instalments not yet invoiced are lowered, an `AmountChanged` subscription event is logged, and accounting's acknowledgment task is raised. Later instalment invoices bill the lowered line, and the schedule check subtracts approved reductions. A change that needs a credit memo (a credit on an invoice already sent, an order billed as a whole, or a refund) is still refused. `ReasonCategory` accepts `Dispute`. Integration bundle `amount-change` gains AC5 to AC7.
+- a184085: A return against an order billed by instalment records the credit memo it booked on each returning line (`CreditMemoAmount`, zero when it credited nothing), so the return order's `Balance` is what the customer was credited rather than the full value of its lines (#661). RV5 and RV11 check both balances.
+- b0deb81: A partial return against an order billed by instalment lowers the origin's instalments not yet invoiced by the returned units' share of what they still bill, pro rata, and records it on the returning line (`ScheduleReduction`) (#661). A whole-order return records it too and cancels the instalments as before. The schedule check and each instalment invoice read the origin's lines less these reductions, alongside approved amount changes, so the lowered instalments still invoice. A reduction that needs a credit memo (more than the uninvoiced instalments bill, or below what is already paid on one) refuses the return. `contract-reversal` gains RV11; RV7's figures follow the lowered instalments.
+
+### Patch Changes
+
+- 9e4c8df: An amount change's credit memo has a customer document (#684). `Orders.GenerateInvoice` and `Orders.SendDocument` take `OrderConcessionID` and render the credit memo that approved change issued: its number, the line's net and tax credited, the invoice or order it was applied to, and the credit left to the customer (refunded when they asked for it). It is built from what the approval logged on the `AmountChanged` subscription event, not recomputed. `Orders.SendDocument` sends it by email also when the order's company invoices through Bill.com, which carries no credit memos, and another concession still pending on the order does not hold it. Re-rendered invoices show the credit: an instalment invoice lists the memos that credited it and asks for its balance, and a whole-order document subtracts each approved amount change's memo and schedule reduction, as the order's balance does. The acknowledgment task for an amount change with a memo tells accounting to send it. Integration checks AC7–AC9 render the memo and the credited invoices.
+- f7109a3: New `billcom-rail` integration bundle (BR1–BR20) covers the Bill.com invoice rail against a real database, with Bill.com replaced by an in-memory stub behind the rail's gateway seam. It runs the send sweep, re-send, cancel, payment poll (preview, capture, watermark, part, multi-order, scheduled and unmatched payments) and the webhook handler. It checks that the send and poll jobs ship Disabled and in Preview, that a poll asked to record cash records nothing while its job is Disabled and only previews while it is in Preview, and that each invoice a payment touched is refreshed with its own due amount.
+- 7cc1751: Review fixes. An order created automatically from an unmatched charge books the units the checkout bought, at the charge divided by them; a charge that does not divide into a unit price at the line's four decimals, or a checkout line with a quantity that is not a whole number, is left to finance. Applying an amount change on an order billed as a whole plans against the balance before its own credit memo, so the refund or credit it reports matches the preview (integration check AC11). A return against an instalment-billed order renders a document that asks for the credit memo only, with the part taken off the origin's uninvoiced instalments shown on its own row. A reconciliation run that creates an order for a charge clears the exception an earlier run raised for it. HubSpot payments, which are recorded Unmatched until their deal can be read, no longer fail the poll run on their own. The generated spawn-renewals output type carries the renewal promotion codes.
+- Updated dependencies [2cc0d55]
+- Updated dependencies [e384e15]
+- Updated dependencies [9a78b8e]
+- Updated dependencies [67e1dbd]
+- Updated dependencies [3388b7e]
+- Updated dependencies [9e4c8df]
+- Updated dependencies [008f08f]
+- Updated dependencies [adad687]
+- Updated dependencies [a58c964]
+- Updated dependencies [2972434]
+- Updated dependencies [3ec829a]
+- Updated dependencies [3bbd5d6]
+- Updated dependencies
+- Updated dependencies [7d0ccf6]
+- Updated dependencies [3f6fd86]
+- Updated dependencies [3c16360]
+- Updated dependencies [1a69590]
+- Updated dependencies [d3ba6b5]
+- Updated dependencies [5606499]
+- Updated dependencies [cd5b92e]
+- Updated dependencies [df7ff8d]
+- Updated dependencies [49a6d65]
+- Updated dependencies [f3ff9c4]
+- Updated dependencies [77050bc]
+- Updated dependencies [968549b]
+- Updated dependencies [bc1778f]
+- Updated dependencies [fde8cc8]
+- Updated dependencies [17e183d]
+- Updated dependencies [0cdc7b6]
+- Updated dependencies [3f2f22a]
+- Updated dependencies [c0d0b84]
+- Updated dependencies [60f4ef3]
+- Updated dependencies [8525cc2]
+- Updated dependencies [4f1f89a]
+- Updated dependencies [4ba919b]
+- Updated dependencies [465980d]
+- Updated dependencies [49c52df]
+- Updated dependencies [dfcc809]
+- Updated dependencies [313f19f]
+- Updated dependencies [32aa1b2]
+- Updated dependencies [55dd0ca]
+- Updated dependencies [e51a86a]
+- Updated dependencies [7cc1751]
+- Updated dependencies [21f2d6e]
+- Updated dependencies [a33ca5a]
+- Updated dependencies [6f50258]
+- Updated dependencies [37f31ea]
+- Updated dependencies [3388b7e]
+- Updated dependencies [3388b7e]
+- Updated dependencies [4c88fcd]
+- Updated dependencies [e43db9f]
+- Updated dependencies [9c40399]
+- Updated dependencies [c418914]
+- Updated dependencies [a20dbf0]
+- Updated dependencies [500e533]
+- Updated dependencies [a184085]
+- Updated dependencies [78ff171]
+- Updated dependencies [bc4607f]
+- Updated dependencies [b0deb81]
+- Updated dependencies [59a2c13]
+- Updated dependencies [4c28b84]
+- Updated dependencies [d77b2bd]
+- Updated dependencies [11afb0b]
+- Updated dependencies [f48b68f]
+- Updated dependencies [44a267d]
+- Updated dependencies [72f235c]
+- Updated dependencies [c03ff3d]
+- Updated dependencies [0ab95c6]
+- Updated dependencies [3869621]
+- Updated dependencies [b1b4844]
+- Updated dependencies [01f209b]
+- Updated dependencies [3f8c3a0]
+- Updated dependencies [55343b7]
+- Updated dependencies [920b008]
+- Updated dependencies [ca98a5d]
+  - @mj-biz-apps/orders-core-entities-server@5.33.0
+  - @mj-biz-apps/orders-entities@5.33.0
+  - @mj-biz-apps/orders-server@5.33.0
+
+## 5.32.1
+
+### Patch Changes
+
+- Updated dependencies [d120083]
+  - @mj-biz-apps/orders-core-entities-server@5.32.1
+  - @mj-biz-apps/orders-server@5.32.1
+  - @mj-biz-apps/orders-entities@5.32.1
+
+## 5.32.0
+
+### Patch Changes
+
+- @mj-biz-apps/orders-core-entities-server@5.32.0
+- @mj-biz-apps/orders-entities@5.32.0
+- @mj-biz-apps/orders-server@5.32.0
+
+## 5.31.0
+
+### Patch Changes
+
+- Updated dependencies [8f105ee]
+- Updated dependencies [1f5d3f6]
+- Updated dependencies [0ef01d0]
+- Updated dependencies [98ba1d8]
+- Updated dependencies [1ea0ecf]
+- Updated dependencies [52e3762]
+- Updated dependencies [f8b53d9]
+- Updated dependencies [aa84d29]
+- Updated dependencies [bcdb1dc]
+- Updated dependencies [e98b880]
+- Updated dependencies [50de8dc]
+- Updated dependencies [0feb8d2]
+- Updated dependencies [6f8bcf7]
+- Updated dependencies [d462e77]
+- Updated dependencies [8073f27]
+- Updated dependencies [cb861ae]
+- Updated dependencies [06ee0ac]
+  - @mj-biz-apps/orders-entities@5.31.0
+  - @mj-biz-apps/orders-core-entities-server@5.31.0
+  - @mj-biz-apps/orders-server@5.31.0
+
+## 5.30.0
+
+### Patch Changes
+
+- 063bb40: A bundle line is expanded once. Saving a draft again after its lines changed used to add a second set of component lines, doubling the order, and the new set carried none of the edits made to the first, so an overlap acknowledged on a band inside a bundle came back unacknowledged and confirm refused it. A bundle line that already has children now updates them to its current quantity and price instead (a child whose quantity or price was set by hand keeps it). An overlap acknowledgment on the bundle line is copied to its component lines, so a bundle confirmed in one step can acknowledge a band inside it.
+- de64c27: EN22 places its renewal in time, so confirm grants it Active, then moves the renewal's due date past the cutoff and checks that `Orders.CheckEntitlement` and `Orders.ListEntitlements` read it Suspended before the nightly job runs. It previously placed the renewal already past its cutoff, which confirm grants Suspended, so its "rows still read Active" precondition never held. EN25 covers that case: a renewal past its cutoff when confirmed starts Suspended for `PastDue`.
+- 9d2cbc0: The payment-hold waiver check is now `entitlements.EN27`. It shared `entitlements.EN24` with the OnPaidInFull check, and the registry keeps one check per Id, so the OnPaidInFull check never ran. The registry-parity test now reads the check files and fails when two checks declare the same Id.
+- Updated dependencies [ac78d0d]
+- Updated dependencies [557b6b3]
+- Updated dependencies [573ff96]
+- Updated dependencies [5cd3382]
+- Updated dependencies [c89ac1b]
+- Updated dependencies [063bb40]
+- Updated dependencies [9647922]
+- Updated dependencies [0db962e]
+- Updated dependencies [23d9f7f]
+- Updated dependencies [0c4815c]
+- Updated dependencies [036923f]
+- Updated dependencies [5d531bf]
+- Updated dependencies [7fe01d1]
+- Updated dependencies [de9be4d]
+- Updated dependencies [d8efa9f]
+- Updated dependencies [ba20d3e]
+- Updated dependencies [330c0e5]
+- Updated dependencies [a1810fd]
+- Updated dependencies [f22d329]
+- Updated dependencies [6c5e3e2]
+- Updated dependencies [d0c3fa6]
+- Updated dependencies [ff4e795]
+- Updated dependencies [307859d]
+  - @mj-biz-apps/orders-core-entities-server@5.30.0
+  - @mj-biz-apps/orders-entities@5.30.0
+  - @mj-biz-apps/orders-server@5.30.0
+
+## 5.29.0
+
+### Patch Changes
+
+- Updated dependencies [edea1b5]
+- Updated dependencies [9d0e76d]
+- Updated dependencies [41efacb]
+- Updated dependencies [2cec5c3]
+  - @mj-biz-apps/orders-core-entities-server@5.29.0
+  - @mj-biz-apps/orders-entities@5.29.0
+  - @mj-biz-apps/orders-server@5.29.0
+
+## 5.28.0
+
+### Minor Changes
+
+- 93213ea: A different band of the same subscription offering no longer books a second, overlapping subscription without anyone noticing (golive #276).
+
+  Confirm found an existing subscription by product, so a holder with coverage under one band who ordered another band got a new subscription for the same dates, billed and recognized alongside the first.
+
+  - A product joins a subscription family (the `SubscriptionFamily` table, one per selling company) through `Product.SubscriptionFamilyID`, picked on the product form's Subscription section. A product can only join a family of its own company, and not a family marked inactive; a family's company cannot change once saved.
+  - At confirm, a subscription line whose term overlaps the holder's coverage under another band of its family, within the product's company, follows the stricter `ConcurrencyMode` of the two bands' types (`RejectDuplicate`, then `ExtendExisting`, then `AllowMultiple`): `AllowMultiple` proceeds, `RejectDuplicate` refuses, and `ExtendExisting` refuses unless the line sets `OrderLine.AcknowledgesCoverageOverlap`. The refusal names the family, the subscription and the overlapping dates, and says to start the band after the existing coverage ends or to mark the line to run alongside it. Two bands on one order are checked against each other.
+  - A cancelled subscription still counts until its coverage ends: its terms that are not Canceled or Lapsed count in full, and a Canceled term counts through `Subscription.EndDate`.
+  - `Orders.CheckCoverageOverlap` (new, read-only): runs the same check over a saved draft. The order lines editor calls it after each save and shows the result on the line, with the acknowledgment checkbox ("Run alongside the existing coverage. Both will be billed.") where it applies.
+
+  Products with no family behave as before.
+
+  An organization-held subscription bought with a contact person is now found again at confirm (#317). The subscription stores that person, and the lookup required it to be empty, so a re-order of the same product booked a second subscription without `ConcurrencyMode` running. Under `Organization`, and under `Holder` when no person was resolved, the lookup now matches the organization whatever person is stored. Under `Holder` when a person was resolved, and for seats under `Individual`, it matches the exact organization and person, so a coworker's purchase at the same organization does not extend another person's subscription. Under `Holder`, when the organization was stated on the line or the order rather than inferred from the person's employer, the lookup also matches that organization's subscription stored with no person, so a re-order naming a contact extends a subscription first bought with none. The same rule applies to the family check above. Among several matches, an Active or Trialing subscription is chosen first, then a Paused one, then a Canceled one, and among equals the one stored for the ordered person, then the newest.
+
+  A product created on the server takes its product type's defaults again (golive #277). The server's product class extended the generated class instead of `ProductEntity`, and replaced it, so a product saved there with only a type failed for lack of a revenue recognition type and left the subscription type and taxability empty.
+
+### Patch Changes
+
+- Updated dependencies [01810a7]
+- Updated dependencies [a2dc752]
+- Updated dependencies [c5ea664]
+- Updated dependencies [07793bc]
+- Updated dependencies [d9d9413]
+- Updated dependencies [d3b9c7d]
+- Updated dependencies [93213ea]
+- Updated dependencies [6777eb5]
+  - @mj-biz-apps/orders-core-entities-server@5.28.0
+  - @mj-biz-apps/orders-entities@5.28.0
+  - @mj-biz-apps/orders-server@5.28.0
+
+## 5.27.0
+
+### Patch Changes
+
+- Updated dependencies [d1cfdcf]
+- Updated dependencies [a023cbc]
+- Updated dependencies [b9900b7]
+- Updated dependencies [d1cfdcf]
+- Updated dependencies [148b74c]
+- Updated dependencies [d1cfdcf]
+- Updated dependencies [d1cfdcf]
+  - @mj-biz-apps/orders-core-entities-server@5.27.0
+  - @mj-biz-apps/orders-entities@5.27.0
+  - @mj-biz-apps/orders-server@5.27.0
+
+## 5.26.0
+
+### Patch Changes
+
+- Updated dependencies [bf3ed93]
+- Updated dependencies [8ab937f]
+- Updated dependencies [8df4d53]
+- Updated dependencies [5ca8b93]
+- Updated dependencies [3ebb622]
+- Updated dependencies [8dd30b8]
+- Updated dependencies [25b0dd1]
+- Updated dependencies [d0b9bbd]
+- Updated dependencies [d1fd2e0]
+- Updated dependencies [aab09c1]
+- Updated dependencies [2b8d2a5]
+- Updated dependencies [f697eee]
+  - @mj-biz-apps/orders-core-entities-server@5.26.0
+  - @mj-biz-apps/orders-entities@5.26.0
+  - @mj-biz-apps/orders-server@5.26.0
+
+## 5.25.0
+
+### Patch Changes
+
+- Updated dependencies [00f6713]
+  - @mj-biz-apps/orders-entities@5.25.0
+  - @mj-biz-apps/orders-core-entities-server@5.25.0
+  - @mj-biz-apps/orders-server@5.25.0
+
+## 5.24.0
+
+### Patch Changes
+
+- Updated dependencies [21ade73]
+- Updated dependencies [5939a65]
+- Updated dependencies [fee2c37]
+- Updated dependencies [54d4e4a]
+- Updated dependencies [36b3869]
+- Updated dependencies [4f68e25]
+- Updated dependencies [7126955]
+- Updated dependencies [3b94fb5]
+- Updated dependencies [5c49cb5]
+- Updated dependencies [266995a]
+- Updated dependencies [59efbe7]
+- Updated dependencies [297fe94]
+- Updated dependencies [71ad081]
+- Updated dependencies [09e42d1]
+  - @mj-biz-apps/orders-core-entities-server@5.24.0
+  - @mj-biz-apps/orders-entities@5.24.0
+  - @mj-biz-apps/orders-server@5.24.0
+
+## 5.23.1
+
+### Patch Changes
+
+- Updated dependencies [b49eff4]
+- Updated dependencies [529fe84]
+  - @mj-biz-apps/orders-entities@5.23.1
+  - @mj-biz-apps/orders-core-entities-server@5.23.1
+  - @mj-biz-apps/orders-server@5.23.1
+
+## 5.23.0
+
+### Minor Changes
+
+- b5e97d0: An approved Duration concession now extends its term (bc-aidp-next-golive#221, case B).
+
+  Approving the concession applies the extension in the same transaction:
+
+  - The term's `EndDate` and its line's `ServicePeriodEnd` move to the new end.
+  - Every staged `RevenueRecognition` entry dated on or after the effective date is mirrored on its own date, and what those entries were going to recognise is spread again from the first of them to the new end, using the term's own driver and cadence. There is no catch-up and no receivable entry.
+  - Access grants that follow the term run to the new end.
+  - An `Extended` subscription event names the concession and pairs each offset with the entry it offsets.
+  - A task is assigned to every active holder of the acknowledgment role except the requester, carrying the old and new schedules.
+
+  The renewal follows the new end because `SpawnRenewals` reads the latest term.
+
+  An extension is refused, both when it is recorded and when it is approved, if:
+
+  - the term's renewal is already placed;
+  - an entry it would offset is already in a journal-entry batch;
+  - no acknowledgment role is configured (the new `AmendmentAcknowledgmentRole` setting, empty by default); or
+  - nobody but the requester holds that role.
+
+  `Orders.AmendArrangement` previews an extension without writing anything, or records it. A change of amount is refused for now.
+
+  A booked term's dates can still be changed only through this path. The server subclass `SubscriptionTermEntityServer` admits the amendment's own write and no other.
+
+### Patch Changes
+
+- 44ba79b: Move to MemberJunction 6.1.4 (the 6.1 LTS line) from 6.1.0-edge.5, and require BizApps Accounting 0.17.0 or later, the first release with the finance exception operations that progress posting, the overlap check and the below-engine check call. `mjVersionRange` is now `>=6.1.4 <7.0.0`.
+- a05a122: Outbound events: Orders tells registered `OrdersOutboundConsumer` subclasses when a sale confirms (renewals included; not returns, cancellations, amendments or credits) and when an entitlement grant is created or its status changes. Events are recorded in the same transaction as the change (a transactional outbox) and sent after it by the new `Orders — Dispatch Outbound Events` scheduled job and, for a completed checkout, right after `/complete`. Delivery is at least once with a stable event id, retried with backoff (a `Deliver` call is bounded at 30 seconds) and dead-lettered after 24 hours. A new `EntitlementGrantEntityServer` records grant changes whoever makes them. With no consumer registered, nothing is recorded. See `docs/outbound-events.md`.
+- 7d375f5: An order line refuses a `ParentOrderLineID` unless bundle expansion wrote it. The concession confirm gate does not re-price a bundle component, so a parent set through the API would have let an ordinary line skip it. Clearing a parent is still allowed. Integration check BN13 covers the refusal.
+- Updated dependencies [319018d]
+- Updated dependencies [cd97084]
+- Updated dependencies [afbfd22]
+- Updated dependencies [8fe29eb]
+- Updated dependencies [348b2ab]
+- Updated dependencies [bf20bfa]
+- Updated dependencies [43cb51e]
+- Updated dependencies [69060ae]
+- Updated dependencies [44ba79b]
+- Updated dependencies [a05a122]
+- Updated dependencies [78878b3]
+- Updated dependencies [76053c0]
+- Updated dependencies [7d375f5]
+- Updated dependencies [498ce77]
+- Updated dependencies [dfa3dc8]
+- Updated dependencies [69aff1b]
+- Updated dependencies [399a517]
+- Updated dependencies [b5e97d0]
+  - @mj-biz-apps/orders-entities@5.23.0
+  - @mj-biz-apps/orders-core-entities-server@5.23.0
+  - @mj-biz-apps/orders-server@5.23.0
+
+## 5.22.0
+
+### Patch Changes
+
+- Updated dependencies [2aca048]
+  - @mj-biz-apps/orders-entities@5.22.0
+  - @mj-biz-apps/orders-core-entities-server@5.22.0
+  - @mj-biz-apps/orders-server@5.22.0
+
+## 5.21.0
+
+### Patch Changes
+
+- Updated dependencies [4d6f410]
+- Updated dependencies [854a137]
+- Updated dependencies [6e5077d]
+- Updated dependencies [1901f73]
+- Updated dependencies [53d6fd8]
+- Updated dependencies [68402d5]
+- Updated dependencies [18b10d7]
+- Updated dependencies [497fc57]
+- Updated dependencies [2831b2f]
+- Updated dependencies [f263124]
+- Updated dependencies [704eec2]
+- Updated dependencies [fd0cfac]
+- Updated dependencies [528b483]
+- Updated dependencies [fa90781]
+- Updated dependencies [61fb0e6]
+  - @mj-biz-apps/orders-entities@5.21.0
+  - @mj-biz-apps/orders-core-entities-server@5.21.0
+  - @mj-biz-apps/orders-server@5.21.0
+
+## 5.20.0
+
+### Patch Changes
+
+- 460c601: The `payment-terms` bundle proves that a confirmed order's `DueDate` can be corrected without approval and that every correction, and every change to `PaymentTermsTypeID`, leaves a `MJ: Record Changes` row with the old value, the new value and who made it.
+- Updated dependencies [a1114ed]
+- Updated dependencies [7af7a46]
+- Updated dependencies [41d32be]
+- Updated dependencies [53efeb9]
+- Updated dependencies [2ddd206]
+- Updated dependencies [0bcafbd]
+- Updated dependencies [22ee8ec]
+- Updated dependencies [d0c5fcd]
+- Updated dependencies [d71575a]
+- Updated dependencies [3a8b6b2]
+- Updated dependencies [e131f07]
+- Updated dependencies [a67d0ef]
+- Updated dependencies [102ea17]
+- Updated dependencies [8d3df77]
+- Updated dependencies [ada18e6]
+  - @mj-biz-apps/orders-entities@5.20.0
+  - @mj-biz-apps/orders-core-entities-server@5.20.0
+  - @mj-biz-apps/orders-server@5.20.0
+
 ## 5.19.0
 
 ### Patch Changes

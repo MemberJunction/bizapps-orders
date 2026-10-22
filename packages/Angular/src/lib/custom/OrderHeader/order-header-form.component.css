@@ -486,6 +486,13 @@
     color: var(--mj-status-error-text);
 }
 
+.mjo-oh-moved__list {
+    flex-basis: 100%;
+    margin: 0;
+    padding-left: var(--mj-space-5);
+    color: var(--mj-text-primary);
+}
+
 .mjo-oh-ref {
     display: flex;
     flex-direction: column;

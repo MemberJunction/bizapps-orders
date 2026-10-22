@@ -15,7 +15,7 @@ import type {
 } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
-import { FormatCoverageWindow, FormatShortDate, YesNo } from './document-form.helpers';
+import { FormatCoverageWindow, FormatShortDate, FormatShortInstantDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
 
@@ -105,6 +105,15 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
     public Cards: MJOOverviewCard[] = [];
 
     public async ngOnInit(): Promise<void> {
+        await this.load();
+    }
+
+    /** The toolbar's Refresh, or a cancellation the header confirmed: terms, grants and events changed with the record. */
+    public override OnRecordRefreshed(): void {
+        void this.load();
+    }
+
+    private async load(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
         const [terms, grants, events] = await Promise.all([
@@ -153,7 +162,7 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
                 Icon: 'fa-solid fa-key',
                 Items: grants.map((g) => ({
                     Title: g.BeneficiaryPerson || 'Grant',
-                    Detail: g.ValidTo ? `Valid through ${FormatShortDate(g.ValidTo)}` : 'Open-ended',
+                    Detail: g.ValidTo ? `Valid through ${FormatShortInstantDate(g.ValidTo)}` : 'Open-ended',
                     Badge: g.Status,
                     BadgeKind: g.Status === 'Active' ? 'ok' : 'muted',
                 })),
@@ -163,7 +172,7 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
                 Icon: 'fa-solid fa-bolt',
                 Items: events.map((e) => ({
                     Title: e.EventType,
-                    Detail: FormatShortDate(e.OccurredAt) || '',
+                    Detail: FormatShortInstantDate(e.OccurredAt) || '',
                 })),
             },
         ];
@@ -216,7 +225,7 @@ export class SubscriptionTermOverviewPanel extends BaseFormPanel<mjBizAppsOrders
                 Title: 'Grants tied to this term',
                 Icon: 'fa-solid fa-key',
                 Headers: ['Beneficiary', 'Valid to', 'Status'],
-                Rows: grants.map((g) => [g.BeneficiaryPerson || '—', FormatShortDate(g.ValidTo) || '—', g.Status]),
+                Rows: grants.map((g) => [g.BeneficiaryPerson || '—', FormatShortInstantDate(g.ValidTo) || '—', g.Status]),
             },
         ];
         this.FormComponent.cdr.detectChanges();
@@ -257,7 +266,7 @@ export class StoredValueOverviewPanel extends BaseFormPanel<mjBizAppsOrdersStore
                 Icon: 'fa-solid fa-right-left',
                 Headers: ['When', 'Type', 'Amount', 'Balance'],
                 Rows: txns.map((t) => [
-                    FormatShortDate(t.OccurredAt) || '—',
+                    FormatShortInstantDate(t.OccurredAt) || '—',
                     t.TransactionType,
                     FormatMoney(t.Amount),
                     FormatMoney(t.BalanceAfter),

@@ -88,6 +88,19 @@ describe('ResolveRecipients — no fallback, ever', () => {
 
 // ─── The decision ──────────────────────────────────────────────────────────────────────────────
 
+describe('DecideDelivery — externally invoiced', () => {
+    it('refuses a document whose unit is invoiced through Bill.com, before recipients are even considered', () => {
+        const d = DecideDelivery({ Document: facts({ ExternallyInvoiced: true }), Recipients: [billing('ap@acme.test')] });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('EXTERNALLY_INVOICED');
+        expect(d.Reason).toMatch(/Bill\.com/);
+        expect(d.Reason).toMatch(/two invoices/);
+    });
+    it('does not change the answer for a unit that is not on a rail', () => {
+        expect(DecideDelivery({ Document: facts({ ExternallyInvoiced: false }), Recipients: [billing('ap@acme.test')] }).Verdict).toBe('Send');
+    });
+});
+
 describe('DecideDelivery — what may be sent', () => {
     it('sends a confirmed order to a billing contact', () => {
         const d = DecideDelivery({ Document: facts(), Recipients: [billing('ap@contoso.com')] });
@@ -145,6 +158,36 @@ describe('DecideDelivery — what may be sent', () => {
             Recipients: [billing('ap@contoso.com')],
         });
         expect(d.Verdict).toBe('Send');
+    });
+
+    // golive #222: a concession the customer has been told about cannot be withdrawn.
+    it('holds back a quote carrying a concession that is not yet approved', () => {
+        const d = DecideDelivery({
+            Document: facts({ SourceStatus: 'Quoted', Kind: 'Quote' }),
+            Recipients: [billing('ap@contoso.com')],
+            UnapprovedConcessions: ['a duration concession worth 13808.22 (retention) is awaiting approval'],
+        });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('CONCESSION_PENDING');
+        expect(d.Reason).toContain('awaiting approval');
+    });
+
+    it('sends once nothing is awaiting approval', () => {
+        const d = DecideDelivery({
+            Document: facts({ SourceStatus: 'Quoted', Kind: 'Quote' }),
+            Recipients: [billing('ap@contoso.com')],
+            UnapprovedConcessions: [],
+        });
+        expect(d.Verdict).toBe('Send');
+    });
+
+    it('still names a draft order before a pending concession', () => {
+        const d = DecideDelivery({
+            Document: facts({ SourceStatus: 'Draft' }),
+            Recipients: [billing('ap@contoso.com')],
+            UnapprovedConcessions: ['a price concession worth 10.00 (other) is awaiting approval'],
+        });
+        expect(d.Code).toBe('NOT_DELIVERABLE');
     });
 });
 

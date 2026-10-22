@@ -14,7 +14,7 @@
     <mj-collapsible-panel
         SectionKey="eventDetails"
         SectionName="Event Details"
-        Icon="fa fa-align-left"
+        Icon="fa fa-calendar-alt"
         [Form]="this"
         [FormContext]="formContext">
         <mj-form-field 
@@ -81,7 +81,6 @@
             Type="textbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
-            LinkType="URL"
         ></mj-form-field>
 
     </mj-collapsible-panel>
@@ -252,6 +251,30 @@
             [ShowLabel]="true"
             FieldName="MaxQuantityPerLine"
             Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="SubscriptionFamilyID"
+            Type="textbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RenewalIncreasePercent"
+            Type="number"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="RequiresSaleApproval"
+            Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"
         ></mj-form-field>

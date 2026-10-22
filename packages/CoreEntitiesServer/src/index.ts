@@ -15,6 +15,69 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
+export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
+export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
+export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
+export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
+export { CheckAmountChange } from './AmountChange.js';
+export type { AmountChangeRequest, CheckedAmountChange } from './AmountChange.js';
+export { PlanAmountChange, PlanReduction } from './AmountChangePlan.js';
+export type { AmountChangeInput, AmountChangePlan, CreditApplication, InstalmentChange, ReductionInput, ReductionInstalment, ReductionPlan } from './AmountChangePlan.js';
+export type { StagedEntry, StagedLine, TermExtensionInput, TermExtensionPlan } from './TermExtensionPlan.js';
+// Each Pending concession is routed to its approvers as its own tasks-app approval task (golive #274).
+export {
+    APPROVAL_TASK_TYPE_CODE,
+    ApprovalTaskName,
+    ApproverAssignees,
+    ChooseEscalationApprovers,
+    CloseConcessionTasks,
+    COMPANY_CFO_ESCALATION,
+    ConcessionStatusForOutcome,
+    ConcessionSummary,
+    IsOpenApprovalTask,
+    LinkedConcessionIDs,
+    RaiseConcessionApprovalAgain,
+    ReleaseOrderFromTasks,
+    RouteConcessionToApproval,
+    SelfApprovalEscalation,
+    UnlinkConcession,
+    type ApprovalTaskContext,
+    type ConcessionDecision,
+    type ConcessionForApproval,
+    type ConcessionSummaryFacts,
+    type ConcessionTaskClosing,
+    type EscalationCandidate,
+    type RoleHolder,
+    type SelfApprovalEscalationResult,
+} from './ConcessionApprovalTask.js';
+export {
+    ApplyTaskDecisionToConcessions,
+    InitConcessionApprovalListener,
+    type ConcessionDecisionResult,
+} from './ConcessionApprovalListener.js';
+export {
+    FindConcessionTier,
+    LoadConcessionTiers,
+    FindUnapprovedConcessions,
+    FindUncoveredLinePrices,
+    LineConcessionTerms,
+    LinePriceConcessionFor,
+    LoadConcessionAuthority,
+    OrderConcessionTotal,
+    OrderNetTotal,
+    type ConcessionLineFacts,
+    type LineConcessionFacts,
+    type LinePriceConcession,
+    type UncoveredLinePrice,
+} from './ConcessionGate.js';
+export {
+    PRICE_BELOW_ENGINE_TYPE_CODE,
+    RaisePriceBelowEngineExceptions,
+    type BookedLineFacts,
+    type PriceBelowEngineBooking,
+    type PriceBelowEngineOutcome,
+} from './PriceBelowEngineExceptions.js';
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
@@ -25,14 +88,46 @@ export {
     LoadOrderLineProgressMeasurementEntityServer,
 } from './OrderLineProgressMeasurementEntityServer.js';
 export { GetProgressWorklistOperation, LoadGetProgressWorklistOperation } from './GetProgressWorklistOperation.js';
+// Finance exception review for progress (golive #279): the judgment call raised at attestation, and
+// the nightly pass for lines left unattested.
+export {
+    JudgmentCallReasons,
+    PROGRESS_JUDGMENT_CALL,
+    RaiseProgressJudgmentCall,
+    ReadJudgmentCallConfig,
+} from './ProgressJudgmentCall.js';
+export type { JudgmentCallConfig, JudgmentCallFacts, JudgmentCallOutcome, PostedObservation } from './ProgressJudgmentCall.js';
+export {
+    DetectUnattestedProgressOperation,
+    LoadDetectUnattestedProgressOperation,
+    PROGRESS_UNATTESTED,
+    ReadMaxDaysWithoutAttestation,
+    SelectUnattestedLines,
+    UnattestedDedupeKey,
+    UnattestedException,
+} from './DetectUnattestedProgressOperation.js';
+
 export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
+    BackDatedWarning,
+    EffectiveObservations,
+    FutureDateWarning,
+    MonthEnd,
+    PlanSupersede,
+    PROGRESS_SUPERSEDE_AUTH,
+    SupersedeRefusal,
+    type ObservationLink,
+    type SupersedePlan,
+} from './ProgressSupersede.js';
+export {
     AddMonths,
     BuildPaymentSchedule,
+    CompanySlices,
     DefaultScheduleWeights,
     ExplainShortfalls,
     SCHEDULE_DEFAULTS,
+    ScheduleCoverage,
     ScheduleShortfalls,
     ScheduledCompanyIDs,
 } from './PaymentScheduleBehavior.js';
@@ -43,6 +138,7 @@ export type {
     ScheduleRowFacts,
     ScheduleShortfall,
     ScheduleTimingFacts,
+    SliceableScheduleRow,
 } from './PaymentScheduleBehavior.js';
 
 // Fulfilment (D15) — a logistics fact, deliberately disconnected from revenue.
@@ -59,6 +155,7 @@ export {
 export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } from './FulfillmentBehavior.js';
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
+export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
@@ -101,13 +198,19 @@ export type {
     CancellableTerm,
     CancellationContext,
     CancellationDecision,
+    LaterTermBilling,
+    LaterTermCancellationContext,
 } from './SubscriptionBehavior.js';
 
 export { CancelSubscriptionOperation, LoadCancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
+export { AmendArrangementOperation, LoadAmendArrangementOperation } from './AmendArrangementOperation.js';
+export type { AmendArrangementInput, AmendArrangementOutput } from '@mj-biz-apps/orders-entities';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+
+export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
     BuildGLAccountResolver,
@@ -115,8 +218,16 @@ export {
     LoadAccountingEngine,
     ResolverEntities,
     SubmitJournalEntryDrafts,
+    GetActiveFinanceExceptionType,
+    RaiseFinanceExceptions,
 } from './AccountingBridge.js';
-export type { AccountingEngineSurface, CreateJournalEntriesOutcome } from './AccountingBridge.js';
+export type {
+    AccountingEngineSurface,
+    CreateJournalEntriesOutcome,
+    FinanceExceptionToRaise,
+    FinanceExceptionTypeInfo,
+    RaiseFinanceExceptionsOutcome,
+} from './AccountingBridge.js';
 
 export { PaymentJournalEntryFactory } from './PaymentJournalEntryFactory.js';
 export type {
@@ -139,6 +250,7 @@ export type {
     DimensionSlice,
     IntercompanyPair,
     IntercompanyLookup,
+    LegalEntityLookup,
     PaymentLineAllocationContext,
     PaymentAllocationResult,
 } from './PaymentAllocationFactory.js';
@@ -157,7 +269,12 @@ export { ApplyAccountCreditOperation, LoadApplyAccountCreditOperation } from './
 export { PreviewPriceOperation, LoadPreviewPriceOperation } from './PreviewPriceOperation.js';
 export { PriceOrderOperation, LoadPriceOrderOperation } from './PriceOrderOperation.js';
 export type { PreviewPriceInput, PreviewPriceOutput, PreviewComponent } from './PreviewPriceOperation.js';
-export { ProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export { ProductPriceEntityServer, LoadProductPriceEntityServer } from './ProductPriceEntityServer.js';
+export {
+    ProductEntityServer,
+    SubscriptionFamilyEntityServer,
+    LoadSubscriptionFamilyRules,
+} from './SubscriptionFamilyRules.js';
 export {
     BasePriceResolver,
     DefaultPriceResolver,
@@ -193,6 +310,10 @@ export {
     FirstPaymentAmount,
     ReconcileGrantStatus,
     IsPaymentSuspension,
+    IsSuspensionReason,
+    ReadTimeAccessCutoffDay,
+    ReadTimeCutoffSuspension,
+    ReadTimeWaiverExpirySuspension,
     PAYMENT_GATED_TIMINGS,
     ReduceGrantForReturn,
     EvaluateGrantAccess,
@@ -200,6 +321,7 @@ export {
     CacheUntilFor,
     ShouldRevokeGrantsOnCancel,
     ENTITLEMENT_CHECK_TTL_MS,
+    AccessOverrideApprovers,
 } from './EntitlementBehavior.js';
 export type {
     GrantTiming,
@@ -223,6 +345,8 @@ export type {
     TermAccessFacts,
     GrantAccessEvaluation,
     RankableAccess,
+    AccessOverrideApproverFacts,
+    AccessOverrideApproverResult,
 } from './EntitlementBehavior.js';
 export {
     CreateEntitlementGrants,
@@ -232,6 +356,7 @@ export {
 export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 // Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
 export {
+    LoadApprovedAccessOverrides,
     LoadOrderPaymentFacts,
     ReconcilePaymentGatedGrants,
     EnforcePaymentGatedAccess,
@@ -243,6 +368,78 @@ export type {
     EnforcePaymentGatedAccessInput,
     EnforcePaymentGatedAccessOutput,
 } from './PaymentGatedAccess.js';
+// Paying a renewal through the checkout — the update-card link (#289).
+export {
+    ConfigureRenewalPaymentLinks,
+    LoadRenewalPaymentOrder,
+    PayerOwnsRenewalCustomer,
+    RENEWAL_LINK_DAYS_WITHOUT_CUTOFF,
+    RENEWAL_LINK_GRACE_DAYS,
+    RENEWAL_LINK_MIN_SECRET_LENGTH,
+    RenewalPayer,
+    RenewalPaymentAlreadyConfirmed,
+    RenewalPaymentLinkExpiresAt,
+    RenewalPaymentLinkSecret,
+    RenewalPaymentLinkUrl,
+    RenewalPaymentRefusal,
+    RenewalPaymentTokenMessage,
+    SignRenewalPaymentToken,
+    VerifyRenewalPaymentToken,
+} from './CheckoutRenewalPayment.js';
+export type {
+    RenewalPaymentOrder,
+    RenewalPaymentTokenAccepted,
+    RenewalPaymentTokenCheck,
+    RenewalPaymentTokenClaims,
+    RenewalPaymentTokenFailure,
+    RenewalPaymentTokenRefused,
+} from './CheckoutRenewalPayment.js';
+// Charging the renewal card (#289) — the daily pass that collects a renewal order off-session.
+export {
+    ChargeRenewals,
+    ClassifyRenewalCharge,
+    DecideRenewalCharge,
+    NextRenewalChargeDay,
+    RENEWAL_CHARGE_SOURCE,
+    RenewalCaptureDay,
+    RenewalCaptureIdempotencyKey,
+    RenewalChargeDays,
+    RenewalChargeIdempotencyKey,
+} from './RenewalCharging.js';
+export type {
+    ChargeRenewalsHooks,
+    ChargeRenewalsInput,
+    ChargeRenewalsOutput,
+    RenewalChargeAttempt,
+    RenewalChargeDecision,
+    RenewalChargeFacts,
+    RenewalChargeOutcome,
+    RenewalChargeResultKind,
+} from './RenewalCharging.js';
+// Approved exceptions to payment-gated access (bizapps-orders#268).
+export {
+    ACCESS_OVERRIDE_AUTH,
+    ACCESS_OVERRIDE_TASK_TYPE_CODE,
+    ApplyAccessOverrideDecision,
+    RecordAccessOverrideDecision,
+    RequestAccessOverride,
+    UserMayRequestAccessOverride,
+} from './AccessOverride.js';
+export type {
+    AccessOverrideDecisionOutput,
+    RecordAccessOverrideDecisionInput,
+    RequestAccessOverrideInput,
+    RequestAccessOverrideOutput,
+} from './AccessOverride.js';
+export {
+    RecordAccessOverrideDecisionOperation,
+    RequestAccessOverrideOperation,
+    LoadAccessOverrideOperations,
+} from './AccessOverrideOperations.js';
+export {
+    EntitlementAccessOverrideEntityServer,
+    LoadEntitlementAccessOverrideEntityServer,
+} from './EntitlementAccessOverrideEntityServer.js';
 export { CheckEntitlementOperation, LoadCheckEntitlementOperation } from './CheckEntitlementOperation.js';
 export { ListEntitlementsOperation, LoadListEntitlementsOperation } from './ListEntitlementsOperation.js';
 export { CheckPersonEntitlement, ListPersonEntitlements, ASOF_FUTURE_TOLERANCE_MS } from './EntitlementRead.js';
@@ -305,6 +502,8 @@ export {
     SignaturesMatch,
     MapStripeIntentStatus,
     DecideWebhookAction,
+    IsOutOfOrderIntentEvent,
+    SETTLED_INTENT_STATUSES,
     SplitCapturedAmount,
     AchFeeEstimate,
     DecideSettlement,
@@ -314,6 +513,7 @@ export type {
     SignatureVerification,
     WebhookAction,
     WebhookDecision,
+    WebhookReasonCode,
     SettlementAction,
     SettlementDecision,
 } from './PaymentProviderBehavior.js';
@@ -330,11 +530,190 @@ export type {
     RetrieveIntentResult,
     RefundRequest,
     RefundResult,
+    UpdateIntentRequest,
+    UpdateIntentResult,
     WebhookEvent,
+    GatewayRefund,
+    ListRefundsRequest,
+    ListRefundsResult,
+    GatewayCharge,
+    GatewayChargeItem,
+    ListChargeItemsRequest,
+    ListChargeItemsResult,
+    ListChargesRequest,
+    ListChargesResult,
+    RetrieveChargeRequest,
+    RetrieveChargeResult,
+    GatewayWebhookEndpoint,
+    ListWebhookEndpointsResult,
 } from './BasePaymentProvider.js';
 
-export { StripePaymentProvider, LoadStripePaymentProvider, ToFormBody } from './StripePaymentProvider.js';
+export {
+    StripePaymentProvider,
+    LoadStripePaymentProvider,
+    ToFormBody,
+    AddCreatedRange,
+    StripeRefundFromObject,
+    StripeChargeFromObject,
+    StripeChargeRefusal,
+    StubDigest,
+} from './StripePaymentProvider.js';
+export {
+    CheckPaymentWebhookEndpoints,
+    CheckWebhookEndpointDrift,
+    EndpointServesProvider,
+} from './PaymentWebhookEndpointCheck.js';
+export type { WebhookEndpointCheckResult } from './PaymentWebhookEndpointCheck.js';
+export {
+    FindChargeMismatches,
+    ChargeMismatchDedupeKey,
+    GatewayWindow,
+    CreatedInWindow,
+} from './ChargeReconciliation.js';
+export type { ChargeMismatch, ChargeMismatchKind, ReconcilablePayment } from './ChargeReconciliation.js';
+export {
+    ReconcilePaymentProviderChargesOperation,
+    LoadReconcilePaymentProviderChargesOperation,
+    PROVIDER_CHARGE_MISMATCH_TYPE_CODE,
+} from './ReconcilePaymentProviderChargesOperation.js';
+export {
+    CheckChargeForOrder,
+    CheckProviderPaymentInput,
+    ProviderPaymentIdempotencyKey,
+    ProviderPaymentLineReason,
+    PROVIDER_PAYMENT_ORDER_ORIGIN,
+    MAX_PROVIDER_CHARGE_ID_LENGTH,
+} from './ProviderPaymentOrder.js';
+export type { ProviderPaymentRefusal, ProviderPaymentRefusalCode, ProviderPaymentOrderRequest, CheckedProviderPaymentRequest } from './ProviderPaymentOrder.js';
+export {
+    CreateOrderFromProviderPaymentOperation,
+    CreateOrderFromGatewayCharge,
+    LoadCreateOrderFromProviderPaymentOperation,
+} from './CreateOrderFromProviderPaymentOperation.js';
+export {
+    ParseChargeMismatchDedupeKey,
+    CheckChargeExceptionForOrder,
+    CheckResolveChargeExceptionInput,
+    ChargeExceptionResolutionNote,
+} from './ChargeExceptionResolution.js';
+export type {
+    ChargeExceptionRow,
+    ChargeExceptionTarget,
+    ChargeExceptionRefusal,
+    ChargeExceptionRefusalCode,
+    ParsedChargeMismatchKey,
+    ResolveChargeExceptionRequest,
+    CheckedResolveChargeExceptionRequest,
+} from './ChargeExceptionResolution.js';
+export {
+    ResolveChargeExceptionOperation,
+    ResolveChargeException,
+    UserCanClearFinanceExceptions,
+    FINANCE_EXCEPTIONS_CLEAR_AUTH,
+    LoadResolveChargeExceptionOperation,
+} from './ResolveChargeExceptionOperation.js';
+export type { BookExceptionCharge } from './ResolveChargeExceptionOperation.js';
+export {
+    BuyerFromCharge,
+    ChooseProductForCharge,
+    PriceMapLookup,
+    SplitBuyerName,
+    UnitPriceForCharge,
+} from './UnmatchedChargeRules.js';
+export type { ChargeBuyer, ProviderPriceMapRow, UnmatchedChargeUnresolved, UnmatchedChargeUnresolvedCode } from './UnmatchedChargeRules.js';
+export {
+    CreateOrderForUnmatchedCharge,
+    IsUnmatchedCharge,
+    LoadProviderPriceMap,
+    PAYMENT_PROVIDER_PRICE_ENTITY,
+} from './UnmatchedChargeOrders.js';
+export type { UnmatchedChargeOutcome } from './UnmatchedChargeOrders.js';
+export {
+    BookProviderRefunds,
+    PlanProviderRefundBooking,
+    UnmatchedGatewayRefunds,
+    PROVIDER_REFUND_NOT_BOOKED_TYPE_CODE,
+} from './ProviderRefundBooking.js';
+export type { HeldRefund, RefundBookingPlan, ProviderRefundOutcome } from './ProviderRefundBooking.js';
 export { StripeACHPaymentProvider, LoadStripeACHPaymentProvider } from './StripeACHPaymentProvider.js';
+export { BillComPaymentProvider, LoadBillComPaymentProvider } from './BillComPaymentProvider.js';
+export { HubSpotPaymentsProvider, LoadHubSpotPaymentsProvider } from './HubSpotPaymentsProvider.js';
+export { BaseInvoiceRail, LoadBaseInvoiceRail } from './BaseInvoiceRail.js';
+export type {
+    RailCustomerFacts,
+    RailInvoiceLine,
+    RailInvoiceFacts,
+    RailInvoiceSnapshot,
+    RailPaymentRecord,
+    RailResult,
+    InvoiceRailConfig,
+} from './BaseInvoiceRail.js';
+export {
+    BuildInvoiceRail,
+    ResolveInvoiceRail,
+    FindInvoiceRailForCompany,
+    FindInvoiceRailProviderID,
+    ListInvoiceRailProviderIDs,
+    ListPaymentSourceProviderIDs,
+    InvoiceRailNotConfiguredError,
+    INVOICE_RAIL_TYPE_CODES,
+    PAYMENT_SOURCE_TYPE_CODES,
+} from './InvoiceRailResolver.js';
+export { BillComInvoiceRail, LoadBillComInvoiceRail, NormalizeReceivablePayment, BILLCOM_TRANSIENT } from './BillComInvoiceRail.js';
+export {
+    HubSpotPaymentsRail,
+    LoadHubSpotPaymentsRail,
+    NormalizeHubSpotPayment,
+    HubSpotSetAsideReason,
+    HUBSPOT_PAYMENT_PROPERTIES,
+    HUBSPOT_TRANSIENT,
+} from './HubSpotPaymentsRail.js';
+export {
+    HubSpotPaymentsGateway,
+    UseHubSpotPaymentsGatewaySeams,
+    DefaultHubSpotPaymentsGateway,
+    HUBSPOT_PAYMENTS_OBJECT,
+    HUBSPOT_PAYMENTS_FIRST_WATERMARK,
+    type HubSpotPaymentsGatewaySeams,
+} from './HubSpotPaymentsGateway.js';
+export { BillComGateway, DefaultBillComGateway, UseBillComGatewaySeams, CurrentBillComGatewaySeams } from './BillComGateway.js';
+export type { BillComGatewaySeams } from './BillComGateway.js';
+export { BILLCOM_SIGNATURE_HEADER, SignBillComPayload, VerifyBillComSignature, ParseBillComWebhookEvent, IsPaymentRelevant } from './BillComWebhook.js';
+export type { BillComWebhookEvent } from './BillComWebhook.js';
+export {
+    BuildExternalInvoicePayload,
+    DecideInvoiceable,
+    DecideCancel,
+    ClassifyIssueFailure,
+} from './ExternalInvoiceBehavior.js';
+export type {
+    BillingUnitKey,
+    ExternalInvoiceStatus,
+    ExternalInvoiceUnitFacts,
+    ExternalInvoiceLine,
+    ExternalInvoicePayload,
+    InvoiceableDecision,
+    InvoiceableCode,
+    CancelCode,
+} from './ExternalInvoiceBehavior.js';
+export {
+    IssueExternalInvoiceOperation,
+    LoadIssueExternalInvoiceOperation,
+    IssueOneUnit,
+    ScheduleSupported,
+    LoadExternalInvoiceForUnit,
+    LoadExternalInvoicesByRef,
+} from './IssueExternalInvoiceOperation.js';
+export type { ExternalInvoiceRow, IssueUnitOptions } from './IssueExternalInvoiceOperation.js';
+export { AdoptExternalInvoiceOperation, LoadAdoptExternalInvoiceOperation } from './AdoptExternalInvoiceOperation.js';
+export { CancelExternalInvoiceOperation, LoadCancelExternalInvoiceOperation, paidOnUnit } from './CancelExternalInvoiceOperation.js';
+export {
+    GetExternalInvoicingWorklistOperation,
+    LoadGetExternalInvoicingWorklistOperation,
+    BuildExternalInvoicingWorklist,
+} from './GetExternalInvoicingWorklistOperation.js';
+export { SendExternalInvoicesOperation, LoadSendExternalInvoicesOperation } from './SendExternalInvoicesOperation.js';
+export { PollExternalPaymentsOperation, LoadPollExternalPaymentsOperation } from './PollExternalPaymentsOperation.js';
 export { ManualPaymentProvider, LoadManualPaymentProvider } from './ManualPaymentProvider.js';
 export {
     StoredValuePaymentProvider,
@@ -350,7 +729,19 @@ export {
     ResolvePaymentProvider,
     LoadPaymentProviderConfig,
     BuildPaymentProvider,
+    ResolvePaymentCredentials,
 } from './PaymentProviderResolver.js';
+export {
+    ResolveCheckoutPublishableKey,
+    ChooseCheckoutPublishableKey,
+    StripeKeyModeOf,
+} from './CheckoutPublishableKey.js';
+export type {
+    CheckoutPublishableKey,
+    CheckoutPublishableKeyInputs,
+    CheckoutPublishableKeySource,
+    StripeKeyMode,
+} from './CheckoutPublishableKey.js';
 
 // Document delivery (§4.4) — the pure decisions, the channel seam, and the one shipped channel.
 // Document-AGNOSTIC: nothing below knows what an invoice is, which is what makes it reusable for
@@ -372,10 +763,17 @@ export type {
 } from './BaseDeliveryChannel.js';
 export { EmailDeliveryChannel, LoadEmailDeliveryChannel } from './EmailDeliveryChannel.js';
 export { ResolveDeliveryChannel, DeliveryChannelNotConfiguredError } from './DeliveryResolver.js';
-export { LoadOrderDeliveryContacts, LoadOrderStatus } from './DeliveryRecipientResolver.js';
+export { LoadOrderDeliveryContacts, LoadOrderStatus, LoadExternallyInvoiced } from './DeliveryRecipientResolver.js';
 
 export { HandlePaymentWebhook, MountPaymentWebhook } from './PaymentWebhookHandler.js';
-export { OpenPaymentIntent } from './PaymentIntentService.js';
+export { DeliveryOutcomeFor, FindPriorDelivery, RecordWebhookDelivery } from './PaymentWebhookDeliveryLog.js';
+export type {
+    PriorDelivery,
+    WebhookDeliveryOutcome,
+    WebhookDeliveryReasonCode,
+    WebhookDeliveryRecord,
+} from './PaymentWebhookDeliveryLog.js';
+export { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 export type { OpenIntentRequest, OpenIntentResult } from './PaymentIntentService.js';
 export { SettlePaymentForEvent } from './PaymentSettlement.js';
 export type { SettlementOutcome } from './PaymentSettlement.js';
@@ -435,7 +833,7 @@ export type {
 export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from '@mj-biz-apps/orders-entities';
 export type { RequestedCharge } from '@mj-biz-apps/orders-entities';
 
-// Tax resolution (D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
+// Tax resolution (D73, exemptions D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
 // jurisdiction step is a SEAM — postal/city matching is enough for many deployments and is not
 // rooftop-accurate, which is where a commercial provider earns its money.
 export { BaseTaxJurisdictionResolver, DefaultTaxJurisdictionResolver, LoadTaxResolver, ResolveTax } from '@mj-biz-apps/orders-entities';
@@ -454,6 +852,32 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
+export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export {
+    GetCheckoutAccessStatus,
+    SummarizeAccessDeliveries,
+    type CheckoutAccessState,
+    type CheckoutAccessStatusResult,
+} from './CheckoutAccessStatus.js';
+export {
+    OrdersOutboundConsumer,
+    RecordOutboundEvent,
+    DispatchOutboundDeliveries,
+    RegisteredOutboundConsumers,
+    HasOutboundConsumers,
+    NextOutboundAttempt,
+    EnvelopeFor,
+    OUTBOUND_EVENT_ENTITY,
+    OUTBOUND_DELIVERY_ENTITY,
+    OUTBOUND_DELIVERY_DEADLINE_MS,
+    OUTBOUND_RETRY_MINUTES,
+    OUTBOUND_LEASE_MS,
+    type OutboundEventType,
+    type OutboundEventEnvelope,
+    type RecordOutboundEventInput,
+    type DispatchOutboundInput,
+    type DispatchOutboundOutput,
+} from './OutboundEvents.js';
 export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
 
 // Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in
@@ -461,6 +885,7 @@ export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEnt
 // in an MJ Template so it can be changed without a deploy.
 export {
     AttributeByLine,
+    BuildAmountChangeCreditMemo,
     BuildDocuments,
     BuildLadder,
     BuildRows,
@@ -480,9 +905,12 @@ export {
     TermsLabel,
 } from './InvoiceBehavior.js';
 export type {
+    AmountChangeMemoFacts,
+    CreditMemoApplicationFacts,
     DocumentKind,
     InvoiceAdjustmentFacts,
     InvoiceChargeFacts,
+    InvoiceCreditFacts,
     InvoiceDocument,
     InvoiceInstalmentFacts,
     InvoiceIssuerFacts,
@@ -494,7 +922,7 @@ export type {
     LadderRow,
 } from './InvoiceBehavior.js';
 
-export { BuildInvoiceDocuments } from './InvoiceBuilder.js';
+export { BuildCreditMemoDocuments, BuildInvoiceDocuments, OrderCredits, ReturnScheduleCredits } from './InvoiceBuilder.js';
 export type { InvoiceBuildResult } from './InvoiceBuilder.js';
 
 export { DecorateInvoice, DuePhrase, FormatDate, FormatMoney, FormatQuantity } from './InvoiceDisplay.js';
@@ -533,7 +961,39 @@ export type { CustomerTermsFacts, TermsFacts, TermsResolution, TermsResolutionIn
 export { EntitlementGrantClaimDriver, LoadEntitlementGrantClaimDriver } from './EntitlementGrantClaimDriver.js';
 export { GuestOrderClaimDriver, LoadGuestOrderClaimDriver } from './GuestOrderClaimDriver.js';
 export { resolvePersonID } from './claimDriverHelpers.js';
+export { ResolvePersonByEmail, ChoosePersonForEmail, NormalizePersonEmail, MAX_PERSON_EMAIL_LENGTH, type PersonCandidate, type ResolvePersonByEmailResult } from './PersonByEmail.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
+export {
+    CheckoutAccountStep,
+    EnsureCheckoutAccount,
+    SetCheckoutAccountPassword,
+    ResolveCheckoutAccountStep,
+    HasCheckoutAccountStep,
+    MAX_CHECKOUT_PASSWORD_ATTEMPTS,
+    MAX_CHECKOUT_PASSWORD_LENGTH,
+    DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES,
+    DEFAULT_CHECKOUT_ACCOUNT_HOST_TIMEOUT_SECONDS,
+    type CheckoutAccountContext,
+    type CheckoutAccountOutcome,
+    type CheckoutAccountHostOutcome,
+    type CheckoutAccountResult,
+    type CheckoutAccountStatus,
+    type CheckoutAccountResponse,
+    type CheckoutPasswordResult,
+} from './CheckoutAccountStep.js';
+export {
+    BaseCheckoutMemberDiscountResolver,
+    CheckoutMemberDiscountNotConfiguredError,
+    ResolveCheckoutMemberDiscountResolver,
+    IsRegisteredMemberPromotionCode,
+    DEFAULT_TYPED_CODE_PRECEDENCE,
+} from './CheckoutMemberDiscountResolver.js';
+export type {
+    CheckoutMemberDiscountContext,
+    CheckoutMemberDiscountDecision,
+    CheckoutTypedCodePrecedence,
+    CheckoutTypedPromotionCodeContext,
+} from './CheckoutMemberDiscountResolver.js';
 export {
     CHECKOUT_CAPTURE_RETRY_WINDOW_MS,
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
@@ -541,19 +1001,36 @@ export {
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert } from './checkoutCaptureAlert.js';
+export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
+// The post-payment step record, its review queue and operator replay (#326).
+export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
+export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';
+export { ReplayCheckoutStepOperation, LoadReplayCheckoutStepOperation, CHECKOUT_REPLAY_AUTH } from './ReplayCheckoutStepOperation.js';
 export type {
     AttendeeInput,
     CheckoutAttendeeInput,
+    CheckoutBillingAddressInput,
     CheckoutLineExtensionData,
     CheckoutLineInput,
     CheckoutLineSummary,
     InitSessionResult,
+    RenewalPaymentSummary,
     UpdateDraftResult,
     CompleteCheckoutResult,
     OpenSessionPaymentIntentResult,
     BookCheckoutPaymentResult,
 } from './CheckoutSessionService.js';
+export { ToIsoCountryCode } from './VatLocationEvidence.js';
+export type { CheckoutLocationEvidence } from './VatLocationEvidence.js';
+// The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
+export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
+export type {
+    CheckoutRefusal,
+    PrePurchaseContext,
+    PrePurchaseLine,
+    PrePurchaseRefusal,
+    PrePurchaseVerdict,
+} from './CheckoutPrePurchaseCheck.js';
 
 // SQL boundary guards — the sanctioned escaping/validation helpers for remote-caller input
 // (see the repo CLAUDE.md "SQL Safety" rule). Exported so the Server package's edge can use

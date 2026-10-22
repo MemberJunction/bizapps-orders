@@ -28,6 +28,12 @@ export interface OrdersCapturePaymentAllocationInput {
     Amount: number;
     /** Settle a specific LINE rather than the order as a whole. Optional. */
     OrderLineID?: string | null;
+    /**
+     * Apply this share to a named instalment of the order (PR #220). Optional; without it the
+     * database cascades the money oldest-due-first. The poller names the instalment its rail
+     * invoice was issued for, so an instalment payment lands on the instalment it paid.
+     */
+    OrderHeaderPaymentScheduleID?: string | null;
 }
 
 /** Instrument detail, when the tender needs one. Never the PAN — only tokens and references (D38). */

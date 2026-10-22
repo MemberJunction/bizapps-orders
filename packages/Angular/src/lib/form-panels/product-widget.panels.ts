@@ -256,7 +256,7 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
         slot: 'after-fields',
         sortKey: 40,
         contributionKey: 'subscriptions',
-        // Claims the generated `subscriptionAndEntitlements` section — every one of its four
+        // Claims the generated `subscriptionAndEntitlements` section — every one of its five
         // fields is already rendered by this panel or the fulfillment panel.
         replacesSectionKey: 'subscriptionAndEntitlements',
     },
@@ -285,11 +285,32 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
                     LinkType="Record"
                     (Navigate)="FormComponent.OnFormNavigate($event)">
                 </mj-form-field>
+                <!-- Bands of one offering share a family, so confirm can tell a different band
+                     from a new subscription (golive #276). -->
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="SubscriptionFamilyID"
+                    Type="textbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    LinkType="Record"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
                 <mj-form-field
                     [Record]="Record"
                     [ShowLabel]="true"
                     FieldName="EntitlementValidityMode"
                     Type="select"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="RenewalIncreasePercent"
+                    Type="number"
                     [EditMode]="EditMode"
                     [FormContext]="FormContext"
                     (Navigate)="FormComponent.OnFormNavigate($event)">

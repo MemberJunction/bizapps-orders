@@ -148,8 +148,11 @@ module.exports = {
    */
   advancedGeneration: {
     features: [
-      // Every run: categorises fields with AutoUpdateCategory=1 and an empty Category, which is
-      // what turns a flat field list into a real form layout.
+      // Change events only: categorises fields with AutoUpdateCategory=1 and an empty Category,
+      // which is what turns a flat field list into a real form layout. It runs for a new entity,
+      // a new field, or a field whose description or type changed — not on every run — so a field
+      // that arrives uncategorized another way stays in the Details panel. Those get a Category in
+      // metadata/entity-fields (#276); .github/scripts/check-form-details-panel.mjs catches them.
       { name: 'FormLayoutGeneration', enabled: true },
       // Existing objects: CHECK-constraint descriptions + Validate() bodies in the subclasses.
       { name: 'ParseCheckConstraints', enabled: true },
@@ -224,15 +227,30 @@ module.exports = {
        * of CheckoutSessionService, mounted pre-auth like the webhook. Access control is the
        * distribution slug + per-session client key, layered with rate limiting, a per-widget
        * origin allowlist (`Configuration.allowedOrigins`), and optional Cloudflare Turnstile
-       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar).
+       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar and its TurnstileSiteKey).
        * Settings:
        *   ServiceUserEmail      — named checkout principal for writes (falls back to system user)
        *   TurnstileSecretEnvVar — env var holding the Turnstile secret (e.g. 'CHECKOUT_TURNSTILE_SECRET')
+       *   TurnstileSiteKey      — public Turnstile site key paired with that secret; sent to the
+       *                           checkout clients so they can render the challenge
        *   RateLimitWindowMs / RateLimitMax — fixed-window limits per client IP (defaults 60000 / 30)
        */
       Enabled: true,
       DriverClass: 'OrdersCheckoutEdge',
       RootPath: '/checkout',
+      Settings: {},
+    },
+    {
+      /**
+       * Bill.com webhook receiver (BillComWebhookExtension). Bill.com publishes invoice events only —
+       * no payment-received event — so a VERIFIED notification does one thing: run
+       * Orders.PollExternalPayments for the provider in the URL now rather than at the next tick.
+       * The subscription's securityKey is read from <CredentialsRef>_WEBHOOK_SECRET on the BillCom
+       * PaymentProvider row. Harmless when no Bill.com provider is configured (every delivery 404s).
+       */
+      Enabled: true,
+      DriverClass: 'OrdersBillComWebhook',
+      RootPath: '/webhooks/billcom',
       Settings: {},
     },
   ],

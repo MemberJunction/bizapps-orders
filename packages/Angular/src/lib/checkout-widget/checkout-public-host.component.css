@@ -69,3 +69,208 @@
     font-weight: 600;
     color: #334155;
 }
+
+/* Whether the buyer's access is ready yet (#325). */
+.mj-checkout-success__access {
+    margin: 0.75rem 0 0;
+    color: #334155;
+    font-size: 0.95rem;
+}
+
+.mj-checkout-success__access.is-failed {
+    color: #991b1b;
+}
+
+/* Post-payment account step: set a password for the account the host created (#292). */
+.mj-checkout-account {
+    margin: 1.5rem auto 0;
+    max-width: 320px;
+    text-align: left;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mj-checkout-account__title {
+    margin: 0 0 0.5rem;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    text-align: center;
+}
+
+.mj-checkout-account__label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.mj-checkout-account__input {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    font-size: 0.95rem;
+    font-family: inherit;
+}
+
+.mj-checkout-account__input:focus {
+    outline: none;
+    border-color: var(--mj-primary-color, #2563eb);
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+}
+
+.mj-checkout-account__error {
+    margin: 4px 0 0;
+    color: #991b1b;
+    font-size: 0.85rem;
+}
+
+.mj-checkout-account__submit {
+    margin-top: 10px;
+    padding: 10px;
+    border: 0;
+    border-radius: 6px;
+    background: var(--mj-primary-color, #2563eb);
+    color: #ffffff;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mj-checkout-account__skip {
+    padding: 6px;
+    border: 0;
+    background: none;
+    color: #64748b;
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.mj-checkout-account__submit:disabled,
+.mj-checkout-account__skip:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.mj-checkout-account__msg {
+    margin: 1rem 0 0;
+    color: #334155;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.mj-checkout-account__note {
+    margin: 0 0 0.5rem;
+    color: #475569;
+    font-size: 0.85rem;
+    line-height: 1.45;
+    text-align: center;
+}
+
+.mj-checkout-account--actions {
+    margin-top: 0.75rem;
+}
+
+/* Cloudflare Turnstile renders here only when it needs the buyer to interact (#592). */
+.mj-checkout-public__turnstile {
+    display: flex;
+    justify-content: center;
+    margin-top: 0.75rem;
+}
+
+/* ─── Pay-renewal mode (#289) ─────────────────────────────────────────────── */
+
+.mj-checkout-renewal {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 1.75rem 1.5rem;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+}
+
+.mj-checkout-renewal__title {
+    margin: 0;
+    font-size: 1.4rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.mj-checkout-renewal__lead,
+.mj-checkout-renewal__note {
+    margin: 0;
+    color: #475569;
+    font-size: 0.95rem;
+    line-height: 1.5;
+}
+
+.mj-checkout-renewal__note {
+    font-size: 0.85rem;
+}
+
+.mj-checkout-renewal__summary {
+    margin: 0.25rem 0;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 0.25rem 0.9rem;
+}
+
+.mj-checkout-renewal__row {
+    display: flex;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.92rem;
+}
+
+.mj-checkout-renewal__row:last-child {
+    border-bottom: none;
+}
+
+.mj-checkout-renewal__row dt {
+    color: #64748b;
+}
+
+.mj-checkout-renewal__row dd {
+    margin: 0;
+    color: #0f172a;
+    text-align: right;
+}
+
+.mj-checkout-renewal__row--total dt,
+.mj-checkout-renewal__row--total dd {
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.mj-checkout-renewal__label {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #334155;
+}
+
+.mj-checkout-renewal__card {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 0.75rem;
+    background: #ffffff;
+}
+
+.mj-checkout-renewal__pay {
+    margin-top: 0.25rem;
+    padding: 0.8rem 1rem;
+    border: none;
+    border-radius: 6px;
+    background: var(--mj-checkout-primary, #2563eb);
+    color: #ffffff;
+    font-size: 1rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.mj-checkout-renewal__pay:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}

@@ -45,8 +45,12 @@ import {
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  createViaEntity,
 } from "../fixture.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { Metadata } from "@memberjunction/core";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
+import { ORDER_HEADER_ENTITY, SALES_AUTHORITY_ENTITY } from "../entity-names.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
   // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
@@ -91,6 +95,7 @@ function returnAgainst(
     discountPct?: number;
     addressKey?: string;
     servicePeriod?: { Start: string; End: string };
+    reversesOrderHeaderID?: string;
   },
 ) {
   const f = Fx();
@@ -99,6 +104,7 @@ function returnAgainst(
     OrderType: "Return",
     BillToOrganizationID: f.Customers.OrganizationID,
     ShipToAddressID: opts.addressKey ? f.Tax.AddressIDs.get(opts.addressKey) : undefined,
+    ReversesOrderHeaderID: opts.reversesOrderHeaderID,
     Lines: [
       {
         ProductID: opts.productID,
@@ -173,6 +179,27 @@ const lineTotals = (ctx: IntegrationCheckContext, orderID: string) =>
             ISNULL(SUM(Quantity),0) AS Qty
        FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${orderID}'`,
   );
+
+/** Tax charged on an order, per jurisdiction, lowercased ID order. */
+const taxByJurisdiction = (ctx: IntegrationCheckContext, orderID: string) =>
+  TxQuery<{ J: string; Amount: number }>(
+    ctx,
+    `SELECT LOWER(CONVERT(varchar(36), c.TaxJurisdictionID)) AS J, SUM(c.Amount) AS Amount
+       FROM ${ORDERS_SCHEMA}.OrderCharge c
+       JOIN ${ORDERS_SCHEMA}.ChargeType t ON t.ID = c.ChargeTypeID
+      WHERE c.OrderHeaderID = '${orderID}' AND t.Category = 'Tax'
+      GROUP BY c.TaxJurisdictionID
+      ORDER BY 1`,
+  );
+
+/**
+ * The refund one of `units` returns for each jurisdiction: that jurisdiction's tax share, rounded to
+ * the cent half away from zero, negated. Per jurisdiction and not on the total, because each
+ * jurisdiction's refund is rounded on its own; rounding a quarter of the combined tax lands a cent
+ * off whenever two layers both end in a half cent.
+ */
+const firstShareBack = (sold: { J: string; Amount: number }[], units: number) =>
+  sold.map((r) => ({ J: r.J, Amount: -Math.round((Math.abs(Number(r.Amount)) / units) * 100) / 100 }));
 
 export const ReturnsChecks: NamedCheck[] = [
   {
@@ -340,11 +367,19 @@ export const ReturnsChecks: NamedCheck[] = [
         const back = await lineTotals(ctx, ret.Order.ID as string);
         // A quarter of the units, so a quarter of the tax. Returning the WHOLE tax on a partial
         // return is the plausible-looking bug: it balances, and it hands back money never collected.
+        const expected = firstShareBack(await taxByJurisdiction(ctx, sale.Order.ID as string), 4);
+        const backJ = await taxByJurisdiction(ctx, ret.Order.ID as string);
+        AssertEqual(
+          JSON.stringify(backJ.map((r) => [r.J, Number(r.Amount)])),
+          JSON.stringify(expected.map((r) => [r.J, r.Amount])),
+          "one of four units returns a quarter of each jurisdiction's tax",
+        );
         AssertEqual(
           Math.round(Number(back.Tax) * 100) / 100,
-          Math.round(-Number(sold.Tax) / 4 * 100) / 100,
-          "one of four units returns a quarter of the tax",
+          Math.round(expected.reduce((t, r) => t + r.Amount, 0) * 100) / 100,
+          "and the line's tax is their sum",
         );
+        Assert(Math.abs(Number(back.Tax)) < Math.abs(Number(sold.Tax)) / 2, "a quarter, not the whole tax");
       }),
   },
   {
@@ -379,6 +414,8 @@ export const ReturnsChecks: NamedCheck[] = [
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
+        // SubRolling's engine price, so the stated 120 is not a concession the confirm gate holds.
+        await CreateProductPrice(ctx, f.Products.SubRolling, 120);
         const sale = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
@@ -653,6 +690,132 @@ export const ReturnsChecks: NamedCheck[] = [
           sold.map((r) => r.On).join(","),
           "on the same dates — a monthly cut would put twelve entries here, on dates the sale never used",
         );
+      }),
+  },
+  {
+    Id: "returns.RT15",
+    Name: "RT15: a return that names no address refunds the sale's tax and takes the sale's address",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await grantNexus(ctx, ["CA", "CA-SANTACLARA"]);
+        const sale = await sell(ctx, { price: 100, quantity: 4, addressKey: "SantaClara" });
+        const sold = await lineTotals(ctx, sale.Order.ID as string);
+        Assert(Number(sold.Tax) > 0, "the sale must actually be taxed, or this check proves nothing");
+
+        // Built the way the return page builds one: the customer and the origin order, no address.
+        const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.WidgetA,
+          quantity: 4,
+          reversesOrderHeaderID: sale.Order.ID as string,
+        });
+        Assert(ret.Saved, `confirm failed: ${ret.Message}`);
+
+        const back = await lineTotals(ctx, ret.Order.ID as string);
+        AssertEqual(Number(back.Tax), -Number(sold.Tax), "no address on the return, and still the full tax back");
+        const header = await TxOne<{ Ship: string | null; Snapshot: string | null; OriginSnapshot: string | null }>(
+          ctx,
+          `SELECT r.ShipToAddressID AS Ship, r.ShipToAddressSnapshot AS Snapshot, o.ShipToAddressSnapshot AS OriginSnapshot
+             FROM ${ORDERS_SCHEMA}.OrderHeader r
+             JOIN ${ORDERS_SCHEMA}.OrderHeader o ON o.ID = '${sale.Order.ID}'
+            WHERE r.ID = '${ret.Order.ID}'`,
+        );
+        AssertEqual(
+          String(header.Ship ?? "").toLowerCase(),
+          String(f.Tax.AddressIDs.get("SantaClara")).toLowerCase(),
+          "the return ships to the sale's address",
+        );
+        AssertEqual(header.Snapshot, header.OriginSnapshot, "and keeps the sale's snapshot of it");
+      }),
+  },
+  {
+    Id: "returns.RT16",
+    Name: "RT16: a return shipping elsewhere refunds the tax the SALE collected, in the sale's jurisdictions",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await grantNexus(ctx, ["CA", "CA-SANTACLARA", "MD"]);
+        const sale = await sell(ctx, { price: 100, quantity: 4, addressKey: "SantaClara" });
+
+        // Maryland taxes at 6%; Santa Clara at 9.125%. Re-resolving would refund Maryland's rate.
+        const ret = await returnAgainst(ctx, sale.Lines[0].ID as string, {
+          productID: f.Products.WidgetA,
+          quantity: 1,
+          addressKey: "Maryland",
+        });
+        Assert(ret.Saved, `confirm failed: ${ret.Message}`);
+
+        const back = await lineTotals(ctx, ret.Order.ID as string);
+        const soldJ = await taxByJurisdiction(ctx, sale.Order.ID as string);
+        const backJ = await taxByJurisdiction(ctx, ret.Order.ID as string);
+        AssertEqual(
+          backJ.map((r) => r.J).join(","),
+          soldJ.map((r) => r.J).join(","),
+          "the refund is recorded against the jurisdictions that collected the tax",
+        );
+        const expected = firstShareBack(soldJ, 4);
+        AssertEqual(
+          JSON.stringify(backJ.map((r) => Number(r.Amount))),
+          JSON.stringify(expected.map((r) => r.Amount)),
+          "a quarter of each jurisdiction's tax the sale collected, not a quarter of Maryland's",
+        );
+        AssertEqual(
+          Math.round(Number(back.Tax) * 100) / 100,
+          Math.round(expected.reduce((t, r) => t + r.Amount, 0) * 100) / 100,
+          "and the line's tax is their sum",
+        );
+      }),
+  },
+  {
+    Id: "returns.RT17",
+    Name: "RT17: a draft return cut from 4 units to 2 carries half the allocated discount, not all of it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // 4 × 100 less a 50 order-level discount: 350 paid, 12.50 of discount per unit. The return's
+        // share used to be filled on its first save and never again, so cutting the draft to 2 units
+        // kept all 50 and refunded −150.00 (#668).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await createViaEntity(ctx, SALES_AUTHORITY_ENTITY, {
+          SalesRepUserID: ctx.User.ID,
+          MaxDiscountPct: 1,
+          MaxConcessionValue: 1000,
+          IsActive: 1,
+        });
+        const sale = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 4 }],
+          ManualDiscounts: [{ Amount: 50, Reason: "order-level discount" }],
+        });
+        Assert(sale.Saved, `the sale did not confirm: ${sale.Message}`);
+        const sold = await lineTotals(ctx, sale.Order.ID as string);
+        AssertEqual(Number(sold.Discount), 50, "the order-level discount is allocated to the line");
+        AssertEqual(Number(sold.Net), 350, "4 × 100 less 50");
+
+        const draft = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderType: "Return",
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: -4, ReversesOrderLineID: sale.Lines[0].ID as string }],
+        });
+        Assert(await draft.Order.Save(), `the draft return did not save: ${draft.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        const returnID = draft.Order.ID as string;
+        AssertEqual(Number((await lineTotals(ctx, returnID)).Discount), 50, "the full return inherits all 50");
+
+        // Reloaded, so the line's quantity before this save is the -4 already stored.
+        const fresh = await new Metadata().GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await fresh.LoadWithLines(returnID), "the draft return did not reload");
+        fresh.Lines.Items[0].Quantity = -2;
+        fresh.Status = "Confirmed";
+        Assert(await fresh.Save(), `the return did not confirm: ${fresh.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const back = await lineTotals(ctx, returnID);
+        AssertEqual(Number(back.Discount), 25, "two of four units carry half the discount");
+        AssertEqual(Number(back.Net), -175, "the return refunds what two units were paid");
       }),
   },
 ];

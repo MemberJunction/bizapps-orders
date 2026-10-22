@@ -21,7 +21,9 @@ export interface ProgressWorklistRow {
     LineAmount: number;
     ServicePeriodStart?: string | null;
     ServicePeriodEnd?: string | null;
-    /** The last posted observation, or null when none has been recorded yet. */
+    /** The last posted observation that has not been superseded — what a supersede would replace. Null when none. */
+    LastMeasurementID?: string | null;
+    /** The last posted observation's date, or null when none has been recorded yet. A superseded observation is not "last". */
     LastMeasurementDate?: string | null;
     /** Cumulative fraction at the last observation; 0 when none. */
     LastPercentComplete: number;
@@ -29,7 +31,11 @@ export interface ProgressWorklistRow {
     RecognizedToDate: number;
     /** Who signed the last observation. */
     LastAttestedBy?: string | null;
+    /** The user ID behind `LastAttestedBy`, or null when the line has never been attested. */
+    LastAttestedByUserID?: string | null;
     OrderStatus: string;
+    /** When the order was booked, as an ISO instant. */
+    ConfirmedAt?: string | null;
 }
 
 export interface OrdersGetProgressWorklistOutput {
@@ -39,4 +45,6 @@ export interface OrdersGetProgressWorklistOutput {
     RowCount: number;
     /** True when `MaxCount` clipped the result. */
     Truncated: boolean;
+    /** True when the caller holds `MJ.BizApps.Orders.Progress.Supersede`, so the screen can offer it. The operation checks again. */
+    CanSupersede: boolean;
 }

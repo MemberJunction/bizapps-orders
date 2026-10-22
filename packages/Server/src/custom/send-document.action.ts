@@ -34,12 +34,15 @@ import { BaseAction } from '@memberjunction/actions';
 import type { ActionParam, ActionResultSimple, RunActionParams } from '@memberjunction/actions-base';
 import { Metadata, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
+import { IsEditable } from '@mj-biz-apps/orders-entities';
 import {
     BuildSubject,
     DecideDelivery,
     DeliveryIdempotencyKey,
+    FindUnapprovedConcessions,
     LoadOrderDeliveryContacts,
     LoadOrderStatus,
+    LoadExternallyInvoiced,
     ResolveDeliveryChannel,
     ResolveRecipients,
     type DeliverableFacts,
@@ -99,7 +102,8 @@ function setOutput(params: RunActionParams, name: string, value: unknown): void 
 /**
  * Send an order's document to the customer.
  *
- * Inputs: `OrderID` (required), `CompanyID`, `Channel`, `TemplateName`, `Locale`, `CurrencyCode`,
+ * Inputs: `OrderID` (required), `CompanyID`, `OrderConcessionID` (the credit memo an approved amount change
+ * issued, #684), `Channel`, `TemplateName`, `Locale`, `CurrencyCode`,
  * `ToAddress`, `CC`, `BCC`, `From`, `FromName`, `PreviewOnly`.
  * Outputs: `Deliveries`, `SentCount`, `FailedCount`.
  */
@@ -138,6 +142,10 @@ export class SendDocumentAction extends BaseAction {
         if (companyID && !UUID.test(companyID)) {
             return { Success: false, ResultCode: 'INVALID_COMPANY_ID', Message: `'${companyID}' is not a company ID.` };
         }
+        const orderConcessionID = strParam(params, 'OrderConcessionID');
+        if (orderConcessionID && !UUID.test(orderConcessionID)) {
+            return { Success: false, ResultCode: 'INVALID_ORDER_CONCESSION_ID', Message: `'${orderConcessionID}' is not an order concession ID.` };
+        }
 
         const channel = (strParam(params, 'Channel') ?? 'Email') as DeliveryChannelCode;
         if (!CHANNELS.includes(channel)) {
@@ -168,6 +176,7 @@ export class SendDocumentAction extends BaseAction {
         // ── 1. Render ──────────────────────────────────────────────────────
         const rendered = await RenderInvoiceDocuments(orderID, provider, user, {
             CompanyID: companyID,
+            OrderConcessionID: orderConcessionID,
             TemplateName: strParam(params, 'TemplateName'),
             Locale: strParam(params, 'Locale') ?? 'en-US',
             CurrencyCode: strParam(params, 'CurrencyCode'),
@@ -191,6 +200,11 @@ export class SendDocumentAction extends BaseAction {
             : await LoadOrderDeliveryContacts(orderID, provider, user);
 
         const orderStatus = (await LoadOrderStatus(orderID, provider, user)) ?? '';
+        // Line prices are only still open to question on an order that has not booked. A credit memo states one
+        // approved change and nothing still pending, so another concession awaiting approval does not hold it.
+        const unapprovedConcessions = orderConcessionID
+            ? []
+            : await FindUnapprovedConcessions(orderID, [], IsEditable(orderStatus), provider, user);
 
         // ── 3. Decide, then 4. Deliver — per document ──────────────────────
         const driver = ResolveDeliveryChannel(channel);
@@ -203,7 +217,14 @@ export class SendDocumentAction extends BaseAction {
         const outcomes: DocumentDeliveryOutcome[] = [];
         for (const doc of rendered.Documents) {
             const facts = this.toFacts(doc, orderStatus);
-            const decision = DecideDelivery({ Document: facts, Recipients: contacts });
+            // A unit invoiced through Bill.com must not also go out natively (golive #146 AC5). An amount change's
+            // credit memo is not such a unit: the rail carries no credit memos, so this is its only copy (#684).
+            facts.ExternallyInvoiced = orderConcessionID ? false : await LoadExternallyInvoiced(orderID, doc.CompanyID, provider, user);
+            const decision = DecideDelivery({
+                Document: facts,
+                Recipients: contacts,
+                UnapprovedConcessions: unapprovedConcessions,
+            });
 
             if (decision.Verdict === 'Refuse') {
                 outcomes.push({

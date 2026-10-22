@@ -42,11 +42,21 @@
  *
  * @module @mj-biz-apps/orders-ng
  */
-import { Metadata, RunView, type RunViewParams, type UserInfo } from '@memberjunction/core';
+import { Metadata, RunView, type IMetadataProvider, type RunViewParams, type UserInfo } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
-import { IsBefore, LoadOrdersEngine, OrdersEngine, OverdueFilter, Today, ToISODate, type DateCell } from '@mj-biz-apps/orders-entities';
+import {
+    FindExistingHolding,
+    IsBefore,
+    LoadOrdersEngine,
+    OrdersEngine,
+    OverdueFilter,
+    Today,
+    ToISODate,
+    type DateCell,
+} from '@mj-biz-apps/orders-entities';
 import type {
+    HoldingReactivation,
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
     mjBizAppsOrdersOrderHeaderEntity,
@@ -236,7 +246,7 @@ async function runRows<T>(
             EntityName: entityName,
             ExtraFilter: filters.filter(Boolean).join(' AND '),
             OrderBy: orderBy,
-            MaxRows: maxRows,
+            ...(maxRows > 0 ? { MaxRows: maxRows } : { IgnoreMaxRows: true }),
             Fields: fields,
             ResultType: 'simple',
         },
@@ -318,7 +328,7 @@ export async function GetOrders(
     options: MJOGetOrdersOptions = {},
 ): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
     const filters: string[] = [];
-    const today = new Date().toISOString().slice(0, 10);
+    const today = Today();
 
     switch (options.Preset) {
         case 'overdue':
@@ -422,6 +432,75 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
             credits: credits.length,
         },
     };
+}
+
+/**
+ * Lightweight projection of `MJ_BizApps_Orders: Order Headers` for the Orders executive dashboard.
+ *
+ * Derived directly from {@link mjBizAppsOrdersOrderHeaderEntity} so value-list unions (`Status`,
+ * `FulfillmentStatus`) stay in lockstep with CodeGen.
+ */
+export type MJODashboardOrderRow = Pick<
+    mjBizAppsOrdersOrderHeaderEntity,
+    | 'ID'
+    | 'OrderNumber'
+    | 'OrderDate'
+    | 'DueDate'
+    | 'Status'
+    | 'FulfillmentStatus'
+    | 'TotalGross'
+    | 'Balance'
+    | 'BillToOrganizationID'
+    | 'BillToOrganization'
+    | 'BillToPersonID'
+    | 'BillToPerson'
+>;
+
+const DASHBOARD_ORDER_FIELDS: Array<keyof MJODashboardOrderRow & string> = [
+    'ID',
+    'OrderNumber',
+    'OrderDate',
+    'DueDate',
+    'Status',
+    'FulfillmentStatus',
+    'TotalGross',
+    'Balance',
+    'BillToOrganizationID',
+    'BillToOrganization',
+    'BillToPersonID',
+    'BillToPerson',
+];
+
+/**
+ * Uncapped `'simple'` read of non-voided order headers for the Orders executive dashboard.
+ *
+ * Avoids both the 500-row entity cap on `GetOrders({ Preset: 'all' })` (which truncated KPIs and
+ * logged a console.error on datasets > 500 orders) and the cost of instantiating thousands of full
+ * `BaseEntity` objects when only summary columns are needed.
+ */
+export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardOrderRow[]> {
+    return runRows<MJODashboardOrderRow>(
+        MJO_ENTITIES.OrderHeader,
+        [`Status <> 'Voided'`],
+        'OrderDate DESC',
+        0,
+        user,
+        DASHBOARD_ORDER_FIELDS,
+    );
+}
+
+/**
+ * Settled/confirmed orders with a non-zero balance (open receivables or customer credit balances)
+ * for the Customer AR screen. Filters server-side instead of fetching every historical paid order.
+ */
+export async function GetOpenBalanceOrders(user?: UserInfo): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
+    return run<mjBizAppsOrdersOrderHeaderEntity>(
+        MJO_ENTITIES.OrderHeader,
+        [`Status NOT IN ('Draft','Quoted','Voided')`, `Balance <> 0`],
+        'OrderDate DESC',
+        5000,
+        user,
+    );
 }
 
 /** Lines belonging to one order. */
@@ -1417,6 +1496,79 @@ export async function GetDimensionOptions(
     }));
 }
 
+/** The MJ entity a company-level Dimension Default hangs off. */
+const COMPANY_ENTITY_NAME = 'MJ: Companies';
+
+/** The fields of a Dimension Default row the company scoping reads. */
+export interface MJODimensionDefaultScopeRow {
+    Entity: string;
+    RecordID: string;
+    DimensionValueID: string;
+}
+
+/**
+ * The dimension values a company's own Dimension Defaults use.
+ *
+ * WHY THIS IS THE SOURCE. Dimensions and their values are shared by every company — accounting has
+ * no company on either — so there is nothing on a value that says which company sells under it. The
+ * defaults do: each hangs off a company, or a product or category that belongs to one. A value one
+ * of those uses is a value that company books under.
+ *
+ * PRODUCT TYPES ARE LEFT OUT. A type is shared by every company, so a default on one says nothing
+ * about which company's lines it is meant for.
+ */
+export function CompanyDimensionValueIDs(
+    defaults: readonly MJODimensionDefaultScopeRow[],
+    companyID: string,
+    companyProductIDs: readonly string[],
+    companyCategoryIDs: readonly string[],
+): Set<string> {
+    const key = (id: string) => id.toLowerCase();
+    const products = new Set(companyProductIDs.map(key));
+    const categories = new Set(companyCategoryIDs.map(key));
+    const company = key(companyID);
+
+    const out = new Set<string>();
+    for (const row of defaults) {
+        const record = key(row.RecordID);
+        const belongs =
+            (row.Entity === COMPANY_ENTITY_NAME && record === company) ||
+            (row.Entity === MJO_ENTITIES.Product && products.has(record)) ||
+            (row.Entity === MJO_ENTITIES.ProductCategory && categories.has(record));
+        if (belongs) out.add(key(row.DimensionValueID));
+    }
+    return out;
+}
+
+/**
+ * Read the dimension values the given company's active Dimension Defaults use, lower-cased.
+ * An id that is not a UUID returns an empty set rather than reaching a filter.
+ */
+export async function GetCompanyDimensionValueIDs(companyID: string, user?: UserInfo): Promise<Set<string>> {
+    const company = uuidList([companyID]);
+    if (!company) return new Set();
+
+    const [defaults, products, categories] = await Promise.all([
+        runRows<MJODimensionDefaultScopeRow>(
+            MJO_ENTITIES.DimensionDefault,
+            [`Status = 'Active'`],
+            'Entity',
+            5000,
+            user,
+            ['Entity', 'RecordID', 'DimensionValueID'],
+        ),
+        runRows<{ ID: string }>(MJO_ENTITIES.Product, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
+        runRows<{ ID: string }>(MJO_ENTITIES.ProductCategory, [`CompanyID = ${company}`], 'ID', 5000, user, ['ID']),
+    ]);
+
+    return CompanyDimensionValueIDs(
+        defaults,
+        companyID,
+        products.map((p) => p.ID),
+        categories.map((c) => c.ID),
+    );
+}
+
 /** Dimension tags on an order's lines — the analysis axes a line was filed under. */
 export async function GetLineDimensionsForOrder(
     orderLineIDs: string[],
@@ -1698,6 +1850,44 @@ export function ContinuationStartFrom(state: MJOSubscriptionContinuation | null)
     return new Date(Date.UTC(end.getUTCFullYear(), end.getUTCMonth(), end.getUTCDate() + 1));
 }
 
+/**
+ * A live subscription the subscriber already holds for a product, with where its coverage ends —
+ * what a new line for that product would extend at confirm (golive #299).
+ */
+export interface MJOExistingHolding extends MJOSubscriptionContinuation {
+    SubscriptionID: string;
+    SubscriptionNumber: string;
+    /** The type's reactivation rule, for a holding the server would reactivate rather than extend. */
+    Reactivation?: HoldingReactivation | null;
+}
+
+/**
+ * The live subscription to `productID` held by this organization or naming this person, or null.
+ * The rule is `FindExistingHolding` in orders-entities, shared with the server-side checks that
+ * refuse a close or confirm on an unanswered line.
+ *
+ * A failed read is logged and returns null here: the screen then does not ask, and the server
+ * still applies its rule and the confirm reports a moved start.
+ */
+export async function GetExistingHolding(
+    productID: string,
+    organizationID: string | null,
+    personID: string | null,
+    user?: UserInfo,
+): Promise<MJOExistingHolding | null> {
+    try {
+        return await FindExistingHolding(
+            productID,
+            { OrganizationID: organizationID, PersonID: personID },
+            undefined,
+            user ?? currentUser(),
+        );
+    } catch (err) {
+        console.error(`[orders-queries] ${err instanceof Error ? err.message : String(err)}`);
+        return null;
+    }
+}
+
 /** What happened to a subscription, newest first. */
 export async function GetSubscriptionEvents(
     subscriptionID: string,
@@ -1711,6 +1901,122 @@ export async function GetSubscriptionEvents(
         undefined,
         user,
     );
+}
+
+/** Subscription term id (either case) → the label the recognition waterfall colours it by. */
+export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label: string }>;
+
+/**
+ * A subscription's revenue recognition journal entries, with their lines loaded.
+ *
+ * A recognition entry points at the TERM it recognizes (`LinkedRecordID`, D25), so the search runs
+ * over the subscription's terms as well as the subscription and its originating order line. The
+ * subscription form and the Receivables subscription panel both read the schedule through here, so
+ * the two cannot disagree about what is scheduled.
+ *
+ * Pass `terms` when the caller has already loaded them, so they are not read a second time. Lines
+ * for every entry come back in one batched query (`IncludeRelatedRecords`), not one per entry.
+ *
+ * `CanRead` is false when the user has no read permission on journal entries; nothing is queried
+ * then, so the caller can say why the schedule is empty instead of showing an empty chart.
+ */
+export async function LoadSubscriptionRevRec(
+    record: { ID: string; OrderLineID?: string | null },
+    provider: IMetadataProvider,
+    terms?: ReadonlyArray<{ ID: string; TermNumber?: number | null }>,
+): Promise<{
+    Entries: mjBizAppsAccountingJournalEntryEntity[];
+    TermLookup: SubscriptionTermLookup;
+    TermIDs: string[];
+    CanRead: boolean;
+}> {
+    const rv = RunView.FromMetadataProvider(provider);
+    const user = provider.CurrentUser;
+    const loadedTerms = terms ?? (await loadTermKeys(rv, record.ID, user));
+    const termIds = loadedTerms.map((t) => t.ID);
+    const lookup: SubscriptionTermLookup = {};
+    loadedTerms.forEach((term, index) => {
+        const num = term.TermNumber ?? index + 1;
+        const label = `Term ${num}`;
+        lookup[term.ID.toLowerCase()] = { TermNumber: num, Label: label };
+        lookup[term.ID.toUpperCase()] = { TermNumber: num, Label: label };
+    });
+
+    const journalEntity = provider.Entities?.find((e) => e.Name === MJO_ACCOUNTING_ENTITIES.JournalEntry);
+    const canRead = !journalEntity || !user || journalEntity.GetUserPermisions(user).CanRead;
+    if (!canRead) {
+        return { Entries: [], TermLookup: lookup, TermIDs: termIds, CanRead: false };
+    }
+
+    const targets = [...termIds, record.ID];
+    if (record.OrderLineID) targets.push(record.OrderLineID);
+    const quoted = targets.map((id) => `'${id}'`).join(',');
+    const jeRes = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>({
+        EntityName: MJO_ACCOUNTING_ENTITIES.JournalEntry,
+        ExtraFilter: `LinkedRecordID IN (${quoted})`,
+        OrderBy: 'EffectiveDate ASC',
+        ResultType: 'entity_object',
+        IncludeRelatedRecords: ['Lines'],
+        MaxRows: 500,
+    }, user);
+    const all = jeRes.Success && jeRes.Results ? jeRes.Results : [];
+    const recognized = FilterRecognitionEntries(all, termIds);
+    return {
+        Entries: recognized.length > 0 ? recognized : all,
+        TermLookup: lookup,
+        TermIDs: termIds,
+        CanRead: true,
+    };
+}
+
+async function loadTermKeys(
+    rv: RunView,
+    subscriptionID: string,
+    user: UserInfo | undefined,
+): Promise<Array<{ ID: string; TermNumber?: number }>> {
+    const termsRes = await rv.RunView<{ ID: string; TermNumber?: number }>({
+        EntityName: MJO_ENTITIES.SubscriptionTerm,
+        ExtraFilter: `SubscriptionID = '${subscriptionID}'`,
+        OrderBy: 'TermNumber ASC',
+        Fields: ['ID', 'TermNumber'],
+        ResultType: 'simple',
+        MaxRows: 200,
+    }, user);
+    return termsRes.Success && termsRes.Results ? termsRes.Results : [];
+}
+
+/**
+ * The subscription type's renewal lead days — the fallback the renewal engine uses when the
+ * subscription does not set its own. Null when the type has none or cannot be read.
+ */
+export async function GetSubscriptionTypeRenewalLeadDays(
+    subscriptionTypeID: string,
+    user?: UserInfo,
+): Promise<number | null> {
+    if (!UUID_PATTERN.test(subscriptionTypeID)) return null;
+    const result = await new RunView().RunView<{ RenewalLeadDays: number | null }>(
+        {
+            EntityName: MJO_ENTITIES.SubscriptionType,
+            ExtraFilter: `ID = '${subscriptionTypeID}'`,
+            Fields: ['ID', 'RenewalLeadDays'],
+            ResultType: 'simple',
+            MaxRows: 1,
+        },
+        user ?? currentUser(),
+    );
+    return result.Success ? (result.Results?.[0]?.RenewalLeadDays ?? null) : null;
+}
+
+function FilterRecognitionEntries(
+    entries: mjBizAppsAccountingJournalEntryEntity[],
+    termIds: string[],
+): mjBizAppsAccountingJournalEntryEntity[] {
+    return entries.filter((je) => {
+        const desc = (je.Description || '').toLowerCase();
+        const type = (je.EntryType || '').toLowerCase();
+        const isTerm = termIds.some((id) => id.toLowerCase() === String(je.LinkedRecordID).toLowerCase());
+        return isTerm || desc.includes('recognize') || type.includes('recognition');
+    });
 }
 
 /* ── Catalog ─────────────────────────────────────────────────────────────────── */
@@ -1763,7 +2069,8 @@ export interface MJOProductOption {
     OrderLineExtensionEntity: string | null;
     CompanyName: string;
     CompanyID: string;
-    ListPrice: number;
+    /** First base price row's amount; NULL when the product has none, so the picker can say so. */
+    ListPrice: number | null;
     Taxable: boolean;
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
@@ -1790,13 +2097,12 @@ export function CatalogOptionFrom(
         | 'ProductTypeID'
         | 'CompanyID'
         | 'Company'
-        | 'StandaloneSellingPrice'
         | 'IsTaxable'
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
     type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
-    listPrice: number,
+    listPrice: number | null,
 ): MJOProductOption {
     return {
         ID: product.ID,
@@ -1807,7 +2113,7 @@ export function CatalogOptionFrom(
         OrderLineExtensionEntity: type?.OrderLineExtensionEntity ?? null,
         CompanyName: product.Company ?? '',
         CompanyID: product.CompanyID ?? '',
-        ListPrice: product.StandaloneSellingPrice || listPrice || 0,
+        ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
         SubscriptionTypeID: product.SubscriptionTypeID ?? null,
@@ -1873,18 +2179,18 @@ export function RankCatalogMatches(
 /**
  * Products the picker can add, with an indicative list price.
  *
- * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: SSP is
- * null for anything priced by a rule, and rendering that as $0.00 tells an
+ * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: the line
+ * prices only from rules, so showing SSP advertises a price the line will not
+ * use. A product with no base rule gets NULL, not $0.00, which would tell an
  * order taker the item is free. The engine still resolves the real price on
- * the line.
+ * the line. Catalog rows come from OrdersEngine — live, not a session snapshot.
  */
-/** Catalog picker rows from OrdersEngine — live, not a session snapshot. */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
     const products = await GetProducts({ User: user });
     const engine = OrdersEngine.Instance;
     return products.map((product) => {
         const list = engine.BaseProductPrices(product.ID)[0];
-        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), Number(list?.Amount ?? 0));
+        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), list ? Number(list.Amount) : null);
     });
 }
 

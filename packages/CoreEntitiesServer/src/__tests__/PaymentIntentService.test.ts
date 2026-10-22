@@ -41,6 +41,15 @@ vi.mock('../PaymentProviderResolver.js', () => ({
     }),
 }));
 
+// The order-derived description reads the database; its own tests live in IntentDescription.test.ts.
+const describeOrder = { Next: null as string | null, Calls: [] as string[] };
+vi.mock('../IntentDescription.js', () => ({
+    DescribeOrder: async (orderHeaderID: string) => {
+        describeOrder.Calls.push(orderHeaderID);
+        return describeOrder.Next;
+    },
+}));
+
 const { OpenPaymentIntent } = await import('../PaymentIntentService.js');
 
 const PROVIDER_ID = '11111111-1111-1111-1111-111111111111';
@@ -103,6 +112,8 @@ const open = (state: Recorded, over: Record<string, unknown> = {}) =>
 beforeEach(() => {
     driverResponse.Next = { Success: true, ProviderIntentID: 'pi_1', Status: 'Processing' };
     driverResponse.LastRequest = null;
+    describeOrder.Next = null;
+    describeOrder.Calls = [];
 });
 
 describe('OpenPaymentIntent — refusing before it asks', () => {
@@ -123,6 +134,23 @@ describe('OpenPaymentIntent — refusing before it asks', () => {
         expect(result.Success).toBe(false);
         expect(result.Reason).toMatch(/PaymentProviderID/);
         expect(state.Saved).toHaveLength(0);
+    });
+
+    it('refuses any currency but USD, and a missing one, without calling the gateway', async () => {
+        // Orders carry no currency column: a GBP amount would be stored as a bare number.
+        const state = fresh();
+        for (const currency of ['GBP', 'CHF', '', undefined]) {
+            const result = await open(state, { CurrencyCode: currency });
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toMatch(/only be taken in USD/);
+        }
+        expect(driverResponse.LastRequest).toBeNull();
+        expect(state.Saved).toHaveLength(0);
+    });
+
+    it('accepts USD in any case', async () => {
+        const result = await open(fresh(), { CurrencyCode: 'usd' });
+        expect(result.Success).toBe(true);
     });
 });
 
@@ -182,6 +210,29 @@ describe('OpenPaymentIntent — the happy path', () => {
     });
 });
 
+describe('OpenPaymentIntent — the description the gateway shows (#327)', () => {
+    const ORDER = '33333333-3333-3333-3333-333333333333';
+
+    it("passes the caller's description through and does not read the order", async () => {
+        await open(fresh(), { OrderHeaderID: ORDER, Description: 'Pay link for the spring invoice' });
+        expect(driverResponse.LastRequest?.Description).toBe('Pay link for the spring invoice');
+        expect(describeOrder.Calls).toEqual([]);
+    });
+
+    it('builds the description from the order when the caller gives none — the renewal path', async () => {
+        describeOrder.Next = 'Annual Membership — Order ORD-9';
+        await open(fresh(), { OrderHeaderID: ORDER, ProviderInstrumentRef: 'pm_saved' });
+        expect(describeOrder.Calls).toEqual([ORDER]);
+        expect(driverResponse.LastRequest?.Description).toBe('Annual Membership — Order ORD-9');
+    });
+
+    it('sends no description for a payment on account with none given', async () => {
+        await open(fresh());
+        expect(describeOrder.Calls).toEqual([]);
+        expect(driverResponse.LastRequest?.Description ?? null).toBeNull();
+    });
+});
+
 describe('OpenPaymentIntent — when the gateway refuses', () => {
     it('leaves NO ROW behind', async () => {
         // A recorded intent the gateway never opened is a row every webhook fails to match.
@@ -237,5 +288,53 @@ describe('OpenPaymentIntent — when we cannot record what the gateway opened', 
         // caller might swallow would lose that; a throw puts it in front of somebody.
         const state = fresh({ SaveSucceeds: false });
         await expect(open(state)).rejects.toThrow(/Could not record payment intent pi_1/);
+    });
+});
+
+describe('OpenPaymentIntent — a saved card declined at create time (#289)', () => {
+    it('records the attempt as a Failed intent and returns our row with the reason', async () => {
+        driverResponse.Next = {
+            Success: false,
+            Reason: 'Your card was declined.',
+            ProviderIntentID: 'pi_declined',
+            Status: 'Failed',
+            FailureCode: 'card_declined',
+        };
+        const state = fresh();
+        const result = await open(state, { ProviderInstrumentRef: 'pm_1', ProviderCustomerRef: 'cus_1', OrderHeaderID: '33333333-3333-3333-3333-333333333333' });
+        expect(result).toMatchObject({
+            Success: false,
+            Reason: 'Your card was declined.',
+            PaymentIntentID: 'new-intent-row',
+            ProviderIntentID: 'pi_declined',
+            Status: 'Failed',
+            FailureCode: 'card_declined',
+        });
+        expect(state.Saved).toHaveLength(1);
+        expect(state.Saved[0].Status).toBe('Failed');
+        expect(state.Saved[0].ProviderIntentID).toBe('pi_declined');
+        expect(state.Saved[0].OrderHeaderID).toBe('33333333-3333-3333-3333-333333333333');
+    });
+
+    it('passes an SCA demand through', async () => {
+        driverResponse.Next = { Success: false, Reason: 'auth', ProviderIntentID: 'pi_sca', Status: 'Failed', RequiresAuthentication: true };
+        const result = await open(fresh(), { ProviderInstrumentRef: 'pm_1' });
+        expect(result.RequiresAuthentication).toBe(true);
+        expect(result.PaymentIntentID).toBe('new-intent-row');
+    });
+
+    it('a repeated key for a declined intent returns the row we already hold and writes nothing', async () => {
+        driverResponse.Next = { Success: false, Reason: 'declined', ProviderIntentID: 'pi_declined', Status: 'Failed' };
+        const state = fresh({ Existing: 'held-row' });
+        const result = await open(state, { ProviderInstrumentRef: 'pm_1' });
+        expect(result.PaymentIntentID).toBe('held-row');
+        expect(state.Saved).toHaveLength(0);
+    });
+
+    it('a success passes the capture time through', async () => {
+        const at = new Date('2027-01-01T15:00:00Z');
+        driverResponse.Next = { Success: true, ProviderIntentID: 'pi_ok', Status: 'Succeeded', CapturedAt: at };
+        const result = await open(fresh(), { ProviderInstrumentRef: 'pm_1' });
+        expect(result).toMatchObject({ Success: true, Status: 'Succeeded', CapturedAt: at });
     });
 });

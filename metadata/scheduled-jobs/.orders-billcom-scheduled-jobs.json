@@ -1,0 +1,69 @@
+[
+  {
+    "_comments": [
+      "BILL.COM JOBS (golive #146/#148, design §6). Both SHIP DISABLED AND SET TO PREVIEW, for the same two",
+      "reasons as the renewal job: Disabled keeps a lower environment from scheduling live invoicing the moment",
+      "this metadata lands; Preview means even an enabled job writes nothing until a person has read one run.",
+      "Going live is two named acts per job: enable, read the run's Results/Outcomes with Finance, then set",
+      "Preview to false. Only the second act sends a customer an invoice or records cash.",
+      "",
+      "SEND: every 30 minutes, 13:00–23:59 UTC, weekdays (7am–6pm Central). A confirmed order should reach",
+      "Bill.com the same half-hour; MaxCount 25 means a mis-configuration invoices 25 customers, not the book.",
+      "POLL: hourly at :15, every day — ACH clears in days, hourly is generous, and :15 never coincides with",
+      "the send. MaxCount 100; a capped pass keeps its watermark so the remainder is read next pass.",
+      "Both: ConcurrencyMode Skip (two passes racing would each read 'unsent'), MissedRunPolicy RunOnce (a week",
+      "of missed runs is one catch-up), RunImmediatelyIfNeverRun false (nobody is billed before a person looks).",
+      "OwnerUserID / NotifyUserID deliberately unset: they name people, which differs per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Send External Invoices (half-hourly, business hours)",
+      "Description": "Creates Bill.com invoices for billing units that have become invoiceable: confirmed orders billed as a whole and issued instalments. Ships disabled and set to Preview: enable it, confirm the Results list on the run, then set Preview to false to begin sending.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 */30 13-23 * * 1-5",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 20,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\": \"B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B01\", \"Params\": [{\"ActionParamID\": \"B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B04\", \"ValueType\": \"Static\", \"Value\": \"true\"}, {\"ActionParamID\": \"B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B03\", \"ValueType\": \"Static\", \"Value\": \"25\"}]}"
+    },
+    "primaryKey": {
+      "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B20"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:47.748Z",
+      "checksum": "fd6d7f050b6dba36e72739557b994abbf5cf1e47196b11e5ab45572048ba8481"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Orders — Poll External Payments (hourly)",
+      "Description": "Reads cleared customer payments from Bill.com and records each once against the orders its invoices belong to. Ships disabled and set to Preview: enable it, confirm the Outcomes list on the run, then set Preview to false to begin recording cash.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 15 * * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\": \"B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B11\", \"Params\": [{\"ActionParamID\": \"B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13\", \"ValueType\": \"Static\", \"Value\": \"true\"}, {\"ActionParamID\": \"B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B14\", \"ValueType\": \"Static\", \"Value\": \"100\"}]}"
+    },
+    "primaryKey": {
+      "ID": "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B21"
+    },
+    "sync": {
+      "lastModified": "2026-09-21T18:40:47.768Z",
+      "checksum": "d592ecfa2fe011bd3e10d0ec6195d17c59a4c981dadca57ed98d8198e52ff3e7"
+    }
+  }
+]

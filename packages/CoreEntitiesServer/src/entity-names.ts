@@ -15,11 +15,55 @@ export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 /** The order line entity. */
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 
+/** IsA Disjoint child of Product — present only for products that ARE events. */
+export const EVENT_PRODUCT_ENTITY = 'MJ_BizApps_Orders: Event Products';
+
+/** IsA Disjoint child of OrderLine, sharing its key: the line's attendee. */
+export const EVENT_ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Event Order Lines';
+
 /** The order line's accounting dimension tags (D31). */
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
 
+/** Payment provider configuration rows — one per (company, provider type). */
+export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
+
+/** Payment provider types — the `Code` is the ClassFactory key for drivers and invoice rails. */
+export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
+
+/** External invoices — the authoritative unit ↔ rail invoice mapping (Bill.com). */
+export const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
+
+/** External customers — bill-to party ↔ rail customer id, per provider row. */
+export const EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers';
+
+/** External payments — every rail payment the poller has seen, and what it did with it. */
+export const EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments';
+
+/** Poll watermark per provider row per rail object. */
+export const PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States';
+
+/** Payment headers and lines — read by the poller for "has money been applied to this unit". */
+export const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
+export const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
+
+/** bizapps-common parties, as the recipient resolver already names them. */
+export const ORGANIZATION_ENTITY = 'MJ_BizApps_Common: Organizations';
+export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+export const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 /** One instalment of an order's billing schedule (AIDP-24). */
 export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 
 /** One attested progress observation on a percentage-of-completion line (AIDP-26, D90). */
 export const ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY = 'MJ_BizApps_Orders: Order Line Progress Measurements';
+
+/** One post-payment step of one checkout session: what ran, how often, and how it ended (#326). */
+export const CHECKOUT_SESSION_STEP_ENTITY = 'MJ_BizApps_Orders: Checkout Session Steps';
+
+/** A concession granted on an order, valued whatever form it takes (golive #222). */
+export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
+
+/** Subscription families — the bands of one subscription offering, per company (golive #276). */
+export const SUBSCRIPTION_FAMILY_ENTITY = 'MJ_BizApps_Orders: Subscription Families';
+
+/** What each instalment invoice billed each line, part by part (#681). */
+export const INSTALMENT_LINE_BILLING_ENTITY = 'MJ_BizApps_Orders: Instalment Line Billings';

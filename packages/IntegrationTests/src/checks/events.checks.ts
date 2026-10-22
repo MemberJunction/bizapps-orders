@@ -1,5 +1,5 @@
 /**
- * events.checks.ts — the `events` bundle (EV1–EV10).
+ * events.checks.ts — the `events` bundle (EV1–EV12).
  *
  * WHAT AN EVENT IS HERE
  * A ticket sold in advance for something that happens on a fixed future date. The money arrives now
@@ -24,6 +24,11 @@
  *   EV8   quantity scales the deferral, and the release still lands on one date
  *   EV9   attendee detail rides on the EventOrderLine extension
  *   EV10  a two-company event order defers on each company separately
+ *   EV11  an event that requires attendee information refuses a multi-seat line with no attendee
+ *   EV12  the same event confirms sold one seat per line, each line naming its attendee
+ *
+ * The shared world's events do not require attendee information, so EV1–EV10 stay about
+ * recognition; EV11 and EV12 create the event that does.
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -38,6 +43,7 @@ import {
 import {
   ACCT_SCHEMA,
   CreateOrdersFixture,
+  CreateProductPrice,
   createViaEntity,
   Fx,
   InRolledBackTransaction,
@@ -47,7 +53,8 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { EVENT_ORDER_LINE_ENTITY, EVENT_PRODUCT_ENTITY } from "../entity-names.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { mjBizAppsOrdersEventOrderLineEntity } from "@mj-biz-apps/orders-entities";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 const AR_CODE = "11201";
 const DEFERRED_CODE = "21301";
@@ -92,6 +99,8 @@ async function sellTickets(
   productKey = "EventTicket",
 ) {
   const f = Fx();
+  // The engine's price, so the stated price is not a concession the confirm gate holds.
+  await CreateProductPrice(ctx, f.Products[productKey], unitPrice);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     OrderDate: new Date("2026-08-01T00:00:00Z"),
@@ -411,7 +420,86 @@ export const EventChecks: NamedCheck[] = [
         );
       }),
   },
+  {
+    Id: "events.EV11",
+    Name: "EV11: an event that requires attendee information refuses five seats with no attendee",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const productID = await createAttendeeEvent(ctx);
+
+        const result = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [{ ProductID: productID, Quantity: 5, UnitPrice: 25 }],
+        });
+        Assert(!result.Saved, "an order selling five seats with no attendee must not confirm");
+        Assert(
+          result.Message.includes("sells 5 seats"),
+          `the refusal names the line and the seats; got: ${result.Message}`,
+        );
+      }),
+  },
+  {
+    Id: "events.EV12",
+    Name: "EV12: one seat per line, each naming its attendee, confirms and stores every attendee",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const productID = await createAttendeeEvent(ctx);
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2026-08-01T00:00:00Z"),
+          Lines: [
+            { ProductID: productID, Quantity: 1, UnitPrice: 25 },
+            { ProductID: productID, Quantity: 1, UnitPrice: 25 },
+          ],
+        });
+        for (const line of built.Lines) {
+          const attendee = await line.EnsureISAChild(EVENT_ORDER_LINE_ENTITY);
+          if (!(attendee instanceof mjBizAppsOrdersEventOrderLineEntity)) {
+            throw new Error("the line did not take an event attendee row");
+          }
+          attendee.PersonID = f.Customers.PersonID;
+        }
+        built.Order.Status = "Confirmed";
+        const saved = await built.Order.Save();
+        Assert(saved, `confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? ""}`);
+
+        const stored = await TxOne<{ N: number }>(
+          ctx,
+          `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.EventOrderLine e
+             JOIN ${ORDERS_SCHEMA}.OrderLine l ON l.ID = e.ID
+            WHERE l.OrderHeaderID = '${built.Order.ID}'`,
+        );
+        AssertEqual(Number(stored.N), 2, "one attendee row per seat");
+      }),
+  },
 ];
+
+/** An event, created in the check's transaction, whose product requires attendee information. */
+async function createAttendeeEvent(ctx: IntegrationCheckContext): Promise<string> {
+  const f = Fx();
+  const catA = await TxOne<{ ID: string }>(
+    ctx,
+    `SELECT TOP 1 ID FROM ${ORDERS_SCHEMA}.ProductCategory WHERE CompanyID='${f.CoA.ID}'`,
+  );
+  return createViaEntity(ctx, EVENT_PRODUCT_ENTITY, {
+    EventStartsAt: "2027-03-10T15:00:00Z",
+    EventEndsAt: "2027-03-10T22:00:00Z",
+    RequiresAttendeeInfo: true,
+    CompanyID: f.CoA.ID,
+    ProductTypeID: f.ProductTypeIDs.Event,
+    ProductCategoryID: catA.ID,
+    Name: `${f.Run} Named-Seat Workshop`,
+    Status: "Active",
+    RevenueRecognitionTypeID: f.RevRecTypeIDs.get("AllBackEnd"),
+    IsTaxable: 0,
+  });
+}
 
 for (const check of EventChecks) {
   IntegrationCheckRegistry.Instance.Register(check);

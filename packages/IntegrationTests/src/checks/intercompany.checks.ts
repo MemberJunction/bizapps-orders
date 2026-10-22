@@ -19,7 +19,7 @@
  *   IC5   a missing IntercompanyAccountMatch REFUSES the allocation rather than defaulting
  *   IC6   a partial payment pro-rates across companies
  *   IC7   a payment line targeting one order line books no intercompany legs at all
- *   IC8   three companies produce three entries and two separate Due To credits
+ *   IC8   two lines of one other company collapse into one share: two entries, one Due To
  *   IC9   a shared-services collector owning no line books no AR line of its own
  *   IC10  a refund mirrors every leg, on every company
  *   IC11  the allocation is idempotent — re-saving does not double the Due To
@@ -46,6 +46,7 @@ import {
   CreateOrdersFixture,
   createViaEntity,
   COUNTERPARTY_DIMENSION_CODE,
+  CreateProductPrice,
   DUE_FROM_CODE,
   DUE_TO_CODE,
   EnsureDimension,
@@ -192,6 +193,11 @@ async function confirmMultiCompanyOrder(
   spec: Array<[string, number]>,
 ) {
   const f = Fx();
+  // Each product's engine price is the lowest price stated for it, so no stated price is a
+  // concession the confirm gate would hold.
+  const lowest = new Map<string, number>();
+  for (const [product, price] of spec) lowest.set(product, Math.min(price, lowest.get(product) ?? price));
+  for (const [product, price] of lowest) await CreateProductPrice(ctx, f.Products[product], price);
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
     Lines: spec.map(([product, price]) => ({
@@ -256,8 +262,8 @@ export async function CreateIntercompanyFixture(ctx: IntegrationCheckContext): P
   // mis-oriented pair STILL BALANCES — so a hand-written INSERT that gets the direction wrong
   // produces a journal entry that looks perfectly healthy.
   //
-  // CoA→CoB and CoB→CoA are configured; CoC is deliberately left UNPAIRED so IC5 has a genuine
-  // missing-pair case to exercise.
+  // CoA→CoB and CoB→CoA are configured. IC5's missing pair is CoD, which ORD-WORLD links to GL but
+  // leaves out of intercompany-matches.csv; it is not passed here, so it gets no pair.
   await EnsureIntercompanyAccounts(ctx, companies, [
     [f.CoA.ID, f.CoB.ID],
     [f.CoB.ID, f.CoA.ID],
@@ -419,26 +425,14 @@ export const IntercompanyChecks: NamedCheck[] = [
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
-        // Co C has GL links for AR/Cash but NO intercompany pair with Co A. There is no fallback
-        // on purpose: a guessed account would still balance, so the misposting would be invisible.
-        const f = Fx();
-        const result = await ConfirmOrder(ctx.User, {
-          CompanyID: f.CoA.ID,
-          Lines: [
-            { ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 100 },
-            { ProductID: f.Products.WidgetC, Quantity: 1, UnitPrice: 200 },
-          ],
-        });
-        // Co C has no GL links at all, so the CONFIRM is what fails for this fixture. Either way
-        // no allocation may proceed against an unpaired company — assert whichever gate caught it.
-        if (!result.Saved) {
-          Assert(
-            /Co C|GL|account/i.test(result.Message),
-            `expected a GL-resolution refusal naming the unlinked company, got: ${result.Message}`,
-          );
-          return;
-        }
-        const applied = await payToCoA(ctx, result.Order.ID as string, 300, { expectFailure: true });
+        // Co D has GL links for AR/Sales/Cash, so the order CONFIRMS, but there is NO intercompany
+        // pair between Co A and Co D. There is no fallback on purpose: a guessed account would still
+        // balance, so the misposting would be invisible.
+        const order = await confirmMultiCompanyOrder(ctx, [
+          ["WidgetA", 100],
+          ["WidgetD", 200],
+        ]);
+        const applied = await payToCoA(ctx, order.Order.ID as string, 300, { expectFailure: true });
         Assert(!applied.Applied, "an allocation across an unpaired company must be refused");
         Assert(
           /IntercompanyAccountMatch/i.test(applied.Message),
@@ -518,7 +512,7 @@ export const IntercompanyChecks: NamedCheck[] = [
   },
   {
     Id: "intercompany.IC8",
-    Name: "IC8: three companies produce three entries and two SEPARATE Due To credits",
+    Name: "IC8: two lines of one other company collapse into ONE share — two entries, one Due To",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {

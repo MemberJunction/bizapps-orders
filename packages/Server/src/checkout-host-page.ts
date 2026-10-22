@@ -1,7 +1,8 @@
 /**
  * Public checkout host page — a self-contained HTML document that drives
- * `OrdersCheckoutEdge` POSTs from a browser with no Explorer shell and no
- * custom-element bundle.
+ * `OrdersCheckoutEdge` POSTs from a browser with no Explorer shell. When the
+ * `<mj-orders-checkout>` Angular Element bundle is available (`elementSrc`), the
+ * page hosts that element; otherwise it renders a vanilla fallback form.
  *
  * All per-request values reach the boot script via HTML-escaped `data-*`
  * attributes (Forms host-page XSS rule): nothing attacker-controlled is
@@ -26,6 +27,11 @@ export interface CheckoutHostPageOptions {
      * extension fields). When omitted, a vanilla fallback form is used.
      */
     elementSrc?: string;
+    /**
+     * A signed update-card link token (#289). Set, the element opens in the pay-renewal mode: it pays
+     * the renewal order the token names instead of selling the widget's product.
+     */
+    renewalToken?: string;
 }
 
 export interface CheckoutHostErrorOptions {
@@ -43,10 +49,10 @@ export function checkoutHostSecurityHeaders(nonce: string): Record<string, strin
         "base-uri 'none'",
         "form-action 'none'",
         "frame-ancestors 'none'",
-        `script-src 'nonce-${n}' 'self' https://js.stripe.com`,
+        `script-src 'nonce-${n}' 'self' https://js.stripe.com https://challenges.cloudflare.com`,
         `style-src 'nonce-${n}' 'self'`,
         "img-src 'self' data: https://*.stripe.com",
-        'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://*.stripe.com https://*.hcaptcha.com https://newassets.hcaptcha.com',
+        'frame-src https://js.stripe.com https://*.js.stripe.com https://hooks.stripe.com https://*.stripe.com https://*.hcaptcha.com https://newassets.hcaptcha.com https://challenges.cloudflare.com',
         "connect-src 'self' https://api.stripe.com https://m.stripe.network",
     ].join('; ');
     return {
@@ -77,6 +83,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
     const apiRoot = escapeAttr(options.apiRoot);
     const nonceAttr = ` nonce="${escapeAttr(options.cspNonce)}"`;
     const elementSrc = options.elementSrc ? escapeAttr(options.elementSrc) : '';
+    const renewal = options.renewalToken ? ` renewal-token="${escapeAttr(options.renewalToken)}"` : '';
     if (elementSrc) {
         return `<!doctype html>
 <html lang="en">
@@ -90,7 +97,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
 </head>
 <body>
   <main class="mj-co">
-    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"></mj-orders-checkout>
+    <mj-orders-checkout slug="${slug}" api-root="${apiRoot}" csp-nonce="${escapeAttr(options.cspNonce)}"${renewal}></mj-orders-checkout>
   </main>
 </body>
 </html>`;
@@ -108,6 +115,7 @@ export function renderCheckoutHostPage(options: CheckoutHostPageOptions): string
   <main class="mj-co" id="mj-co" data-slug="${slug}" data-api-root="${apiRoot}">
     <p class="mj-co__status" role="status">Loading checkout…</p>
   </main>
+  <div id="mj-co-turnstile"></div>
   <script${nonceAttr}>${BOOT_SCRIPT}</script>
 </body>
 </html>`;
@@ -159,7 +167,7 @@ body {
 .mj-co h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .mj-co p { margin: 0 0 1rem; }
 .mj-co label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
-.mj-co input, .mj-co select, .mj-co textarea {
+.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {
   width: 100%;
   padding: 0.5rem 0.65rem;
   border: 1px solid var(--mj-border, #c9cdd4);
@@ -230,6 +238,14 @@ const BOOT_SCRIPT = `
     try { sessionStorage.setItem(storageKey, key); } catch (e) {}
     return key;
   }
+  // A reply that is not the edge's JSON: a gateway error page (a 504 when /complete outlasts the
+  // proxy in front of the server) or no reply at all. Its message is for the buyer, never a parser error.
+  function transportError(httpStatus) {
+    var e = new Error('Checkout could not reach the server. Please try again.');
+    e.transport = true;
+    e.httpStatus = httpStatus;
+    return e;
+  }
   function post(path, body) {
     return fetch(apiRoot + path, {
       method: 'POST',
@@ -238,10 +254,99 @@ const BOOT_SCRIPT = `
       body: JSON.stringify(body)
     }).then(function (res) {
       return res.json().then(function (json) {
+        if (!json || typeof json !== 'object') throw transportError(res.status);
         json._httpStatus = res.status;
         return json;
+      }, function () { throw transportError(res.status); });
+    }, function () { throw transportError(null); });
+  }
+  // Turnstile (#592): the edge's 403 names the site key, since the widget configuration only
+  // arrives with /initialize. Render the challenge, retry once; a token works once, so every
+  // later gated call asks for a fresh one.
+  var turnstileSiteKey = null;
+  var turnstileWidget = null;
+  var turnstileWaiting = null;
+  function loadTurnstile() {
+    return new Promise(function (resolve, reject) {
+      if (window.turnstile) { resolve(window.turnstile); return; }
+      var s = document.createElement('script');
+      s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+      s.onload = function () {
+        if (!window.turnstile) { reject(new Error('Human verification did not load.')); return; }
+        resolve(window.turnstile);
+      };
+      s.onerror = function () { reject(new Error('Could not load human verification. Check your connection and try again.')); };
+      document.head.appendChild(s);
+    });
+  }
+  function turnstileToken(siteKey) {
+    return loadTurnstile().then(function (ts) {
+      return new Promise(function (resolve, reject) {
+        turnstileWaiting = { resolve: resolve, reject: reject };
+        if (turnstileWidget === null) {
+          turnstileWidget = ts.render(document.getElementById('mj-co-turnstile'), {
+            sitekey: siteKey,
+            execution: 'execute',
+            appearance: 'interaction-only',
+            callback: function (token) {
+              var w = turnstileWaiting; turnstileWaiting = null;
+              if (w) w.resolve(token);
+            },
+            'error-callback': function () {
+              var w = turnstileWaiting; turnstileWaiting = null;
+              if (w) w.reject(new Error('Human verification failed. Please try again.'));
+              return true;
+            }
+          });
+        } else {
+          ts.reset(turnstileWidget);
+        }
+        ts.execute(turnstileWidget);
       });
     });
+  }
+  function turnstileChallenge(reply) {
+    return reply && reply._httpStatus === 403 && reply.TurnstileRequired === true && typeof reply.TurnstileSiteKey === 'string' && reply.TurnstileSiteKey
+      ? reply.TurnstileSiteKey
+      : null;
+  }
+  function withToken(body, token) {
+    var copy = {};
+    for (var k in body) copy[k] = body[k];
+    copy.turnstileToken = token;
+    return copy;
+  }
+  function postGated(path, body) {
+    var first = turnstileSiteKey
+      ? turnstileToken(turnstileSiteKey).then(function (token) { return post(path, withToken(body, token)); })
+      : post(path, body);
+    return first.then(function (reply) {
+      var siteKey = turnstileChallenge(reply);
+      if (!siteKey) return reply;
+      turnstileSiteKey = siteKey;
+      return turnstileToken(siteKey).then(function (token) { return post(path, withToken(body, token)); });
+    });
+  }
+  // /complete once the buyer has paid. The server may still be booking the order when the reply is
+  // a gateway error, or when it answers that the session is Processing; it is replay-safe, so ask
+  // again every 3 s for up to 2 min. Resolves { _delayed: true } when the wait runs out.
+  function completeCheckout(body, onWaiting) {
+    var deadline = Date.now() + 120000;
+    var waiting = false;
+    function attempt() {
+      return postGated('/complete', body).then(function (reply) {
+        return reply && reply.Success !== true && reply.Status === 'Processing' ? null : reply;
+      }, function (err) {
+        if (err && err.transport) return null;
+        throw err;
+      }).then(function (reply) {
+        if (reply) return reply;
+        if (!waiting) { waiting = true; onWaiting(); }
+        if (Date.now() >= deadline) return { _delayed: true };
+        return new Promise(function (resolve) { setTimeout(resolve, 3000); }).then(attempt);
+      });
+    }
+    return attempt();
   }
   function fieldValue(el) {
     if (el.type === 'checkbox') return el.checked;
@@ -281,7 +386,7 @@ const BOOT_SCRIPT = `
   var stripe = null;
   var cardElement = null;
 
-  post('/initialize', { slug: slug, clientSessionKey: sessionKey }).then(function (init) {
+  postGated('/initialize', { slug: slug, clientSessionKey: sessionKey }).then(function (init) {
     if (!init || !init.Success) {
       showError((init && init.ErrorMessage) || 'This checkout is not available.');
       return;
@@ -399,6 +504,7 @@ const BOOT_SCRIPT = `
       if (Object.keys(extensionFields).length) {
         line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
       }
+      var finishing = function () { status.textContent = 'Payment received. Finishing your order…'; };
       post('/draft', {
         sessionId: sessionId,
         clientSessionKey: sessionKey,
@@ -412,16 +518,17 @@ const BOOT_SCRIPT = `
         totalEl.textContent = 'Total: ' + total.toFixed(2);
         if (!draft.RequiresPayment) {
           status.textContent = 'Completing…';
-          return post('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+          return completeCheckout({ sessionId: sessionId, clientSessionKey: sessionKey }, finishing);
         }
         status.textContent = 'Opening payment…';
         return post('/payment-intent', { sessionId: sessionId, clientSessionKey: sessionKey }).then(function (intent) {
           if (!intent || !intent.Success || !intent.ClientSecret) {
             throw new Error((intent && intent.ErrorMessage) || 'Could not start payment.');
           }
+          // Resolved server-side by ResolveCheckoutPublishableKey: the provider's env key, else the widget's.
           var pk = config.stripePublishableKey;
           if (!pk) {
-            throw new Error('This checkout requires card payment. Configure stripePublishableKey on the widget, or embed the checkout widget on a site that already loads Stripe.');
+            throw new Error('This checkout requires card payment, but no Stripe publishable key is configured. Set <CredentialsRef>_PUBLISHABLE_KEY for the payment provider of the widget on the server, or stripePublishableKey on the widget.');
           }
           return loadStripe(pk).then(function (stripeInst) {
             stripe = stripeInst;
@@ -441,12 +548,22 @@ const BOOT_SCRIPT = `
             }).then(function (result) {
               if (result.error) throw new Error(result.error.message || 'Payment failed.');
               status.textContent = 'Completing…';
-              return post('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+              return completeCheckout({ sessionId: sessionId, clientSessionKey: sessionKey }, finishing);
             });
           });
         });
       }).then(function (done) {
         if (!done || done._waitForCard) return;
+        if (done._delayed) {
+          // Paid, but not confirmed within the wait: the form goes, so the buyer cannot pay twice.
+          host.innerHTML = '';
+          var late = document.createElement('p');
+          late.className = 'mj-co__ok';
+          late.setAttribute('role', 'status');
+          late.textContent = 'Your payment went through, but confirming your order is taking longer than usual. Please do not pay again. Contact support if you need your order confirmation.';
+          host.appendChild(late);
+          return;
+        }
         if (!done.Success) {
           throw new Error(done.ErrorMessage || 'Could not complete checkout.');
         }
@@ -457,7 +574,17 @@ const BOOT_SCRIPT = `
         ok.textContent = config.successMessage || ('Thank you. Order ' + (done.OrderNumber || '') + ' is confirmed.');
         host.appendChild(ok);
         if (config.redirectUrl) {
-          window.location.href = config.redirectUrl;
+          // The landing page learns which order completed from ?order= (#295). Only the order
+          // number: a URL lands in history, logs and referrers.
+          var target = config.redirectUrl;
+          if (done.OrderNumber) {
+            try {
+              var u = new URL(target, window.location.href);
+              u.searchParams.set('order', String(done.OrderNumber));
+              target = u.toString();
+            } catch (e) { /* unreadable URL: redirect unchanged */ }
+          }
+          window.location.href = target;
         }
       }).catch(function (err) {
         status.textContent = '';
@@ -471,8 +598,9 @@ const BOOT_SCRIPT = `
         submit.disabled = false;
       });
     });
-  }).catch(function () {
-    showError('Checkout is temporarily unavailable. Please try again.');
+  }).catch(function (err) {
+    var msg = err && /human verification/i.test(err.message || '') ? err.message : 'Checkout is temporarily unavailable. Please try again.';
+    showError(msg);
   });
 })();
 `;

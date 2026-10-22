@@ -13,7 +13,7 @@
  * calls the reader, the display layer and the template engine in that order, and hands back what
  * they produced:
  *
- *   `InvoiceBuilder`  → the document, per selling company, derived from the order
+ *   `InvoiceBuilder`  → the document, from the order's company, derived from the order
  *   `InvoiceDisplay`  → the strings, so the template can print without computing
  *   MJ Templates      → the HTML, editable in the database with no deploy
  *
@@ -81,7 +81,7 @@ function setOutput(params: RunActionParams, name: string, value: unknown): void 
  * Render an order as an invoice, quote or credit memo.
  *
  * Inputs: `OrderID` (required), `CompanyID`, `PaymentScheduleID` (one instalment's document),
- * `AsOfDate`, `TemplateName`, `Locale`, `CurrencyCode`, `Format`, `ShowDiagnostics`.
+ * `OrderConcessionID` (the credit memo an approved amount change issued, #684), `AsOfDate`, `TemplateName`, `Locale`, `CurrencyCode`, `Format`, `ShowDiagnostics`.
  * Outputs: `Invoices`, `HTML`, `DocumentCount`, `Notes`.
  */
 @RegisterClass(BaseAction, 'Orders.GenerateInvoice')
@@ -176,9 +176,19 @@ export class GenerateInvoiceAction extends BaseAction {
             };
         }
 
+        const orderConcessionID = strParam(params, 'OrderConcessionID');
+        if (orderConcessionID && !UUID.test(orderConcessionID)) {
+            return {
+                Success: false,
+                ResultCode: 'INVALID_ORDER_CONCESSION_ID',
+                Message: `'${orderConcessionID}' is not an order concession ID.`,
+            };
+        }
+
         const rendered = await RenderInvoiceDocuments(orderID, provider, user, {
             CompanyID: companyID,
             PaymentScheduleID: paymentScheduleID,
+            OrderConcessionID: orderConcessionID,
             AsOfDate: strParam(params, 'AsOfDate'),
             TemplateName: strParam(params, 'TemplateName') ?? DEFAULT_INVOICE_TEMPLATE,
             Locale: strParam(params, 'Locale') ?? 'en-US',
@@ -198,9 +208,9 @@ export class GenerateInvoiceAction extends BaseAction {
         const invoices: RenderedInvoice[] = rendered.Documents;
 
         setOutput(params, 'Invoices', invoices);
-        // The scalar HTML is a convenience for the overwhelmingly common single-company order. It is
-        // deliberately null when an order split, rather than silently handing back the first of two
-        // documents as though it were the whole bill.
+        // An order renders one document, from the order's company (golive #311). The scalar HTML stays
+        // null if a render ever returned more than one, rather than handing back the first as though
+        // it were the whole bill.
         setOutput(params, 'HTML', invoices.length === 1 ? invoices[0].HTML : null);
         setOutput(params, 'DocumentCount', invoices.length);
 
@@ -210,12 +220,9 @@ export class GenerateInvoiceAction extends BaseAction {
         const kind = invoices[0]?.Kind ?? 'Invoice';
         return {
             Success: true,
-            ResultCode: invoices.length > 1 ? 'SPLIT_BY_COMPANY' : 'SUCCESS',
+            ResultCode: 'SUCCESS',
             Params: params.Params,
-            Message:
-                invoices.length > 1
-                    ? `This order is sold by ${invoices.length} companies, so it produces ${invoices.length} documents: ${invoices.map((i) => i.DocumentNumber).join(', ')}. Each one bills only what its company is owed.`
-                    : `${kind} ${invoices[0]?.DocumentNumber ?? ''} rendered.`,
+            Message: `${kind} ${invoices.map((i) => i.DocumentNumber).join(', ')} rendered.`,
         };
     }
 }

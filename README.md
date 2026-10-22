@@ -26,11 +26,10 @@
 
 <p align="center">
   <img alt="Status" src="https://img.shields.io/badge/Status-Engine%20shipped-green?style=flat-square" />
-  <img alt="MJ Version" src="https://img.shields.io/badge/MemberJunction-5.40%2B-blue?style=flat-square" />
+  <img alt="MJ Version" src="https://img.shields.io/badge/MemberJunction-6.1.6%2B-blue?style=flat-square" />
   <img alt="Angular" src="https://img.shields.io/badge/Angular-21-DD0031?style=flat-square&logo=angular&logoColor=white" />
   <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" />
   <img alt="SQL Server" src="https://img.shields.io/badge/SQL%20Server-2019%2B-CC2927?style=flat-square&logo=microsoftsqlserver&logoColor=white" />
-  <img alt="PostgreSQL" src="https://img.shields.io/badge/PostgreSQL-17-336791?style=flat-square&logo=postgresql&logoColor=white" />
   <a href="./LICENSE"><img alt="License: BUSL-1.1" src="https://img.shields.io/badge/License-BUSL--1.1-green?style=flat-square" /></a>
 </p>
 
@@ -40,9 +39,9 @@
 
 A customer commits to pay; the system tracks both **what they're getting** and **how they're paying**. BizApps Orders treats orders, payments, and subscriptions as **aspects of the same business event** and ships them as one **MemberJunction Open App** — so an MJ adopter installs a single dependency and has working order management in days, rather than stitching together separate payments and subscriptions packages.
 
-The model is deliberately lean: **the substrate is Products → Orders → Payments.** A confirmed/posted **Order is both the customer's commitment and the A/R document** (its own bill) — there is no separate Invoice entity *(D2)*. Recurring cadence lives one level up, in Subscriptions that spawn a fresh Order each billing cycle *(D20)*.
+The model is deliberately lean: **the substrate is Products → Orders → Payments.** A confirmed **Order is both the customer's commitment and the A/R document** (its own bill) — there is no separate Invoice entity *(D2)*. Recurring cadence lives one level up, in Subscriptions that spawn a fresh Order each billing cycle *(D20)*.
 
-Orders is the **orchestrator**; it does not keep the ledger. Every business event that requires accounting (order line booked, payment captured, revenue recognized, refund issued) is emitted as a balanced journal entry into [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting), which batches the subledger to the ERP. Tax calculation delegates to a third-party engine (Stripe Tax / Avalara class) behind Accounting's provider seam *(D23)*; contract terms belong to a future BizApps Contracts; the customer master lives in [BizApps Common](https://github.com/MemberJunction/bizapps-common); workflow/approvals run on [BizApps Tasks](https://github.com/MemberJunction/bizapps-tasks).
+Orders is the **orchestrator**; it does not keep the ledger. Every business event that requires accounting (order line booked, payment captured, revenue recognized, refund issued) is emitted as a balanced journal entry into [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting), which batches the subledger to the ERP. Tax is computed from Accounting's jurisdiction and rate tables, and the address-to-jurisdiction step is a replaceable `BaseTaxJurisdictionResolver` plugin *(D71–D73)*; contract terms belong to a future BizApps Contracts; the customer master lives in [BizApps Common](https://github.com/MemberJunction/bizapps-common); workflow/approvals run on [BizApps Tasks](https://github.com/MemberJunction/bizapps-tasks).
 
 ---
 
@@ -51,11 +50,11 @@ Orders is the **orchestrator**; it does not keep the ledger. Every business even
 | ✅ This is | ❌ This is not |
 |---|---|
 | The transactional substrate: products, orders, payments, subscriptions | The general ledger (calls into BizApps Accounting) |
-| **Order as the A/R primitive** — the confirmed/posted order *is* the receivable & the bill | A separate invoicing system (no Invoice entity; bills/statements are reports) |
-| Multi-company native — one order can carry lines owned by different subsidiaries; **each line books its own single-company JE** | A tax engine (a third-party engine calculates; we send inputs and snapshot results) |
+| **Order as the A/R primitive** — the confirmed order *is* the receivable & the bill | A separate invoicing system (no Invoice entity; bills/statements are reports) |
+| Multi-company native — one order can carry lines owned by different subsidiaries; **each line books its own single-company JE** | A tax engine (rates and jurisdictions come from BizApps Accounting; the address lookup is a replaceable seam) |
 | Payment-provider agnostic (Stripe first; others pluggable via `RegisterClass`; Manual always available) | The contract layer (terms / escalators / renewals are future BizApps Contracts territory) |
 | Subscription-aware — a continuity record spawning a per-cycle renewal Order | An e-commerce storefront / customer portal |
-| Reversal-disciplined — returns, refunds, chargebacks, credit-memo orders, cancellations at every layer, each emitting reversal JEs | A CRM (customer master lives in BizApps Common) — nor inventory/COGS (future BizApps Inventory bolt-on) |
+| Reversal-disciplined — returns, refunds, bank returns, credit-memo orders, cancellations at every layer, each emitting reversal JEs | A CRM (customer master lives in BizApps Common) — nor inventory/COGS (future BizApps Inventory bolt-on) |
 
 See [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) for the current surface and the explicit out-of-scope list.
 
@@ -63,7 +62,7 @@ See [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) for the curre
 
 ## Installation
 
-BizApps Orders is a [MemberJunction Open App](https://github.com/MemberJunction/MJ/tree/main/packages/OpenApp). Once published, install it into any MJ environment using the [MJ CLI](https://github.com/MemberJunction/MJ/tree/main/packages/MJCLI):
+BizApps Orders is a [MemberJunction Open App](https://github.com/MemberJunction/MJ/tree/main/packages/OpenApp). Install it into any MJ environment using the [MJ CLI](https://github.com/MemberJunction/MJ/tree/main/packages/MJCLI):
 
 ```bash
 mj app install https://github.com/MemberJunction/bizapps-orders
@@ -75,11 +74,15 @@ The CLI resolves dependencies automatically — installing this app pulls in [Bi
 
 ```bash
 mj app info mj-bizapps-orders     # Show details and version
-mj app upgrade mj-bizapps-orders  # Upgrade to latest release
+mj app upgrade mj-bizapps-orders --version <X.Y.Z>  # Upgrade to the v<X.Y.Z> release tag
 mj app disable mj-bizapps-orders  # Temporarily disable
 mj app enable mj-bizapps-orders   # Re-enable
 mj app remove mj-bizapps-orders   # Uninstall (--keep-data to preserve schema)
 ```
+
+Pass `--version` to `mj app upgrade`. Without it the CLI takes the newest GitHub Release as the
+latest version, and this repo's only Release is the checkout widget assets (`v5.1.0-assets`), which
+it refuses as older than any install at 5.1.0 or later. Versions are the repo's `v*` tags.
 
 ---
 
@@ -87,61 +90,57 @@ mj app remove mj-bizapps-orders   # Uninstall (--keep-data to preserve schema)
 
 ### Database (`__mj_BizAppsOrders` schema)
 
-| Area | Tables | Purpose |
-|---|---|---|
-| **Catalog** | `ProductType`, `Product`, `ProductCategory`, `ProductPrice`, `PriceList`, `PriceTier` | Sellable items with type-driven behavior, per-company categories, segmented & tiered pricing, rev-rec policy. **No GL account columns anywhere** — routing is role-based via Accounting (D5) |
-| **Composite & policy** | `ProductBundleItem`, `ProductPerformanceObligation`, `ProductEntitlement` | Bundles/kits, ASC-606 performance obligations (SSP fields now, allocation engine later), and *what a purchase grants* |
-| **Type extensions (IsA)** | `EventProduct` / `EventOrderLine` | Per-type attributes via MJ IsA disjoint subtypes (shared UUID) at Product *and* OrderLine level — Event ships as the first pair; `ProductType` names the extension entities so new types add their own |
-| **Orders & A/R** | `Order`, `OrderLine`, `OrderLineDimension`, `OrderSequence` | The commitment **and the receivable** (Order carries `TotalGross` / `Balance` / `FulfillmentStatus` / `DueDate`); one JE per line via `OrderLine.JournalEntryID`; accounting dimension tags per line; `ORD-{seq}` numbering |
-| **Payments** | `Payment`, `PaymentProvider`, `PaymentIntent`, `PaymentLine`, `CustomerPaymentMethod`, `PaymentSequence` | Provider-agnostic capture / refund / chargeback; `PaymentLine` applies cash to Orders; saved-instrument token vault (charge-on-file) |
-| **Stored value** | `StoredValueAccount`, `StoredValueTransaction` | Gift cards / stored value — schema ships now; issuance/redemption flows are a later named item (§21) |
-| **Subscriptions** | `SubscriptionPlan`, `Subscription`, `SubscriptionEvent` | Continuity record that spawns a renewal Order each cycle (Draft at launch, D20); lifecycle + immutable event log |
-| **Revenue recognition** | `RevenueRecognitionSchedule`, `RevRecScheduleLine` | The **computed envelope** for MRR/ARR display and computation — the ledger truth is real forward-dated JEs written at booking (D14) |
-| **Entitlement grants** | `EntitlementGrant` | The provisioned instance of an entitlement, with a **beneficiary** (may differ from the buyer); consumers poll — no webhook system |
-| **Sales governance** | `SalesRule`, `SalesAuthority`, `PaymentTermsType` | Metadata-driven discount/credit/authorization rules; per-rep limits; payment terms (owned here — Accounting delegates to it) |
+The tables fall into these areas. [`docs/ERD.md`](docs/ERD.md) has every table, column and relationship.
 
-Tax tables (`ProductTaxCategory`, `OrderLineTaxLine`) land with the tax build (D23). Coupon recording columns land with the D22 schema freeze.
+- **Catalog** — product types, products, categories, bundles, what a purchase grants, and per-type IsA extensions (`EventProduct` / `EventOrderLine`). No GL account columns: accounts resolve by role through Accounting *(D5)*.
+- **Pricing, promotions, charges and tax** — price lists, prices and tiers, promotions and their codes, charge types, customer tax exemptions.
+- **Orders and receivables** — `OrderHeader` (the commitment and the receivable) and `OrderLine`, with price components, charges, adjustments, concessions, accounting dimensions, payment schedules and progress measurements.
+- **Payments** — `PaymentHeader` and `PaymentLine`, payment types, providers and intents, saved instruments, gift cards and stored value.
+- **Subscriptions and entitlements** — subscription types and families, subscriptions with their terms and events, entitlement grants and access overrides.
+- **Sales governance** — sales rules, sales authorities, payment terms.
+- **Checkout** — widgets, their public distributions, sessions and session steps.
+- **Integrations** — external customers, invoices and payments for the Bill.com rail; outbound events and their deliveries ([docs/outbound-events.md](docs/outbound-events.md)).
 
 ### TypeScript Packages
 
 | Package | NPM Name | Role |
 |---|---|---|
-| **Entities** | `@mj-biz-apps/orders-entities` | Strongly-typed entity classes with Zod validation |
-| **Actions** | `@mj-biz-apps/orders-actions` | Server-side action handlers (webhook processing, scheduled work) |
-| **Server** | `@mj-biz-apps/orders-server` | GraphQL resolvers, remote operations (`Orders.CapturePayment`, `Orders.RefundPayment`, `Orders.FulfillOrderLines`), the server `OrdersEngine`, the `OrderJournalEntryFactory`, and pluggable `PaymentProvider` implementations |
+| **Entities** | `@mj-biz-apps/orders-entities` | Strongly-typed entity classes with Zod validation, the shared order and payment subclasses, the pricing engine, the `OrdersEngine` lookup cache, and the typed remote-operation contracts. Browser-safe. |
+| **Actions** | `@mj-biz-apps/orders-actions` | Generated action subclasses only. It also ships to the browser, so the hand-written actions live in `orders-server`. |
+| **Server** | `@mj-biz-apps/orders-server` | The server bootstrap (`LoadBizAppsOrdersServer`), generated GraphQL resolvers, the server extensions (payment webhook, checkout edge, Bill.com webhook) and the hand-written actions (invoices and documents, renewals, the Bill.com sweeps, nightly checks) |
 | **Angular** | `@mj-biz-apps/orders-ng` | UI components, form overrides, custom widgets (forms-first, D33). The Order Header form puts **Ship To** on the left (starts expanded) and **Bill To** as a slim rail that takes the width when selected. Person and Organization **Orders** grids pass every filter join field as `NewRecordValues` so **New** opens an order already linked to that party (`BillToPersonID` + `ShipToPersonID`, or the org equivalents). For new orders, selecting a Person with a singular active employer relationship auto-populates the Organization. |
-| **Core Entities Server** | `@mj-biz-apps/orders-core-entities-server` | Server-only entity subclasses — the Order `Save()` override that books on lock, numbering, totals, fulfillment rollup & balance maintenance |
+| **Core Entities Server** | `@mj-biz-apps/orders-core-entities-server` | Server-only entity subclasses — the Order `Save()` override that books on confirm, numbering, totals, fulfillment rollup & balance maintenance — plus the `OrderJournalEntryFactory`, the remote-operation bodies and the payment drivers |
 
 ---
 
 ## Core Principles
 
 ### Order is the substrate *and* the A/R primitive
-The `Order` is the customer's commitment **and the bill**. Subscriptions are born from order lines; payments apply to orders; rev-rec hangs off lines. There is **no Invoice entity** — a confirmed Order *is* the receivable, with `Balance = TotalGross − SUM(posted PaymentLine.Amount)` and trigger-maintained `FulfillmentStatus`. Payment progress is dynamically derived from real-time balances. A **credit memo is a negative-balance Order** (`ReversesOrderID` set). The customer-facing "invoice" and any consolidated statement are **rendered reports**, not entities *(D1, D2)*.
+The `Order` is the customer's commitment **and the bill**. Subscriptions are born from order lines; payments apply to orders; rev-rec hangs off lines. There is **no Invoice entity** — a confirmed Order *is* the receivable, with `Balance = TotalGross − AmountPaid` (the order's lines on captured, refunded and disputed payments) and trigger-maintained `FulfillmentStatus`. Payment progress is dynamically derived from real-time balances. A **credit memo is a negative-balance Order** (`ReversesOrderHeaderID` set). The customer-facing "invoice" and any consolidated statement are **rendered reports**, not entities *(D1, D2)*.
 
 ### One JE per order line — always
 Every order line books its **own complete, single-company journal entry** — even multiple lines of the same company. The "order-level JE" is a **UI aggregation concept**, never a row; batching nets the line JEs later anyway. Linkage is `OrderLine.JournalEntryID` (the Order header carries no JE ref; no junction table) *(D10)*.
 
 ### Booking fires once, atomically, on first Confirm
-Booking fires exactly once, on the **first transition to `Confirmed`** — failure **blocks** the Confirm, never leaving a silently-unbooked locked order. The `OrderJournalEntryFactory` iterates the lines and books each JE via the accounting engine, inside the server-only Order `Save()` override: outer transaction → save → book per-line JEs → stamp each `OrderLine.JournalEntryID` → all-or-none commit. `Posted` just means "the JEs are in the subledger" *(D8, D12)*.
+Booking fires exactly once, on the **first transition to `Confirmed`** — failure **blocks** the Confirm, never leaving a silently-unbooked locked order. The `OrderJournalEntryFactory` iterates the lines and books each JE via the accounting engine, inside the server-only Order `Save()` override: outer transaction → save → book per-line JEs → stamp each `OrderLine.JournalEntryID` → all-or-none commit *(D8, D12)*.
 
 ### Type-driven products, role-based GL
-`ProductType` is the keystone: behavior defaults (rev-rec type, taxability, fulfillment, recurrence), the **IsA extension entities** per type, subscription semantics, and a pluggable `ProductBehavior` seam (schema ready, seam deferred). GL routing carries **no account columns in the catalog** — accounts resolve by **role** through Accounting's `GLAccountRole`/`GLAccountLink`: product link → up the product-company's category tree → the company-default link → **fail loudly** *(D4, D5)*.
+`ProductType` is the keystone: behavior defaults (rev-rec type, taxability, fulfillment, recurrence), the **IsA extension entities** per type, subscription semantics, and pluggable driver classes (a pricing driver, plus the rev-rec and subscription type drivers). GL routing carries **no account columns in the catalog** — accounts resolve by **role** through Accounting's `GLAccountRole`/`GLAccountLink`: product → its category and the category's ancestors → product type → the company default → **fail loudly** *(D4, D5)*.
 
 ### Company model: the product owns the line
 `Product.CompanyID` (NOT NULL) is the **source of truth for line ownership** — revenue accrues to the product's company. `Order.CompanyID` is the **originating/owning company**: the document/visibility/sales-attribution anchor (it pairs with `SalesRepUserID`) — **never GL resolution**. `OrderLine.CompanyID` is a denormalized stamp of the product's company at save (perf/reporting + temporal integrity). Product categories are per-company rows *(D6, D7)*.
 
 ### Emit JEs; Accounting batches them
-Orders books through the **`Accounting.CreateJournalEntry` / `CreateJournalEntries` remote operations** — one transaction, all-or-none, typed errors — with the engine pair `OrdersEngine` ↔ `AccountingEngine` server-side (Accounting ships `JournalEntryServerExtended` — a `Lines` getter + scoped transactions — which the factory composes with). JEs land **`Pending`**; Accounting batches and ships the subledger to the ERP. **"Book"/"post" means create a Pending JE — never GL-post.** Accounting-side provenance is one polymorphic origin pair, `JournalEntry.LinkedEntityID`/`LinkedRecordID` → the OrderLine; Orders-side, `OrderLine.JournalEntryID` completes the round trip *(D12; plan §6)*.
+Orders books through Accounting's **`Accounting.CreateJournalEntries` remote operation** — one transaction, all-or-none, typed errors — and resolves accounts through Accounting's `AccountingEngineBase`, which `AccountingBridge.ts` wires into `GLAccountResolver`. JEs land **`Pending`**; Accounting batches and ships the subledger to the ERP. **"Book"/"post" means create a Pending JE — never GL-post.** Accounting-side provenance is one polymorphic origin pair, `JournalEntry.LinkedEntityID`/`LinkedRecordID` → the OrderLine; Orders-side, `OrderLine.JournalEntryID` completes the round trip *(D12; plan §6)*.
 
 ### Reversal discipline at every layer
-Every business event has a reversal at its own layer — return/cancellation/amendment/credit-memo **Orders** with negative-quantity lines, refund/chargeback/bank-return **Payments** (negative `Amount`, `ReversesPaymentID`), **Subscription** cancellations with proration — each emitting its own reversal JE. Locked history is never edited; the audit chain is the source of truth *(D9, D16)*.
+Every business event has a reversal at its own layer — return/cancellation/amendment/credit-memo **Orders** with negative-quantity lines, refund and bank-return **Payments** (`Status = 'Refunded'`, negative lines, `ReversesPaymentHeaderID`), **Subscription** cancellations with proration — each emitting its own reversal JE. Locked history is never edited; the audit chain is the source of truth *(D9, D16)*.
 
 ### Atomic units of work are remote operations
-An order confirm plus its bookings, a refund plus its reversal JE — each is **one transactional server call** (`Orders.ConfirmOrder`, `Orders.RefundPayment`), never client-side multi-save choreography. Plain BaseEntity saves are fine for one-record edits *(D17; plan §1)*.
+An order confirm plus its bookings, a refund plus its reversal JE — each is **one transactional server call** (the order's own confirm `Save()`, `Orders.RefundPayment`), never client-side multi-save choreography. Plain BaseEntity saves are fine for one-record edits *(D17; plan §1)*.
 
 ### Workflow runs on BizApps Tasks
-Any human gate — a discount beyond a rep's authority, a credit-limit override, a refund authorization — is raised as an **"Approval Request" Task** in [BizApps Tasks](https://github.com/MemberJunction/bizapps-tasks), linked to the subject record and routed to an approver role. Approve → Confirm proceeds; reject → back to Draft with notes *(D26)*.
+Human gates are approval tasks in [BizApps Tasks](https://github.com/MemberJunction/bizapps-tasks), linked to the subject record. A price concession (a stated price below the engine price, or a `DiscountPct` on the line) needs an approved `OrderConcession`. A pending concession raises a task for the holders of the role the `ConcessionLimit` sales rule names, and the order cannot be confirmed, nor its documents sent, until every concession on it is decided. Entitlement access overrides are approved through a task the same way.
 
 ---
 
@@ -149,64 +148,29 @@ Any human gate — a discount beyond a rep's authority, a credit-limit override,
 
 Product is the root of the app: it defines **how an item is billed** (one-time / subscription / usage), **how revenue is recognized**, **how it's taxed**, **what the purchase grants**, **which company owns the revenue**, and **how it's priced**. Nail the catalog and orders / booking / subscriptions / rev-rec / tax all inherit correct behavior *(D4)*.
 
-- **`ProductType`** — a first-class kind with behavior defaults. Seeded types: *Event, Membership, PhysicalGood, DigitalGood, Service, Donation, GiftCard, Bundle, AddOn/Fee, Subscription, Usage* *(D4)*.
+- **`ProductType`** — a first-class kind with behavior defaults. The seeded types (Event, Membership, Subscription, Gift Card, Bundle and more) are in [`metadata/product-types/`](metadata/product-types/) *(D4)*.
 - **Type-driven IsA extensions** — each type can name a Product-level and an OrderLine-level subtype (shared-UUID disjoint child). The shipped pair is `EventProduct` (date/venue/capacity) + `EventOrderLine` (attendee). Adopters register their own *(D4)*.
-- **`ProductBehavior` seam** — a pluggable class resolved most-specific-wins (`Product → ProductType → default`) via `ClassFactory` is the escape hatch for custom behavior. Schema ready; seam activation deferred *(D4)*.
+- **Driver seams** — a product that cannot price from metadata names a `PricingDriverClass`, resolved most-specific-wins (product → category → type → company policy) to a server-side `BasePriceResolver` plugin. Revenue-recognition and subscription types name driver classes the same way. All register through `@RegisterClass`.
 - **Pricing** — `PriceList` / `ProductPrice` / `PriceTier`: pricing models (flat / per-unit / tiered / volume / package / usage), fee types, effective-dated — **built**. `OrderLine.UnitPrice` direct entry stays valid as the base of the precedence chain; the `ResolvePrice` engine suggests/resolves on top, so pricing never blocks baseline flows *(D21)*.
 - **Bundles** — `ProductBundleItem` powers two order modes: a single **bundle line** or a **fast-path expansion** into individual lines (`OrderLine.SourceBundleProductID`).
-- **Entitlements** — `ProductEntitlement` defines *what a purchase grants*; `EntitlementGrant` is the instance created at booking, with a **beneficiary** defaulting to the buyer (a line may designate an attendee, gift-card recipient, honoree). Downstream apps **poll** grants — no bespoke webhook system *(D27)*.
-- **ASC 606** — `ProductPerformanceObligation` + standalone selling price (SSP) fields ship now; the bundle allocation engine is future *(D21)*.
+- **Entitlements** — `ProductEntitlement` defines *what a purchase grants*; `EntitlementGrant` is the instance created at booking, with a **beneficiary** defaulting to the buyer (a line may designate an attendee, gift-card recipient, honoree). Downstream apps **ask** `Orders.CheckEntitlement` / `Orders.ListEntitlements` rather than polling grant status ([plans/entitlement-read-contract.md](plans/entitlement-read-contract.md)), or register an outbound consumer that is told when a sale confirms or a grant's status changes ([docs/outbound-events.md](docs/outbound-events.md)).
 
-*PhysicalGood* is inventory-aware via seams only (`FulfillmentStatus`, stock-tracking flags) — inventory, costing (FIFO/LIFO/Average), and COGS live in a future bolt-on **BizApps Inventory** app *(plan §21)*.
+*PhysicalGood* is inventory-aware via seams only (`FulfillmentStatus`, `ProductType.RequiresFulfillment`) — inventory, costing (FIFO/LIFO/Average), and COGS live in a future bolt-on **BizApps Inventory** app *(plan §21)*.
 
 ---
 
 ## Entity Model
 
-```
- BizAppsCommon          __mj.Company                BizAppsAccounting
- Org / Person       owning (Order) · product        GLAccountRole/Link · JournalEntry
-      │ customer    owner (Product) · stamp (Line)  Dimension · Currency
-      ▼                      │                            ▲ soft refs (→ hard FKs
- ┌──────────────┐ 1 → N ┌──────────────┐                  │  when include-mode lands)
- │    Order     │──────►│  OrderLine   │────────────────► │
- │ the deal AND │       │ Product, Qty │  JournalEntryID  │
- │ the A/R doc  │       │ CompanyID    │  (ONE JE PER     ┌───────────────────────────────┐
- │ Balance,     │       │ ServicePeriod│   LINE — D10)    │ Product ◄─IsA─ EventProduct …  │
- │ PaymentStat  │       └──────┬───────┘─────────────────►│  ProductType · ProductCategory │
- └──────┬───────┘              │          ProductID       │  ProductPrice · PriceList/Tier │
-        │           ┌──────────┼──────────────┐           │  BundleItem · Entitlement      │
-        │           ▼          ▼              ▼           └───────────────────────────────┘
-        │  OrderLineDimension Subscription  RevRecSchedule (+lines)
-        │ PaymentLine          │ (spawns      = computed envelope; ledger truth is
-        │ (clears Orders)      │  renewal     REAL forward-dated JEs written at
-        ▼                      │  Orders)     booking-lock (D14)
- ┌──────────────┐             ▼
- │   Payment    │      SubscriptionEvent · EntitlementGrant (beneficiary)
- │ capture /    │── PaymentIntent ◄── PaymentProvider (Stripe / Manual / StoredValue)
- │ refund /     │── PaymentMethodID ─► CustomerPaymentMethod (token vault)
- │ chargeback   │── StoredValueAccount → StoredValueTransaction (schema; flows later)
- └──────┬───────┘
-        │ JournalEntryID (soft ref); JE origin = LinkedEntityID/LinkedRecordID
-        ▼
- BizAppsAccounting.JournalEntry   (Pending → batched to the ERP)
-```
+An `OrderHeader` (the deal and the receivable) has `OrderLine`s. Each line's `Product` decides which
+company owns its revenue, and each line books its own journal entry (`OrderLine.JournalEntryID`, D10).
+`PaymentHeader`s apply cash to orders through `PaymentLine`s. The customer is a BizApps Common
+`Person` or `Organization` (`BillTo*` / `ShipTo*` on the order), companies are MJ core's `Company`, and
+journal entries, GL accounts and dimensions are BizApps Accounting's.
 
-### Cross-app references
+The full picture, including every foreign key that leaves the schema, is in
+[`docs/ERD.md`](docs/ERD.md) (§3 is the cross-app register).
 
-| Reference on an Orders entity | Refers to | Lives in |
-|---|---|---|
-| `Order.CustomerOrganizationID` | `Organization.ID` | `bizapps-common` |
-| `Order.CustomerPersonID`, `SalesRepUserID` | `Person.ID`, `__mj.User` | `bizapps-common`, `__mj` |
-| `Order.CompanyID`, `OrderLine.CompanyID`, `Product.CompanyID` | `Company.ID` | `__mj` |
-| `OrderLine.JournalEntryID` | `JournalEntry.ID` — **soft ref** until CodeGen include-mode FK hardening lands (§2 FK standard) | `bizapps-accounting` |
-| `Payment.JournalEntryID` | `JournalEntry.ID` (soft ref, same standard) | `bizapps-accounting` |
-| `OrderLineDimension` | `Dimension` / `DimensionValue` | `bizapps-accounting` |
-| `OrderLineTaxLine` tax refs *(lands with the tax build, D23)* | tax snapshot entities | `bizapps-accounting` |
-| `PaymentProvider.CredentialsRef` | `MJ: Credentials` | `__mj` |
-| `Order` approval (via `Task Links`) | `Task` ("Approval Request") | `bizapps-tasks` |
-
-`Order.ContractID` used to appear here and was **removed** *(D44)*. `bizapps-contracts` sits
+An `Order.ContractID` column used to exist and was **removed** *(D44)*. `bizapps-contracts` sits
 DOWNSTREAM of orders, so a reference to it — hard or soft — inverts the dependency graph and encodes
 a contracts concern in an orders table. When that app exists it will join to orders from its own
 schema. The same rule retired `ProductPerformanceObligation`: allocating one transaction price across
@@ -219,36 +183,14 @@ No currency/FX columns on Order/OrderLine — multi-currency is deferred *(D24)*
 
 ## Order Lifecycle
 
-```mermaid
-stateDiagram-v2
-    [*] --> Draft
-    Draft --> Quoted: optional stage
-    Draft --> Confirmed: skip allowed (D9)
-    Quoted --> Confirmed: sales rules pass (or approved)
-    Confirmed --> Posted: JEs in the subledger (near-instant)
-    Posted --> Fulfilled: logistics fact only — no JE (D15);\nauto-advance when no line needs fulfillment
-    Draft --> Voided
-    Quoted --> Voided
+An order's state is three separate facts; [`docs/HOW_THE_SYSTEM_WORKS.md` §4.1](docs/HOW_THE_SYSTEM_WORKS.md#41-order-lifecycle-and-3-way-orthogonal-status) has the detail, and `OrderStatusBehavior.ts` the legal moves.
 
-    note right of Confirmed
-      FIRST transition to Confirmed books
-      one JE per line (D8/D10);
-      failure BLOCKS the Confirm.
-    end note
-
-    note right of Fulfilled
-      Pen, not pencil. After Confirm,
-      corrections are reversing / credit-memo
-      Orders — Voided is only reachable
-      from Draft/Quoted.
-    end note
-```
-
-- **Stage order is fixed; skipping forward is allowed** — Draft → Confirmed without Quoted is legal, but a later stage always gets its prerequisites' effects (booking on first Confirmed; can't Fulfill before Posted) *(D9)*.
-- **Confirm is the first `Save()` to `Confirmed`**: order row + per-line JEs in one transaction *(D8, D12)*. There is no `Orders.ConfirmOrder` operation.
-- **Fulfillment is disconnected from revenue** — no JE fires on Posted → Fulfilled; orders with no fulfillment-requiring lines auto-advance *(D15)*.
-- **Reversal pattern**: a return / cancellation / amendment — and a **credit memo** — is a **new** `Order` (`ReversesOrderID` set) with negative-quantity lines for the slice being reversed. A credit-memo Order has a **negative `Balance`**, settled by a refund Payment, applied to another Order, or written off. Both orders and both JE sets persist; net is zero *(D16)*.
-- Orders get **number + memo, not names**: `ORD-{seq}` via `OrderSequence` plus `ExternalDocumentNumber`, with `Order.Description` as the searchable memo — no `Order.Name` *(D29, D30)*. `IsOverdue` is computed (`Balance > 0 AND DueDate < now`), never stored *(D32)*. All persisted timestamps are UTC *(D34)*.
+- **`Status`** — `Draft` ⇄ `Quoted` → `Confirmed`. Draft → Confirmed without Quoted is legal *(D9)*. A Draft or Quoted order can be `Voided` and reopened; nothing leaves `Confirmed`, so after Confirm corrections are reversing or credit-memo orders.
+- **`FulfillmentStatus`** — `Pending`, `PartiallyFulfilled`, `Fulfilled`, `NotApplicable` or `Returned`, rolled up from the lines. Fulfillment books no JE *(D15)*.
+- **Payment progress** — `TotalGross`, `AmountPaid`, `Balance` and `DueDate`. There is no stored payment status.
+- **Confirm is the first `Save()` to `Confirmed`**: order row + per-line JEs in one transaction, and a booking failure blocks the Confirm *(D8, D12)*. There is no `Orders.ConfirmOrder` operation.
+- **Reversal pattern**: a return / cancellation / amendment — and a **credit memo** — is a **new** `Order` (`ReversesOrderHeaderID` set) with negative-quantity lines for the slice being reversed. A credit-memo Order has a **negative `Balance`**, settled by a refund Payment, applied to another Order, or written off. Both orders and both JE sets persist; net is zero *(D16)*.
+- Orders get **number + memo, not names**: `ORD-{seq}` via `OrderSequence` plus `ExternalDocumentNumber`, with `Order.Description` as the searchable memo — no `Order.Name` *(D29, D30)*. `IsOverdue` is computed in `vwOrderHeaders` (a positive balance past its next due date, from `packages/Entities/src/overdue.ts`), never stored *(D32)*. All persisted timestamps are UTC *(D34)*.
 
 ---
 
@@ -269,7 +211,7 @@ At first Confirm, three Pending JEs — one per line, single-company by construc
   JE (BCHQ):     Dr Accounts Receivable $10,000    Cr Sales Revenue   $10,000
 ```
 
-"You don't know about intercompany anything until you get cash": each line's AR sits with the **line's** company. When cash received by one entity is later applied across companies' AR, the **payment-application step** books the intercompany balancing entries — that machinery lands with the payments slice *(D13; plan §9)*. Accounts in each JE resolve by **role** (AR, Sales, Deferred Revenue, Sales Discounts, …) through the product-company's `GLAccountLink` walk, and the resolved account must belong to the line's company — cross-company mapping is refused outright *(D5, D6)*.
+"You don't know about intercompany anything until you get cash": each line's AR sits with the **line's** company. When cash received by one entity is later applied across companies' AR, the **payment-application step** books the intercompany balancing entries (`PaymentAllocationFactory`, *D13, D66*). Accounts in each JE resolve by **role** (AR, Sales, Deferred Revenue, Sales Discounts, …) through the `GLAccountLink` walk, and the resolved account must belong to the line's company — cross-company mapping is refused outright *(D5, D6)*.
 
 The customer-facing invoice still presents as one document — the order-level JE is a **virtual aggregation** of the line JEs, a UI concept only *(D10)*.
 
@@ -279,7 +221,7 @@ The customer-facing invoice still presents as one document — the order-level J
 
 Revenue recognition is **real forward-dated JEs written at booking-lock** *(D14)*. A 12-month $1,200 subscription books its waterfall immediately: 12 × $100 Dr Deferred Revenue / Cr Revenue entries dated on the monthly anniversaries across the line's `ServicePeriodStart/End`; an event product books **one** entry dated the event date. There is **no schedule bridge, no materializer, no daily job** — recognition "fires" by date, and Accounting's batches sweep entries by date window (default cutoff = today). **Changes and cancellations are correcting Orders** whose new entries net against what's staged — staged entries are never edited or deleted.
 
-`RevenueRecognitionSchedule` (+ lines) remains as the **computed envelope** for MRR/ARR display and as the computation source — never the ledger truth. Fulfillment never recognizes revenue *(D15)*.
+There is no schedule table: `RevenueRecognitionSchedule` and `RevRecScheduleLine` were retired *(D84)* because the dated entries already are the schedule. Fulfillment never recognizes revenue *(D15)*.
 
 A year subscription **billed annually** = one Order, deferred and recognized ratably. The same sub **billed monthly** = twelve per-cycle renewal Orders (spawned as `Draft` at launch — a human confirms; Confirm books) — the billing cadence *is* the order cadence *(D20)*.
 
@@ -287,38 +229,19 @@ A year subscription **billed annually** = one Order, deferred and recognized rat
 
 ## Payments & A/R
 
-Payments apply to **Orders** (the A/R primitive) via `PaymentLine` — supporting split tender (one Payment clears many Orders; one Order cleared by many Payments) and partial application. Refunds/chargebacks/bank-returns are negative Payments pointing back via `ReversesPaymentID`. `Payment` carries `ProcessingFeeAmount` / `NetAmount`, and capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross) *(D16, D18)*.
+Payments apply to **Orders** (the A/R primitive) via `PaymentLine` — supporting split tender (one Payment clears many Orders; one Order cleared by many Payments) and partial application. Refunds and bank returns are reversal Payments (`Status = 'Refunded'`, positive `Amount`, negative lines) pointing back via `ReversesPaymentHeaderID`. `Orders.RefundPayment` writes a refund atomically, and the ACH webhook writes a bank return *(D16, D17)*. Capture books Dr Cash (net) / Dr Processing Fee / Cr A/R (gross) *(D18)*. Overdue is computed, never stored, and worked from `Orders.GetOverdueWorklist` *(D32)*.
 
-- **Refund is one atomic remote operation** (`Orders.RefundPayment`): reversal Payment + reversing JE commit together or not at all. Not blocked on Stripe — a Manual-provider refund is fully expressible today *(D17)*.
-- **Saved instruments**: `CustomerPaymentMethod` is a token vault (provider tokens + display metadata; **never the PAN**) for subscriptions and charge-on-file *(D18)*.
-- **Coupons are in the launch scope** via the payment provider: Stripe hosted checkout + **promotion codes** own configuration/application, and Orders records the outcome — order-level discount structure *and* line-level `DiscountAmount`. An Orders-native `Coupon` entity is the fast-follow, slotting in as just another provider *(D22)*.
-- **Dunning**: overdue detection + worklist (`Orders.GetOverdueWorklist`), a configurable `DunningGracePeriodDays` (default 7), and CS notification rather than auto-cancel *(D32)*.
-- **Gift cards / stored value**: `StoredValueAccount` / `StoredValueTransaction` schema ships now; the issuance/redemption flows (liability pattern) are a later named item *(plan §21)*.
+Payment drivers register by `PaymentProviderType.Code`, so a new provider needs no schema change: **Manual**, **Stripe** (cards), **StripeACH** (US bank debits), **StoredValue** (gift cards and account credit) and **BillCom**, the outbound invoice rail described in [`docs/billcom-invoice-rail.md`](docs/billcom-invoice-rail.md). Gateway webhooks arrive on an unauthenticated route that verifies the provider's signature *(D19)*. A saved instrument (`CustomerPaymentMethod` and its `PaymentDetail`) keeps provider tokens and display details such as brand and last four digits, never the card number.
 
-### Payment providers (pluggable)
-
-Providers register against an abstract `PaymentProvider` base via `@RegisterClass` / `ClassFactory` — new providers ship without a schema change. Inbound webhooks are received by an **unauthenticated Express route** (mirroring MJ's `SignatureWebhookHandler`) that captures the raw body and verifies the provider HMAC signature; idempotency via `ProviderEventID` uniqueness *(D19)*.
-
-| Provider | Status |
-|---|---|
-| **Stripe** — stub-first (committed success-stub is the default test provider); the LXP-checkout subset (PaymentIntent lifecycle + hosted checkout + webhook → capture) is pulled forward for launch | v1 |
-| **Manual** (Wire / ACH / Check / Cash recorded by finance) | v1 |
-| **StoredValue** (internal — gift-card redemption) | when gift cards activate |
-| PayPal / Square / Authorize.Net / Adyen | deferred (§21) |
+Capture, account credit and the provider seam in more detail: [`docs/HOW_THE_SYSTEM_WORKS.md` §7](docs/HOW_THE_SYSTEM_WORKS.md#7-payments-and-ar).
 
 ---
 
 ## Checkout Widget & Session Engine
 
-BizApps Orders includes an **adaptive, metadata-driven embeddable checkout and registration engine**. Any product in your catalog can be sold or registered online with zero custom code:
+BizApps Orders includes an embeddable checkout and registration widget backed by a server-side session engine. A widget is a Checkout Widget record with one or more public distributions, served from the anonymous `/checkout` edge. It renders a product type's IsA line fields (for example `EventOrderLine`'s attendee fields), can expand one form per unit (`unitMode: 'perUnit'`), prices drafts in memory with the same `OrderPricingService` the order save uses, and takes theming and lifecycle hooks through `customUI`. Guest claiming, which would link an anonymous order to an account later, is wired but dormant until MemberJunction publishes its identity-claim engine.
 
-- 🪄 **Zero-Touch Dynamic Auto-Discovery**: Automatically reflects product-type companion extension entities (e.g. `EventOrderLine`, `MembershipOrderLine`, `LicenseOrderLine`) and renders contact + custom fields (`DietaryPreferences`, `Allergies`, `SpecialRequests`, `IsVIP`).
-- 🎨 **Extensible `customUI` & Theming**: Full control over brand colors, CSS token overrides, custom stylesheets, and lifecycle JavaScript hooks (`onInit`, `onValidate`, `onQuantityChange`, `onBeforeSubmit`, `onDestroy`).
-- 🎟️ **Multi-Attendee / Unit Expansion**: When purchasing multiple units (`unitMode: 'perUnit'`), the widget dynamically expands discrete attendee forms and persists separate order lines in the database.
-- ⚡ **Zero-DB-Draft In-Memory Pricing**: Draft adjustments and coupon evaluations run in-memory via `OrderPricingService` without creating temporary rows in `OrderHeader`.
-- 🔐 **Guest Record Claiming**: Anonymous buyers receive cryptographic claim tokens / magic links allowing them to claim their orders and entitlements once authenticated.
-
-👉 **See the complete [Checkout Widget & Session Architecture Guide](docs/checkout-widget-and-session-architecture.md) for tutorials, schema details, and embedding code.**
+The [Checkout Widget & Session Architecture Guide](docs/checkout-widget-and-session-architecture.md) covers configuration, the API and embedding.
 
 ---
 
@@ -336,6 +259,7 @@ const md = new Metadata();
 const order = await md.GetEntityObject<OrderHeaderEntity>('MJ_BizApps_Orders: Order Headers', contextUser);
 order.NewRecord();
 order.CompanyID = bchqCompanyId;     // OWNING company — document/visibility anchor, never GL (D6)
+order.BillToOrganizationID = acmeOrgId;  // the payer; a Draft may omit it, Confirm needs a bill-to person or organization
 order.OrderType = 'Sale';
 order.Status = 'Draft';
 order.OrderDate = new Date();        // backdating allowed, unguarded (D25)
@@ -366,39 +290,41 @@ if (!(await order.Save())) {
 // Deferred-revenue lines also stage their forward-dated recognition JEs here (D14).
 ```
 
-GL accounts are never supplied by the caller: they resolve by **role** in `OrdersEngineBase` (browser-safe — the UI can preview "accounts this product will use"), walking product link → category tree → company default, failing loudly if nothing resolves *(D5)*.
+GL accounts are never supplied by the caller: they resolve by **role** in `GLAccountResolver` (server side, `orders-core-entities-server`), walking product → category and its ancestors → product type → company default, failing loudly if nothing resolves *(D5)*.
 
 ### Applying a payment to an order
 
 ```typescript
 import { Metadata } from '@memberjunction/core';
-import type { PaymentEntity, PaymentLineEntity } from '@mj-biz-apps/orders-entities';
+import type { PaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 
 const md = new Metadata();
-const payment = await md.GetEntityObject<PaymentEntity>('MJ_BizApps_Orders: Payment Headers', contextUser);
+const payment = await md.GetEntityObject<PaymentHeaderEntity>('MJ_BizApps_Orders: Payment Headers', contextUser);
 payment.NewRecord();
 payment.ReceivingCompanyID = bchqCompanyId;  // where the cash hits (D18)
-payment.Method = 'CreditCard';
+payment.BillToOrganizationID = acmeOrgId;    // who paid
+payment.PaymentTypeID = checkPaymentTypeId;  // the 'Check' Payment Types row: a recorded payment, no gateway
+payment.PaymentDate = new Date();
 payment.Amount = 99.0;
-payment.Status = 'Captured';                 // capture books Dr Cash / Cr A/R
-await payment.Save();
 
-// PaymentLine applies cash to the Order (the A/R primitive) — supports split tender
-const pl = await md.GetEntityObject<PaymentLineEntity>('MJ_BizApps_Orders: Payment Lines', contextUser);
-pl.NewRecord();
-pl.PaymentID = payment.ID;
-pl.OrderID = order.ID;               // Order.Balance = TotalGross - SUM(posted PaymentLine.Amount)
-pl.Amount = 99.0;
-await pl.Save();
+// Allocations are the payment's Lines collection, saved with the header in one transaction.
+// One payment can clear several orders (split tender).
+const allocation = await payment.Lines.Create();
+allocation.OrderHeaderID = order.ID;
+allocation.Amount = 99.0;
+
+if (!(await payment.SaveStatus('Captured'))) {  // capture books Dr Cash / Cr A/R
+    throw new Error(payment.LatestResult?.CompleteMessage ?? 'capture failed');
+}
 ```
 
-Refunds go through the atomic `Orders.RefundPayment` remote operation (reversal Payment + reversing JE in one transaction — guards against double-refund and over-refund) *(D17)*. Sales-rule violations at Confirm raise an **"Approval Request" Task** in BizApps Tasks routed to the approver role — the evaluation engine is a pending build *(D26)*.
+`Orders.CapturePayment` takes the same payment as one remote call and adds a preview mode and a retry-safe `IdempotencyKey`; its input type is in `packages/Entities/src/generated/remote_operations.ts`. Refunds go through the atomic `Orders.RefundPayment` remote operation (reversal Payment + reversing JE in one transaction — guards against double-refund and over-refund) *(D17)*. An order with an undecided price concession cannot be confirmed (see [Workflow runs on BizApps Tasks](#workflow-runs-on-bizapps-tasks)).
 
 ---
 
 ## Database Support
 
-SQL Server is the **source of truth** for migrations. PostgreSQL is supported via automatic conversion using [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) — we consume MJ's toolchain directly.
+SQL Server is the **source of truth** for migrations and the only database this repo can build today. PostgreSQL counterparts are converted from them with MJ's [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) (`pnpm run mj:migrate:convert`); see below for how far that has gone.
 
 The baseline is deliberately **two** files. Migrations run as one transaction per file, and a
 trigger that declares a variable of a user-defined table type cannot be compiled inside the
@@ -410,86 +336,79 @@ migration; the header of the first file explains it in full.
 migrations/                       ←  T-SQL, hand-written
   V<TS>__v<X.Y.x>__Foo.sql
 
-migrations-pg/                    ←  PG, produced by `npx mj sql-convert`
+migrations-pg/                    ←  PG, produced by `pnpm run mj:migrate:convert`
   V<TS>__v<X.Y.x>__Foo.pg.sql        (converter output)
   V<TS>__v<X.Y.x>__Bar.pg-only.sql   (PG-only patches when needed)
 ```
 
-At runtime `mj migrate` reads `DB_PLATFORM` and picks the right directory (`sqlserver` → `migrations/`, `postgresql` → `migrations-pg/`). CI applies the PG set to a fresh `postgres:17` container on every PR that touches migrations. Note the standing pre-production practice: schema changes **edit the original baseline migration in place** (clean rebuild + CodeGen re-run) — no incremental fix-up migrations until publish *(plan §2)*.
+`migrations-pg/` holds PostgreSQL counterparts for three migrations only and no baseline, so it cannot build a database yet. `pg-migrations.yml`, which applies them to a fresh `postgres:17` container, runs only when started by hand. Schema changes are new migrations, never edits to the baseline: [`docs/database-migrations.md`](docs/database-migrations.md).
 
-Editing the baseline in place is only safe because rebuilding from zero is routine:
+To build a new empty database from zero:
 
 ```bash
-scripts/rebuild-db.sh                      # drop → MJ core → common → accounting → orders → seed metadata
-pnpm run mj:codegen                        # regenerate entity metadata + SQL objects
-scripts/append-codegen.sh                  # fold that output back BELOW the migration's banner
-pnpm exec mj sync push --dir metadata      # this app's lookup tables
+scripts/rebuild-db.sh   # drop → MJ core → common → tasks → accounting → orders → seed metadata
 ```
 
-> The `append-codegen.sh` step is not optional. The generated half of the baseline — entity/field
-> metadata, base views, CRUD procs, permissions — is what makes a fresh `mj migrate` produce a
-> **working** database rather than bare tables. Skipping it after a CodeGen run silently discards it.
+The migrations are applied as committed, with their CodeGen output, so no CodeGen run is needed
+afterwards. The script reads `.env` (start from [`.env.example`](.env.example)) and needs sibling
+checkouts of bizapps-common, bizapps-tasks and bizapps-accounting;
+[`docs/HOW_THE_SYSTEM_WORKS.md` §12](docs/HOW_THE_SYSTEM_WORKS.md#12-local-run) lists its settings.
 
 ---
 
 ## Testing
 
-Two layers, both green as of the current build.
+**Unit** — `pnpm run build`, then `pnpm run test:unit` from the repo root (Vitest over every
+package's `src/**/*.test.ts`; tests load the other packages from `dist/`). Pure logic, no database.
+CI runs these on every pull request.
 
-**Unit** — `pnpm test` per package. Pure logic only (`SubscriptionBehavior`'s term arithmetic, the
-rev-rec allocators), no database.
-
-**Integration** — 82 checks across 8 bundles, driving a live database through the real stack:
-entity subclasses, DB triggers, remote operations, and accounting's ledger all participate. Nothing
-is mocked.
-
-| Bundle | Checks | Proves |
-|---|---|---|
-| `order-booking` | OB1–OB9 | confirm books one balanced JE per line, single-company, atomically *(D10/D12/D25)* |
-| `revenue-recognition` | RR1–RR7 | forward-dated release schedules that sum exactly to the line *(D14/D43)* |
-| `subscriptions` | SB1–SB12 | `SubscriptionType` rules → Subscription + terms, anchoring, proration, concurrency *(D45/D46)* |
-| `subscription-cancellation` | SC1–SC10 | `Orders.CancelSubscription`: policy → mirrored reversal, atomically *(D52/D53)* |
-| `subscription-renewal` | SR1–SR11 | `Orders.SpawnRenewals`: the scheduled continuation, and everything it must **not** do *(D55)* |
-| `payments-rollups` | PR1–PR9 | rollup triggers, document numbering, instrument copy-on-use *(D30/D39/D42)* |
-| `payment-ledger` | PL1–PL12 | the **cash leg** — capture/refund journal entries, AR reconciliation, application guards *(D17/D18/D57–D59)* |
-| `intercompany` | IC1–IC12 | whose books each amount lands on when one company collects for another *(D66)* |
-| `account-credit` | AC1–AC11 | the allocation invariant, over-payment, and credit as tender *(D68)* |
-| `events` | EV1–EV10 | an event's own dates drive its line's service period and recognition *(D67)* |
-| `line-subscriber` | LS1–LS12 | per-line ship-to and the benefit model's dedupe scope *(D61/D62)* |
+**Integration** — check bundles that drive a live database through the real stack: entity
+subclasses, DB triggers, remote operations, and accounting's ledger all participate. Nothing is
+mocked. The bundles are registered in
+[`packages/IntegrationTests/src/index.ts`](packages/IntegrationTests/src/index.ts), and
+[`registry-parity.test.ts`](packages/IntegrationTests/src/__tests__/registry-parity.test.ts) holds
+each bundle's expected check count. CI does not run them (they need a database and the sibling
+checkouts; `.github/workflows/ci.yml` explains), so run them before merging:
 
 ```bash
-# fast inner loop — one bundle, or one check, with a stack trace on failure
-node test-harnesses/integration.mjs subscriptions
-node test-harnesses/integration.mjs subscriptions.SB5
+pnpm run build                                        # the harness loads the built packages
+pnpm run test:integration                             # every bundle
+node test-harnesses/integration.mjs subscriptions     # one bundle
+IT_VERBOSE=1 node test-harnesses/integration.mjs subscriptions.SB5  # one check; IT_VERBOSE=1 prints each failure's stack
+pnpm run verify   # unit tests, build, integration, then fail if any check failed or fewer ran than declared
 
-# the CI path — same registry, same checks, results recorded against the metadata Test records
+# through MJ's test driver, recording results against the metadata Test records
 RUN_MUTATION_TESTS=1 MJ_INTEGRATION_TEST=1 \
   pnpm exec mj test suite --name "BizApps Orders Integration"
 ```
 
-`RUN_MUTATION_TESTS=1` is **required**: every check is mutation-class by nature, so a run without it
-reports zero checks and passes vacuously.
+`RUN_MUTATION_TESTS=1` is **required** for `mj test`: every check is mutation-class by nature, so a
+run without it reports zero checks and passes vacuously.
 
 ### Demo data you can click through
 
-The suite leaves nothing behind by design — every check rolls back, which is what makes it
-re-runnable and also why the database looks empty after a green run. For hands-on review there is a
-seed that **commits**:
+The suite leaves no orders of its own behind — every check rolls back, which is what makes it
+re-runnable. The committed ORD-WORLD catalog carries only two sample orders. For hands-on review
+there is a seed that **commits**:
 
 ```bash
 node test-harnesses/seed-demo-data.mjs --reset
 ```
 
-It drives the same engine paths and leaves one company (`DEMO Publishing Co`) with orders in
-deliberately different states — unpaid, paid at confirm, partially paid, an event deferral, a rolling
-membership, a prorated calendar membership, one cancelled, one renewed, one refunded — then prints a
+It drives the same engine paths and leaves two companies (`DEMO Publishing Co` and
+`DEMO Partner Press`) with orders in deliberately different states — unpaid, paid at confirm,
+partially paid, an event deferral, a rolling membership, a prorated calendar membership, one
+cancelled and refunded, one renewed, and a two-company order paid with one cheque — then prints a
 trial balance so you can see the ledger reconciles. Safe to re-run; `--reset` clears the previous
 set first.
 
 Checks are safe to run repeatedly against a working database. Each one owns a transaction that
-always rolls back, so orders, journal entries, payments and subscription terms never reach disk;
-only the inert catalog fixture is committed, and teardown sweeps it in FK order *(D48 — the design,
-and the Phase 0 spike behind it, are in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) §11)*.
+always rolls back, so orders, journal entries, payments and subscription terms never reach disk.
+Only the shared ORD-WORLD catalog and the catalog rows a bundle's Setup adds are committed, and
+teardown leaves them in place for the next run and for Explorer
+([`packages/IntegrationTests/README.md`](packages/IntegrationTests/README.md), "Isolation") *(D48 —
+the design, and the Phase 0 spike behind it, are in
+[`plans/archive/integration-testing-plan.md`](plans/archive/integration-testing-plan.md) §0)*.
 
 ---
 
@@ -499,37 +418,36 @@ and the Phase 0 spike behind it, are in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HO
 bizapps-orders/
 ├── mj-app.json                    # MJ Open App manifest (schema __mj_BizAppsOrders)
 ├── mj.config.cjs                  # CodeGen config + SQL → PG placeholder rules
-├── apps/
-│   ├── MJAPI/                     # GraphQL API server (port 4103)
-│   └── MJExplorer/                # Angular UI application (port 4303)
+├── .env.example                   # settings the MJ CLI, scripts and harnesses read; copy to .env
 ├── packages/
-│   ├── Entities/                  # @mj-biz-apps/orders-entities
-│   ├── Actions/                   # @mj-biz-apps/orders-actions
-│   ├── Server/                    # @mj-biz-apps/orders-server (OrdersEngine + factory + providers + remote ops)
-│   ├── CoreEntitiesServer/        # @mj-biz-apps/orders-core-entities-server (Save-override + lifecycle hooks)
+│   ├── Entities/                  # @mj-biz-apps/orders-entities (shared subclasses, pricing engine, OrdersEngine)
+│   ├── Actions/                   # @mj-biz-apps/orders-actions (generated action subclasses)
+│   ├── Server/                    # @mj-biz-apps/orders-server (bootstrap, server extensions, hand-written actions)
+│   ├── CoreEntitiesServer/        # @mj-biz-apps/orders-core-entities-server (Save overrides, JE factories, operations, payment drivers)
 │   ├── IntegrationTests/          # @mj-biz-apps/orders-integration-tests (check bundles for `mj test`)
 │   └── Angular/                   # @mj-biz-apps/orders-ng
 ├── migrations/                    # T-SQL migrations (source of truth)
-├── migrations-pg/                 # PG migrations (converter output + .pg-only patches)
+├── migrations-pg/                 # PostgreSQL counterparts so far (converter output); not a buildable set
 ├── metadata/                      # Seed data + entity metadata (synced via mj-sync)
 ├── metadata-tests/                # MJ: Tests + Test Suite records (pushed separately, not production seed)
-├── scripts/                       # rebuild-db.sh, append-codegen.sh, link-local-apps.mjs
-├── test-harnesses/                # standalone dispatchers (integration.mjs, booking-live.mjs)
-├── docs/
-│   └── HOW_THE_SYSTEM_WORKS.md    # How the running system works — start here
+├── scripts/                       # rebuild-db.sh, append-codegen.sh, db-snapshot.sh, assert-check-count.mjs
+├── test-harnesses/                # standalone dispatchers (integration.mjs, integration-client.mjs, seed scripts)
+├── docs/                          # how the running system works; start at docs/README.md
 └── plans/
     ├── README.md                  # Pointer: current docs vs archive
-    ├── orders-plan-gap-report.html
+    ├── entitlement-read-contract.md  # the entitlement read contract (shipped; code cites this path)
     └── archive/                   # Historical D1–D84 design docs
 ```
 
-Ports follow the BizApps convention (MJ core 4001/4201, common 4101/4301, accounting 4102/4302); Orders uses **4103 / 4303**.
+This repo has no MJAPI or MJ Explorer of its own; to run the API or the UI, host the app in an MJ
+instance ([`docs/HOW_THE_SYSTEM_WORKS.md` §12](docs/HOW_THE_SYSTEM_WORKS.md#12-local-run)). Docs and
+harness examples use port 4103 for MJAPI and 4303 for Explorer.
 
 ---
 
 ## What is still open
 
-The engine slices in the old build sequence (per-line booking, company model, rev-rec, payments, subscriptions, tax, promotions) have landed. Remaining product work is in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) §13 and the [gap report](plans/orders-plan-gap-report.html): LXP packaging, live Stripe/Bill.com/BC export tests (other team), an approvals inbox, event capacity, multi-currency, and sibling apps (Contracts, Inventory).
+The engine slices in the old build sequence (per-line booking, company model, rev-rec, payments, subscriptions, tax, promotions) have landed, and so has the Bill.com invoice rail. What is outside this app or still open is in [`docs/HOW_THE_SYSTEM_WORKS.md`](docs/HOW_THE_SYSTEM_WORKS.md) §13: LXP packaging, live Stripe and Business Central export tests (other team), an approvals inbox, event capacity, multi-currency, and sibling apps (Contracts, Inventory).
 
 ---
 
@@ -545,9 +463,20 @@ Future bolt-on apps layer on via seams Orders already ships (`FulfillmentStatus`
 
 | Document | Description |
 |---|---|
-| [How the system works](docs/HOW_THE_SYSTEM_WORKS.md) | Current engine, API, UI, tests, and local run |
+| [Docs index](docs/README.md) | Every doc, grouped |
+| [How the system works](docs/HOW_THE_SYSTEM_WORKS.md) | Current engine, API, UI, tests, and local run — start here |
 | [API and UI architecture](docs/orders-api-and-ui-architecture.md) | Remote operations, Explorer sections, form binding |
+| [UI architecture](docs/ui-architecture.md) | Binding rule: bind to entities and operations, no data-access service layer |
+| [Database migrations](docs/database-migrations.md) | Binding rule: new migrations only; how metadata reaches a host |
+| [ERD](docs/ERD.md) | The schema, generated from a database built by the migrations |
+| [Checkout widget and sessions](docs/checkout-widget-and-session-architecture.md) | The embeddable checkout, its session engine and API |
+| [Bill.com invoice rail](docs/billcom-invoice-rail.md) | The outbound invoice rail and payment poll |
+| [Outbound events](docs/outbound-events.md) | Telling registered consumers about confirmed sales and grant changes |
+| [Dependency on accounting](docs/dependency-on-accounting.md) | Why BizApps Accounting is required, and how it is configured |
+| [Overdue and layered base views](docs/overdue-and-layered-base-views.md) | How `IsOverdue` is computed in the view layer |
 | [Reviewing the data](docs/reviewing-the-data.md) | Committed seed you can inspect |
+| [Adversarial order cases](docs/adversarial-order-cases.md) | Edge-case orders to build by hand, and what each should do |
+| [Entitlement read contract](plans/entitlement-read-contract.md) | `Orders.CheckEntitlement` / `Orders.ListEntitlements` for downstream apps |
 | [Archived design](plans/archive/) | Historical decision log (D1–D84) — not the running schema |
 | [BizApps Accounting](https://github.com/MemberJunction/bizapps-accounting) | The ledger primitives Orders emits into |
 | [BizApps Common](https://github.com/MemberJunction/bizapps-common) | Person / Organization / Address master data |
@@ -559,16 +488,16 @@ Future bolt-on apps layer on via seams Orders already ships (`FulfillmentStatus`
 
 | Layer | Technology | Version |
 |---|---|---|
-| **Platform** | [MemberJunction](https://github.com/MemberJunction/MJ) | 5.40+ |
+| **Platform** | [MemberJunction](https://github.com/MemberJunction/MJ) | 6.1.6+ (below 7) |
 | **Runtime** | Node.js | 18+ |
 | **Language** | TypeScript | 5.9 (strict) |
 | **Database (primary)** | SQL Server / Azure SQL | 2019+ |
-| **Database (secondary)** | PostgreSQL | 17 |
+| **Database (secondary)** | PostgreSQL | not buildable yet (see Database Support) |
 | **API** | GraphQL (Apollo Server) | -- |
 | **UI Framework** | Angular | 21 |
 | **Build** | Turborepo | 2.7 |
-| **Validation** | Zod | 3.24 |
-| **SQL Conversion** | [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) | 5.40+ |
+| **Validation** | Zod | 3.25 |
+| **SQL Conversion** | [`@memberjunction/sql-converter`](https://github.com/MemberJunction/MJ/tree/main/packages/SQLConverter) | with the MJ CLI, 6.1.6+ |
 
 ---
 

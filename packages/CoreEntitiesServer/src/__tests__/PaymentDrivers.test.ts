@@ -14,9 +14,10 @@
  */
 import { describe, it, expect } from 'vitest';
 import { BasePaymentProvider, type PaymentProviderConfig } from '../BasePaymentProvider.js';
-import { StripePaymentProvider, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
+import { StripePaymentProvider, StripeChargeRefusal, StripeInstrumentFromIntent, StubDigest, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
 import { ManualPaymentProvider } from '../ManualPaymentProvider.js';
 import { StoredValuePaymentProvider } from '../StoredValuePaymentProvider.js';
+import { MoveGiftCardBalance } from '../GiftCardEngine.js';
 
 const config = (over: Partial<PaymentProviderConfig> = {}): PaymentProviderConfig => ({
     ID: '11111111-1111-1111-1111-111111111111',
@@ -46,6 +47,7 @@ describe('BasePaymentProvider — the default is refusal', () => {
         expect((await base.Capture({ ProviderIntentID: 'x', CurrencyCode: 'USD' })).Success).toBe(false);
         expect((await base.RetrieveIntent({ ProviderIntentID: 'x' })).Success).toBe(false);
         expect((await base.Refund({ CurrencyCode: 'USD', Amount: 1 })).Success).toBe(false);
+        expect((await base.ListRefunds({ ProviderChargeID: 'ch_x' })).Success).toBe(false);
     });
 
     it('names the provider type in the refusal, so the fix is findable', async () => {
@@ -155,6 +157,28 @@ describe('StripePaymentProvider — the stub', () => {
         }
     });
 
+    it('sends receipt_email when the request names one, and nothing otherwise (#295)', async () => {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const bodies: URLSearchParams[] = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (_input: RequestInfo | URL, init?: RequestInit) => {
+            bodies.push(new URLSearchParams(String(init?.body ?? '')));
+            return new Response(JSON.stringify({ id: 'pi_1', client_secret: 'cs_1', status: 'requires_payment_method' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }) as typeof fetch;
+        try {
+            await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD', ReceiptEmail: 'buyer@example.com' });
+            await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD' });
+            expect(bodies[0].get('receipt_email')).toBe('buyer@example.com');
+            expect(bodies[1].has('receipt_email')).toBe(false);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    });
+
     it('stripeCaptureAlreadyCollected recognises Stripe automatic-capture refusals', () => {
         expect(
             stripeCaptureAlreadyCollected('This PaymentIntent could not be captured because it has already been captured.', {
@@ -207,6 +231,81 @@ describe('StripePaymentProvider — the stub', () => {
         const result = await live.CreateIntent({ Amount: 100, CurrencyCode: 'USD' });
         expect(result.Success).toBe(false);
         expect(result.Reason).toMatch(/CredentialsRef/);
+    });
+});
+
+describe('Payment intent descriptions (#327)', () => {
+    /** Stands in for Stripe; records each call's method, path and decoded form body. */
+    async function withStripe(
+        run: (driver: StripePaymentProvider, calls: Array<{ Method: string; Path: string; Body: URLSearchParams }>) => Promise<void>,
+    ): Promise<void> {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const calls: Array<{ Method: string; Path: string; Body: URLSearchParams }> = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({
+                Method: (init?.method ?? 'GET').toUpperCase(),
+                Path: new URL(String(input)).pathname,
+                Body: new URLSearchParams(String(init?.body ?? '')),
+            });
+            return new Response(JSON.stringify({ id: 'pi_live', status: 'requires_payment_method' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }) as typeof fetch;
+        try {
+            await run(driver, calls);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    }
+
+    it('Stripe sends the description when opening an intent', async () => {
+        await withStripe(async (driver, calls) => {
+            await driver.CreateIntent({ Amount: 100, CurrencyCode: 'USD', Description: 'Annual Membership — Order ORD-1' });
+            expect(calls[0].Body.get('description')).toBe('Annual Membership — Order ORD-1');
+        });
+    });
+
+    it('Stripe sends no description field when none is given', async () => {
+        await withStripe(async (driver, calls) => {
+            await driver.CreateIntent({ Amount: 100, CurrencyCode: 'USD' });
+            expect(calls[0].Body.has('description')).toBe(false);
+        });
+    });
+
+    it('Stripe updates an open intent with the description and order id', async () => {
+        await withStripe(async (driver, calls) => {
+            const result = await driver.UpdateIntent({
+                ProviderIntentID: 'pi_live',
+                Description: 'Annual Membership — Order ORD-1',
+                Metadata: { OrderHeaderID: 'order-1' },
+            });
+            expect(result.Success).toBe(true);
+            expect(calls).toHaveLength(1);
+            expect(calls[0].Method).toBe('POST');
+            expect(calls[0].Path).toBe('/v1/payment_intents/pi_live');
+            expect(calls[0].Body.get('description')).toBe('Annual Membership — Order ORD-1');
+            expect(calls[0].Body.get('metadata[OrderHeaderID]')).toBe('order-1');
+        });
+    });
+
+    it('Stripe makes no call for an update with nothing in it', async () => {
+        await withStripe(async (driver, calls) => {
+            expect((await driver.UpdateIntent({ ProviderIntentID: 'pi_live' })).Success).toBe(true);
+            expect(calls).toHaveLength(0);
+        });
+    });
+
+    it('the Stripe stub accepts an update without a network call', async () => {
+        expect((await stripe().UpdateIntent({ ProviderIntentID: 'pi_stub_x', Description: 'x' })).Success).toBe(true);
+    });
+
+    it('the base driver refuses an update rather than pretending', async () => {
+        const base = new BasePaymentProvider();
+        base.Config = config({ TypeCode: 'Nonexistent' });
+        expect((await base.UpdateIntent({ ProviderIntentID: 'pi_1', Description: 'x' })).Success).toBe(false);
     });
 });
 
@@ -441,5 +540,395 @@ describe('StoredValuePaymentProvider', () => {
 
     it('handles no webhook kinds — internal money has no external notifier', () => {
         expect(sv().HandledEventKinds).toEqual([]);
+    });
+});
+
+describe('StripePaymentProvider — keeping a card for later charges', () => {
+    type Call = { method: string; url: string; body: URLSearchParams; headers: Record<string, string> };
+
+    /** A live driver whose requests are recorded; every call answers with `reply`. */
+    function recordingLive(reply: Record<string, unknown>) {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const calls: Call[] = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+            calls.push({
+                method: (init?.method ?? 'GET').toUpperCase(),
+                url: String(input),
+                body: new URLSearchParams(String(init?.body ?? '')),
+                headers: (init?.headers ?? {}) as Record<string, string>,
+            });
+            return new Response(JSON.stringify(reply), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }) as typeof fetch;
+        return { driver, calls, restore: () => (globalThis.fetch = orig) };
+    }
+
+    it('asks Stripe to keep the card when a customer is given', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'pi_1', status: 'requires_payment_method', client_secret: 'cs' });
+        try {
+            await driver.CreateIntent({ Amount: 599, CurrencyCode: 'USD', ProviderCustomerRef: 'cus_1', SaveInstrumentForReuse: true });
+            expect(calls[0].body.get('customer')).toBe('cus_1');
+            expect(calls[0].body.get('setup_future_usage')).toBe('off_session');
+            expect(calls[0].body.get('confirm')).toBe('false');
+            expect(calls[0].body.get('off_session')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('does not ask to keep the card without a customer to attach it to', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'pi_1', status: 'requires_payment_method' });
+        try {
+            await driver.CreateIntent({ Amount: 599, CurrencyCode: 'USD', SaveInstrumentForReuse: true });
+            expect(calls[0].body.get('setup_future_usage')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('charges an already-saved card off-session rather than asking to save it again', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'pi_1', status: 'succeeded' });
+        try {
+            await driver.CreateIntent({
+                Amount: 599,
+                CurrencyCode: 'USD',
+                ProviderCustomerRef: 'cus_1',
+                ProviderInstrumentRef: 'pm_1',
+                SaveInstrumentForReuse: true,
+            });
+            expect(calls[0].body.get('off_session')).toBe('true');
+            expect(calls[0].body.get('payment_method')).toBe('pm_1');
+            expect(calls[0].body.get('setup_future_usage')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('reuses an existing customer without calling Stripe', async () => {
+        const { driver, calls, restore } = recordingLive({});
+        try {
+            const result = await driver.EnsureCustomer({ ExistingProviderCustomerRef: 'cus_old', BillToPersonID: 'p-1' });
+            expect(result).toEqual({ Success: true, ProviderCustomerRef: 'cus_old', WasExisting: true });
+            expect(calls).toHaveLength(0);
+        } finally {
+            restore();
+        }
+    });
+
+    it('creates a customer with the buyer’s e-mail, our person id and an idempotency key', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'cus_new' });
+        try {
+            const result = await driver.EnsureCustomer({ Email: 'buyer@example.com', BillToPersonID: 'p-1', IdempotencyKey: 'customer-p-1-pp-1' });
+            expect(result).toEqual({ Success: true, ProviderCustomerRef: 'cus_new', WasExisting: false });
+            expect(calls[0].method).toBe('POST');
+            expect(calls[0].url).toContain('/v1/customers');
+            expect(calls[0].body.get('email')).toBe('buyer@example.com');
+            expect(calls[0].body.get('metadata[PersonID]')).toBe('p-1');
+            expect(calls[0].headers['Idempotency-Key']).toBe('customer-p-1-pp-1');
+        } finally {
+            restore();
+        }
+    });
+
+    it('creates a customer for a checkout when the buyer has no person yet', async () => {
+        const { driver, calls, restore } = recordingLive({ id: 'cus_checkout' });
+        try {
+            const result = await driver.EnsureCustomer({ Email: 'new@example.com', CheckoutSessionID: 'sess-1' });
+            expect(result).toEqual({ Success: true, ProviderCustomerRef: 'cus_checkout', WasExisting: false });
+            expect(calls[0].body.get('email')).toBe('new@example.com');
+            expect(calls[0].body.get('metadata[CheckoutSessionID]')).toBe('sess-1');
+            expect(calls[0].body.get('metadata[PersonID]')).toBeNull();
+        } finally {
+            restore();
+        }
+    });
+
+    it('refuses a customer with no owner', async () => {
+        const result = await stripe({ IsLiveMode: true }).EnsureCustomer({ Email: 'buyer@example.com' });
+        expect(result.Success).toBe(false);
+    });
+
+    it('stub returns a deterministic customer without a network call', async () => {
+        const result = await stripe().EnsureCustomer({ BillToPersonID: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' });
+        expect(result.Success).toBe(true);
+        expect(result.ProviderCustomerRef).toBe('cus_stub_aaaaaaaabbbbccccddddeeee');
+    });
+
+    it('the base driver refuses rather than inventing a customer', async () => {
+        const base = new BasePaymentProvider();
+        base.Config = config({ TypeCode: 'Nonexistent' });
+        const result = await base.EnsureCustomer({ BillToPersonID: 'p-1' });
+        expect(result.Success).toBe(false);
+        expect(result.Reason).toContain('does not support');
+    });
+
+    it('retrieve reads the paid card back from an expanded intent', async () => {
+        const { driver, calls, restore } = recordingLive({
+            id: 'pi_1',
+            status: 'succeeded',
+            amount_received: 59900,
+            currency: 'usd',
+            customer: 'cus_1',
+            payment_method: {
+                id: 'pm_1',
+                card: { brand: 'visa', last4: '4242', exp_month: 12, exp_year: 2030 },
+                billing_details: { name: 'Pat Buyer' },
+            },
+        });
+        try {
+            const result = await driver.RetrieveIntent({ ProviderIntentID: 'pi_1' });
+            expect(calls[0].url).toContain('expand[]=payment_method');
+            expect(result.Instrument).toEqual({
+                ProviderCustomerRef: 'cus_1',
+                ProviderInstrumentRef: 'pm_1',
+                Brand: 'visa',
+                Last4: '4242',
+                ExpiryMonth: 12,
+                ExpiryYear: 2030,
+                HolderName: 'Pat Buyer',
+            });
+        } finally {
+            restore();
+        }
+    });
+});
+
+describe('StripePaymentProvider — charging a saved card off-session (#289)', () => {
+    /** A live driver whose every call answers `status` with `reply`. */
+    function live(status: number, reply: Record<string, unknown>) {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async () =>
+            new Response(JSON.stringify(reply), { status, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+        return { driver, restore: () => (globalThis.fetch = orig) };
+    }
+    const charge = { Amount: 1200, CurrencyCode: 'USD', ProviderCustomerRef: 'cus_1', ProviderInstrumentRef: 'pm_1', IdempotencyKey: 'k-1' };
+
+    it('a decline keeps the intent Stripe opened, its reason and its code', async () => {
+        const { driver, restore } = live(402, {
+            error: {
+                type: 'card_error',
+                code: 'card_declined',
+                decline_code: 'insufficient_funds',
+                message: 'Your card has insufficient funds.',
+                payment_intent: { id: 'pi_declined', status: 'requires_payment_method' },
+            },
+        });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({
+                Success: false,
+                Reason: 'Your card has insufficient funds.',
+                ProviderIntentID: 'pi_declined',
+                Status: 'Failed',
+                FailureCode: 'insufficient_funds',
+            });
+            expect(result.RequiresAuthentication).toBeUndefined();
+        } finally {
+            restore();
+        }
+    });
+
+    it('authentication_required on an off-session confirm is an SCA demand', async () => {
+        const { driver, restore } = live(402, {
+            error: {
+                code: 'authentication_required',
+                message: 'This payment requires authentication.',
+                payment_intent: { id: 'pi_sca', status: 'requires_payment_method' },
+            },
+        });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({ Success: false, ProviderIntentID: 'pi_sca', Status: 'Failed', FailureCode: 'authentication_required', RequiresAuthentication: true });
+        } finally {
+            restore();
+        }
+    });
+
+    it('an intent answered with requires_action is an SCA demand too', async () => {
+        const { driver, restore } = live(200, { id: 'pi_action', status: 'requires_action' });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({ Success: true, ProviderIntentID: 'pi_action', Status: 'RequiresPayment', RequiresAuthentication: true });
+        } finally {
+            restore();
+        }
+    });
+
+    it('a success reports when the money was taken, from the intent created in the same request', async () => {
+        const { driver, restore } = live(200, { id: 'pi_ok', status: 'succeeded', created: 1798761600 });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({ Success: true, ProviderIntentID: 'pi_ok', Status: 'Succeeded' });
+            expect(result.CapturedAt?.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+            expect(result.RequiresAuthentication).toBeUndefined();
+        } finally {
+            restore();
+        }
+    });
+
+    it('a refusal of a checkout intent (no saved card) is unchanged: just the reason', async () => {
+        const { driver, restore } = live(400, { error: { message: 'Invalid amount', payment_intent: { id: 'pi_x' } } });
+        try {
+            expect(await driver.CreateIntent({ Amount: 5, CurrencyCode: 'USD' })).toEqual({ Success: false, Reason: 'Invalid amount' });
+        } finally {
+            restore();
+        }
+    });
+
+    it('StripeChargeRefusal without an intent in the error records nothing', () => {
+        expect(StripeChargeRefusal({ error: { code: 'card_declined' } }, 'declined')).toMatchObject({
+            Success: false,
+            Reason: 'declined',
+            ProviderIntentID: undefined,
+            Status: undefined,
+            FailureCode: 'card_declined',
+        });
+    });
+
+    it('the stub succeeds with Stripe\'s ordinary test card and dates the charge', async () => {
+        const result = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa' });
+        expect(result).toMatchObject({ Success: true, Status: 'Succeeded' });
+        expect(result.ProviderIntentID).toMatch(/^pi_stub_[0-9a-f]{24}$/);
+        expect(result.CapturedAt).toBeInstanceOf(Date);
+    });
+
+    it('the stub declines Stripe\'s declining test card and demands authentication for its SCA card', async () => {
+        expect(await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_chargeDeclined' })).toMatchObject({
+            Success: false,
+            Status: 'Failed',
+            FailureCode: 'card_declined',
+        });
+        expect(await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_authenticationRequired' })).toMatchObject({
+            Success: false,
+            Status: 'Failed',
+            FailureCode: 'authentication_required',
+            RequiresAuthentication: true,
+        });
+    });
+
+    it('the stub gives a repeated key the same intent and a new key a new one, as Stripe does', async () => {
+        const first = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa', IdempotencyKey: 'renewal-charge-o-2027-01-01' });
+        const again = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa', IdempotencyKey: 'renewal-charge-o-2027-01-01' });
+        const retry = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa', IdempotencyKey: 'renewal-charge-o-2027-01-04' });
+        expect(again.ProviderIntentID).toBe(first.ProviderIntentID);
+        expect(retry.ProviderIntentID).not.toBe(first.ProviderIntentID);
+        expect(StubDigest('a')).not.toBe(StubDigest('b'));
+    });
+});
+
+describe('StripeInstrumentFromIntent', () => {
+    it('reads unexpanded ids', () => {
+        expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: 'pm_1' })).toEqual({
+            ProviderCustomerRef: 'cus_1',
+            ProviderInstrumentRef: 'pm_1',
+        });
+    });
+
+    it('takes the customer from the payment method when the intent has none', () => {
+        expect(StripeInstrumentFromIntent({ customer: null, payment_method: { id: 'pm_1', customer: 'cus_2' } })?.ProviderCustomerRef).toBe('cus_2');
+    });
+
+    it('is undefined before a payment method exists', () => {
+        expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: null })).toBeUndefined();
+    });
+
+    it("reads the card's issuing country as VAT location evidence (#480)", () => {
+        const instrument = StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', card: { brand: 'visa', country: 'ie' } } });
+        expect(instrument?.IssuingCountry).toBe('IE');
+    });
+
+    it('leaves the issuing country out when the method is not a card or the country is not a code', () => {
+        expect(StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', us_bank_account: { last4: '6789' } } })).not.toHaveProperty('IssuingCountry');
+        expect(StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', card: { country: 'Ireland' } } })).not.toHaveProperty('IssuingCountry');
+    });
+});
+
+describe('MoveGiftCardBalance — the capture/refund write behind a gift-card payment (#302)', () => {
+    const CARD = '33333333-3333-3333-3333-333333333333';
+    const PAY = '44444444-4444-4444-4444-444444444444';
+    /** A card plus whatever ledger rows get written, behind a provider that hands out both. */
+    const fakeCard = (balance: number, status = 'Active', expiresAt: Date | null = null) => {
+        const card = { Code: 'GC-TEST', CurrentBalance: balance, Status: status, ExpiresAt: expiresAt, Saves: 0 };
+        const txns: Array<Record<string, unknown>> = [];
+        const sql: string[] = [];
+        const provider = {
+            // The locked read returns whatever the card holds now, as the database would.
+            ExecuteSQL: async (q: string) => (sql.push(q), [{ CurrentBalance: card.CurrentBalance }]),
+            GetEntityObject: async (name: string) =>
+                name.endsWith('Stored Value Accounts')
+                    ? Object.assign(card, { Load: async () => true, Save: async () => ++card.Saves > 0 })
+                    : (() => {
+                          const t: Record<string, unknown> = { NewRecord: () => undefined };
+                          t.Save = async () => (txns.push(t), true);
+                          return t;
+                      })(),
+        };
+        return { card, txns, sql, provider: provider as never };
+    };
+
+    it('redeems: lowers the balance and writes a signed Redeem row that agrees with it', async () => {
+        const { card, txns, provider } = fakeCard(90);
+        expect(await MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -60, PAY, 'o1')).toBe(30);
+        expect(card.CurrentBalance).toBe(30);
+        expect(card.Status).toBe('Active');
+        expect(txns).toHaveLength(1);
+        expect(txns[0]).toMatchObject({
+            TransactionType: 'Redeem',
+            Amount: -60,
+            BalanceAfter: 30,
+            RelatedOrderHeaderID: 'o1',
+            RelatedPaymentID: PAY,
+        });
+    });
+
+    it('spending to zero depletes the card; a refund makes it Active again', async () => {
+        const { card, txns, provider } = fakeCard(40);
+        await MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -40, PAY, null);
+        expect(card.Status).toBe('Depleted');
+        await MoveGiftCardBalance(provider, {} as never, CARD, 'Refund', 25, PAY, null);
+        expect(card.CurrentBalance).toBe(25);
+        expect(card.Status).toBe('Active');
+        expect(txns.map((t) => [t.TransactionType, t.Amount, t.BalanceAfter])).toEqual([
+            ['Redeem', -40, 0],
+            ['Refund', 25, 25],
+        ]);
+    });
+
+    it('refuses an overdraw and writes nothing', async () => {
+        const { card, txns, provider } = fakeCard(30);
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -50, PAY, null)).rejects.toThrow(
+            /holds 30\.00, which does not cover 50\.00/,
+        );
+        expect(card.Saves).toBe(0);
+        expect(txns).toHaveLength(0);
+    });
+
+    it('refuses to spend a card that is not Active', async () => {
+        const { txns, provider } = fakeCard(50, 'Voided');
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -10, PAY, null)).rejects.toThrow(/Voided/);
+        expect(txns).toHaveLength(0);
+    });
+
+    it('reads the balance under UPDLOCK, ROWLOCK, so concurrent spends of one card serialize', async () => {
+        const { sql, provider } = fakeCard(90);
+        await MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -60, PAY, null);
+        expect(sql).toHaveLength(1);
+        expect(sql[0]).toMatch(/FROM __mj_BizAppsOrders\.StoredValueAccount WITH \(UPDLOCK, ROWLOCK\)/);
+        expect(sql[0]).toContain(CARD);
+    });
+
+    it('refuses to spend a card past its expiry, even with no provider in the way', async () => {
+        const { txns, provider } = fakeCard(50, 'Active', new Date('2026-01-01'));
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -10, PAY, null)).rejects.toThrow(/expired on 2026-01-01/);
+        expect(txns).toHaveLength(0);
+    });
+
+    it('refuses a movement signed the wrong way for its type', async () => {
+        const { provider } = fakeCard(50);
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', 10, PAY, null)).rejects.toThrow(/wrong sign/);
+        await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Refund', -10, PAY, null)).rejects.toThrow(/wrong sign/);
     });
 });

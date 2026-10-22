@@ -16,6 +16,8 @@ export interface WorldState {
     Organizations: Record<string, string>;
     People: Record<string, string>;
     Categories: Record<string, string>;
+    /** Subscription families by `CompanyCode:Code`. */
+    SubscriptionFamilies: Record<string, string>;
     Products: Record<string, string>;
     /** Old fixture mnemonics (WidgetA, SubRolling, …) → product ID. */
     ProductMnemonics: Record<string, string>;

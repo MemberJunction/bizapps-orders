@@ -12,15 +12,23 @@
  * point-in-time snapshot of a customer's position, so re-deriving it later gives you a DIFFERENT
  * document with the same date on it. That one needs storage. This one must not have it.)
  *
- * WHY THE SPLIT BY SELLING COMPANY IS THE LOAD-BEARING DECISION HERE. An order's lines can be sold
- * by more than one company — 14 of the 75 orders in the review seed are — and each company carries
- * its own receivable, its own tax registration and its own remit-to address. One document covering
- * two companies would name one of them as the payee for money the other is owed. So an order
- * produces one document PER SELLING COMPANY, and the invariant that matters is that the documents
- * sum back to the order: `Σ documents.Gross === OrderHeader.TotalGross`. Everything below exists to
- * keep that true, which is why unattributable amounts are pushed onto the header company rather
- * than dropped. A dropped charge produces an invoice that is internally consistent, adds up
- * perfectly, and undercharges the customer.
+ * ONE ORDER, ONE PAYER, ONE INVOICE (D61, golive #311). An order's lines can belong to products of
+ * more than one company, but the order is sold, and billed, by the company on its header. So an
+ * order produces ONE document — per instalment when it has a schedule — from the order's company,
+ * listing every line whatever company owns its product. A/R and revenue stay in each product's
+ * company (D13) and cash the order's company receives for another company's lines moves through the
+ * intercompany legs; none of that is the customer's business, and none of it is printed.
+ *
+ * The invariant that matters is that the document sums to the order: `document.Gross ===
+ * OrderHeader.TotalGross`. A dropped charge produces an invoice that is internally consistent, adds
+ * up perfectly, and undercharges the customer.
+ *
+ * THE ONE EXCEPTION is an instalment from a schedule written per product company before golive #311, on an
+ * order that had already issued under it. Such a row bills only its company's lines, and its
+ * document is rebuilt the way it was issued: that company's lines, from that company, under the
+ * number it froze. The per-company machinery below (attribution through line allocations, the
+ * header company taking what no line claims) exists for that case; for every other order there is
+ * one company and it attributes everything to it.
  *
  * THE LADDER MUST TIE. `ListSubtotal − Discounts + Charges + Tax === Gross`, always. The named
  * discount rows are a BREAKDOWN of the line-level discount, not a second source of it — promotions
@@ -30,6 +38,8 @@
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
+
+import { UUIDsEqual } from '@memberjunction/global';
 
 import { SplitExactly } from './BundleBehavior.js';
 
@@ -53,7 +63,6 @@ export interface InvoiceOrderFacts {
     AmountPaid: number;
     Balance: number;
     DueDate: string | null;
-    PaymentStatus: string | null;
     /** The customer's own PO/reference, printed so their AP department can match it. */
     ExternalDocumentNumber: string | null;
     /** Set when this order reverses another — the document is then a credit memo. */
@@ -78,6 +87,9 @@ export interface InvoiceLineFacts {
     CompanyName: string;
     Quantity: number;
     UnitPrice: number;
+    /** What the price rule set for the line before discount; null when no rule priced it, or on a line written before the column existed. */
+    ExtendedAmount: number | null;
+    DiscountPct: number;
     DiscountAmount: number;
     LineTotalNet: number;
     ChargeAmount: number;
@@ -137,11 +149,9 @@ export interface InvoicePartyFacts {
 }
 
 /**
- * Who is asking to be paid.
- *
- * One per selling company, because on a split order they are genuinely different businesses with
- * different registrations. `CurrencyCode` belongs here rather than on the order: it is the selling
- * company's functional currency, which is a property of the seller and not of the sale.
+ * Who is asking to be paid: the order's company. `CurrencyCode` belongs here rather than on the
+ * order: it is the selling company's functional currency, which is a property of the seller and not
+ * of the sale.
  */
 export interface InvoiceIssuerFacts {
     CompanyID: string;
@@ -210,8 +220,22 @@ export interface InvoiceInstalmentFacts {
     AmountPaid: number;
     /** Frozen at invoicing; null while Scheduled, when the number is derived from position instead. */
     DocumentNumber: string | null;
-    /** What prints between the total and the amount due. */
+    /**
+     * What credit memos took off this instalment (#684). The instalment keeps its amount, since the customer
+     * holds that invoice, and what is due falls by the credit.
+     */
+    AmountCredited?: number;
+    /** What prints between the total and the amount due: payments, then credits. */
     Payments: Array<{ Label: string; Amount: number }>;
+}
+
+/**
+ * What an approved amount change took off a whole-order document (#684): its credit memo, and what it took off
+ * the instalments not yet invoiced. The order's balance subtracts both, so the document's amount due does too.
+ */
+export interface InvoiceCreditFacts {
+    Label: string;
+    Amount: number;
 }
 
 /** The whole of one company's share, as one instalment: what every order without a schedule bills. */
@@ -234,10 +258,10 @@ export function ImplicitInstalment(input: {
     };
 }
 
-/** One sendable document: an order, restricted to what one selling company is owed for. */
+/** One sendable document: an order, or one instalment of it, from the order's company. */
 export interface InvoiceDocument {
     Kind: DocumentKind;
-    /** `ORD-1005` when the order is single-company, `ORD-1005-A` when it had to be split. */
+    /** `ORD-1005`, or `ORD-1005-2` for the second of several instalments. */
     DocumentNumber: string;
     OrderNumber: string;
     OrderHeaderID: string;
@@ -365,20 +389,55 @@ export function PaymentStatusLabel(gross: number, paid: number): string {
 /**
  * The document number.
  *
- * A single-company order prints the ORDER number, unchanged: the customer, the ledger, the aging
- * report and the person answering the phone all say the same string. Only when one order has to
- * become several documents does a suffix appear, and then it is stable — companies are ordered by
- * ID, so re-rendering the same order tomorrow produces the same `-A` and `-B`.
+ * An order prints the ORDER number, unchanged: the customer, the ledger, the aging report and the
+ * person answering the phone all say the same string. The company letter (`-A`, `-B`) survives only
+ * for an instalment of a schedule written per product company before golive #311 (`total > 1`),
+ * so such an order's later instalments cannot collide with what it already issued. Companies are
+ * ordered by ID, so the letter is stable across renders.
  */
 export function DocumentNumber(orderNumber: string, index: number, total: number): string {
     if (total <= 1) return orderNumber;
     return `${orderNumber}-${String.fromCharCode(65 + index)}`;
 }
 
+/** What `ExternalInvoice.DocumentNumber` and `OrderHeader.ExternalDocumentNumber` can hold. */
+export const MAX_DOCUMENT_NUMBER_LENGTH = 40;
+
 /**
- * The instalment's document number, derived from position — `ORD-1234-2`, or `ORD-1234-B2` when the
- * order is also split by company. A one-instalment schedule prints the plain order number, so an order
- * without a schedule is unchanged.
+ * The number a RE-ISSUE carries after a cancel — `ORD-1234-R1`, then `-R2`, `ORD-1234-A-R1` when the
+ * order is also split by company.
+ *
+ * WHY A SUFFIX AND NOT THE OLD NUMBER AGAIN. Craig ruled this on golive #242 for traceability, and
+ * the sandbox says he was right for a sharper reason than the one first written down here.
+ *
+ * This comment used to claim Bill.com keeps an archived invoice's number and refuses the duplicate, so
+ * a re-issue HAD to be renumbered. That is false, and it was never tested: spike S4 proved a duplicate
+ * against a LIVE invoice is refused and the conclusion about archived ones was extrapolated. Probed
+ * directly on 2026-09-29 — create, archive, create the same number again — Bill.com **accepts** it.
+ * Live duplicate: "Duplicate invoice number for 00e…". Archived duplicate: 201, a second invoice.
+ *
+ * Which makes the suffix MORE necessary, not less. If the rail freely reissues the number, then an
+ * order cancelled after its invoice went out leaves the customer holding ORD-1234, and a re-issue
+ * without a suffix puts a second, different ORD-1234 in front of them. Nothing on either side would
+ * flag it. The cancelled invoice stays on file as history, exactly as a cancelled instalment does, and
+ * the number has no ledger effect because the receivable was booked when the order was confirmed.
+ *
+ * `attempts` counts rail invoices this unit has ALREADY SPENT A NUMBER ON — rows carrying an
+ * `ExternalInvoiceRef` — not rows that merely failed. A send the rail refused outright created nothing
+ * and consumed nothing, so its number is still free and re-issuing reuses it; a send that was created
+ * and then archived (a cancel, or a tie check that withdrew it) did consume one.
+ *
+ * INSTALMENTS NEVER COME HERE. They are refused a re-issue outright (`DecideInvoiceable`): a cancelled
+ * instalment is replaced by a new schedule row under the next instalment number, not renumbered.
+ */
+export function ReissueDocumentNumber(baseNumber: string, attempts: number): string {
+    return attempts > 0 ? `${baseNumber}-R${attempts}` : baseNumber;
+}
+
+/**
+ * The instalment's document number, derived from position — `ORD-1234-2`, or `ORD-1234-B2` for a
+ * product company's own row left from a pre-golive-#311 per-company schedule. A one-instalment schedule
+ * prints the plain order number, so an order without a schedule is unchanged.
  *
  * ONE FUNCTION, because the format is unconfirmed against what Bill.com and Business Central accept
  * and must be cheap to change. It is computed ONCE, by `Orders.IssueInstalmentInvoice`, and frozen on
@@ -512,10 +571,28 @@ export function BuildRows(lines: InvoiceLineFacts[]): InvoiceRow[] {
  * well inflates the subtotal by a whole bundle. The discount line below would then absorb the
  * difference and the ladder would still reach the right total, while showing the customer a
  * fictional list price and a fictional saving.
+ *
+ * THE LINE'S OWN GROSS, NOT `Quantity × UnitPrice`. A Flat price that does not divide by the quantity
+ * stores a rounded unit rate — Flat 100.00 at quantity 3 is 33.33 — and re-multiplying it lists the
+ * line at 99.99, so the discount derived below comes out −0.01 and the ladder prints a one-cent
+ * Adjustment nobody gave (#579). The rule's figure is stored on the line, and the line's total was
+ * computed from it, so the invoice lists that.
+ *
+ * A line written before that figure was stored has none. When it records no discount and its net is
+ * within rounding of quantity × unit price, the net is its list amount: a unit price rounded to
+ * cents is off by at most half a cent per unit, so a gap that small is the rounding, not a saving. A
+ * larger gap is a discount the columns do not show (see {@link LineDiscountOf}), and quantity × unit
+ * price stays the list amount so the ladder still prints it.
  */
 export function ListAmountOf(line: InvoiceLineFacts): number {
     if (line.IsRollupParent) return 0;
-    return Money(Number(line.Quantity) * Number(line.UnitPrice));
+    if (line.ExtendedAmount !== null && line.ExtendedAmount !== undefined) return Money(Number(line.ExtendedAmount));
+    const fromRate = Money(Number(line.Quantity) * Number(line.UnitPrice));
+    const net = Money(Number(line.LineTotalNet ?? 0));
+    const undiscounted = !Number(line.DiscountPct ?? 0) && !Number(line.DiscountAmount ?? 0);
+    // In whole cents, so a gap of exactly half a cent per unit is not lost to floating point.
+    if (undiscounted && Math.round(Math.abs(fromRate - net) * 100) <= 0.5 * Math.abs(Number(line.Quantity))) return net;
+    return fromRate;
 }
 
 /**
@@ -605,8 +682,9 @@ export function BuildLadder(input: {
 }
 
 /**
- * Everything above, in the right order: an order and its satellites become one document per selling
- * company.
+ * Everything above, in the right order: an order and its satellites become one document, from the
+ * order's company (golive #311). An instalment of a pre-golive-#311 per-company schedule is the one case
+ * that still renders per company; see the module note.
  *
  * @param asOf The date the document is being produced, used only for the days-until-due countdown.
  */
@@ -623,15 +701,33 @@ export function BuildDocuments(input: {
     /** Company ID -> issuer block. A company with no entry still gets a document, with just a name. */
     Issuers?: Map<string, InvoiceIssuerFacts>;
     AsOf: string;
-    /** Render only this company's document. Omit for all of them. */
+    /**
+     * Render only this company's document. Every order has one document, from the order's company,
+     * so this narrows only an instalment of a pre-golive-#311 per-company schedule; any other company
+     * yields nothing.
+     */
     OnlyCompanyID?: string | null;
     /**
      * The instalment to demand. Omit for the implicit one — the whole of each company's gross, due on
      * the header's date — which is what every order without a schedule bills.
      */
     Instalment?: InvoiceInstalmentFacts | null;
+    /**
+     * Approved amount changes' credits on the order (#684). They lower what the whole-order document asks for;
+     * an instalment's own credits come with the instalment instead.
+     */
+    Credits?: InvoiceCreditFacts[];
 }): InvoiceDocument[] {
-    const { Order: order, Lines: lines, Charges: charges, Adjustments: adjustments, Payments: payments } = input;
+    const { Order: order, Charges: charges, Adjustments: adjustments, Payments: payments } = input;
+
+    // ONE DOCUMENT FROM THE ORDER'S COMPANY: every line is attributed to it, so the per-company
+    // machinery below produces exactly one document for the header company with no letter. Only an
+    // instalment of a product company's own pre-golive-#311 row keeps the lines' own companies, so its
+    // document is rebuilt as it was issued.
+    const legacyCompanyInstalment = !!input.Instalment && !UUIDsEqual(input.Instalment.CompanyID, order.CompanyID);
+    const lines = legacyCompanyInstalment
+        ? input.Lines
+        : input.Lines.map((l) => ({ ...l, CompanyID: order.CompanyID, CompanyName: order.CompanyName }));
 
     const kind = DeriveDocumentKind(order);
     const dueDate = DueDateFor(order);
@@ -639,14 +735,15 @@ export function BuildDocuments(input: {
 
     const lineCompany = new Map(lines.map((l) => [l.ID, l.CompanyID]));
 
-    // Companies in ID order, so the -A/-B suffixes are stable across renders. An order with no
+    // Companies in ID order, so a legacy per-company instalment keeps stable -A/-B suffixes across
+    // renders; every other document has the order's company alone. An order with no
     // lines still produces one document — for the header company, showing nothing — because an
     // empty invoice is a visible problem and no invoice at all is not.
     const companyIDs = [...new Set(lines.map((l) => l.CompanyID))].sort();
     if (!companyIDs.length) companyIDs.push(order.CompanyID);
 
     const companyName = (id: string): string =>
-        input.CompanyNames?.get(id) ?? lines.find((l) => l.CompanyID === id)?.CompanyName ?? order.CompanyName;
+        input.CompanyNames?.get(id) || lines.find((l) => l.CompanyID === id)?.CompanyName || order.CompanyName;
 
     const grossByCompany = companyIDs.map((id) => ({
         CompanyID: id,
@@ -748,18 +845,27 @@ export function BuildDocuments(input: {
         const amountPaid = Money(myPayments.reduce((s, p) => s + p.Amount, 0));
 
         // What this document demands. An explicit instalment for another company is not this
-        // document's business; anything else is the whole of this company's share.
+        // document's business; anything else is the whole of this company's share, less what approved amount
+        // changes credited the order, which belongs to the order's own company.
+        const orderCredits = UUIDsEqual(companyID, order.CompanyID) ? (input.Credits ?? []).filter((c) => Money(c.Amount) !== 0) : [];
         const instalment =
             input.Instalment && input.Instalment.CompanyID.toLowerCase() === companyID.toLowerCase()
                 ? input.Instalment
-                : ImplicitInstalment({
-                      CompanyID: companyID,
-                      Gross: gross,
-                      AmountPaid: amountPaid,
-                      DueDate: dueDate,
-                      Payments: myPayments.map(({ Payment, Amount }) => ({ Label: `Payment ${Payment.PaymentNumber}`, Amount })),
-                  });
-        const amountDue = Money(instalment.Amount - instalment.AmountPaid);
+                : {
+                      ...ImplicitInstalment({
+                          CompanyID: companyID,
+                          Gross: gross,
+                          AmountPaid: amountPaid,
+                          DueDate: dueDate,
+                          Payments: [
+                              ...myPayments.map(({ Payment, Amount }) => ({ Label: `Payment ${Payment.PaymentNumber}`, Amount })),
+                              ...orderCredits.map((c) => ({ Label: c.Label, Amount: Money(c.Amount) })),
+                          ],
+                      }),
+                      AmountCredited: Money(orderCredits.reduce((s, c) => s + c.Amount, 0)),
+                  };
+        const credited = Money(instalment.AmountCredited ?? 0);
+        const amountDue = Money(instalment.Amount - instalment.AmountPaid - credited);
 
         const ladderCharges = myCharges
             .filter((c) => c.Charge.Category !== 'Tax')
@@ -831,7 +937,7 @@ export function BuildDocuments(input: {
             DueDate: instalment.DueDate,
             DaysUntilDue: instalment.DueDate && amountDue > 0 ? DaysBetween(input.AsOf, instalment.DueDate) : null,
             Status: order.Status,
-            PaymentStatusLabel: PaymentStatusLabel(instalment.Amount, instalment.AmountPaid),
+            PaymentStatusLabel: PaymentStatusLabel(instalment.Amount, Money(instalment.AmountPaid + credited)),
 
             CompanyID: companyID,
             CompanyName: companyName(companyID),
@@ -878,5 +984,134 @@ export function BuildDocuments(input: {
         });
     });
 
-    return input.OnlyCompanyID ? documents.filter((d) => d.CompanyID === input.OnlyCompanyID) : documents;
+    // UUIDsEqual, not ===: SQL Server returns uppercase ids while callers routinely carry lower-cased
+    // copies, and a case-sensitive match here drops every document and reports the order as having no
+    // lines for the company — a wrong answer that looks like a data problem.
+    return input.OnlyCompanyID ? documents.filter((d) => UUIDsEqual(d.CompanyID, input.OnlyCompanyID!)) : documents;
+}
+
+// ── The credit memo of an amount change (#684) ──────────────────────────────────────────────────
+
+/** Where an amount change's credit memo was applied: an invoiced instalment, or the order billed as a whole. */
+export interface CreditMemoApplicationFacts {
+    /** The instalment's frozen invoice number; null when the memo credited the order itself. */
+    DocumentNumber: string | null;
+    Amount: number;
+}
+
+/** The credit memo an approved amount change issued, as its approval recorded it. */
+export interface AmountChangeMemoFacts {
+    DocumentNumber: string;
+    /** `YYYY-MM-DD`: the day the change took effect, which is the day the memo is dated. */
+    IssuedOn: string;
+    Net: number;
+    Tax: number;
+    Gross: number;
+    TermNumber: number;
+    SubscriptionNumber: string | null;
+    PreviousAmount: number;
+    NewAmount: number;
+    Applied: CreditMemoApplicationFacts[];
+    /** The part the customer asked to have back, which finance refunds. */
+    Refund: number;
+    /** The part applied to nothing yet: the customer's credit on account. */
+    OpenCredit: number;
+    /** The line the term was bought on, as the order's own document prints it. */
+    LineNumber: number;
+    ProductName: string;
+    ProductSKU: string | null;
+}
+
+/**
+ * The customer's document for an amount change's credit memo, built on the order's own document so the issuer,
+ * the parties and the order number are the ones the customer already holds.
+ *
+ * NOT AN ORDER RENDERED. The memo is the approved change itself (#662): no order or instalment carries it, so it
+ * is built from what the approval recorded, never recomputed. One row for the term's line, negative; the ladder
+ * runs from its net through its tax to its total, then what was applied to an invoice the customer holds; what
+ * is left is the credit due to the customer, refunded when they asked for it and otherwise held on account.
+ */
+export function BuildAmountChangeCreditMemo(orderDocument: InvoiceDocument, memo: AmountChangeMemoFacts): InvoiceDocument {
+    const net = Money(memo.Net);
+    const tax = Money(memo.Tax);
+    const gross = Money(memo.Gross);
+    if (Money(net + tax) !== gross) {
+        throw new Error(`Credit memo ${memo.DocumentNumber} records ${net.toFixed(2)} and ${tax.toFixed(2)} of tax, which is not its ${gross.toFixed(2)}.`);
+    }
+    const applied = memo.Applied.filter((a) => Money(a.Amount) !== 0);
+    const appliedTotal = Money(applied.reduce((s, a) => s + a.Amount, 0));
+    const due = Money(gross - appliedTotal);
+    if (due !== Money(memo.Refund + memo.OpenCredit)) {
+        throw new Error(
+            `Credit memo ${memo.DocumentNumber} is for ${gross.toFixed(2)}, applies ${appliedTotal.toFixed(2)} and leaves ` +
+                `${Money(memo.Refund + memo.OpenCredit).toFixed(2)}; those do not add up.`,
+        );
+    }
+    // Negated amounts go through Money so a zero prints as 0, not -0.
+    const credit = (n: number): number => Money(-n);
+    const term = memo.SubscriptionNumber ? `term ${memo.TermNumber} of ${memo.SubscriptionNumber}` : `term ${memo.TermNumber}`;
+    const description = [
+        `Credit on order ${orderDocument.OrderNumber}: ${term} lowered from ${Money(memo.PreviousAmount).toFixed(2)} to ` +
+            `${Money(memo.NewAmount).toFixed(2)}, from ${memo.IssuedOn}.`,
+        memo.Refund > 0 ? `${Money(memo.Refund).toFixed(2)} of it is refunded to you.` : null,
+    ]
+        .filter(Boolean)
+        .join(' ');
+
+    const ladder = BuildLadder({
+        ListSubtotal: credit(net),
+        Discounts: [],
+        DiscountTotal: 0,
+        Charges: [{ Label: 'Tax', Note: null, Amount: credit(tax), IsTax: true }],
+        Gross: credit(gross),
+        // Applied credit walks the total back towards zero, the way a payment walks an invoice down.
+        Payments: applied.map((a) => ({
+            Label: a.DocumentNumber ? `Applied to invoice ${a.DocumentNumber}` : `Applied to order ${orderDocument.OrderNumber}`,
+            Amount: credit(a.Amount),
+        })),
+        AmountDue: credit(due),
+        DueLabel: 'Credit due you',
+    });
+
+    return {
+        ...orderDocument,
+        Kind: 'Credit Memo',
+        DocumentNumber: memo.DocumentNumber,
+        OrderDate: memo.IssuedOn,
+        DueDate: null,
+        DaysUntilDue: null,
+        PaymentStatusLabel: 'Credit',
+        ReversesOrderNumber: null,
+        ReversalReason: null,
+        Description: description,
+        Rows: [
+            {
+                LineID: `${memo.DocumentNumber}-1`,
+                LineNumber: memo.LineNumber,
+                ProductName: memo.ProductName,
+                ProductSKU: memo.ProductSKU,
+                Description: `Lower amount on ${term}`,
+                Quantity: 1,
+                UnitPrice: credit(net),
+                DiscountAmount: 0,
+                Amount: credit(net),
+                IncludedInParent: false,
+                ServicePeriodStart: null,
+                ServicePeriodEnd: null,
+                ReversesOrderLineID: null,
+                Children: [],
+            },
+        ],
+        Ladder: ladder,
+        ListSubtotal: credit(net),
+        DiscountTotal: 0,
+        NetTotal: credit(net),
+        ChargeTotal: 0,
+        TaxTotal: credit(tax),
+        Gross: credit(gross),
+        AmountPaid: credit(appliedTotal),
+        AmountDue: credit(due),
+        Payments: [],
+        Notes: [],
+    };
 }

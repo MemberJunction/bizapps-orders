@@ -30,6 +30,48 @@ export async function raiseCheckoutCaptureTerminalAlert(
         `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled payment was not booked onto confirmed checkout order ${orderID}` +
             `${sessionID ? ` session=${sessionID}` : ''}: ${reason}`,
     );
+    await raiseAlertTask(
+        `Checkout capture not booked: ${orderID}`,
+        `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
+        contextUser,
+    );
+}
+
+/**
+ * The session-scoped counterpart: a payment settled but completing the checkout refused it, so
+ * NO order exists — typically the re-priced total rose above the amount paid (a promotion that
+ * expired or hit its limit between the draft and the payment). Staff refund or book by hand.
+ *
+ * One Task per session: the refusal, the webhook's attempt and the expiry sweep can each report the
+ * same session, and staff act on it once (#724).
+ */
+export async function raiseCheckoutSettledNotBookedAlert(
+    sessionID: string,
+    paymentIntentID: string | null | undefined,
+    reason: string,
+    contextUser?: UserInfo,
+): Promise<void> {
+    LogError(
+        `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled payment for checkout session ${sessionID} was refused at completion; no order was booked: ${reason}`,
+    );
+    await raiseAlertTask(
+        `Checkout payment settled with no order: session ${sessionID}`,
+        `A payment settled for a checkout session, but completing the checkout refused it, so no order was created. Refund the payment or book the order by hand.\n\nSession: ${sessionID}\nPayment intent: ${paymentIntentID ?? '(unknown)'}\nReason: ${reason}`,
+        contextUser,
+        { OncePerName: true },
+    );
+}
+
+/**
+ * Writes the human-visible Tasks row; the caller has already logged the marker. `OncePerName` skips
+ * the write when a Task with this name already exists.
+ */
+async function raiseAlertTask(
+    name: string,
+    description: string,
+    contextUser?: UserInfo,
+    options?: { OncePerName?: boolean },
+): Promise<void> {
     if (!contextUser) {
         return;
     }
@@ -40,6 +82,21 @@ export async function raiseCheckoutCaptureTerminalAlert(
         }
 
         const rv = new RunView();
+        if (options?.OncePerName) {
+            const existing = await rv.RunView<{ ID: string }>(
+                {
+                    EntityName: CHECKOUT_CAPTURE_TASK_ENTITY,
+                    ExtraFilter: `Name = '${EscapeText(name)}'`,
+                    Fields: ['ID'],
+                    ResultType: 'simple',
+                    MaxRows: 1,
+                },
+                contextUser,
+            );
+            if (existing.Success && existing.Results.length > 0) {
+                return;
+            }
+        }
         const types = await rv.RunView<mjBizAppsTasksTaskTypeEntity>(
             {
                 EntityName: CHECKOUT_CAPTURE_TASK_TYPE_ENTITY,
@@ -61,9 +118,8 @@ export async function raiseCheckoutCaptureTerminalAlert(
         );
         task.NewRecord();
         task.TypeID = typeID;
-        task.Name = `Checkout capture not booked: ${orderID}`;
-        task.Description =
-            `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`;
+        task.Name = name;
+        task.Description = description;
         task.Status = 'Open';
         if (!(await task.Save())) {
             LogError(

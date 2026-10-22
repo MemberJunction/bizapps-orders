@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { mjBizAppsOrdersCheckoutSessionEntity } from '@mj-biz-apps/orders-entities';
 import { RegisterClass } from '@memberjunction/global';
 import { BaseFormComponent } from '@memberjunction/ng-base-forms';
+import {  } from "@memberjunction/ng-entity-viewer"
 
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Checkout Sessions') // Tell MemberJunction about this class
 @Component({
@@ -20,7 +21,8 @@ export class mjBizAppsOrdersCheckoutSessionFormComponent extends BaseFormCompone
             { sectionKey: 'customerInformation', sectionName: 'Customer Information', isExpanded: true },
             { sectionKey: 'orderAndPayment', sectionName: 'Order and Payment', isExpanded: true },
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
-            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersCheckoutSessionSteps', sectionName: 'Checkout Session Steps', isExpanded: false }
         ]);
     }
 }
