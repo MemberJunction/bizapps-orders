@@ -37,6 +37,11 @@
                             type="button"
                             class="mjo-channel-tab"
                             [class.active]="SelectedChannelID === ch.ID"
+                            mjRecordLink
+                            [EntityName]="PriceListsEntity"
+                            [RecordID]="ch.ID ?? ''"
+                            [DisplayName]="ch.Name"
+                            [HandleClick]="false"
                             (click)="SelectChannel(ch.ID)">
                             <i [class]="ch.Icon"></i>
                             <span>{{ ch.Name }}</span>
@@ -96,7 +101,15 @@
                             [class.open]="ExpandedPriceID === row.ID && PriceCanExpand(row)"
                             [class.selected]="SelectedPriceID === row.ID"
                             [class.inherited]="row.Inherited">
-                            <button type="button" class="mjo-offer-h" (click)="TogglePrice(row)">
+                            <button
+                                type="button"
+                                class="mjo-offer-h"
+                                mjRecordLink
+                                [EntityName]="ProductPricesEntity"
+                                [RecordID]="row.ID"
+                                [DisplayName]="row.Name"
+                                [HandleClick]="false"
+                                (click)="TogglePrice(row)">
                                 @if (EditMode && !row.Inherited) {
                                     <span class="mjo-offer-grip" cdkDragHandle title="Drag to change rank">
                                         <i class="fa-solid fa-grip-vertical"></i>

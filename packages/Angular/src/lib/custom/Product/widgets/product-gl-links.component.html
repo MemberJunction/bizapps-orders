@@ -162,7 +162,7 @@
                         <tr [class.mjo-gl-links__row--inactive]="!row.Active">
                             <td>{{ row.RoleName }}</td>
                             <td>
-                                <button type="button" class="mjo-gl-links__link" (click)="OpenLink(row)">
+                                <button type="button" class="mjo-gl-links__link" mjRecordLink [EntityName]="LinkEntity" [RecordID]="row.ID" [DisplayName]="row.AccountCode + ' ' + row.AccountName" [HandleClick]="false" (click)="OpenLink(row)">
                                     {{ row.AccountCode }}<span class="mjo-gl-links__name"> {{ row.AccountName }}</span>
                                 </button>
                             </td>

@@ -450,7 +450,7 @@
                                                 <td class="font-bold">{{ order.BillToOrganization || order.BillToPerson || '—' }}</td>
                                             }
                                             <td>
-                                                <button type="button" class="mjo-link" (click)="OpenOrderRecord(order, $event)">
+                                                <button type="button" class="mjo-link" mjRecordLink [EntityName]="OrderHeaderEntity" [RecordID]="order.ID || ''" [DisplayName]="order.OrderNumber" [HandleClick]="false" (click)="OpenOrderRecord(order, $event)">
                                                     <strong>{{ order.OrderNumber }}</strong>
                                                 </button>
                                                 @if (order.Description) {
