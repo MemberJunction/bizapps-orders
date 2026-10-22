@@ -10,9 +10,10 @@
       "MJ: Entity Fields": [
         {
           "fields": {
-            "EntityID": "@parent:ID",
-            "Name": "RecordID",
             "EntityIDFieldName": "EntityID"
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Dimension Defaults&Name=RecordID"
           }
         }
       ]
@@ -32,9 +33,10 @@
       "MJ: Entity Fields": [
         {
           "fields": {
-            "EntityID": "@parent:ID",
-            "Name": "SourceRecordID",
             "EntityIDFieldName": "SourceEntityID"
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Price Components&Name=SourceRecordID"
           }
         }
       ]
@@ -54,9 +56,10 @@
       "MJ: Entity Fields": [
         {
           "fields": {
-            "EntityID": "@parent:ID",
-            "Name": "SourceRecordID",
             "EntityIDFieldName": "SourceEntityID"
+          },
+          "primaryKey": {
+            "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Line Progress Measurements&Name=SourceRecordID"
           }
         }
       ]
