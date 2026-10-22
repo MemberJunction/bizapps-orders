@@ -15,10 +15,10 @@
             <div class="mjo-doc-hero__meta">
                 <span>Coverage: <strong>{{ Coverage }}</strong></span>
                 @if (Record.Product) {
-                    <span [mjRecordLink]="Record" FieldName="ProductID" [HandleClick]="false">{{ Record.Product }}</span>
+                    <span>{{ Record.Product }}</span>
                 }
                 @if (Record.Company) {
-                    <span [mjRecordLink]="Record" FieldName="CompanyID" [HandleClick]="false">{{ Record.Company }}</span>
+                    <span>{{ Record.Company }}</span>
                 }
             </div>
             <bizapps-related-chips
@@ -30,11 +30,11 @@
     <div class="mjo-doc-hero__stats">
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">Holder</span>
-            <span class="mjo-doc-stat__value" [mjRecordLink]="Record" FieldName="HolderOrganizationID" [HandleClick]="false">{{ Holder }}</span>
+            <span class="mjo-doc-stat__value">{{ Holder }}</span>
         </div>
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">Beneficiary</span>
-            <span class="mjo-doc-stat__value" [mjRecordLink]="Record" FieldName="BeneficiaryPersonID" [HandleClick]="false">{{ Beneficiary }}</span>
+            <span class="mjo-doc-stat__value">{{ Beneficiary }}</span>
         </div>
     </div>
     <mjo-subscription-cancel

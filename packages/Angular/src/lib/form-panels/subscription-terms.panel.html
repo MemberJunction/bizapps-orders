@@ -29,15 +29,7 @@
                         <div class="mjo-term-card__amount">{{ TermAmount(term.Amount) }}</div>
                         <div class="mjo-term-card__dates">{{ TermDates(term.StartDate, term.EndDate) }}</div>
                         <div class="mjo-term-card__seats">{{ TermSeats(term.Quantity) }}</div>
-                        <button
-                            type="button"
-                            class="mjo-term-card__open"
-                            mjRecordLink
-                            [EntityName]="TermEntity"
-                            [RecordID]="term.ID"
-                            [DisplayName]="'Term ' + (term.TermNumber || (i + 1))"
-                            [HandleClick]="false"
-                            (click)="OpenTerm(term)">
+                        <button type="button" class="mjo-term-card__open" (click)="OpenTerm(term)">
                             Open term
                         </button>
                     </article>

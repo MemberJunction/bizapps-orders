@@ -102,7 +102,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     /** Related lists in the header tabs cap at 300px and scroll internally when larger. */
     public readonly RelatedGridHeight = 300;
-    public readonly JournalEntryEntity = MJO_ACCOUNTING_ENTITIES.JournalEntry;
 
     public AccountingView: OrderAccountingView = 'summary';
 
@@ -449,16 +448,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public get ShipToIsSame(): boolean {
         if (!this.record) return true;
         return !this.record.ShipToOrganizationID && !this.record.ShipToPersonID && !this.record.ShipToAddressID;
-    }
-
-    public get BillToFieldName(): string {
-        return this.record?.BillToOrganizationID ? 'BillToOrganizationID' : 'BillToPersonID';
-    }
-
-    public get ShipToFieldName(): string {
-        if (this.record?.ShipToOrganizationID) return 'ShipToOrganizationID';
-        if (this.record?.ShipToPersonID) return 'ShipToPersonID';
-        return this.BillToFieldName;
     }
 
     /**

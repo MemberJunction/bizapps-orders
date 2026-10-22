@@ -2,7 +2,7 @@ import { ChangeDetectionStrategy, ChangeDetectorRef, Component, Input, OnInit, i
 import { CommonModule } from '@angular/common';
 import { CompositeKey, RunQuery, RunView, type IMetadataProvider, type IRunQueryProvider, type IRunViewProvider } from '@memberjunction/core';
 import { NavigationService } from '@memberjunction/ng-shared';
-import { BaseFormComponent, BaseFormsModule } from '@memberjunction/ng-base-forms';
+import { BaseFormComponent } from '@memberjunction/ng-base-forms';
 import {
     MJCardGridComponent,
     MJCardComponent,
@@ -62,7 +62,6 @@ interface TimelineItem {
     standalone: true,
     imports: [
         CommonModule,
-        BaseFormsModule,
         MJCardGridComponent,
         MJCardComponent,
         MJCardToolsDirective,
@@ -138,7 +137,7 @@ interface TimelineItem {
                         <div class="mjo-sub-list">
                             @if (Subscriptions.length > 0) {
                                 @for (sub of Subscriptions; track sub.ID) {
-                                    <div class="mjo-sub-item" mjRecordLink [EntityName]="SubscriptionEntity" [RecordID]="sub.ID" [DisplayName]="sub.Product || sub.SubscriptionType || ('Subscription #' + sub.SubscriptionNumber)" [HandleClick]="false" (click)="OnSubClick(sub.ID)">
+                                    <div class="mjo-sub-item" (click)="OnSubClick(sub.ID)">
                                         <div class="mjo-sub-item__info">
                                             <h4>{{ sub.Product || sub.SubscriptionType || ('Subscription #' + sub.SubscriptionNumber) }}</h4>
                                             <p>
@@ -207,7 +206,7 @@ interface TimelineItem {
                                     </thead>
                                     <tbody>
                                         @for (ord of Orders; track ord.ID) {
-                                            <tr mjRecordLink [EntityName]="OrderHeaderEntity" [RecordID]="ord.ID" [DisplayName]="ord.OrderNumber" [HandleClick]="false" (click)="OnOrderClick(ord.ID)">
+                                            <tr (click)="OnOrderClick(ord.ID)">
                                                 <td class="mjo-table__order-num" [title]="ord.OrderNumber">{{ ord.OrderNumber }}</td>
                                                 <td>{{ FormatDate(ord.OrderDate) }}</td>
                                                 <td class="mjo-table__amount">{{ FormatCurrency(ord.TotalGross) }}</td>
@@ -248,11 +247,6 @@ interface TimelineItem {
                                 @for (item of Timeline; track item.Title + item.TimeAgo) {
                                     <div class="mjo-timeline__item"
                                          [class.mjo-timeline__item--clickable]="!!item.EntityName && !!item.RecordID"
-                                         mjRecordLink
-                                         [EntityName]="item.EntityName ?? ''"
-                                         [RecordID]="item.RecordID ?? ''"
-                                         [DisplayName]="item.Title"
-                                         [HandleClick]="false"
                                          (click)="OnTimelineItemClick(item)">
                                         <div class="mjo-timeline__icon mjo-timeline__icon--{{ item.Tone }}">
                                             <i [class]="item.Icon"></i>
@@ -758,9 +752,6 @@ export class PartyOrdersOverviewComponent implements OnInit {
 
     private navigationService = inject(NavigationService, { optional: true });
     private cdr = inject(ChangeDetectorRef);
-
-    public readonly OrderHeaderEntity = MJO_ENTITIES.OrderHeader;
-    public readonly SubscriptionEntity = MJO_ENTITIES.Subscription;
 
     public Loading = true;
     public MaximizedCardId: string | null = null;
