@@ -2202,6 +2202,102 @@ export interface RefundPaymentOutput {
 }
 
 /**
+ * One instalment as the caller wants it on the order.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ReplacePaymentScheduleRow {
+    /** `YYYY-MM-DD`. */
+    DueDate: string;
+    /** Greater than zero; rounded to the cent. */
+    Amount: number;
+    /** Up to 500 characters. */
+    Description?: string | null;
+}
+
+/**
+ * Input for `Orders.ReplacePaymentSchedule`.
+ *
+ * `Rows` is the whole schedule the order should have, in any order; the operation numbers the rows
+ * by due date. An empty list removes the schedule, which bills the order as one instalment.
+ * Instalments already invoiced must be in the list unchanged (same due date and amount).
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplacePaymentScheduleInput {
+    OrderHeaderID: string;
+    Rows: ReplacePaymentScheduleRow[];
+    /** Check and report what the schedule would be, and write nothing. */
+    Preview?: boolean;
+}
+
+/**
+ * Why `Orders.ReplacePaymentSchedule` refused. Nothing is written on any refusal.
+ *
+ * - `INVALID_ROW` — a row has no valid due date, no amount above zero, or too long a description.
+ * - `NOT_FOUND` / `READ_FAILED` — the order could not be found or read.
+ * - `ORDER_VOIDED` — a voided order's schedule does not change.
+ * - `PER_COMPANY_SCHEDULE` — the order still bills by a schedule per product company.
+ * - `INVOICED_ROW_CHANGED` — an invoiced, paid or written-off instalment is missing from the list
+ *   or has a different due date or amount.
+ * - `BILLED_WITHOUT_SCHEDULE` — the order was confirmed with no schedule and billed in full.
+ * - `SCHEDULE_REQUIRED` — the order is confirmed and billed by its schedule, which cannot be removed.
+ * - `TIE_FAILED` — the rows do not add up to the order's lines.
+ * - `WRITE_FAILED` — a save failed; the transaction was rolled back.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export type ReplacePaymentScheduleCode =
+    | 'INVALID_ROW'
+    | 'NOT_FOUND'
+    | 'READ_FAILED'
+    | 'ORDER_VOIDED'
+    | 'PER_COMPANY_SCHEDULE'
+    | 'INVOICED_ROW_CHANGED'
+    | 'BILLED_WITHOUT_SCHEDULE'
+    | 'SCHEDULE_REQUIRED'
+    | 'TIE_FAILED'
+    | 'WRITE_FAILED';
+
+/** One instalment of the order's schedule after the call. */
+export interface ReplacedPaymentScheduleRow {
+    /** Null only on a preview, for a row that would be created. */
+    OrderHeaderPaymentScheduleID: string | null;
+    InstallmentNumber: number;
+    DueDate: string;
+    Amount: number;
+    Status: string;
+    DocumentNumber?: string | null;
+    /** True for an invoiced, paid or written-off instalment kept exactly as it was. */
+    Kept: boolean;
+}
+
+/**
+ * Output for `Orders.ReplacePaymentSchedule`.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersReplacePaymentScheduleOutput {
+    Success: boolean;
+    Message?: string;
+    /** Set on a refusal. */
+    Code?: ReplacePaymentScheduleCode | null;
+    OrderHeaderID?: string | null;
+    OrderNumber?: string | null;
+    /** The schedule after the call (or, on a preview, as it would be), by instalment number. */
+    Rows: ReplacedPaymentScheduleRow[];
+    /** Instalments already invoiced and kept unchanged. */
+    Kept: number;
+    /** Rows created or changed. */
+    Written: number;
+    /** Scheduled rows deleted. */
+    Removed: number;
+    /** False when the order already had this schedule and nothing was written. */
+    Changed: boolean;
+    WasPreview: boolean;
+}
+
+/**
  * Input for `Orders.ReplayCheckoutStep`.
  *
  * Names one post-payment step of one checkout session, as recorded in CheckoutSessionStep.
@@ -2915,6 +3011,22 @@ export class OrdersRefundPaymentOperation extends BaseRemotableOperation<RefundP
     public readonly OperationKey = "Orders.RefundPayment";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:payments:refund";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ReplacePaymentSchedule — Replace Payment Schedule
+// ============================================================
+/**
+ * Replace Payment Schedule
+ * Set an order's payment schedule to a supplied list of rows (due date, amount, description). Instalments already invoiced, paid or written off must appear in the list with the same due date and amount and are kept unchanged; a list that changes or drops one is refused. The remaining rows replace the order's Scheduled rows, numbered by due date, and must tie to the order's lines by the same check confirm and invoicing run. A confirmed order billed in full without a schedule cannot be given one, and a confirmed order billed by its schedule cannot have it removed. All or none; the same list sent twice writes nothing. Preview reports the result without writing.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ReplacePaymentSchedule'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersReplacePaymentScheduleOperation extends BaseRemotableOperation<OrdersReplacePaymentScheduleInput, OrdersReplacePaymentScheduleOutput> {
+    public readonly OperationKey = "Orders.ReplacePaymentSchedule";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:write";
     public readonly RequiresSystemUser = false;
 }
 
