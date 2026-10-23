@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
+import { AgingBucketOf, EmptyAgingBuckets, MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { PresetViewRef } from '../../data/preset-view';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
@@ -460,7 +460,7 @@ export class MJOCustomerARPageComponent implements OnInit {
      * second implementation of the same rule.
      */
     public get TotalBuckets(): MJOAgingBuckets {
-        const total: MJOAgingBuckets = { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 };
+        const total: MJOAgingBuckets = EmptyAgingBuckets();
         for (const customer of this.Customers) {
             total.Current += customer.Buckets.Current;
             total.Days1To30 += customer.Buckets.Days1To30;
@@ -576,7 +576,7 @@ export class MJOCustomerARPageComponent implements OnInit {
                     IsOrganization: isOrg,
                     Open: 0,
                     Credit: 0,
-                    Buckets: { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 },
+                    Buckets: EmptyAgingBuckets(),
                     Orders: [],
                 } satisfies MJOCustomerSummary);
 
@@ -587,11 +587,9 @@ export class MJOCustomerARPageComponent implements OnInit {
                 existing.Credit += Math.abs((order.Balance ?? 0));
             } else {
                 existing.Open += (order.Balance ?? 0);
-                const late = order.DueDate ? DaysSince(order.DueDate, today) : 0;
-                if (late <= 0) existing.Buckets.Current += (order.Balance ?? 0);
-                else if (late <= 30) existing.Buckets.Days1To30 += (order.Balance ?? 0);
-                else if (late <= 60) existing.Buckets.Days31To60 += (order.Balance ?? 0);
-                else existing.Buckets.Days61Plus += (order.Balance ?? 0);
+                // The age rule lives beside the bucket type, so this page and the Orders dashboard
+                // cannot drift apart about what "current" means (golive#361).
+                existing.Buckets[AgingBucketOf(order.DueDate, today)] += (order.Balance ?? 0);
             }
 
             byCustomer.set(key, existing);
