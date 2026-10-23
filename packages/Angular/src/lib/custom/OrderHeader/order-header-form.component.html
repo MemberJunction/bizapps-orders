@@ -89,8 +89,8 @@
                 </div>
                 @if (ExpandedParty === 'ship') {
                     <div class="mjo-oh-bubble__edit">
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToOrganizationID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('ShipTo', $event)"></mj-form-field>
+                        <bizapps-party-field [Record]="record" [ShowLabel]="true" FieldName="ShipToOrganizationID" Kind="Organization" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></bizapps-party-field>
+                        <bizapps-party-field [Record]="record" [ShowLabel]="true" FieldName="ShipToPersonID" Kind="Person" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('ShipTo', $event)"></bizapps-party-field>
                         <mjo-party-address-picker
                             [Order]="record"
                             Side="ship"
@@ -125,8 +125,8 @@
                 </div>
                 @if (ExpandedParty === 'bill') {
                     <div class="mjo-oh-bubble__edit">
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
-                        <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('BillTo', $event)"></mj-form-field>
+                        <bizapps-party-field [Record]="record" [ShowLabel]="true" FieldName="BillToOrganizationID" Kind="Organization" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></bizapps-party-field>
+                        <bizapps-party-field [Record]="record" [ShowLabel]="true" FieldName="BillToPersonID" Kind="Person" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)" (ValueChange)="OnPartyPersonChange('BillTo', $event)"></bizapps-party-field>
                         <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="PaymentTermsTypeID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                         <mjo-party-address-picker
                             [Order]="record"

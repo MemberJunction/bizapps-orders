@@ -327,10 +327,7 @@
                                     [class.is-selected]="line.SubscriptionAction === 'ExtendExisting'"
                                     [attr.aria-pressed]="line.SubscriptionAction === 'ExtendExisting'"
                                     (click)="SetSubscriptionAction(line, 'ExtendExisting')">
-                                    Add as next term
-                                    @if (HoldingContinuationStart(holding)) {
-                                        (starts {{ HoldingContinuationStart(holding) }}@if (HoldingContinuationEnd(line, holding); as end) {, ends {{ end }}})
-                                    }
+                                    {{ HoldingExtendLineText(line, holding).Choice }}
                                 </button>
                                 <button
                                     type="button"
@@ -346,7 +343,7 @@
                             @if (line.SubscriptionAction === 'CreateNew') {
                                 Confirm starts a separate subscription on this line's service period.
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
-                                Confirm adds a term to {{ holding.SubscriptionNumber }}, starting the day after its coverage ends@if (HoldingContinuationEnd(line, holding); as end) { and ending {{ end }}}.
+                                {{ HoldingExtendLineText(line, holding).Hint }}
                             } @else {
                                 Not chosen. The subscription type's rule will decide at confirm, and it may move this
                                 line's dates.

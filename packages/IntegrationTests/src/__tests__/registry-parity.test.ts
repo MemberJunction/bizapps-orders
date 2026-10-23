@@ -77,6 +77,7 @@ import '../checks/term-extension.checks.js';
 import '../checks/amount-change.checks.js';
 import '../checks/term-shift.checks.js';
 import '../checks/billcom-rail.checks.js';
+import '../checks/service-period-lock.checks.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(here, '../../../..');
@@ -95,12 +96,12 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'revenue-recognition': 10,
     subscriptions: 39,
     'subscription-cancellation': 11,
-    'subscription-renewal': 52,
+    'subscription-renewal': 53,
     'payments-rollups': 9,
     'payment-ledger': 12,
     intercompany: 14,
     events: 12,
-    'line-subscriber': 17,
+    'line-subscriber': 19,
     'account-credit': 11,
     pricing: 23,
     promotions: 30,
@@ -135,6 +136,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'amount-change': 11,
     'term-shift': 6,
     'billcom-rail': 21,
+    'service-period-lock': 6,
 };
 
 /**

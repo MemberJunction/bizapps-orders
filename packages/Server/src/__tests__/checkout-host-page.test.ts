@@ -132,6 +132,28 @@ describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
     });
 });
 
+describe('the fallback page when /complete outlasts the gateway', () => {
+    const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+    const script = html.slice(html.lastIndexOf('<script'), html.lastIndexOf('</script>'));
+
+    it('reads only JSON replies, so a gateway error page never becomes a parser error', () => {
+        expect(script).toContain('}, function () { throw transportError(res.status); });');
+        expect(script).toContain("'Checkout could not reach the server. Please try again.'");
+    });
+
+    it('asks /complete again while the server may still be finishing, and never shows a paid buyer a failure', () => {
+        expect(script).toContain("reply.Status === 'Processing' ? null : reply");
+        expect(script).toContain('if (err && err.transport) return null;');
+        expect(script.match(/completeCheckout\(\{ sessionId: sessionId, clientSessionKey: sessionKey \}, finishing\)/g)).toHaveLength(2);
+        expect(script).toContain('Please do not pay again.');
+    });
+
+    it('is a script that parses', () => {
+        const body = script.slice(script.indexOf('>') + 1);
+        expect(() => new Function(body)).not.toThrow();
+    });
+});
+
 describe('the pay-renewal page (#289)', () => {
     it('passes the update-card token to the element as an escaped attribute, and only when given', async () => {
         const { renderCheckoutHostPage } = await import('../checkout-host-page.js');

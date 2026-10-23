@@ -74,7 +74,14 @@ import {
     DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import {
+    AsDateValue,
+    ExtendChoiceTextFor,
+    ExtendOutcomeFor,
+    HoldingSubscriberFor,
+    TodayAsDateValue,
+    type ExtendChoiceText,
+} from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -597,6 +604,32 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** The start an extension would get: the day after the existing coverage ends. */
     public HoldingContinuationStart(holding: MJOExistingHolding): string {
         return this.dateInputValue(ContinuationStartFrom(holding));
+    }
+
+    /**
+     * The "extend" choice's label and hint, saying what confirm will do with it: a next term for an
+     * active holding, or the type's reactivation rule for a paused one (golive #339). Judged on the
+     * order date, as the server's reactivation window is.
+     */
+    public HoldingExtendText(holding: MJOExistingHolding): ExtendChoiceText {
+        return ExtendChoiceTextFor(holding, AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue());
+    }
+
+    /**
+     * The extend choice's text for one line: {@link HoldingExtendText}, plus the end an "Add as next
+     * term" choice would give this line (golive #338). Only the next-term outcome takes the line's
+     * dates; a reactivation or a new subscription runs on the line's own dates.
+     */
+    public HoldingExtendLineText(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): ExtendChoiceText {
+        const text = this.HoldingExtendText(holding);
+        const purchaseDay = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
+        if (ExtendOutcomeFor(holding, purchaseDay).Kind !== 'NextTerm') return text;
+        const end = this.HoldingContinuationEnd(line, holding);
+        if (!end) return text;
+        return {
+            Choice: text.Choice.endsWith(')') ? `${text.Choice.slice(0, -1)}, ends ${end})` : `${text.Choice} (ends ${end})`,
+            Hint: text.Hint.replace(/\.$/, ` and ending ${end}.`),
+        };
     }
 
     /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */
