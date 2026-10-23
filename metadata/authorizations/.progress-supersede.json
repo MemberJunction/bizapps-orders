@@ -5,14 +5,14 @@
       "ParentID": null,
       "IsActive": true,
       "UseAuditLog": true,
-      "Description": "Replace the latest posted progress observation on a percentage-of-completion line. Orders.RecordProgress writes a new observation that names the one it replaces, reverses the replaced observation's recognition (on its own date, or in the first later month with no posted batch when its month has one), and posts the new catch-up, booked no earlier than that reversal date. Nothing is edited; the replaced row stays Posted and immutable. Held by the Orders Revenue Supervisor role, on top of MJ.BizApps.Orders.Progress.Attest, which every attestation needs. Without this row, supersede is refused."
+      "Description": "Replace the latest posted progress observation on a percentage-of-completion line. Orders.RecordProgress writes a new observation that names the one it replaces, reverses the replaced observation's recognition (on its own date, or on the first open day when finance has closed that month), and posts the new catch-up on the date entered, which may not be in a month finance has closed. Nothing is edited; the replaced row stays Posted and immutable. Held by the Orders Revenue Supervisor role, on top of MJ.BizApps.Orders.Progress.Attest, which every attestation needs. Without this row, supersede is refused."
     },
     "primaryKey": {
       "ID": "6CF663E9-4180-42F4-BBAE-18C1BC598E5C"
     },
     "sync": {
-      "lastModified": "2026-10-03T21:47:05.799Z",
-      "checksum": "527715ab6f71fb58c3c447ddbb441daa74a34dd00cc60cf7e9acb9d7a3bbde1b"
+      "lastModified": "2026-10-12T01:22:27.000Z",
+      "checksum": "ffbc3dac1c879e211f006e066991bf92128dbc87d5b5379c79e84ae08c074980"
     }
   }
 ]
