@@ -529,6 +529,13 @@
     color: var(--mj-text-muted);
 }
 
+.mjo-oh-subhead {
+    margin: var(--mj-space-4) 0 var(--mj-space-2);
+    font-size: var(--mj-text-sm);
+    font-weight: var(--mj-font-semibold);
+    color: var(--mj-text-primary);
+}
+
 .mjo-oh-acct__bar {
     display: flex;
     align-items: flex-start;
