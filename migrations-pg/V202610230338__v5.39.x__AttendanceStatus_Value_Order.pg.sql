@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610230338__v5.38.x__AttendanceStatus_Value_Order.sql
+-- PostgreSQL counterpart of V202610230338__v5.39.x__AttendanceStatus_Value_Order.sql
 -- =============================================================================================
 -- `mj sql-convert --from tsql --to postgres` (MJ CLI 6.1.5) output, unchanged. The T-SQL file's
 -- explanation is carried below, under "Other". Schema names are written unquoted, as the converter
