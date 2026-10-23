@@ -1,5 +1,39 @@
 # @mj-biz-apps/orders-ng
 
+## 5.37.0
+
+### Minor Changes
+
+- 0983af2: Checkout: a verified member sees their discount before pressing Pay (#919). With a `member-token` on `<mj-orders-checkout>`, once the e-mail is valid and the billing location is complete, the element drafts the form in the background (debounced 400 ms, again when the e-mail, location or quantity changes, stale answers dropped) with the token and no typed code. When the draft reports `MemberDiscountApplied`, the widget shows "<code> member discount: −<amount>", the total and the Pay button show the server's total, and the promo-code box is hidden, so one press of Pay charges it. A token that earns nothing keeps the full price and the notice at Pay, as before; without a token nothing is sent early. When the host also sets `email`, the e-mail field is read-only while the token is attached. The widget gains the `memberDiscount` and `lockEmail` inputs and the `quoteRequested` output.
+
+### Patch Changes
+
+- 1cf9fa1: `FindExistingHolding` and `FindUnansweredHeldLines` count every subscription that has not ended (Active, Trialing, Paused) as held, so the extend-or-new question is asked for a paused subscription too. The status set is exported as `EXISTING_HOLDING_STATUSES`.
+
+  The order screen's "extend" choice now says what confirm will do: a next term for an active holding, or the subscription type's reactivation rule (reactivate, or a separate subscription) for a paused one. `ExtendOutcomeFor` and `ExtendChoiceTextFor` give the same wording to other screens.
+
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+  - @mj-biz-apps/orders-entities@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- 0c499b2: A paid checkout no longer shows a parser error when `/complete` outlasts the CDN or proxy in front of the server. The checkout element and the fallback host page read only JSON replies; a gateway error page or no reply becomes "Checkout could not reach the server". After payment, a reply like that, or a session still `Processing`, means the server may still be booking the order, so the checkout shows "Payment received. Finishing your order…" and sends `/complete` again every 3 s for up to 2 minutes. `/complete` is replay-safe, so the retry returns the confirmed order. If the wait runs out, the buyer is told the payment went through and not to pay again.
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- 7af3d40: The subscription form has a Cancel subscription control (#702). The person cancelling keeps the subscription type's own rule (the default, which sends no timing) or overrides it with end of term or immediately, adds a reason, previews what `Orders.CancelSubscription` would do (coverage end, access end, refund, later terms), and then confirms; changing the choice discards the preview. It is offered to a viewer who may update subscriptions, on an Active, Trialing or Paused subscription.
+- 5a511c5: Call NotifyLoadComplete() when the initial Orders section page finishes mounting, and replace capped 500-row entity_object GetOrders({ Preset: 'all' }) reads on the Orders dashboard, order document, and Customer AR pages with targeted/uncapped queries.
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+  - @mj-biz-apps/orders-entities@5.36.0
+
 ## 5.35.1
 
 ### Patch Changes
@@ -806,8 +840,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                    "FK_EntityFieldValue_EntityField"
+                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

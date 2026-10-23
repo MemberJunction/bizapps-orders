@@ -1,5 +1,45 @@
 # @mj-biz-apps/orders-server
 
+## 5.37.0
+
+### Patch Changes
+
+- Updated dependencies [3ec257f]
+- Updated dependencies [d429e9e]
+- Updated dependencies [065481c]
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+- Updated dependencies [3982e30]
+- Updated dependencies [dfc43ea]
+  - @mj-biz-apps/orders-core-entities-server@5.37.0
+  - @mj-biz-apps/orders-entities@5.37.0
+  - @mj-biz-apps/orders-actions@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- 0c499b2: A paid checkout no longer shows a parser error when `/complete` outlasts the CDN or proxy in front of the server. The checkout element and the fallback host page read only JSON replies; a gateway error page or no reply becomes "Checkout could not reach the server". After payment, a reply like that, or a session still `Processing`, means the server may still be booking the order, so the checkout shows "Payment received. Finishing your order…" and sends `/complete` again every 3 s for up to 2 minutes. `/complete` is replay-safe, so the retry returns the confirmed order. If the wait runs out, the buyer is told the payment went through and not to pay again.
+- Updated dependencies [0e3b9fd]
+- Updated dependencies [7756bb0]
+  - @mj-biz-apps/orders-core-entities-server@5.36.1
+  - @mj-biz-apps/orders-actions@5.36.1
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- 4aa6783: Checkout: the Stripe publishable key the browser gets can come from the server environment. When a widget names a `paymentProviderId` and that provider's `CredentialsRef` resolves to a publishable key (the default secret resolver reads `<CredentialsRef>_PUBLISHABLE_KEY`, beside `<CredentialsRef>_API_KEY`), `/checkout/initialize` hands that key to the browser in place of the widget's `stripePublishableKey`, on both the ordinary and the renewal-payment session, so the host page and the Angular widget load Stripe.js with the same account's key as the server. Without the variable the widget's value is used as before. A key whose test/live mode disagrees with the account's (its API key's mode, else `IsLiveMode`) is logged as a warning by prefix only, and a provider that cannot be read is logged and falls back to the widget's key rather than failing the checkout. New exports: `ResolveCheckoutPublishableKey`, `ChooseCheckoutPublishableKey`, `StripeKeyModeOf`, `ResolvePaymentCredentials`; `PaymentCredentials` gains `PublishableKey`.
+- Updated dependencies [4aa6783]
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+- Updated dependencies [5a490c4]
+  - @mj-biz-apps/orders-core-entities-server@5.36.0
+  - @mj-biz-apps/orders-entities@5.36.0
+  - @mj-biz-apps/orders-actions@5.36.0
+
 ## 5.35.1
 
 ### Patch Changes
@@ -864,8 +904,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                    "FK_EntityFieldValue_EntityField"
+                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

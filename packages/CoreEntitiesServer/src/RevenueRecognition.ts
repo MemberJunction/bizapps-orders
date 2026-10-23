@@ -61,11 +61,16 @@ function money(v: number): number {
     return Math.round((v + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * Month arithmetic in UTC. Service periods are calendar days that arrive as UTC midnight (SQL `DATE`
+ * columns, `YYYY-MM-DD` strings); local-time arithmetic put them on the previous evening west of
+ * Greenwich, so a 2026-07-01 to 2026-12-31 window counted 7 months and a one-month term 2 (golive #338).
+ */
 function addMonths(d: Date, n: number): Date {
     const r = new Date(d.getTime());
-    const day = r.getDate();
-    r.setMonth(r.getMonth() + n);
-    if (r.getDate() < day) r.setDate(0); // clamp: Jan 31 + 1mo -> Feb 28/29
+    const day = r.getUTCDate();
+    r.setUTCMonth(r.getUTCMonth() + n);
+    if (r.getUTCDate() < day) r.setUTCDate(0); // clamp: Jan 31 + 1mo -> Feb 28/29
     return r;
 }
 
@@ -92,11 +97,11 @@ export abstract class RevenueRecognitionDriver {
         return out;
     }
 
-    /** Whole months between two dates, minimum 1. */
+    /** Whole months between two calendar days (UTC), minimum 1. */
     protected MonthSpan(start: Date, end: Date): number {
         const months =
-            (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-        return Math.max(1, months + (end.getDate() >= start.getDate() ? 1 : 0));
+            (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth());
+        return Math.max(1, months + (end.getUTCDate() >= start.getUTCDate() ? 1 : 0));
     }
 
     protected RequireServicePeriod(context: RevRecContext, driver: string): { start: Date; end: Date } {

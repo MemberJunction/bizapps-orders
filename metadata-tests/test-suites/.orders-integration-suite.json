@@ -632,6 +632,17 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-46 - Service Period Lock",
+            "Sequence": 46,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "5E7C2B94-16AD-4C3F-9D20-8A41E6F35B72"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-47 - Replace Payment Schedule",
             "Sequence": 47,
             "Status": "Active"

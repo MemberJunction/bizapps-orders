@@ -1,11 +1,11 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { FormatDate, FormatInstantDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { RunView, Metadata, type EntityInfo } from '@memberjunction/core';
-import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import {
@@ -59,16 +59,19 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
  * they are: entries that already exist and sit harmlessly until their period
  * arrives. A change nets against them; they are never edited.
  *
+ * OPENING ONE GOES TO ITS FORM, where Cancel lives (#932): double-click a row, or press "Open" in the
+ * side panel. A single click only fills the side panel.
+ *
  * ## Example
  *
  * ```html
- * <mjo-subscriptions-page />
+ * <mjo-subscriptions-page (SubscriptionOpened)="open($event)" />
  * ```
  */
 @Component({
     selector: 'mjo-subscriptions-page',
     standalone: true,
-    imports: [CommonModule, EntityViewerModule, DeferredRevenueWaterfallModule, MJOStatedValueComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, DeferredRevenueWaterfallModule, MJOStatedValueComponent, MJAlertComponent, MJButtonDirective],
     template: `
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
@@ -97,8 +100,12 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                         <div class="mj-card-head">
                             <i class="fa-solid fa-rotate" aria-hidden="true"></i>
                             <h3>{{ Selected.SubscriptionNumber }}</h3>
-                            <span class="right">
+                            <span class="right mjo-sub__head-actions">
                                 <span class="mj-chip" [class]="statusClass(Selected)">{{ Selected.Status }}</span>
+                                <button type="button" mjButton variant="outline" size="sm" (click)="OpenSelected()"
+                                        title="Open the subscription's form, where it can be cancelled">
+                                    <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open
+                                </button>
                             </span>
                         </div>
                         <div class="mj-card-pad">
@@ -248,6 +255,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                 height: 100%;
                 width: 100%;
             }
+            .mjo-sub__head-actions { display: inline-flex; align-items: center; gap: var(--mj-space-2); }
             .mjo-sub__recog { margin-top: var(--mj-space-4); }
             .mjo-sub__note { margin-top: var(--mj-space-3); }
             .mjo-sub__event {
@@ -278,6 +286,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     public Rows: MJOSubscriptionRow[] = [];
     public SelectedID: string | null = null;
     public Preset = 'active';
+    /** Asks the section to open a subscription's form, where Cancel lives (#932). */
+    @Output() SubscriptionOpened = new EventEmitter<{ ID: string }>();
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
@@ -308,12 +318,15 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         }
     }
 
+    /** Double-click opens the form; the single click before it has already filled the side panel. */
     public OnRecordOpened(event: RecordOpenedEvent): void {
         const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
-        if (id) {
-            this.SelectedID = id;
-            void this.loadDetail(id);
-        }
+        if (id) this.SubscriptionOpened.emit({ ID: id });
+    }
+
+    /** The side panel's "Open" button. */
+    public OpenSelected(): void {
+        if (this.Selected) this.SubscriptionOpened.emit({ ID: this.Selected.ID });
     }
 
     public Terms: mjBizAppsOrdersSubscriptionTermEntity[] = [];

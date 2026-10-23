@@ -119,7 +119,12 @@ export interface GrantOutcome {
 export async function CreateEntitlementGrants(
     order: GrantableOrder,
     lines: GrantableLine[],
-    termsByLine: Map<string, TermForLine>,
+    /**
+     * The term or terms each subscription line bought. A line that states an end past its first term
+     * bought several (golive #338); a grant that follows the term is written once per term, so
+     * extending, shifting or cancelling one term moves the access that term gave.
+     */
+    termsByLine: Map<string, TermForLine | readonly TermForLine[]>,
     provider: IMetadataProvider,
     user: UserInfo,
     options?: EntitySaveOptions,
@@ -192,11 +197,11 @@ export async function CreateEntitlementGrants(
     //
     // Re-keying here rather than asking the caller to change: a map that arrives with unknown casing
     // is the caller's business, and normalising on receipt cannot be forgotten by the next caller.
-    const termsByLineKey = new Map<string, TermForLine>();
-    for (const [lineID, term] of termsByLine) termsByLineKey.set(key(lineID), term);
+    const termsByLineKey = new Map<string, readonly TermForLine[]>();
+    for (const [lineID, terms] of termsByLine) termsByLineKey.set(key(lineID), Array.isArray(terms) ? terms : [terms as TermForLine]);
 
     // Subscription IDs behind the terms, so a grant can point at both.
-    const termIDs = [...termsByLineKey.values()].map((t) => t.ID);
+    const termIDs = [...termsByLineKey.values()].flat().map((t) => t.ID);
     const subscriptionByTerm = new Map<string, string>();
     if (termIDs.length) {
         const terms = await rv.RunView<{ ID: string; SubscriptionID: string }>(
@@ -250,7 +255,7 @@ export async function CreateEntitlementGrants(
             );
         }
 
-        const term = termsByLineKey.get(key(line.ID)) ?? null;
+        const lineTerms = termsByLineKey.get(key(line.ID)) ?? [];
 
         for (const template of forThisProduct) {
             if (!TemplateAppliesToLineChoices(template, choicesByLine.get(key(line.ID)) ?? [])) continue;
@@ -262,75 +267,80 @@ export async function CreateEntitlementGrants(
                 { ValidityMode: template.ValidityMode },
             );
 
-            const event = eventByProduct.get(key(line.ProductID));
-            const validity = ResolveValidityWindow(resolved.ValidityMode, {
-                GrantedOn: order.OrderDate,
-                DurationDays: template.ValidityDurationDays,
-                EventStartsAt: event?.EventStartsAt ? new Date(event.EventStartsAt) : null,
-                EventEndsAt: event?.EventEndsAt ? new Date(event.EventEndsAt) : null,
-                AccessLeadHours: template.AccessLeadHours,
-                AccessLagHours: template.AccessLagHours,
-                TermStartDate: term ? new Date(term.StartDate) : null,
-                TermEndDate: term ? new Date(term.EndDate) : null,
-            });
+            // One grant per term when it follows the term; any other validity is the line's, once.
+            const grantTerms: Array<TermForLine | null> =
+                resolved.ValidityMode === 'SubscriptionTerm' && lineTerms.length > 1 ? [...lineTerms] : [lineTerms[0] ?? null];
+            for (const term of grantTerms) {
+                const event = eventByProduct.get(key(line.ProductID));
+                const validity = ResolveValidityWindow(resolved.ValidityMode, {
+                    GrantedOn: order.OrderDate,
+                    DurationDays: template.ValidityDurationDays,
+                    EventStartsAt: event?.EventStartsAt ? new Date(event.EventStartsAt) : null,
+                    EventEndsAt: event?.EventEndsAt ? new Date(event.EventEndsAt) : null,
+                    AccessLeadHours: template.AccessLeadHours,
+                    AccessLagHours: template.AccessLagHours,
+                    TermStartDate: term ? new Date(term.StartDate) : null,
+                    TermEndDate: term ? new Date(term.EndDate) : null,
+                });
 
-            const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(ENTITLEMENT_GRANT_ENTITY, user);
-            grant.NewRecord();
-            grant.ProductEntitlementID = template.ID;
-            grant.OrderLineID = line.ID;
-            const subID = term ? subscriptionByTerm.get(key(term.ID)) : undefined;
-            if (term) {
-                grant.SubscriptionTermID = term.ID;
-                if (subID) grant.SubscriptionID = subID;
-            }
+                const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(ENTITLEMENT_GRANT_ENTITY, user);
+                grant.NewRecord();
+                grant.ProductEntitlementID = template.ID;
+                grant.OrderLineID = line.ID;
+                const subID = term ? subscriptionByTerm.get(key(term.ID)) : undefined;
+                if (term) {
+                    grant.SubscriptionTermID = term.ID;
+                    if (subID) grant.SubscriptionID = subID;
+                }
 
-            // BENEFICIARY: the subscription's holder when the grant belongs to one, so access and
-            // the subscription never name different parties. Otherwise the line's own ship-to,
-            // because that is where 'who is this for' lives (D61) — a seat bought for a named
-            // colleague, a ticket for an attendee — then the order's ship-to, then the buyer.
-            const beneficiary = (subID && holderBySubscription.get(key(subID))) || ResolveLineParty(line, order);
-            if (beneficiary.PersonID) grant.BeneficiaryPersonID = beneficiary.PersonID;
-            if (beneficiary.OrganizationID) grant.BeneficiaryOrganizationID = beneficiary.OrganizationID;
+                // BENEFICIARY: the subscription's holder when the grant belongs to one, so access and
+                // the subscription never name different parties. Otherwise the line's own ship-to,
+                // because that is where 'who is this for' lives (D61) — a seat bought for a named
+                // colleague, a ticket for an attendee — then the order's ship-to, then the buyer.
+                const beneficiary = (subID && holderBySubscription.get(key(subID))) || ResolveLineParty(line, order);
+                if (beneficiary.PersonID) grant.BeneficiaryPersonID = beneficiary.PersonID;
+                if (beneficiary.OrganizationID) grant.BeneficiaryOrganizationID = beneficiary.OrganizationID;
 
-            // A subscription line's seats come from its term: the line's own quantity is prorated
-            // by now, so 10 seats over a half-length first period would grant 5 (#589).
-            grant.Quantity = ResolveGrantQuantity(
-                template.Quantity,
-                term ? term.Quantity : Number(line.Quantity ?? 0),
-                resolved.QuantityMode,
-            );
-            grant.ValidFrom = validity.ValidFrom;
-            grant.ValidTo = validity.ValidTo;
-            grant.ValidityModeApplied = validity.ModeApplied;
-            const decision = DecideGrantStatus(
-                resolved.GrantTiming,
-                !!line.RenewsSubscriptionID,
-                order.Payment,
-                cutoffDaysPastDue,
-            );
-            const status = decision.Status;
-            grant.Status = status;
-            // Recorded so the grant can be re-decided later under the rule it was written under,
-            // whatever the catalog says by then (PaymentGatedAccess).
-            grant.GrantTimingApplied = resolved.GrantTiming;
-            grant.SuspensionReason = decision.Reason;
-            grant.SuspendedAt = status === 'Suspended' ? new Date() : null;
-
-            if (!(await grant.Save(options))) {
-                throw new Error(
-                    `Failed to grant entitlement '${template.Code}' for order line ${line.ID}: ` +
-                        `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                // A subscription line's seats come from its term: the line's own quantity is prorated
+                // by now, so 10 seats over a half-length first period would grant 5 (#589).
+                grant.Quantity = ResolveGrantQuantity(
+                    template.Quantity,
+                    term ? term.Quantity : Number(line.Quantity ?? 0),
+                    resolved.QuantityMode,
                 );
-            }
+                grant.ValidFrom = validity.ValidFrom;
+                grant.ValidTo = validity.ValidTo;
+                grant.ValidityModeApplied = validity.ModeApplied;
+                const decision = DecideGrantStatus(
+                    resolved.GrantTiming,
+                    !!line.RenewsSubscriptionID,
+                    order.Payment,
+                    cutoffDaysPastDue,
+                );
+                const status = decision.Status;
+                grant.Status = status;
+                // Recorded so the grant can be re-decided later under the rule it was written under,
+                // whatever the catalog says by then (PaymentGatedAccess).
+                grant.GrantTimingApplied = resolved.GrantTiming;
+                grant.SuspensionReason = decision.Reason;
+                grant.SuspendedAt = status === 'Suspended' ? new Date() : null;
 
-            out.Created++;
-            out.Grants.push({
-                ID: grant.ID,
-                OrderLineID: line.ID,
-                Code: template.Code,
-                Status: status,
-                ValidityModeApplied: validity.ModeApplied,
-            });
+                if (!(await grant.Save(options))) {
+                    throw new Error(
+                        `Failed to grant entitlement '${template.Code}' for order line ${line.ID}: ` +
+                            `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+
+                out.Created++;
+                out.Grants.push({
+                    ID: grant.ID,
+                    OrderLineID: line.ID,
+                    Code: template.Code,
+                    Status: status,
+                    ValidityModeApplied: validity.ModeApplied,
+                });
+            }
         }
     }
 

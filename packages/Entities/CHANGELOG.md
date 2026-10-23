@@ -1,5 +1,27 @@
 # @mj-biz-apps/orders-entities
 
+## 5.37.0
+
+### Minor Changes
+
+- 336603c: The 5.37 Metadata_Sync ships the one setting metadata/ added since 5.36: `ConcessionSelfApprovalEscalation` (#913). A host that upgrades by migration gets the same row as one that ran `mj sync push`, created empty, so a holder of a ConcessionLimit rule's role still approves their own concession until the setting is filled in. It has a Postgres counterpart.
+
+### Patch Changes
+
+- 1cf9fa1: `FindExistingHolding` and `FindUnansweredHeldLines` count every subscription that has not ended (Active, Trialing, Paused) as held, so the extend-or-new question is asked for a paused subscription too. The status set is exported as `EXISTING_HOLDING_STATUSES`.
+
+  The order screen's "extend" choice now says what confirm will do: a next term for an active holding, or the subscription type's reactivation rule (reactivate, or a separate subscription) for a paused one. `ExtendOutcomeFor` and `ExtendChoiceTextFor` give the same wording to other screens.
+
+## 5.36.1
+
+## 5.36.0
+
+### Minor Changes
+
+- db3aef7: Order review by trigger (bc-aidp-next-golive#320 §5). A Direct order that hits a switched-on trigger (`NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`) cannot confirm until the reviewer role approves its `ORDERS_ORDER_REVIEW` task; an order a reviewer created goes to the escalation role. Routing is to the role holders' linked Persons, never the order's creator. Configured by the new `OrderReview*` settings, all off by default, so hosts that set nothing are unaffected. Adds the `RegisterOrderDealLink` seam for the sales app to say which deal created an order; the `ORDERS_ORDER_REVIEW` task type and the settings rows ship in metadata. An approval counts only when the user who wrote the decision (from `MJ: Record Changes`) holds the routed role and is not the creator, the task was linked to this order alone before it was decided, and nothing reviewed on the order was written since. `OrderHeader.Origin` can now be written only by the process that creates the order (checkout, provider payment); any other write of it is refused on save.
+- 4a7fbb0: Build and run on MemberJunction 6.1.6, the current 6.1 LTS release. Every `@memberjunction/*` peer, devDependency and the `@memberjunction/core` / `@memberjunction/global` overrides move from `^6.1.5` to `^6.1.6`, and `mj-app.json` requires a host at `>=6.1.6 <7.0.0`. `scripts/rebuild-db.sh` and the PostgreSQL parity workflow install MJ core `v6.1.6`. One copy of `@memberjunction/core` and `@memberjunction/global` resolves.
+- eeb9cd5: The 5.36 Metadata_Sync ships the eight settings and the task type that metadata/ added since 5.35: the order review settings (`OrderReviewTriggers`, `OrderReviewTotalThreshold`, `OrderReviewServiceStartMonths`, `OrderReviewLineTermMonths`, `OrderReviewerRole`, `OrderReviewEscalationRole`), the refund approval settings (`RefundApprovalThreshold`, `RefundApproverRole`) and the `ORDERS_ORDER_REVIEW` task type. A host that upgrades by migration gets the same rows as one that ran `mj sync push`, with the checks off until the settings are filled in. It has a Postgres counterpart.
+
 ## 5.35.1
 
 ## 5.35.0
@@ -700,8 +722,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                    "FK_EntityFieldValue_EntityField"
+                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

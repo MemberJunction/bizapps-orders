@@ -22,6 +22,10 @@ const gate = vi.hoisted(() => ({
 }));
 vi.mock('../ConcessionGate.js', () => gate);
 
+// No metadata here: the settings read is stubbed, unset (ConcessionSelfApprovalEscalation keeps self-approval).
+const settings = vi.hoisted(() => ({ OrdersSettings: { Load: vi.fn(), ConcessionSelfApprovalEscalation: [] as string[] } }));
+vi.mock('../OrdersSettings.js', () => settings);
+
 const roles = vi.hoisted(() => ({ UserHoldsRole: vi.fn() }));
 vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
