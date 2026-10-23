@@ -1,5 +1,31 @@
 # @mj-biz-apps/orders-ng
 
+## 5.38.0
+
+### Minor Changes
+
+- d0ecc66: The order header's Ship to and Bill to organization and person lookups use the shared fast party picker (`bizapps-party-field` from `@mj-biz-apps/common-ng` 5.56.0): nothing is listed until two characters are typed, then one prefix search finds people by last name, display name, email or email domain and organizations by name, legal name or website domain. Requires `@mj-biz-apps/common-ng` >= 5.56.0.
+
+### Patch Changes
+
+- f5d774f: The Orders dashboard and Customer A/R age open balances by the same rule.
+
+  The dashboard's first aging tile read "Current (0-30 days)" and swept in everything up to thirty days past due, so overdue money was reported as "Due or recently invoiced" while Receivables showed the same balances as 1-30 days late. The totals agreed and only the labels disagreed, which is the hardest kind to notice, because each page looks right on its own. The two also broke the top end differently: 61-90 and 90+ on the dashboard, 61+ on Receivables.
+
+  `AgingBucketOf` now states the rule once, beside the bucket type both screens already shared. Current means NOT YET DUE, then 1-30, 31-60 and 61+ days past due. An order with no due date has no age and counts as current.
+
+  The dashboard's tiles follow the four buckets the shared aging bar draws, which is also what its colour ramp was validated for.
+
+- 0e30741: Receivables → Subscriptions opens a subscription's form (#932). Double-clicking a row, or pressing the new
+  **Open** button in the side panel, now opens the Subscription form, where **Cancel subscription** is.
+  Before, double-click only filled the side panel, the page had no output for the section to route, and the
+  form (and so Cancel) could not be reached from the app. New `SubscriptionOpened` output, wired in the
+  section shell beside `OrderOpened` / `PaymentOpened` / `ProductOpened`.
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+  - @mj-biz-apps/orders-entities@5.38.0
+
 ## 5.37.0
 
 ### Minor Changes
@@ -840,8 +866,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                          "FK_EntityFieldValue_EntityField"
+                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
