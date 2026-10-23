@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610171500 — Event Order Lines.AttendanceStatus: dropdown order
+-- V202610230338 — Event Order Lines.AttendanceStatus: dropdown order
 -- =============================================================================
 -- CodeGen orders a value list alphabetically: Attended 1, Cancelled 2,
 -- No Show 3, Registered 4. V202609201435 inserted the four values as

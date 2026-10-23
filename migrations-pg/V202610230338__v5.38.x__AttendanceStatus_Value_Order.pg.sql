@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610171500__v5.35.x__AttendanceStatus_Value_Order.sql
+-- PostgreSQL counterpart of V202610230338__v5.38.x__AttendanceStatus_Value_Order.sql
 -- =============================================================================================
 -- `mj sql-convert --from tsql --to postgres` (MJ CLI 6.1.5) output, unchanged. The T-SQL file's
 -- explanation is carried below, under "Other". Schema names are written unquoted, as the converter
@@ -60,7 +60,7 @@ WHERE "EntityFieldID" = '5214C1CF-7583-469C-AA86-D1699063A784'
 -- ===================== Other =====================
 
 -- =============================================================================
--- V202610171500 — Event Order Lines.AttendanceStatus: dropdown order
+-- V202610230338 — Event Order Lines.AttendanceStatus: dropdown order
 -- =============================================================================
 -- CodeGen orders a value list alphabetically: Attended 1, Cancelled 2,
 -- No Show 3, Registered 4. V202609201435 inserted the four values as
