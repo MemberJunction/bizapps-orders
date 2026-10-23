@@ -48,8 +48,8 @@
 <template id="page">
 
   <div slot="meta">
-    <span class="mj-chip mj-chip--brand">19 screens</span>
-    <span class="mj-chip mj-chip--outline">interactive</span>
+    <span class="mjo-chip mjo-chip--brand">19 screens</span>
+    <span class="mjo-chip mjo-chip--outline">interactive</span>
   </div>
 
   <div slot="actions">
@@ -330,9 +330,9 @@ function render() {
         ${j.screens.map(s => `
           <a class="ix-card ${s.hero ? 'is-hero' : ''}" href="${s.href}">
             <div class="t"><i class="fa-solid ${s.icon}"></i> ${s.t}
-              ${s.hero ? '<span class="mj-chip mj-chip--brand" style="margin-left:auto">core</span>' : ''}</div>
+              ${s.hero ? '<span class="mjo-chip mjo-chip--brand" style="margin-left:auto">core</span>' : ''}</div>
             <div class="d">${s.d}</div>
-            <div class="f">${s.f.map(x => `<span class="mj-chip mj-chip--outline">${x}</span>`).join('')}</div>
+            <div class="f">${s.f.map(x => `<span class="mjo-chip mjo-chip--outline">${x}</span>`).join('')}</div>
           </a>`).join('')}
       </div>
     </div>`).join('');
