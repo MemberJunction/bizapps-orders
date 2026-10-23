@@ -10597,6 +10597,9 @@ export class mjBizAppsOrdersPaymentProviderPrice_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Boolean, {nullable: true, description: "The price a new gateway-billed subscription to this product is created on. At most one active row per provider and product. Other active rows still map charges to the product (unmatched charges) but are never used for new subscriptions."}) 
+    UseForNewSubscriptions?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     PaymentProvider?: string;
@@ -10633,6 +10636,9 @@ export class CreatemjBizAppsOrdersPaymentProviderPriceInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field(() => Boolean, { nullable: true })
+    UseForNewSubscriptions?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -10660,6 +10666,9 @@ export class UpdatemjBizAppsOrdersPaymentProviderPriceInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field(() => Boolean, { nullable: true })
+    UseForNewSubscriptions?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -10994,6 +11003,9 @@ export class mjBizAppsOrdersPaymentProviderType_ {
     @Field() 
     _mj__UpdatedAt: Date;
         
+    @Field(() => Boolean, {nullable: true, description: "Whether the gateway can bill a subscription itself: charge the card each period and send its own receipts. Orders creates a gateway subscription only for a provider whose type supports it and whose account has BillsSubscriptions set."}) 
+    SupportsSubscriptionBilling?: boolean;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -11034,6 +11046,9 @@ export class CreatemjBizAppsOrdersPaymentProviderTypeInput {
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
 
+    @Field(() => Boolean, { nullable: true })
+    SupportsSubscriptionBilling?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -11073,6 +11088,9 @@ export class UpdatemjBizAppsOrdersPaymentProviderTypeInput {
 
     @Field(() => Boolean, { nullable: true })
     IsActive?: boolean;
+
+    @Field(() => Boolean, { nullable: true })
+    SupportsSubscriptionBilling?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -11208,6 +11226,9 @@ export class mjBizAppsOrdersPaymentProvider_ {
     @MaxLength(36)
     CompanyIntegrationID?: string;
         
+    @Field(() => Boolean, {nullable: true, description: "Whether this account bills the auto-renewing subscriptions sold through it. When set and the type supports it, Orders creates a gateway subscription after the first payment, and the gateway charges each renewal. Turning it off stops new ones only: a subscription already billed by the gateway keeps being skipped by Orders' renewal jobs."}) 
+    BillsSubscriptions?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(200)
     PaymentProviderType?: string;
@@ -11254,6 +11275,9 @@ export class CreatemjBizAppsOrdersPaymentProviderInput {
     @Field({ nullable: true })
     CompanyIntegrationID: string | null;
 
+    @Field(() => Boolean, { nullable: true })
+    BillsSubscriptions?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -11287,6 +11311,9 @@ export class UpdatemjBizAppsOrdersPaymentProviderInput {
 
     @Field({ nullable: true })
     CompanyIntegrationID?: string | null;
+
+    @Field(() => Boolean, { nullable: true })
+    BillsSubscriptions?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -18117,11 +18144,11 @@ export class mjBizAppsOrdersSubscription_ {
     @Field(() => Int, {nullable: true, description: `How many days before CurrentPeriodEnd the renewal order is raised (Jeremy: invoice about three months ahead).`}) 
     RenewalLeadDays?: number;
         
-    @Field({nullable: true}) 
+    @Field({nullable: true, description: "The payment provider that bills this subscription. Set only with ProviderSubscriptionID; NULL when Orders bills it."}) 
     @MaxLength(36)
     PaymentProviderID?: string;
         
-    @Field({nullable: true, description: `Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.`}) 
+    @Field({nullable: true, description: "The gateway's id for a subscription it bills (for Stripe, sub_...). When set, the gateway named by PaymentProviderID charges every renewal and Orders' renewal jobs skip the subscription; NULL means Orders renews it."}) 
     @MaxLength(100)
     ProviderSubscriptionID?: string;
         
