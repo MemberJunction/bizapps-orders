@@ -1040,3 +1040,7 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 // The calendar-day rule for records that carry a `date` column (#209). Exported for the same
 // reason as the guards above: the edge should reach for the audited helper, not re-derive it.
 export { CalendarDayOrToday } from './calendar-day.js';
+
+// TEST SEAM, never for production code (#947): the integration harness lets isolated work join the
+// transaction a check holds. Calling it in production would bring back the shared-provider rollback #927 fixed.
+export { JoinCallerTransactionForTests } from './isolatedProvider.js';

@@ -34,7 +34,7 @@ import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/cor
 import { OrdersEngine, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
-import { ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
+import { JoinCallerTransactionForTests, ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
 import { LoadWorld } from './world/load-world.js';
 import { SetWorld } from './world/world.js';
 import { FindId, FindRows, Quote } from './world/entity-io.js';
@@ -248,6 +248,10 @@ const provider = (ctx: IntegrationCheckContext) =>
  * after each rollback: reloading only the prices left a product or category one check changed as
  * the cached row every later check was judged against, which made checks pass or fail depending on
  * which bundles ran before them.
+ *
+ * Inside the body, `WithIsolatedProvider` runs its work on this provider (`JoinCallerTransactionForTests`), so
+ * a check proves what isolated work writes but not that it writes on its own transaction; that stays
+ * with `isolatedProvider.test.ts`. A check that needs the real isolation runs `OutsideTransaction`.
  */
 export async function InRolledBackTransaction(
     ctx: IntegrationCheckContext,
@@ -256,7 +260,10 @@ export async function InRolledBackTransaction(
     const p = provider(ctx);
     await p.BeginTransaction();
     try {
-        await body();
+        // Work the code under test runs on an isolated provider (`WithIsolatedProvider`: the checkout
+        // capture, the webhook's delivery row) joins this transaction instead. On its own connection it
+        // would wait on this transaction's locks while the check waited for it (#947).
+        await JoinCallerTransactionForTests(p, body);
     } finally {
         try {
             // A trigger that refused a write has already rolled the transaction back on the server.
