@@ -1,5 +1,13 @@
 # @mj-biz-apps/orders-entities
 
+## 5.38.0
+
+### Minor Changes
+
+- 5fe872a: Release seed for 5.38: `V202610230130__v5.38.x__Metadata_Sync.sql` and its PostgreSQL counterpart carry `EntityIDFieldName` on the three polymorphic RecordID fields (#946) to hosts, which install by migration and never read `metadata/`.
+- 0baf0fd: Populate `EntityField.EntityIDFieldName` metadata on polymorphic foreign-key record-ID fields so MemberJunction forms, grids, cards, and detail panels resolve target record names and render smart clickable record links.
+- 68f8cc1: `metadata/entities/.polymorphic-fk-entity-fields.json` gives every `MJ: Entity Fields` entry a `primaryKey` lookup (`@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=<entity>&Name=<field>`). The entries had none, and `mj sync push` creates a new row for any record without a `primaryKey`, so on a fresh database it tried to insert a second field row with a NULL `EntityID` and the app's whole metadata push rolled back. With the lookup, push updates the field row CodeGen created and sets its `EntityIDFieldName`.
+
 ## 5.37.0
 
 ### Minor Changes
@@ -722,8 +730,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                          "FK_EntityFieldValue_EntityField"
+                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
