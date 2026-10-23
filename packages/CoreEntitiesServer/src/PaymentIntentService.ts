@@ -57,6 +57,7 @@ import {
     mjBizAppsOrdersPaymentIntentEntity,
 } from '@mj-biz-apps/orders-entities';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import { EscapeText } from './sql-guards.js';
 import type { IntentStatus } from './PaymentProviderBehavior.js';
 import type { CreateIntentResult } from './BasePaymentProvider.js';
 import { DescribeOrder } from './IntentDescription.js';
@@ -281,7 +282,7 @@ async function findByProviderIntentID(
     // Escaped rather than interpolated raw. The value came from our own driver rather than from a
     // caller, so it is not attacker-controlled — but "ours" and "safe to concatenate into SQL" are
     // different claims, and only one of them is being made here.
-    const safe = providerIntentID.replace(/'/g, "''");
+    const safe = EscapeText(providerIntentID);
     const result = await rv.RunView<{ ID: string }>(
         {
             EntityName: PAYMENT_INTENT_ENTITY,

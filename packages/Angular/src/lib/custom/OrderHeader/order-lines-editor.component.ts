@@ -9,7 +9,7 @@ import {
     type IMetadataProvider,
     type UserInfo,
 } from '@memberjunction/core';
-import { UUIDsEqual } from '@memberjunction/global';
+import { EscapeSQLString, UUIDsEqual } from '@memberjunction/global';
 import {
     BaseFormComponent,
     BaseFormsModule,
@@ -1476,7 +1476,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     private async overrideKindFromLiveRoles(user: UserInfo | null): Promise<PriceOverrideKind> {
         const roleIDs = (user?.UserRoles ?? []).map((r) => r.RoleID).filter(Boolean);
         if (!roleIDs.length) return 'none';
-        const quoted = roleIDs.map((id) => `'${String(id).replace(/'/g, "''")}'`).join(',');
+        const quoted = roleIDs.map((id) => `'${EscapeSQLString(String(id))}'`).join(',');
         const rv = new RunView();
         const res = await rv.RunView<{ Authorization: string; Type: string }>({
             EntityName: 'MJ: Authorization Roles',
