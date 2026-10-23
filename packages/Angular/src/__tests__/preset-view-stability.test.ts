@@ -1,0 +1,117 @@
+import '@angular/compiler';
+import { describe, it, expect, vi } from 'vitest';
+import { PresetViewRef } from '../lib/data/preset-view';
+import { MJOCustomerARPageComponent } from '../lib/pages/receivables/customer-ar.page';
+import { MJOAccountCreditPageComponent } from '../lib/pages/payments/account-credit.page';
+import { MJOOverduePageComponent } from '../lib/pages/receivables/overdue.page';
+import { MJOFulfillmentPageComponent } from '../lib/pages/orders/fulfillment.page';
+
+/**
+ * A PRESET VIEW MUST KEEP ITS IDENTITY (bc-aidp-next-golive#362).
+ *
+ * `mj-entity-viewer` takes its view as an `@Input()`, and Angular compares those by REFERENCE. A
+ * getter that builds a fresh object therefore runs the viewer's `ViewEntity` setter on every
+ * change-detection pass, and that setter's last branch reloads whenever `!this._records` -- which is
+ * exactly the state a load that has not finished is in. Each pass restarts it, the response triggers
+ * the next pass, and the grid never settles: "Loading MJ_BizApps_Orders: Order Headers..." forever.
+ *
+ * Reproduced before fixing: ~2,800 API calls, every one returning the correct rows, nothing rendered.
+ *
+ * So these assert IDENTITY, not equality. `toEqual` would pass against the bug.
+ */
+describe('PresetViewRef hands back the same object until its key changes', () => {
+    it('builds once and returns that object again', () => {
+        const ref = new PresetViewRef();
+        const build = vi.fn(() => ({ ID: 'preset-x' }) as never);
+        const first = ref.For('k1', build);
+        const second = ref.For('k1', build);
+        expect(second).toBe(first);
+        expect(build).toHaveBeenCalledTimes(1);
+    });
+
+    it('rebuilds when the key changes, and keeps the new one', () => {
+        const ref = new PresetViewRef();
+        const build = vi.fn((): never => ({ ID: 'preset-x' }) as never);
+        const first = ref.For('k1', build);
+        const second = ref.For('k2', build);
+        expect(second).not.toBe(first);
+        expect(ref.For('k2', build)).toBe(second);
+        expect(build).toHaveBeenCalledTimes(2);
+    });
+
+    it('does not leak one instance into another', () => {
+        const a = new PresetViewRef();
+        const b = new PresetViewRef();
+        expect(a.For('k', () => ({ ID: 'a' }) as never)).not.toBe(b.For('k', () => ({ ID: 'b' }) as never));
+    });
+});
+
+/**
+ * The four pages that hand the viewer a synthetic view. Two were reported (#362); the other two
+ * share the pattern and so shared the defect, waiting on timing rather than on being reported.
+ */
+describe('every preset view getter is reference-stable across change detection', () => {
+    const entity = { ID: 'E1', Name: 'MJ_BizApps_Orders: Order Headers' };
+
+    /**
+     * `Object.create` does not run field initialisers, so the component's own `PresetViewRef` is
+     * supplied here the way the constructor would. `ref` names the private field each page holds;
+     * getting it wrong makes the getter throw rather than quietly pass, which is the right way round.
+     */
+    const make = <T>(proto: object, ref: string, fields: Record<string, unknown>): T => {
+        const page = Object.create(proto) as T;
+        for (const [k, v] of Object.entries({ ...fields, [ref]: new PresetViewRef() })) {
+            Object.defineProperty(page, k, { value: v, writable: true });
+        }
+        return page;
+    };
+
+    it('Customer A/R: Open items', () => {
+        const page = make<MJOCustomerARPageComponent>(MJOCustomerARPageComponent.prototype, 'openOrdersView', {
+            OrderEntityInfo: entity,
+            Selected: { Key: 'ORG1', Name: 'Cascade', IsOrganization: true },
+        });
+        expect(page.CustomerOpenOrdersView).toBe(page.CustomerOpenOrdersView);
+    });
+
+    it('Customer A/R: and it DOES rebuild when another customer is picked', () => {
+        const selected = { Key: 'ORG1', Name: 'Cascade', IsOrganization: true };
+        const page = make<MJOCustomerARPageComponent>(MJOCustomerARPageComponent.prototype, 'openOrdersView', {
+            OrderEntityInfo: entity,
+            Selected: selected,
+        });
+        const first = page.CustomerOpenOrdersView;
+        (page as unknown as { Selected: unknown }).Selected = { Key: 'ORG2', Name: 'Northwind', IsOrganization: true };
+        const second = page.CustomerOpenOrdersView;
+        expect(second).not.toBe(first);
+        expect((second as unknown as { WhereClause: string }).WhereClause).toContain('ORG2');
+    });
+
+    it('Account credits', () => {
+        const page = make<MJOAccountCreditPageComponent>(MJOAccountCreditPageComponent.prototype, 'creditOrdersView', { OrderEntityInfo: entity });
+        expect(page.CreditOrdersView).toBe(page.CreditOrdersView);
+    });
+
+    it('Overdue worklist', () => {
+        const page = make<MJOOverduePageComponent>(MJOOverduePageComponent.prototype, 'overdueView', { OrderEntityInfo: entity });
+        expect(page.OverdueView).toBe(page.OverdueView);
+    });
+
+    it('Fulfillment queue', () => {
+        const page = make<MJOFulfillmentPageComponent>(MJOFulfillmentPageComponent.prototype, 'queueView', {
+            OrderLineEntityInfo: { ID: 'E2', Name: 'MJ_BizApps_Orders: Order Lines' },
+            Preset: 'open',
+        });
+        expect(page.FulfillmentQueueView).toBe(page.FulfillmentQueueView);
+    });
+
+    it('Fulfillment queue: rebuilds when the preset changes', () => {
+        const page = make<MJOFulfillmentPageComponent>(MJOFulfillmentPageComponent.prototype, 'queueView', {
+            OrderLineEntityInfo: { ID: 'E2', Name: 'MJ_BizApps_Orders: Order Lines' },
+            Preset: 'open',
+        });
+        const first = page.FulfillmentQueueView;
+        (page as unknown as { Preset: string }).Preset = 'done';
+        expect(page.FulfillmentQueueView).not.toBe(first);
+    });
+});
