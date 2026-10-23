@@ -42,7 +42,14 @@ import {
   TxQuery,
 } from "../fixture.js";
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
-import { ENTITLEMENT_GRANT_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
+import {
+  ENTITLEMENT_GRANT_ENTITY,
+  ORDER_HEADER_ENTITY,
+  OUTBOUND_DELIVERY_ENTITY,
+  OUTBOUND_EVENT_ENTITY,
+  PAYMENT_WEBHOOK_DELIVERY_ENTITY,
+  SUBSCRIPTION_EVENT_ENTITY,
+} from "../entity-names.js";
 import { addDays, gatesFor, payOrder, renew, withGrantTiming } from "./entitlements.checks.js";
 
 const CONSUMER_KEY = "integration-test-consumer";
@@ -424,6 +431,59 @@ export const OutboundEventsChecks: NamedCheck[] = [
           AssertEqual(restored.length, grantIDs.size, `paying the renewal records each grant's return (${JSON.stringify(restored)})`);
           Assert(restored.every((p) => p.FromStatus === "Suspended" && p.ToStatus === "Active"), "as Suspended to Active");
         });
+      }),
+  },
+  {
+    Id: "outbound-events.OB13",
+    Name: "OB13: Orders append-heavy event/webhook entities SaveReturnMode datestamps_only verification and benchmark log",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const fs = await import("node:fs");
+        const path = await import("node:path");
+        const { performance } = await import("node:perf_hooks");
+        const { fileURLToPath } = await import("node:url");
+
+        const getSaveReturnMode = (info: { Configuration?: string | null } & Record<string, unknown>): string => {
+          if (typeof info.SaveReturnMode === "string") return info.SaveReturnMode;
+          if (typeof info.Configuration === "string" && info.Configuration.trim()) {
+            return (JSON.parse(info.Configuration) as { SaveReturnMode?: string }).SaveReturnMode ?? "full";
+          }
+          return "full";
+        };
+        const expectedEntities = [
+          OUTBOUND_EVENT_ENTITY,
+          OUTBOUND_DELIVERY_ENTITY,
+          PAYMENT_WEBHOOK_DELIVERY_ENTITY,
+          SUBSCRIPTION_EVENT_ENTITY,
+        ];
+        for (const name of expectedEntities) {
+          const info = ctx.Provider.EntityByName(name);
+          Assert(!!info, `${name} entity metadata present`);
+          AssertEqual(
+            getSaveReturnMode(info! as unknown as { Configuration?: string | null } & Record<string, unknown>),
+            "datestamps_only",
+            `${name} SaveReturnMode is datestamps_only`,
+          );
+        }
+
+        resetProbe();
+        const t0 = performance.now();
+        const orderID = await buyWidget(ctx);
+        Assert(!!orderID, "OB13 order confirmed");
+        const elapsedMs = Number((performance.now() - t0).toFixed(2));
+
+        const logDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../benchmark-logs");
+        fs.mkdirSync(logDir, { recursive: true });
+        const entry = {
+          Timestamp: new Date().toISOString(),
+          Package: "@mj-biz-apps/orders-integration-tests",
+          Check: "outbound-events.OB13",
+          DatestampsOnlyEntities: expectedEntities,
+          ConfirmOrderWithOutboundEventsMs: elapsedMs,
+        };
+        fs.writeFileSync(path.join(logDir, "latest.json"), JSON.stringify(entry, null, 2), "utf8");
+        fs.appendFileSync(path.join(logDir, "history.jsonl"), JSON.stringify(entry) + "\n", "utf8");
       }),
   },
 ];
