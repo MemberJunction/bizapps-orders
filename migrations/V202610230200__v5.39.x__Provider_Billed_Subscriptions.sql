@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610221105 — Provider-billed subscriptions: a gateway that bills a
+-- V202610230200 — Provider-billed subscriptions: a gateway that bills a
 --                 subscription itself, and Orders' renewal jobs leaving it alone
 -- =============================================================================
 -- Orders renews a subscription itself: Spawn Renewals places the renewal order

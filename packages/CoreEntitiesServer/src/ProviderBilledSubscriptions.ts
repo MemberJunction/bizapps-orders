@@ -24,7 +24,7 @@
  * that holds a row. They agree by construction (both are `ProviderSubscriptionID IS NOT NULL`).
  *
  *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE)
- *   SCHEMA:  migrations/V202610221105__v5.38.x__Provider_Billed_Subscriptions.sql
+ *   SCHEMA:  migrations/V202610230200__v5.39.x__Provider_Billed_Subscriptions.sql
  */
 
 /** A plain SQL identifier, which is all a table alias here can be. */
