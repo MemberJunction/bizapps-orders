@@ -1242,19 +1242,13 @@ export const OrderBookingChecks: NamedCheck[] = [
                         { ProductID: f.Products.WidgetB, Quantity: 1 },
                     ],
                 });
-                built.Order.Origin = 'Widget';
                 Assert(await built.Order.Save(), `the draft must save: ${built.Order.LatestResult?.CompleteMessage ?? ''}`);
-                AssertEqual(built.Order.UnpricedLines().length, 0, 'no line is held on a checkout order');
+                AssertEqual(built.Order.UnpricedLines().length, 1, 'entered by hand, the $0 line is held');
 
-                const hand = await BuildOrder(ctx.User, {
-                    CompanyID: f.CoA.ID,
-                    Lines: [
-                        { ProductID: f.Products.WidgetA, Quantity: 1 },
-                        { ProductID: f.Products.WidgetB, Quantity: 1 },
-                    ],
-                });
-                Assert(await hand.Order.Save(), `the draft must save: ${hand.Order.LatestResult?.CompleteMessage ?? ''}`);
-                AssertEqual(hand.Order.UnpricedLines().length, 1, 'the same lines entered by hand hold the $0 one');
+                // Only the checkout process may save Origin 'Widget' (SystemOrderOrigin's guard), so the
+                // checkout side is asked of the same priced lines in memory, without a save.
+                built.Order.Origin = 'Widget';
+                AssertEqual(built.Order.UnpricedLines().length, 0, 'no line is held on a checkout order');
             }),
     },
 ];
