@@ -72,8 +72,10 @@ jobs:
       # No `--depth=1` on the fetch: merge-base needs history on both sides.
       - name: Resolve the merge base
         id: mb
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git fetch --no-tags origin "${{ github.base_ref }}"
+          git fetch --no-tags origin "$BASE_REF"
           echo "tip=$(git rev-parse FETCH_HEAD)" >> "$GITHUB_OUTPUT"
           echo "sha=$(git merge-base FETCH_HEAD HEAD)" >> "$GITHUB_OUTPUT"
 
@@ -172,8 +174,10 @@ jobs:
 
       - name: Resolve the merge base
         id: mb
+        env:
+          BASE_REF: ${{ github.base_ref }}
         run: |
-          git fetch --no-tags origin "${{ github.base_ref }}"
+          git fetch --no-tags origin "$BASE_REF"
           echo "sha=$(git merge-base FETCH_HEAD HEAD)" >> "$GITHUB_OUTPUT"
 
       # `--self-test` first: the plain invocation exits 0 when no migration changed, so the
