@@ -1,0 +1,146 @@
+# Merges the Version Packages PR — the one dispatch that turns a bump into a release.
+#
+# `version.yml` opens `changeset-release/main` -> `main` and stops there. Merging it IS the
+# release: the push to `main` runs `publish.yml`, which builds, publishes to npm and tags.
+# Until this workflow existed, that merge was a human click, and `protect-main` required an
+# approving review for it — so a release needed a second person even though the diff was
+# generated, reviewed by the `rr:` gates, and authored by the App rather than by anyone.
+#
+# Why a dispatch and not an auto-merge. `version.yml` runs on every push to `next`, so
+# auto-merging its PR on creation would make every merge into `next` publish. Releasing has
+# to stay a decision; this workflow is where that decision is recorded.
+#
+# Why this takes no inputs. The App is a `pull_request`-mode bypass actor on `protect-main`,
+# which is what lets this merge skip the review requirement. A `pr_number` input would point
+# that exemption at any PR a dispatcher chose, which would make "the App may merge without
+# review" mean "anyone with write may merge anything into main without review". The head
+# branch is therefore fixed to the one branch `changeset-release/main` that the changesets
+# action owns. The exemption is scoped by construction, not by trust.
+#
+# What the bypass does NOT cover. `publish.yml` argues against ruleset bypasses on the grounds
+# that a bypass is unconditional — that reasoning still holds, so the bypass here is as narrow
+# as GitHub allows. Bypass is per-ruleset, not per-rule, so `protect-main` holds only the review
+# rule; `deletion`, `non_fast_forward` and the eight `rr:`/`build` checks live in
+# `protect-main-checks`, which the App does NOT bypass. A dispatch cannot merge a release that
+# fails the gate, and cannot delete or force-push `main`.
+#
+# The human override survives the split. Whatever could bypass `protect-main` before it — the
+# repository admin role, plus the break-glass teams in the repos that have them — carries over
+# to `protect-main-checks`, so a person can still force a release past a stuck check, exactly as
+# on MJ's `next-protect`. The App is the one actor deliberately left out of that half, because it
+# is the one actor a `workflow_dispatch` can drive.
+name: Cut the Release
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read # the merge goes through the App token, not GITHUB_TOKEN
+
+concurrency:
+  group: "cut-release"
+  cancel-in-progress: false # two cuts racing would publish twice
+
+jobs:
+  cut:
+    # The template repo carries this pipeline for the apps made from it, but never releases itself.
+    if: github.repository != 'MemberJunction/open-app-template'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      # The merge has to come from the App: it is the bypass actor on `protect-main`, and
+      # GITHUB_TOKEN is not. A merge attempted with GITHUB_TOKEN fails the review requirement.
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          client-id: ${{ vars.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Find the Version Packages PR
+        id: find
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+
+          # Exactly one, or refuse. Zero means there is nothing to release — either no changeset
+          # has landed since the last release, or version.yml has not finished its run on the
+          # most recent push to `next`.
+          COUNT=$(gh pr list --head changeset-release/main --base main --state open \
+                    --json number --jq 'length')
+          if [ "$COUNT" = "0" ]; then
+            echo "::error::No open changeset-release/main -> main PR. Nothing to release: either no changeset has landed on next since the last release, or version.yml has not finished opening the PR for the latest push. Check the Version Packages workflow."
+            exit 1
+          fi
+          if [ "$COUNT" != "1" ]; then
+            echo "::error::Found $COUNT open changeset-release/main -> main PRs, expected 1. Refusing to guess which one releases. Close the extras."
+            exit 1
+          fi
+
+          NUMBER=$(gh pr list --head changeset-release/main --base main --state open \
+                     --json number --jq '.[0].number')
+          HEAD_SHA=$(gh pr view "$NUMBER" --json headRefOid --jq .headRefOid)
+          echo "number=$NUMBER" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$HEAD_SHA" >> "$GITHUB_OUTPUT"
+          echo "Release PR: #$NUMBER at $HEAD_SHA"
+
+      # Merging while a required check is still queued is refused by the ruleset, which would
+      # read as a broken release rather than "too early". So wait for the checks to settle
+      # first -- but do not decide the outcome here. Which contexts are required lives in
+      # `protect-main-checks`; duplicating that list in YAML would let the two drift, and an
+      # advisory check (`caret pins (advisory)`) is allowed to fail without blocking a release.
+      # GitHub enforces the required subset on the merge call below.
+      - name: Wait for the checks to settle
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NUMBER: ${{ steps.find.outputs.number }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            UNFINISHED=$(gh pr view "$NUMBER" --json statusCheckRollup --jq '
+              [ .statusCheckRollup[]
+                | select(
+                    (.status  == "QUEUED") or (.status == "IN_PROGRESS") or
+                    (.status  == "WAITING") or (.status == "PENDING") or
+                    (.state   == "PENDING")
+                  )
+              ] | length')
+            if [ "$UNFINISHED" = "0" ]; then
+              echo "All checks have concluded after $attempt poll(s)."
+              exit 0
+            fi
+            echo "$UNFINISHED check(s) still running (poll $attempt/40); waiting 15s."
+            sleep 15
+          done
+          echo "::error::Checks on #$NUMBER were still running after 10 minutes. Not merging. Wait for them to finish and dispatch again."
+          exit 1
+
+      # --match-head-commit makes GitHub refuse if the head moved while we were polling, so a
+      # push that landed mid-wait cannot be released without its own checks having passed.
+      - name: Merge the release
+        id: merge
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NUMBER: ${{ steps.find.outputs.number }}
+          HEAD_SHA: ${{ steps.find.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+
+          # A merge commit, matching every release before this workflow existed. Squashing would
+          # flatten the generated CHANGELOG commits that `rr: release base current` compares.
+          if ! MERGE_OUTPUT=$(gh pr merge "$NUMBER" --merge --match-head-commit "$HEAD_SHA" 2>&1); then
+            echo "$MERGE_OUTPUT"
+            echo "::error::GitHub refused to merge #$NUMBER at $HEAD_SHA: ${MERGE_OUTPUT//$'\n'/ }. The PR stays open. A failing required check is the usual cause -- read the checks on the PR; if the head moved, dispatch again."
+            exit 1
+          fi
+
+          # `gh pr merge` exiting 0 is not proof the PR merged -- it reports that GitHub accepted
+          # the request. Assert the end state before claiming a release was cut.
+          STATE=$(gh pr view "$NUMBER" --json state --jq .state)
+          if [ "$STATE" != "MERGED" ]; then
+            echo "::error::gh pr merge succeeded but #$NUMBER is $STATE, not MERGED. Check the PR and merge it by hand if it is still open."
+            exit 1
+          fi
+
+          echo "## Release cut" >> "$GITHUB_STEP_SUMMARY"
+          echo "Merged #$NUMBER at \`$HEAD_SHA\`. The push to \`main\` is now running publish.yml, which builds, publishes to npm, tags, and opens the back-merge into \`next\`." >> "$GITHUB_STEP_SUMMARY"
