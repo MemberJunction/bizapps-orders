@@ -47,6 +47,13 @@ jobs:
     if: github.repository != 'MemberJunction/open-app-template'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # `gh pr` resolves which repo it is talking about from the git remote, NOT from the API —
+      # so in a job with no checkout every `gh pr` call dies with
+      # "failed to run git: fatal: not a git repository". GH_REPO supplies the repo instead,
+      # which is cheaper than checking out the tree just to be told where we are, and covers
+      # every `gh` call in the job including any added later.
+      GH_REPO: ${{ github.repository }}
     steps:
       # The merge has to come from the App: it is the bypass actor on `protect-main`, and
       # GITHUB_TOKEN is not. A merge attempted with GITHUB_TOKEN fails the review requirement.
