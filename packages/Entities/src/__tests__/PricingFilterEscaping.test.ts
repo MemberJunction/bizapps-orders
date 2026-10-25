@@ -3,7 +3,7 @@
  *
  * Charge and promotion codes come from the caller, and the pricing engines compose them into
  * `ExtraFilter` SQL on both tiers. `RunCharges` is driven against a stubbed RunView to check the
- * filter text it sends; a source-level guard keeps hand-rolled quote doubling out of the folder.
+ * filter text it sends; a source-level guard keeps hand-rolled quote doubling out of the package.
  */
 import { describe, expect, it, vi } from 'vitest';
 import { readdirSync, readFileSync } from 'node:fs';
@@ -51,12 +51,26 @@ describe('orders-entities UUID guards', () => {
     });
 });
 
-describe('pricing source', () => {
+describe('package source', () => {
     it('has no hand-rolled quote doubling', () => {
-        const dir = join(import.meta.dirname, '..', 'pricing');
-        const offenders = readdirSync(dir)
-            .filter((f) => f.endsWith('.ts'))
-            .filter((f) => readFileSync(join(dir, f), 'utf8').includes(`.replace(/'/g`));
+        // The whole package, not just `pricing/` — the convention (CLAUDE.md) bans inline
+        // `.replace(/'/g, "''")` everywhere; the sanctioned helpers are `EscapeSQLString`
+        // and the guards in `sql-guards.ts`. `__tests__` is skipped because this file names
+        // the pattern; `generated/` is CodeGen's output, not hand-written source.
+        const src = join(import.meta.dirname, '..');
+        const offenders: string[] = [];
+        const walk = (dir: string): void => {
+            for (const entry of readdirSync(dir, { withFileTypes: true })) {
+                if (entry.isDirectory()) {
+                    if (entry.name === '__tests__' || entry.name === 'generated') continue;
+                    walk(join(dir, entry.name));
+                } else if (entry.name.endsWith('.ts')) {
+                    const file = join(dir, entry.name);
+                    if (readFileSync(file, 'utf8').includes(`.replace(/'/g`)) offenders.push(file);
+                }
+            }
+        };
+        walk(src);
         expect(offenders).toEqual([]);
     });
 });
