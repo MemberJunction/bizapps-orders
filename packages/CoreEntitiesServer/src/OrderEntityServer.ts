@@ -327,6 +327,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
         return false;
     }
+
+    /**
+     * The hand-entered rule, less the lines the renewal pass priced. A renewal order keeps Origin
+     * `Direct`, so the shared rule reads it as typed; but a $0 renewal (a complimentary term, a
+     * product now priced at zero) is the price the pass chose, and refusing it would roll back the
+     * renewal and leave the subscription due on every later run. Once someone changes the price the
+     * line is judged like any other, the same rule the concession gate and order review follow.
+     */
+    public override UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
+        return super.UnpricedLines().filter((line) => !this.isUneditedRenewalPrice(line));
+    }
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
     private _manualDiscounts: ManualDiscountRequest[] = [];

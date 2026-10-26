@@ -685,7 +685,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * Checkout orders are left out: their prices come from the catalog with no one to type one, and a
      * free checkout product is decided by the catalog and the promotion code. Bundle components are
      * left out because the bundle price is allocated down to them, and return lines because they
-     * mirror the line they reverse. A line with no price yet is left to the server's pricing.
+     * mirror the line they reverse. A line with no price yet is left to the server's pricing. The
+     * server's order also leaves out lines the renewal pass priced (`OrderEntityServer.UnpricedLines`).
      */
     public UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
         if (!IsHandEnteredOrigin(this.Origin)) return [];

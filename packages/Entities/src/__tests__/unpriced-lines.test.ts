@@ -7,7 +7,8 @@
  * `OrderHeaderEntity` cannot be constructed cheaply (see order-header-default-date.test.ts), so the
  * methods under test are called on a stand-in that carries only the members they read.
  */
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ValidationResult } from '@memberjunction/core';
 import { OrdersEngine } from '../pricing/OrdersEngine.js';
 import { OrderHeaderEntity } from '../OrderHeaderEntity.js';
 import { IsHandEnteredOrigin } from '../order-origin.js';
@@ -112,6 +113,54 @@ describe('ConfirmEligibility', () => {
 
     it('allows a checkout order with a free line', () => {
         expect(order([line(1, 'p-free', 0)], 'Widget').ConfirmEligibility().Allowed).toBe(true);
+    });
+});
+
+/**
+ * The save itself refuses, not only the checklist: `Validate()` on an order moving to Confirmed. The
+ * base entity's field checks and the other confirm rules are stood down, so the result is this rule's
+ * alone; deleting the refusal from `Validate()` turns the first test red.
+ */
+describe('Validate on confirm', () => {
+    function confirming(lines: Row[], origin = 'Direct'): OrderHeaderEntity {
+        const o = order(lines, origin);
+        const pass = () => undefined;
+        for (const [k, v] of Object.entries({
+            Status: 'Confirmed',
+            OrderNumber: 'ORD-1',
+            InitialPaymentDetailID_Object: null,
+            dropSavePopulatedFieldErrors: pass,
+            refuseBookedMoneyEdits: pass,
+            refuseBookedAddressEdits: pass,
+            refuseBookedPaymentTermsEdit: pass,
+            statusTransitionVerdict: () => ({ Allowed: true }),
+            willBookOnThisSave: () => true,
+        })) {
+            Object.defineProperty(o, k, { value: v, writable: true });
+        }
+        return o;
+    }
+
+    beforeEach(() => {
+        vi.spyOn(Object.getPrototypeOf(OrderHeaderEntity.prototype), 'Validate').mockImplementation(() => {
+            const result = new ValidationResult();
+            result.Success = true;
+            return result;
+        });
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    it('refuses a hand-entered order with a line at a price of zero', () => {
+        const result = confirming([line(1, 'p-paid', 100), line(2, 'p-free', 0)]).Validate();
+        expect(result.Success).toBe(false);
+        expect(result.Errors.map((e) => e.Message).join(' ')).toContain(
+            'Order ORD-1 cannot be confirmed: Line 2 (Negotiated Seat) has a price of 0',
+        );
+    });
+
+    it('confirms when every line is priced, and a checkout order with a free line', () => {
+        expect(confirming([line(1, 'p-paid', 100)]).Validate().Success).toBe(true);
+        expect(confirming([line(1, 'p-free', 0)], 'Widget').Validate().Success).toBe(true);
     });
 });
 
