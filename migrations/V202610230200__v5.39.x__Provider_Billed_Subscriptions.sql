@@ -24,7 +24,10 @@
 --
 -- The index makes a gateway subscription belong to at most one Orders
 -- subscription per provider account, and gives the webhook and import lookups
--- by (provider, id) an index; the CHECK makes an id always name its provider.
+-- by (provider, id) an index; the CHECK makes an id always name its provider
+-- and refuses an empty one ('' or only spaces): the generated form stores ''
+-- when the field is cleared, and an empty id would stop Orders renewing a
+-- subscription that no gateway bills.
 --
 -- PaymentProviderPrice.UseForNewSubscriptions marks the one price a new gateway
 -- subscription to a product is created on. A product may keep several active
@@ -37,7 +40,7 @@
 -- imported gateway ids should check first; the CHECK and the index fail this
 -- migration on violating rows, and every subscription with an id stops being
 -- renewed by Orders. Pre-flight (expect 0 and 0):
---   SELECT COUNT(*) FROM Subscription WHERE ProviderSubscriptionID IS NOT NULL AND PaymentProviderID IS NULL;
+--   SELECT COUNT(*) FROM Subscription WHERE ProviderSubscriptionID IS NOT NULL AND (PaymentProviderID IS NULL OR LEN(LTRIM(RTRIM(ProviderSubscriptionID))) = 0);
 --   SELECT COUNT(*) FROM (SELECT PaymentProviderID, ProviderSubscriptionID FROM Subscription
 --     WHERE ProviderSubscriptionID IS NOT NULL GROUP BY PaymentProviderID, ProviderSubscriptionID HAVING COUNT(*) > 1) d;
 --
@@ -65,7 +68,7 @@ GO
 
 ALTER TABLE [${flyway:defaultSchema}].[Subscription]
     ADD CONSTRAINT [CK_Subscription_ProviderSubscriptionHasProvider]
-        CHECK ([ProviderSubscriptionID] IS NULL OR [PaymentProviderID] IS NOT NULL);
+        CHECK ([ProviderSubscriptionID] IS NULL OR ([PaymentProviderID] IS NOT NULL AND LEN(LTRIM(RTRIM([ProviderSubscriptionID]))) > 0));
 GO
 
 CREATE UNIQUE NONCLUSTERED INDEX [UQ_Subscription_ProviderSubscriptionID]
@@ -117,7 +120,7 @@ GO
 -- PaymentProviderID had no description, so it is added rather than updated.
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'The payment provider that bills this subscription. Set only with ProviderSubscriptionID; NULL when Orders bills it.',
+    @value = N'The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'Subscription',
     @level2type = N'COLUMN', @level2name = N'PaymentProviderID';
@@ -1280,23 +1283,32 @@ WHERE
    ID = 'E909E2D2-28D6-4FEE-A57D-5936ABD4AEAD';
 
 /* Generated Validation Functions for MJ_BizApps_Orders: Subscriptions */
-
 -- CHECK constraint for MJ_BizApps_Orders: Subscriptions @ Table Level was newly set or modified since the last generation of the validation function, the code was regenerated and updating the GeneratedCode table with the new generated validation function
 IF NOT EXISTS (
-      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND [Name] = 'ValidatePaymentProviderRequiredForProviderSubscription'
+      SELECT 1 FROM [${mjSchema}].[GeneratedCode] WHERE [CategoryID] = (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators') AND [LinkedEntityID] = 'E0238F34-2837-EF11-86D4-6045BDEE16E6' AND [LinkedRecordPrimaryKey] = 'E9B55146-3351-440C-AD47-FD4DE05BDA05' AND [Name] = 'ValidateProviderSubscriptionIDAndPaymentProviderID'
    )
    BEGIN
       INSERT INTO [${mjSchema}].[GeneratedCode] ([ID], [CategoryID], [GeneratedByModelID], [GeneratedAt], [Language], [Status], [Source], [Code], [Description], [Name], [LinkedEntityID], [LinkedRecordPrimaryKey])
-VALUES ('3a4be09f-8fd7-4f36-bbdc-32e3894619d5', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([ProviderSubscriptionID] IS NULL OR [PaymentProviderID] IS NOT NULL)', 'public ValidatePaymentProviderRequiredForProviderSubscription(result: ValidationResult) {
-	if (this.ProviderSubscriptionID != null && this.PaymentProviderID == null) {
-		result.Errors.push(new ValidationErrorInfo(
-			"PaymentProviderID",
-			"A payment provider must be specified when a provider subscription ID is provided.",
-			this.PaymentProviderID,
-			ValidationErrorType.Failure
-		));
+VALUES ('bfe29515-2383-4d26-bb51-88b7658a097a', (SELECT [ID] FROM [${mjSchema}].[vwGeneratedCodeCategories] WHERE [Name]='CodeGen: Validators'), 'C43229F6-4CC8-4838-9D04-03419A2DA191', GETUTCDATE(), 'TypeScript', 'Approved', '([ProviderSubscriptionID] IS NULL OR [PaymentProviderID] IS NOT NULL AND len(ltrim(rtrim([ProviderSubscriptionID])))>(0))', 'public ValidateProviderSubscriptionIDAndPaymentProviderID(result: ValidationResult) {
+	if (this.ProviderSubscriptionID != null) {
+		if (this.ProviderSubscriptionID.trim().length === 0) {
+			result.Errors.push(new ValidationErrorInfo(
+				"ProviderSubscriptionID",
+				"Provider Subscription ID cannot be blank when provided.",
+				this.ProviderSubscriptionID,
+				ValidationErrorType.Failure
+			));
+		}
+		if (this.PaymentProviderID == null) {
+			result.Errors.push(new ValidationErrorInfo(
+				"PaymentProviderID",
+				"Payment Provider is required when a Provider Subscription ID is specified.",
+				this.PaymentProviderID,
+				ValidationErrorType.Failure
+			));
+		}
 	}
-}', 'Ensures that a payment provider is specified whenever a provider subscription ID is recorded.', 'ValidatePaymentProviderRequiredForProviderSubscription', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', 'E9B55146-3351-440C-AD47-FD4DE05BDA05')
+}', 'If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.', 'ValidateProviderSubscriptionIDAndPaymentProviderID', 'E0238F34-2837-EF11-86D4-6045BDEE16E6', 'E9B55146-3351-440C-AD47-FD4DE05BDA05')
    END;
 
 

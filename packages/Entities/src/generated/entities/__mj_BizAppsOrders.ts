@@ -7062,7 +7062,7 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Display Name: Payment Provider
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
-        * * Description: The payment provider that bills this subscription. Set only with ProviderSubscriptionID; NULL when Orders bills it.`),
+        * * Description: The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.`),
     ProviderSubscriptionID: z.string().nullable().describe(`
         * * Field Name: ProviderSubscriptionID
         * * Display Name: Provider Subscription ID
@@ -27987,7 +27987,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * RenewalLeadDays: Renewal lead days must be a non-negative number (0 or greater) if specified.
     * * Table-Level: A subscription cannot migrate from itself; the source subscription must be a different subscription.
     * * Table-Level: A subscription cannot migrate to itself. This prevents logical errors where a subscription's migration destination is set as its own record.
-    * * Table-Level: Ensures that a payment provider is specified whenever a provider subscription ID is recorded.
+    * * Table-Level: If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.
     * @public
     * @method
     * @override
@@ -27998,7 +27998,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
         this.ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result);
         this.ValidateMigratesFromSubscriptionIDNotEqualsID(result);
         this.ValidateMigratesToSubscriptionIDNotEqualToID(result);
-        this.ValidatePaymentProviderRequiredForProviderSubscription(result);
+        this.ValidateProviderSubscriptionIDAndPaymentProviderID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -28073,19 +28073,29 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     }
 
     /**
-    * Ensures that a payment provider is specified whenever a provider subscription ID is recorded.
+    * If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidatePaymentProviderRequiredForProviderSubscription(result: ValidationResult) {
-    	if (this.ProviderSubscriptionID != null && this.PaymentProviderID == null) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"PaymentProviderID",
-    			"A payment provider must be specified when a provider subscription ID is provided.",
-    			this.PaymentProviderID,
-    			ValidationErrorType.Failure
-    		));
+    public ValidateProviderSubscriptionIDAndPaymentProviderID(result: ValidationResult) {
+    	if (this.ProviderSubscriptionID != null) {
+    		if (this.ProviderSubscriptionID.trim().length === 0) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"ProviderSubscriptionID",
+    				"Provider Subscription ID cannot be blank when provided.",
+    				this.ProviderSubscriptionID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    		if (this.PaymentProviderID == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"PaymentProviderID",
+    				"Payment Provider is required when a Provider Subscription ID is specified.",
+    				this.PaymentProviderID,
+    				ValidationErrorType.Failure
+    			));
+    		}
     	}
     }
 
@@ -28300,7 +28310,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * Display Name: Payment Provider
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
-    * * Description: The payment provider that bills this subscription. Set only with ProviderSubscriptionID; NULL when Orders bills it.
+    * * Description: The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.
     */
     get PaymentProviderID(): string | null {
         return this.Get('PaymentProviderID');

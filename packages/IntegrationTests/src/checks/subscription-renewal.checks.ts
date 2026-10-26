@@ -2029,7 +2029,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR57',
-        Name: 'SR57: one Orders subscription per (provider, gateway id), another account may reuse an id, and an id needs its provider',
+        Name: 'SR57: one Orders subscription per (provider, gateway id), another account may reuse an id, and an id needs its provider and may not be empty',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2052,7 +2052,22 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 } catch (e) {
                     modelRefusal = String(e);
                 }
-                Assert(/payment provider must be specified/i.test(modelRefusal), `the entity refuses an id with no provider: ${modelRefusal || 'it was allowed'}`);
+                Assert(/payment provider is required/i.test(modelRefusal), `the entity refuses an id with no provider: ${modelRefusal || 'it was allowed'}`);
+
+                // An empty id is refused too, by the object model and by the database: the generated form saves
+                // '' when the field is cleared, and an empty marker would stop Orders renewing a subscription
+                // nothing bills. Only spaces counts as empty.
+                for (const empty of ['', '   ']) {
+                    let blankRefusal = '';
+                    try {
+                        await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, second.SubscriptionID, { PaymentProviderID: accountB, ProviderSubscriptionID: empty });
+                    } catch (e) {
+                        blankRefusal = String(e);
+                    }
+                    Assert(/cannot be blank/i.test(blankRefusal), `the entity refuses the id ${JSON.stringify(empty)}: ${blankRefusal || 'it was allowed'}`);
+                    const blankInDb = await refusedBySql(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET PaymentProviderID = '${accountB}', ProviderSubscriptionID = '${empty}' WHERE ID = '${second.SubscriptionID}'`);
+                    Assert(/CK_Subscription_ProviderSubscriptionHasProvider/.test(blankInDb), `the database refuses the id ${JSON.stringify(empty)}: ${blankInDb || 'it was allowed'}`);
+                }
 
                 // The database floor, each probe behind a savepoint so a refusal leaves the check's transaction usable.
                 const sameAccount = await refusedBySql(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET PaymentProviderID = '${accountA}', ProviderSubscriptionID = '${gatewayID}' WHERE ID = '${second.SubscriptionID}'`);

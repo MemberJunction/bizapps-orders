@@ -18144,7 +18144,7 @@ export class mjBizAppsOrdersSubscription_ {
     @Field(() => Int, {nullable: true, description: `How many days before CurrentPeriodEnd the renewal order is raised (Jeremy: invoice about three months ahead).`}) 
     RenewalLeadDays?: number;
         
-    @Field({nullable: true, description: "The payment provider that bills this subscription. Set only with ProviderSubscriptionID; NULL when Orders bills it."}) 
+    @Field({nullable: true, description: "The payment provider that bills this subscription. Required when ProviderSubscriptionID is set."}) 
     @MaxLength(36)
     PaymentProviderID?: string;
         

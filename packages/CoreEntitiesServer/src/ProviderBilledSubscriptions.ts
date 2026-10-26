@@ -4,7 +4,7 @@
  * A gateway such as Stripe Billing can bill a subscription itself: it charges the card each period and
  * sends its own receipt. Such a subscription carries the gateway's id in `ProviderSubscriptionID`
  * (Stripe's `sub_...`), and the gateway is the one named by `PaymentProviderID`
- * (`CK_Subscription_ProviderSubscriptionHasProvider` keeps the two together). For it, Orders' own
+ * (`CK_Subscription_ProviderSubscriptionHasProvider` keeps the two together and refuses an empty id). For it, Orders' own
  * renewal jobs must do nothing: a renewal order from Spawn Renewals, or a charge from Charge Renewals,
  * would bill the customer a second time.
  *

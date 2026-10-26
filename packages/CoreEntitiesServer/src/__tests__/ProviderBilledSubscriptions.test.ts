@@ -29,7 +29,9 @@ describe('IsProviderBilled', () => {
     });
 
     it('agrees with the SQL form: any non-NULL value is a marker, even an empty string', () => {
-        // SQL's `IS NULL` is false for '', so the row form must say provider-billed for '' too.
+        // SQL's `IS NULL` is false for '', so the row form must say provider-billed for '' too. The CHECK
+        // refuses '' (and only spaces) on save, so a stored row never holds one; an unsaved row that does
+        // is treated as gateway-billed (not charged) rather than silently renewed.
         expect(IsProviderBilled({ ProviderSubscriptionID: '' })).toBe(true);
     });
 
