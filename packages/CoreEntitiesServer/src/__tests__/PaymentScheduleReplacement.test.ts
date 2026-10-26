@@ -40,7 +40,7 @@ describe('NormaliseReplacementRows', () => {
     it('accepts days and Dates, rounds to the cent, trims descriptions', () => {
         const out = NormaliseReplacementRows([
             { DueDate: '2026-10-15', Amount: 10.005, Description: '  Q1 ' },
-            { DueDate: new Date('2027-01-15T00:00:00Z'), Amount: '5' },
+            { DueDate: new Date('2027-01-15T00:00:00Z'), Amount: 5 },
         ]);
         expect(out).toEqual([
             { DueDate: '2026-10-15', Amount: 10.01, Description: 'Q1' },
@@ -54,6 +54,13 @@ describe('NormaliseReplacementRows', () => {
         [{ DueDate: '2026-10-15', Amount: null }, 'greater than zero'],
         [{ DueDate: '2026-10-15', Amount: 0 }, 'greater than zero'],
         [{ DueDate: '2026-10-15', Amount: 0.004 }, 'greater than zero'],
+        [{ DueDate: '11/01/2026', Amount: 1 }, 'no valid due date'],
+        [{ DueDate: '2026-11-01 junk', Amount: 1 }, 'no valid due date'],
+        [{ DueDate: '2026-11-01T00:00:00Z', Amount: 1 }, 'no valid due date'],
+        [{ DueDate: new Date('nonsense'), Amount: 1 }, 'no valid due date'],
+        [{ DueDate: '2026-10-15', Amount: '5' }, 'greater than zero'],
+        [{ DueDate: '2026-10-15', Amount: true }, 'greater than zero'],
+        [{ DueDate: '2026-10-15', Amount: [5] }, 'greater than zero'],
     ])('refuses %j', (bad, words) => {
         const out = NormaliseReplacementRows([bad]);
         expect('Refused' in out && out.Code).toBe('INVALID_ROW');
@@ -186,5 +193,93 @@ describe('PlanScheduleReplacement', () => {
         expect(ScheduleShortfalls(short, lines, CO)).toEqual([
             { CompanyID: CO, Scheduled: 7500, Lines: 10000.03, Difference: 2500.03 },
         ]);
+    });
+
+    // Each of these fails if the planner drops one of its checks: the Description comparison and the
+    // InstallmentNumber comparison in sameRow, the used-row guard in matchFrozenRows, and the Canceled
+    // filter before the company and booked-order checks.
+    it('writes a description-only edit', () => {
+        const existing = [row(1, 'Scheduled', '2026-10-15', 10000.03, { Description: 'Old' })];
+        const p = plan(QUOTED, existing, [{ DueDate: '2026-10-15', Amount: 10000.03, Description: 'New' }]);
+        expect(p.Unchanged).toBe(false);
+        expect(p.Update).toEqual([{ ID: 'row-1', InstallmentNumber: 1, DueDate: '2026-10-15', Amount: 10000.03, Description: 'New' }]);
+    });
+
+    it('renumbers a lone Scheduled row #5 to 1', () => {
+        const p = plan(QUOTED, [row(5, 'Scheduled', '2026-10-15', 10000.03)], [{ DueDate: '2026-10-15', Amount: 10000.03 }]);
+        expect(p.Unchanged).toBe(false);
+        expect(p.Update).toEqual([{ ID: 'row-5', InstallmentNumber: 1, DueDate: '2026-10-15', Amount: 10000.03, Description: null }]);
+    });
+
+    it('needs one supplied row for each of two identical invoiced rows', () => {
+        const existing = [
+            row(1, 'Invoiced', '2026-10-15', 5000, { DocumentNumber: 'ORD-1-1' }),
+            row(2, 'Invoiced', '2026-10-15', 5000, { DocumentNumber: 'ORD-1-2' }),
+        ];
+        const one = PlanScheduleReplacement(CONFIRMED, existing, [{ DueDate: '2026-10-15', Amount: 5000 }]);
+        expect('Refused' in one && one.Code).toBe('INVOICED_ROW_CHANGED');
+        expect('Refused' in one && one.Message).toContain('Instalment 2');
+        const both = plan(CONFIRMED, existing, [
+            { DueDate: '2026-10-15', Amount: 5000 },
+            { DueDate: '2026-10-15', Amount: 5000 },
+        ]);
+        expect(both.Unchanged).toBe(true);
+        expect(both.Final.map((r) => r.ID)).toEqual(['row-1', 'row-2']);
+    });
+
+    it('ignores a cancelled row from another company', () => {
+        const existing = [row(1, 'Canceled', '2026-10-15', 100, { CompanyID: OTHER }), row(2, 'Scheduled', '2026-12-01', 9900)];
+        const p = plan(QUOTED, existing, [{ DueDate: '2026-12-01', Amount: 10000 }]);
+        expect(p.Update.map((u) => [u.ID, u.InstallmentNumber, u.Amount])).toEqual([['row-2', 2, 10000]]);
+    });
+
+    it('treats a confirmed order with only cancelled rows as billed without a schedule', () => {
+        const out = PlanScheduleReplacement(CONFIRMED, [row(1, 'Canceled', '2026-10-15', 10000.03)], FOUR);
+        expect('Refused' in out && out.Code).toBe('BILLED_WITHOUT_SCHEDULE');
+    });
+});
+
+describe('a row a payment names', () => {
+    const paid = (n: number, due: string, amount: number, amountPaid: number) =>
+        row(n, 'Scheduled', due, amount, { AmountPaid: amountPaid, NamedByPayment: true });
+
+    it('refuses to re-date it, naming the instalment', () => {
+        // Reuse is by position: prepending a row would move #1 (and its payment) to 2026-11-01.
+        const out = PlanScheduleReplacement(QUOTED, [paid(1, '2026-12-01', 500, 500)], [
+            { DueDate: '2026-11-01', Amount: 300 },
+            { DueDate: '2026-12-01', Amount: 500 },
+        ]);
+        expect('Refused' in out && out.Code).toBe('PAID_ROW_CHANGED');
+        expect('Refused' in out && out.Message).toContain('Instalment 1 of order ORD-1 (due 2026-12-01, 500.00) has a payment applied to it (500.00 paid)');
+        expect('Refused' in out && out.Message).toContain('moves it to 2026-11-01');
+    });
+
+    it('refuses to lower it below what is paid', () => {
+        const out = PlanScheduleReplacement(QUOTED, [paid(1, '2026-12-01', 500, 400)], [{ DueDate: '2026-12-01', Amount: 399.99 }]);
+        expect('Refused' in out && out.Code).toBe('PAID_ROW_CHANGED');
+        expect('Refused' in out && out.Message).toContain('lowers it to 399.99');
+    });
+
+    it('refuses to delete it', () => {
+        const out = PlanScheduleReplacement(QUOTED, [row(1, 'Scheduled', '2026-11-01', 500), paid(2, '2026-12-01', 500, 100)], [
+            { DueDate: '2026-11-01', Amount: 1000 },
+        ]);
+        expect('Refused' in out && out.Code).toBe('PAID_ROW_CHANGED');
+        expect('Refused' in out && out.Message).toContain('Instalment 2');
+        expect('Refused' in out && out.Message).toContain('removes it');
+    });
+
+    it('allows a higher amount, a lower one still covering the payment, a new description and a new number', () => {
+        const raised = plan(QUOTED, [paid(1, '2026-12-01', 500, 500)], [{ DueDate: '2026-12-01', Amount: 600, Description: 'Q4' }]);
+        expect(raised.Update).toEqual([{ ID: 'row-1', InstallmentNumber: 1, DueDate: '2026-12-01', Amount: 600, Description: 'Q4' }]);
+        const lowered = plan(QUOTED, [paid(1, '2026-12-01', 500, 400)], [{ DueDate: '2026-12-01', Amount: 400 }]);
+        expect(lowered.Update.map((u) => u.Amount)).toEqual([400]);
+        const renumbered = plan(QUOTED, [paid(3, '2026-12-01', 500, 500)], [{ DueDate: '2026-12-01', Amount: 500 }]);
+        expect(renumbered.Update.map((u) => u.InstallmentNumber)).toEqual([1]);
+    });
+
+    it('does not limit a row whose AmountPaid comes only from payments that name no instalment', () => {
+        const p = plan(QUOTED, [row(1, 'Scheduled', '2026-12-01', 500, { AmountPaid: 500 })], [{ DueDate: '2026-11-01', Amount: 300 }]);
+        expect(p.Update.map((u) => [u.DueDate, u.Amount])).toEqual([['2026-11-01', 300]]);
     });
 });

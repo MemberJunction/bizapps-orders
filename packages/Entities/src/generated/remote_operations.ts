@@ -2207,9 +2207,9 @@ export interface RefundPaymentOutput {
  * NO import statements — definitions are emitted verbatim.
  */
 export interface ReplacePaymentScheduleRow {
-    /** `YYYY-MM-DD`. */
+    /** Exactly `YYYY-MM-DD`; any other form is refused. */
     DueDate: string;
-    /** Greater than zero; rounded to the cent. */
+    /** A number greater than zero; rounded to the cent. */
     Amount: number;
     /** Up to 500 characters. */
     Description?: string | null;
@@ -2218,9 +2218,10 @@ export interface ReplacePaymentScheduleRow {
 /**
  * Input for `Orders.ReplacePaymentSchedule`.
  *
- * `Rows` is the whole schedule the order should have, in any order; the operation numbers the rows
- * by due date. An empty list removes the schedule, which bills the order as one instalment.
- * Instalments already invoiced must be in the list unchanged (same due date and amount).
+ * `Rows` is the whole schedule the order should have, in any order. Instalments already invoiced must
+ * be in the list unchanged (same due date and amount) and keep their numbers; the operation numbers
+ * the remaining rows by due date, using the numbers those instalments do not hold. An empty list
+ * removes the schedule, which bills the order as one instalment.
  *
  * NO import statements — definitions are emitted verbatim.
  */
@@ -2234,12 +2235,15 @@ export interface OrdersReplacePaymentScheduleInput {
 /**
  * Why `Orders.ReplacePaymentSchedule` refused. Nothing is written on any refusal.
  *
+ * - `INVALID_ORDER_ID` — `OrderHeaderID` is not a UUID.
  * - `INVALID_ROW` — a row has no valid due date, no amount above zero, or too long a description.
  * - `NOT_FOUND` / `READ_FAILED` — the order could not be found or read.
  * - `ORDER_VOIDED` — a voided order's schedule does not change.
  * - `PER_COMPANY_SCHEDULE` — the order still bills by a schedule per product company.
  * - `INVOICED_ROW_CHANGED` — an invoiced, paid or written-off instalment is missing from the list
  *   or has a different due date or amount.
+ * - `PAID_ROW_CHANGED` — a not-yet-invoiced instalment that a payment names would be removed, moved to
+ *   another due date, or lowered below what is paid on it.
  * - `BILLED_WITHOUT_SCHEDULE` — the order was confirmed with no schedule and billed in full.
  * - `SCHEDULE_REQUIRED` — the order is confirmed and billed by its schedule, which cannot be removed.
  * - `TIE_FAILED` — the rows do not add up to the order's lines.
@@ -2248,12 +2252,14 @@ export interface OrdersReplacePaymentScheduleInput {
  * NO import statements — definitions are emitted verbatim.
  */
 export type ReplacePaymentScheduleCode =
+    | 'INVALID_ORDER_ID'
     | 'INVALID_ROW'
     | 'NOT_FOUND'
     | 'READ_FAILED'
     | 'ORDER_VOIDED'
     | 'PER_COMPANY_SCHEDULE'
     | 'INVOICED_ROW_CHANGED'
+    | 'PAID_ROW_CHANGED'
     | 'BILLED_WITHOUT_SCHEDULE'
     | 'SCHEDULE_REQUIRED'
     | 'TIE_FAILED'

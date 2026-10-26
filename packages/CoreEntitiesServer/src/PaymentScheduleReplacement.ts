@@ -16,9 +16,16 @@
  * nothing to show for it. Cancelled rows have left the schedule and are left alone.
  *
  * WHAT HAPPENS TO THE REST. The supplied rows not matched to a frozen row become the order's
- * `Scheduled` rows, in due-date order. Existing `Scheduled` rows are reused in place (re-dated,
- * re-amounted, renumbered) before any is deleted or created, so a row that a payment is already aimed
- * at keeps its identity where it can.
+ * `Scheduled` rows, in due-date order. Existing `Scheduled` rows are reused by position, lowest
+ * number first (re-dated, re-amounted, renumbered), before any is deleted or created. Reuse is by
+ * position, not content: a reused row takes whatever date and amount falls to it.
+ *
+ * A ROW A PAYMENT NAMES. A payment line can name an instalment (`PaymentLine.OrderHeaderPaymentScheduleID`).
+ * Reusing such a row by position would move that payment to a different date and amount, and deleting
+ * it would fail on the foreign key. So a plan that deletes a named row, re-dates one, or lowers one
+ * below its `AmountPaid` is refused (`PAID_ROW_CHANGED`), naming the instalment, and nothing is
+ * written. Renumbering, a description change or a higher amount are allowed. Payments that name no
+ * instalment are spread over the rows by `spRecalcOrderHeaderPaymentSchedule` and do not limit the plan.
  *
  * NUMBERING. A frozen or cancelled row keeps its `InstallmentNumber`: it is part of a document number
  * the customer may hold. The live `Scheduled` rows take the lowest numbers no frozen or cancelled row
@@ -39,6 +46,7 @@
 
 import { ToISODate } from '@mj-biz-apps/orders-entities';
 import type { ScheduleRowFacts } from './PaymentScheduleBehavior.js';
+import { RequireDate } from './sql-guards.js';
 
 const Money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const cents = (n: number): number => Math.round(Money(n) * 100);
@@ -62,6 +70,10 @@ export interface ExistingScheduleRow extends ScheduleRowFacts {
     DueDate: string | Date;
     DocumentNumber?: string | null;
     Description?: string | null;
+    /** What the row has been paid, named and spread payments together. */
+    AmountPaid?: number | null;
+    /** True when at least one payment line names this row. */
+    NamedByPayment?: boolean;
 }
 
 /** A row the plan leaves on the order after it is applied. */
@@ -82,6 +94,7 @@ export type ScheduleReplacementRefusalCode =
     | 'ORDER_VOIDED'
     | 'PER_COMPANY_SCHEDULE'
     | 'INVOICED_ROW_CHANGED'
+    | 'PAID_ROW_CHANGED'
     | 'BILLED_WITHOUT_SCHEDULE'
     | 'SCHEDULE_REQUIRED';
 
@@ -119,10 +132,10 @@ export function NormaliseReplacementRows(
     const out: ScheduleReplacementRow[] = [];
     for (const [i, row] of rows.entries()) {
         const n = i + 1;
-        const day = typeof row?.DueDate === 'string' || row?.DueDate instanceof Date ? ToISODate(row.DueDate) : null;
-        if (!day || !isRealDay(day)) return refusal('INVALID_ROW', `Row ${n} has no valid due date (YYYY-MM-DD).`);
-        const amount = Number(row?.Amount);
-        if (row?.Amount === null || row?.Amount === undefined || !Number.isFinite(amount) || Money(amount) <= 0) {
+        const day = suppliedDay(row?.DueDate);
+        if (!day) return refusal('INVALID_ROW', `Row ${n} has no valid due date (YYYY-MM-DD).`);
+        const amount = row?.Amount;
+        if (typeof amount !== 'number' || !Number.isFinite(amount) || Money(amount) <= 0) {
             return refusal('INVALID_ROW', `Row ${n} (due ${day}) needs an amount greater than zero.`);
         }
         const description = row?.Description === null || row?.Description === undefined ? null : String(row.Description).trim() || null;
@@ -177,7 +190,43 @@ export function PlanScheduleReplacement(
     const matched = matchFrozenRows(order, existing, supplied);
     if ('Refused' in matched) return matched;
 
-    return buildPlan(order, existing, supplied, matched.Used);
+    const plan = buildPlan(order, existing, supplied, matched.Used);
+    return checkNamedRows(order, existing, plan) ?? plan;
+}
+
+/**
+ * Refuse a plan that deletes a row a payment names, re-dates one, or lowers one below what is paid
+ * on it. See "A ROW A PAYMENT NAMES" above.
+ */
+function checkNamedRows(
+    order: ScheduleReplacementOrder,
+    existing: readonly ExistingScheduleRow[],
+    plan: ScheduleReplacementPlan,
+): ScheduleReplacementRefusal | null {
+    for (const row of existing.filter((r) => r.Status === 'Scheduled' && r.NamedByPayment).sort(byNumber)) {
+        const day = ToISODate(row.DueDate);
+        const paid = Money(Number(row.AmountPaid ?? 0));
+        const which = `Instalment ${row.InstallmentNumber} of order ${order.OrderNumber} (due ${day}, ${Money(row.Amount).toFixed(2)})`;
+        const fix = `Keep that row's due date and an amount of at least ${paid.toFixed(2)}, or move the payment off it first.`;
+        if (plan.Delete.includes(row.ID)) {
+            return refusal('PAID_ROW_CHANGED', `${which} has a payment applied to it (${paid.toFixed(2)} paid), but the new schedule removes it. ${fix}`);
+        }
+        const change = plan.Update.find((u) => u.ID === row.ID);
+        if (!change) continue;
+        if (change.DueDate !== day) {
+            return refusal(
+                'PAID_ROW_CHANGED',
+                `${which} has a payment applied to it (${paid.toFixed(2)} paid), but the new schedule moves it to ${change.DueDate}. ${fix}`,
+            );
+        }
+        if (cents(change.Amount) < cents(paid)) {
+            return refusal(
+                'PAID_ROW_CHANGED',
+                `${which} has a payment applied to it (${paid.toFixed(2)} paid), but the new schedule lowers it to ${Money(change.Amount).toFixed(2)}. ${fix}`,
+            );
+        }
+    }
+    return null;
 }
 
 /** Pair each frozen row with a supplied row of the same day and amount, or refuse naming it. */
@@ -280,11 +329,20 @@ function byNumber(a: { InstallmentNumber: number }, b: { InstallmentNumber: numb
     return Number(a.InstallmentNumber) - Number(b.InstallmentNumber);
 }
 
-/** A well-formed day that exists: `2026-02-30` is refused rather than rolled into March. */
-function isRealDay(day: string): boolean {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
-    const parsed = new Date(`${day}T00:00:00Z`);
-    return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === day;
+/**
+ * The supplied due date as `YYYY-MM-DD`, or null. A string must be exactly `YYYY-MM-DD` and a day that
+ * exists (`RequireDate` refuses `2026-02-30` rather than rolling it into March); any other string,
+ * such as `11/01/2026` or `2026-11-01 junk`, is refused rather than parsed in the server's time zone.
+ * A `Date` is read as its UTC day.
+ */
+function suppliedDay(value: unknown): string | null {
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : ToISODate(value);
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    try {
+        return RequireDate(value, 'DueDate');
+    } catch {
+        return null;
+    }
 }
 
 function refusal(code: ScheduleReplacementRefusalCode, message: string): ScheduleReplacementRefusal {

@@ -4,9 +4,9 @@
  * NO import statements — definitions are emitted verbatim.
  */
 export interface ReplacePaymentScheduleRow {
-    /** `YYYY-MM-DD`. */
+    /** Exactly `YYYY-MM-DD`; any other form is refused. */
     DueDate: string;
-    /** Greater than zero; rounded to the cent. */
+    /** A number greater than zero; rounded to the cent. */
     Amount: number;
     /** Up to 500 characters. */
     Description?: string | null;
@@ -15,9 +15,10 @@ export interface ReplacePaymentScheduleRow {
 /**
  * Input for `Orders.ReplacePaymentSchedule`.
  *
- * `Rows` is the whole schedule the order should have, in any order; the operation numbers the rows
- * by due date. An empty list removes the schedule, which bills the order as one instalment.
- * Instalments already invoiced must be in the list unchanged (same due date and amount).
+ * `Rows` is the whole schedule the order should have, in any order. Instalments already invoiced must
+ * be in the list unchanged (same due date and amount) and keep their numbers; the operation numbers
+ * the remaining rows by due date, using the numbers those instalments do not hold. An empty list
+ * removes the schedule, which bills the order as one instalment.
  *
  * NO import statements — definitions are emitted verbatim.
  */

@@ -11,11 +11,22 @@
  *   - instalments already invoiced are kept exactly as they are, and a list that changes or drops one
  *     is refused (the rule is in `PaymentScheduleReplacement.ts`);
  *   - the resulting schedule ties to the order's lines, by the same check confirm and invoicing run;
- *   - a confirmed order is never given a schedule after being billed in full, nor stripped of one.
+ *   - a confirmed order is never given a schedule after being billed in full, nor stripped of one;
+ *   - a payment that names an instalment is never moved to another date or amount, nor orphaned
+ *     (`PAID_ROW_CHANGED`).
  *
  * ALL OR NONE. The writes run in one transaction, nested as a savepoint when the caller already holds
  * one, so a refusal or a failed save leaves the order's schedule as it was. Sending the same list
  * twice writes nothing the second time.
+ *
+ * A CONFIRM THAT LANDS MID-REPLACE. The order is read and planned before the transaction opens, so a
+ * confirm could book the order in between: an order confirmed with no schedule is billed in full, and
+ * rows inserted after that would bill it again. So the first thing inside the transaction is a
+ * re-read of the order's status under an update lock (`UPDLOCK, HOLDLOCK` on SQL Server,
+ * `FOR UPDATE` on PostgreSQL), held until commit. Confirm writes the order row before it reads the
+ * schedule, so it either finished first and the re-read sees it, or it waits for this transaction and
+ * then sees the new rows. When the status moved, the plan's refusals are re-run against the new
+ * status (`BILLED_WITHOUT_SCHEDULE`, `SCHEDULE_REQUIRED`, `ORDER_VOIDED`) before anything is written.
  *
  * WHAT IT DOES NOT DO: issue anything. A new row due on or before today stays `Scheduled` and appears
  * on the billing worklist like any other; only confirm and `Orders.IssueInstalmentInvoice` issue.
@@ -36,13 +47,14 @@ import {
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
 } from '@mj-biz-apps/orders-entities';
 
-import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, PAYMENT_LINE_ENTITY } from './entity-names.js';
 import { ExplainShortfalls, ScheduleShortfalls } from './PaymentScheduleBehavior.js';
 import {
     NormaliseReplacementRows,
     PlanScheduleReplacement,
     type ExistingScheduleRow,
     type ScheduleReplacementPlan,
+    type ScheduleReplacementRefusalCode,
 } from './PaymentScheduleReplacement.js';
 import { AppliedScheduleReductions } from './ReversalScheduleReduction.js';
 import { RequireUUID } from './sql-guards.js';
@@ -76,7 +88,7 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
         try {
             orderID = RequireUUID(input?.OrderHeaderID, 'OrderHeaderID');
         } catch (e) {
-            return empty({ Code: 'INVALID_ROW', Message: (e as Error).message });
+            return empty({ Code: 'INVALID_ORDER_ID', Message: (e as Error).message });
         }
         const supplied = NormaliseReplacementRows(input?.Rows);
         if ('Refused' in supplied) return empty({ OrderHeaderID: orderID, Code: supplied.Code, Message: supplied.Message });
@@ -116,8 +128,11 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
         };
         if (input.Preview || plan.Unchanged) return out;
 
-        const failure = await this.apply(order, plan, provider, user, out);
-        return failure ? empty({ ...echo, Code: 'WRITE_FAILED', Message: failure }) : out;
+        const failure = await this.apply(order, plan, provider, user, out, (status) => {
+            const recheck = PlanScheduleReplacement({ ...order, Status: status }, rows, supplied);
+            return 'Refused' in recheck ? recheck : null;
+        });
+        return failure ? empty({ ...echo, ...failure }) : out;
     }
 
     /** The order, its schedule rows (cancelled included) and the line totals the tie is checked against. */
@@ -130,21 +145,30 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
         | { Code: 'NOT_FOUND' | 'READ_FAILED'; Message: string }
     > {
         const rv = RunView.FromMetadataProvider(provider);
-        const [orders, rows, lines] = await rv.RunViews(
+        const [orders, rows, lines, named] = await rv.RunViews(
             [
                 { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${orderID}'`, Fields: ['ID', 'OrderNumber', 'Status', 'CompanyID'], ResultType: 'simple', BypassCache: true },
                 {
                     EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
                     ExtraFilter: `OrderHeaderID = '${orderID}'`,
-                    Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Amount', 'Status', 'DocumentNumber', 'Description'],
+                    Fields: ['ID', 'CompanyID', 'InstallmentNumber', 'DueDate', 'Amount', 'AmountPaid', 'Status', 'DocumentNumber', 'Description'],
                     ResultType: 'simple',
                     BypassCache: true,
                 },
                 { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${orderID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple', BypassCache: true },
+                // Any payment line naming a row, whatever its payment's status: the foreign key holds
+                // for all of them, so each one stops that row being deleted.
+                {
+                    EntityName: PAYMENT_LINE_ENTITY,
+                    ExtraFilter: `OrderHeaderID = '${orderID}' AND OrderHeaderPaymentScheduleID IS NOT NULL`,
+                    Fields: ['OrderHeaderPaymentScheduleID'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
             ],
             user,
         );
-        const failed = [orders, rows, lines].find((r) => !r.Success);
+        const failed = [orders, rows, lines, named].find((r) => !r.Success);
         if (failed) return { Code: 'READ_FAILED', Message: `Could not read order ${orderID}: ${failed.ErrorMessage ?? 'unknown error'}` };
         const order = (orders.Results ?? [])[0] as OrderFacts | undefined;
         if (!order) return { Code: 'NOT_FOUND', Message: `No order with ID ${orderID}.` };
@@ -152,9 +176,12 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
         // An approved amount change or a return lowered the instalments rather than the lines, so the
         // lines are read less what each took off them, exactly as invoicing reads them.
         const reductions = await AppliedScheduleReductions(order.ID, { Provider: provider, User: user });
+        const namedIDs = new Set(
+            ((named.Results ?? []) as Array<{ OrderHeaderPaymentScheduleID: string }>).map((p) => p.OrderHeaderPaymentScheduleID.toLowerCase()),
+        );
         return {
             order,
-            rows: (rows.Results ?? []) as ExistingScheduleRow[],
+            rows: ((rows.Results ?? []) as ExistingScheduleRow[]).map((r) => ({ ...r, NamedByPayment: namedIDs.has(r.ID.toLowerCase()) })),
             lines: [
                 ...((lines.Results ?? []) as Array<{ CompanyID: string; LineTotalGross: number }>),
                 ...reductions.map((c) => ({ CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
@@ -163,8 +190,11 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
     }
 
     /**
-     * Write the plan in one transaction: deletes, then updates in the plan's order, then inserts.
-     * Returns the failure message, or null. Fills in the IDs of rows it created on `out`.
+     * Write the plan in one transaction: lock and re-read the order's status, then deletes, then
+     * updates in the plan's order, then inserts. Returns the refusal or failure, or null. Fills in the
+     * IDs of rows it created on `out`.
+     *
+     * `recheck` re-runs the plan's refusals against a status that moved since the first read.
      */
     private async apply(
         order: OrderFacts,
@@ -172,10 +202,20 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
         provider: IMetadataProvider,
         user: UserInfo,
         out: OrdersReplacePaymentScheduleOutput,
-    ): Promise<string | null> {
+        recheck: (status: string) => { Code: ScheduleReplacementRefusalCode; Message: string } | null,
+    ): Promise<{ Code: ScheduleReplacementRefusalCode | 'WRITE_FAILED'; Message: string } | null> {
         const db = provider as unknown as DatabaseProviderBase;
         await db.BeginTransaction();
         try {
+            const status = await this.lockOrderStatus(order.ID, provider, user);
+            if (status === null) throw new Error(`the order could not be locked`);
+            if (status !== order.Status) {
+                const refused = recheck(status);
+                if (refused) {
+                    await this.rollback(db);
+                    return { Code: refused.Code, Message: refused.Message };
+                }
+            }
             for (const id of plan.Delete) {
                 const row = await this.load(id, provider, user);
                 if (!(await row.Delete())) throw new Error(`instalment ${row.InstallmentNumber} could not be removed: ${row.LatestResult?.CompleteMessage ?? 'unknown error'}`);
@@ -202,13 +242,35 @@ export class ReplacePaymentScheduleOperation extends OrdersReplacePaymentSchedul
         } catch (err) {
             const message = `Order ${order.OrderNumber}'s payment schedule was not changed: ${err instanceof Error ? err.message : String(err)}`;
             LogError(`Orders.ReplacePaymentSchedule: ${message}`);
-            try {
-                await db.RollbackTransaction();
-            } catch (rollbackErr) {
-                LogError(`Orders.ReplacePaymentSchedule: rollback failed: ${rollbackErr}`);
-            }
-            return message;
+            await this.rollback(db);
+            return { Code: 'WRITE_FAILED', Message: message };
         }
+    }
+
+    private async rollback(db: DatabaseProviderBase): Promise<void> {
+        try {
+            await db.RollbackTransaction();
+        } catch (rollbackErr) {
+            LogError(`Orders.ReplacePaymentSchedule: rollback failed: ${rollbackErr}`);
+        }
+    }
+
+    /**
+     * The order's status, read under an update lock held to the end of the transaction, or null when
+     * the row is gone. A concurrent confirm writes the order row, so it cannot pass this lock.
+     */
+    private async lockOrderStatus(orderID: string, provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
+        const db = provider as unknown as {
+            PlatformKey?: string;
+            ExecuteSQL(sql: string, params?: unknown[], options?: unknown, user?: UserInfo): Promise<unknown>;
+        };
+        const id = RequireUUID(orderID, 'OrderHeaderID');
+        const sql =
+            db.PlatformKey === 'postgresql'
+                ? `SELECT "Status" FROM __mj_BizAppsOrders."OrderHeader" WHERE "ID" = '${id}' FOR UPDATE;`
+                : `SELECT Status FROM __mj_BizAppsOrders.OrderHeader WITH (UPDLOCK, HOLDLOCK) WHERE ID = '${id}';`;
+        const rows = (await db.ExecuteSQL(sql, undefined, undefined, user)) as Array<{ Status: string }> | null;
+        return rows?.[0]?.Status ?? null;
     }
 
     private async load(id: string, provider: IMetadataProvider, user: UserInfo): Promise<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity> {
