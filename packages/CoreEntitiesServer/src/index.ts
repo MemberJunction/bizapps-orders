@@ -1041,6 +1041,4 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 // reason as the guards above: the edge should reach for the audited helper, not re-derive it.
 export { CalendarDayOrToday } from './calendar-day.js';
 
-// TEST SEAM, never for production code (#947): the integration harness lets isolated work join the
-// transaction a check holds. Calling it in production would bring back the shared-provider rollback #927 fixed.
-export { JoinCallerTransactionForTests } from './isolatedProvider.js';
+// The integration harness's test seam (#947) is NOT exported here: it lives on the `./testing` subpath.

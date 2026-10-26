@@ -34,7 +34,8 @@ import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/cor
 import { OrdersEngine, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
-import { JoinCallerTransactionForTests, ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
+import { ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
+import { JoinCallerTransactionForTests } from '@mj-biz-apps/orders-core-entities-server/testing';
 import { LoadWorld } from './world/load-world.js';
 import { SetWorld } from './world/world.js';
 import { FindId, FindRows, Quote } from './world/entity-io.js';

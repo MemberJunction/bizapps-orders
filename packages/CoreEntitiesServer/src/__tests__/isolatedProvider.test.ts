@@ -37,6 +37,20 @@ describe('WithIsolatedProvider (#927)', () => {
         expect(made[0].released).toBe(true);
     });
 
+    it('holds the instance until the work has finished, not just until it has started (#928 review)', async () => {
+        // \`return work(...)\` without \`await\` lets the \`finally\` release the instance (rolling back
+        // its open transaction) while the work is still awaiting, e.g. on the gateway. A check made
+        // at the start of the work cannot see that; one made after an await can.
+        const { shared, made } = sharedProvider();
+        const out = await WithIsolatedProvider(async () => {
+            await new Promise((r) => setTimeout(r, 10));
+            expect(made[0].released).toBe(false);
+            return 'booked';
+        }, shared);
+        expect(out).toBe('booked');
+        expect(made[0].released).toBe(true);
+    });
+
     it('releases the instance when the work throws, and rethrows', async () => {
         const { shared, made } = sharedProvider();
         await expect(

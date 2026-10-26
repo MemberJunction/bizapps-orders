@@ -56,7 +56,9 @@ export async function WithIsolatedProvider<T>(
 
 /**
  * TEST SEAM (#947). Inside `fn`, {@link WithIsolatedProvider} runs its work on `provider` rather than on
- * a new instance, so the work joins the transaction `provider` holds. Production code never calls it.
+ * a new instance, so the work joins the transaction `provider` holds. Production code never calls it,
+ * and the package root does not export it: harnesses import it from
+ * `@mj-biz-apps/orders-core-entities-server/testing`.
  *
  * It exists for the integration harness, which wraps each check in a transaction it rolls back
  * (`InRolledBackTransaction`). An isolated instance writes on another pooled connection, outside that
