@@ -1,8 +1,10 @@
 import { type ViewGridState } from '@memberjunction/ng-entity-viewer';
 
 /**
- * Column state for the Order Headers grids the app hosts directly (All Orders, the dashboard's
- * Active Orders / Orders Explorer / Overdue Collections panes).
+ * Column state for the Order Headers grids the app hosts directly: the Overdue page
+ * (`receivables/overdue.page.ts`), the Customer A/R page (`receivables/customer-ar.page.ts`) and the
+ * Account Credit page (`payments/account-credit.page.ts`). All Orders and the dashboard panes run in
+ * `mj-view-workspace` and take their columns from the user's view (`order-views.ts`), not from here.
  *
  * The grid only renders a money column as currency when the column carries an explicit
  * `format: { type: 'currency' }` or its field name happens to match the core name heuristic

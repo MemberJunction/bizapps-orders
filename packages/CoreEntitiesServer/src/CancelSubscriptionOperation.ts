@@ -14,7 +14,9 @@
  *   1. resolve the affected term (the one whose window covers the request, else the next to
  *      start, else the latest), and the LATER terms — open terms that start after its coverage ends
  *   2. ask the behaviour what the rules say — effective date, refund, reversal fraction — for the
- *      affected term, and for each later term (never delivered, so reversed in full, #406)
+ *      affected term, and for each later term (never delivered, so reversed in full, #406). The
+ *      rules are the type's, or, when the caller chose a `Timing`, the type's with that timing
+ *      in place of its `CancellationMode`
  *   3. when there is something to reverse, emit ONE reversal ORDER with a line per reversed term,
  *      each carrying the negative quantity and pointing at its original line, and confirm it —
  *      booking mirrors the JEs
@@ -64,8 +66,10 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
+    CANCELLATION_TIMINGS,
     type CancellableTerm,
     type CancellationDecision,
+    type CancellationTiming,
     type LaterTermBilling,
     type SubscriptionTypeRules,
 } from './SubscriptionBehavior.js';
@@ -86,6 +90,13 @@ export interface CancelSubscriptionInput {
     RequestDate?: Date | string;
     /** Free text, stored on the lifecycle event. */
     Reason?: string;
+    /**
+     * When coverage ends, chosen by the person cancelling: `Immediate` ends coverage and access on
+     * the request day, `EndOfTerm` on the term's last day. Either way the type's grace does not
+     * apply. Absent, the type's `CancellationMode` and grace decide. See
+     * `SubscriptionBehavior.RulesForTiming`.
+     */
+    Timing?: CancellationTiming;
     /**
      * Compute and return the decision WITHOUT writing anything — for a confirmation screen that
      * shows "you will be refunded $X, coverage ends Y" before the user commits.
@@ -192,6 +203,15 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return { Success: false, Message: String((e as Error).message) };
         }
 
+        // A timing outside the two the contract names would fall through to the type's rule, and
+        // the caller would believe they had chosen something they had not.
+        if (input.Timing != null && !CANCELLATION_TIMINGS.includes(input.Timing)) {
+            return {
+                Success: false,
+                Message: `Timing must be one of ${CANCELLATION_TIMINGS.join(', ')}; got '${input.Timing}'.`,
+            };
+        }
+
         const requestDate = await CalendarDayOrToday(requestedDay, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
@@ -203,8 +223,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return { Success: false, Message: `Subscription is already canceled.` };
         }
 
-        const rules = await this.loadRules(provider, user, subscription.SubscriptionTypeID);
-        if (!rules) {
+        const typeRules = await this.loadRules(provider, user, subscription.SubscriptionTypeID);
+        if (!typeRules) {
             return {
                 Success: false,
                 Message: `Subscription type '${subscription.SubscriptionTypeID}' was not found.`,
@@ -220,7 +240,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             };
         }
 
-        const behavior = this.behaviorFor(rules);
+        const behavior = this.behaviorFor(typeRules);
+        const rules = behavior.RulesForTiming(typeRules, input.Timing);
         const decision = behavior.DecideCancellation({
             Rules: rules,
             RequestDate: requestDate,
@@ -285,7 +306,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             }
             await this.stampSubscription(provider, user, subscription.ID, decision);
             await this.syncGrantsOnCancel(provider, user, subscription.ID, decision, input.Reason);
-            await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input.Reason, reversal?.ID);
+            await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input, reversal?.ID);
 
             await dbProvider.CommitTransaction();
             return {
@@ -610,7 +631,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         decision: CancellationDecision,
         later: TermCancellation[],
         totalRefund: number,
-        reason?: string,
+        input: CancelSubscriptionInput,
         reversalOrderID?: string,
     ): Promise<void> {
         const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
@@ -633,7 +654,10 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 ReversalFraction: l.Decision.ReversalFraction,
             })),
             TotalRefundAmount: totalRefund,
-            Reason: reason ?? null,
+            // Which timing the person cancelling chose, so a reader can tell an override from the
+            // type's own rule. Null when the type decided.
+            Timing: input.Timing ?? null,
+            Reason: input.Reason ?? null,
         });
         if (!(await event.Save())) {
             throw new Error(

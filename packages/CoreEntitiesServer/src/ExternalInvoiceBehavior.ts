@@ -23,6 +23,7 @@
  */
 import type { InvoiceDocument, InvoiceRow } from './InvoiceBehavior.js';
 import { BILLCOM_TRANSIENT } from './BillComInvoiceRail.js';
+import { FormatServicePeriod } from './InvoiceDisplay.js';
 
 export type ExternalInvoiceStatus = 'Sending' | 'Sent' | 'Canceled' | 'Failed';
 
@@ -80,6 +81,10 @@ const TIE_TOLERANCE = 0.005;
  *
  * INSTALMENT: one line, for the instalment amount, under the frozen number. The full order value and
  * the "2 of 4" ladder are on OUR document; the rail's invoice is the amount now due.
+ *
+ * SERVICE PERIOD. Bill.com's invoice template has no field for it, so it rides in the line text in
+ * the format our own document prints: a row's period after its name, and on an instalment line the
+ * span of the order's rows (earliest start to latest end).
  */
 export function BuildExternalInvoicePayload(
     doc: InvoiceDocument,
@@ -115,7 +120,13 @@ export function BuildExternalInvoicePayload(
                 InvoiceDate: invoiceDate,
                 DueDate: unit.DueDate,
                 Amount: amount,
-                Lines: [{ Description: `Instalment ${unit.InstallmentNumber} of ${unit.InstallmentCount} — order ${doc.OrderNumber}`, Quantity: 1, UnitPrice: amount }],
+                Lines: [
+                    {
+                        Description: withPeriod(`Instalment ${unit.InstallmentNumber} of ${unit.InstallmentCount} — order ${doc.OrderNumber}`, orderSpan(doc.Rows)),
+                        Quantity: 1,
+                        UnitPrice: amount,
+                    },
+                ],
                 Memo: doc.Description,
             },
         };
@@ -168,12 +179,32 @@ function rowLines(row: InvoiceRow): ExternalInvoiceLine[] {
     const amount = money(row.Amount);
     if (amount === 0) return [];
     const name = row.Description ? `${row.ProductName} — ${row.Description}` : row.ProductName;
+    const period = FormatServicePeriod(row.ServicePeriodStart, row.ServicePeriodEnd);
     const qty = Number(row.Quantity) || 1;
     const unit = money(amount / qty);
     if (qty > 0 && Math.abs(money(unit * qty) - amount) <= TIE_TOLERANCE) {
-        return [{ Description: name, Quantity: qty, UnitPrice: unit }];
+        return [{ Description: withPeriod(name, period), Quantity: qty, UnitPrice: unit }];
     }
-    return [{ Description: `${name} (×${qty})`, Quantity: 1, UnitPrice: amount }];
+    return [{ Description: withPeriod(`${name} (×${qty})`, period), Quantity: 1, UnitPrice: amount }];
+}
+
+function withPeriod(text: string, period: string | null): string {
+    return period ? `${text} (${period})` : text;
+}
+
+/** Earliest start to latest end across every row, children included. ISO dates compare as strings. */
+function orderSpan(rows: InvoiceRow[]): string | null {
+    let start: string | null = null;
+    let end: string | null = null;
+    const visit = (r: InvoiceRow): void => {
+        const s = r.ServicePeriodStart?.slice(0, 10) ?? null;
+        const e = r.ServicePeriodEnd?.slice(0, 10) ?? null;
+        if (s && (!start || s < start)) start = s;
+        if (e && (!end || e > end)) end = e;
+        r.Children.forEach(visit);
+    };
+    rows.forEach(visit);
+    return FormatServicePeriod(start, end);
 }
 
 export type InvoiceableCode =
@@ -201,6 +232,12 @@ export function DecideInvoiceable(i: {
     ScheduleRowStatus: string | null;
     ScheduleRowNamed: boolean;
     ExistingStatus: ExternalInvoiceStatus | null;
+    /**
+     * Whether any row for this unit holds a rail invoice reference — whether the rail has ever held
+     * an invoice for it. A send refused before the rail created anything (no customer email, a number
+     * too long) leaves a `Failed` row with no reference, and sending after that is not a re-issue.
+     */
+    UnitReachedRail: boolean;
     AllowReissue: boolean;
 }): InvoiceableDecision {
     switch (i.ExistingStatus) {
@@ -247,6 +284,12 @@ export function DecideInvoiceable(i: {
             }
             break;
         case 'Failed':
+            // NOTHING ON THE RAIL, NOTHING TO BILL TWICE. A Failed row without a reference is a send
+            // refused before the rail created an invoice — by this module, or by the rail answering
+            // no — so the next send is a first send and needs no AllowReissue. A timed-out send does
+            // not land here: it keeps its `Sending` claim until a person resolves it. (Before
+            // 2026-09-22 a timeout was written Failed; such a row could have an invoice on the rail.)
+            if (!i.UnitReachedRail) break;
             if (!i.AllowReissue) {
                 return {
                     Verdict: 'Refuse',

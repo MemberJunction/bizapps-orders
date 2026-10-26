@@ -1,5 +1,98 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.38.0
+
+### Patch Changes
+
+- a9f4bfa: The webhook's own records are much less likely to be lost when the page finishes the same purchase
+  (#939). When the `payment_intent.succeeded` webhook and the page's completion ran in the same second,
+  the page could put the webhook's `ProviderEventID` stamp on the intent back to null, and the
+  `PaymentWebhookDelivery` row could be rolled back with another request's work, so a redelivery of the
+  event would not have been recognised as a duplicate. The page now re-reads the intent after each
+  gateway call before it writes (and leaves it alone when the webhook already recorded the same status),
+  which narrows the window to milliseconds without closing it (#943). The delivery row is written on its
+  own provider (`WithIsolatedProvider`, #927), and a row that cannot be written now logs why, including
+  the retry's reason.
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+  - @mj-biz-apps/orders-entities@5.38.0
+
+## 5.37.0
+
+### Minor Changes
+
+- 065481c: Add the `ConcessionSelfApprovalEscalation` Orders setting (bc-aidp-next-golive#320): when set, a concession requested by a holder of its ConcessionLimit rule's role is no longer approved by that requester. It is Pending for the next approver up the setting names — `CompanyCFO` (the order company's `ApprovalCFOUserID`) or an MJ role name, tried in order — the approval task is assigned to them, and only they can decide it. The requester is never assigned, and when no target names anyone else the concession is refused. Empty (the default) keeps the previous behavior.
+- 3982e30: Confirm honors a subscription line's stated service period end (golive #338). It used to build one term of the type's default length whatever end the line stated, then overwrite the line's end to match, so a 13-, 18- or 24-month sale became 12 months and its revenue spread over 12. Now a shorter period is one short term; a longer one is one term per type term length with a final partial term (13 months on an annual type: 12 + 1; 24 months: 12 + 12), all on one subscription, each with its share of the line amount by months and its own recognition schedule, so every stated month recognizes the same amount. A stated period is not prorated. A line extending a held subscription keeps its stated length from the continuation date. Entitlement grants that follow the term are written per term. `SubscriptionBehavior.Decide` takes `RequestedEndDate` and returns every planned term in `Terms`, with `EndOverrideIgnored` when a stated end could not be used.
+
+  Recognition schedules count months in UTC. Service periods are calendar days stored as UTC midnight, and the EvenOverTime driver's local-time month arithmetic put them on the previous evening on a server west of Greenwich, so a July-to-December window produced seven monthly entries and a one-month term two.
+
+- dfc43ea: A subscription line whose stated period gives it a length other than its type's term is raised for finance review at confirm (golive #338), as finance exception `SUBSCRIPTION_TERM_LENGTH`: one per line, deduplicated on the line. The summary says whether the line carries the one-term list price ("priced at 11000.00, the list price for 12 months, so 1 month is not charged for") or a different price, and the amount is the difference between the length at the list rate and what the line charges. Nothing is refused or repriced, and nothing is raised until accounting has an active type with that code. `SubscriptionBehavior.Decide` reports the stated length and the type's term length in `StatedLength`.
+
+### Patch Changes
+
+- 3ec257f: Bill.com invoice lines carry the service period in their text, in the format the Orders invoice prints; an instalment line carries the span of the order's rows (#742).
+- d429e9e: Checkout captures the payment on an isolated provider (#927). The page's completion and the
+  `payment_intent.succeeded` webhook capture the same session within a second of each other; on the
+  shared `Metadata.Provider` their transactions nested, and a rollback on one side undid the other's
+  payment, so a charged buyer ended up with no payment booked and no access. New `WithIsolatedProvider`
+  helper (MJ `CreateIndependentInstance`, the same pattern as MJ #5059).
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+  - @mj-biz-apps/orders-entities@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- 0e3b9fd: A blank service period can be filled in on the order of a closed deal.
+
+  The deal lock refuses order-line edits while the deal is closed, and its message says what it protects: "before changing what was sold". It covered every field, including the service period — which is the coverage window, not the thing sold.
+
+  That blocked an ordinary close. `ConfirmEligibility` will not confirm a line whose product requires a service period until it has both a start and an end; Sales can state a term start on a deal line and nothing more, because `DealLine` carries no date columns. So the end could only be set on the order, the lock refused it, and the only route to a confirmable order ran through reopening the deal, setting the dates and closing it again.
+
+  An update now skips the lock only when it is FILLING those columns in: every field it changes is `ServicePeriodStart` or `ServicePeriodEnd`, and every one of them was empty beforehand. A date that is already set still meets the lock, so correcting one continues to go through reopening the deal — a date that was never set has nowhere else it could have come from, while one that is already there had a source, and moving it changes the window agreed at the close.
+
+  A save that also moves the quantity or the price still meets the lock, a create is untouched, and a line on a booked order still meets it: after confirm the stored period is the settled term that recognition is derived from.
+
+- 7756bb0: A checkout whose payment succeeded but whose browser never sent the final complete call (the tab closed, the page dropped) is now completed by the signed `payment_intent.succeeded` webhook, through the same path the browser uses. A refusal on that path, or a paid session that expires uncompleted, raises the "Checkout payment settled with no order" Task. A complete call that finds the webhook completing the session waits for it and returns the same order.
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Minor Changes
+
+- 4aa6783: Checkout: the Stripe publishable key the browser gets can come from the server environment. When a widget names a `paymentProviderId` and that provider's `CredentialsRef` resolves to a publishable key (the default secret resolver reads `<CredentialsRef>_PUBLISHABLE_KEY`, beside `<CredentialsRef>_API_KEY`), `/checkout/initialize` hands that key to the browser in place of the widget's `stripePublishableKey`, on both the ordinary and the renewal-payment session, so the host page and the Angular widget load Stripe.js with the same account's key as the server. Without the variable the widget's value is used as before. A key whose test/live mode disagrees with the account's (its API key's mode, else `IsLiveMode`) is logged as a warning by prefix only, and a provider that cannot be read is logged and falls back to the widget's key rather than failing the checkout. New exports: `ResolveCheckoutPublishableKey`, `ChooseCheckoutPublishableKey`, `StripeKeyModeOf`, `ResolvePaymentCredentials`; `PaymentCredentials` gains `PublishableKey`.
+- db3aef7: Order review by trigger (bc-aidp-next-golive#320 §5). A Direct order that hits a switched-on trigger (`NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`) cannot confirm until the reviewer role approves its `ORDERS_ORDER_REVIEW` task; an order a reviewer created goes to the escalation role. Routing is to the role holders' linked Persons, never the order's creator. Configured by the new `OrderReview*` settings, all off by default, so hosts that set nothing are unaffected. Adds the `RegisterOrderDealLink` seam for the sales app to say which deal created an order; the `ORDERS_ORDER_REVIEW` task type and the settings rows ship in metadata. An approval counts only when the user who wrote the decision (from `MJ: Record Changes`) holds the routed role and is not the creator, the task was linked to this order alone before it was decided, and nothing reviewed on the order was written since. `OrderHeader.Origin` can now be written only by the process that creates the order (checkout, provider payment); any other write of it is refused on save.
+- 5a490c4: Add an optional refund authority check to `Orders.RefundPayment` (bc-aidp-next-golive#320 §3). With the new `RefundApprovalThreshold` setting set, a refund that brings the payment's refunds to at most the threshold may be issued by a holder of the role named by the new `RefundApproverRole` setting, and anything above it only by the receiving company's `AccountingCompanyProfile.ApprovalCFOUserID`, who may always refund. A deactivated approver counts as none, so the refusal asks for a new one. The amount is counted per payment, not per order. The check runs before Preview and before any write, and refuses with a message. A gateway refund booked by the system user (a webhook) is exempt. Empty, the default, leaves refunds as before; an unreadable value is read as 0, and if the Orders application row cannot be found the refund fails loudly rather than running unchecked. This is an interim shape: the performer is the approver until a request-then-approve flow lands.
+
+### Patch Changes
+
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+  - @mj-biz-apps/orders-entities@5.35.1
+
+## 5.35.0
+
+### Minor Changes
+
+- 8a9d2f9: `Orders.CancelSubscription` takes an optional `Timing` (#702). `Immediate` ends coverage and access on the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's grace period, so access ends on the day chosen. Without it the type's `CancellationMode` decides, as before. The refund mode always comes from the type. The policy is `SubscriptionBehavior.RulesForTiming` and can be overridden; an unknown timing is refused before anything is written, and the lifecycle event records the timing chosen.
+- 303849b: Checkout account step: a host can set or remove the verification wording. `CheckoutAccountResult` takes `VerificationNote` (text, or `null` for none) and `PasswordSetMessage` on a `Created` answer; the widget shows them in place of its default verification text, and keeps the default when a host gives none. The contract now lets a host allow sign-in before verification as its own choice, while still not linking the login to the matched Person until the e-mail is verified.
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-entities@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes
@@ -928,8 +1021,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

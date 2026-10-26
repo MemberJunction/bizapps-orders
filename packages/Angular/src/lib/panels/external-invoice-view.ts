@@ -21,6 +21,8 @@ export type ExternalInvoiceState = 'Sending' | 'Sent' | 'Canceled' | 'Failed';
 export interface ExternalInvoiceLike {
     Status: ExternalInvoiceState;
     ExternalStatus?: string | null;
+    /** The rail's id for the invoice; null when the rail never created one. */
+    ExternalInvoiceRef?: string | null;
     /** Set when this row bills one instalment rather than the order as a whole. */
     OrderHeaderPaymentScheduleID?: string | null;
 }
@@ -43,8 +45,9 @@ export type PaymentExceptionDisposition = 'Held' | 'Unmatched' | 'Refused' | 'Re
  *
  * `Sending` blocks exactly as `Sent` does. It means the last attempt was never confirmed, so the rail
  * may or may not already hold the invoice; resolving that is a person's job with the rail open, not a
- * button's. `Failed` and `Canceled` do not block, because re-issuing after those is the deliberate act
- * the operation already asks to be told about.
+ * button's. `Failed` and `Canceled` do not block: a send after one is either a first send (nothing
+ * reached the rail) or the deliberate re-issue the operation asks to be told about — see
+ * {@link SendIsReissue}.
  */
 export function CanSend(
     orderStatus: string | null | undefined,
@@ -60,6 +63,19 @@ export function CanSend(
     // button appeared, leading nowhere. Instalments are issued from the Billing worklist.
     if (billedOnSchedule) return false;
     return !rows.some((r) => r.Status === 'Sent' || r.Status === 'Sending');
+}
+
+/**
+ * Whether sending this order now is a RE-ISSUE: the rail has held an invoice for the whole-order unit
+ * before, so a person must have checked the rail and the send carries `AllowReissue`.
+ *
+ * A `Failed` row with no rail reference does not count. The rail refused before creating anything —
+ * the customer had no email, Bill.com answered no — so there is nothing there to bill twice, and
+ * warning about it sends a person to look for an invoice that does not exist. The server decides
+ * the same way (`DecideInvoiceable`'s `UnitReachedRail`).
+ */
+export function SendIsReissue(rows: readonly ExternalInvoiceLike[]): boolean {
+    return rows.some((r) => !r.OrderHeaderPaymentScheduleID && !!r.ExternalInvoiceRef);
 }
 
 /**
