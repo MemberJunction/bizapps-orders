@@ -834,6 +834,37 @@ export interface CheckEntitlementOutput {
 }
 
 /**
+ * Input for `Orders.ConfirmReadiness`.
+ *
+ * What would make confirm refuse this order on the concession gate. The order form asks this so the
+ * list it shows under "Before this can be confirmed" is the rule confirm enforces, not a copy of it.
+ *
+ * Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ConfirmReadinessInput {
+    /** A saved order. Its saved header and lines are checked, not unsaved edits in a browser. */
+    OrderHeaderID: string;
+}
+
+/**
+ * Output of `Orders.ConfirmReadiness`.
+ *
+ * Empty when confirm would pass the concession gate, and for an order that is already booked or
+ * voided.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ConfirmReadinessOutput {
+    /**
+     * One sentence per problem, in the wording confirm refuses with, e.g. "Line 1 is discounted 10%,
+     * a concession worth 1000.00 with no approved Price concession recorded for it."
+     */
+    ConcessionProblems: string[];
+}
+
+/**
  * Input for `Orders.CreateOrderFromProviderPayment`.
  *
  * Creates a paid order from a gateway charge that matched no order or invoice: the order in the
@@ -2595,6 +2626,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ConfirmReadiness — Confirm Readiness
+// ============================================================
+/**
+ * Confirm Readiness
+ * The concession problems that would make confirm refuse a saved, unbooked order, one sentence each in the wording confirm refuses with: a concession awaiting approval, a line priced or discounted below its catalog price with no approved Price concession, a line whose product needs sale approval with none recorded. Read-only. Runs the same check confirm runs, over the saved order, so the order form's list cannot disagree with the refusal. A booked or voided order returns no problems.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ConfirmReadiness'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersConfirmReadinessOperation extends BaseRemotableOperation<ConfirmReadinessInput, ConfirmReadinessOutput> {
+    public readonly OperationKey = "Orders.ConfirmReadiness";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 

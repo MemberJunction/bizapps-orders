@@ -78,6 +78,11 @@
  *   CS35      approved on a booked term, the term's seat count rises by the added seats; approved on a draft's line,
  *             confirm counts them with the seats bought
  *
+ * The order form asks what still holds confirm before the rep presses it (golive #340):
+ *
+ *   CS36      Orders.ConfirmReadiness lists each concession problem confirm refuses with, in its wording, writes
+ *             nothing, and lists none once a concession covers the line
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -447,6 +452,16 @@ async function amendTerms(ctx: IntegrationCheckContext, input: Record<string, un
   const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
   Assert(result.Success, `Orders.AmendArrangement did not execute: ${result.ErrorMessage ?? result.ResultCode ?? "unknown"}`);
   return result.Output as AmendTermsOutput;
+}
+
+/** `Orders.ConfirmReadiness` through the class factory, as the form calls it. */
+async function confirmReadiness(ctx: IntegrationCheckContext, orderID: string): Promise<string[]> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<{ OrderHeaderID: string }, { ConcessionProblems: string[] }>>(
+    BaseRemotableOperation, "Orders.ConfirmReadiness");
+  Assert(op != null, "'Orders.ConfirmReadiness' is not registered");
+  const result = await op!.Execute({ OrderHeaderID: orderID }, { provider: ctx.Provider, user: ctx.User });
+  Assert(result.Success, `Orders.ConfirmReadiness did not execute: ${result.ErrorMessage ?? result.ResultCode ?? "unknown"}`);
+  return result.Output?.ConcessionProblems ?? [];
 }
 
 interface AmendTermOutput {
@@ -1605,6 +1620,47 @@ export const ConcessionChecks: NamedCheck[] = [
         draft.Order.Status = "Confirmed";
         Assert(await draft.Order.Save(), `the confirm failed: ${draft.Order.LatestResult?.CompleteMessage}`);
         AssertEqual(await seatsOf(draft.Lines[0].ID), 3, "two bought and one conceded");
+      }),
+  },
+  {
+    Id: "concessions.CS36",
+    Name: "CS36: Orders.ConfirmReadiness lists what confirm refuses on, writes nothing, and clears once covered",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const before = await confirmReadiness(ctx, built.Order.ID);
+        AssertEqual(before.length, 1, `one problem expected, got: ${JSON.stringify(before)}`);
+        Assert(/^Line 1 is discounted 10%, a concession worth 20\.00 .*no approved Price concession recorded for it\.$/.test(before[0]),
+          `the problem should be the gate's sentence, got: ${before[0]}`);
+        AssertEqual((await TxOne<{ Status: string }>(ctx,
+          `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`)).Status, "Draft",
+          "asking did not confirm the order");
+
+        // The refusal confirm gives carries the same clause.
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "the discounted line must still hold the confirm");
+        const refusal = built.Order.LatestResult?.CompleteMessage ?? "";
+        const clause = before[0].charAt(0).toLowerCase() + before[0].slice(1, -1);
+        Assert(refusal.includes(clause), `the refusal should carry "${clause}", got: ${refusal}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved && c.Entity.Status === "Approved", `recording failed: ${c.Message}`);
+        AssertEqual((await confirmReadiness(ctx, built.Order.ID)).length, 0, "an approved concession clears the list");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `with the list empty, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
+        AssertEqual((await confirmReadiness(ctx, built.Order.ID)).length, 0, "a booked order lists nothing");
       }),
   },
 ];
