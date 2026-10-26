@@ -89,7 +89,11 @@
  *   SR52  on a gift, the link's payment and new card are the buyer's who owns the declined card;
  *         the renewal still bills the beneficiary
  *
- * Deterministic. Every check runs inside a rolled-back transaction.
+ *   Outside the harness transaction (#950):
+ *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
+ *
+ * Deterministic. Every check runs inside a rolled-back transaction, except SR46-OT, which commits and
+ * deletes its rows afterwards (`PurgeCheckoutRun`).
  */
 import { BaseAction } from '@memberjunction/actions';
 import type { RunActionParams } from '@memberjunction/actions-base';
@@ -112,7 +116,10 @@ import {
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
+    OutsideTransaction,
+    PurgeCheckoutRun,
     SameID,
+    type CheckoutRun,
     TeardownOrdersFixture,
     TxMaybeOne,
     createViaEntity,
@@ -1940,6 +1947,69 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             ),
     },
 
+    {
+        // Inside InRolledBackTransaction the capture joins the check's transaction (#947), so SR46,
+        // SR52 and SR53 cannot tell a capture that runs on its own provider from one that would
+        // wait on a transaction its own request holds. This one runs outside it: everything it
+        // writes commits, the capture runs on an isolated provider exactly as in production, and a
+        // self-blocking capture times out here (#950 review). Its rows are deleted afterwards.
+        Id: 'subscription-renewal.SR46-OT',
+        Name: 'SR46-OT: outside the harness transaction, the update-card link pays the renewal through the isolated capture (#950)',
+        RequiresMutation: true,
+        Fn: async (ctx) => {
+            const run: CheckoutRun = { OrderIDs: [], SubscriptionIDs: [] };
+            await OutsideTransaction(
+                () =>
+                    withRenewalLinks(async () => {
+                        const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                        run.OrderIDs.push(r.SourceOrderID, r.OrderID);
+                        run.SubscriptionIDs.push(r.SubscriptionID);
+                        run.PaymentProviderID = r.ProviderID;
+                        await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                        run.CheckoutWidgetID = await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+
+                        const key = `it-renew-ot-${r.OrderID.slice(0, 8)}`;
+                        const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
+                        Assert(init.Success, `the link opens a session: ${init.ErrorMessage}`);
+                        const sessionID = init.SessionID!;
+                        const intent = await CheckoutSessionService.OpenPaymentIntentForSession(sessionID, key, ctx.User);
+                        Assert(intent.Success, `an intent opens: ${intent.ErrorMessage}`);
+                        await settleSessionIntent(ctx, sessionID);
+
+                        const done = await CheckoutSessionService.CompleteCheckout(sessionID, key, ctx.User);
+                        Assert(done.Success, `the payment completes: ${done.ErrorMessage}`);
+                        Assert(SameID(done.OrderID, r.OrderID), 'on the renewal order');
+
+                        const order = await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${r.OrderID}'`);
+                        AssertEqual(Number(order.Balance), 0, 'the renewal is paid');
+                        const payments = await paymentsFor(ctx, r.OrderID);
+                        AssertEqual(payments.length, 1, 'by one payment');
+                        AssertEqual(payments[0].Status, 'Captured', 'captured, and committed by the isolated capture');
+                        const session = await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${sessionID}'`);
+                        AssertEqual(session.Status, 'Confirmed', 'the session is confirmed');
+                    }),
+                async () => {
+                    await PurgeCheckoutRun(ctx, run);
+                },
+            );
+
+            // OutsideTransaction only warns when cleanup fails, so the check asserts it did not.
+            const ids = (values: Array<string | undefined>) => values.filter(Boolean).map((v) => `'${v}'`).join(',') || 'NULL';
+            const left = await TxOne<{ Orders: number; Subscriptions: number; Providers: number; Widgets: number }>(
+                ctx,
+                `SELECT
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID IN (${ids(run.OrderIDs)})) AS Orders,
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.Subscription WHERE ID IN (${ids(run.SubscriptionIDs)})) AS Subscriptions,
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentProvider WHERE ID IN (${ids([run.PaymentProviderID])})) AS Providers,
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.CheckoutWidget WHERE ID IN (${ids([run.CheckoutWidgetID])})) AS Widgets`,
+            );
+            AssertEqual(
+                Number(left.Orders) + Number(left.Subscriptions) + Number(left.Providers) + Number(left.Widgets),
+                0,
+                `the check's committed rows are deleted afterwards: ${JSON.stringify(left)}`,
+            );
+        },
+    },
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */

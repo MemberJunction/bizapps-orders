@@ -15,3 +15,9 @@ The seam is exported only from a new `./testing` subpath
 (`@mj-biz-apps/orders-core-entities-server/testing`), not from the package root. The package now has
 an `exports` map (`.`, `./testing`, `./package.json`): the root exports what it did before, minus the
 seam, and a deep import into `dist/` is no longer resolvable.
+
+A new check, `subscription-renewal.SR46-OT`, runs SR46's payment outside the harness transaction, so the
+capture runs on its own provider as in production; a capture that waits on its own request's transaction
+fails it. It deletes what it committed with `PurgeCheckoutRun`. The order-tree delete it shares with
+`PurgeReviewRun` now also removes outbound deliveries and instalment billings, and lifts the Invoiced
+instalment guard, which it needed for a paid renewal.
