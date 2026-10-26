@@ -51,6 +51,7 @@ import {
     LoadOrdersEngine,
     OrdersEngine,
     OverdueFilter,
+    ResolveSubscriptionTypeID,
     Today,
     ToISODate,
     type DateCell,
@@ -2075,8 +2076,9 @@ export interface MJOProductOption {
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
     /**
-     * Set when buying this product starts a subscription — the same column the server reads to
-     * decide which lines get a term (`OrderEntityServer.subscriptionLines`).
+     * Set when buying this product starts a subscription: the product's own type, or its product
+     * type's default, resolved the way the server decides which lines get a term
+     * (`OrderEntityServer.subscriptionLines`, golive #339).
      *
      * The catalog row carries it because a line editor otherwise cannot tell a membership from a
      * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
@@ -2101,7 +2103,7 @@ export function CatalogOptionFrom(
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
-    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
+    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity' | 'DefaultSubscriptionTypeID'> | undefined,
     listPrice: number | null,
 ): MJOProductOption {
     return {
@@ -2116,7 +2118,7 @@ export function CatalogOptionFrom(
         ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
-        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
+        SubscriptionTypeID: ResolveSubscriptionTypeID(product.SubscriptionTypeID, type?.DefaultSubscriptionTypeID),
     };
 }
 

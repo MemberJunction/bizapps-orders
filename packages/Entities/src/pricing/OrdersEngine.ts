@@ -47,6 +47,7 @@ import type {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
+import { ResolveSubscriptionTypeID } from '../subscription-type';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
@@ -200,6 +201,15 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         if (explicit) return explicit;
         return this.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID?.trim() || null;
     }
+    /**
+     * Product.SubscriptionTypeID when set, otherwise the product type's DefaultSubscriptionTypeID:
+     * the type confirm builds a term from (golive #339). Null means the line is not a subscription.
+     */
+    public ResolveSubscriptionTypeID(productID: string | null | undefined): string | null {
+        const product = this.ProductByID(productID);
+        if (!product) return null;
+        return ResolveSubscriptionTypeID(product.SubscriptionTypeID, this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID);
+    }
     public EventProductByID(id: string | null | undefined): mjBizAppsOrdersEventProductEntity | undefined {
         return byID(this.EventProducts, id);
     }
@@ -316,7 +326,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         if ((type?.Code ?? '').trim().toLowerCase() === GIFT_CARD_TYPE_CODE) return 'NotRequired';
         const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
         if (!revRec?.RequiresServicePeriod) return 'NotRequired';
-        if (product.SubscriptionTypeID) return 'Subscription';
+        if (this.ResolveSubscriptionTypeID(productID)) return 'Subscription';
         // The ROW, not the product type: the order save stamps the window from the Event Products row
         // (`applyEventServicePeriod`), so an event-type product loaded without one has no dates to
         // stamp and has to be asked for them like any other line.
