@@ -680,6 +680,19 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     /** The one fetched snapshot every accounting view is derived from. Null until the tab is opened. */
     private journalData: OrderJournalData | null = null;
 
+    /**
+     * The schedule is read once at open, so the form's Refresh reads it again too: rows added or
+     * changed elsewhere (another screen, Data Explorer, Sales) appear without reopening the order.
+     */
+    override async RefreshRecord(): Promise<boolean> {
+        const refreshed = await super.RefreshRecord();
+        if (refreshed) {
+            await this.loadInstalments();
+            this.cdr.detectChanges();
+        }
+        return refreshed;
+    }
+
     private async loadInstalments(): Promise<void> {
         if (!this.record?.IsSaved) return;
         try {
