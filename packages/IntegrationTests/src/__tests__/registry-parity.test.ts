@@ -112,7 +112,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'gift-cards': 15,
     bundles: 14,
     fulfillment: 12,
-    'capture-payment': 12,
+    'capture-payment': 13,
     'advance-order-state': 11,
     invoicing: 16,
     'order-status': 8,
