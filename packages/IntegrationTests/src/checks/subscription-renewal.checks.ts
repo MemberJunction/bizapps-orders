@@ -2250,7 +2250,7 @@ async function renewWithCard(
     return { SubscriptionID, OrderID: placed.Candidates[0].OrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)), SourceOrderID, ProviderID: providerID };
 }
 
-/** Mark a subscription as billed by a gateway, as the provider-subscription service and the Stripe import write it. */
+/** Mark a subscription as billed by a gateway: its provider account and the gateway's subscription id, set together. */
 async function markProviderBilled(ctx: IntegrationCheckContext, subscriptionID: string, providerID: string, gatewayID: string): Promise<void> {
     await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, subscriptionID, { PaymentProviderID: providerID, ProviderSubscriptionID: gatewayID });
 }
