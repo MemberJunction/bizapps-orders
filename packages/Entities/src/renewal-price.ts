@@ -12,6 +12,9 @@
  *   3. An annual increase applies on top, from the start of the renewal term, when that term crosses
  *      an anniversary of the subscription's start. Every invoice in a term carries one price, so the
  *      increase belongs to a term, never to part of one.
+ *   4. A renewal buys one term. A line that bought several terms at once (24 months sold as one line
+ *      on a 12-month type) has a price covering all of them, so the prior price is cut to one term's
+ *      share of it before the rules above apply (golive #338). See {@link PriorTermShare}.
  *
  * Pure: the caller resolves the prices and the increase levels, and this decides.
  *
@@ -82,9 +85,31 @@ function calendarDay(value: Date | string): { y: number; m: number; d: number } 
     return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate() };
 }
 
+/**
+ * The fraction of a line's price that one renewal term is worth: the type's term length over the
+ * months the line covered, capped at 1 (golive #338).
+ *
+ * A 24-month line on a 12-month type is worth half its price per term, and a 13-month line 12/13. A
+ * line no longer than the term is worth its whole price: a 6-month line sold at the full-year price
+ * renews at that price, since the short first period was the concession, not the price.
+ *
+ * 1 when either length is missing or not positive, so a line with no stated period renews as before.
+ */
+export function PriorTermShare(lineMonths: number | null | undefined, termMonths: number | null | undefined): number {
+    const line = Number(lineMonths);
+    const term = Number(termMonths);
+    if (!Number.isFinite(line) || !Number.isFinite(term) || line <= 0 || term <= 0) return 1;
+    return Math.min(1, term / line);
+}
+
 export interface RenewalPriceInput {
     /** The unit price on the line that bought the expiring term, before its discount. */
     PriorUnitPrice: number;
+    /**
+     * The share of `PriorUnitPrice` one renewal term is worth, from {@link PriorTermShare}. Absent
+     * means 1: the line bought one term.
+     */
+    PriorTermShare?: number;
     /** As a fraction, as `OrderLine.DiscountPct` stores it. */
     PriorDiscountPct: number | null;
     /** The prior line's price was typed rather than taken from the engine. */
@@ -121,6 +146,11 @@ export interface RenewalPrice {
  */
 export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
     const discount = input.CarryDiscount ? Number(input.PriorDiscountPct ?? 0) : 0;
+    // One term's worth of the prior price. The list price is not scaled: the engine prices a product
+    // per term whatever period a line states, so it is already one term's price. Comparing it with
+    // the scaled prior price is what tells a multi-term line sold below list from one sold at it.
+    const share = input.PriorTermShare ?? 1;
+    const priorPrice = share < 1 ? cents(Number(input.PriorUnitPrice) * share) : Number(input.PriorUnitPrice);
 
     let base: number;
     let source: RenewalBaseSource;
@@ -134,14 +164,14 @@ export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
         input.PriorPriceOverridden &&
         !input.CarryDiscount &&
         input.PriorListPrice != null &&
-        Number(input.PriorUnitPrice) < Number(input.PriorListPrice)
+        priorPrice < Number(input.PriorListPrice)
     ) {
         // A price typed BELOW list is a discount by another name and lapses like one. One typed
         // above list is what the customer agreed to pay, and carries forward.
         base = Number(input.PriorListPrice);
         source = 'PriorList';
     } else {
-        base = Number(input.PriorUnitPrice);
+        base = priorPrice;
         source = 'PriorPrice';
     }
 
@@ -151,7 +181,11 @@ export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
         BaseSource: source,
         IncreasePercent: percent,
         IncreaseSource: input.ApplyIncrease ? input.Increase.Source : 'None',
-        UnitPrice: Math.round(base * (1 + percent / 100) * 100) / 100,
+        UnitPrice: cents(base * (1 + percent / 100)),
         DiscountPct: discount,
     };
+}
+
+function cents(v: number): number {
+    return Math.round(v * 100) / 100;
 }

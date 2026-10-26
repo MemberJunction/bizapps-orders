@@ -28,7 +28,7 @@
  *   TABLE:  __mj_BizAppsOrders.SubscriptionType
  *   CALLER: OrderEntityServer (term creation at confirm)
  */
-import { RegisterClass } from '@memberjunction/global';
+import { MJGlobal, RegisterClass } from '@memberjunction/global';
 
 /** The rules row, as plain data. */
 export interface SubscriptionTypeRules {
@@ -432,6 +432,41 @@ export function MonthsCovered(start: Date, end: Date): number {
     const rest = daysBetween(from, after);
     if (rest <= 0) return whole;
     return whole + rest / daysBetween(from, addMonths(s, whole + 1));
+}
+
+/**
+ * The months a line's price covers, when that line bought earlier terms as well as the one starting
+ * on `termStart`; null when it bought only that term or states no period (golive #338).
+ *
+ * A line stating 24 months on a 12-month type buys two terms, and its price covers both. A line
+ * whose period starts on the term's own start bought that term alone, whatever its length, so its
+ * price is one term's: that keeps a short first term, or a custom-cadence term a few days longer than
+ * its whole months, from reading as several.
+ */
+export function MultiTermLineMonths(
+    lineStart: Date | null | undefined,
+    lineEnd: Date | null | undefined,
+    termStart: Date,
+): number | null {
+    if (!lineStart || !lineEnd) return null;
+    if (utcDay(lineStart).getTime() >= utcDay(termStart).getTime()) return null;
+    return MonthsCovered(lineStart, lineEnd);
+}
+
+/**
+ * The behaviour object for a subscription type: the base class when the type names no driver, or
+ * the registered subclass when it does. Throws when the named driver is not registered.
+ */
+export function SubscriptionBehaviorFor(rules: SubscriptionTypeRules): SubscriptionBehavior {
+    if (!rules.DriverClass) return new SubscriptionBehavior();
+    const driver = MJGlobal.Instance.ClassFactory.CreateInstance<SubscriptionBehavior>(SubscriptionBehavior, rules.DriverClass);
+    if (!driver) {
+        throw new Error(
+            `Subscription type '${rules.Code}' names driver '${rules.DriverClass}', which is not ` +
+                `registered. Register a SubscriptionBehavior subclass under that key.`,
+        );
+    }
+    return driver;
 }
 
 /** Calendar date for user-facing explanations. */
