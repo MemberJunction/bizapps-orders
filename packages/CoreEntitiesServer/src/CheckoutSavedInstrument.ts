@@ -69,7 +69,10 @@ export async function SnapshotSellsSubscription(metadataJSON: string | null | un
     const products = await rv.RunView<{ ID: string }>(
         {
             EntityName: PRODUCT_ENTITY,
-            ExtraFilter: `ID IN (${RequireUUIDs(productIDs, 'ProductID').map((id) => `'${id}'`).join(',')}) AND SubscriptionTypeID IS NOT NULL`,
+            // A product with no type of its own inherits its product type's default, as confirm does.
+            ExtraFilter:
+                `ID IN (${RequireUUIDs(productIDs, 'ProductID').map((id) => `'${id}'`).join(',')}) AND (SubscriptionTypeID IS NOT NULL ` +
+                `OR ProductTypeID IN (SELECT ID FROM __mj_BizAppsOrders.ProductType WHERE DefaultSubscriptionTypeID IS NOT NULL))`,
             Fields: ['ID'],
             MaxRows: 1,
             ResultType: 'simple',

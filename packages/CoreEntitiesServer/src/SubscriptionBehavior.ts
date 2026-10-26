@@ -1232,21 +1232,10 @@ export function SubscriptionTypeRulesFrom(row: SubscriptionTypeRules): Subscript
 }
 
 /**
- * Which subscription type a product actually uses at confirm.
- *
- * `Product.SubscriptionTypeID` wins when set. Otherwise the product type's
- * `DefaultSubscriptionTypeID` (Membership → Annual Rolling, etc.). Null means
- * the line is not a subscription — no term, no service period from this path.
+ * Which subscription type a product actually uses at confirm. Lives in orders-entities so the
+ * screens that decide whether a line is a subscription apply the same rule (golive #339).
  */
-export function ResolveSubscriptionTypeID(
-    productSubscriptionTypeID: string | null | undefined,
-    typeDefaultSubscriptionTypeID: string | null | undefined,
-): string | null {
-    const explicit = productSubscriptionTypeID?.trim();
-    if (explicit) return explicit;
-    const inherited = typeDefaultSubscriptionTypeID?.trim();
-    return inherited || null;
-}
+export { ResolveSubscriptionTypeID } from '@mj-biz-apps/orders-entities';
 
 /**
  * Which revenue-recognition type a product actually uses at booking.
