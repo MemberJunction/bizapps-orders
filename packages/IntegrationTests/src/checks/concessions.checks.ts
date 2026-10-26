@@ -80,7 +80,7 @@
  *
  * The order form asks what still holds confirm before the rep presses it (golive #340):
  *
- *   CS36      Orders.ConfirmReadiness lists each concession problem confirm refuses with, in its wording, writes
+ *   CS38      Orders.ConfirmReadiness lists each concession problem confirm refuses with, in its wording, writes
  *             nothing, and lists none once a concession covers the line
  *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
@@ -1623,8 +1623,8 @@ export const ConcessionChecks: NamedCheck[] = [
       }),
   },
   {
-    Id: "concessions.CS36",
-    Name: "CS36: Orders.ConfirmReadiness lists what confirm refuses on, writes nothing, and clears once covered",
+    Id: "concessions.CS38",
+    Name: "CS38: Orders.ConfirmReadiness lists what confirm refuses on, writes nothing, and clears once covered",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
