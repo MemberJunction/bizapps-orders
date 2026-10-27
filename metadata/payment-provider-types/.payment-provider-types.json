@@ -8,6 +8,7 @@
       "SupportsTokenization": 1,
       "SupportsRefund": 1,
       "SupportsWebhooks": 1,
+      "SupportsSubscriptionBilling": 1,
       "Sequence": 10,
       "IsActive": 1
     },
