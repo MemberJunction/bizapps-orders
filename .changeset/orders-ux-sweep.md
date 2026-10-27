@@ -18,3 +18,5 @@ Orders UI/UX fixes.
 - The checkout element stops sending events, polling and redirecting once its host removes it; payment and completion calls already started still finish.
 - Styles read only `--mj-*` tokens MemberJunction 6.1.5 defines, checked by a unit test. The kit's print rules, filter chip, select and timeline rules no longer restyle MemberJunction pages outside Orders; loaders and empty states use MemberJunction's components; app chips take the `mjo-` prefix.
 - A migration puts the Event Order Line Attendance Status values in CodeGen's order on databases built from migrations. The Referral Programs list shows Company and Is Active by default.
+
+The order form's notes on subscription lengths other than the type's term, which do not block confirm, show under their own "When this is confirmed" heading instead of "Before this can be confirmed".

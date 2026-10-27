@@ -113,6 +113,43 @@ describe('term end on a subscription line', () => {
         expect(c.HoldingContinuationEnd(line('p-member', '2026-10-01', '2027-03-31'), holding)).toBe('2028-03-31');
         expect(c.HoldingContinuationEnd(line('p-member', '2026-10-01'), holding)).toBe('2028-09-30');
     });
+
+    it('adds that end to the "Add as next term" choice and hint, inside the start date\'s brackets', () => {
+        const holding = {
+            SubscriptionID: 's1',
+            SubscriptionNumber: 'SUB-0001',
+            Status: 'Active',
+            LatestTermEnd: d('2027-09-30'),
+        } as MJOExistingHolding;
+        expect(editor().HoldingExtendLineText(line('p-member', '2026-10-01'), holding)).toEqual({
+            Choice: 'Add as next term (starts 2027-10-01, ends 2028-09-30)',
+            Hint: 'Confirm adds a term to SUB-0001, starting the day after its coverage ends and ending 2028-09-30.',
+        });
+    });
+
+    it('keeps the plain next-term text when the holding has no coverage end to count from', () => {
+        const holding = { SubscriptionID: 's1', SubscriptionNumber: 'SUB-0001', Status: 'Active', LatestTermEnd: null } as MJOExistingHolding;
+        // No continuation date means no end either, so the text is the plain next-term text.
+        expect(editor().HoldingExtendLineText(line('p-member', '2026-10-01'), holding)).toEqual({
+            Choice: 'Add as next term',
+            Hint: 'Confirm adds a term to SUB-0001, starting the day after its coverage ends.',
+        });
+    });
+
+    it('leaves a reactivation or a new subscription alone: those run on the line\'s own dates', () => {
+        const paused = (Mode: string) =>
+            ({
+                SubscriptionID: 's1',
+                SubscriptionNumber: 'SUB-0001',
+                Status: 'Paused',
+                LatestTermEnd: d('2026-09-30'),
+                Reactivation: { Mode, WindowDays: null },
+            }) as MJOExistingHolding;
+        const c = editor();
+        const l = line('p-member', '2026-10-01');
+        expect(c.HoldingExtendLineText(l, paused('ReactivateExisting'))).toEqual(c.HoldingExtendText(paused('ReactivateExisting')));
+        expect(c.HoldingExtendLineText(l, paused('AlwaysCreateNew'))).toEqual(c.HoldingExtendText(paused('AlwaysCreateNew')));
+    });
 });
 
 describe('term start on a bundle line (u623.1)', () => {

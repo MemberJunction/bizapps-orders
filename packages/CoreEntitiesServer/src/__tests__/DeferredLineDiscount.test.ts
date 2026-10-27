@@ -12,7 +12,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OrdersEngine } from '@mj-biz-apps/orders-entities';
-import { OrderJournalEntryFactory, type OrderLineDraft } from '../OrderJournalEntryFactory.js';
+import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from '../OrderJournalEntryFactory.js';
 import { GL_ROLE, GLAccountResolutionError } from '../GLAccountResolver.js';
 import '../RevenueRecognition.js';
 
@@ -48,9 +48,9 @@ function line(overrides: Record<string, unknown>) {
     } as never;
 }
 
-async function build(l: never): Promise<OrderLineDraft[]> {
+async function build(l: never, creditMemoByLine?: Map<string, CreditMemoForLine>): Promise<OrderLineDraft[]> {
     const factory = new OrderJournalEntryFactory(resolver as never, 'ol', 'st', 'ct', {} as never, {} as never);
-    return factory.BuildDrafts({ OrderNumber: 'ORD-1', CompanyID: 'c-1' } as never, [l]);
+    return factory.BuildDrafts({ OrderNumber: 'ORD-1', CompanyID: 'c-1' } as never, [l], undefined, undefined, undefined, creditMemoByLine);
 }
 
 function sum(drafts: OrderLineDraft[], account: string, side: 'DebitAmount' | 'CreditAmount'): number {
@@ -161,5 +161,57 @@ describe('a discounted percentage-of-completion line', () => {
         expect(drafts).toHaveLength(1);
         expect(sum(drafts, 'gl-DeferredRevenue', 'CreditAmount')).toBe(8800);
         expect(sum(drafts, 'gl-SalesDiscounts', 'DebitAmount')).toBe(0);
+    });
+});
+
+describe('reversing a partly discounted deferred line', () => {
+    // The reversing line: quantity -1, the origin's amounts negated.
+    const reversal = () => line({ ID: 'l-rev', Quantity: -1, ExtendedAmount: -11000, DiscountPct: 0.2, LineTotalNet: -8800 });
+
+    it('mirrors every release with its discount share, so Sales Discounts goes back to zero', async () => {
+        const drafts = await build(reversal());
+        const releases = drafts.filter((d) => !d.IsBooking);
+        expect(releases).toHaveLength(12);
+        expect(sum(releases, 'gl-DeferredRevenue', 'CreditAmount')).toBe(8800);
+        expect(sum(releases, 'gl-SalesDiscounts', 'CreditAmount')).toBe(2200);
+        expect(sum(releases, 'gl-Sales', 'DebitAmount')).toBe(11000);
+        // The mirrored booking debits Deferred with the net, never the gross.
+        expect(sum(drafts.filter((d) => d.IsBooking), 'gl-DeferredRevenue', 'DebitAmount')).toBe(8800);
+    });
+
+    it('on a scheduled origin, takes back only the releases still to come, each with its own discount share', async () => {
+        // Reversed on 30 June: January to June are earned and stay; July to December are taken back.
+        vi.spyOn(OrderJournalEntryFactory.prototype as never, 'effectiveDateOf' as never).mockResolvedValue('2026-06-30' as never);
+        const origin: CreditMemoForLine = {
+            OriginLineID: 'l-1',
+            BilledToDate: 8800,
+            RecognizedToDate: 0,
+            RemainingQuantity: 1,
+            OriginNet: 8800,
+            PriorReversals: [],
+            ScheduleRows: [
+                { ID: 's-1', CompanyID: 'c-1', InstallmentNumber: 1, DueDate: '2026-01-01', Status: 'Invoiced', DocumentNumber: 'ORD-1-1' },
+            ],
+            OriginOrderNumber: 'ORD-1',
+            OriginLineNumber: 1,
+        };
+        const drafts = await build(reversal(), new Map([['l-rev', origin]]));
+        const booking = drafts.filter((d) => d.IsBooking);
+        const releases = drafts.filter((d) => !d.IsBooking);
+
+        // The memo gives back what was billed and not earned. January's release carries the rounding
+        // cent, so the six earned months are 4,400.02 and the memo 4,399.98.
+        const memo = sum(booking, 'gl-DeferredRevenue', 'DebitAmount');
+        expect(memo).toBe(4399.98);
+        expect(sum(booking, 'gl-AccountsReceivable', 'CreditAmount')).toBe(memo);
+
+        // The releases still to come take back exactly what the memo put back into Deferred.
+        expect(releases).toHaveLength(6);
+        expect(releases.every((r) => r.Draft.EffectiveDate > '2026-06-30')).toBe(true);
+        expect(sum(releases, 'gl-DeferredRevenue', 'CreditAmount')).toBe(memo);
+        // The discount goes back with the unearned half (1,099.99); the earned half keeps the rest.
+        const discountBack = sum(releases, 'gl-SalesDiscounts', 'CreditAmount');
+        expect(discountBack).toBe(1099.99);
+        expect(sum(releases, 'gl-Sales', 'DebitAmount')).toBe(Math.round((memo + discountBack) * 100) / 100);
     });
 });

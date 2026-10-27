@@ -235,6 +235,9 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     private sendRegistered = false;
     private recordEvents: { unsubscribe(): void } | null = null;
 
+    /** Counts loads, so one that finishes after a later one started cannot overwrite the later one's state. */
+    private loadSeq = 0;
+
     public readonly money = (n: number): string => FormatMoney(n);
     /** `SentAt` is a `datetimeoffset`: shown as the business day it happened on. */
     public readonly date = (iso: string): string => FormatInstantDate(iso, { Short: true });
@@ -511,11 +514,18 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
 
     /* ── Loading ────────────────────────────────────────────────────────── */
 
+    /**
+     * Loads are not serialised: a save event, the toolbar's Refresh and an action's own reload can
+     * overlap and finish in either order. Each reads into locals and only the newest one writes, so
+     * an older load cannot put back stale rows or a stale Send state.
+     */
     private async load(): Promise<void> {
         if (!this.Record?.IsSaved) return;
+        const seq = ++this.loadSeq;
         const rv = new RunView();
         try {
             const rail = await this.loadRail();
+            if (seq !== this.loadSeq) return;
             this.Visible = rail.Present;
             if (rail.Name) this.ProviderName = rail.Name;
             if (!this.Visible) return;
@@ -526,16 +536,23 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
                 OrderBy: '__mj_CreatedAt DESC',
                 ResultType: 'simple',
             });
+            if (seq !== this.loadSeq) return;
             if (!result.Success) {
                 this.LoadError = result.ErrorMessage ?? 'The external invoices could not be read.';
                 return;
             }
+            const rows = result.Results ?? [];
+            const billedOnSchedule = BilledOnScheduleFromRows(rows) || (await this.hasPaymentSchedule());
+            if (seq !== this.loadSeq) return;
             this.LoadError = null;
-            this.Rows = result.Results ?? [];
+            this.Rows = rows;
             if (this.Selected) this.Selected = this.Rows.find((r) => r.ID === this.Selected!.ID) ?? null;
-            this.BilledOnSchedule = BilledOnScheduleFromRows(this.Rows) || (await this.hasPaymentSchedule());
-            this.SendBlocked = this.Sendable ? await this.previewBlock() : null;
+            this.BilledOnSchedule = billedOnSchedule;
+            const sendBlocked = this.Sendable ? await this.previewBlock() : null;
+            if (seq !== this.loadSeq) return;
+            this.SendBlocked = sendBlocked;
         } catch (err) {
+            if (seq !== this.loadSeq) return;
             this.LoadError = err instanceof Error ? err.message : String(err);
         }
         // Write the DOM where the assignment happens. The shell creates forms imperatively and the
