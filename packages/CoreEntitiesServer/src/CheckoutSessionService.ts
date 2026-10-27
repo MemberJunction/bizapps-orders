@@ -103,6 +103,9 @@ const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+
+/** Shown when no checkout session could be created or resumed for a widget and client key. */
+const SESSION_START_RETRY_MESSAGE = 'Checkout could not start just now. Please try again in a minute.';
 const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
 const ADDRESS_TYPE_ENTITY = 'MJ_BizApps_Common: Address Types';
 const BILLING_ADDRESS_TYPE = 'Billing';
@@ -479,7 +482,9 @@ export class CheckoutSessionService {
             if (!saved) {
                 const concurrent = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
                 if (!concurrent) {
-                    return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+                    // Most likely an expired session that could not be marked Expired still holds
+                    // the index; ReapExpiredOpenSessions clears it within a minute.
+                    return { Success: false, ErrorMessage: SESSION_START_RETRY_MESSAGE };
                 }
                 session = concurrent;
             }
@@ -906,7 +911,9 @@ export class CheckoutSessionService {
         if (session.ExpiresAt && new Date(session.ExpiresAt).getTime() <= Date.now()) {
             if (session.Status === 'Open') {
                 session.Status = 'Expired';
-                const saved = await session.Save();
+                // Retried once: a session left Open holds the one-open-session index (#782), so
+                // a new session for the same key cannot start until the reaper expires it.
+                const saved = (await session.Save()) || (await session.Save());
                 if (!saved) {
                     LogError(`[CheckoutSessionService] Failed to mark session ${session.ID} Expired: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
                 }

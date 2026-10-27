@@ -920,7 +920,7 @@ describe('CheckoutSessionService', () => {
             const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
 
             expect(res.Success).toBe(false);
-            expect(res.ErrorMessage).toBe('Failed to initialize checkout session record');
+            expect(res.ErrorMessage).toBe('Checkout could not start just now. Please try again in a minute.');
         });
 
         it('expires a stale open session for the key instead of resuming it (#782)', async () => {
@@ -936,6 +936,34 @@ describe('CheckoutSessionService', () => {
             expect(stale.Save).toHaveBeenCalled();
             expect(res.Success).toBe(true);
             expect(res.SessionID).not.toBe('sess-stale');
+        });
+
+        it('retries marking a stale session Expired once, so it stops holding the index (#782)', async () => {
+            const stale = new mocks.MockCheckoutSession();
+            stale.ID = 'sess-stale';
+            stale.ExpiresAt = new Date(Date.now() - 1000);
+            stale.Save = vi.fn().mockResolvedValueOnce(false).mockResolvedValueOnce(true);
+            mocks.sessionRunViewQueue = [[stale]];
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(stale.Save).toHaveBeenCalledTimes(2);
+            expect(res.Success).toBe(true);
+            expect(res.SessionID).not.toBe('sess-stale');
+        });
+
+        it('asks the buyer to retry shortly when a stale session cannot be expired (#782)', async () => {
+            const stale = new mocks.MockCheckoutSession();
+            stale.ID = 'sess-stale';
+            stale.ExpiresAt = new Date(Date.now() - 1000);
+            stale.Save = vi.fn().mockResolvedValue(false);
+            mocks.sessionRunViewQueue = [[stale], [stale]];
+            mocks.mockSessionSave.mockResolvedValueOnce(false);
+
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toBe('Checkout could not start just now. Please try again in a minute.');
         });
 
         it('initializes a session and extracts customUI configuration', async () => {
