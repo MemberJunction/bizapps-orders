@@ -5,6 +5,7 @@ import { MJOCustomerARPageComponent } from '../lib/pages/receivables/customer-ar
 import { MJOAccountCreditPageComponent } from '../lib/pages/payments/account-credit.page';
 import { MJOOverduePageComponent } from '../lib/pages/receivables/overdue.page';
 import { MJOFulfillmentPageComponent } from '../lib/pages/orders/fulfillment.page';
+import { Today } from '@mj-biz-apps/orders-entities';
 
 /**
  * A PRESET VIEW MUST KEEP ITS IDENTITY (bc-aidp-next-golive#362).
@@ -95,6 +96,33 @@ describe('every preset view getter is reference-stable across change detection',
     it('Overdue worklist', () => {
         const page = make<MJOOverduePageComponent>(MJOOverduePageComponent.prototype, 'overdueView', { OrderEntityInfo: entity });
         expect(page.OverdueView).toBe(page.OverdueView);
+    });
+
+    /**
+     * The ONE key component here that moves with nobody touching anything. A collections worklist
+     * left open overnight must pick up the orders that fell due at midnight, so the day belongs in
+     * the key -- and the viewer must be handed a NEW object when it turns, or the grid keeps
+     * filtering on yesterday.
+     */
+    it('Overdue worklist: and it DOES rebuild when the business day rolls over', () => {
+        vi.useFakeTimers();
+        try {
+            vi.setSystemTime(new Date('2026-03-10T12:00:00Z'));
+            const page = make<MJOOverduePageComponent>(MJOOverduePageComponent.prototype, 'overdueView', { OrderEntityInfo: entity });
+            const yesterday = Today();
+            const first = page.OverdueView;
+
+            vi.setSystemTime(new Date('2026-03-11T12:00:00Z'));
+            // Guard: if the clock move did not reach the business calendar there is nothing to assert.
+            expect(Today()).not.toBe(yesterday);
+
+            const second = page.OverdueView;
+            expect(second).not.toBe(first);
+            expect((first as unknown as { WhereClause: string }).WhereClause).toContain(yesterday);
+            expect((second as unknown as { WhereClause: string }).WhereClause).toContain(Today());
+        } finally {
+            vi.useRealTimers();
+        }
     });
 
     it('Fulfillment queue', () => {
