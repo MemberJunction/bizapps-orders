@@ -89,7 +89,25 @@
  *   SR52  on a gift, the link's payment and new card are the buyer's who owns the declined card;
  *         the renewal still bills the beneficiary
  *
- * Deterministic. Every check runs inside a rolled-back transaction.
+ *   Subscriptions a gateway bills itself (option E, E1): `ProviderSubscriptionID` set means the gateway
+ *   named by `PaymentProviderID` renews it, so Orders' jobs leave it alone, keyed on that marker only:
+ *   SR54  Spawn Renewals places no renewal for a provider-billed subscription; a sibling with no gateway
+ *         id still renews, on an account whose BillsSubscriptions switch is ON
+ *   SR55  Charge Renewals does not charge the renewal card of a provider-billed subscription, with the
+ *         account's switch OFF; a sibling with no gateway id is charged the same day
+ *   SR56  money taken but not booked is not captured either once the subscription is provider-billed
+ *         (the settled-unbooked branch, which selects without AutoRenew)
+ *   SR57  the database holds the marker's shape: one Orders subscription per (provider, gateway id),
+ *         the same id under another provider account is allowed, and an id needs its provider
+ *
+ *   SR58  a subscription renewed at a price of zero books: the $0-line refusal leaves the renewal
+ *         pass's own price alone (#954)
+ *
+ *   Outside the harness transaction (#950):
+ *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
+ *
+ * Deterministic. Every check runs inside a rolled-back transaction, except SR46-OT, which commits and
+ * deletes its rows afterwards (`PurgeCheckoutRun`).
  */
 import { BaseAction } from '@memberjunction/actions';
 import type { RunActionParams } from '@memberjunction/actions-base';
@@ -112,7 +130,10 @@ import {
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
+    OutsideTransaction,
+    PurgeCheckoutRun,
     SameID,
+    type CheckoutRun,
     TeardownOrdersFixture,
     TxMaybeOne,
     createViaEntity,
@@ -1940,8 +1961,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             ),
     },
     {
-        Id: 'subscription-renewal.SR54',
-        Name: 'SR54: a subscription renewed at a price of zero books, the $0-line refusal leaving the renewal pass\'s own price alone',
+        Id: 'subscription-renewal.SR58',
+        Name: 'SR58: a subscription renewed at a price of zero books, the $0-line refusal leaving the renewal pass\'s own price alone',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -1972,6 +1993,197 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
 
+    // ─── Subscriptions a gateway bills itself (option E, E1) ─────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR54',
+        Name: 'SR54: Spawn Renewals skips a provider-billed subscription; a sibling with no gateway id still renews',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // The account's switch is ON here, so the sibling proves the switch does not stop Orders
+                // renewing a subscription the gateway does not bill.
+                const providerID = await stubStripeProvider(ctx);
+                await upsertViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, providerID, { BillsSubscriptions: true });
+
+                const billed = await buySubscription(ctx, 'SubRolling', 1200);
+                await markProviderBilled(ctx, billed.SubscriptionID, providerID, `sub_it_sr54_${billed.SubscriptionID.slice(0, 8)}`);
+                // A second holder: AnnualRolling extends an existing subscription for the same holder.
+                const sibling = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, f.Customers.SecondOrganizationID);
+                const asOf = daysBefore(billed.Term.EndDate, 10);
+
+                const skipped = await spawnRenewals(ctx, { SubscriptionID: billed.SubscriptionID, AsOfDate: asOf });
+                AssertEqual(skipped.Placed, 0, `the gateway renews it, so Orders places nothing: ${skipped.Message}`);
+                AssertEqual(skipped.Candidates.length, 0, 'and it is not a candidate at all');
+                const lines = await TxQuery(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${billed.SubscriptionID}'`);
+                AssertEqual(lines.length, 0, 'no renewal line names it');
+
+                const renewed = await spawnRenewals(ctx, { SubscriptionID: sibling.SubscriptionID, AsOfDate: asOf });
+                AssertEqual(renewed.Placed, 1, `the sibling with no gateway id renews as before: ${renewed.Message}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR55',
+        Name: 'SR55: Charge Renewals does not charge a provider-billed subscription with the switch off; a sibling is charged',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const billed = await renewWithCard(ctx, 'pm_card_visa');
+                const sibling = await renewWithCard(ctx, 'pm_card_visa', { organizationID: Fx().Customers.SecondOrganizationID });
+                // The renewal order already exists (placed before the gateway took over billing). The
+                // account's switch stays at its default, OFF: the marker alone keeps Orders off the card.
+                const provider = await TxOne<{ BillsSubscriptions: boolean }>(ctx, `SELECT BillsSubscriptions FROM ${ORDERS_SCHEMA}.PaymentProvider WHERE ID = '${billed.ProviderID}'`);
+                AssertEqual(Boolean(provider.BillsSubscriptions), false, 'precondition: the switch is off');
+                await markProviderBilled(ctx, billed.SubscriptionID, billed.ProviderID, `sub_it_sr55_${billed.SubscriptionID.slice(0, 8)}`);
+
+                const out = await chargeRenewals(ctx, { SubscriptionID: billed.SubscriptionID, AsOfDate: billed.TermStart });
+                AssertEqual(out.Considered, 0, `not a candidate: ${out.Message} ${JSON.stringify(out.Attempts)}`);
+                AssertEqual(out.Charged, 0, 'nothing charged');
+                AssertEqual((await intentsOf(ctx, billed.OrderID)).length, 0, 'and no intent was opened on the card');
+
+                const control = await chargeRenewals(ctx, { SubscriptionID: sibling.SubscriptionID, AsOfDate: sibling.TermStart });
+                AssertEqual(control.Charged, 1, `the sibling with no gateway id is charged as before: ${control.Message}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR56',
+        Name: 'SR56: money taken but not booked is not captured once the subscription is provider-billed',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // SR49's shape, which on its own is captured on day 20 with automatic renewal off. This
+                // branch selects without AutoRenew, so only a rule in the OUTER WHERE keeps it out.
+                const r = await renewWithCard(ctx, 'pm_card_visa');
+                await createViaEntity(ctx, PAYMENT_INTENT_ENTITY, {
+                    PaymentProviderID: r.ProviderID,
+                    ProviderIntentID: `pi_it_sr56_${r.OrderID.slice(0, 8)}`,
+                    Status: 'Succeeded',
+                    Amount: 1200,
+                    OrderHeaderID: r.OrderID,
+                });
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, r.SubscriptionID, { AutoRenew: false });
+                await markProviderBilled(ctx, r.SubscriptionID, r.ProviderID, `sub_it_sr56_${r.SubscriptionID.slice(0, 8)}`);
+
+                const out = await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: daysBefore(r.TermStart, -20) });
+                AssertEqual(out.Considered, 0, `not a candidate on either branch: ${JSON.stringify(out.Attempts)}`);
+                AssertEqual((await paymentsFor(ctx, r.OrderID)).length, 0, 'no payment is booked by the renewal pass');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR57',
+        Name: 'SR57: one Orders subscription per (provider, gateway id), another account may reuse an id, and an id needs its provider and may not be empty',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const first = await buySubscription(ctx, 'SubRolling', 1200);
+                const second = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, f.Customers.SecondOrganizationID);
+                const accountA = await stubStripeProvider(ctx);
+                const accountB = await stubStripeProvider(ctx);
+                const gatewayID = `sub_it_sr57_${first.SubscriptionID.slice(0, 8)}`;
+                await markProviderBilled(ctx, first.SubscriptionID, accountA, gatewayID);
+
+                // NULLs repeat freely: the index is filtered to rows with a gateway id.
+                const unbilled = await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.Subscription WHERE ProviderSubscriptionID IS NULL`);
+                Assert(Number(unbilled.N) >= 1, 'subscriptions with no gateway id coexist');
+
+                // The object model refuses an id without its provider before the database is asked.
+                let modelRefusal = '';
+                try {
+                    await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, second.SubscriptionID, { ProviderSubscriptionID: 'sub_it_sr57_orphan' });
+                } catch (e) {
+                    modelRefusal = String(e);
+                }
+                Assert(/payment provider is required/i.test(modelRefusal), `the entity refuses an id with no provider: ${modelRefusal || 'it was allowed'}`);
+
+                // An empty id is refused too, by the object model and by the database: the generated form saves
+                // '' when the field is cleared, and an empty marker would stop Orders renewing a subscription
+                // nothing bills. Only spaces counts as empty.
+                for (const empty of ['', '   ']) {
+                    let blankRefusal = '';
+                    try {
+                        await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, second.SubscriptionID, { PaymentProviderID: accountB, ProviderSubscriptionID: empty });
+                    } catch (e) {
+                        blankRefusal = String(e);
+                    }
+                    Assert(/cannot be blank/i.test(blankRefusal), `the entity refuses the id ${JSON.stringify(empty)}: ${blankRefusal || 'it was allowed'}`);
+                    const blankInDb = await refusedBySql(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET PaymentProviderID = '${accountB}', ProviderSubscriptionID = '${empty}' WHERE ID = '${second.SubscriptionID}'`);
+                    Assert(/CK_Subscription_ProviderSubscriptionHasProvider/.test(blankInDb), `the database refuses the id ${JSON.stringify(empty)}: ${blankInDb || 'it was allowed'}`);
+                }
+
+                // The database floor, each probe behind a savepoint so a refusal leaves the check's transaction usable.
+                const sameAccount = await refusedBySql(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET PaymentProviderID = '${accountA}', ProviderSubscriptionID = '${gatewayID}' WHERE ID = '${second.SubscriptionID}'`);
+                Assert(/UQ_Subscription_ProviderSubscriptionID/.test(sameAccount), `a second subscription with the same (provider, id) is refused: ${sameAccount || 'it was allowed'}`);
+                const otherAccount = await refusedBySql(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET PaymentProviderID = '${accountB}', ProviderSubscriptionID = '${gatewayID}' WHERE ID = '${second.SubscriptionID}'`);
+                AssertEqual(otherAccount, '', 'the same id under another provider account is allowed (two accounts are two id spaces)');
+                const noProvider = await refusedBySql(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET PaymentProviderID = NULL, ProviderSubscriptionID = 'sub_it_sr57_orphan' WHERE ID = '${second.SubscriptionID}'`);
+                Assert(/CK_Subscription_ProviderSubscriptionHasProvider/.test(noProvider), `an id with no provider is refused by the database: ${noProvider || 'it was allowed'}`);
+            }),
+    },
+
+    {
+        // Inside InRolledBackTransaction the capture joins the check's transaction (#947), so SR46,
+        // SR52 and SR53 cannot tell a capture that runs on its own provider from one that would
+        // wait on a transaction its own request holds. This one runs outside it: everything it
+        // writes commits, the capture runs on an isolated provider exactly as in production, and a
+        // self-blocking capture times out here (#950 review). Its rows are deleted afterwards.
+        Id: 'subscription-renewal.SR46-OT',
+        Name: 'SR46-OT: outside the harness transaction, the update-card link pays the renewal through the isolated capture (#950)',
+        RequiresMutation: true,
+        Fn: async (ctx) => {
+            const run: CheckoutRun = { OrderIDs: [], SubscriptionIDs: [] };
+            await OutsideTransaction(
+                () =>
+                    withRenewalLinks(async () => {
+                        const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
+                        run.OrderIDs.push(r.SourceOrderID, r.OrderID);
+                        run.SubscriptionIDs.push(r.SubscriptionID);
+                        run.PaymentProviderID = r.ProviderID;
+                        await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
+                        run.CheckoutWidgetID = await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+
+                        const key = `it-renew-ot-${r.OrderID.slice(0, 8)}`;
+                        const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
+                        Assert(init.Success, `the link opens a session: ${init.ErrorMessage}`);
+                        const sessionID = init.SessionID!;
+                        const intent = await CheckoutSessionService.OpenPaymentIntentForSession(sessionID, key, ctx.User);
+                        Assert(intent.Success, `an intent opens: ${intent.ErrorMessage}`);
+                        await settleSessionIntent(ctx, sessionID);
+
+                        const done = await CheckoutSessionService.CompleteCheckout(sessionID, key, ctx.User);
+                        Assert(done.Success, `the payment completes: ${done.ErrorMessage}`);
+                        Assert(SameID(done.OrderID, r.OrderID), 'on the renewal order');
+
+                        const order = await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${r.OrderID}'`);
+                        AssertEqual(Number(order.Balance), 0, 'the renewal is paid');
+                        const payments = await paymentsFor(ctx, r.OrderID);
+                        AssertEqual(payments.length, 1, 'by one payment');
+                        AssertEqual(payments[0].Status, 'Captured', 'captured, and committed by the isolated capture');
+                        const session = await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${sessionID}'`);
+                        AssertEqual(session.Status, 'Confirmed', 'the session is confirmed');
+                    }),
+                async () => {
+                    await PurgeCheckoutRun(ctx, run);
+                },
+            );
+
+            // OutsideTransaction only warns when cleanup fails, so the check asserts it did not.
+            const ids = (values: Array<string | undefined>) => values.filter(Boolean).map((v) => `'${v}'`).join(',') || 'NULL';
+            const left = await TxOne<{ Orders: number; Subscriptions: number; Providers: number; Widgets: number }>(
+                ctx,
+                `SELECT
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID IN (${ids(run.OrderIDs)})) AS Orders,
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.Subscription WHERE ID IN (${ids(run.SubscriptionIDs)})) AS Subscriptions,
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentProvider WHERE ID IN (${ids([run.PaymentProviderID])})) AS Providers,
+                    (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.CheckoutWidget WHERE ID IN (${ids([run.CheckoutWidgetID])})) AS Widgets`,
+            );
+            AssertEqual(
+                Number(left.Orders) + Number(left.Subscriptions) + Number(left.Providers) + Number(left.Widgets),
+                0,
+                `the check's committed rows are deleted afterwards: ${JSON.stringify(left)}`,
+            );
+        },
+    },
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
@@ -2141,6 +2353,32 @@ async function renewWithCard(
     const placed = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
     AssertEqual(placed.Placed, 1, `the renewal is placed: ${placed.Message}`);
     return { SubscriptionID, OrderID: placed.Candidates[0].OrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)), SourceOrderID, ProviderID: providerID };
+}
+
+/** Mark a subscription as billed by a gateway: its provider account and the gateway's subscription id, set together. */
+async function markProviderBilled(ctx: IntegrationCheckContext, subscriptionID: string, providerID: string, gatewayID: string): Promise<void> {
+    await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, subscriptionID, { PaymentProviderID: providerID, ProviderSubscriptionID: gatewayID });
+}
+
+/**
+ * Run one statement behind a savepoint and return the database's refusal, or '' when it was allowed.
+ * A refused statement is rolled back to the savepoint, so the check's transaction stays usable for the
+ * next probe; an allowed one is kept (the check's own rollback discards it).
+ */
+async function refusedBySql(ctx: IntegrationCheckContext, statement: string): Promise<string> {
+    const rows = await TxQuery<{ Refusal: string | null }>(
+        ctx,
+        `SAVE TRANSACTION sr_probe;
+         BEGIN TRY
+             ${statement};
+             SELECT CAST(NULL AS NVARCHAR(4000)) AS Refusal;
+         END TRY
+         BEGIN CATCH
+             IF XACT_STATE() = 1 ROLLBACK TRANSACTION sr_probe;
+             SELECT ERROR_MESSAGE() AS Refusal;
+         END CATCH`,
+    );
+    return rows[0]?.Refusal ?? '';
 }
 
 /** `ChargeRenewals` as the Action calls it. */

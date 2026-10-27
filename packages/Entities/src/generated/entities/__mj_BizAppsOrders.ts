@@ -4234,6 +4234,12 @@ export const mjBizAppsOrdersPaymentProviderPriceSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    UseForNewSubscriptions: z.boolean().describe(`
+        * * Field Name: UseForNewSubscriptions
+        * * Display Name: Use For New Subscriptions
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: The price a new gateway-billed subscription to this product is created on. At most one active row per provider and product. Other active rows still map charges to the product (unmatched charges) but are never used for new subscriptions.`),
     PaymentProvider: z.string().describe(`
         * * Field Name: PaymentProvider
         * * Display Name: Payment Provider Name
@@ -4364,6 +4370,12 @@ export const mjBizAppsOrdersPaymentProviderTypeSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    SupportsSubscriptionBilling: z.boolean().describe(`
+        * * Field Name: SupportsSubscriptionBilling
+        * * Display Name: Supports Subscription Billing
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether the gateway can bill a subscription itself: charge the card each period and send its own receipts. Orders creates a gateway subscription only for a provider whose type supports it and whose account has BillsSubscriptions set.`),
 });
 
 export type mjBizAppsOrdersPaymentProviderTypeEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderTypeSchema>;
@@ -4425,6 +4437,12 @@ export const mjBizAppsOrdersPaymentProviderSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Company Integrations (vwCompanyIntegrations.ID)
         * * Description: The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`),
+    BillsSubscriptions: z.boolean().describe(`
+        * * Field Name: BillsSubscriptions
+        * * Display Name: Bills Subscriptions
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether this account bills the auto-renewing subscriptions sold through it. When set and the type supports it, Orders creates a gateway subscription after the first payment, and the gateway charges each renewal. Turning it off stops new ones only: a subscription already billed by the gateway keeps being skipped by Orders' renewal jobs.`),
     PaymentProviderType: z.string().describe(`
         * * Field Name: PaymentProviderType
         * * Display Name: Provider Type
@@ -7043,12 +7061,13 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Field Name: PaymentProviderID
         * * Display Name: Payment Provider
         * * SQL Data Type: uniqueidentifier
-        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)`),
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.`),
     ProviderSubscriptionID: z.string().nullable().describe(`
         * * Field Name: ProviderSubscriptionID
         * * Display Name: Provider Subscription ID
         * * SQL Data Type: nvarchar(100)
-        * * Description: Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.`),
+        * * Description: The gateway's id for a subscription it bills (for Stripe, sub_...). When set, the gateway named by PaymentProviderID charges every renewal and Orders' renewal jobs skip the subscription; NULL means Orders renews it.`),
     MigratesFromSubscriptionID: z.string().nullable().describe(`
         * * Field Name: MigratesFromSubscriptionID
         * * Display Name: Migrates From Subscription
@@ -19761,6 +19780,20 @@ export class mjBizAppsOrdersPaymentProviderPriceEntity extends BaseEntity<mjBizA
     }
 
     /**
+    * * Field Name: UseForNewSubscriptions
+    * * Display Name: Use For New Subscriptions
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: The price a new gateway-billed subscription to this product is created on. At most one active row per provider and product. Other active rows still map charges to the product (unmatched charges) but are never used for new subscriptions.
+    */
+    get UseForNewSubscriptions(): boolean {
+        return this.Get('UseForNewSubscriptions');
+    }
+    set UseForNewSubscriptions(value: boolean) {
+        this.Set('UseForNewSubscriptions', value);
+    }
+
+    /**
     * * Field Name: PaymentProvider
     * * Display Name: Payment Provider Name
     * * SQL Data Type: nvarchar(200)
@@ -20107,6 +20140,20 @@ export class mjBizAppsOrdersPaymentProviderTypeEntity extends BaseEntity<mjBizAp
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
     }
+
+    /**
+    * * Field Name: SupportsSubscriptionBilling
+    * * Display Name: Supports Subscription Billing
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether the gateway can bill a subscription itself: charge the card each period and send its own receipts. Orders creates a gateway subscription only for a provider whose type supports it and whose account has BillsSubscriptions set.
+    */
+    get SupportsSubscriptionBilling(): boolean {
+        return this.Get('SupportsSubscriptionBilling');
+    }
+    set SupportsSubscriptionBilling(value: boolean) {
+        this.Set('SupportsSubscriptionBilling', value);
+    }
 }
 
 
@@ -20265,6 +20312,20 @@ export class mjBizAppsOrdersPaymentProviderEntity extends BaseEntity<mjBizAppsOr
     }
     set CompanyIntegrationID(value: string | null) {
         this.Set('CompanyIntegrationID', value);
+    }
+
+    /**
+    * * Field Name: BillsSubscriptions
+    * * Display Name: Bills Subscriptions
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether this account bills the auto-renewing subscriptions sold through it. When set and the type supports it, Orders creates a gateway subscription after the first payment, and the gateway charges each renewal. Turning it off stops new ones only: a subscription already billed by the gateway keeps being skipped by Orders' renewal jobs.
+    */
+    get BillsSubscriptions(): boolean {
+        return this.Get('BillsSubscriptions');
+    }
+    set BillsSubscriptions(value: boolean) {
+        this.Set('BillsSubscriptions', value);
     }
 
     /**
@@ -27926,6 +27987,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * RenewalLeadDays: Renewal lead days must be a non-negative number (0 or greater) if specified.
     * * Table-Level: A subscription cannot migrate from itself; the source subscription must be a different subscription.
     * * Table-Level: A subscription cannot migrate to itself. This prevents logical errors where a subscription's migration destination is set as its own record.
+    * * Table-Level: If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.
     * @public
     * @method
     * @override
@@ -27936,6 +27998,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
         this.ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result);
         this.ValidateMigratesFromSubscriptionIDNotEqualsID(result);
         this.ValidateMigratesToSubscriptionIDNotEqualToID(result);
+        this.ValidateProviderSubscriptionIDAndPaymentProviderID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -28006,6 +28069,33 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     			this.MigratesToSubscriptionID,
     			ValidationErrorType.Failure
     		));
+    	}
+    }
+
+    /**
+    * If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateProviderSubscriptionIDAndPaymentProviderID(result: ValidationResult) {
+    	if (this.ProviderSubscriptionID != null) {
+    		if (this.ProviderSubscriptionID.trim().length === 0) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"ProviderSubscriptionID",
+    				"Provider Subscription ID cannot be blank when provided.",
+    				this.ProviderSubscriptionID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    		if (this.PaymentProviderID == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"PaymentProviderID",
+    				"Payment Provider is required when a Provider Subscription ID is specified.",
+    				this.PaymentProviderID,
+    				ValidationErrorType.Failure
+    			));
+    		}
     	}
     }
 
@@ -28220,6 +28310,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * Display Name: Payment Provider
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.
     */
     get PaymentProviderID(): string | null {
         return this.Get('PaymentProviderID');
@@ -28232,7 +28323,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * Field Name: ProviderSubscriptionID
     * * Display Name: Provider Subscription ID
     * * SQL Data Type: nvarchar(100)
-    * * Description: Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.
+    * * Description: The gateway's id for a subscription it bills (for Stripe, sub_...). When set, the gateway named by PaymentProviderID charges every renewal and Orders' renewal jobs skip the subscription; NULL means Orders renews it.
     */
     get ProviderSubscriptionID(): string | null {
         return this.Get('ProviderSubscriptionID');
