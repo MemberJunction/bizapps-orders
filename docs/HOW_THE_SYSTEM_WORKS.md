@@ -132,7 +132,7 @@ The table lists the main ones. The full list, by area, is in [`orders-api-and-ui
 | `Orders.PriceOrder` | Price without writing. Same `OrderPricingService` the save path uses. |
 | `Orders.PreviewPrice` | One product's advisory price. Promotions stack against totals, so this cannot be final. |
 | `Orders.AdvanceOrderState` | Moves a confirmed order to `FulfillmentStatus = 'Fulfilled'`, marking its fulfillable lines first. Books nothing; refuses an unbooked order. |
-| `Orders.CapturePayment` | Settle with the provider, then record money. |
+| `Orders.CapturePayment` | Settle with the provider, then record money. A read it cannot complete is a retryable refusal (`OrderReadFailed`, `TenderReadFailed`, `PaymentReadFailed`), never a missing record (#967). |
 | `Orders.RefundPayment` | Reversal payment + un-apply, atomically. |
 | `Orders.ApplyAccountCredit` | Spend a credit (zero-amount payment, two offsetting lines). |
 | `Orders.FulfillOrderLines` | Mark lines fulfilled and update header `FulfillmentStatus`. |

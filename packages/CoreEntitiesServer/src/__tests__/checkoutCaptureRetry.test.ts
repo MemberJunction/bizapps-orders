@@ -7,9 +7,12 @@ import {
 } from '../checkoutCaptureRetry.js';
 
 describe('isCaptureRefusalRetryable', () => {
-    it('retries unclassified and CaptureFailed', () => {
+    it('retries unclassified, CaptureFailed and a failed read (#967)', () => {
         expect(isCaptureRefusalRetryable([])).toBe(true);
         expect(isCaptureRefusalRetryable(['CaptureFailed'])).toBe(true);
+        expect(isCaptureRefusalRetryable(['OrderReadFailed'])).toBe(true);
+        expect(isCaptureRefusalRetryable(['TenderReadFailed'])).toBe(true);
+        expect(isCaptureRefusalRetryable(['PaymentReadFailed'])).toBe(true);
         expect(isCaptureRefusalRetryable(['SomeNewCode'])).toBe(true);
     });
 
