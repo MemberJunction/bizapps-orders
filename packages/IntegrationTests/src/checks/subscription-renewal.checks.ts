@@ -1961,12 +1961,11 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             await OutsideTransaction(
                 () =>
                     withRenewalLinks(async () => {
-                        const r = await renewWithCard(ctx, 'pm_card_chargeDeclined');
-                        run.OrderIDs.push(r.SourceOrderID, r.OrderID);
-                        run.SubscriptionIDs.push(r.SubscriptionID);
-                        run.PaymentProviderID = r.ProviderID;
+                        // Setup records each committed row in `run` as it is made, so a setup that
+                        // fails part-way still leaves the purge something to delete.
+                        const r = await renewWithCard(ctx, 'pm_card_chargeDeclined', { run });
                         await chargeRenewals(ctx, { SubscriptionID: r.SubscriptionID, AsOfDate: r.TermStart });
-                        run.CheckoutWidgetID = await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID);
+                        await soldThroughCheckout(ctx, r.SourceOrderID, r.ProviderID, run);
 
                         const key = `it-renew-ot-${r.OrderID.slice(0, 8)}`;
                         const init = await CheckoutSessionService.InitializeRenewalPaymentSession(await linkToken(r.OrderID, r.SubscriptionID), key, ctx.User);
@@ -2143,18 +2142,25 @@ async function stubStripeProvider(ctx: IntegrationCheckContext, active = true): 
  * Buy an annual subscription, give it a renewal card (a wallet entry the customer organization owns,
  * as checkout writes one) and spawn its renewal. `instrumentRef` is one of Stripe's test card names,
  * which the stub answers the way test mode does.
+ *
+ * A check that commits (SR46-OT) passes its `run`: each ID goes into it as soon as the row exists, so
+ * a throw part-way still leaves {@link PurgeCheckoutRun} the rows already written. The wallet and its
+ * card need no entry of their own: the purge takes everything on the run's provider.
  */
 async function renewWithCard(
     ctx: IntegrationCheckContext,
     instrumentRef: string,
-    opts: { inactiveProvider?: boolean; organizationID?: string; billToPersonID?: string } = {},
+    opts: { inactiveProvider?: boolean; organizationID?: string; billToPersonID?: string; run?: CheckoutRun } = {},
 ): Promise<{ SubscriptionID: string; OrderID: string; TermStart: string; SourceOrderID: string; ProviderID: string }> {
     const f = Fx();
     // A second subscription in one check needs a second holder: AnnualRolling is ExtendExisting, so the
     // same holder buying again extends the first subscription instead of starting another.
     const holder = opts.organizationID ?? f.Customers.OrganizationID;
     const { SubscriptionID, Term, OrderID: SourceOrderID } = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder, opts.billToPersonID);
+    opts.run?.OrderIDs.push(SourceOrderID);
+    opts.run?.SubscriptionIDs.push(SubscriptionID);
     const providerID = await stubStripeProvider(ctx, !opts.inactiveProvider);
+    if (opts.run) opts.run.PaymentProviderID = providerID;
     const tenderID = f.PaymentTypeIDs.get('CreditCard');
     Assert(tenderID != null, 'precondition: a CreditCard payment type');
     // The card is the wallet's embedded Payment Detail, written through the wallet as checkout writes it
@@ -2177,8 +2183,10 @@ async function renewWithCard(
     await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { DefaultCustomerPaymentMethodID: walletID });
 
     const placed = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+    const renewalOrderID = placed.Candidates[0]?.OrderID;
+    if (renewalOrderID) opts.run?.OrderIDs.push(renewalOrderID);
     AssertEqual(placed.Placed, 1, `the renewal is placed: ${placed.Message}`);
-    return { SubscriptionID, OrderID: placed.Candidates[0].OrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)), SourceOrderID, ProviderID: providerID };
+    return { SubscriptionID, OrderID: renewalOrderID!, TermStart: isoDate(daysBefore(Term.EndDate, -1)), SourceOrderID, ProviderID: providerID };
 }
 
 /** `ChargeRenewals` as the Action calls it. */
@@ -2259,9 +2267,9 @@ async function withRenewalLinks<T>(body: () => Promise<T>): Promise<T> {
 /**
  * The checkout that sold the subscription: an active widget on the renewal card's provider, with a
  * distribution, named as the source of the subscription's first order. The update-card page is shown
- * in it.
+ * in it. A committing check passes its `run`; the widget goes into it as soon as it exists.
  */
-async function soldThroughCheckout(ctx: IntegrationCheckContext, sourceOrderID: string, providerID: string): Promise<string> {
+async function soldThroughCheckout(ctx: IntegrationCheckContext, sourceOrderID: string, providerID: string, run?: CheckoutRun): Promise<string> {
     const f = Fx();
     const widgetID = await createViaEntity(ctx, CHECKOUT_WIDGET_ENTITY, {
         Name: `${f.Run} renewal checkout`,
@@ -2269,6 +2277,7 @@ async function soldThroughCheckout(ctx: IntegrationCheckContext, sourceOrderID: 
         Status: 'Active',
         Configuration: JSON.stringify({ paymentProviderId: providerID, currency: 'USD' }),
     });
+    if (run) run.CheckoutWidgetID = widgetID;
     await createViaEntity(ctx, CHECKOUT_WIDGET_DISTRIBUTION_ENTITY, {
         CheckoutWidgetID: widgetID,
         Slug: `${f.Run.toLowerCase()}-renew-${widgetID.slice(0, 8).toLowerCase()}`,
