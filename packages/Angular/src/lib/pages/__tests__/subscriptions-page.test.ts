@@ -1,4 +1,5 @@
 import '@angular/compiler';
+import { EventEmitter } from '@angular/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
 import { Today, type mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
@@ -242,5 +243,51 @@ describe('LoadSubscriptionRevRec', () => {
         expect(loaded.CanRead).toBe(false);
         expect(loaded.Entries).toEqual([]);
         expect(runView).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * #932. The Cancel button lives on the Subscription FORM, and this page is where support finds a
+ * subscription. Double-click used to do what a single click does (fill the side panel), and the
+ * side panel had no way out, so the form, and with it Cancel, could not be reached from the app.
+ */
+describe('MJOSubscriptionsPageComponent opening a subscription (#932)', () => {
+    type Opener = {
+        SubscriptionOpened: EventEmitter<{ ID: string }>;
+        SelectedID: string | null;
+        AllRows: Array<Record<string, unknown>>;
+        OnRecordOpened(event: unknown): void;
+        OpenSelected(): void;
+    };
+
+    function opener(): { p: Opener; opened: string[] } {
+        const p = Object.create(MJOSubscriptionsPageComponent.prototype) as Opener;
+        p.SubscriptionOpened = new EventEmitter<{ ID: string }>();
+        const opened: string[] = [];
+        p.SubscriptionOpened.subscribe((row) => opened.push(row.ID));
+        return { p, opened };
+    }
+
+    it('opens the form on double-click', () => {
+        const { p, opened } = opener();
+        p.OnRecordOpened({ record: { ID: SUB_ID } });
+        expect(opened).toEqual([SUB_ID]);
+    });
+
+    it('opens the selected subscription from the side panel button', () => {
+        const { p, opened } = opener();
+        p.AllRows = [{ ID: SUB_ID, SubscriptionNumber: 'SUB-000089', Status: 'Active' }];
+        p.SelectedID = SUB_ID;
+        p.OpenSelected();
+        expect(opened).toEqual([SUB_ID]);
+    });
+
+    it('opens nothing when nothing is selected', () => {
+        const { p, opened } = opener();
+        p.AllRows = [];
+        p.SelectedID = null;
+        p.OpenSelected();
+        p.OnRecordOpened({ record: {} });
+        expect(opened).toEqual([]);
     });
 });

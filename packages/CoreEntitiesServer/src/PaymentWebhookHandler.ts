@@ -314,7 +314,8 @@ async function findPriorDeliverySafely(
 
 /**
  * After the intent row reflects Succeeded, book CapturePayment for a Confirmed
- * checkout session if the complete path failed to. No-op for back-office intents.
+ * checkout session if the complete path failed to, or complete a checkout session
+ * the buyer's browser never completed (#724). No-op for back-office intents.
  * Returns false when a checkout capture was attempted, did not book, and is
  * Retryable inside the event-age window — caller 500s so Stripe retries.
  * Terminal refusals (and events older than the window) return true after a

@@ -1,5 +1,56 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.38.0
+
+### Patch Changes
+
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+- Updated dependencies [a9f4bfa]
+  - @mj-biz-apps/orders-entities@5.38.0
+  - @mj-biz-apps/orders-core-entities-server@5.38.0
+  - @mj-biz-apps/orders-server@5.38.0
+
+## 5.37.0
+
+### Patch Changes
+
+- Updated dependencies [3ec257f]
+- Updated dependencies [d429e9e]
+- Updated dependencies [065481c]
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+- Updated dependencies [3982e30]
+- Updated dependencies [dfc43ea]
+  - @mj-biz-apps/orders-core-entities-server@5.37.0
+  - @mj-biz-apps/orders-entities@5.37.0
+  - @mj-biz-apps/orders-server@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- Updated dependencies [0c499b2]
+- Updated dependencies [0e3b9fd]
+- Updated dependencies [7756bb0]
+  - @mj-biz-apps/orders-server@5.36.1
+  - @mj-biz-apps/orders-core-entities-server@5.36.1
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- Updated dependencies [4aa6783]
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+- Updated dependencies [5a490c4]
+  - @mj-biz-apps/orders-core-entities-server@5.36.0
+  - @mj-biz-apps/orders-server@5.36.0
+  - @mj-biz-apps/orders-entities@5.36.0
+
 ## 5.35.1
 
 ### Patch Changes

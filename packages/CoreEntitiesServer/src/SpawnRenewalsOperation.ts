@@ -91,6 +91,7 @@ import {
 import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireOptionalDay, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
+import { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { RenewalDueDate, RenewalScheduleRows } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
@@ -385,7 +386,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
      * Raw SQL rather than RunView because the selection is inherently a JOIN across four tables with
      * a "latest term per subscription" window — expressible in one statement and awkward as several
      * round trips. `RenewalLeadDays` falls back from the subscription to its type, which is the
-     * inheritance rule the schema documents.
+     * inheritance rule the schema documents. A subscription a gateway bills itself
+     * (`ProviderSubscriptionID` set) is never due here: the gateway renews it (./ProviderBilledSubscriptions.ts).
      */
     private async findDue(
         provider: IMetadataProvider,
@@ -431,6 +433,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
               -- lapsed subscription from being silently revived months later by a routine pass.
               AND l.EndDate >= DATEADD(DAY, -1, '${asOfDate}')
               AND l.EndDate <= DATEADD(DAY, COALESCE(s.RenewalLeadDays, t.RenewalLeadDays, 0), '${asOfDate}')
+              -- A gateway that bills the subscription itself renews it; Orders placing an order too
+              -- would bill twice. Keyed on the marker, never the account's switch.
+              AND ${NotProviderBilledSql('s')}
               ${only}
             ORDER BY l.EndDate, s.SubscriptionNumber
         `)) as DueRow[];

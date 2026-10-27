@@ -78,20 +78,48 @@ export interface ExistingSubscription {
     LatestTermNumber?: number | null;
 }
 
+/** One term a purchase buys. */
+export interface PlannedTerm {
+    StartDate: Date;
+    EndDate: Date;
+    TermNumber: number;
+    IsProrated: boolean;
+    ProrationFactor: number | null;
+    /** What this term costs: line amount × proration for a single term, its `Share` of the amount otherwise. */
+    Amount: number;
+    /**
+     * This term's fraction of the line amount, by its length in months. 1 for a purchase that buys
+     * one term. The shares of a purchase add up to 1, so the caller can split the line's settled net
+     * across its terms the same way.
+     */
+    Share: number;
+}
+
 /** What the caller must do with this purchase. */
 export interface SubscriptionDecision {
     Action: 'CreateNew' | 'ExtendExisting' | 'Reactivate' | 'Reject';
     SubscriptionID?: string;
-    /** Term to create; absent only when Action = 'Reject'. */
-    Term?: {
-        StartDate: Date;
-        EndDate: Date;
-        TermNumber: number;
-        IsProrated: boolean;
-        ProrationFactor: number | null;
-        /** Line amount × proration — what this term actually costs. */
-        Amount: number;
-    };
+    /** The first term to create; absent only when Action = 'Reject'. Always `Terms[0]`. */
+    Term?: PlannedTerm;
+    /**
+     * Every term this purchase buys, in order (golive #338). One, unless the line states an end past
+     * the first term: then one term per type term length (a year on an annual type) up to the stated
+     * end, the last one partial when the length does not divide evenly. Absent only when
+     * Action = 'Reject'.
+     */
+    Terms?: PlannedTerm[];
+    /**
+     * True when the line stated an end and the coverage ends on a DIFFERENT date. That happens only
+     * when existing coverage displaced the start (see `StartOverrideIgnored`): the stated length is
+     * kept and measured from the continuation date, so the end moves with the start.
+     */
+    EndOverrideIgnored?: boolean;
+    /**
+     * Set when the coverage follows a stated end and its length differs from what the type's rules
+     * compute (golive #338): the length in months, and the type's term length. A length other than
+     * the type's is sold under an exception, so confirm raises it for finance review.
+     */
+    StatedLength?: { Months: number; TypeMonths: number };
     /** Populated when Action = 'Reject'. */
     RejectReason?: string;
     /**
@@ -307,6 +335,19 @@ export interface SubscriptionPurchaseContext {
      */
     RequestedStartDate?: Date | null;
     /**
+     * The last day of coverage stated on the order line (golive #338). Absent, the type's rules
+     * decide the end, exactly as before.
+     *
+     * Present, the coverage runs to it: a length shorter than the type's term is one short term, and
+     * a longer one is one term per type term length with a final partial term, so renewals, price
+     * increases and recognition keep the type's rhythm. Proration does not apply: the stated dates
+     * are what was sold, and the price is the line's.
+     *
+     * When existing coverage displaces the start, the stated LENGTH is kept and measured from the
+     * continuation date, and `EndOverrideIgnored` reports the moved end.
+     */
+    RequestedEndDate?: Date | null;
+    /**
      * What the line says to do when the subscriber already holds this product
      * (`OrderLine.SubscriptionAction`, golive #299). Absent or null, `ConcurrencyMode` decides.
      *
@@ -321,6 +362,17 @@ export interface SubscriptionPurchaseContext {
 
 function money(v: number): number {
     return Math.round((v + Number.EPSILON) * 100) / 100;
+}
+
+/**
+ * The last day of coverage a decision buys: the end of its last term. Null for a rejection.
+ *
+ * Use this, not `Term.EndDate`, wherever the question is "how long is this line covered": a line that
+ * states an end past the first term buys several terms (golive #338).
+ */
+export function CoverageEndOf(decision: SubscriptionDecision): Date | null {
+    const terms = decision.Terms ?? (decision.Term ? [decision.Term] : []);
+    return terms.length ? terms[terms.length - 1].EndDate : null;
 }
 
 /**
@@ -353,6 +405,33 @@ function addDays(d: Date, n: number): Date {
 
 function daysBetween(a: Date, b: Date): number {
     return Math.round((b.getTime() - a.getTime()) / 86400000);
+}
+
+/**
+ * The number of whole months from `start` through `end` inclusive, or null when the span is not a
+ * whole number of months (2026-11-01 through 2027-04-30 is 6; through 2027-04-29 is null).
+ */
+export function WholeMonthsBetween(start: Date, end: Date): number | null {
+    const s = utcDay(start);
+    const after = addDays(utcDay(end), 1);
+    const months = (after.getUTCFullYear() - s.getUTCFullYear()) * 12 + (after.getUTCMonth() - s.getUTCMonth());
+    if (months <= 0) return null;
+    return addMonths(s, months).getTime() === after.getTime() ? months : null;
+}
+
+/**
+ * The length of `start` through `end` inclusive in months: whole months counted from `start`, plus
+ * the remaining days as a fraction of the month they fall in. 2026-11-01 through 2027-11-30 is 13.
+ */
+export function MonthsCovered(start: Date, end: Date): number {
+    const s = utcDay(start);
+    const after = addDays(utcDay(end), 1);
+    let whole = 0;
+    while (addMonths(s, whole + 1).getTime() <= after.getTime()) whole++;
+    const from = addMonths(s, whole);
+    const rest = daysBetween(from, after);
+    if (rest <= 0) return whole;
+    return whole + rest / daysBetween(from, addMonths(s, whole + 1));
 }
 
 /** Calendar date for user-facing explanations. */
@@ -415,6 +494,7 @@ export class SubscriptionBehavior {
             // land a term start hours before the day it names and, on an anchored type, an end
             // before the start.
             RequestedStartDate: rawContext.RequestedStartDate ? utcDay(rawContext.RequestedStartDate) : null,
+            RequestedEndDate: rawContext.RequestedEndDate ? utcDay(rawContext.RequestedEndDate) : null,
             Existing: rawContext.Existing
                 ? { ...rawContext.Existing, LatestTermEnd: rawContext.Existing.LatestTermEnd ? utcDay(rawContext.Existing.LatestTermEnd) : null }
                 : rawContext.Existing,
@@ -451,6 +531,27 @@ export class SubscriptionBehavior {
 
         const end = this.ComputeEndDate(ctx, start, extending);
         const { isProrated, factor } = this.ComputeProration(ctx, start, end, extending);
+        const firstTermNumber = action === 'CreateNew' ? 1 : (ctx.Existing?.LatestTermNumber ?? 0) + 1;
+
+        const coverageEnd = this.ComputeCoverageEnd(ctx, start, extending);
+        const terms: PlannedTerm[] =
+            coverageEnd && coverageEnd.getTime() !== end.getTime()
+                ? this.SplitCoverage(ctx, start, end, coverageEnd, firstTermNumber)
+                : [
+                      {
+                          StartDate: start,
+                          EndDate: end,
+                          // A new subscription starts at term 1 even when the subscriber holds another one:
+                          // the existing subscription's term count is not this one's.
+                          TermNumber: firstTermNumber,
+                          IsProrated: isProrated,
+                          ProrationFactor: isProrated ? factor : null,
+                          Amount: money(ctx.Amount * (isProrated ? factor : 1)),
+                          Share: 1,
+                      },
+                  ];
+        const lastEnd = terms[terms.length - 1].EndDate;
+        const followsStatedEnd = terms.length > 1 || terms[0].EndDate.getTime() !== end.getTime();
 
         return {
             Action: action,
@@ -465,17 +566,90 @@ export class SubscriptionBehavior {
                 !!ctx.RequestedStartDate &&
                 existingCoverageEnd !== null &&
                 start.getTime() !== ctx.RequestedStartDate.getTime(),
-            Term: {
-                StartDate: start,
-                EndDate: end,
-                // A new subscription starts at term 1 even when the subscriber holds another one:
-                // the existing subscription's term count is not this one's.
-                TermNumber: action === 'CreateNew' ? 1 : (ctx.Existing?.LatestTermNumber ?? 0) + 1,
-                IsProrated: isProrated,
-                ProrationFactor: isProrated ? factor : null,
-                Amount: money(ctx.Amount * (isProrated ? factor : 1)),
-            },
+            EndOverrideIgnored: !!ctx.RequestedEndDate && lastEnd.getTime() !== ctx.RequestedEndDate.getTime(),
+            Term: terms[0],
+            Terms: terms,
+            ...(followsStatedEnd
+                ? { StatedLength: { Months: Math.round(MonthsCovered(start, lastEnd) * 100) / 100, TypeMonths: this.TermMonths(ctx.Rules) } }
+                : {}),
         };
+    }
+
+    /**
+     * The last day of coverage the line asks for, or null when it states no end or one the coverage
+     * cannot use (golive #338).
+     *
+     * Taken as given when the term starts where the line said it would. When existing coverage moved
+     * the start, the stated length is kept and measured from the new start: whole months stay whole
+     * months (a 6-month line stays 6 months), anything else keeps its day count. A stated end before
+     * the start has no length to keep, so the type's rules decide.
+     */
+    protected ComputeCoverageEnd(ctx: SubscriptionPurchaseContext, start: Date, extending: boolean): Date | null {
+        const requestedEnd = ctx.RequestedEndDate;
+        if (!requestedEnd) return null;
+        // Where the line meant coverage to begin: the stated start, or the start the type's rules
+        // derive when the line states none.
+        const intendedStart = ctx.RequestedStartDate ?? utcDay(this.ComputeStartDate({ ...ctx, RequestedStartDate: null }));
+        if (requestedEnd.getTime() < intendedStart.getTime()) return null;
+        if (!extending || start.getTime() === intendedStart.getTime()) return requestedEnd;
+
+        const months = WholeMonthsBetween(intendedStart, requestedEnd);
+        return months !== null
+            ? addDays(addMonths(start, months), -1)
+            : addDays(start, daysBetween(intendedStart, requestedEnd));
+    }
+
+    /**
+     * Coverage from `start` through `coverageEnd`, as terms (golive #338): the first term as the type
+     * computes it (`firstEnd`), then one term per type term length, each cut at `coverageEnd`. A
+     * stated end inside the first term makes a single short term.
+     *
+     * Not prorated: the stated dates are what was sold and the line's price is its own. Each term's
+     * `Share` is its length in months over the whole, so a 13-month line at 11,000 recognizes the
+     * same 846.15 a month in both terms.
+     */
+    protected SplitCoverage(
+        ctx: SubscriptionPurchaseContext,
+        start: Date,
+        firstEnd: Date,
+        coverageEnd: Date,
+        firstTermNumber: number,
+    ): PlannedTerm[] {
+        const months = this.TermMonths(ctx.Rules);
+        const windows: Array<{ StartDate: Date; EndDate: Date }> = [];
+        let termStart = start;
+        let termEnd = firstEnd;
+        // Bounded: each pass moves `termStart` forward by at least a month.
+        while (termEnd.getTime() < coverageEnd.getTime()) {
+            windows.push({ StartDate: termStart, EndDate: termEnd });
+            termStart = addDays(termEnd, 1);
+            termEnd = addDays(addMonths(termStart, months), -1);
+        }
+        windows.push({ StartDate: termStart, EndDate: coverageEnd });
+
+        const lengths = windows.map((w) => MonthsCovered(w.StartDate, w.EndDate));
+        const total = lengths.reduce((a, b) => a + b, 0);
+        let allocated = 0;
+        return windows.map((w, i) => {
+            const last = i === windows.length - 1;
+            const share = last ? 1 - lengths.slice(0, -1).reduce((a, b) => a + b / total, 0) : lengths[i] / total;
+            // The last term takes the rounding, so the terms add up to the amount exactly.
+            const amount = last ? money(ctx.Amount - allocated) : money(ctx.Amount * share);
+            allocated = money(allocated + amount);
+            return {
+                ...w,
+                TermNumber: firstTermNumber + i,
+                IsProrated: false,
+                ProrationFactor: null,
+                Amount: amount,
+                Share: Math.round(share * 1e9) / 1e9,
+            };
+        });
+    }
+
+    /** The type's term length in months: `DefaultTermMonths`, or the billing cadence's. */
+    public TermMonths(rules: SubscriptionTypeRules): number {
+        return rules.DefaultTermMonths ?? this.MonthsForCadence(rules.BillingCadence, rules.CustomCycleDays);
     }
 
     // ─── Overridable pieces ────────────────────────────────────────────────────
@@ -690,7 +864,7 @@ export class SubscriptionBehavior {
     }
 
     protected ComputeEndDate(ctx: SubscriptionPurchaseContext, start: Date, extending: boolean): Date {
-        const months = ctx.Rules.DefaultTermMonths ?? this.MonthsForCadence(ctx.Rules.BillingCadence, ctx.Rules.CustomCycleDays);
+        const months = this.TermMonths(ctx.Rules);
 
         if (ctx.Rules.StartMode === 'CalendarAnchored' && !extending) {
             // A partial first term runs from the purchase to the day before the next anchor.

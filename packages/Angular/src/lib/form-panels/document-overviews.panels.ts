@@ -105,6 +105,15 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
     public Cards: MJOOverviewCard[] = [];
 
     public async ngOnInit(): Promise<void> {
+        await this.load();
+    }
+
+    /** The toolbar's Refresh, or a cancellation the header confirmed: terms, grants and events changed with the record. */
+    public override OnRecordRefreshed(): void {
+        void this.load();
+    }
+
+    private async load(): Promise<void> {
         if (!this.Record?.IsSaved) return;
         const p = this.FormComponent.ProviderToUse;
         const [terms, grants, events] = await Promise.all([

@@ -30,7 +30,9 @@ export {
     APPROVAL_TASK_TYPE_CODE,
     ApprovalTaskName,
     ApproverAssignees,
+    ChooseEscalationApprovers,
     CloseConcessionTasks,
+    COMPANY_CFO_ESCALATION,
     ConcessionStatusForOutcome,
     ConcessionSummary,
     IsOpenApprovalTask,
@@ -38,13 +40,16 @@ export {
     RaiseConcessionApprovalAgain,
     ReleaseOrderFromTasks,
     RouteConcessionToApproval,
+    SelfApprovalEscalation,
     UnlinkConcession,
     type ApprovalTaskContext,
     type ConcessionDecision,
     type ConcessionForApproval,
     type ConcessionSummaryFacts,
     type ConcessionTaskClosing,
+    type EscalationCandidate,
     type RoleHolder,
+    type SelfApprovalEscalationResult,
 } from './ConcessionApprovalTask.js';
 export {
     ApplyTaskDecisionToConcessions,
@@ -204,6 +209,9 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+
+// Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
+export { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
@@ -726,7 +734,19 @@ export {
     ResolvePaymentProvider,
     LoadPaymentProviderConfig,
     BuildPaymentProvider,
+    ResolvePaymentCredentials,
 } from './PaymentProviderResolver.js';
+export {
+    ResolveCheckoutPublishableKey,
+    ChooseCheckoutPublishableKey,
+    StripeKeyModeOf,
+} from './CheckoutPublishableKey.js';
+export type {
+    CheckoutPublishableKey,
+    CheckoutPublishableKeyInputs,
+    CheckoutPublishableKeySource,
+    StripeKeyMode,
+} from './CheckoutPublishableKey.js';
 
 // Document delivery (§4.4) — the pure decisions, the channel seam, and the one shipped channel.
 // Document-AGNOSTIC: nothing below knows what an invoice is, which is what makes it reusable for
@@ -1026,3 +1046,5 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 // The calendar-day rule for records that carry a `date` column (#209). Exported for the same
 // reason as the guards above: the edge should reach for the audited helper, not re-derive it.
 export { CalendarDayOrToday } from './calendar-day.js';
+
+// The integration harness's test seam (#947) is NOT exported here: it lives on the `./testing` subpath.

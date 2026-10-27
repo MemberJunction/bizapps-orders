@@ -421,9 +421,11 @@ export class OrderJournalEntryFactory {
         /**
          * Terms created for subscription lines during this confirm, keyed by OrderLineID (D46).
          * Recognition entries anchor to the TERM — the release is caused by time passing over that
-         * coverage period. The booking entry stays on the line: that is caused by the sale.
+         * coverage period. The booking entry stays on the line: that is caused by the sale. A line
+         * that states an end past its first term has several terms, each with its own schedule
+         * (golive #338).
          */
-        termsByLine?: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
+        termsByLine?: Map<string, ReadonlyArray<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>>,
         /** Months per recognition slice, per line, from the subscription type's cadence (D45). */
         recognitionMonthsByLine?: Map<string, number>,
         /**
@@ -566,7 +568,7 @@ export class OrderJournalEntryFactory {
         asOf: Date,
         giftCardTypeIDs: Set<string>,
         scheduledCompanies: Set<string>,
-        term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
+        terms?: ReadonlyArray<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
         recognitionMonths?: number,
         /** Present when this line reverses a line billed by instalment (D92 §6). */
         creditMemo?: CreditMemoForLine,
@@ -912,69 +914,76 @@ export class OrderJournalEntryFactory {
         if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
-            const schedule = this.driverFor(revRec).BuildSchedule({
-                Amount: term ? term.Amount : net,
-                BookingDate: new Date(effectiveDate),
-                ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
-                ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
-                ProductName: product.Name,
-                PeriodMonths: recognitionMonths,
-            });
-
-            // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
-            // unearned part, so only the releases still to come are mirrored; mirroring the whole
-            // term would also un-recognise the months already delivered and strand them in Deferred.
-            let releases = scheduledOrigin
-                ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
-                : schedule.Entries;
-            // THE REVERSAL THAT TAKES THE LAST UNITS BACK EMPTIES DEFERRED EXACTLY (#841). Each
-            // reversing line's rounding remainder sits in its own first month, before its date, so
-            // partial reversals of an uneven amount mirror a few cents more or less than the origin
-            // deferred. The final one trues its last mirror to what the origin still holds.
-            if (scheduledOrigin && releases.length && Math.abs(Number(line.Quantity)) >= Number(scheduledOrigin.RemainingQuantity) - 1e-9) {
-                const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths);
-                const target = StagedDeferredAfter(Own, PriorMirrors, effectiveDate);
-                // One cent per release of the origin and of each earlier reversal is the most rounding can drift.
-                const tolerance = 0.01 * Own.length * (1 + scheduledOrigin.PriorReversals.length);
-                const amounts = TrueUpFinalMirrors(releases.map((e) => Number(e.Amount)), target, tolerance);
-                releases = releases.map((e, i) => (amounts[i] === Number(e.Amount) ? e : { ...e, Amount: amounts[i] }));
-            }
-            for (const entry of releases) {
-                const releaseLines: JELineDraft[] = [
-                    {
-                        GLAccountID: bookingCreditAccount,
-                        DebitAmount: entry.Amount,
-                        Description: `Release deferred — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                    {
-                        GLAccountID: salesAccount,
-                        CreditAmount: entry.Amount,
-                        Description: `Revenue — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                ];
-                const releaseEntryLines = mirrorIf(isReversal, releaseLines);
-                this.assertBalanced(releaseEntryLines, order, line, 'recognition');
-
-                out.push({
-                    OrderLineID: line.ID,
-                    IsBooking: false,
-                    SubscriptionTermID: term?.ID,
-                    RecognitionEntry: entry,
-                    Draft: {
-                        EffectiveDate: isoDate(entry.RecognitionDate),
-                        EntryType: 'RevenueRecognition',
-                        Description:
-                            `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
-                            `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
-                        // D46: anchor to the TERM when there is one; otherwise the line (event
-                        // products are deferred but have no subscription and therefore no term).
-                        LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
-                        LinkedRecordID: term ? term.ID : line.ID,
-                        Lines: releaseEntryLines,
-                    },
+            // A line with several terms recognizes each over its own window, at its own amount, so
+            // the months of the whole coverage are recognized evenly (golive #338).
+            const windows: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number } | undefined> =
+                terms && terms.length ? [...terms] : [undefined];
+            for (const term of windows) {
+                const schedule = this.driverFor(revRec).BuildSchedule({
+                    Amount: term ? term.Amount : net,
+                    BookingDate: new Date(effectiveDate),
+                    ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
+                    ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
+                    ProductName: product.Name,
+                    PeriodMonths: recognitionMonths,
                 });
+
+                // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
+                // unearned part, so only the releases still to come are mirrored; mirroring the whole
+                // term would also un-recognise the months already delivered and strand them in Deferred.
+                let releases = scheduledOrigin
+                    ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
+                    : schedule.Entries;
+                // THE REVERSAL THAT TAKES THE LAST UNITS BACK EMPTIES DEFERRED EXACTLY (#841). Each
+                // reversing line's rounding remainder sits in its own first month, before its date, so
+                // partial reversals of an uneven amount mirror a few cents more or less than the origin
+                // deferred. The final one trues its last mirror to what the origin still holds. A
+                // reversing line creates no terms, so it has one window and this runs once.
+                if (scheduledOrigin && releases.length && Math.abs(Number(line.Quantity)) >= Number(scheduledOrigin.RemainingQuantity) - 1e-9) {
+                    const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths);
+                    const target = StagedDeferredAfter(Own, PriorMirrors, effectiveDate);
+                    // One cent per release of the origin and of each earlier reversal is the most rounding can drift.
+                    const tolerance = 0.01 * Own.length * (1 + scheduledOrigin.PriorReversals.length);
+                    const amounts = TrueUpFinalMirrors(releases.map((e) => Number(e.Amount)), target, tolerance);
+                    releases = releases.map((e, i) => (amounts[i] === Number(e.Amount) ? e : { ...e, Amount: amounts[i] }));
+                }
+                for (const entry of releases) {
+                    const releaseLines: JELineDraft[] = [
+                        {
+                            GLAccountID: bookingCreditAccount,
+                            DebitAmount: entry.Amount,
+                            Description: `Release deferred — ${product.Name}`,
+                            Dimensions: lineDims,
+                        },
+                        {
+                            GLAccountID: salesAccount,
+                            CreditAmount: entry.Amount,
+                            Description: `Revenue — ${product.Name}`,
+                            Dimensions: lineDims,
+                        },
+                    ];
+                    const releaseEntryLines = mirrorIf(isReversal, releaseLines);
+                    this.assertBalanced(releaseEntryLines, order, line, 'recognition');
+
+                    out.push({
+                        OrderLineID: line.ID,
+                        IsBooking: false,
+                        SubscriptionTermID: term?.ID,
+                        RecognitionEntry: entry,
+                        Draft: {
+                            EffectiveDate: isoDate(entry.RecognitionDate),
+                            EntryType: 'RevenueRecognition',
+                            Description:
+                                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
+                            // D46: anchor to the TERM when there is one; otherwise the line (event
+                            // products are deferred but have no subscription and therefore no term).
+                            LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
+                            LinkedRecordID: term ? term.ID : line.ID,
+                            Lines: releaseEntryLines,
+                        },
+                    });
+                }
             }
         }
 

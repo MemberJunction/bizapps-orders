@@ -223,6 +223,56 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(c.noticeMessage).toBeNull();
     });
 
+    describe('/complete outlasting the gateway in front of the server', () => {
+        const GATEWAY_504 = {
+            status: 504,
+            json: () => Promise.reject(new SyntaxError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`)),
+        };
+
+        /** Answers /complete from `replies` in turn; every other path as the suite does. */
+        const completeAnswers = (replies: unknown[]): void => {
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            let i = 0;
+            vi.mocked(fetch).mockImplementation((url: string, init?: RequestInit) => {
+                if (!url.endsWith('/complete')) return base(url, init);
+                const reply = replies[Math.min(i++, replies.length - 1)];
+                return Promise.resolve(reply === GATEWAY_504 ? reply : { status: 200, json: () => Promise.resolve(reply) });
+            });
+        };
+
+        it('waits, asks again, and reports the sale once the order is confirmed', async () => {
+            completeAnswers([
+                GATEWAY_504,
+                { Success: false, Status: 'Processing', ErrorMessage: 'Session is not in an Open status' },
+                { Success: true, Status: 'Confirmed', OrderNumber: 'SO-1', TotalGross: 0 },
+            ]);
+            const c = create();
+            c.completeRetryIntervalMs = 0;
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
+            expect(c.orderNumber).toBe('SO-1');
+            expect(c.finishingMessage).toBeNull();
+            expect(c.errorMessage).toBeNull();
+            expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/complete'))).toHaveLength(3);
+        });
+
+        it('tells a paid buyer not to pay again, never a parser error, when the wait runs out', async () => {
+            completeAnswers([GATEWAY_504]);
+            const c = create();
+            c.completeRetryIntervalMs = 0;
+            c.completeRetryTimeoutMs = 0;
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(c.finishingMessage).toContain('Please do not pay again.');
+            expect(c.errorMessage).toBeNull();
+            expect(seen.some((e) => e.type === 'checkout-error')).toBe(false);
+            expect(JSON.stringify(seen)).not.toContain('Unexpected token');
+        });
+    });
+
     describe('account step password form (#396)', () => {
         const SALE = [
             { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },

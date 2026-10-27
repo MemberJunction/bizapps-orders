@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610181800 — OrderHeader.ApprovalTaskID references its task (#774)
+-- V202610271200 — OrderHeader.ApprovalTaskID references its task (#774)
 -- =============================================================================
 -- OrderHeader.ApprovalTaskID was left a soft reference because the tasks app was
 -- not part of the install set: a foreign key would have made Orders impossible to

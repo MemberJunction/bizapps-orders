@@ -71,7 +71,14 @@ import {
     DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, DescendantLines, HoldingSubscriberFor, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import {
+    AsDateValue,
+    DescendantLines,
+    ExtendChoiceTextFor,
+    HoldingSubscriberFor,
+    TodayAsDateValue,
+    type ExtendChoiceText,
+} from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -583,6 +590,15 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     /** The start an extension would get: the day after the existing coverage ends. */
     public HoldingContinuationStart(holding: MJOExistingHolding): string {
         return this.dateInputValue(ContinuationStartFrom(holding));
+    }
+
+    /**
+     * The "extend" choice's label and hint, saying what confirm will do with it: a next term for an
+     * active holding, or the type's reactivation rule for a paused one (golive #339). Judged on the
+     * order date, as the server's reactivation window is.
+     */
+    public HoldingExtendText(holding: MJOExistingHolding): ExtendChoiceText {
+        return ExtendChoiceTextFor(holding, AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue());
     }
 
     /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */

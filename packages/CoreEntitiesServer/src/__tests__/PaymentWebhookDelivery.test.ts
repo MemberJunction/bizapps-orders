@@ -20,6 +20,11 @@ const state = vi.hoisted(() => ({
     saved: [] as Row[],
     intentSaveFails: false,
     refundReview: undefined as string | undefined,
+    /** Runs when the handler books the checkout capture: stands for the page's work happening then. */
+    onBook: null as null | (() => void),
+    errors: [] as string[],
+    /** The provider each delivery-row lookup ran on, in order. */
+    deliveryLookups: [] as unknown[],
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -27,13 +32,17 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     return {
         ...actual,
         LogStatus: () => undefined,
-        LogError: () => undefined,
+        LogError: (message: unknown) => {
+            state.errors.push(String(message));
+        },
         RunView: class {
+            constructor(private readonly provider?: unknown) {}
             async RunView(params: { EntityName: string; ExtraFilter?: string }) {
                 if (params.EntityName.endsWith('Payment Intents')) {
                     return { Success: true, Results: state.intent ? [state.intent] : [] };
                 }
                 if (params.EntityName.endsWith('Payment Webhook Deliveries')) {
+                    state.deliveryLookups.push(this.provider);
                     const id = /ProviderEventID = '([^']*)'/.exec(params.ExtraFilter ?? '')?.[1];
                     return { Success: true, Results: state.deliveries.filter((d) => d.ProviderEventID === id) };
                 }
@@ -63,7 +72,12 @@ vi.mock('../ProviderRefundBooking.js', () => ({
     BookProviderRefunds: async () => ({ Booked: [], ReviewReason: state.refundReview }),
 }));
 vi.mock('../CheckoutSessionService.js', () => ({
-    CheckoutSessionService: { BookSettledCheckoutPaymentIfNeeded: async () => ({ Attempted: false }) },
+    CheckoutSessionService: {
+        BookSettledCheckoutPaymentIfNeeded: async () => {
+            state.onBook?.();
+            return { Attempted: false };
+        },
+    },
 }));
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
@@ -114,6 +128,7 @@ const event = (over: Partial<WebhookEvent> = {}): WebhookEvent => ({
 });
 
 beforeEach(() => {
+    state.deliveryLookups = [];
     state.verified = true;
     state.event = null;
     state.intent = null;
@@ -121,6 +136,8 @@ beforeEach(() => {
     state.saved = [];
     state.intentSaveFails = false;
     state.refundReview = undefined;
+    state.onBook = null;
+    state.errors = [];
 });
 
 describe('payment webhook deliveries are recorded (#474)', () => {
@@ -259,5 +276,184 @@ describe('payment webhook deliveries are recorded (#474)', () => {
         expect(DeliveryOutcomeFor('AlreadyApplied')).toBe('AlreadyApplied');
         expect(DeliveryOutcomeFor('Ignore')).toBe('Ignored');
         expect(DeliveryOutcomeFor('Reject')).toBe('Rejected');
+    });
+});
+
+describe('the delivery row survives the page finishing the same purchase (#939)', () => {
+    /**
+     * The shared provider as MJ's SQL Server provider behaves: while ANY caller holds a transaction on
+     * it, every statement anyone sends through it runs inside that transaction
+     * (`SQLServerDataProvider._internalExecuteSQL` takes `this._transaction`). So a row saved through
+     * it while the page's unit of work is open is committed or rolled back with the PAGE's work.
+     */
+    function sharedProviderWithForeignTransaction() {
+        const shared = {
+            foreignOpen: false,
+            pending: [] as Row[],
+            BeginForeign() {
+                shared.foreignOpen = true;
+            },
+            RollbackForeign() {
+                shared.foreignOpen = false;
+                shared.pending = [];
+            },
+            GetEntityObject: async (name: string) => {
+                const row = entity(name.endsWith('Payment Intents') ? 'intent' : 'delivery');
+                if (name.endsWith('Payment Intents')) return row;
+                const save = row.Save as () => Promise<boolean>;
+                row.Save = async () => {
+                    if (!shared.foreignOpen) return save();
+                    shared.pending.push(Object.fromEntries(Object.entries(row).filter(([, v]) => typeof v !== 'function')));
+                    return true; // the statement succeeded; only the transaction it joined is lost later
+                };
+                return row;
+            },
+            // An instance with its own transaction stack, as CreateIndependentInstance gives (#928).
+            CreateIndependentInstance: vi.fn(async () => ({
+                GetEntityObject: async (name: string) => entity(name.endsWith('Payment Intents') ? 'intent' : 'delivery'),
+                ReleaseIndependentInstance: vi.fn(async () => undefined),
+            })),
+        };
+        return shared;
+    }
+
+    it('records the Applied row even when the page rolls back work it had open on the shared provider', async () => {
+        const shared = sharedProviderWithForeignTransaction();
+        state.intent = { ID: INTENT_ID, Status: 'Processing', ProviderEventID: null, LastEventAt: null };
+        state.event = event();
+        // The webhook books the capture while the page is still finishing the purchase on the same
+        // shared provider (ORD-002466, ORD-002467: the page's card-for-renewals save, claim, account step).
+        state.onBook = () => shared.BeginForeign();
+
+        const res = await HandlePaymentWebhook(
+            { RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID },
+            shared as unknown as IMetadataProvider,
+            user,
+        );
+        shared.RollbackForeign();
+
+        expect(res.Status).toBe(200);
+        expect(state.saved.filter((r) => r.Outcome === 'Applied')).toHaveLength(1);
+        expect(state.saved[0]).toMatchObject({ ProviderEventID: 'evt_test_1', PaymentIntentID: INTENT_ID });
+    });
+
+    it('a raced insert is retried as an update on the same isolated instance, which is then released', async () => {
+        const release = vi.fn(async () => undefined);
+        const sharedGetEntityObject = vi.fn();
+        let inserts = 0;
+        const own = {
+                GetEntityObject: async (name: string) => {
+                    const row = entity(name.endsWith('Payment Intents') ? 'intent' : 'delivery');
+                    if (name.endsWith('Payment Intents')) return row;
+                    const save = row.Save as () => Promise<boolean>;
+                    row.Save = async () => {
+                        if (row.ID || inserts++ > 0) return save();
+                        // Another delivery of the same event inserted first; the unique key refuses ours.
+                        state.deliveries.push({ ID: 'd-raced', ProviderEventID: 'evt_test_1', Outcome: 'Ignored', DeliveryCount: 1 });
+                        return false;
+                    };
+                    return row;
+                },
+                ReleaseIndependentInstance: release,
+        };
+        const shared = {
+            GetEntityObject: sharedGetEntityObject,
+            CreateIndependentInstance: vi.fn(async () => own),
+        };
+        state.event = event();
+
+        const res = await HandlePaymentWebhook(
+            { RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID },
+            shared as unknown as IMetadataProvider,
+            user,
+        );
+
+        expect(res.Status).toBe(200);
+        expect(state.saved).toHaveLength(1);
+        expect(state.saved[0]).toMatchObject({ ID: 'd-raced', DeliveryCount: 2 });
+        expect(sharedGetEntityObject).not.toHaveBeenCalled();
+        expect(release).toHaveBeenCalledTimes(1);
+        expect(state.errors.filter((e) => e.includes('Could not record webhook delivery'))).toHaveLength(0);
+        // The retry's lookup of the row that won the race runs on the same isolated instance.
+        expect(state.deliveryLookups.at(-1)).toBe(own);
+    });
+
+    it('when no isolated instance can be made, the failure is logged and the answer is unchanged', async () => {
+        const shared = {
+            GetEntityObject: async (name: string) => entity(name.endsWith('Payment Intents') ? 'intent' : 'delivery'),
+            CreateIndependentInstance: async () => {
+                throw new Error('pool closed');
+            },
+        };
+        state.intent = { ID: INTENT_ID, Status: 'Processing', ProviderEventID: null, LastEventAt: null };
+        state.event = event();
+
+        const res = await HandlePaymentWebhook(
+            { RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID },
+            shared as unknown as IMetadataProvider,
+            user,
+        );
+
+        expect(res.Status).toBe(200);
+        expect(res.Body.outcome).toBe('Apply');
+        const line = state.errors.find((e) => e.includes('Could not record webhook delivery evt_test_1 as Applied'));
+        expect(line).toBeDefined();
+        expect(line).toContain('pool closed');
+    });
+
+    it('a provider that cannot make an independent instance still gets its row, as before', async () => {
+        state.intent = { ID: INTENT_ID, Status: 'Processing', ProviderEventID: null, LastEventAt: null };
+        state.event = event();
+
+        // `provider` has GetEntityObject only, like a test double or a non-database provider.
+        const res = await deliver();
+
+        expect(res.Status).toBe(200);
+        expect(state.saved).toHaveLength(1);
+        expect(state.saved[0]).toMatchObject({ Outcome: 'Applied', PaymentIntentID: INTENT_ID });
+    });
+
+    it('a delivery row that could not be written says why in the log', async () => {
+        const failing = {
+            GetEntityObject: async () => ({
+                ...entity('delivery'),
+                Save: async () => false,
+                LatestResult: { CompleteMessage: 'FK_PaymentWebhookDelivery_PaymentIntent violated' },
+            }),
+        } as unknown as IMetadataProvider;
+        state.event = event();
+
+        await HandlePaymentWebhook({ RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID }, failing, user);
+
+        const line = state.errors.find((e) => e.includes('Could not record webhook delivery evt_test_1'));
+        expect(line).toBeDefined();
+        expect(line).toContain('FK_PaymentWebhookDelivery_PaymentIntent violated');
+    });
+
+    it('when the raced retry also fails, the log line carries the retry\'s reason too', async () => {
+        let saves = 0;
+        const failing = {
+            GetEntityObject: async () => {
+                const row = entity('delivery');
+                row.Load = async () => true;
+                row.Save = async () => {
+                    if (saves++ === 0) {
+                        state.deliveries.push({ ID: 'd-raced', ProviderEventID: 'evt_test_1', Outcome: 'Ignored', DeliveryCount: 1 });
+                        row.LatestResult = { CompleteMessage: 'UQ_PaymentWebhookDelivery_Event violated' };
+                    } else {
+                        row.LatestResult = { CompleteMessage: 'deadlock victim' };
+                    }
+                    return false;
+                };
+                return row;
+            },
+        } as unknown as IMetadataProvider;
+        state.event = event();
+
+        await HandlePaymentWebhook({ RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID }, failing, user);
+
+        const line = state.errors.find((e) => e.includes('Could not record webhook delivery evt_test_1'));
+        expect(line).toContain('UQ_PaymentWebhookDelivery_Event violated');
+        expect(line).toContain('as an update of d-raced: deadlock victim');
     });
 });

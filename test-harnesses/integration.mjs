@@ -135,6 +135,7 @@ const ALL_BUNDLES = [
     'progress-measurement',
     'outbound-events',
     'billcom-rail',
+    'service-period-lock',
     'volume',
 ];
 
