@@ -210,6 +210,9 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
 
+// Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
+export { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
+
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
@@ -1040,3 +1043,5 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 // The calendar-day rule for records that carry a `date` column (#209). Exported for the same
 // reason as the guards above: the edge should reach for the audited helper, not re-derive it.
 export { CalendarDayOrToday } from './calendar-day.js';
+
+// The integration harness's test seam (#947) is NOT exported here: it lives on the `./testing` subpath.

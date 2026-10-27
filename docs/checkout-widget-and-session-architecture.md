@@ -554,7 +554,7 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
 | Step | Runs in | Failure leaves |
 |---|---|---|
 | `Confirm` | `CompleteCheckout` once payment has checked out, or the `payment_intent.succeeded` webhook for a session the browser never completed | the session `Open`; the buyer's next complete call, or the gateway's retry of the webhook, retries it |
-| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid |
+| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid; a retryable failure is retried by the buyer's next complete call and by the webhook, which answers 500 so the gateway redelivers |
 
 - Every attempt sets the row `Running`, adds one to `Attempts` and records its source (`Checkout`, `Webhook` or `Replay`). It then ends `Succeeded` or `Failed` with `LastError` and `Retryable`.
 - Rows are written outside the step's own transaction, so a rolled-back `Confirm` still records its failure. A write that fails is logged; it never fails the step.
@@ -564,6 +564,7 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
   - a step still `Running` inside the stale window is refused;
   - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
   - `Confirm` is not replayable here.
+- A capture failure is non-retryable only when every blocker code is in `TERMINAL_CAPTURE_BLOCKER_CODES` (`checkoutCaptureRetry.ts`): a refusal about the data that a retry cannot change, such as `OrderNotFound`, `UnknownTender` or `AllocationMismatch`. Everything else retries, including a thrown error and a read the capture could not complete (`OrderReadFailed`, `TenderReadFailed`, `PaymentReadFailed`, #967): a read that times out on another transaction's lock is "could not read", never "does not exist". The capture reports `OrderNotFound` only after a second read, of the ids the first missed and past the cache, also comes back without them.
 - The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
 - GuestOrder claim minting is not recorded as a step: it is best-effort, and a failure is logged without failing the booked order (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 
