@@ -79,6 +79,7 @@ import { CapturePaymentOperation } from './CapturePaymentOperation.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY, type OpenIntentResult } from './PaymentIntentService.js';
 import { PaymentProviderNotConfiguredError } from './PaymentProviderResolver.js';
+import { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 import { AddDays } from './PaymentTermsBehavior.js';
 import { DaysBetween } from './InvoiceBehavior.js';
 import { RequireOptionalDay, RequireOptionalUUID, RequireUUIDs } from './sql-guards.js';
@@ -736,6 +737,8 @@ async function businessToday(provider: IMetadataProvider, user: UserInfo): Promi
  *   · holding a Succeeded intent with no payment that no checkout session opened, whatever the due
  *     day, automatic renewal or the card — these may only be captured (`CaptureOnly`). Without this
  *     set, money taken on day 11 whose capture failed would never be booked once the window closed.
+ * Neither set includes a subscription a gateway bills itself (`ProviderSubscriptionID` set): the gateway
+ * charges that renewal, so the rule sits in the outer `WHERE` and covers both sets (./ProviderBilledSubscriptions.ts).
  *
  * Raw SQL for the same reason as `SpawnRenewals.findDue`: one statement over five tables. The order's
  * card is the renewal card of the subscription its first renewal line renews. `NextDueDate` and
@@ -794,6 +797,9 @@ async function findCandidates(
           AND (${chargeable} OR ${settledUnbooked})
           AND pd.PaymentProviderID IS NOT NULL
           AND pd.ProviderInstrumentRef IS NOT NULL
+          -- Outside the group above on purpose: settledUnbooked selects without AutoRenew, and a
+          -- subscription a gateway bills is never charged or captured here, on either branch.
+          AND ${NotProviderBilledSql('s')}
           ${only}
         ORDER BY oh.NextDueDate, oh.OrderNumber
     `)) as ChargeCandidate[];
