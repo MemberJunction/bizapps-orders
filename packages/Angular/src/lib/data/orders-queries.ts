@@ -803,6 +803,8 @@ export interface JournalHeaderRow {
     CompanyID: string;
     Company: string;
     EntryNumber: string | null;
+    /** The entry type's name — Order Booking, Payment Receipt, a recognition type. */
+    EntryType: string | null;
     Description: string | null;
     EffectiveDate: DateCell;
     JournalEntryBatchID: string | null;
@@ -897,7 +899,17 @@ export async function LoadOrderJournalData(
         'EffectiveDate',
         500,
         user,
-        ['ID', 'CompanyID', 'Company', 'EntryNumber', 'Description', 'EffectiveDate', 'JournalEntryBatchID', 'LinkedRecordID'],
+        [
+            'ID',
+            'CompanyID',
+            'Company',
+            'EntryNumber',
+            'EntryType',
+            'Description',
+            'EffectiveDate',
+            'JournalEntryBatchID',
+            'LinkedRecordID',
+        ],
     );
     if (Journals.length === 0) return { ...EMPTY_DATA, SharedPaymentOrderCounts: origins.SharedPaymentOrderCounts };
 
@@ -1128,6 +1140,157 @@ export function BuildOrderJournalEntryRows(
             SharedWithOtherOrders: sharedCount(data, journal),
         };
     });
+}
+
+/** A column of an accounting-tab export. Matches MJ's `ExportColumn`, so it goes to the export dialog as is. */
+export interface OrderJournalExportColumn {
+    name: string;
+    displayName: string;
+    dataType: 'string' | 'number' | 'dateonly';
+    numberFormat?: string;
+}
+
+export type OrderJournalExportRow = Record<string, string | number | null>;
+
+/** Rows and columns for the export dialog. Dimension columns depend on which dimensions the rows carry. */
+export interface OrderJournalExport {
+    Columns: OrderJournalExportColumn[];
+    Rows: OrderJournalExportRow[];
+}
+
+const EXPORT_AMOUNT_FORMAT = '#,##0.00';
+
+function textColumn(name: string, displayName: string): OrderJournalExportColumn {
+    return { name, displayName, dataType: 'string' };
+}
+
+function dayColumn(name: string, displayName: string): OrderJournalExportColumn {
+    return { name, displayName, dataType: 'dateonly' };
+}
+
+function amountColumn(name: string, displayName: string): OrderJournalExportColumn {
+    return { name, displayName, dataType: 'number', numberFormat: EXPORT_AMOUNT_FORMAT };
+}
+
+/**
+ * One column per dimension name, sorted, keyed `Dim1`, `Dim2`… so a dimension called "Name" or
+ * "Debit" cannot overwrite a fixed column.
+ */
+function dimensionColumns(dimensionSets: OrderJournalDimension[][]): {
+    Columns: OrderJournalExportColumn[];
+    Cells: (dims: OrderJournalDimension[]) => OrderJournalExportRow;
+} {
+    const names = [...new Set(dimensionSets.flat().map((dim) => dim.Name))].sort((a, b) => a.localeCompare(b));
+    const keyByName = new Map(names.map((name, index) => [name, `Dim${index + 1}`]));
+    return {
+        Columns: names.map((name) => textColumn(keyByName.get(name) ?? name, name)),
+        Cells: (dims) => {
+            const cells: OrderJournalExportRow = {};
+            for (const name of names) cells[keyByName.get(name) ?? name] = null;
+            for (const dim of dims) cells[keyByName.get(dim.Name) ?? dim.Name] = dim.Value;
+            return cells;
+        },
+    };
+}
+
+/**
+ * The By line export: one row per journal LINE of every entry By line shows, with the entry's fields
+ * repeated on each of its lines. Pure.
+ *
+ * The screen shows one row per entry; the export goes one level down because tying out to the GL
+ * needs the account and dimensions, which only a line has. Same snapshot and same filter as the
+ * screen, so the file holds exactly the entries in view.
+ */
+export function BuildOrderJournalLineExport(
+    data: OrderJournalData,
+    options: OrderJournalViewOptions = {},
+): OrderJournalExport {
+    const filtered = FilterOrderJournals(data, options);
+    const labels = rollupLabels(filtered.Journals, data.Lines, data.Dims, data.Accounts);
+    const linesByJournal = new Map<string, JournalLineRow[]>();
+    for (const line of data.Lines) {
+        const key = line.JournalEntryID.toLowerCase();
+        const list = linesByJournal.get(key) ?? [];
+        list.push(line);
+        linesByJournal.set(key, list);
+    }
+    const dimsByLine = new Map<string, OrderJournalDimension[]>();
+    for (const dim of data.Dims) {
+        const key = dim.JournalEntryLineID.toLowerCase();
+        const list = dimsByLine.get(key) ?? [];
+        list.push(...presentDimensions([{ DimensionID: dim.DimensionID, DimensionValueID: dim.DimensionValueID }], labels));
+        dimsByLine.set(key, list);
+    }
+
+    const pairs = filtered.Journals.flatMap((journal) =>
+        (linesByJournal.get(journal.ID.toLowerCase()) ?? []).map((line) => ({ journal, line })),
+    );
+    const dimensions = dimensionColumns(pairs.map(({ line }) => dimsByLine.get(line.ID.toLowerCase()) ?? []));
+
+    const Rows = pairs.map(({ journal, line }) => {
+        const batch = batchOf(data, journal);
+        const account = labels.Account[line.GLAccountID.toLowerCase()];
+        return {
+            EntryNumber: journal.EntryNumber ?? '',
+            EntryType: journal.EntryType ?? '',
+            Description: journal.Description ?? '',
+            Company: journal.Company,
+            EffectiveDate: ToISODate(journal.EffectiveDate),
+            PostingDate: ToISODate(batch?.PostingDate),
+            Batch: batch?.JournalEntryBatchNumber ?? '',
+            BatchStatus: batch?.Status ?? 'Not batched',
+            AccountCode: account?.Code ?? '',
+            AccountName: account?.Name || line.GLAccount,
+            Debit: line.DebitAmount ?? 0,
+            Credit: line.CreditAmount ?? 0,
+            ...dimensions.Cells(dimsByLine.get(line.ID.toLowerCase()) ?? []),
+        };
+    });
+
+    return {
+        Columns: [
+            textColumn('EntryNumber', 'Entry'),
+            textColumn('EntryType', 'Entry type'),
+            textColumn('Description', 'Description'),
+            textColumn('Company', 'Company'),
+            dayColumn('EffectiveDate', 'Effective date'),
+            dayColumn('PostingDate', 'Posting date'),
+            textColumn('Batch', 'Batch'),
+            textColumn('BatchStatus', 'Batch status'),
+            textColumn('AccountCode', 'Account code'),
+            textColumn('AccountName', 'Account'),
+            amountColumn('Debit', 'Debit'),
+            amountColumn('Credit', 'Credit'),
+            ...dimensions.Columns,
+        ],
+        Rows,
+    };
+}
+
+/** The Rolled up export: the cards' rows, flattened, one row per company × account × dimension set. Pure. */
+export function BuildOrderJournalRollupExport(rollup: OrderJournalRollup): OrderJournalExport {
+    const rows = rollup.Cards.flatMap((card) => card.Rows);
+    const dimensions = dimensionColumns(rows.map((row) => row.Dimensions));
+    return {
+        Columns: [
+            textColumn('Company', 'Company'),
+            textColumn('AccountCode', 'Account code'),
+            textColumn('AccountName', 'Account'),
+            amountColumn('Debit', 'Debit'),
+            amountColumn('Credit', 'Credit'),
+            { name: 'SourceLineCount', displayName: 'Source lines', dataType: 'number' },
+            ...dimensions.Columns,
+        ],
+        Rows: rows.map((row) => ({
+            Company: row.Company,
+            AccountCode: row.AccountCode,
+            AccountName: row.AccountName,
+            Debit: row.Debit,
+            Credit: row.Credit,
+            SourceLineCount: row.SourceLineCount,
+            ...dimensions.Cells(row.Dimensions),
+        })),
+    };
 }
 
 /**
@@ -1363,16 +1526,17 @@ function toNettableLines(
     const companyByJE = new Map(journals.map((j) => [j.ID.toLowerCase(), j.CompanyID]));
     const dimsByLine = new Map<string, NettableLine['dims']>();
     for (const dim of dims) {
-        const existing = dimsByLine.get(dim.JournalEntryLineID) ?? [];
+        const key = dim.JournalEntryLineID.toLowerCase();
+        const existing = dimsByLine.get(key) ?? [];
         existing.push({ DimensionID: dim.DimensionID, DimensionValueID: dim.DimensionValueID });
-        dimsByLine.set(dim.JournalEntryLineID, existing);
+        dimsByLine.set(key, existing);
     }
     return lines.map((line) => ({
         companyId: companyByJE.get(line.JournalEntryID.toLowerCase()) ?? '',
         glAccountId: line.GLAccountID,
         debit: line.DebitAmount ?? 0,
         credit: line.CreditAmount ?? 0,
-        dims: dimsByLine.get(line.ID) ?? [],
+        dims: dimsByLine.get(line.ID.toLowerCase()) ?? [],
     }));
 }
 
