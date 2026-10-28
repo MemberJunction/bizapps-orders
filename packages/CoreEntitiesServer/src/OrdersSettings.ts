@@ -396,9 +396,12 @@ export class OrdersSettings {
         };
     }
 
-    /** The roles whose holders may confirm an order with no deal; empty switches the check off (#390). */
+    /**
+     * The roles whose holders may confirm an order with no deal; empty switches the check off (#390).
+     * @throws when the Orders application row is missing, rather than reading the check as off.
+     */
     public static get NoDealConfirmRoles(): string[] {
-        return asList(this.raw(ORDERS_SETTING.NoDealConfirmRoles), []);
+        return asList(this.rawAppScoped(ORDERS_SETTING.NoDealConfirmRoles), []);
     }
 
     /**

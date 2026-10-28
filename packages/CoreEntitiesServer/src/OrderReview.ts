@@ -259,7 +259,13 @@ let warnedNoDealLink = false;
  */
 export async function CheckNoDealConfirm(order: ReviewOrderInput, ctx: ApprovalTaskContext): Promise<string | null> {
     await OrdersSettings.Load(ctx.Provider, ctx.User);
-    const allowed = OrdersSettings.NoDealConfirmRoles;
+    const label = `Order ${order.OrderNumber ?? ''}`.trim();
+    let allowed: string[];
+    try {
+        allowed = OrdersSettings.NoDealConfirmRoles;
+    } catch (err) {
+        return `${label} was not confirmed: the Orders setting NoDealConfirmRoles could not be read. ${messageOf(err)}`;
+    }
     if (allowed.length === 0) return null;
     const link = HostOrderDealLink();
     if (!link) {
@@ -273,7 +279,6 @@ export async function CheckNoDealConfirm(order: ReviewOrderInput, ctx: ApprovalT
         return null;
     }
     if (OrderReviewExemption(scopeOf(order))) return null;
-    const label = `Order ${order.OrderNumber ?? ''}`.trim();
     try {
         if (await ResolveOrderDeal(link, order.OrderHeaderID, ctx.User)) return null;
         const held = await heldRoleNames(ctx);

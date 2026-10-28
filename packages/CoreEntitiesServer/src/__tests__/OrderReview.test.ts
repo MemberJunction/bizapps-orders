@@ -797,6 +797,13 @@ describe('CheckNoDealConfirm', () => {
         expect(log.mock.calls[0][0]).toMatch(/NoDealConfirmRoles/);
     });
 
+    it('refuses when the setting cannot be read, rather than reading the check as off', async () => {
+        vi.spyOn(OrdersSettings, 'NoDealConfirmRoles', 'get').mockImplementation(() => {
+            throw new Error('The Orders application (__mj_BizAppsOrders) is not in metadata');
+        });
+        expect(await CheckNoDealConfirm(order(), ctx)).toMatch(/NoDealConfirmRoles could not be read\. The Orders application/);
+    });
+
     it('refuses when the deal link cannot tell, rather than reading it as no deal', async () => {
         holds('Finance');
         RegisterOrderDealLink({ DealForOrder: vi.fn(async () => { throw new Error('sales is down'); }) });
