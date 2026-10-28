@@ -67,6 +67,7 @@ import '../checks/payment-providers.checks.js';
 import '../checks/ach-settlement.checks.js';
 import '../checks/embedded-payment-detail.checks.js';
 import '../checks/payment-schedule.checks.js';
+import '../checks/schedule-replace.checks.js';
 import '../checks/payment-deposit.checks.js';
 import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
@@ -126,6 +127,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'ach-settlement': 17,
     'embedded-payment-detail': 17,
     'payment-schedule': 23,
+    'schedule-replace': 9,
     'payment-deposit': 15,
     'contract-reversal': 12,
     'party-roster': 2,

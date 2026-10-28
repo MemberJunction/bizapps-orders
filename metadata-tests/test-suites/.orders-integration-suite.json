@@ -639,6 +639,17 @@
           "primaryKey": {
             "ID": "5E7C2B94-16AD-4C3F-9D20-8A41E6F35B72"
           }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-47 - Replace Payment Schedule",
+            "Sequence": 47,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "83444943-244C-41AB-9728-404EB075B824"
+          }
         }
       ]
     },
