@@ -2158,6 +2158,17 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
 }
 
 /**
+ * The fields {@link RankCatalogMatches} reads. Any product row carrying them can be ranked, so another
+ * app's picker (the deal line editor in sales) ranks its own rows without building a full
+ * {@link MJOProductOption}. Nullable because a SKU is optional and lookup rows carry it as null.
+ */
+export interface RankableProduct {
+    Name: string | null;
+    SKU?: string | null;
+    CompanyID?: string | null;
+}
+
+/**
  * Catalog rows matching `query`, most useful first.
  *
  * A plain `includes()` over the catalog is what an order taker experiences as a broken picker: type
@@ -2170,6 +2181,9 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
  *   2. either merely contains it
  *   ...then the order's own selling company before other companies, then alphabetically by name.
  *
+ * The name comparison reads digit runs as numbers, so revenue bands list as "$1M-$2M", "$2M-$5M",
+ * "$10M-$15M". Character order puts "$10M" before "$1M-", which reads as a broken ladder.
+ *
  * RELEVANCE OUTRANKS COMPANY, deliberately. Cross-company selling is intended — BCC sells SoundPost
  * products — so a company is a disambiguator between similar names, not a filter: burying an exact
  * name match under every own-company partial match would hide the row the user typed out in full.
@@ -2180,13 +2194,13 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
  *
  * Pure and exported so the ordering can be tested without Angular; the component only slices it.
  */
-export function RankCatalogMatches(
-    options: readonly MJOProductOption[],
+export function RankCatalogMatches<T extends RankableProduct>(
+    options: readonly T[],
     query: string,
     ownCompanyID?: string | null,
-): MJOProductOption[] {
+): T[] {
     const q = query.trim().toLowerCase();
-    const ranked: { option: MJOProductOption; tier: number; own: number }[] = [];
+    const ranked: { option: T; tier: number; own: number }[] = [];
     for (const option of options) {
         const name = (option.Name ?? '').toLowerCase();
         const sku = (option.SKU ?? '').toLowerCase();
@@ -2203,7 +2217,7 @@ export function RankCatalogMatches(
             (a, b) =>
                 a.tier - b.tier ||
                 a.own - b.own ||
-                (a.option.Name ?? '').localeCompare(b.option.Name ?? ''),
+                (a.option.Name ?? '').localeCompare(b.option.Name ?? '', undefined, { numeric: true }),
         )
         .map((r) => r.option);
 }

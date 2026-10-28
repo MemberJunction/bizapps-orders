@@ -84,6 +84,18 @@ describe('RankCatalogMatches', () => {
         expect(names(ranked)).toEqual(['Summit Dinner', 'Summit Ticket', 'Summit Workshop']);
     });
 
+    it('orders numbers in names by value, so revenue bands climb', () => {
+        const ranked = RankCatalogMatches(
+            [
+                option({ ID: 'a', Name: 'Membership $10M-$15M' }),
+                option({ ID: 'b', Name: 'Membership $2M-$5M' }),
+                option({ ID: 'c', Name: 'Membership $1M-$2M' }),
+            ],
+            'membership',
+        );
+        expect(names(ranked)).toEqual(['Membership $1M-$2M', 'Membership $2M-$5M', 'Membership $10M-$15M']);
+    });
+
     it('keeps another company’s products in the results', () => {
         const ranked = RankCatalogMatches(
             [option({ ID: 'a', Name: 'SoundPost Journal', CompanyID: OTHER_COMPANY, CompanyName: 'SoundPost' })],
