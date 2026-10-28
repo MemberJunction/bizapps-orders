@@ -7,7 +7,7 @@ import { AgingBucketOf, EmptyAgingBuckets, MJOAgingBarComponent, type MJOAgingBu
 import { PresetViewRef } from '../../data/preset-view';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
-import { MJAlertComponent } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -47,7 +47,7 @@ interface MJOCustomerSummary {
 @Component({
     selector: 'mjo-customer-ar-page',
     standalone: true,
-    imports: [CommonModule, EntityViewerModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJAlertComponent],
+    imports: [CommonModule, EntityViewerModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJAlertComponent, MJEmptyStateComponent],
     template: `
         <div class="mjo-ar__split">
             <!-- ── Customers ── -->
@@ -234,7 +234,7 @@ interface MJOCustomerSummary {
                                                 {{ sub['AutoRenew'] ? 'automatically' : 'it simply ends' }}
                                             </td>
                                             <td>
-                                                <span class="mj-chip" [class]="subClass(sub)">
+                                                <span class="mjo-chip" [class]="subClass(sub)">
                                                     {{ sub['Status'] ?? '—' }}
                                                 </span>
                                             </td>
@@ -251,11 +251,10 @@ interface MJOCustomerSummary {
                         </div>
                     </div>
                 } @else {
-                    <div class="mj-empty mjo-ar__empty">
-                        <i class="fa-solid fa-user-tag" aria-hidden="true"></i>
-                        <div class="t">Select a customer</div>
-                        <div class="small">Aging, open items and credits will appear here.</div>
-                    </div>
+                    <mj-empty-state
+                        Icon="fa-solid fa-user-tag"
+                        Title="Select a customer"
+                        Message="Aging, open items and credits will appear here." />
                 }
             </div>
         </div>
@@ -332,8 +331,6 @@ interface MJOCustomerSummary {
                 height: 100%;
                 width: 100%;
             }
-            .mjo-ar__empty { padding: var(--mj-space-12); }
-
             /* These four hooks were in the markup with no rule anywhere, so the
                two lower cards stacked full-width instead of pairing, and each
                order/amount pair ran together as one line of text. */
@@ -499,13 +496,13 @@ export class MJOCustomerARPageComponent implements OnInit {
     protected subClass(sub: mjBizAppsOrdersSubscriptionEntity): string {
         switch (sub.Status) {
             case 'Active':
-                return 'mj-chip--success';
+                return 'mjo-chip--success';
             case 'Trialing':
-                return 'mj-chip--info';
+                return 'mjo-chip--info';
             case 'Paused':
-                return 'mj-chip--warning';
+                return 'mjo-chip--warning';
             default:
-                return 'mj-chip--outline';
+                return 'mjo-chip--outline';
         }
     }
 
@@ -545,8 +542,8 @@ export class MJOCustomerARPageComponent implements OnInit {
     private ageClass(row: mjBizAppsOrdersOrderHeaderEntity): string {
         if (!row.DueDate || (row.Balance ?? 0) <= 0) return '';
         const late = DaysSince(row.DueDate, Today());
-        if (late > 60) return 'mj-chip--error';
-        if (late > 0) return 'mj-chip--warning';
+        if (late > 60) return 'mjo-chip--error';
+        if (late > 0) return 'mjo-chip--warning';
         return '';
     }
 

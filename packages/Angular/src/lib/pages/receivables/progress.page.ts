@@ -156,8 +156,8 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             .mjo-pg__closed {
                 margin-bottom: var(--mj-space-4);
                 padding: var(--mj-space-3) var(--mj-space-4);
-                border-left: 3px solid var(--mj-color-warning, #b8860b);
-                background: var(--mj-color-warning-subtle, rgba(184, 134, 11, 0.08));
+                border-left: 3px solid var(--mj-status-warning);
+                background: var(--mj-status-warning-bg);
                 border-radius: var(--mj-radius-sm, 4px);
                 font-size: 0.9rem;
             }
@@ -199,7 +199,7 @@ export class MJOProgressPageComponent implements OnInit {
         { Key: 'CompanyName', Label: 'Sold by', HideBelow: 1000 },
         { Key: 'LineAmount', Label: 'Contract', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.LineAmount) },
         { Key: 'LastMeasurementDate', Label: 'Last attested', Kind: 'date', Width: '130px', Format: (r) => (r.LastMeasurementDate ? FormatDate(r.LastMeasurementDate, { Short: true }) : 'never'), Secondary: (r) => (r.LastAttestedBy ? `by ${r.LastAttestedBy}` : null) },
-        { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mj-chip--success' : 'mj-chip--outline') },
+        { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline') },
         { Key: 'RecognizedToDate', Label: 'Recognised', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
     ];
 

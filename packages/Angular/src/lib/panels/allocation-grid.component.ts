@@ -3,7 +3,7 @@ import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatMoney, FormatDate } from './money-format';
 import { CrossesLegalEntities } from './allocation-math';
 import { LegalEntityForHint } from './legal-entity-hint';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 
 /** An open order a payment can be applied to. */
 export interface MJOAllocatableOrder {
@@ -60,7 +60,7 @@ export type MJOAllocationMap = Record<string, number>;
 @Component({
     selector: 'mjo-allocation-grid',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJAlertComponent, MJEmptyStateComponent],
     template: `
         <div class="mj-card">
             <div class="mj-card-head">
@@ -98,7 +98,7 @@ export type MJOAllocationMap = Record<string, number>;
                                 }
                             </td>
                             <td class="mjo-ag__co">
-                                <span class="mj-chip mj-chip--outline">{{ order.CompanyName ?? '—' }}</span>
+                                <span class="mjo-chip mjo-chip--outline">{{ order.CompanyName ?? '—' }}</span>
                             </td>
                             <td class="num">{{ order.Balance | mjoMoney }}</td>
                             <td class="num">
@@ -119,13 +119,11 @@ export type MJOAllocationMap = Record<string, number>;
                     } @empty {
                         <tr>
                             <td colspan="7">
-                                <div class="mj-empty mjo-ag__empty">
-                                    <i class="fa-solid fa-check" aria-hidden="true"></i>
-                                    <div class="t">No open orders</div>
-                                    <div class="small">
-                                        This payment will create a credit on the order it is applied to.
-                                    </div>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    Icon="fa-solid fa-check"
+                                    Title="No open orders"
+                                    Message="This payment will create a credit on the order it is applied to." />
                             </td>
                         </tr>
                     }
@@ -176,8 +174,6 @@ export type MJOAllocationMap = Record<string, number>;
                 color: var(--mj-status-error-text);
                 font-weight: var(--mj-font-semibold);
             }
-            .mjo-ag__empty { padding: var(--mj-space-6); }
-
             .mjo-ag__unallocated {
                 position: sticky;
                 bottom: 0;
