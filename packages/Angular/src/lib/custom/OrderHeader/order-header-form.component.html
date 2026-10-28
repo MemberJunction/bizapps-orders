@@ -235,6 +235,47 @@
                 } @else {
                     <div class="mjo-oh-hint">Intent only — the payment is created when the order is confirmed.</div>
                 }
+                @if (record.IsSaved) {
+                    <h3 class="mjo-oh-subhead">Payment schedule</h3>
+                    @if (InstalmentsError) {
+                        <div class="mjo-oh-hint">{{ InstalmentsError }}</div>
+                    } @else if (Instalments === null) {
+                        <div class="mjo-oh-hint">Loading payment schedule…</div>
+                    } @else if (Instalments.length === 0) {
+                        <div class="mjo-oh-hint">{{ NoScheduleNote }}</div>
+                    } @else {
+                        <table class="mjo-oh-je__table mjo-oh-je__table--detail">
+                            <thead>
+                                <tr>
+                                    <th>Instalment</th>
+                                    <th>Due</th>
+                                    <th class="is-num">Amount</th>
+                                    <th>Status</th>
+                                    <th>Invoice</th>
+                                    <th>AR raised</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (row of Instalments; track row.ID) {
+                                    <tr class="is-clickable" (click)="OpenInstalment(row)">
+                                        <td>{{ row.InstallmentNumber }}</td>
+                                        <td>{{ InstalmentDue(row) }}</td>
+                                        <td class="is-num">{{ InstalmentAmount(row) }}</td>
+                                        <td>{{ row.Status }}</td>
+                                        <td>{{ row.DocumentNumber || '—' }}</td>
+                                        <td>
+                                            @if (row.JournalEntryID) {
+                                                <button type="button" class="mjo-oh-linkbtn" (click)="OpenInstalmentEntry($event, row)">{{ InstalmentAR(row) }}</button>
+                                            } @else {
+                                                <span class="mjo-oh-dim">{{ InstalmentAR(row) }}</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                }
             </div>
         }
 

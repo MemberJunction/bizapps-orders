@@ -12,6 +12,7 @@ import {
     LoadOrdersEngine,
     OrderHeaderEntity,
     type DateCell,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     type mjBizAppsOrdersPaymentTypeEntity,
     type PartyOrganizationClear,
 } from '@mj-biz-apps/orders-entities';
@@ -35,6 +36,7 @@ import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entitie
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import { InstalmentARLabel, NoScheduleARNote } from './order-payment-schedule';
 import {
     ExpandedPartyFromPref,
     FormatPartyAddress,
@@ -135,6 +137,13 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public DisplacedStartNotices: string[] = [];
     public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
 
+    /**
+     * The order's payment schedule, on the Payment tab: one row per instalment with the date its AR
+     * is raised. Null until loaded; a failed read shows its message instead of the table.
+     */
+    public Instalments: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity[] | null = null;
+    public InstalmentsError: string | null = null;
+
     public get ContextTabs(): TabConfig[] {
         return OrderFormTabs(!!this.record?.IsSaved);
     }
@@ -182,6 +191,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
         await this.loadDisplacedStartNotices();
+        await this.loadInstalments();
 
         this.RegisterToolbarItem({
             Key: 'confirm-order',
@@ -339,6 +349,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             }
             const outcome = await this.record.Confirm();
             this.DisplacedStartNotices = outcome.DisplacedTermStarts.map(DescribeDisplacedTermStart);
+            // Confirm invoices any instalment already due, so the AR column changes with it.
+            await this.loadInstalments();
             this.updateLineBadge();
             if (this.EditMode) {
                 this.EditMode = false;
@@ -675,6 +687,56 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     /** The one fetched snapshot every accounting view is derived from. Null until the tab is opened. */
     private journalData: OrderJournalData | null = null;
+
+    /**
+     * The schedule is read once at open, so the form's Refresh reads it again too: rows added or
+     * changed elsewhere (another screen, Data Explorer, Sales) appear without reopening the order.
+     */
+    override async RefreshRecord(): Promise<boolean> {
+        const refreshed = await super.RefreshRecord();
+        if (refreshed) {
+            await this.loadInstalments();
+            this.cdr.detectChanges();
+        }
+        return refreshed;
+    }
+
+    private async loadInstalments(): Promise<void> {
+        if (!this.record?.IsSaved) return;
+        try {
+            this.Instalments = await this.record.LoadPaymentSchedule();
+            this.InstalmentsError = null;
+        } catch (error) {
+            this.Instalments = null;
+            this.InstalmentsError = error instanceof Error ? error.message : 'Could not read this order’s payment schedule.';
+        }
+    }
+
+    public get NoScheduleNote(): string {
+        return NoScheduleARNote(!!this.record?.IsBookedOrder);
+    }
+
+    public InstalmentAR(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return InstalmentARLabel(row);
+    }
+
+    public InstalmentDue(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return FormatDate(row.DueDate);
+    }
+
+    public InstalmentAmount(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return FormatMoney(row.Amount);
+    }
+
+    public OpenInstalment(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): void {
+        this.openRecord(MJO_ENTITIES.OrderHeaderPaymentSchedule, String(row.ID));
+    }
+
+    /** The AR link: opens the journal entry the instalment's invoice posted, not the row. */
+    public OpenInstalmentEntry(event: Event, row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): void {
+        event.stopPropagation();
+        if (row.JournalEntryID) this.OnJournalRowSelected(row.JournalEntryID);
+    }
 
     /** Booked orders only. A failed read shows no notice rather than blocking the form. */
     private async loadDisplacedStartNotices(): Promise<void> {
