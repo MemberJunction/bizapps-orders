@@ -22,7 +22,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--warning">Return</span><span class="mj-chip">Draft</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--warning">Return</span><span class="mjo-chip">Draft</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline">Save draft</button>
@@ -43,8 +43,8 @@
         <div class="sec-label" style="margin:0 0 3px">Returning against</div>
         <div class="row">
           <span class="mono strong" style="font-size:15px">ORD-1001</span>
-          <span class="mj-chip mj-chip--success">Posted</span>
-          <span class="mj-chip mj-chip--outline">BCM</span>
+          <span class="mjo-chip mjo-chip--success">Posted</span>
+          <span class="mjo-chip mjo-chip--outline">BCM</span>
         </div>
       </div>
       <div style="border-left:1px solid var(--mj-border-default);padding-left:var(--mj-space-4)">
@@ -285,7 +285,7 @@ function renderPreflight(c) {
 
     <details class="mj-panel" open style="margin-top:var(--mj-space-4)">
       <summary><i class="fa-solid fa-scale-balanced"></i> Journal entries
-        <span class="right"><span class="mj-chip mj-chip--success">1 entry · mirrored · balanced</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--success">1 entry · mirrored · balanced</span></span></summary>
       <div class="mj-panel-body small">
         BC Media, line 1: Dr Publication Revenue ${F.money(Math.abs(c.net))} · Dr Sales Tax Payable
         ${F.money(Math.abs(c.tax))} · Cr Accounts Receivable ${F.money(Math.abs(c.gross))}.
@@ -295,7 +295,7 @@ function renderPreflight(c) {
 
     <details class="mj-panel" open>
       <summary><i class="fa-solid fa-shield-halved"></i> Guards that were checked
-        <span class="right"><span class="mj-chip mj-chip--outline">3 of 3 passed</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--outline">3 of 3 passed</span></span></summary>
       <div class="mj-panel-body small">
         <div class="stack-2">
           <div class="row-t"><i class="fa-solid fa-check" style="color:var(--mj-status-success);margin-top:3px"></i>
