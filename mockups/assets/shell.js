@@ -336,27 +336,27 @@ const MJ = (() => {
   const H = {
     /** Status chip for an order status. */
     orderStatus(s) {
-      const map = { Draft: '', Quoted: 'mj-chip--info', Confirmed: 'mj-chip--brand',
-                    Posted: 'mj-chip--success', Fulfilled: 'mj-chip--success', Voided: 'mj-chip--outline' };
-      return `<span class="mj-chip ${map[s] || ''}">${s}</span>`;
+      const map = { Draft: '', Quoted: 'mjo-chip--info', Confirmed: 'mjo-chip--brand',
+                    Posted: 'mjo-chip--success', Fulfilled: 'mjo-chip--success', Voided: 'mjo-chip--outline' };
+      return `<span class="mjo-chip ${map[s] || ''}">${s}</span>`;
     },
     /** Status chip for a payment status on an order. */
     payStatus(s) {
-      const map = { Unpaid: '', PartiallyPaid: 'mj-chip--warning', Paid: 'mj-chip--success',
-                    Overdue: 'mj-chip--error', WrittenOff: 'mj-chip--outline' };
-      return `<span class="mj-chip ${map[s] || ''}">${s === 'PartiallyPaid' ? 'Part paid' : s}</span>`;
+      const map = { Unpaid: '', PartiallyPaid: 'mjo-chip--warning', Paid: 'mjo-chip--success',
+                    Overdue: 'mjo-chip--error', WrittenOff: 'mjo-chip--outline' };
+      return `<span class="mjo-chip ${map[s] || ''}">${s === 'PartiallyPaid' ? 'Part paid' : s}</span>`;
     },
     /** Origin chip — U18. Staff / LXP / Renewal / Migration. */
     origin(o, ref) {
-      if (!o || o === 'Staff') return `<span class="mj-chip mj-chip--outline"><i class="fa-solid fa-user"></i> Staff</span>`;
-      if (o === 'LXP') return `<span class="mj-chip mj-chip--violet" title="${ref || ''}"><i class="fa-solid fa-graduation-cap"></i> LXP</span>`;
-      if (o === 'Renewal') return `<span class="mj-chip mj-chip--info" title="${ref || ''}"><i class="fa-solid fa-rotate"></i> Renewal</span>`;
-      return `<span class="mj-chip mj-chip--outline">${o}</span>`;
+      if (!o || o === 'Staff') return `<span class="mjo-chip mjo-chip--outline"><i class="fa-solid fa-user"></i> Staff</span>`;
+      if (o === 'LXP') return `<span class="mjo-chip mjo-chip--violet" title="${ref || ''}"><i class="fa-solid fa-graduation-cap"></i> LXP</span>`;
+      if (o === 'Renewal') return `<span class="mjo-chip mjo-chip--info" title="${ref || ''}"><i class="fa-solid fa-rotate"></i> Renewal</span>`;
+      return `<span class="mjo-chip mjo-chip--outline">${o}</span>`;
     },
     /** Company badge. */
     company(id) {
       const c = DB.companies[id];
-      return c ? `<span class="mj-chip mj-chip--outline" title="${c.name}">${c.abbr}</span>` : '—';
+      return c ? `<span class="mjo-chip mjo-chip--outline" title="${c.name}">${c.abbr}</span>` : '—';
     },
     /** Bill-to display name for an order. */
     billTo(o) {

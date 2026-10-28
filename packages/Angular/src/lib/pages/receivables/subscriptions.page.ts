@@ -101,7 +101,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                             <i class="fa-solid fa-rotate" aria-hidden="true"></i>
                             <h3>{{ Selected.SubscriptionNumber }}</h3>
                             <span class="right mjo-sub__head-actions">
-                                <span class="mj-chip" [class]="statusClass(Selected)">{{ Selected.Status }}</span>
+                                <span class="mjo-chip" [class]="statusClass(Selected)">{{ Selected.Status }}</span>
                                 <button type="button" mjButton variant="outline" size="sm" (click)="OpenSelected()"
                                         title="Open the subscription's form, where it can be cancelled">
                                     <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open
@@ -163,12 +163,12 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                                             <td class="small">
                                                 {{ termDateOf(term['StartDate']) }} → {{ termDateOf(term['EndDate']) }}
                                                 @if (term['IsProrated']) {
-                                                    <span class="mj-chip mj-chip--outline">prorated</span>
+                                                    <span class="mjo-chip mjo-chip--outline">prorated</span>
                                                 }
                                             </td>
                                             <td class="num">{{ moneyOf(term['Amount']) }}</td>
                                             <td>
-                                                <span class="mj-chip" [class]="termClass(term)">
+                                                <span class="mjo-chip" [class]="termClass(term)">
                                                     {{ isCurrentTerm(term) ? 'current' : (term['Status'] ?? '—') }}
                                                 </span>
                                             </td>
@@ -189,7 +189,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                         <div class="mj-card-pad">
                             @for (event of Events; track event['ID']) {
                                 <div class="mjo-sub__event">
-                                    <span class="mj-chip mj-chip--outline">{{ event['EventType'] }}</span>
+                                    <span class="mjo-chip mjo-chip--outline">{{ event['EventType'] }}</span>
                                     <span class="small muted">{{ instantOf(event['OccurredAt']) }}</span>
                                 </div>
                             } @empty {
@@ -395,8 +395,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     }
 
     protected termClass(term: mjBizAppsOrdersSubscriptionTermEntity): string {
-        if (this.isCurrentTerm(term)) return 'mj-chip--success';
-        return term['Status'] === 'Canceled' ? 'mj-chip--outline' : 'mj-chip--outline';
+        if (this.isCurrentTerm(term)) return 'mjo-chip--success';
+        return term['Status'] === 'Canceled' ? 'mjo-chip--outline' : 'mjo-chip--outline';
     }
 
     /**
@@ -496,12 +496,12 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     protected statusClass(row: MJOSubscriptionRow): string {
         switch (row.Status) {
             case 'Active':
-                return 'mj-chip--success';
+                return 'mjo-chip--success';
             case 'Grace':
-                return 'mj-chip--warning';
+                return 'mjo-chip--warning';
             case 'Cancelled':
             case 'Expired':
-                return 'mj-chip--outline';
+                return 'mjo-chip--outline';
             default:
                 return '';
         }

@@ -27,7 +27,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="ar-total">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="ar-total">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Aging report</button>
@@ -113,9 +113,9 @@ let SEL = 'O1';
 function bucketOf(o) {
   const late = o.dueDate ? F.days(o.dueDate) : 0;
   if (late <= 0) return { key: 'cur', label: 'Current', cls: '' };
-  if (late <= 30) return { key: 'd30', label: `${late}d`, cls: 'mj-chip--warning' };
-  if (late <= 60) return { key: 'd60', label: `${late}d`, cls: 'mj-chip--warning' };
-  return { key: 'd90', label: `${late}d`, cls: 'mj-chip--error' };
+  if (late <= 30) return { key: 'd30', label: `${late}d`, cls: 'mjo-chip--warning' };
+  if (late <= 60) return { key: 'd60', label: `${late}d`, cls: 'mjo-chip--warning' };
+  return { key: 'd90', label: `${late}d`, cls: 'mjo-chip--error' };
 }
 
 function render() {
@@ -172,11 +172,11 @@ function render() {
           ${c.contact ? ` · contact ${c.contact}` : ''}
         </div>
         <div class="row wrap" style="gap:6px;margin-top:var(--mj-space-2)">
-          ${c.wallet ? `<span class="mj-chip mj-chip--outline"><i class="fa-solid fa-credit-card"></i>
+          ${c.wallet ? `<span class="mjo-chip mjo-chip--outline"><i class="fa-solid fa-credit-card"></i>
             ${c.wallet} saved method${c.wallet === 1 ? '' : 's'}</span>` : ''}
-          <span class="mj-chip mj-chip--outline">${F.money0(c.ytd)} lifetime</span>
-          ${c.buckets.d90 > 0 ? '<span class="mj-chip mj-chip--error">61+ days past due</span>' : ''}
-          ${(org && org.address) ? `<span class="mj-chip mj-chip--outline">${org.address[1]}</span>` : ''}
+          <span class="mjo-chip mjo-chip--outline">${F.money0(c.ytd)} lifetime</span>
+          ${c.buckets.d90 > 0 ? '<span class="mjo-chip mjo-chip--error">61+ days past due</span>' : ''}
+          ${(org && org.address) ? `<span class="mjo-chip mjo-chip--outline">${org.address[1]}</span>` : ''}
         </div>
       </div>
       <div class="row" style="gap:var(--mj-space-2)">
@@ -195,9 +195,9 @@ function render() {
       <div><span class="l">Credit held</span>
         <span class="v ${c.credit ? 'mj-money--credit' : 'mj-money--muted'}">${c.credit ? F.money(c.credit) : '—'}</span></div>
       <div><span class="l">Net owed</span><span class="v">${F.money(r2(c.open - c.credit))}</span></div>
-      <div>${c.buckets.d90 > 0 ? '<span class="mj-chip mj-chip--error">Collection risk</span>'
-        : c.buckets.d30 + c.buckets.d60 > 0 ? '<span class="mj-chip mj-chip--warning">Past due</span>'
-        : '<span class="mj-chip mj-chip--success">Current</span>'}</div>
+      <div>${c.buckets.d90 > 0 ? '<span class="mjo-chip mjo-chip--error">Collection risk</span>'
+        : c.buckets.d30 + c.buckets.d60 > 0 ? '<span class="mjo-chip mjo-chip--warning">Past due</span>'
+        : '<span class="mjo-chip mjo-chip--success">Current</span>'}</div>
     </div>
 
     <div style="margin-top:var(--mj-space-4)">${H.agingBar(c.buckets)}</div>
@@ -218,7 +218,7 @@ function render() {
       <td class="num">${F.money(o.gross)}</td>
       <td class="num ${o.paid ? '' : 'muted'}">${o.paid ? F.money(o.paid) : '—'}</td>
       <td class="num strong">${F.money(o.balance)}</td>
-      <td><span class="mj-chip ${b.cls}">${b.label}</span></td>
+      <td><span class="mjo-chip ${b.cls}">${b.label}</span></td>
     </tr>`;
   }).join('') : `<tr><td colspan="8"><div class="mj-empty" style="padding:var(--mj-space-6)">
       <i class="fa-solid fa-check"></i><div class="t">Nothing outstanding</div></div></td></tr>`;
@@ -258,8 +258,8 @@ function render() {
       <tbody>${subs.map(s => `<tr>
         <td><a class="mono" href="subscriptions.html">${s.number}</a></td>
         <td>${s.beneficiary}</td>
-        <td><span class="mj-chip ${s.status === 'Active' ? 'mj-chip--success'
-          : s.status === 'Grace' ? 'mj-chip--warning' : 'mj-chip--outline'}">${s.status}</span></td>
+        <td><span class="mjo-chip ${s.status === 'Active' ? 'mjo-chip--success'
+          : s.status === 'Grace' ? 'mjo-chip--warning' : 'mjo-chip--outline'}">${s.status}</span></td>
         <td>${F.date(s.endDate)}</td>
         <td class="num">${F.money(s.amountPerTerm)}</td></tr>`).join('')}
       </tbody></table>` : '<div class="small muted">No subscriptions.</div>';

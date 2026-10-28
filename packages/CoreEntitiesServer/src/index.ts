@@ -27,6 +27,7 @@ export {
 } from './PaymentScheduleReplacement.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { OrderAdjustmentEntityServer, LoadOrderAdjustmentEntityServer } from './OrderAdjustmentEntityServer.js';
 export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
@@ -72,6 +73,7 @@ export {
     LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    HeldManualDiscounts,
     LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
@@ -220,6 +222,9 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+
+// Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
+export { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
@@ -1051,3 +1056,5 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 // The calendar-day rule for records that carry a `date` column (#209). Exported for the same
 // reason as the guards above: the edge should reach for the audited helper, not re-derive it.
 export { CalendarDayOrToday } from './calendar-day.js';
+
+// The integration harness's test seam (#947) is NOT exported here: it lives on the `./testing` subpath.
