@@ -27,8 +27,8 @@
 <template id="page">
 
   <div slot="meta">
-    <span class="mj-chip mj-chip--outline" id="cx-count">—</span>
-    <span class="mj-chip mj-chip--info">tax is a charge</span>
+    <span class="mjo-chip mjo-chip--outline" id="cx-count">—</span>
+    <span class="mjo-chip mjo-chip--info">tax is a charge</span>
   </div>
 
   <div slot="actions">
@@ -138,15 +138,15 @@
               <th class="num" style="width:60px">Seq</th><th style="width:110px">Level</th></tr></thead>
             <tbody>
               <tr><td>California</td><td class="num">6.250%</td><td class="num">100</td>
-                <td><span class="mj-chip mj-chip--outline">State</span></td></tr>
+                <td><span class="mjo-chip mjo-chip--outline">State</span></td></tr>
               <tr><td>Los Angeles County</td><td class="num">2.250%</td><td class="num">110</td>
-                <td><span class="mj-chip mj-chip--outline">County</span></td></tr>
+                <td><span class="mjo-chip mjo-chip--outline">County</span></td></tr>
               <tr><td>City of Los Angeles</td><td class="num">1.000%</td><td class="num">120</td>
-                <td><span class="mj-chip mj-chip--outline">City</span></td></tr>
+                <td><span class="mjo-chip mjo-chip--outline">City</span></td></tr>
               <tr><td>Pennsylvania</td><td class="num">6.000%</td><td class="num">100</td>
-                <td><span class="mj-chip mj-chip--outline">State</span></td></tr>
+                <td><span class="mjo-chip mjo-chip--outline">State</span></td></tr>
               <tr><td>Washington</td><td class="num">6.500%</td><td class="num">100</td>
-                <td><span class="mj-chip mj-chip--outline">State</span></td></tr>
+                <td><span class="mjo-chip mjo-chip--outline">State</span></td></tr>
             </tbody>
           </table>
           <div class="mj-card-pad" style="border-top:1px solid var(--mj-border-default)">
@@ -182,13 +182,13 @@
             <div class="sec-label" style="margin-top:var(--mj-space-4)">A zero always says which reason</div>
             <table class="mj-table mj-table--compact">
               <tbody>
-                <tr><td><span class="mj-chip mj-chip--outline">Untaxable</span></td>
+                <tr><td><span class="mjo-chip mjo-chip--outline">Untaxable</span></td>
                   <td class="small">The chain resolved to non-taxable</td></tr>
-                <tr><td><span class="mj-chip mj-chip--outline">No nexus</span></td>
+                <tr><td><span class="mjo-chip mjo-chip--outline">No nexus</span></td>
                   <td class="small">We are not registered to collect there</td></tr>
-                <tr><td><span class="mj-chip mj-chip--outline">Exempt</span></td>
+                <tr><td><span class="mjo-chip mjo-chip--outline">Exempt</span></td>
                   <td class="small">The buyer holds a certificate</td></tr>
-                <tr><td><span class="mj-chip mj-chip--outline">No jurisdiction</span></td>
+                <tr><td><span class="mjo-chip mjo-chip--outline">No jurisdiction</span></td>
                   <td class="small">The address resolved to nothing</td></tr>
               </tbody>
             </table>
@@ -212,7 +212,7 @@
       <div class="grid-2">
         <div class="mj-card">
           <div class="mj-card-head"><i class="fa-solid fa-building-columns"></i><h3>Nexus — where we must collect</h3>
-            <span class="right"><span class="mj-chip mj-chip--outline">lives in Accounting</span></span></div>
+            <span class="right"><span class="mjo-chip mjo-chip--outline">lives in Accounting</span></span></div>
           <table class="mj-table mj-table--compact">
             <thead><tr><th>Company</th><th>Jurisdiction</th><th style="width:120px">Registered</th>
               <th style="width:90px">Status</th></tr></thead>
@@ -250,19 +250,19 @@
               <th style="width:130px">Taxable?</th><th>Recorded reason</th></tr></thead>
             <tbody>
               <tr><td>Handbook shipped to Los Angeles, Meridian</td>
-                <td><span class="mj-chip mj-chip--success">yes, CA</span></td>
-                <td><span class="mj-chip mj-chip--outline">none held</span></td>
-                <td><span class="mj-chip mj-chip--warning">taxed</span></td>
+                <td><span class="mjo-chip mjo-chip--success">yes, CA</span></td>
+                <td><span class="mjo-chip mjo-chip--outline">none held</span></td>
+                <td><span class="mjo-chip mjo-chip--warning">taxed</span></td>
                 <td class="small">3 layers on $385.00</td></tr>
               <tr><td>Exam sold to Northwind, Seattle</td>
-                <td><span class="mj-chip mj-chip--outline">no, WA</span></td>
-                <td><span class="mj-chip mj-chip--success">WA-EX-88213</span></td>
-                <td><span class="mj-chip mj-chip--outline">$0.00</span></td>
+                <td><span class="mjo-chip mjo-chip--outline">no, WA</span></td>
+                <td><span class="mjo-chip mjo-chip--success">WA-EX-88213</span></td>
+                <td><span class="mjo-chip mjo-chip--outline">$0.00</span></td>
                 <td class="small">Exempt — certificate on file</td></tr>
               <tr><td>Membership sold anywhere</td>
-                <td><span class="mj-chip mj-chip--outline">n/a</span></td>
-                <td><span class="mj-chip mj-chip--outline">n/a</span></td>
-                <td><span class="mj-chip mj-chip--outline">$0.00</span></td>
+                <td><span class="mjo-chip mjo-chip--outline">n/a</span></td>
+                <td><span class="mjo-chip mjo-chip--outline">n/a</span></td>
+                <td><span class="mjo-chip mjo-chip--outline">$0.00</span></td>
                 <td class="small">Untaxable — type resolved non-taxable</td></tr>
             </tbody>
           </table>
@@ -323,19 +323,19 @@ function render() {
         ${c.jurisdiction ? `<div class="secondary">${c.jurisdiction}</div>` : ''}</td>
       <td class="small">${c.basis}</td>
       <td class="num">${c.rate != null ? F.rate(c.rate) : '<span class="muted">—</span>'}</td>
-      <td>${c.isTax ? '<span class="mj-chip mj-chip--info">tax</span>'
-        : '<span class="mj-chip mj-chip--outline">charge</span>'}</td>
-      <td>${c.taxable ? '<span class="mj-chip mj-chip--warning">yes</span>'
-        : '<span class="mj-chip mj-chip--outline">no</span>'}</td>
+      <td>${c.isTax ? '<span class="mjo-chip mjo-chip--info">tax</span>'
+        : '<span class="mjo-chip mjo-chip--outline">charge</span>'}</td>
+      <td>${c.taxable ? '<span class="mjo-chip mjo-chip--warning">yes</span>'
+        : '<span class="mjo-chip mjo-chip--outline">no</span>'}</td>
       <td class="small">${c.glRole}</td>
-      <td>${c.active ? '<span class="mj-chip mj-chip--success">Active</span>'
-        : '<span class="mj-chip">Off</span>'}</td>
+      <td>${c.active ? '<span class="mjo-chip mjo-chip--success">Active</span>'
+        : '<span class="mjo-chip">Off</span>'}</td>
     </tr>`).join('');
 
   document.getElementById('cx-nexus').innerHTML = DB.nexus.map(n => `
     <tr><td>${DB.companies[n.companyID].short}</td><td>${n.jurisdiction}</td>
       <td>${F.date(n.registered)}</td>
-      <td><span class="mj-chip mj-chip--success">${n.status}</span></td></tr>`).join('');
+      <td><span class="mjo-chip mjo-chip--success">${n.status}</span></td></tr>`).join('');
 
   document.getElementById('cx-exempt').innerHTML = DB.exemptions.map(e => `
     <tr><td>${e.party}<div class="secondary">${e.partyKind}</div></td>

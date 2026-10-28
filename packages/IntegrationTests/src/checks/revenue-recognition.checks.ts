@@ -1,5 +1,5 @@
 /**
- * revenue-recognition.checks.ts — the `revenue-recognition` bundle (RR1–RR7).
+ * revenue-recognition.checks.ts — the `revenue-recognition` bundle (RR1–RR10).
  *
  * D14's central claim: recognition is not a nightly job, it is FORWARD-DATED LEDGER. At booking we
  * write every future release entry immediately, so the ledger already contains the whole schedule
@@ -13,6 +13,9 @@
  *   RR5  OrderLine.JournalEntryID points at the BOOKING entry, never at a release
  *   RR6  an AllBackEnd (event) line recognizes 100% on the END date, in one entry
  *   RR7  an UpFront line credits Sales directly and writes NO release entries at all
+ *   RR8  a deferred line nothing dates is refused at confirm, and confirms once its service period is set
+ *   RR9  a deferred line a 100%-off code brings to zero confirms and writes no entries at all
+ *   RR10 a partly discounted deferred line still stages every release, summing to its net
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -26,6 +29,7 @@ import {
 import {
     ACCT_SCHEMA,
     CreateOrdersFixture,
+    CreatePromotion,
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
@@ -59,9 +63,10 @@ async function entriesForOrder(ctx: IntegrationCheckContext, orderID: string): P
 }
 
 /** A 12-month, $1,200 straight-line deferred line — the canonical rev-rec case. */
-async function confirmStraightLine(ctx: IntegrationCheckContext) {
+async function confirmStraightLine(ctx: IntegrationCheckContext, promotionCodes?: string[]) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
+        PromotionCodes: promotionCodes,
         CompanyID: f.CoA.ID,
         OrderDate: new Date('2026-07-01T00:00:00Z'),
         Lines: [
@@ -292,6 +297,38 @@ export const RevenueRecognitionChecks: NamedCheck[] = [
                     (e) => e.EntryType === 'RevenueRecognition',
                 );
                 AssertEqual(releases.length, 1, 'AllBackEnd stages one release, on the period end');
+            }),
+    },
+    {
+        Id: 'revenue-recognition.RR9',
+        Name: 'RR9: a deferred line a 100%-off code brings to zero confirms and writes no entries',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Twelve releases of zero used to be staged, and accounting refuses each one, so the
+                // whole order was refused. A comped line has no ledger impact: nothing books.
+                const code = await CreatePromotion(ctx, { Kind: 'PercentOff', Value: 1, AppliesAt: 'Line' });
+                const { Order, Lines } = await confirmStraightLine(ctx, [code]);
+                AssertEqual(Number(Lines[0].LineTotalNet), 0, 'the line nets to zero');
+                AssertEqual((await entriesForOrder(ctx, Order.ID as string)).length, 0, 'no booking and no releases');
+            }),
+    },
+    {
+        Id: 'revenue-recognition.RR10',
+        Name: 'RR10: a partly discounted deferred line still stages every release, summing to its net',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const code = await CreatePromotion(ctx, { Kind: 'PercentOff', Value: 0.2, AppliesAt: 'Line' });
+                const { Order, Lines } = await confirmStraightLine(ctx, [code]);
+                AssertEqual(Number(Lines[0].LineTotalNet), 960, '20% off 1,200');
+                const releases = (await entriesForOrder(ctx, Order.ID as string)).filter((e) => e.EntryType === 'RevenueRecognition');
+                AssertEqual(releases.length, 12, 'one release a month');
+                AssertEqual(
+                    Math.round(releases.reduce((t, e) => t + Number(e.D), 0) * 100) / 100,
+                    960,
+                    'the releases sum to the net',
+                );
             }),
     },
 ];

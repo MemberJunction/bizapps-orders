@@ -100,6 +100,13 @@ export interface OrderPricingContext {
     Lines: mjBizAppsOrdersOrderLineEntity[];
     PromotionCodes: string[];
     ManualDiscounts: ManualDiscountRequest[];
+    /**
+     * True when this walk prices an order that books on the same save. A manual discount above the
+     * user's authority is held for approval (golive #328), and the confirm gate that would hold it
+     * has already run, so on a booking walk it is refused instead: save the order first, then confirm
+     * once a concession covering it is approved.
+     */
+    Booking?: boolean;
     Charges: RequestedCharge[];
     /**
      * Tax already settled for a line, which is used instead of resolving it from the ship-to address.
@@ -344,6 +351,12 @@ export class OrderPricingService {
             const amount = ManualDiscountAmount(md, base);
             const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
             if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
+            if (auth.Held && this.ctx.Booking) {
+                throw new Error(
+                    `Manual discount refused: ${auth.Held} Save the order without confirming it, record a ` +
+                        `concession for the line, and confirm once it is approved.`,
+                );
+            }
 
             if (target) {
                 run.Applications.push({

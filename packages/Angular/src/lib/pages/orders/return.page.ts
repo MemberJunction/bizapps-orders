@@ -22,7 +22,7 @@ import { Metadata } from '@memberjunction/core';
 
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 
-import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
@@ -69,7 +69,7 @@ interface MJOReturnLine {
 @Component({
     selector: 'mjo-return-page',
     standalone: true,
-    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent, MJEmptyStateComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-rotate-left" class="mjo-rt__note">
                 <strong>A return is recorded as a new order that reverses the original.</strong>
@@ -248,10 +248,10 @@ interface MJOReturnLine {
                 </aside>
             </div>
         } @else {
-            <div class="mj-empty mjo-rt__empty">
-                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-                <div class="t">Select an order to return</div>
-                <div class="small">Choose the original order to start a return.</div>
+            <mj-empty-state
+                Icon="fa-solid fa-rotate-left"
+                Title="Select an order to return"
+                Message="Choose the original order to start a return.">
                 <!--
                     THREE STATES, NOT TWO. "Not asked yet" and "asked and got nothing" used to render
                     the same sentence, so the "no booked orders" message flashed on every open — and a
@@ -280,7 +280,7 @@ interface MJOReturnLine {
                         before it can be reversed — if you expected one here, the read may have failed.
                     </div>
                 }
-            </div>
+            </mj-empty-state>
         }
     `,
     styles: [
@@ -307,7 +307,6 @@ interface MJOReturnLine {
             .mjo-rt__reason { margin-top: var(--mj-space-4); }
             .mjo-rt__qty { width: 74px; }
             .mjo-rt__actions { margin-top: var(--mj-space-4); }
-            .mjo-rt__empty { padding: var(--mj-space-12); }
             /* A SERVER ERROR IS NOT A SENTENCE. Measured on the golive#251 save failure: 11,636
                characters and 4,003px tall, which pushed the whole return off screen. The text is
                kept in full -- it is the only diagnostic anyone gets -- but it scrolls in its own

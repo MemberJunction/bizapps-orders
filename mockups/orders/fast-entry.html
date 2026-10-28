@@ -65,8 +65,8 @@
 <template id="page">
 
   <div slot="meta">
-    <span class="mj-chip">Draft</span>
-    <span class="mj-chip mj-chip--outline"><i class="fa-solid fa-user"></i> Staff entry</span>
+    <span class="mjo-chip">Draft</span>
+    <span class="mjo-chip mjo-chip--outline"><i class="fa-solid fa-user"></i> Staff entry</span>
   </div>
 
   <div slot="actions">
@@ -101,8 +101,8 @@
                 <div class="nm">Jane Chen</div>
                 <div class="small muted">Director of Education · jane.chen@meridian.org</div>
                 <div class="row wrap" style="margin-top:var(--mj-space-2);gap:6px">
-                  <span class="mj-chip mj-chip--outline"><i class="fa-solid fa-building"></i> Meridian Association</span>
-                  <span class="mj-chip mj-chip--outline">Net 30</span>
+                  <span class="mjo-chip mjo-chip--outline"><i class="fa-solid fa-building"></i> Meridian Association</span>
+                  <span class="mjo-chip mjo-chip--outline">Net 30</span>
                   <span class="mj-consequence">
                     <i class="fa-solid fa-wand-magic-sparkles"></i>
                     Organization inferred from her <b>Employee</b> affiliation since Mar 2019
@@ -245,7 +245,7 @@
           <div class="mj-card-head">
             <i class="fa-solid fa-calculator"></i>
             <h3>What this order comes to</h3>
-            <span class="right"><span class="mj-chip mj-chip--outline" id="fe-live">live</span></span>
+            <span class="right"><span class="mjo-chip mjo-chip--outline" id="fe-live">live</span></span>
           </div>
           <div class="mj-card-pad">
             <div class="mj-ladder" id="fe-ladder"></div>
@@ -642,7 +642,7 @@ const FE = (() => {
 
       <details class="mj-panel" open>
         <summary><i class="fa-solid fa-scale-balanced"></i> Journal entries
-          <span class="right"><span class="mj-chip mj-chip--success">${jes.length} entries · ${new Set(jes.map(j => j.company)).size} companies · balanced</span></span>
+          <span class="right"><span class="mjo-chip mjo-chip--success">${jes.length} entries · ${new Set(jes.map(j => j.company)).size} companies · balanced</span></span>
         </summary>
         <div class="mj-panel-body">
           ${jes.map(j => `
@@ -659,7 +659,7 @@ const FE = (() => {
       ${subs.length ? `
       <details class="mj-panel" open>
         <summary><i class="fa-solid fa-rotate"></i> Subscriptions
-          <span class="right"><span class="mj-chip mj-chip--violet">${subs.length} extended</span></span>
+          <span class="right"><span class="mjo-chip mjo-chip--violet">${subs.length} extended</span></span>
         </summary>
         <div class="mj-panel-body">
           ${subs.map(l => `
@@ -680,7 +680,7 @@ const FE = (() => {
       ${events.length ? `
       <details class="mj-panel">
         <summary><i class="fa-solid fa-calendar-day"></i> Event lines
-          <span class="right"><span class="mj-chip mj-chip--info">${events.length}</span></span></summary>
+          <span class="right"><span class="mjo-chip mjo-chip--info">${events.length}</span></span></summary>
         <div class="mj-panel-body small">
           ${events.map(l => `<div>${l.product.name} — recognizes 100% on <b>${F.date(l.product.event.startsAt)}</b>,
             stamped from the event's own dates.</div>`).join('')}
@@ -689,7 +689,7 @@ const FE = (() => {
 
       <details class="mj-panel">
         <summary><i class="fa-solid fa-id-badge"></i> Entitlement grants
-          <span class="right"><span class="mj-chip">1 grant</span></span></summary>
+          <span class="right"><span class="mjo-chip">1 grant</span></span></summary>
         <div class="mj-panel-body small">
           <b>Member Portal Access</b> → beneficiary <b>Jane Chen</b>, active for the subscription term.
           Downstream apps poll for grants; nothing is pushed.
@@ -699,7 +699,7 @@ const FE = (() => {
       ${ships.length ? `
       <details class="mj-panel">
         <summary><i class="fa-solid fa-dolly"></i> Fulfillment
-          <span class="right"><span class="mj-chip mj-chip--warning">holds at Posted</span></span></summary>
+          <span class="right"><span class="mjo-chip mjo-chip--warning">holds at Posted</span></span></summary>
         <div class="mj-panel-body small">
           ${ships.map(l => `${F.qty(l.qty)} × ${l.product.name} must ship, so the order stops at
             <b>Posted</b> and enters the fulfillment queue. No entry fires when it ships — fulfillment is
@@ -709,7 +709,7 @@ const FE = (() => {
 
       <details class="mj-panel">
         <summary><i class="fa-solid fa-user-check"></i> Approvals
-          <span class="right"><span class="mj-chip mj-chip--outline">none required</span></span></summary>
+          <span class="right"><span class="mjo-chip mjo-chip--outline">none required</span></span></summary>
         <div class="mj-panel-body small muted">
           No sales rule matched. Had a discount exceeded the rep's authority, this would name the approver role
           and the confirm would raise an approval task instead of proceeding.
@@ -811,7 +811,7 @@ const FE = (() => {
   function renderCodes() {
     document.getElementById('fe-codes').innerHTML = state.codes.map(c => {
       const known = DB.promotions.find(p => p.code === c);
-      return `<span class="mj-chip ${known ? 'mj-chip--success' : 'mj-chip--error'}">
+      return `<span class="mjo-chip ${known ? 'mjo-chip--success' : 'mjo-chip--error'}">
         <i class="fa-solid ${known ? 'fa-check' : 'fa-triangle-exclamation'}"></i> ${c}
         <button class="mj-why" onclick="FE.dropCode('${c}')" title="Remove"><i class="fa-solid fa-xmark"></i></button>
       </span>`;
@@ -821,9 +821,9 @@ const FE = (() => {
   /* ── flash the rail so a recomputation is visible ─────────────────────── */
   function flash() {
     const el = document.getElementById('fe-live');
-    el.classList.add('mj-chip--brand');
+    el.classList.add('mjo-chip--brand');
     el.textContent = 'recomputed';
-    setTimeout(() => { el.classList.remove('mj-chip--brand'); el.textContent = 'live'; }, 900);
+    setTimeout(() => { el.classList.remove('mjo-chip--brand'); el.textContent = 'live'; }, 900);
   }
 
   function render() {

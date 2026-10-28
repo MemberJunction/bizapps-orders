@@ -65,23 +65,14 @@
         } @else {
             @if (IsLoading) {
                 <div class="mjo-loading-state">
-                    <i class="fa-solid fa-spinner fa-spin"></i>
-                    <span>Loading prices…</span>
+                    <mj-loading text="Loading prices…" size="small"></mj-loading>
                 </div>
             } @else if (VisiblePrices.length === 0) {
-                <div class="mjo-empty-tiers">
-                    <div class="mjo-empty-icon"><i class="fa-solid fa-tags"></i></div>
-                    <div class="mjo-empty-text">
-                        <h4>No prices on this channel</h4>
-                        <p>
-                            @if (EditMode) {
-                                Add a price. When is optional — only if this rate is not for everyone.
-                            } @else {
-                                Switch to Edit to add prices.
-                            }
-                        </p>
-                    </div>
-                </div>
+                <mj-empty-state
+                    Size="compact"
+                    Icon="fa-solid fa-tags"
+                    Title="No prices on this channel"
+                    [Message]="EditMode ? 'Add a price. When is optional — only if this rate is not for everyone.' : 'Switch to Edit to add prices.'" />
             } @else {
                 <div
                     class="mjo-price-list"
@@ -227,7 +218,7 @@
                         </label>
                         <button type="button" class="mjo-btn-add" [disabled]="IsSaving" (click)="AddPrice()">
                             @if (IsSaving) {
-                                <i class="fa-solid fa-spinner fa-spin"></i>
+                                <mj-loading class="mjo-btn-add__loading" [showText]="false" size="small" logoColor="currentColor"></mj-loading>
                                 <span>Saving…</span>
                             } @else {
                                 <i class="fa-solid fa-plus"></i>

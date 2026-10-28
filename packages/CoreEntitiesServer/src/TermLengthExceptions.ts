@@ -21,7 +21,7 @@
  *   OPS:    'Accounting.GetFinanceExceptionTypes', 'Accounting.RaiseFinanceExceptions' (via AccountingBridge)
  */
 import { LogStatus, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
-import { ResolveLinePriceStanding, type PricedLineFacts } from '@mj-biz-apps/orders-entities';
+import { FormatMonths, LengthDiffersFromTerm, ResolveLinePriceStanding, type PricedLineFacts } from '@mj-biz-apps/orders-entities';
 import { GetActiveFinanceExceptionType, RaiseFinanceExceptions, type FinanceExceptionToRaise } from './AccountingBridge.js';
 import { ORDER_LINE_ENTITY } from './entity-names.js';
 
@@ -55,7 +55,7 @@ export interface TermLengthReview {
 
 const money = (v: number) => Math.round((v + Number.EPSILON) * 100) / 100;
 const amount = (v: number) => v.toFixed(2);
-const months = (n: number) => `${Number.isInteger(n) ? n : n.toFixed(2)} month${n === 1 ? '' : 's'}`;
+const months = FormatMonths;
 const day = (d: Date) => d.toISOString().slice(0, 10);
 
 /**
@@ -134,7 +134,8 @@ export async function RaiseTermLengthExceptions(
     provider: IMetadataProvider,
     user: UserInfo | null,
 ): Promise<TermLengthOutcome> {
-    const differing = booking.Lines.filter((l) => Math.abs(l.Months - l.TypeMonths) > 0.005);
+    // The same test the order screen's confirm checklist applies, so it warns of exactly these lines.
+    const differing = booking.Lines.filter((l) => LengthDiffersFromTerm(l.Months, l.TypeMonths));
     if (differing.length === 0) return { Lines: 0, Created: 0 };
 
     const actingUser = user as UserInfo;
