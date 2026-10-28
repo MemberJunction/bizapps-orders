@@ -1000,6 +1000,8 @@ const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
     // An Invoiced instalment refuses deletion; a renewal paid through the link has one (#950).
     `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
+    // Billing rows refuse deletion; an issued instalment always leaves some.
+    `${ORDERS_SCHEMA}.trg_InstalmentLineBilling_Immutable ON ${ORDERS_SCHEMA}.InstalmentLineBilling`,
 ];
 
 /**
