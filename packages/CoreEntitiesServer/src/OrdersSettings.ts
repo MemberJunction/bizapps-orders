@@ -275,17 +275,12 @@ export class OrdersSettings {
     }
 
     /**
-     * The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. The names are
-     * tried in order, not as one match: a host also carries `Orders`, the MJ Explorer navigation app,
-     * which holds no settings, and matching it first read every app-scoped setting as unset.
+     * The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. That name only:
+     * a host also carries `Orders`, the MJ Explorer navigation app, which holds no settings. Matching it
+     * read every app-scoped setting as unset, and kept {@link rawAppScoped} from noticing a missing row.
      */
     private static applicationID(): string | undefined {
-        const apps = new Metadata().Applications ?? [];
-        for (const name of [ORDERS_APPLICATION_NAME, 'MJ_BizApps_Orders', 'Orders']) {
-            const app = apps.find((a) => a.Name === name);
-            if (app) return app.ID;
-        }
-        return undefined;
+        return new Metadata().Applications?.find((a) => a.Name === ORDERS_APPLICATION_NAME)?.ID;
     }
 
     private static raw(key: string): string | undefined {
@@ -371,12 +366,12 @@ export class OrdersSettings {
 
     /** The escalation targets for a self-requested concession, in order; empty keeps self-approval. */
     public static get ConcessionSelfApprovalEscalation(): string[] {
-        return asList(this.raw(ORDERS_SETTING.ConcessionSelfApprovalEscalation), []);
+        return asList(this.rawAppScoped(ORDERS_SETTING.ConcessionSelfApprovalEscalation), []);
     }
 
     /** The order review triggers switched on, and any entry that names no trigger (#320 §5). */
     public static get OrderReviewTriggers(): ParsedOrderReviewTriggers {
-        return ParseOrderReviewTriggers(this.raw(ORDERS_SETTING.OrderReviewTriggers));
+        return ParseOrderReviewTriggers(this.rawAppScoped(ORDERS_SETTING.OrderReviewTriggers));
     }
 
     /** The order review configuration as one value (#320 §5). */
