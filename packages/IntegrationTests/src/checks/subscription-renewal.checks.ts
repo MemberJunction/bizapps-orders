@@ -115,10 +115,14 @@
  *         renewal term is NOT handed over; Charge Renewals collects it; the next pass hands over the
  *         term after it. No term is given away
  *   SR63  the real hook: a new buyer's checkout on an account that bills subscriptions ends with the
- *         gateway subscription created and recorded on the subscription the checkout sold. NEEDS #950: the checkout's
+ *         gateway subscription created and recorded on the subscription the checkout sold, then the
+ *         same buyer is refused a second subscription purchase at the draft. NEEDS #950: the checkout's
  *         capture and the hand-over run on isolated providers, which join this check's transaction
  *         only through #950's `JoinCallerTransactionForTests`; on a base without it this check fails
  *         like SR46, SR52 and SR53
+ *   SR64  the returning-buyer refusal against real rows, both directions: a buyer the gateway bills is
+ *         refused another subscription in that company; the same buyer in another company, someone
+ *         else, a ticket, and a cancelled subscription are not
  *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
@@ -184,6 +188,7 @@ import {
     EnsureProviderSubscriptions,
     OneIntervalLaterAsStripeCounts,
     OneYearLaterAsStripeCounts,
+    RunPrePurchaseChecks,
     StripePaymentProvider,
     type CreateProviderSubscriptionRequest,
     type CreateProviderSubscriptionResult,
@@ -2365,7 +2370,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR63',
-        Name: "SR63: a new buyer's checkout on an account that bills subscriptions hands the subscription to the gateway",
+        Name: "SR63: a new buyer's checkout on an account that bills subscriptions hands the subscription to the gateway, and the buyer's next subscription purchase is refused",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2382,6 +2387,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                         currency: 'USD',
                         productId: f.Products.SubRolling,
                         autoRenewConsentText: 'Renews every year until cancelled.',
+                        providerBilledSubscriptionMessage: 'You already have a subscription that renews on {renewalDate}.',
                     }),
                 });
                 const slug = `${f.Run.toLowerCase()}-gw-${widgetID.slice(0, 8).toLowerCase()}`;
@@ -2412,6 +2418,55 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 Assert(SameID(sold.PaymentProviderID, account), 'with its account');
                 AssertEqual(fakeGateway.created[0].Metadata?.OrdersSubscriptionID?.toLowerCase(), sold.ID.toLowerCase(), 'carrying the Orders id');
                 AssertEqual(fakeGateway.created[0].ProviderPriceID, 'price_it_rolling', 'on the flagged price');
+
+                // The same buyer comes back for another subscription: refused at the draft, by its own code.
+                const again = await CheckoutSessionService.InitializeSession(slug, `${key}-again`, ctx.User);
+                Assert(again.Success, `a second session opens: ${again.ErrorMessage}`);
+                const refused = await CheckoutSessionService.UpdateDraft(again.SessionID!, `${key}-again`, email, lines, billing, ctx.User);
+                AssertEqual(refused.Success, false, 'the second subscription purchase is refused');
+                AssertEqual(refused.Refusal?.Code, 'ProviderBilledSubscription', `by the gateway-billed rule: ${JSON.stringify(refused.Refusal)}`);
+                Assert(/renews on /.test(refused.ErrorMessage ?? ''), `with the widget's wording: ${refused.ErrorMessage}`);
+            }),
+    },
+
+    {
+        Id: 'subscription-renewal.SR64',
+        Name: 'SR64: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const person = f.Customers.PersonID;
+                const account = await stubStripeProvider(ctx);
+                // P holds SubRolling in company A, billed by the gateway, renewing on its term's last day.
+                const held = await buySubscription(ctx, 'SubRolling', 1200);
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, held.SubscriptionID, { BeneficiaryPersonID: person });
+                const check = (personID: string | null, companyID: string, productKey: string) =>
+                    RunPrePurchaseChecks({
+                        Email: 'buyer@example.com',
+                        PersonID: personID,
+                        CompanyID: companyID,
+                        Lines: [{ ProductID: f.Products[productKey], Quantity: 1 }],
+                        ProviderBilledSubscriptionMessage: 'Renews on {renewalDate}.',
+                        ContextUser: ctx.User,
+                    });
+
+                // Control: before the marker, another subscription product is allowed.
+                AssertEqual(await check(person, f.CoA.ID, 'SubCalendar'), null, 'an Orders-billed holder may buy another plan');
+
+                await markProviderBilled(ctx, held.SubscriptionID, account, `sub_it_sr64_${held.SubscriptionID.slice(0, 8)}`);
+                const refused = await check(person, f.CoA.ID, 'SubCalendar');
+                AssertEqual(refused?.Refusal.Code, 'ProviderBilledSubscription', `refused in company A: ${JSON.stringify(refused)}`);
+                Assert(refused!.Refusal.ProductIDs.some((id) => SameID(id, f.Products.SubRolling)), 'naming the product the gateway bills');
+                const lastDay = isoDate(held.Term.EndDate);
+                Assert(refused!.Message.includes(new Date(`${lastDay}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })), `with the renewal day: ${refused!.Message}`);
+
+                AssertEqual(await check(person, f.CoB.ID, 'SubCalendar'), null, 'the same buyer in company B is not refused');
+                AssertEqual(await check(f.Customers.SecondPersonID, f.CoA.ID, 'SubCalendar'), null, 'someone else (another e-mail) is not refused');
+                AssertEqual(await check(person, f.CoA.ID, 'EventTicket'), null, 'a ticket (no subscription type) is not refused');
+
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, held.SubscriptionID, { Status: 'Canceled' });
+                AssertEqual(await check(person, f.CoA.ID, 'SubCalendar'), null, 'a cancelled gateway-billed subscription does not refuse');
             }),
     },
 ];

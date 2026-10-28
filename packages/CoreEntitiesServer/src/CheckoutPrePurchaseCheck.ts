@@ -2,8 +2,23 @@
  * @fileoverview The checks a self-serve checkout runs before it will price a purchase (#323).
  *
  * Two layers, run in order:
- *   1. BUILT IN — the resolved Person already holds an Active or Trialing subscription to a product
- *      on the draft. Buying it again would charge them for coverage they have.
+ *   1. BUILT IN, two rules, the first that refuses wins:
+ *      a. the draft sells a subscription product (one with a subscription type) and the resolved
+ *         Person already holds an Active or Trialing subscription IN THIS COMPANY that their payment
+ *         gateway bills (`ProviderSubscriptionID` set, option E), whatever its product. Orders would
+ *         extend or add a term for the new purchase that the gateway knows nothing about, and the
+ *         gateway would still charge at its own renewal: the buyer would pay twice. An upgrade would
+ *         open a second gateway subscription. A ticket or another one-off is not refused: it neither
+ *         extends a term nor opens a gateway subscription. Refused as `ProviderBilledSubscription`,
+ *         its own code. The message is the widget's `providerBilledSubscriptionMessage` (a neutral
+ *         default otherwise), with `{renewalDate}` filled in. Example: Jane holds SUB-000110, billed
+ *         by Stripe as `sub_A1` and renewing 30 Oct 2027; in May she tries to buy Executive on the
+ *         same company's widget and is told to contact support; buying an event ticket goes through.
+ *         KNOWN LIMIT: a buyer who cancelled in the gateway's own portal stays Active in Orders until
+ *         Orders hears the gateway's events (E3/E4), so until then they are still refused, with a
+ *         message that says their subscription renews.
+ *      b. the resolved Person already holds an Active or Trialing subscription to a product on the
+ *         draft. Buying it again would charge them for coverage they have.
  *   2. HOST — a `CheckoutPrePurchaseCheck` subclass registered through the ClassFactory. A host that
  *      also sells through another system is the only party that can see, for example, a
  *      subscription held there. The base class allows everything, so with nothing registered only
@@ -15,9 +30,21 @@
  */
 import { LogError, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
-import { EscapeSQLString } from './sql-guards.js';
+import { CompareDays, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
+import { SellsSubscription } from './CheckoutSavedInstrument.js';
+import { ProviderBilledSql } from './ProviderBilledSubscriptions.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+
+/**
+ * Shown when the widget sets no `providerBilledSubscriptionMessage`. Neutral on purpose: a host's own
+ * wording (and its support contact) belongs in its widget configuration.
+ */
+export const DEFAULT_PROVIDER_BILLED_SUBSCRIPTION_MESSAGE =
+    'You already have a subscription that renews automatically on {renewalDate}. If you are buying for someone else, ' +
+    'enter their email address instead. Otherwise, please contact us with any questions.';
 
 /** Subscription statuses that mean the Person already has the coverage a purchase would sell. */
 const HELD_SUBSCRIPTION_STATUSES: ReadonlyArray<string> = ['Active', 'Trialing'];
@@ -40,6 +67,11 @@ export interface PrePurchaseContext {
     /** The selling company of the checkout widget. */
     CompanyID: string;
     Lines: PrePurchaseLine[];
+    /**
+     * The widget's `providerBilledSubscriptionMessage`: what a buyer who already holds a
+     * gateway-billed subscription in this company is told. Unset, the default.
+     */
+    ProviderBilledSubscriptionMessage?: string | null;
     ContextUser?: UserInfo;
 }
 
@@ -59,8 +91,14 @@ export interface PrePurchaseVerdict {
 
 /** Why a checkout step was refused, as the widget receives it. */
 export interface CheckoutRefusal {
-    /** `Unverified` means a check could not answer, and the purchase was refused because of it. */
-    Code: 'AlreadySubscribed' | 'HostRefused' | 'Unverified';
+    /**
+     * `AlreadySubscribed`: the buyer holds the product on the draft (the widget's
+     * `checkout-already-subscribed` event fires). `ProviderBilledSubscription`: the buyer holds a
+     * subscription their payment gateway bills, so no further subscription purchase is taken here;
+     * `ProductIDs` are the held products, not the draft's, and the event does not fire.
+     * `Unverified` means a check could not answer, and the purchase was refused because of it.
+     */
+    Code: 'AlreadySubscribed' | 'ProviderBilledSubscription' | 'HostRefused' | 'Unverified';
     Source: 'built-in' | 'host';
     ProductIDs: string[];
 }
@@ -90,7 +128,7 @@ export class CheckoutPrePurchaseCheck {
 export async function RunPrePurchaseChecks(context: PrePurchaseContext): Promise<PrePurchaseRefusal | null> {
     let builtIn: PrePurchaseRefusal | null;
     try {
-        builtIn = await checkHeldSubscriptions(context);
+        builtIn = (await checkProviderBilledSubscriptions(context)) ?? (await checkHeldSubscriptions(context));
     } catch (err) {
         LogError(`[CheckoutPrePurchaseCheck] subscription check failed: ${err instanceof Error ? err.message : String(err)}`);
         return unverified('built-in');
@@ -107,6 +145,92 @@ function unverified(source: CheckoutRefusal['Source']): PrePurchaseRefusal {
         Message: 'This purchase could not be verified right now. Please try again later.',
         Refusal: { Code: 'Unverified', Source: source, ProductIDs: [] },
     };
+}
+
+/**
+ * Rule 1a: the draft sells a subscription and the Person already holds a subscription in this company
+ * that a payment gateway bills. Any subscription product, any widget of the company: the double charge
+ * does not depend on which plan is being bought.
+ */
+async function checkProviderBilledSubscriptions(context: PrePurchaseContext): Promise<PrePurchaseRefusal | null> {
+    if (!context.PersonID || !context.CompanyID) {
+        return null;
+    }
+    const statusList = HELD_SUBSCRIPTION_STATUSES.map((s) => `'${s}'`).join(', ');
+    // The holder first: for nearly every buyer it is empty, and the product read is skipped.
+    const held = await new RunView().RunView<{ ID: string; ProductID: string }>(
+        {
+            EntityName: SUBSCRIPTION_ENTITY,
+            ExtraFilter:
+                `BeneficiaryPersonID = '${RequireUUID(context.PersonID, 'PersonID')}' ` +
+                `AND CompanyID = '${RequireUUID(context.CompanyID, 'CompanyID')}' ` +
+                `AND Status IN (${statusList}) AND ${ProviderBilledSql()}`,
+            Fields: ['ID', 'ProductID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        context.ContextUser,
+    );
+    if (!held.Success) {
+        throw new Error(`Could not read existing gateway-billed subscriptions: ${held.ErrorMessage ?? 'unknown error'}`);
+    }
+    const subscriptions = held.Results ?? [];
+    if (subscriptions.length === 0) {
+        return null;
+    }
+    if (!(await SellsSubscription(context.Lines.map((l) => l.ProductID), context.ContextUser))) {
+        return null;
+    }
+
+    const renewalDay = await earliestRenewalDay(subscriptions.map((s) => s.ID), context.ContextUser);
+    const template = context.ProviderBilledSubscriptionMessage?.trim() || DEFAULT_PROVIDER_BILLED_SUBSCRIPTION_MESSAGE;
+    return {
+        Message: template.split('{renewalDate}').join(renewalDay ? FormatRenewalDay(renewalDay) : 'its renewal date'),
+        Refusal: {
+            Code: 'ProviderBilledSubscription',
+            Source: 'built-in',
+            ProductIDs: [...new Set(subscriptions.map((s) => s.ProductID))],
+        },
+    };
+}
+
+/** The last day of the latest live term of each subscription, the earliest of those: when the gateway next charges. */
+async function earliestRenewalDay(subscriptionIDs: string[], contextUser?: UserInfo): Promise<string | null> {
+    const idList = RequireUUIDs(subscriptionIDs, 'SubscriptionID').map((id) => `'${id}'`).join(', ');
+    const terms = await new RunView().RunView<{ ID: string; SubscriptionID: string; EndDate: Date | string }>(
+        {
+            EntityName: SUBSCRIPTION_TERM_ENTITY,
+            ExtraFilter: `SubscriptionID IN (${idList}) AND Status IN ('Scheduled', 'Active')`,
+            Fields: ['ID', 'SubscriptionID', 'EndDate'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        contextUser,
+    );
+    if (!terms.Success) {
+        // The refusal stands without a date; the date only completes the message.
+        LogError(`[CheckoutPrePurchaseCheck] Could not read the renewal date: ${terms.ErrorMessage ?? 'unknown error'}`);
+        return null;
+    }
+    const latest = new Map<string, CalendarDay>();
+    for (const t of terms.Results ?? []) {
+        const day = ToCalendarDay(t.EndDate);
+        if (!day) continue;
+        const key = t.SubscriptionID.toLowerCase();
+        const held = latest.get(key);
+        if (!held || CompareDays(day, held) > 0) latest.set(key, day);
+    }
+    const days = [...latest.values()].sort(CompareDays);
+    return days[0] ?? null;
+}
+
+/**
+ * A stored day (`YYYY-MM-DD`) as a buyer reads it: `October 30, 2027`. The day is never shifted by a
+ * zone. Always US English for now; a widget in another language would need a locale setting beside
+ * `providerBilledSubscriptionMessage`.
+ */
+export function FormatRenewalDay(day: string): string {
+    return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' });
 }
 
 async function checkHeldSubscriptions(context: PrePurchaseContext): Promise<PrePurchaseRefusal | null> {

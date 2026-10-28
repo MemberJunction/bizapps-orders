@@ -20,11 +20,13 @@
  * neither job selects it, whatever that account's switch says. A team subscription invoiced through
  * Bill.com has no id, so both jobs treat it exactly as before.
  *
- * One rule, two forms: `NotProviderBilledSql` for the jobs' SQL selections, `IsProviderBilled` for code
- * that holds a row. They agree by construction (both are `ProviderSubscriptionID IS NOT NULL`).
+ * One rule, three forms: `NotProviderBilledSql` for the jobs' SQL selections, `ProviderBilledSql` for a
+ * filter that wants the gateway-billed ones, `IsProviderBilled` for code that holds a row. They agree by
+ * construction (all are `ProviderSubscriptionID IS NOT NULL`, or its negation).
  *
  *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE) ·
- *            ./ProviderSubscriptions.ts (which subscriptions still need a gateway subscription)
+ *            ./ProviderSubscriptions.ts (which subscriptions still need a gateway subscription) ·
+ *            ./CheckoutPrePurchaseCheck.ts (the returning buyer the gateway already bills)
  *   SCHEMA:  migrations/V202610230200__v5.39.x__Provider_Billed_Subscriptions.sql
  */
 
@@ -44,6 +46,20 @@ export function NotProviderBilledSql(alias: string): string {
         throw new Error(`NotProviderBilledSql: '${alias}' is not a plain SQL table alias.`);
     }
     return `${alias}.ProviderSubscriptionID IS NULL`;
+}
+
+/**
+ * The SQL condition "a gateway bills this subscription": the positive twin of `NotProviderBilledSql`.
+ *
+ * @param alias - the alias of `__mj_BizAppsOrders.Subscription`, or none for a RunView `ExtraFilter`
+ *                on the Subscriptions entity.
+ */
+export function ProviderBilledSql(alias?: string): string {
+    if (alias === undefined) return 'ProviderSubscriptionID IS NOT NULL';
+    if (!SQL_ALIAS.test(alias)) {
+        throw new Error(`ProviderBilledSql: '${alias}' is not a plain SQL table alias.`);
+    }
+    return `${alias}.ProviderSubscriptionID IS NOT NULL`;
 }
 
 /**
