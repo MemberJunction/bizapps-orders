@@ -20,7 +20,7 @@ vi.mock('../PaymentGatedAccess.js', () => ({ BusinessDay: async () => '2026-10-1
 
 const { RegisterOrderDealLink } = await import('@mj-biz-apps/orders-entities');
 const { OrdersSettings, ORDERS_SETTING } = await import('../OrdersSettings.js');
-const { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange } = await import('../OrderReview.js');
+const { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, ResetNoDealLinkWarning } = await import('../OrderReview.js');
 type ReviewOrderInput = import('../OrderReview.js').ReviewOrderInput;
 type ReviewLineInput = import('../OrderReview.js').ReviewLineInput;
 
@@ -731,5 +731,75 @@ describe('OrdersSettings.OrderReview', () => {
     it('keeps the default for an unreadable month count and reads an unreadable threshold as unset', () => {
         settings({ OrderReviewServiceStartMonths: 'thirteen', OrderReviewLineTermMonths: '0', OrderReviewTotalThreshold: '$25k' });
         expect(OrdersSettings.OrderReview).toMatchObject({ MaxMonthsToServiceStart: 13, MaxLineServiceMonths: 12, TotalThreshold: null });
+    });
+});
+
+// ─── Who may confirm an order with no deal (golive #390) ─────────────────────────────────────────
+
+describe('CheckNoDealConfirm', () => {
+    const FINANCE_ROLES = 'Finance,Senior Finance (AR),CFO';
+    /** The confirming user holds exactly these roles. */
+    const holds = (...roles: string[]) => {
+        tables['MJ: User Roles'] = roles.map((Role) => ({ UserID: USER.ID, RoleID: uuid(), Role }));
+    };
+    beforeEach(() => {
+        settings({ NoDealConfirmRoles: FINANCE_ROLES });
+        RegisterOrderDealLink(dealLink(null));
+        ResetNoDealLinkWarning();
+    });
+
+    it('refuses an Account Director confirming an order with no deal, naming the roles', async () => {
+        holds('Account Director');
+        expect(await CheckNoDealConfirm(order(), ctx)).toBe(
+            'Order ORD-1 was not confirmed. Only Finance, Senior Finance (AR) or CFO can confirm an order that has no deal. ' +
+                'Link it to a deal, or ask someone in one of those roles to confirm it.',
+        );
+    });
+
+    it.each(['Finance', 'Senior Finance (AR)', 'CFO'])('lets a holder of %s confirm it', async (role) => {
+        holds(role);
+        expect(await CheckNoDealConfirm(order(), ctx)).toBeNull();
+    });
+
+    it('lets a user holding Account Director and Finance confirm it (golive #310)', async () => {
+        holds('Account Director', 'finance');
+        expect(await CheckNoDealConfirm(order(), ctx)).toBeNull();
+    });
+
+    it('lets an Account Director confirm an order a deal created', async () => {
+        holds('Account Director');
+        RegisterOrderDealLink(dealLink('DEAL-1'));
+        expect(await CheckNoDealConfirm(order(), ctx)).toBeNull();
+    });
+
+    it('leaves checkout, provider-payment, reversal and renewal-only orders alone', async () => {
+        holds('Account Director');
+        expect(await CheckNoDealConfirm(order({ Origin: 'Widget' }), ctx)).toBeNull();
+        expect(await CheckNoDealConfirm(order({ Origin: 'ProviderPayment' }), ctx)).toBeNull();
+        expect(await CheckNoDealConfirm(order({ ReversesOrderHeaderID: OTHER_ORDER_ID }), ctx)).toBeNull();
+        expect(await CheckNoDealConfirm(order({ Lines: [reviewLine({ RenewsSubscriptionID: 'sub-1' })] }), ctx)).toBeNull();
+    });
+
+    it('does nothing, and reads nothing, while the setting is empty', async () => {
+        settings({ NoDealConfirmRoles: '' });
+        holds('Account Director');
+        expect(await CheckNoDealConfirm(order(), ctx)).toBeNull();
+        expect(RunView.prototype.RunView).not.toHaveBeenCalled();
+    });
+
+    it('is off, warning once, when no order-to-deal link is registered', async () => {
+        const log = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+        RegisterOrderDealLink(null);
+        holds('Account Director');
+        expect(await CheckNoDealConfirm(order(), ctx)).toBeNull();
+        expect(await CheckNoDealConfirm(order(), ctx)).toBeNull();
+        expect(log).toHaveBeenCalledTimes(1);
+        expect(log.mock.calls[0][0]).toMatch(/NoDealConfirmRoles/);
+    });
+
+    it('refuses when the deal link cannot tell, rather than reading it as no deal', async () => {
+        holds('Finance');
+        RegisterOrderDealLink({ DealForOrder: vi.fn(async () => { throw new Error('sales is down'); }) });
+        expect(await CheckNoDealConfirm(order(), ctx)).toMatch(/could not be decided\. sales is down/);
     });
 });

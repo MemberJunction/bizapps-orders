@@ -91,7 +91,7 @@ import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
-import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
 import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
 import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
@@ -666,6 +666,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
         // reviewer sees the order as it will book. Off until a host switches a trigger on.
+        // ONLY THE ROLES THE NoDealConfirmRoles SETTING NAMES CONFIRM AN ORDER NO DEAL CREATED (golive
+        // #390), ahead of the review so a confirm the user may not make raises no review. Off by default.
+        if (booking && !(await this.passesNoDealConfirmGate())) return false;
         if (booking && !(await this.passesOrderReviewGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
@@ -1273,6 +1276,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const user = this.ContextCurrentUser;
         if (!user) return true;
         const refusal = await CheckOrderReviewAtConfirm(this.reviewOrderInput(), {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /** Refuse a confirm of an order with no deal by a user outside the NoDealConfirmRoles setting (golive #390). */
+    private async passesNoDealConfirmGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const refusal = await CheckNoDealConfirm(this.reviewOrderInput(), {
             Provider: this.ProviderToUse as unknown as IMetadataProvider,
             User: user,
         });

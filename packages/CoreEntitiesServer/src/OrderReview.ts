@@ -41,7 +41,7 @@
  *           · MJ: Record Changes · MJ_BizApps_Common: People · Order Concessions · Order Lines
  *           · the registered deal link
  */
-import { LogError, LogStatus, RunView } from '@memberjunction/core';
+import { LogError, LogErrorEx, LogStatus, RunView } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
 // Imported for its side effect: it registers the tasks entities' generated subclasses.
 import '@mj-biz-apps/tasks-entities';
@@ -97,6 +97,7 @@ import { BusinessDay } from './PaymentGatedAccess.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const ROLE_ENTITY = 'MJ: Roles';
+const USER_ROLE_ENTITY = 'MJ: User Roles';
 const RECORD_CHANGE_ENTITY = 'MJ: Record Changes';
 const LOG_PREFIX = '[BizAppsOrders] Order review:';
 
@@ -245,6 +246,58 @@ export async function CheckOrderReviewAtConfirm(order: ReviewOrderInput, ctx: Ap
     } catch (err) {
         return `${label} was not confirmed: whether it needs an order review could not be decided. ${messageOf(err)}`;
     }
+}
+
+/** Set once the missing deal link has been logged, so a host without sales warns once, not per confirm. */
+let warnedNoDealLink = false;
+
+/**
+ * Called by the save that confirms an order (golive #390). An order no deal created may be confirmed
+ * only by a holder of a role the `NoDealConfirmRoles` setting names; the orders review exempts stay
+ * exempt. Off while the setting is empty, and off (with one warning) on a host where nothing registered
+ * the order-to-deal link, since every order would then read as having no deal. Null lets it through.
+ */
+export async function CheckNoDealConfirm(order: ReviewOrderInput, ctx: ApprovalTaskContext): Promise<string | null> {
+    await OrdersSettings.Load(ctx.Provider, ctx.User);
+    const allowed = OrdersSettings.NoDealConfirmRoles;
+    if (allowed.length === 0) return null;
+    const link = HostOrderDealLink();
+    if (!link) {
+        if (!warnedNoDealLink) {
+            LogErrorEx({
+                message: `${LOG_PREFIX} the Orders setting NoDealConfirmRoles is set but no order-to-deal link is registered, so it is not applied.`,
+                severity: 'warning',
+            });
+        }
+        warnedNoDealLink = true;
+        return null;
+    }
+    if (OrderReviewExemption(scopeOf(order))) return null;
+    const label = `Order ${order.OrderNumber ?? ''}`.trim();
+    try {
+        if (await ResolveOrderDeal(link, order.OrderHeaderID, ctx.User)) return null;
+        const held = await heldRoleNames(ctx);
+        if (allowed.some((role) => held.has(role.toLowerCase()))) return null;
+    } catch (err) {
+        return `${label} was not confirmed: whether you may confirm an order with no deal could not be decided. ${messageOf(err)}`;
+    }
+    const names = allowed.length === 1 ? allowed[0] : `${allowed.slice(0, -1).join(', ')} or ${allowed[allowed.length - 1]}`;
+    return `${label} was not confirmed. Only ${names} can confirm an order that has no deal. Link it to a deal, or ask someone in one of those roles to confirm it.`;
+}
+
+/** The names of the roles the saving user holds, lower-cased, read fresh so a role just granted counts. */
+async function heldRoleNames(ctx: ApprovalTaskContext): Promise<Set<string>> {
+    const res = await RunView.FromMetadataProvider(ctx.Provider).RunView<{ Role: string }>(
+        { EntityName: USER_ROLE_ENTITY, ExtraFilter: `UserID = '${RequireUUID(ctx.User.ID, 'UserID')}'`, Fields: ['Role'], ResultType: 'simple', BypassCache: true },
+        ctx.User,
+    );
+    if (!res?.Success) throw new Error(`Your roles could not be read: ${res?.ErrorMessage ?? 'no result'}`);
+    return new Set((res.Results ?? []).map((r) => String(r.Role ?? '').trim().toLowerCase()));
+}
+
+/** Test hook: forget that the missing deal link was logged. */
+export function ResetNoDealLinkWarning(): void {
+    warnedNoDealLink = false;
 }
 
 // ─── Triggers ─────────────────────────────────────────────────────────────────────────────────────
