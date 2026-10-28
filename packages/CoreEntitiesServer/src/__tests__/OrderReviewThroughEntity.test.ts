@@ -9,11 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../OrderReview.js', () => ({
     CheckOrderReviewOnChange: vi.fn(async () => null),
+    CheckNoDealConfirm: vi.fn(async () => null),
     CheckOrderReviewAtConfirm: vi.fn(async () => null),
 }));
 
 import { OrderEntityServer } from '../OrderEntityServer.js';
-import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange } from '../OrderReview.js';
+import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange } from '../OrderReview.js';
 import { OriginWriteRefusal, SetSystemOrderOrigin } from '../SystemOrderOrigin.js';
 import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
@@ -214,6 +215,15 @@ describe('Save (PR #912 review: the hooks are driven through Save, not only call
         expect(await o.Save()).toBe(false);
         expect(CheckOrderReviewAtConfirm).toHaveBeenCalledTimes(1);
         expect(failuresOf(o)).toEqual(['Order ORD-1 cannot be confirmed until its review is approved.']);
+    });
+
+    it('refuses a booking save on the no-deal gate\'s refusal, before the review is asked (golive #390)', async () => {
+        vi.mocked(CheckNoDealConfirm).mockResolvedValueOnce('Order ORD-1 was not confirmed. Only Finance can confirm an order that has no deal.');
+        const o = order({ savedStatus: 'Draft' });
+        savable(o, true);
+        expect(await o.Save()).toBe(false);
+        expect(CheckOrderReviewAtConfirm).not.toHaveBeenCalled();
+        expect(failuresOf(o)).toEqual(['Order ORD-1 was not confirmed. Only Finance can confirm an order that has no deal.']);
     });
 
     it('refuses a save that writes Origin itself, before order review is asked anything (required 2)', async () => {
