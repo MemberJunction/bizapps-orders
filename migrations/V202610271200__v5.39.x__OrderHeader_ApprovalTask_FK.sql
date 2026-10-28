@@ -11,6 +11,15 @@
 -- The column is written by the concession approval flow, which points the order
 -- at its open approval task (ConcessionApprovalTask.ts).
 --
+-- Pre-flight: the constraint is added WITH CHECK, so an order pointing at a
+-- deleted task fails the migration. This lists any such orders; it should
+-- return no rows (the only writer is ConcessionApprovalTask.ts, and a Task
+-- with links cannot be deleted):
+--   SELECT oh.ID, oh.OrderNumber, oh.ApprovalTaskID
+--   FROM __mj_BizAppsOrders.OrderHeader oh
+--   LEFT JOIN __mj_BizAppsTasks.Task t ON t.ID = oh.ApprovalTaskID
+--   WHERE oh.ApprovalTaskID IS NOT NULL AND t.ID IS NULL;
+--
 -- What this file does, in order:
 --   1. Adds FK_OrderHeader_ApprovalTask to the tasks app's Task table.
 --   2. Rewrites the column's description, which still called it a soft reference.
