@@ -23,7 +23,6 @@
  */
 import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
-import { GetGlobalObjectStore } from '@memberjunction/global';
 import { ParseOrderReviewTriggers, type OrderReviewConfig, type ParsedOrderReviewTriggers } from '@mj-biz-apps/orders-entities';
 
 /** The `MJ: Applications` row this app's settings hang off. */
@@ -275,10 +274,18 @@ export class OrdersSettings {
         getOverridesMap().clear();
     }
 
-    /** The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. */
+    /**
+     * The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. The names are
+     * tried in order, not as one match: a host also carries `Orders`, the MJ Explorer navigation app,
+     * which holds no settings, and matching it first read every app-scoped setting as unset.
+     */
     private static applicationID(): string | undefined {
-        const apps = new Metadata().Applications;
-        return apps?.find((a) => a.Name === ORDERS_APPLICATION_NAME || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders')?.ID;
+        const apps = new Metadata().Applications ?? [];
+        for (const name of [ORDERS_APPLICATION_NAME, 'MJ_BizApps_Orders', 'Orders']) {
+            const app = apps.find((a) => a.Name === name);
+            if (app) return app.ID;
+        }
+        return undefined;
     }
 
     private static raw(key: string): string | undefined {
