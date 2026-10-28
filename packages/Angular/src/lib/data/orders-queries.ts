@@ -2223,7 +2223,8 @@ export function RankCatalogMatches<T extends RankableProduct>(
 }
 
 /**
- * Products the picker can add, with an indicative list price.
+ * Products the picker can add, with an indicative list price. A product whose `IsSellableNew` is off
+ * is left out.
  *
  * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: the line
  * prices only from rules, so showing SSP advertises a price the line will not
@@ -2232,7 +2233,10 @@ export function RankCatalogMatches<T extends RankableProduct>(
  * the line. Catalog rows come from OrdersEngine — live, not a session snapshot.
  */
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
-    const products = await GetProducts({ User: user });
+    // Not offered for a new sale (bc-aidp-next-golive#360): catch-all products imported invoice lines book
+    // to, and products kept for converted subscriptions. Only the picker skips them; pricing does not
+    // read the flag, so orders and renewals that already hold them keep saving.
+    const products = (await GetProducts({ User: user })).filter((p) => p.IsSellableNew !== false);
     const engine = OrdersEngine.Instance;
     const withSubscription = await getBundlesWithSubscription(user);
     return products.map((product) => {

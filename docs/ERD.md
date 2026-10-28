@@ -250,6 +250,7 @@ erDiagram
         uuid SuccessorProductID FK
         date AvailableFrom
         date AvailableTo
+        bit IsSellableNew "required"
         uuid RevenueRecognitionTypeID FK "required"
         decimal_19_4 StandaloneSellingPrice
         uuid SubscriptionTypeID FK
