@@ -61,6 +61,7 @@ const PAIRS: ReadonlyArray<{ entity: string; shared: Function; sharedName: strin
 const NO_SHARED_SIBLING: ReadonlySet<string> = new Set([
     'ACCESS_OVERRIDE_ENTITY',
     'ENTITLEMENT_GRANT_ENTITY',
+    'ORDER_ADJUSTMENT_ENTITY',
     'ORDER_CONCESSION_ENTITY',
     'ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY',
     'ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY',
