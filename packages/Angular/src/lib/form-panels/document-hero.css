@@ -85,7 +85,7 @@
 }
 
 .mjo-doc-stat__value {
-    font-size: var(--mj-text-md);
+    font-size: var(--mj-text-base);
     font-weight: 650;
     color: var(--mj-text-primary);
     overflow: hidden;
@@ -281,12 +281,6 @@
     margin: 2px 0 0;
     font-size: 12px;
     color: var(--mj-text-secondary);
-}
-
-.mjo-ov-empty {
-    padding: 12px 4px;
-    color: var(--mj-text-muted);
-    font-size: var(--mj-text-sm);
 }
 
 @media (max-width: 800px) {

@@ -29,6 +29,19 @@
  *   CALLER: OrderEntityServer (term creation at confirm)
  */
 import { RegisterClass } from '@memberjunction/global';
+import {
+    CadenceMonths,
+    DefaultTermEnd,
+    DefaultTermStart,
+    KeptStatedEnd,
+    MonthsCovered,
+    NextAnchorAfter,
+    StatedMonths,
+} from '@mj-biz-apps/orders-entities';
+
+// The date arithmetic for a stated period lives in the shared package, so the order screen reads
+// the same months confirm does (golive #338). Re-exported for callers that import it from here.
+export { MonthsCovered, WholeMonthsBetween } from '@mj-biz-apps/orders-entities';
 
 /** The rules row, as plain data. */
 export interface SubscriptionTypeRules {
@@ -407,33 +420,6 @@ function daysBetween(a: Date, b: Date): number {
     return Math.round((b.getTime() - a.getTime()) / 86400000);
 }
 
-/**
- * The number of whole months from `start` through `end` inclusive, or null when the span is not a
- * whole number of months (2026-11-01 through 2027-04-30 is 6; through 2027-04-29 is null).
- */
-export function WholeMonthsBetween(start: Date, end: Date): number | null {
-    const s = utcDay(start);
-    const after = addDays(utcDay(end), 1);
-    const months = (after.getUTCFullYear() - s.getUTCFullYear()) * 12 + (after.getUTCMonth() - s.getUTCMonth());
-    if (months <= 0) return null;
-    return addMonths(s, months).getTime() === after.getTime() ? months : null;
-}
-
-/**
- * The length of `start` through `end` inclusive in months: whole months counted from `start`, plus
- * the remaining days as a fraction of the month they fall in. 2026-11-01 through 2027-11-30 is 13.
- */
-export function MonthsCovered(start: Date, end: Date): number {
-    const s = utcDay(start);
-    const after = addDays(utcDay(end), 1);
-    let whole = 0;
-    while (addMonths(s, whole + 1).getTime() <= after.getTime()) whole++;
-    const from = addMonths(s, whole);
-    const rest = daysBetween(from, after);
-    if (rest <= 0) return whole;
-    return whole + rest / daysBetween(from, addMonths(s, whole + 1));
-}
-
 /** Calendar date for user-facing explanations. */
 function isoDay(d: Date): string {
     return d.toISOString().slice(0, 10);
@@ -570,7 +556,7 @@ export class SubscriptionBehavior {
             Term: terms[0],
             Terms: terms,
             ...(followsStatedEnd
-                ? { StatedLength: { Months: Math.round(MonthsCovered(start, lastEnd) * 100) / 100, TypeMonths: this.TermMonths(ctx.Rules) } }
+                ? { StatedLength: { Months: StatedMonths(start, lastEnd), TypeMonths: this.TermMonths(ctx.Rules) } }
                 : {}),
         };
     }
@@ -591,12 +577,8 @@ export class SubscriptionBehavior {
         // derive when the line states none.
         const intendedStart = ctx.RequestedStartDate ?? utcDay(this.ComputeStartDate({ ...ctx, RequestedStartDate: null }));
         if (requestedEnd.getTime() < intendedStart.getTime()) return null;
-        if (!extending || start.getTime() === intendedStart.getTime()) return requestedEnd;
-
-        const months = WholeMonthsBetween(intendedStart, requestedEnd);
-        return months !== null
-            ? addDays(addMonths(start, months), -1)
-            : addDays(start, daysBetween(intendedStart, requestedEnd));
+        if (!extending) return requestedEnd;
+        return KeptStatedEnd(intendedStart, requestedEnd, start);
     }
 
     /**
@@ -848,32 +830,18 @@ export class SubscriptionBehavior {
         // somebody typed deliberately.
         if (ctx.RequestedStartDate) return ctx.RequestedStartDate;
 
-        const purchase = ctx.PurchaseDate;
-        switch (ctx.Rules.StartMode) {
-            case 'Immediate':
-                return purchase;
-            case 'Deferred':
-                return addDays(purchase, ctx.Rules.DeferredStartDays ?? 0);
-            case 'CalendarAnchored':
-                // ExtendToNextAnchor waits for the anchor; Prorate/ChargeFull start NOW and run to
-                // the anchor, which is what makes the first term partial.
-                return ctx.Rules.PartialPeriodMode === 'ExtendToNextAnchor'
-                    ? this.NextAnchor(ctx, purchase)
-                    : purchase;
-        }
+        // Otherwise the type's StartMode moves the purchase day (`DefaultTermStart`, shared with the
+        // order screen); the anchor stays this behavior's to decide.
+        return DefaultTermStart(ctx.Rules, ctx.PurchaseDate, (from) => this.NextAnchor(ctx, from));
     }
 
+    /**
+     * One term length after `start`, or on a calendar-anchored first term the day before the next
+     * anchor (`DefaultTermEnd`, shared with the order screen). The term length and the anchor stay
+     * this behavior's to decide.
+     */
     protected ComputeEndDate(ctx: SubscriptionPurchaseContext, start: Date, extending: boolean): Date {
-        const months = this.TermMonths(ctx.Rules);
-
-        if (ctx.Rules.StartMode === 'CalendarAnchored' && !extending) {
-            // A partial first term runs from the purchase to the day before the next anchor.
-            const anchor = this.NextAnchor(ctx, start);
-            if (ctx.Rules.PartialPeriodMode !== 'ExtendToNextAnchor' && anchor.getTime() > start.getTime()) {
-                return addDays(anchor, -1);
-            }
-        }
-        return addDays(addMonths(start, months), -1);
+        return DefaultTermEnd(ctx.Rules, start, extending, this.TermMonths(ctx.Rules), (from) => this.NextAnchor(ctx, from));
     }
 
     /**
@@ -901,25 +869,13 @@ export class SubscriptionBehavior {
 
     /** The next occurrence of AnchorMonth/AnchorDay strictly after `from`. */
     protected NextAnchor(ctx: SubscriptionPurchaseContext, from: Date): Date {
-        const month = (ctx.Rules.AnchorMonth ?? 1) - 1;
-        const day = ctx.Rules.AnchorDay ?? 1;
-        const base = utcDay(from);
-        let anchor = new Date(Date.UTC(base.getUTCFullYear(), month, day));
         // Strictly after: buying ON the anchor date starts a FULL term at that anchor rather than
         // a zero-length stub ending the day before itself.
-        if (anchor.getTime() <= base.getTime()) {
-            anchor = new Date(Date.UTC(base.getUTCFullYear() + 1, month, day));
-        }
-        return anchor;
+        return NextAnchorAfter(ctx.Rules, from);
     }
 
     protected MonthsForCadence(cadence: SubscriptionTypeRules['BillingCadence'], customDays?: number | null): number {
-        switch (cadence) {
-            case 'Monthly': return 1;
-            case 'Quarterly': return 3;
-            case 'Annual': return 12;
-            case 'Custom': return Math.max(1, Math.round((customDays ?? 30) / 30));
-        }
+        return CadenceMonths(cadence, customDays);
     }
 
     /**

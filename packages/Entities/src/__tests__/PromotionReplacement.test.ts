@@ -97,6 +97,8 @@ describe('DeletePromotionAdjustments', () => {
         await DeletePromotionAdjustments('order-1', ['line-1'], {} as never, {} as never);
 
         expect(deleted).toEqual(['alloc-promo', 'adj-promo']);
+        // The server's adjustment class refuses a delete that does not say it is the order's own.
+        expect(views[3].results[0]).toMatchObject({ RemovedByOrderSave: true });
         // Manual discount rows carry no PromotionID, so the first read never sees them.
         expect(views[0].params.ExtraFilter).toContain('PromotionID IS NOT NULL');
     });

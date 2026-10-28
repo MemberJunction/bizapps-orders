@@ -7,8 +7,8 @@
      · packages/Angular/src/lib/styles/orders-kit.css   ← you are here
      · mockups/assets/app.css                            @imports it
 
-   Only classes MJ does NOT ship live here. Page chrome, buttons, inputs, chips,
-   collapsible panels, overlays and tab navigation all come from
+   Only classes MJ does NOT ship live here. Page chrome, buttons, inputs, filter
+   chips, empty states, loading, collapsible panels, overlays and tab navigation all come from
    @memberjunction/ng-ui-components and @memberjunction/ng-base-forms at runtime;
    the mockups shim those separately because they have no Angular to provide them.
 
@@ -16,11 +16,11 @@
    documented exception: the deepest aging step, whose ramp was chosen by running
    the palette validator (see mockups/PROVENANCE.md).
 
-   NAMING. These share MJ's `mj-` prefix deliberately, so a reader cannot tell
-   whether `mj-money-strip` came from the framework or from us — which is the
-   point when the goal is one visual system. The cost is a possible future
-   collision if MJ ships a class of the same name; that would be a mechanical
-   rename caught by a build, and it has not happened yet.
+   NAMING. New classes take the app's `mjo-` prefix. `mj-` is MJ's, and because
+   this sheet is global a kit class sharing an MJ name restyles MJ's own markup;
+   `.mj-filter-chip`, `.mj-timeline` and an unscoped `.mj-select` all collided. The
+   `mj-` names still here move to `mjo-` as each family moves into the component
+   that renders it.
    ============================================================================ */
 
 /* ============================================================================
@@ -58,16 +58,9 @@
    ============================================================================ */
 
 .row  { display: flex; align-items: center; gap: var(--mj-space-2); }
-.row-t { display: flex; align-items: flex-start; gap: var(--mj-space-2); }
 .col  { display: flex; flex-direction: column; gap: var(--mj-space-2); }
 .wrap { flex-wrap: wrap; }
 .spacer { margin-left: auto; }
-.stack-2 > * + * { margin-top: var(--mj-space-2); }
-.stack-3 > * + * { margin-top: var(--mj-space-3); }
-.stack-4 > * + * { margin-top: var(--mj-space-4); }
-.stack-6 > * + * { margin-top: var(--mj-space-6); }
-.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--mj-space-4); }
-.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--mj-space-4); }
 .muted  { color: var(--mj-text-muted); }
 /* 12px floor, on MJ's own token — see the TYPE SCALE note above. `small` and
    `tiny` were 11.5px and 10.5px; both now resolve to --mj-text-xs and the
@@ -99,21 +92,6 @@
    of the legend rather than a separate caption. Prefix-scoped so the unrelated
    `fe-books__note` (which sets its own padding) is untouched. */
 [class*="mjo-"][class*="__note"] { margin-top: var(--mj-space-2); }
-
-/* Two-pane working layout (payment entry, subscriptions, catalog) */
-.mj-split { display: flex; gap: var(--mj-space-4); align-items: flex-start; min-height: 0; }
-.mj-split > .left  { flex: 0 0 380px; min-width: 0; }
-.mj-split > .right { flex: 1; min-width: 0; }
-.mj-split--narrow-left > .left { flex: 0 0 300px; }
-
-@media (max-width: 1100px) {
-  .mj-split { flex-direction: column; }
-  .mj-split > .left, .mj-split > .right { flex: 1 1 auto; width: 100%; }
-  .grid-3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (max-width: 760px) {
-  .grid-2, .grid-3 { grid-template-columns: 1fr; }
-}
 
 /* ============================================================================
    PAGE HEADER — three stacked rows compressed into two
@@ -188,12 +166,10 @@ mjo-section-shell .mj-card:not(.clickable):not(a):hover {
    7. MONEY  (U7)
    ============================================================================ */
 
-.mj-num, .mj-money {
+.mj-num {
   font-variant-numeric: tabular-nums; font-feature-settings: "tnum";
   text-align: right; white-space: nowrap;
 }
-.mj-money--hero { font-size: 22px; font-weight: var(--mj-font-bold); letter-spacing: -0.01em; }
-.mj-money--lg   { font-size: 16px; font-weight: var(--mj-font-semibold); }
 .mj-money--neg  { color: var(--mj-status-error-text); }
 .mj-money--credit { color: var(--mj-status-success-text); }
 .mj-money--muted { color: var(--mj-text-muted); }
@@ -316,8 +292,6 @@ mjo-section-shell .mj-card:not(.clickable):not(a):hover {
 }
 .mj-stat .d { font-size: 11.5px; color: var(--mj-text-muted); }
 .mj-stat.is-alert .v { color: var(--mj-status-error-text); }
-.mj-stat .spark { margin-top: var(--mj-space-2); height: 30px; }
-.mj-stat .spark svg { width: 100%; height: 30px; display: block; overflow: visible; }
 
 /* ============================================================================
    14. AGING BAR
@@ -377,45 +351,9 @@ mjo-section-shell .mj-card:not(.clickable):not(a):hover {
 .mj-aging-legend i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 
 /* ============================================================================
-   15. TIMELINE  (subscription terms)
-   ============================================================================ */
-
-.mj-timeline { position: relative; padding: var(--mj-space-4) 0 var(--mj-space-2); }
-.mj-timeline-track {
-  position: relative; height: 34px;
-  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-sm);
-}
-.mj-timeline-term {
-  position: absolute; top: 4px; bottom: 4px; border-radius: var(--mj-radius-sm);
-  display: flex; align-items: center; padding: 0 var(--mj-space-2);
-  font-size: 11px; font-weight: var(--mj-font-semibold); color: #fff;
-  overflow: hidden; white-space: nowrap;
-}
-.mj-timeline-term.is-past   { background: var(--mj-color-neutral-400); }
-.mj-timeline-term.is-active { background: var(--mj-brand-primary); }
-.mj-timeline-term.is-future { background: color-mix(in srgb, var(--mj-brand-primary) 45%, var(--mj-bg-surface)); color: var(--mj-text-primary); }
-.mj-timeline-now {
-  position: absolute; top: -6px; bottom: -6px; width: 2px;
-  background: var(--mj-status-error);
-}
-.mj-timeline-now::after {
-  content: "today"; position: absolute; top: -16px; left: -14px;
-  font-size: 9.5px; font-weight: var(--mj-font-bold); color: var(--mj-status-error-text);
-}
-.mj-timeline-scale {
-  display: flex; justify-content: space-between; font-size: 10.5px;
-  color: var(--mj-text-muted); margin-top: 6px;
-}
-
-/* ============================================================================
    17. KEYBOARD HINT STRIP  (U20 — shortcuts are visible, not hidden)
    ============================================================================ */
 
-.mj-keys {
-  display: flex; align-items: center; gap: var(--mj-space-4); flex-wrap: wrap;
-  font-size: 11.5px; color: var(--mj-text-muted);
-}
-.mj-keys > span { display: inline-flex; align-items: center; gap: 5px; }
 kbd {
   font-family: var(--mj-font-family); font-size: 10.5px; font-weight: var(--mj-font-semibold);
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-strong);
@@ -455,29 +393,6 @@ kbd {
 .mj-typeahead-item .name { font-size: 13px; font-weight: var(--mj-font-medium); }
 .mj-typeahead-item .sub  { font-size: 11.5px; color: var(--mj-text-muted); }
 .mj-typeahead-item .end  { margin-left: auto; text-align: right; }
-.mj-typeahead-group {
-  padding: 5px var(--mj-space-3); font-size: 10px; font-weight: var(--mj-font-bold);
-  letter-spacing: .07em; text-transform: uppercase; color: var(--mj-text-muted);
-  background: var(--mj-bg-surface-card); border-bottom: 1px solid var(--mj-border-subtle);
-}
-
-/* ============================================================================
-   20. LINE ROW CARD  (fast entry)
-   ============================================================================ */
-
-.mj-linecard {
-  border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md);
-  background: var(--mj-bg-surface); padding: var(--mj-space-3);
-}
-.mj-linecard + .mj-linecard { margin-top: var(--mj-space-2); }
-.mj-linecard-top { display: flex; align-items: flex-start; gap: var(--mj-space-3); }
-.mj-linecard-top .id { flex: 1; min-width: 0; }
-.mj-linecard-top .nm { font-size: 13.5px; font-weight: var(--mj-font-semibold); }
-.mj-linecard-top .mt { font-size: 11.5px; color: var(--mj-text-muted); margin-top: 1px; }
-.mj-linecard-top .qty { flex: none; }
-.mj-linecard-top .price { flex: none; width: 118px; text-align: right; }
-.mj-linecard-top .tot { flex: none; width: 104px; text-align: right; font-variant-numeric: tabular-nums; font-weight: var(--mj-font-semibold); font-size: 14px; }
-.mj-linecard-conseq { display: flex; gap: 6px; flex-wrap: wrap; margin-top: var(--mj-space-2); }
 
 /* ============================================================================
    21. DOCUMENT (the bill)  — U6
@@ -544,12 +459,17 @@ kbd {
   text-transform: uppercase; opacity: .85; pointer-events: none;
 }
 
+/* Print. This sheet is global (the section shell loads it with ViewEncapsulation.None), so every
+   selector stays under mjo-section-shell: unscoped, `.mj-page-header` would hide MJ's header when
+   printing any Explorer page. No body rule for the same reason; browsers print without
+   backgrounds unless asked. */
 @media print {
-  .mj-topnav, .mj-rail, .mj-page-header, .mj-keys, .no-print { display: none !important; }
-  .mj-app, .mj-page-layout, .mj-page-body { height: auto; overflow: visible; display: block; }
-  .mj-page-body { padding: 0; }
-  .mj-doc { border: none; max-width: none; padding: 0; }
-  body { background: #fff; }
+  mjo-section-shell .mj-page-header,
+  mjo-section-shell .no-print { display: none !important; }
+  mjo-section-shell .mj-page-layout,
+  mjo-section-shell .mj-page-body { height: auto; overflow: visible; display: block; }
+  mjo-section-shell .mj-page-body { padding: 0; }
+  mjo-section-shell .mj-doc { border: none; max-width: none; padding: 0; }
 }
 
 
@@ -567,18 +487,8 @@ kbd {
    a class: if our markup writes it, it belongs in this file. Only classes MJ
    genuinely owns (.mj-page-layout, .mj-btn, .mj-input, .mj-card) stay as
    mockup-side shims.
-
-   Names keep the mj- prefix deliberately — a reader should not have to care
-   whether a class came from the framework or from us.
    ============================================================================ */
 
-.mj-iconbtn {
-  border: none; background: none; cursor: pointer;
-  color: var(--mj-text-secondary); font-size: 14px;
-  padding: var(--mj-space-2); border-radius: var(--mj-radius-md);
-  line-height: 1; display: inline-flex; align-items: center; justify-content: center;
-}
-.mj-iconbtn:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
 .mj-avatar {
   width: 30px; height: 30px; border-radius: var(--mj-radius-full);
   background: var(--mj-brand-primary); color: var(--mj-brand-on-primary);
@@ -594,15 +504,17 @@ kbd {
    (13px/6-10px/radius-md vs 14px/8-12px/radius-sm/min-height 38px), so whichever
    won changed how every input in the app looked.
 
-   `.mj-select` stays: MJ styles `.mj-input, .mj-textarea` but ships no select rule,
-   so this is ours to own. Values match MJ's input so the two sit level. */
-.mj-select {
+   `.mj-select` stays: MJ styles `.mj-input, .mj-textarea` but ships no select rule.
+   MJ's own templates do write `class="mj-select"` (list management, conversations),
+   so the rule is scoped to the Orders sections rather than restyling theirs.
+   Values match MJ's input so the two sit level. */
+mjo-section-shell .mj-select {
   font-family: inherit; font-size: var(--mj-text-sm); color: var(--mj-text-primary);
   background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
   border-radius: var(--mj-radius-sm); padding: 8px 12px; width: 100%;
   min-height: 38px;
 }
-.mj-select:focus {
+mjo-section-shell .mj-select:focus {
   outline: none; border-color: var(--mj-border-focus);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--mj-brand-primary) 16%, transparent);
 }
@@ -623,45 +535,14 @@ kbd {
   background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-sm);
   padding: 1px 6px;
 }
-.mj-stepper-num {
-  display: inline-flex; align-items: center; border: 1px solid var(--mj-border-strong);
-  border-radius: var(--mj-radius-md); overflow: hidden; background: var(--mj-bg-surface);
-}
-.mj-stepper-num button {
-  border: none; background: none; cursor: pointer; color: var(--mj-text-secondary);
-  width: 26px; height: 28px; font-size: 11px;
-}
-.mj-stepper-num button:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
-.mj-stepper-num input {
-  border: none; outline: none; background: none; width: 46px; text-align: center;
-  font-family: inherit; font-size: 13px; font-variant-numeric: tabular-nums; color: inherit;
-}
-.mj-chip {
+.mjo-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 2px 9px; border-radius: var(--mj-radius-full);
   font-size: 11.5px; font-weight: var(--mj-font-semibold);
-  background: var(--mj-status-neutral-bg); color: var(--mj-status-neutral-text);
+  background: var(--mj-bg-surface-sunken); color: var(--mj-text-secondary);
   white-space: nowrap;
 }
-.mj-chip i { font-size: 10px; }
-.mj-filter-chip {
-  display: inline-flex; align-items: center; gap: 6px;
-  padding: 5px 11px; border-radius: var(--mj-radius-full);
-  border: 1px solid var(--mj-border-default); background: var(--mj-bg-surface);
-  font-family: inherit; font-size: 12.5px; font-weight: var(--mj-font-medium);
-  color: var(--mj-text-secondary); cursor: pointer; white-space: nowrap;
-}
-.mj-filter-chip:hover { background: var(--mj-bg-surface-hover); color: var(--mj-text-primary); }
-.mj-filter-chip .count {
-  font-variant-numeric: tabular-nums; font-size: 11px;
-  background: var(--mj-bg-surface-sunken); border-radius: var(--mj-radius-full); padding: 0 6px;
-}
-.mj-filter-chip.is-active {
-  background: color-mix(in srgb, var(--mj-brand-primary) 12%, transparent);
-  border-color: color-mix(in srgb, var(--mj-brand-primary) 45%, transparent);
-  color: var(--mj-brand-primary); font-weight: var(--mj-font-semibold);
-}
-.mj-filter-chip.is-active .count { background: color-mix(in srgb, var(--mj-brand-primary) 18%, transparent); }
+.mjo-chip i { font-size: 10px; }
 .mj-consequence {
   display: inline-flex; align-items: center; gap: 6px;
   font-size: 11.5px; color: var(--mj-text-secondary);
@@ -681,27 +562,6 @@ kbd {
 .mj-card-head h3 { font-size: 13px; letter-spacing: .01em; }
 .mj-card-head i { color: var(--mj-text-muted); font-size: 12px; }
 .mj-card-head .right { margin-left: auto; display: flex; gap: var(--mj-space-2); align-items: center; }
-.mj-panel {
-  background: var(--mj-bg-surface); border: 1px solid var(--mj-border-default);
-  border-radius: var(--mj-radius-md); margin-bottom: var(--mj-space-4);
-}
-.mj-panel > summary {
-  display: flex; align-items: center; gap: var(--mj-space-2);
-  padding: var(--mj-space-3) var(--mj-space-4); cursor: pointer;
-  font-size: 13px; font-weight: var(--mj-font-semibold);
-  list-style: none;
-}
-.mj-panel > summary::-webkit-details-marker { display: none; }
-.mj-panel > summary::before {
-  content: "\f105"; font-family: "Font Awesome 6 Free"; font-weight: 900;
-  font-size: 11px; color: var(--mj-text-muted); width: 10px;
-  transition: transform .14s ease;
-}
-.mj-panel[open] > summary::before { transform: rotate(90deg); }
-.mj-panel > summary > i:first-of-type { color: var(--mj-text-muted); font-size: 12px; }
-.mj-panel > summary .right { margin-left: auto; display: flex; gap: var(--mj-space-2); align-items: center; font-weight: var(--mj-font-normal); }
-.mj-panel-body { padding: 0 var(--mj-space-4) var(--mj-space-4); }
-.mj-panel-body.no-pad { padding: 0; }
 /* MJ ALREADY OWNS `.mj-table`. It is defined in ng-explorer-app's shared patterns, which
    Explorer loads before this kit — so `width`, `border-collapse` and the base type were being
    restated here purely to override MJ with the same thing, except in hardcoded pixels. Those
@@ -766,45 +626,15 @@ kbd {
    A bare dot was a signifier with no meaning attached; only its aria-label said
    what it meant, so a sighted user saw a dot and guessed. */
 
-.mj-slide-in {
-  position: fixed; top: 0; right: 0; bottom: 0; z-index: var(--mj-z-modal);
-  width: min(560px, 100vw); display: flex; flex-direction: column;
-  background: var(--mj-bg-surface); border-left: 1px solid var(--mj-border-default);
-  box-shadow: var(--mj-shadow-xl);
-  transform: translateX(100%); transition: transform .18s ease;
-}
-.mj-slide-in.is-open { transform: translateX(0); }
-.mj-empty {
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
-  gap: var(--mj-space-2); padding: var(--mj-space-12) var(--mj-space-6);
-  color: var(--mj-text-muted); text-align: center;
-}
-.mj-empty i { font-size: 26px; color: var(--mj-text-disabled); }
-.mj-empty .t { font-size: 14px; font-weight: var(--mj-font-semibold); color: var(--mj-text-secondary); }
 
 /* Status variants for the chrome above. */
-.mj-chip--success { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
-.mj-chip--warning { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
-.mj-chip--error   { background: var(--mj-status-error-bg);   color: var(--mj-status-error-text); }
-.mj-chip--info    { background: var(--mj-status-info-bg);    color: var(--mj-status-info-text); }
-.mj-chip--violet  { background: var(--mj-status-violet-bg);  color: var(--mj-status-violet-text); }
-.mj-chip--brand   { background: color-mix(in srgb, var(--mj-brand-primary) 13%, transparent); color: var(--mj-brand-primary); }
-.mj-chip--outline { background: transparent; border: 1px solid var(--mj-border-default); color: var(--mj-text-secondary); font-weight: var(--mj-font-medium); }
+.mjo-chip--success { background: var(--mj-status-success-bg); color: var(--mj-status-success-text); }
+.mjo-chip--warning { background: var(--mj-status-warning-bg); color: var(--mj-status-warning-text); }
+.mjo-chip--error   { background: var(--mj-status-error-bg);   color: var(--mj-status-error-text); }
+.mjo-chip--info    { background: var(--mj-status-info-bg);    color: var(--mj-status-info-text); }
+.mjo-chip--brand   { background: color-mix(in srgb, var(--mj-brand-primary) 13%, transparent); color: var(--mj-brand-primary); }
+.mjo-chip--outline { background: transparent; border: 1px solid var(--mj-border-default); color: var(--mj-text-secondary); font-weight: var(--mj-font-medium); }
 .mj-table--compact tbody td { padding: 7px var(--mj-space-3); }
-.mj-table--lines tbody td { padding: var(--mj-space-2) var(--mj-space-3); }
-.mj-slide-in-head {
-  display: flex; align-items: center; gap: var(--mj-space-3); flex: none;
-  padding: var(--mj-space-4) var(--mj-space-5);
-  border-bottom: 1px solid var(--mj-border-default);
-}
-.mj-slide-in-head h2 { font-size: 15px; }
-.mj-slide-in-head .right { margin-left: auto; display: flex; gap: var(--mj-space-1); align-items: center; }
-.mj-slide-in-body { flex: 1; min-height: 0; overflow: auto; padding: var(--mj-space-5); }
-.mj-slide-in-foot {
-  flex: none; display: flex; gap: var(--mj-space-2); align-items: center;
-  padding: var(--mj-space-3) var(--mj-space-5);
-  border-top: 1px solid var(--mj-border-default); background: var(--mj-bg-surface-card);
-}
 
 /*
  * The table filter box.
@@ -842,6 +672,6 @@ kbd {
 }
 
 .mjo-note > i {
-    color: var(--mj-text-tertiary);
+    color: var(--mj-text-muted);
     flex: 0 0 auto;
 }

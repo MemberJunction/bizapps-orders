@@ -12,7 +12,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--violet">Reversal</span><span class="mj-chip">Draft</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--violet">Reversal</span><span class="mjo-chip">Draft</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--primary" data-open="#rf-confirm"><i class="fa-solid fa-check"></i> Issue refund</button>
@@ -127,7 +127,7 @@ function render() {
   document.getElementById('rf-origin').innerHTML = `
     <div class="row" style="margin-bottom:var(--mj-space-3)">
       <span class="mono strong" style="font-size:15px">${ORIG.number}</span>
-      <span class="mj-chip mj-chip--success">Captured</span>
+      <span class="mjo-chip mjo-chip--success">Captured</span>
       <span class="spacer"><button class="mj-btn mj-btn--outline mj-btn--sm">Change</button></span>
     </div>
     <div class="mj-stated"><span class="muted small" style="width:130px">From</span>
@@ -220,7 +220,7 @@ function renderConfirm(rows) {
     </div>
     <details class="mj-panel" open style="margin-top:var(--mj-space-4)">
       <summary><i class="fa-solid fa-arrows-split-up-and-left"></i> Orders that become due again
-        <span class="right"><span class="mj-chip mj-chip--outline">${rows.length}</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--outline">${rows.length}</span></span></summary>
       <div class="mj-panel-body">
         <table class="mj-table mj-table--compact"><tbody>
           ${rows.map(r => `<tr><td class="mono">${r.order}</td>
@@ -231,7 +231,7 @@ function renderConfirm(rows) {
     </details>
     <details class="mj-panel" open>
       <summary><i class="fa-solid fa-scale-balanced"></i> Journal entry
-        <span class="right"><span class="mj-chip mj-chip--success">1 entry · mirrored · balanced</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--success">1 entry · mirrored · balanced</span></span></summary>
       <div class="mj-panel-body small">Dr Accounts Receivable ${F.money(state.amount)} /
         Cr Operating Cash ${F.money(state.amount)} — landing Pending.</div>
     </details>

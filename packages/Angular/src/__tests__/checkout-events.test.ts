@@ -567,4 +567,99 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(c.config).not.toBeNull();
         });
     });
+
+    describe('after the host removes the element', () => {
+        let calls: string[];
+        let stored: Record<string, string>;
+        let location: { href: string };
+        let onAccessStatus: () => void;
+
+        beforeEach(() => {
+            calls = [];
+            stored = {};
+            onAccessStatus = () => undefined;
+            location = { href: 'https://shop.example/buy' };
+            vi.stubGlobal('window', { location });
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => stored[k] ?? null,
+                setItem: (k: string, v: string) => void (stored[k] = v),
+                removeItem: (k: string) => void delete stored[k],
+            });
+            responses['/initialize'] = { Success: true, SessionID: 'sess-1', Configuration: { ...CONFIG, redirectUrl: 'https://shop.example/thanks' } };
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+                    const path = url.replace('/checkout', '');
+                    calls.push(path);
+                    if (path === '/access-status') onAccessStatus();
+                    return base(url, init);
+                })
+            );
+        });
+
+        /** Holds `/complete` until the test lets it answer, and says when it was asked. */
+        const holdComplete = () => {
+            let release!: () => void;
+            let asked!: () => void;
+            const wasAsked = new Promise<void>((r) => (asked = r));
+            const gate = new Promise<void>((r) => (release = r));
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.mocked(fetch).mockImplementation(async (url: string, init?: { body?: string }) => {
+                if (String(url).endsWith('/complete')) {
+                    asked();
+                    await gate;
+                }
+                return base(url, init);
+            });
+            return { release, wasAsked };
+        };
+
+        it('still completes a sale removed mid-/complete, but sends no event and does not redirect', async () => {
+            const c = create();
+            await c.ngOnInit();
+            seen = [];
+            const { release, wasAsked } = holdComplete();
+            const run = c.onSubmitted(submission());
+            await wasAsked;
+            c.ngOnDestroy();
+            release();
+            await run;
+            expect(calls).toContain('/complete');
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'PROCESSING' } }]);
+            expect(calls).not.toContain('/access-status');
+            expect(location.href).toBe('https://shop.example/buy');
+        });
+
+        it('skips the account step but keeps the marker that lets a reload resume it', async () => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            const c = create();
+            await c.ngOnInit();
+            const { release, wasAsked } = holdComplete();
+            const run = c.onSubmitted(submission());
+            await wasAsked;
+            c.ngOnDestroy();
+            release();
+            await run;
+            expect(calls).not.toContain('/account');
+            expect(stored['mj-checkout-completing:annual']).toBe('sess-1');
+        });
+
+        it('stops polling for access once removed', async () => {
+            const c = create();
+            c.accessPollIntervalMs = 0;
+            let answers = 0;
+            responses['/access-status'] = { Success: true, State: 'Pending' };
+            onAccessStatus = () => {
+                answers++;
+                c.ngOnDestroy();
+            };
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(answers).toBe(1);
+            expect(calls.filter((p) => p === '/access-status')).toHaveLength(1);
+            expect(location.href).toBe('https://shop.example/buy');
+        });
+    });
 });

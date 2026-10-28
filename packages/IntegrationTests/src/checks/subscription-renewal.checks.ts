@@ -100,6 +100,9 @@
  *   SR57  the database holds the marker's shape: one Orders subscription per (provider, gateway id),
  *         the same id under another provider account is allowed, and an id needs its provider
  *
+ *   SR58  a subscription renewed at a price of zero books: the $0-line refusal leaves the renewal
+ *         pass's own price alone (#954)
+ *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
@@ -1956,6 +1959,38 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     AssertEqual((await paymentsFor(ctx, r.OrderID)).length, 1, 'and the payment is booked once');
                 }),
             ),
+    },
+    {
+        Id: 'subscription-renewal.SR58',
+        Name: 'SR58: a subscription renewed at a price of zero books, the $0-line refusal leaving the renewal pass\'s own price alone',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { OrderID, SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                // The product is now listed at zero, so pricing the renewal line resolves to zero too.
+                await CreateProductPrice(ctx, f.Products.SubRolling, 0);
+
+                // A complimentary term: the booked line at zero, as a conversion from the previous
+                // system writes it. A hand-entered order cannot confirm a $0 line, and a booked line
+                // cannot be edited through the application, so the row is written directly with the
+                // immutability trigger off.
+                await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`);
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderLine SET UnitPrice = 0 WHERE OrderHeaderID = '${OrderID}'`);
+                await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`);
+
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 10) });
+                AssertEqual(out.Placed, 1, `the renewal books: ${out.Candidates[0]?.SkippedReason ?? out.Message}`);
+                const orderID = out.Candidates[0].OrderID!;
+                const order = await TxOne<{ Status: string; Origin: string }>(
+                    ctx,
+                    `SELECT Status, Origin FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`,
+                );
+                AssertEqual(order.Status, 'Confirmed', 'confirmed, not refused as an unpriced line');
+                AssertEqual(order.Origin, 'Direct', 'the renewal keeps the hand-entry origin');
+                AssertEqual(Number((await renewalLine(ctx, orderID)).UnitPrice), 0, 'at the prior price of zero');
+                AssertEqual((await termsOf(ctx, SubscriptionID)).length, 2, 'the subscription gained its next term');
+            }),
     },
 
     // ─── Subscriptions a gateway bills itself (option E, E1) ─────────────────────────────────────

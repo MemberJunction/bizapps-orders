@@ -32,6 +32,7 @@ export * from './attendee-seats';
 export * from './bundle-lines';
 export * from './order-line-edit-veto';
 export * from './order-confirm-veto';
+export * from './order-origin';
 export * from './order-review';
 
 /**
@@ -119,6 +120,8 @@ export * from './pricing/linePricePick';
  */
 export * from './date-cell';
 export * from './displaced-term-start';
+// Term ends and stated lengths, shared by confirm and the order screen (golive #338).
+export * from './subscription-term-length';
 // Whether a subscription line's subscriber already holds its product — the extend-or-new question.
 export * from './existing-holding';
 

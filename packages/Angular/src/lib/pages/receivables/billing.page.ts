@@ -159,7 +159,7 @@ export class MJOBillingPageComponent implements OnInit {
         { Key: 'CompanyName', Label: 'Billed by', HideBelow: 1000 },
         { Key: 'Description', Label: 'For', HideBelow: 760 },
         { Key: 'Amount', Label: 'Amount', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.Amount) },
-        { Key: 'OrderStatus', Label: 'Order', Kind: 'chip', Width: '110px', HideBelow: 560, ChipClass: (r) => (r.OrderStatus === 'Confirmed' ? 'mj-chip--success' : 'mj-chip--outline') },
+        { Key: 'OrderStatus', Label: 'Order', Kind: 'chip', Width: '110px', HideBelow: 560, ChipClass: (r) => (r.OrderStatus === 'Confirmed' ? 'mjo-chip--success' : 'mjo-chip--outline') },
         {
             // Issuing an instalment freezes its number; for a company on a rail it ALSO queues an
             // external invoice, which is the part nobody could see from this screen.

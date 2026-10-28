@@ -1,6 +1,10 @@
 @if (CanCancel && !Open) {
     <div class="mjo-sc-toolbar">
-        <button type="button" mjButton variant="outline" size="sm" (click)="Start()">
+        @if (EditMode) {
+            <span class="mjo-sc__hint" id="mjo-sc-edit-hint">Save or discard your edits first</span>
+        }
+        <button type="button" mjButton variant="outline" size="sm" (click)="Start()" [disabled]="EditMode"
+            [attr.aria-describedby]="EditMode ? 'mjo-sc-edit-hint' : null">
             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel subscription
         </button>
     </div>
@@ -49,6 +53,9 @@
             <p class="mjo-sc__explain">{{ Preview?.Message || d.Explanation }}</p>
         }
 
+        @if (EditMode) {
+            <p class="mjo-sc__hint">Save or discard your edits first</p>
+        }
         @if (Error) {
             <p class="mjo-sc__error" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ Error }}</p>
         }
@@ -56,7 +63,7 @@
         <div class="mjo-sc__actions">
             <button type="button" mjButton variant="flat" size="sm" (click)="Close()" [disabled]="Busy">Keep subscription</button>
             @if (Preview) {
-                <button type="button" mjButton variant="danger" size="sm" (click)="Confirm()" [disabled]="Busy">Confirm cancellation</button>
+                <button type="button" mjButton variant="danger" size="sm" (click)="Confirm()" [disabled]="Busy || EditMode">Confirm cancellation</button>
             } @else {
                 <button type="button" mjButton variant="primary" size="sm" (click)="RunPreview()" [disabled]="Busy">Preview</button>
             }

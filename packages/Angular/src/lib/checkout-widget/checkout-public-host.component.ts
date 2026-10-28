@@ -125,7 +125,12 @@ declare global {
 })
 export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, OnDestroy {
     private readonly hostEl = inject(ElementRef, { optional: true });
-    private readonly cdr = inject(ChangeDetectorRef);
+    private readonly changeDetector = inject(ChangeDetectorRef);
+    /**
+     * Every redraw goes through here, so none runs once the host has removed the element: the async
+     * paths (a payment, `/complete`, the access poll) resume after it and would draw a dead view.
+     */
+    private readonly cdr = { detectChanges: (): void => (this.destroyed ? undefined : this.changeDetector.detectChanges()) };
 
     @Input() public slug = '';
     @Input() public apiRoot = '/checkout';
@@ -331,6 +336,12 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         }
     }
 
+    /**
+     * The host removed the element. A payment or `/complete` already in flight is left to finish, so a
+     * charged card still completes on the server, and the session-storage marker that lets a reload
+     * resume the account step is still kept. Everything that speaks to the page stops: no events, no
+     * state, no redraws, no access polling, no account step and no redirect.
+     */
     public ngOnDestroy(): void {
         this.destroyed = true;
         this.cancelBackgroundQuote();
@@ -833,6 +844,8 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         try {
             const deadline = Date.now() + this.accessPollTimeoutMs;
             for (;;) {
+                // Before each poll, which is also after each wait.
+                if (this.destroyed) return;
                 let state: CheckoutAccessState | null = null;
                 try {
                     state = ReadAccessState(
@@ -858,6 +871,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     /** Asks for the account step of the completed checkout. The host is asked again only after a failure. */
     private async loadAccount(): Promise<void> {
+        if (this.destroyed) return;
         this.accountLoading = true;
         this.cdr.detectChanges();
         try {
@@ -983,6 +997,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     /** Follows the widget's redirect once nothing is left for the buyer to do here. */
     private leaveIfDone(): void {
+        if (this.destroyed) return;
         const redirectUrl = this.redirectUrl;
         if (redirectUrl && !this.accountLoading && !this.accessTracking && MayRedirect(this.account, this.accountDismissed)) {
             // The landing page learns which order completed from `?order=` (#295).
@@ -992,7 +1007,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
 
     /** Reports a state the host page can track; repeats of the same state are not re-sent. */
     private setState(state: CheckoutElementState): void {
-        if (this.state === state) return;
+        if (this.destroyed || this.state === state) return;
         this.state = state;
         this.dispatch(CHECKOUT_STATE_CHANGE_EVENT, { state });
     }
@@ -1002,8 +1017,9 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.dispatch<CheckoutErrorDetail>(CHECKOUT_ERROR_EVENT, { stage, message });
     }
 
-    /** Dispatches on the `<mj-orders-checkout>` element; bubbling and composed, so `document` hears it too. */
+    /** Dispatches on the `<mj-orders-checkout>` element; bubbling and composed, so `document` hears it too. Nothing once it is removed. */
     private dispatch<T>(name: string, detail: T): void {
+        if (this.destroyed) return;
         const el = this.hostEl?.nativeElement as HTMLElement | undefined;
         el?.dispatchEvent(CheckoutElementEvent(name, detail));
     }

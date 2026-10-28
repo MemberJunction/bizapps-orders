@@ -1,4 +1,5 @@
 import { Component, OnInit } from '@angular/core';
+import { LogError } from '@memberjunction/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type {
@@ -18,6 +19,19 @@ import { FormatMoney } from '../panels/money-format';
 import { FormatCoverageWindow, FormatShortDate, FormatShortInstantDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
+
+/**
+ * Newest first for every list that reads in time order. The Overview loader keeps 8 rows, so the
+ * order also decides which 8 (bizapps-orders#738). `__mj_CreatedAt` breaks ties between rows stamped
+ * at the same instant, such as a cancel and its reactivation in one request.
+ */
+const NEWEST_OCCURRED_FIRST = 'OccurredAt DESC, __mj_CreatedAt DESC';
+const NEWEST_TERMS_FIRST = 'TermNumber DESC';
+const LATEST_GRANTS_FIRST = 'ValidTo DESC';
+const NEWEST_PAYMENTS_FIRST = 'PaymentDate DESC, __mj_CreatedAt DESC';
+
+/** How many rows an Overview list shows. */
+const OVERVIEW_ROWS = 8;
 
 const OVERVIEW_META = {
     slot: 'after-fields' as const,
@@ -104,6 +118,9 @@ export class PaymentOverviewPanel extends BaseFormPanel<mjBizAppsOrdersPaymentHe
 export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubscriptionEntity> implements OnInit {
     public Cards: MJOOverviewCard[] = [];
 
+    /** Counts loads, so one that finishes after a later one started cannot overwrite the later one's cards. */
+    private loadSeq = 0;
+
     public async ngOnInit(): Promise<void> {
         await this.load();
     }
@@ -113,25 +130,52 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
         void this.load();
     }
 
+    /**
+     * Loads are not serialised: `ngOnInit` and a quick Refresh can overlap and finish in either order,
+     * so only the newest one writes. A failed read keeps the cards already shown and logs, rather than
+     * blanking the panel or leaving an unhandled rejection (bizapps-orders#749).
+     */
     private async load(): Promise<void> {
         if (!this.Record?.IsSaved) return;
+        const seq = ++this.loadSeq;
         const p = this.FormComponent.ProviderToUse;
-        const [terms, grants, events] = await Promise.all([
-            LoadOverviewRows<Pick<mjBizAppsOrdersSubscriptionTermEntity, 'TermNumber' | 'StartDate' | 'EndDate' | 'Amount' | 'Status' | 'IsProrated'>>(
-                p, MJO_ENTITIES.SubscriptionTerm, `SubscriptionID='${this.Record.ID}'`,
-                ['TermNumber', 'StartDate', 'EndDate', 'Amount', 'Status', 'IsProrated'],
-            ),
-            LoadOverviewRows<Pick<mjBizAppsOrdersEntitlementGrantEntity, 'Status' | 'BeneficiaryPerson' | 'ValidTo'>>(
-                p, MJO_ENTITIES.EntitlementGrant, `SubscriptionID='${this.Record.ID}'`,
-                ['Status', 'BeneficiaryPerson', 'ValidTo'],
-            ),
-            LoadOverviewRows<Pick<mjBizAppsOrdersSubscriptionEventEntity, 'EventType' | 'OccurredAt'>>(
-                p, MJO_ENTITIES.SubscriptionEvent, `SubscriptionID='${this.Record.ID}'`,
-                ['EventType', 'OccurredAt'],
-            ),
-        ]);
+        try {
+            const [terms, grants, events] = await Promise.all([
+                LoadOverviewRows<Pick<mjBizAppsOrdersSubscriptionTermEntity, 'TermNumber' | 'StartDate' | 'EndDate' | 'Amount' | 'Status' | 'IsProrated'>>(
+                    p, MJO_ENTITIES.SubscriptionTerm, `SubscriptionID='${this.Record.ID}'`,
+                    ['TermNumber', 'StartDate', 'EndDate', 'Amount', 'Status', 'IsProrated'],
+                    OVERVIEW_ROWS, NEWEST_TERMS_FIRST,
+                ),
+                LoadOverviewRows<Pick<mjBizAppsOrdersEntitlementGrantEntity, 'Status' | 'BeneficiaryPerson' | 'ValidTo'>>(
+                    p, MJO_ENTITIES.EntitlementGrant, `SubscriptionID='${this.Record.ID}'`,
+                    ['Status', 'BeneficiaryPerson', 'ValidTo'],
+                    OVERVIEW_ROWS, LATEST_GRANTS_FIRST,
+                ),
+                LoadOverviewRows<Pick<mjBizAppsOrdersSubscriptionEventEntity, 'EventType' | 'OccurredAt'>>(
+                    p, MJO_ENTITIES.SubscriptionEvent, `SubscriptionID='${this.Record.ID}'`,
+                    ['EventType', 'OccurredAt'],
+                    OVERVIEW_ROWS, NEWEST_OCCURRED_FIRST,
+                ),
+            ]);
+            if (seq !== this.loadSeq) return;
+            this.Cards = this.buildCards(terms, grants, events);
+        } catch (err) {
+            if (seq !== this.loadSeq) return;
+            LogError(`Subscription Overview could not load for ${this.Record.ID}: ${err instanceof Error ? err.message : String(err)}`);
+            return;
+        }
+        this.FormComponent.cdr.detectChanges();
+    }
+
+    private buildCards(
+        terms: Pick<mjBizAppsOrdersSubscriptionTermEntity, 'TermNumber' | 'StartDate' | 'EndDate' | 'Amount' | 'Status' | 'IsProrated'>[],
+        grants: Pick<mjBizAppsOrdersEntitlementGrantEntity, 'Status' | 'BeneficiaryPerson' | 'ValidTo'>[],
+        events: Pick<mjBizAppsOrdersSubscriptionEventEntity, 'EventType' | 'OccurredAt'>[],
+    ): MJOOverviewCard[] {
+        // Terms arrive newest first, so the cap keeps the latest ones; the sort keeps the pick
+        // independent of the order the loader happens to return.
         const current = [...terms].sort((a, b) => b.TermNumber - a.TermNumber)[0];
-        this.Cards = [
+        return [
             {
                 Title: 'Current term',
                 Icon: 'fa-solid fa-clock-rotate-left',
@@ -176,7 +220,6 @@ export class SubscriptionOverviewPanel extends BaseFormPanel<mjBizAppsOrdersSubs
                 })),
             },
         ];
-        this.FormComponent.cdr.detectChanges();
     }
 }
 
@@ -207,6 +250,8 @@ export class SubscriptionTermOverviewPanel extends BaseFormPanel<mjBizAppsOrders
             MJO_ENTITIES.EntitlementGrant,
             `SubscriptionTermID='${this.Record.ID}'`,
             ['Status', 'BeneficiaryPerson', 'ValidTo'],
+            OVERVIEW_ROWS,
+            LATEST_GRANTS_FIRST,
         );
         this.Cards = [
             {
@@ -259,6 +304,8 @@ export class StoredValueOverviewPanel extends BaseFormPanel<mjBizAppsOrdersStore
             MJO_ENTITIES.StoredValueTransaction,
             `StoredValueAccountID='${this.Record.ID}'`,
             ['TransactionType', 'Amount', 'BalanceAfter', 'OccurredAt'],
+            OVERVIEW_ROWS,
+            NEWEST_OCCURRED_FIRST,
         );
         this.Cards = [
             {
@@ -313,6 +360,7 @@ export class PaymentProviderOverviewPanel extends BaseFormPanel<mjBizAppsOrdersP
         const [payments, intents] = await Promise.all([
             LoadOverviewRows<{ PaymentNumber: string; Amount: number; Status: string }>(
                 p, MJO_ENTITIES.PaymentHeader, `PaymentProviderID='${this.Record.ID}'`, ['PaymentNumber', 'Amount', 'Status'],
+                OVERVIEW_ROWS, NEWEST_PAYMENTS_FIRST,
             ),
             CountOverviewRows(p, MJO_ENTITIES.PaymentIntent, `PaymentProviderID='${this.Record.ID}'`),
         ]);

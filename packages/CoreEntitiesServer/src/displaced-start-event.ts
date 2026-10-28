@@ -24,6 +24,7 @@ export function DisplacedStartEventData(
     orderLineID: string,
     decision: SubscriptionDecision,
     requestedStart: Date | null,
+    requestedEnd: Date | null = null,
 ): DisplacedTermStartEventData | undefined {
     if (!decision.StartOverrideIgnored || !decision.Term || !requestedStart) return undefined;
     return {
@@ -33,5 +34,7 @@ export function DisplacedStartEventData(
         TermStartDate: day(decision.Term.StartDate),
         // The end of the coverage the line bought, which is the last term's when it bought several.
         TermEndDate: day(CoverageEndOf(decision) ?? decision.Term.EndDate),
+        // The end the line stated, so the notice can say the stated length was kept (golive #338).
+        ...(requestedEnd ? { RequestedEndDate: day(requestedEnd) } : {}),
     };
 }

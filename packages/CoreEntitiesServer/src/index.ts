@@ -14,8 +14,20 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 // invoicing act, the billing worklist, and the AR reclass seam AIDP-25 fills.
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
+export { ReplacePaymentScheduleOperation, LoadReplacePaymentScheduleOperation } from './ReplacePaymentScheduleOperation.js';
+export {
+    NormaliseReplacementRows,
+    PlanScheduleReplacement,
+    type ExistingScheduleRow,
+    type PlannedScheduleRow,
+    type ScheduleReplacementPlan,
+    type ScheduleReplacementRefusal,
+    type ScheduleReplacementRefusalCode,
+    type ScheduleReplacementRow,
+} from './PaymentScheduleReplacement.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { OrderAdjustmentEntityServer, LoadOrderAdjustmentEntityServer } from './OrderAdjustmentEntityServer.js';
 export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
@@ -61,6 +73,7 @@ export {
     LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    HeldManualDiscounts,
     LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,

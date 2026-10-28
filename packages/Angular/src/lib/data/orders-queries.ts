@@ -2115,6 +2115,12 @@ export interface MJOProductOption {
      * Resolved as confirm resolves it: the product's own type, or its product type's default (#903).
      */
     SubscriptionTypeID: string | null;
+    /**
+     * A bundle with a subscription product among its components (u623.1). The bundle line's term start
+     * reaches those components when the bundle expands (`InheritedFields` in the server package), so
+     * the line editor offers the field on the bundle line too.
+     */
+    ContainsSubscription: boolean;
 }
 
 /** Flatten a product + its type into the picker row. */
@@ -2137,6 +2143,7 @@ export function CatalogOptionFrom(
               Partial<Pick<mjBizAppsOrdersProductTypeEntity, 'DefaultSubscriptionTypeID'>>)
         | undefined,
     listPrice: number | null,
+    containsSubscription = false,
 ): MJOProductOption {
     return {
         ID: product.ID,
@@ -2151,7 +2158,32 @@ export function CatalogOptionFrom(
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
         SubscriptionTypeID: product.SubscriptionTypeID?.trim() || type?.DefaultSubscriptionTypeID?.trim() || null,
+        ContainsSubscription: containsSubscription,
     };
+}
+
+/** One row of `Product Bundle Items`, as much as {@link BundlesWithSubscription} reads. */
+export interface MJOBundleItemRow {
+    BundleProductID: string;
+    ComponentProductID: string;
+}
+
+/**
+ * The bundles (lower-cased ids) with a subscription product among their components. A component sells
+ * a subscription when its product names a subscription type, the same test bundle expansion uses to
+ * decide which components take the bundle line's term start.
+ */
+export function BundlesWithSubscription(
+    items: readonly MJOBundleItemRow[],
+    isSubscription: (productID: string) => boolean,
+): Set<string> {
+    const out = new Set<string>();
+    for (const item of items) {
+        if (item.BundleProductID && item.ComponentProductID && isSubscription(item.ComponentProductID)) {
+            out.add(item.BundleProductID.toLowerCase());
+        }
+    }
+    return out;
 }
 
 function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null }): number | null {
@@ -2222,10 +2254,38 @@ export function RankCatalogMatches(
 export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
     const products = await GetProducts({ User: user });
     const engine = OrdersEngine.Instance;
+    const withSubscription = await getBundlesWithSubscription(user);
     return products.map((product) => {
         const list = engine.BaseProductPrices(product.ID)[0];
-        return CatalogOptionFrom(product, engine.ProductTypeByID(product.ProductTypeID), list ? Number(list.Amount) : null);
+        return CatalogOptionFrom(
+            product,
+            engine.ProductTypeByID(product.ProductTypeID),
+            list ? Number(list.Amount) : null,
+            withSubscription.has(product.ID.toLowerCase()),
+        );
     });
+}
+
+/**
+ * Which bundles contain a subscription product. One read of the bundle items for the whole catalog.
+ * A failed read leaves every bundle without the term-start field, which is what the editor showed
+ * before; confirm still dates the components from their own types.
+ */
+async function getBundlesWithSubscription(user?: UserInfo): Promise<Set<string>> {
+    const result = await new RunView().RunView<MJOBundleItemRow>(
+        {
+            EntityName: MJO_ENTITIES.ProductBundleItem,
+            Fields: ['BundleProductID', 'ComponentProductID'],
+            ResultType: 'simple',
+        },
+        user ?? currentUser(),
+    );
+    if (!result.Success) {
+        console.warn(`Could not read bundle items: ${result.ErrorMessage ?? 'unknown error'}`);
+        return new Set();
+    }
+    const engine = OrdersEngine.Instance;
+    return BundlesWithSubscription(result.Results ?? [], (id) => !!engine.ProductByID(id)?.SubscriptionTypeID);
 }
 
 /** Promotions, newest window first. */

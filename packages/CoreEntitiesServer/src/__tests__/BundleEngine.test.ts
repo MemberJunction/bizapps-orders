@@ -34,7 +34,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => ({
             ProductByID: (id: string) => ({ ID: id, SubscriptionTypeID: m.SubscriptionProducts.has(id) ? 'type' : null }),
             // Expansion asks the resolver confirm uses (#903); the type-default case is the
             // resolver's own test, in OrdersEngine.test.ts.
-            SubscriptionTypeForProduct: (id: string) => (m.SubscriptionProducts.has(id) ? 'type' : null),
+            SubscriptionTypeIDForProduct: (id: string) => (m.SubscriptionProducts.has(id) ? 'type' : null),
         },
     },
 }));

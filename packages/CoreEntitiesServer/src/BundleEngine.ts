@@ -402,7 +402,7 @@ function applyFields(row: ExpandableLine, fields: Partial<InheritableLineFields>
 function inheriting(productID: string, isRenewalTarget: boolean) {
     return {
         // The product's own subscription type, or its type's default: the rule confirm books by (#903).
-        IsSubscription: !!OrdersEngine.Instance.SubscriptionTypeForProduct(productID),
+        IsSubscription: !!OrdersEngine.Instance.SubscriptionTypeIDForProduct(productID),
         IsRenewalTarget: isRenewalTarget,
     };
 }
