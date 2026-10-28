@@ -108,6 +108,8 @@ function fakeProvider(): { provider: IMetadataProvider; rec: Recorded } {
         BeginTransaction: async () => void rec.tx.push('begin'),
         CommitTransaction: async () => void rec.tx.push('commit'),
         RollbackTransaction: async () => void rec.tx.push('rollback'),
+        // No tasks app here, so no gateway alert can be open (E2b reads them before cancelling).
+        EntityByName: () => undefined,
         GetEntityObject: async (entityName: string, keyOrUser: unknown) => {
             const keyed = (keyOrUser as { KeyValuePairs?: { Value: string }[] })?.KeyValuePairs?.[0]?.Value;
             const entity: Record<string, unknown> = { NewRecord: () => true, LatestResult: null };

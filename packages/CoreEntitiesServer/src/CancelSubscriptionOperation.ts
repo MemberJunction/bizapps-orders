@@ -26,6 +26,15 @@
  *      grace remains — the read evaluator honours `subscription.EndDate` either way
  *   7. log a `SubscriptionEvent` — the lifecycle record that made the table worth having
  *
+ * A GATEWAY-BILLED SUBSCRIPTION (E2b). When a payment gateway bills it (`IsProviderBilled`), the gateway
+ * is asked FIRST, before the transaction, to charge nothing after coverage ends
+ * (./ProviderSubscriptionCancel.ts). If it does not confirm, nothing is written: a subscription
+ * cancelled here while the gateway still bills is exactly what this prevents. It is also refused while
+ * an open alert says another gateway subscription may be billing, and when no open term covers the
+ * request (the gateway's renewal is not booked here yet, so the term found would be one already paid
+ * and over). The stamp on the subscription is the one write `SubscriptionEntity` lets through for it,
+ * sanctioned after the gateway confirmed (./SubscriptionEntityServer.ts).
+ *
  * ATOMICITY: everything above shares one transaction opened here. The reversal order's own
  * `OrderEntityServer.Save` nests inside it as savepoints (the same composition booking already
  * relies on), so a failure anywhere leaves the subscription exactly as it was — never a reversed
@@ -76,6 +85,18 @@ import {
 import { InstalmentsToCancel } from './ContractBalance.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { LoadReversalContext } from './ReversalResolver.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { IsProviderBilled } from './ProviderBilledSubscriptions.js';
+import { SanctionCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
+import { raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
+import {
+    BusinessToday,
+    CancelAtGateway,
+    CancelBlockingAlerts,
+    GatewayCancelPreview,
+    PlanGatewayCancel,
+    type GatewayCancelSummary,
+} from './ProviderSubscriptionCancel.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -121,6 +142,11 @@ export interface CancelSubscriptionOutput {
     /** The reversal order, when one was needed. Absent when nothing was refunded. */
     ReversalOrderID?: string;
     ReversalOrderNumber?: string;
+    /**
+     * What the cancel did (or, on a preview, will do) at the payment gateway that bills the
+     * subscription. Absent when no gateway bills it.
+     */
+    Gateway?: GatewayCancelSummary;
 }
 
 /** A later term cancelled alongside the affected one. */
@@ -149,6 +175,9 @@ interface TermRow {
 
 interface SubscriptionRow {
     ID: string;
+    SubscriptionNumber: string;
+    PaymentProviderID: string | null;
+    ProviderSubscriptionID: string | null;
     CompanyID: string;
     SubscriptionTypeID: string;
     ProductID: string;
@@ -223,6 +252,19 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return { Success: false, Message: `Subscription is already canceled.` };
         }
 
+        // A gateway subscription Orders has not recorded, or a second one, would keep billing after a
+        // cancel that stops only the one it knows.
+        const blocking = await CancelBlockingAlerts(subscription.SubscriptionNumber, user, provider);
+        if (blocking.length) {
+            return {
+                Success: false,
+                Message:
+                    `Subscription ${subscription.SubscriptionNumber} has an open gateway alert (${blocking.join(', ')}): a gateway ` +
+                    `subscription may be billing that this cancel cannot see. Resolve that Task at the gateway first, then cancel.`,
+            };
+        }
+        const gatewayBilled = IsProviderBilled(subscription);
+
         const typeRules = await this.loadRules(provider, user, subscription.SubscriptionTypeID);
         if (!typeRules) {
             return {
@@ -237,6 +279,17 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return {
                 Success: false,
                 Message: `Subscription has no term to cancel — nothing was ever booked against it.`,
+            };
+        }
+        if (gatewayBilled && !this.coversOrPrecedes(openTerms, requestDate)) {
+            // The gateway renewed it but no term for the new period is booked here, so the term found is
+            // one already over: cancelling it would end access at once although the gateway was paid.
+            return {
+                Success: false,
+                Message:
+                    `Subscription ${subscription.SubscriptionNumber} is billed by the payment gateway (${subscription.ProviderSubscriptionID}), ` +
+                    `and no open term covers ${requestDate.toISOString().slice(0, 10)}: the gateway's renewal is not booked in Orders yet. ` +
+                    `Nothing was changed. Cancel it at the gateway, and in Orders once the renewal is booked.`,
             };
         }
 
@@ -287,8 +340,27 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         const message = [decision.Explanation, ...later.map((l) => l.Decision.Explanation)].join(' ');
         const summary = { SubscriptionTermID: term.ID, LaterTerms: laterTerms, TotalRefundAmount: totalRefund };
 
+        const zone = gatewayBilled ? await this.businessZone(provider, user) : null;
+        const gatewayPlan = zone ? PlanGatewayCancel(decision.EffectiveDate, BusinessToday(zone), zone) : null;
+
         if (input.Preview) {
-            return { Success: true, Decision: decisionResult(decision), ...summary, Message: message };
+            const gateway = gatewayPlan ? GatewayCancelPreview(subscription.ProviderSubscriptionID!, gatewayPlan) : undefined;
+            return { Success: true, Decision: decisionResult(decision), ...summary, Message: message, Gateway: gateway };
+        }
+
+        // The gateway first: if it does not confirm, nothing is written here.
+        let gateway: GatewayCancelSummary | undefined;
+        if (gatewayPlan) {
+            const atGateway = await CancelAtGateway(
+                { ID: subscription.ID, PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+                gatewayPlan,
+                provider,
+                user,
+            );
+            if (!atGateway.Success) {
+                return { Success: false, Message: atGateway.Reason, Decision: decisionResult(decision), ...summary, Gateway: atGateway.Summary };
+            }
+            gateway = atGateway.Summary;
         }
 
         const all: TermCancellation[] = [{ Term: term, Decision: decision }, ...later];
@@ -304,9 +376,9 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             for (const c of all) {
                 await this.stampTerm(provider, user, c.Term.ID, c.Decision);
             }
-            await this.stampSubscription(provider, user, subscription.ID, decision);
+            await this.stampSubscription(provider, user, subscription.ID, decision, !!gateway);
             await this.syncGrantsOnCancel(provider, user, subscription.ID, decision, input.Reason);
-            await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input, reversal?.ID);
+            await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input, reversal?.ID, gateway);
 
             await dbProvider.CommitTransaction();
             return {
@@ -316,6 +388,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 ...summary,
                 ReversalOrderID: reversal?.ID,
                 ReversalOrderNumber: reversal?.Number,
+                Gateway: gateway,
             };
         } catch (err) {
             LogError(`Orders.CancelSubscription failed for ${input.SubscriptionID}: ${err}`);
@@ -324,11 +397,33 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             } catch (rollbackErr) {
                 LogError(`Rollback failed after CancelSubscription error: ${rollbackErr}`);
             }
+            const reason = err instanceof Error ? err.message : String(err);
+            if (gateway) {
+                // The gateway already stopped billing; Orders did not record the cancel. No charge
+                // follows (Orders never renews a gateway-billed subscription), but access and the books
+                // still say active until the cancel is run again, which the gateway answers as done.
+                await raiseProviderSubscriptionAlert(
+                    {
+                        SubscriptionID: subscription.ID,
+                        SubscriptionNumber: subscription.SubscriptionNumber,
+                        Code: 'CanceledAtGatewayOnly',
+                        Reason:
+                            `the gateway confirmed the cancel of ${gateway.ProviderSubscriptionID} (${gateway.Outcome}), but recording ` +
+                            `the cancel in Orders failed (${reason}). Run Cancel subscription again to finish it.`,
+                        Linked: true,
+                    },
+                    user,
+                    provider,
+                ).catch((alertErr) => LogError(`CancelSubscription: could not raise the gateway-only alert: ${alertErr}`));
+            }
             return {
                 Success: false,
-                Message: err instanceof Error ? err.message : String(err),
+                Message: gateway
+                    ? `The payment gateway stopped billing ${gateway.ProviderSubscriptionID}, but recording the cancel in Orders failed: ${reason}. Run the cancel again to finish it.`
+                    : reason,
                 Decision: decisionResult(decision),
                 SubscriptionTermID: term.ID,
+                Gateway: gateway,
             };
         }
     }
@@ -347,6 +442,9 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 ExtraFilter: `ID='${id}'`,
                 Fields: [
                     'ID',
+                    'SubscriptionNumber',
+                    'PaymentProviderID',
+                    'ProviderSubscriptionID',
                     'CompanyID',
                     'SubscriptionTypeID',
                     'ProductID',
@@ -395,6 +493,18 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             user,
         );
         return result?.Results ?? [];
+    }
+
+    /** True when an open term covers the request day or starts after it: the term found is not one already over. */
+    private coversOrPrecedes(terms: TermRow[], requestDate: Date): boolean {
+        const at = requestDate.getTime();
+        return terms.some((t) => new Date(t.EndDate).getTime() >= at);
+    }
+
+    /** The business time zone. `Config(false, …)` is a no-op once the engine is loaded, so nothing is cached here. */
+    private async businessZone(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+        await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+        return BusinessTimeZoneEngine.Instance.Zone;
     }
 
     /**
@@ -466,6 +576,9 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // 'Cancellation' — one of the CK_OrderHeader_OrderType values. There is no 'Reversal'
         // order type; reversal is what the negative LINE does, not what the order is called.
         order.OrderType = 'Cancellation';
+        // Its lines may reverse a gateway-billed subscription's sale: this cancel already stopped the
+        // gateway (E2b). A return made any other way is refused.
+        SanctionCancellationReversal(order);
         order.OrderDate = orderDate;
         order.CompanyID = subscription.CompanyID;
         order.BillToOrganizationID = subscription.HolderOrganizationID;
@@ -605,12 +718,16 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         user: UserInfo,
         subscriptionID: string,
         decision: CancellationDecision,
+        gatewayConfirmed: boolean,
     ): Promise<void> {
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
             SUBSCRIPTION_ENTITY,
             CompositeKey.FromID(subscriptionID),
             user,
         );
+        // The one write the shared entity lets through on a gateway-billed subscription: the gateway
+        // has confirmed it charges nothing after coverage ends.
+        if (gatewayConfirmed) SanctionProviderBilledChange(sub);
         sub.Status = 'Canceled';
         sub.CanceledAt = new Date();
         // EndDate is the ACCESS date, not the revenue date — grace is exactly the window where the
@@ -633,6 +750,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         totalRefund: number,
         input: CancelSubscriptionInput,
         reversalOrderID?: string,
+        gateway?: GatewayCancelSummary,
     ): Promise<void> {
         const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
         event.NewRecord();
@@ -658,6 +776,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             // type's own rule. Null when the type decided.
             Timing: input.Timing ?? null,
             Reason: input.Reason ?? null,
+            // What the payment gateway did, when one bills it: the evidence that it stopped billing.
+            Gateway: gateway ?? null,
         });
         if (!(await event.Save())) {
             throw new Error(

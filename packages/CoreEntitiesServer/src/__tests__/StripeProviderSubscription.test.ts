@@ -6,9 +6,19 @@
  * `proration_behavior=none` charges nothing at creation; `billing_cycle_anchor_config` charged a full
  * year at once and must never be sent.
  */
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BasePaymentProvider, type PaymentProviderConfig } from '../BasePaymentProvider.js';
-import { OneIntervalLaterAsStripeCounts, OneYearLaterAsStripeCounts, StripeChargedAtCreation, StripePaymentProvider, StripePriceInterval } from '../StripePaymentProvider.js';
+import {
+    OneIntervalLaterAsStripeCounts,
+    OneYearLaterAsStripeCounts,
+    PlanStripeCancel,
+    StripeCancelState,
+    StripeChargedAtCreation,
+    StripePaymentProvider,
+    StripePriceInterval,
+    StripeSubscriptionFromObject,
+    type StripeCancelStateFacts,
+} from '../StripePaymentProvider.js';
 
 const config = (overrides: Partial<PaymentProviderConfig> = {}): PaymentProviderConfig => ({
     ID: '88EB5F2E-0000-4000-8000-000000000001',
@@ -372,5 +382,374 @@ describe('BasePaymentProvider', () => {
         expect(found.Success).toBe(false);
         expect((await base.DescribeProviderPrice('price_x')).Success).toBe(false);
         expect(base.LatestFirstChargeAt(new Date())).toBeNull();
+    });
+});
+
+// ─── E2b: cancelling a Stripe-billed subscription ──────────────────────────────────────────────────
+//
+// The running example: Jane's term 1 ends 30 Oct 2027. Stripe's period ends 00:00 Central on 30 Oct
+// 2027 (05:00 UTC, CDT), the charge E2 anchored on the term's last day. Sess cancels at end of term on
+// 3 Mar 2027 (09:00 CST = 15:00 UTC), so Orders asks for nothing after 00:00 Central on 31 Oct 2027
+// (05:00 UTC, still CDT: DST ends 7 Nov 2027).
+
+/** 3 Mar 2027 09:00 Central (CST). */
+const CANCEL_NOW = new Date('2027-03-03T15:00:00Z');
+/** Stripe's current_period_end: 00:00 CDT 30 Oct 2027 = 1824872400. */
+const PERIOD_END = new Date('2027-10-30T05:00:00Z');
+/** Orders' end of coverage for an end-of-term cancel: 00:00 CDT 31 Oct 2027 = 1824958800. */
+const WANTED = new Date('2027-10-31T05:00:00Z');
+/** A cancel effective 15 Jun 2027: nothing after 00:00 CDT 16 Jun 2027 = 1813122000, inside the period. */
+const MID = new Date('2027-06-16T05:00:00Z');
+/** A later instant: 00:00 CST 30 Nov 2027 = 1827554400, after the period end. */
+const LATER = new Date('2027-11-30T06:00:00Z');
+
+const facts = (overrides: Partial<StripeCancelStateFacts> = {}): StripeCancelStateFacts => ({
+    Status: 'active',
+    CurrentPeriodEnd: PERIOD_END,
+    CancelAtPeriodEnd: false,
+    CancelAt: null,
+    ...overrides,
+});
+
+describe('PlanStripeCancel (E2b)', () => {
+    it('Jane already cancelled in Stripe (canceled, incomplete_expired): AlreadyEnded at now, whatever was asked', () => {
+        for (const Status of ['canceled', 'incomplete_expired']) {
+            expect(PlanStripeCancel(facts({ Status }), WANTED, CANCEL_NOW)).toEqual({ Action: 'None', Outcome: 'AlreadyEnded', BillingEndsAt: CANCEL_NOW });
+            expect(PlanStripeCancel(facts({ Status }), null, CANCEL_NOW)).toEqual({ Action: 'None', Outcome: 'AlreadyEnded', BillingEndsAt: CANCEL_NOW });
+        }
+        // Control: the same facts while active are not "ended".
+        expect(PlanStripeCancel(facts(), null, CANCEL_NOW)).toEqual({ Action: 'CancelNow' });
+    });
+
+    it('Jane already set to end at her period end (30 Oct 2027), asked for 31 Oct: AlreadyEnding at 30 Oct, no change', () => {
+        expect(PlanStripeCancel(facts({ CancelAtPeriodEnd: true, CancelAt: PERIOD_END }), WANTED, CANCEL_NOW)).toEqual({
+            Action: 'None',
+            Outcome: 'AlreadyEnding',
+            BillingEndsAt: PERIOD_END,
+        });
+        // Boundary: the period ends exactly at the wanted instant → still AlreadyEnding (≤, not <).
+        expect(PlanStripeCancel(facts({ CancelAtPeriodEnd: true }), PERIOD_END, CANCEL_NOW)).toEqual({
+            Action: 'None',
+            Outcome: 'AlreadyEnding',
+            BillingEndsAt: PERIOD_END,
+        });
+    });
+
+    it('set to end at its period end, but asked for 16 Jun 2027 (inside the period): must act → CancelAt 16 Jun', () => {
+        expect(PlanStripeCancel(facts({ CancelAtPeriodEnd: true }), MID, CANCEL_NOW)).toEqual({ Action: 'CancelAt', BillingEndsAt: MID });
+    });
+
+    it('cancel_at 16 Jun 2027 already set, asked for 31 Oct 2027: AlreadyEnding at 16 Jun', () => {
+        expect(PlanStripeCancel(facts({ CancelAt: MID }), WANTED, CANCEL_NOW)).toEqual({ Action: 'None', Outcome: 'AlreadyEnding', BillingEndsAt: MID });
+        // Boundary: cancel_at exactly the wanted instant.
+        expect(PlanStripeCancel(facts({ CancelAt: WANTED }), WANTED, CANCEL_NOW)).toEqual({ Action: 'None', Outcome: 'AlreadyEnding', BillingEndsAt: WANTED });
+    });
+
+    it('cancel_at later than wanted is NOT already ending: cancel_at 30 Oct asked 16 Jun → CancelAt 16 Jun; cancel_at 30 Nov asked 31 Oct → AtPeriodEnd', () => {
+        expect(PlanStripeCancel(facts({ CancelAt: PERIOD_END }), MID, CANCEL_NOW)).toEqual({ Action: 'CancelAt', BillingEndsAt: MID });
+        expect(PlanStripeCancel(facts({ CancelAt: LATER }), WANTED, CANCEL_NOW)).toEqual({ Action: 'AtPeriodEnd', BillingEndsAt: PERIOD_END });
+    });
+
+    it('asked for now (null) → CancelNow', () => {
+        expect(PlanStripeCancel(facts(), null, CANCEL_NOW)).toEqual({ Action: 'CancelNow' });
+        expect(PlanStripeCancel(facts({ Status: 'trialing' }), null, CANCEL_NOW)).toEqual({ Action: 'CancelNow' });
+    });
+
+    it('an instant already passed (2 Mar 2027 while it is 3 Mar), or exactly now, → CancelNow', () => {
+        expect(PlanStripeCancel(facts(), new Date('2027-03-02T06:00:00Z'), CANCEL_NOW)).toEqual({ Action: 'CancelNow' });
+        expect(PlanStripeCancel(facts(), new Date(CANCEL_NOW.getTime()), CANCEL_NOW)).toEqual({ Action: 'CancelNow' });
+        // Control: one millisecond later is a future instant inside the period → CancelAt.
+        const justAfter = new Date(CANCEL_NOW.getTime() + 1);
+        expect(PlanStripeCancel(facts(), justAfter, CANCEL_NOW)).toEqual({ Action: 'CancelAt', BillingEndsAt: justAfter });
+    });
+
+    it('past_due, unpaid, incomplete, paused with a future instant (31 Oct 2027) → CancelNow (Stripe may be collecting a renewal Orders never sold)', () => {
+        for (const Status of ['past_due', 'unpaid', 'incomplete', 'paused']) {
+            expect(PlanStripeCancel(facts({ Status }), WANTED, CANCEL_NOW)).toEqual({ Action: 'CancelNow' });
+        }
+    });
+
+    it('active, period ends 30 Oct 2027 before 31 Oct → AtPeriodEnd at 30 Oct; trialing likewise', () => {
+        expect(PlanStripeCancel(facts(), WANTED, CANCEL_NOW)).toEqual({ Action: 'AtPeriodEnd', BillingEndsAt: PERIOD_END });
+        expect(PlanStripeCancel(facts({ Status: 'trialing' }), WANTED, CANCEL_NOW)).toEqual({ Action: 'AtPeriodEnd', BillingEndsAt: PERIOD_END });
+    });
+
+    it('boundary: the period ends EXACTLY at the wanted instant (30 Oct 05:00 UTC) → AtPeriodEnd, not CancelAt', () => {
+        expect(PlanStripeCancel(facts(), PERIOD_END, CANCEL_NOW)).toEqual({ Action: 'AtPeriodEnd', BillingEndsAt: PERIOD_END });
+        // One second earlier falls inside the period → CancelAt.
+        const before = new Date(PERIOD_END.getTime() - 1000);
+        expect(PlanStripeCancel(facts(), before, CANCEL_NOW)).toEqual({ Action: 'CancelAt', BillingEndsAt: before });
+    });
+
+    it('active, cancel effective 15 Jun 2027 (inside the period) → CancelAt 00:00 CDT 16 Jun 2027', () => {
+        expect(PlanStripeCancel(facts(), MID, CANCEL_NOW)).toEqual({ Action: 'CancelAt', BillingEndsAt: MID });
+        expect(PlanStripeCancel(facts({ Status: 'trialing' }), MID, CANCEL_NOW)).toEqual({ Action: 'CancelAt', BillingEndsAt: MID });
+    });
+});
+
+describe('StripeCancelState (E2b)', () => {
+    it("reads Jane's subscription: seconds become instants", () => {
+        expect(
+            StripeCancelState({ status: 'active', current_period_end: 1824872400, cancel_at_period_end: true, cancel_at: 1813122000 }),
+        ).toEqual({ Status: 'active', CurrentPeriodEnd: PERIOD_END, CancelAtPeriodEnd: true, CancelAt: MID });
+    });
+
+    it('cancel_at_period_end is true only for boolean true', () => {
+        for (const v of ['true', 1, 'yes', null, undefined, false]) {
+            expect(StripeCancelState({ status: 'active', cancel_at_period_end: v }).CancelAtPeriodEnd).toBe(false);
+        }
+    });
+
+    it('null, 0, negative or garbage seconds become null; a missing status is ""', () => {
+        for (const v of [null, undefined, 0, -5, 'garbage', {}, Number.NaN]) {
+            const state = StripeCancelState({ current_period_end: v, cancel_at: v });
+            expect(state.CurrentPeriodEnd).toBeNull();
+            expect(state.CancelAt).toBeNull();
+            expect(state.Status).toBe('');
+        }
+        // A numeric string is seconds too (Stripe never sends one, but it is unambiguous).
+        expect(StripeCancelState({ cancel_at: '1813122000' }).CancelAt).toEqual(MID);
+    });
+});
+
+describe('StripeSubscriptionFromObject IsLive for every Stripe status (R3)', () => {
+    it('active, trialing, past_due, unpaid, incomplete, paused are live; canceled and incomplete_expired are ended', () => {
+        const live = ['active', 'trialing', 'past_due', 'unpaid', 'incomplete', 'paused'];
+        const ended = ['canceled', 'incomplete_expired'];
+        for (const status of live) expect({ status, IsLive: StripeSubscriptionFromObject({ id: 'sub_x', status }).IsLive }).toEqual({ status, IsLive: true });
+        for (const status of ended) expect({ status, IsLive: StripeSubscriptionFromObject({ id: 'sub_x', status }).IsLive }).toEqual({ status, IsLive: false });
+    });
+});
+
+describe('StripePaymentProvider.CancelProviderSubscription (E2b)', () => {
+    const KEY = 'provider-subscription-cancel:sub-1:sub_x:1824958800';
+    const subscription = (overrides: Record<string, unknown> = {}) => ({
+        id: 'sub_x',
+        object: 'subscription',
+        status: 'active',
+        current_period_end: 1824872400,
+        cancel_at_period_end: false,
+        cancel_at: null,
+        ...overrides,
+    });
+    const URL_X = 'https://api.stripe.com/v1/subscriptions/sub_x';
+
+    beforeEach(() => {
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(CANCEL_NOW);
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+    });
+
+    it('a stub account (IsLiveMode = 0) refuses and never calls Stripe', async () => {
+        const { driver, sent, restore } = live([], { IsLiveMode: false });
+        try {
+            const result = await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY });
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toMatch(/IsLiveMode = 0/);
+            expect(result.Reason).toMatch(/sub_x/);
+            expect(result.Outcome).toBeUndefined();
+            expect(sent).toHaveLength(0);
+        } finally {
+            restore();
+        }
+    });
+
+    it("GET 404: refuses with Stripe's own message and changes nothing", async () => {
+        const { driver, sent, restore } = live([{ status: 404, body: { error: { message: "No such subscription: 'sub_x'" } } }]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).toEqual({
+                Success: false,
+                Reason: "Stripe could not find sub_x: No such subscription: 'sub_x'",
+            });
+            expect(sent).toHaveLength(1);
+            expect(sent[0].method).toBe('GET');
+        } finally {
+            restore();
+        }
+    });
+
+    it('Jane already canceled in the Stripe dashboard: AlreadyEnded, no DELETE', async () => {
+        const { driver, sent, restore } = live([{ body: subscription({ status: 'canceled' }) }]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).toEqual({
+                Success: true,
+                Outcome: 'AlreadyEnded',
+                BillingEndsAt: CANCEL_NOW,
+                Status: 'canceled',
+            });
+            expect(sent.map((s) => s.method)).toEqual(['GET']);
+            expect(sent[0].url).toBe(URL_X);
+        } finally {
+            restore();
+        }
+    });
+
+    it('immediate cancel (BillingEndsAt null): exactly one DELETE /v1/subscriptions/sub_x, no Idempotency-Key, Stripe-Version 2024-06-20', async () => {
+        const { driver, sent, restore } = live([{ body: subscription() }, { body: subscription({ status: 'canceled' }) }]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).toEqual({
+                Success: true,
+                Outcome: 'CanceledNow',
+                BillingEndsAt: CANCEL_NOW,
+                Status: 'canceled',
+            });
+            expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([`GET ${URL_X}`, `DELETE ${URL_X}`]);
+            expect(sent[1].headers['Idempotency-Key']).toBeUndefined();
+            expect([...sent[1].body.keys()]).toEqual([]);
+            for (const call of sent) {
+                expect(call.headers['Stripe-Version']).toBe('2024-06-20');
+                expect(call.signal).toBeInstanceOf(AbortSignal);
+            }
+        } finally {
+            restore();
+        }
+    });
+
+    it('end of term (31 Oct 2027): POST cancel_at_period_end=true with the idempotency key → EndsAtPeriodEnd at 30 Oct', async () => {
+        const { driver, sent, restore } = live([{ body: subscription() }, { body: subscription({ cancel_at_period_end: true, cancel_at: 1824872400 }) }]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).toEqual({
+                Success: true,
+                Outcome: 'EndsAtPeriodEnd',
+                BillingEndsAt: PERIOD_END,
+                Status: 'active',
+            });
+            expect(sent.map((s) => `${s.method} ${s.url}`)).toEqual([`GET ${URL_X}`, `POST ${URL_X}`]);
+            expect(Object.fromEntries(sent[1].body)).toEqual({ cancel_at_period_end: 'true' });
+            expect(sent[1].headers['Idempotency-Key']).toBe(KEY);
+            expect(sent[0].headers['Idempotency-Key']).toBeUndefined();
+            expect(sent[1].headers['Stripe-Version']).toBe('2024-06-20');
+        } finally {
+            restore();
+        }
+    });
+
+    it('mid-period (cancel effective 15 Jun 2027): POST cancel_at=1813122000 (seconds, floored) and proration_behavior=none → EndsAt', async () => {
+        const { driver, sent, restore } = live([{ body: subscription() }, { body: subscription({ cancel_at: 1813122000 }) }]);
+        try {
+            const wantedWithMs = new Date(MID.getTime() + 999);
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: wantedWithMs, IdempotencyKey: KEY })).toEqual({
+                Success: true,
+                Outcome: 'EndsAt',
+                BillingEndsAt: MID,
+                Status: 'active',
+            });
+            expect(sent[1].method).toBe('POST');
+            expect(Object.fromEntries(sent[1].body)).toEqual({ cancel_at: '1813122000', proration_behavior: 'none' });
+            expect(sent[1].headers['Idempotency-Key']).toBe(KEY);
+        } finally {
+            restore();
+        }
+    });
+
+    it('two people press Cancel: the POST is refused (400) but a re-read shows it already ending → Success, AlreadyEnding', async () => {
+        const { driver, sent, restore } = live([
+            { body: subscription() },
+            { status: 400, body: { error: { message: 'Keys for idempotent requests can only be used with the same parameters they were first used with.' } } },
+            { body: subscription({ cancel_at_period_end: true, cancel_at: 1824872400 }) },
+        ]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).toEqual({
+                Success: true,
+                Outcome: 'AlreadyEnding',
+                BillingEndsAt: PERIOD_END,
+                Status: 'active',
+            });
+            expect(sent.map((s) => s.method)).toEqual(['GET', 'POST', 'GET']);
+        } finally {
+            restore();
+        }
+    });
+
+    it('the DELETE is refused but a re-read shows it canceled → Success, AlreadyEnded', async () => {
+        const { driver, sent, restore } = live([
+            { body: subscription() },
+            { status: 404, body: { error: { message: "No such subscription: 'sub_x'" } } },
+            { body: subscription({ status: 'canceled' }) },
+        ]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).toMatchObject({
+                Success: true,
+                Outcome: 'AlreadyEnded',
+                Status: 'canceled',
+            });
+            expect(sent.map((s) => s.method)).toEqual(['GET', 'DELETE', 'GET']);
+        } finally {
+            restore();
+        }
+    });
+
+    it("the POST is refused and the re-read still shows it billing → Success false, naming Stripe's reason", async () => {
+        const { driver, sent, restore } = live([
+            { body: subscription() },
+            { status: 400, body: { error: { message: 'This subscription is managed by a subscription schedule.' } } },
+            { body: subscription() },
+        ]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).toEqual({
+                Success: false,
+                Reason: 'Stripe refused to cancel sub_x: This subscription is managed by a subscription schedule.',
+            });
+            expect(sent.map((s) => s.method)).toEqual(['GET', 'POST', 'GET']);
+        } finally {
+            restore();
+        }
+    });
+
+    it('the POST is refused and the re-read is refused too → Success false with the POST reason', async () => {
+        const { driver, restore } = live([
+            { body: subscription() },
+            { status: 400, body: { error: { message: 'Refused.' } } },
+            { status: 403, body: { error: { message: 'The key lacks Subscriptions: Read' } } },
+        ]);
+        try {
+            expect(await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).toEqual({
+                Success: false,
+                Reason: 'Stripe refused to cancel sub_x: Refused.',
+            });
+        } finally {
+            restore();
+        }
+    });
+
+    it('the POST "succeeds" but the returned subscription still bills after 31 Oct → Success false (verified, not trusted)', async () => {
+        const { driver, restore } = live([{ body: subscription() }, { body: subscription() }]);
+        try {
+            const result = await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY });
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toBe("Stripe accepted the cancel of sub_x but it still shows as billing (status 'active').");
+            expect(result.Outcome).toBeUndefined();
+        } finally {
+            restore();
+        }
+    });
+
+    it('the DELETE "succeeds" but the returned subscription is still active → Success false', async () => {
+        const { driver, restore } = live([{ body: subscription() }, { body: subscription() }]);
+        try {
+            expect((await driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).Success).toBe(false);
+        } finally {
+            restore();
+        }
+    });
+
+    it('a 5xx on the read or on the change throws (a fault; the caller catches it)', async () => {
+        const { driver, restore } = live([{ status: 503, body: {} }, { body: subscription() }, { status: 500, body: {} }]);
+        try {
+            await expect(driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).rejects.toThrow(/503 calling GET \/subscriptions\/sub_x/);
+            await expect(driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).rejects.toThrow(/500 calling POST \/subscriptions\/sub_x/);
+        } finally {
+            restore();
+        }
+    });
+
+    it('the base driver refuses a cancel', async () => {
+        const base = new BasePaymentProvider();
+        base.Config = config({ TypeCode: 'Manual' });
+        const result = await base.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY });
+        expect(result.Success).toBe(false);
+        expect(result.Reason).toMatch(/'Manual' payment provider does not support cancelling a gateway-billed subscription/);
     });
 });

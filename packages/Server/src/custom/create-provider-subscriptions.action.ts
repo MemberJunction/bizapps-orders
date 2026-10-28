@@ -15,6 +15,8 @@
  * (`EnsureProviderSubscriptionsOnOwnProvider`): the scheduler's provider is shared with the process.
  *
  * PREVIEW DEFAULTS TO TRUE, and is read strictly: the scheduled job ships Disabled and set to Preview.
+ * A preview searches the gateway (read-only) and reports what a run would create, record or raise; it
+ * creates, records and cancels nothing. Its search finds only gateway subscriptions Orders created.
  *
  * THE RUN FAILS ONLY FOR NEW PROBLEMS. A subscription that needs a person raises one open Task; while
  * it stays open, later runs report it in `Waiting` and succeed, so the job's failure notice means

@@ -146,4 +146,74 @@ describe('Cancel subscription', () => {
         expect(c.Preview).toBeNull();
         expect(c.Open).toBe(true);
     });
+    describe('when a payment gateway bills the subscription (E2b)', () => {
+        const GATEWAY_REFUSAL =
+            'The payment gateway did not confirm the cancel of sub_x: card_declined. Nothing was changed in Orders. Try again.';
+
+        it('names the gateway subscription id, and none for a subscription the gateway does not bill', () => {
+            expect(componentFor({ ProviderSubscriptionID: 'sub_1Abc' } as Partial<mjBizAppsOrdersSubscriptionEntity>).GatewaySubscriptionID).toBe('sub_1Abc');
+            expect(componentFor({}).GatewaySubscriptionID).toBeNull();
+            expect(componentFor({ ProviderSubscriptionID: null } as unknown as Partial<mjBizAppsOrdersSubscriptionEntity>).GatewaySubscriptionID).toBeNull();
+        });
+
+        it('describes an immediate gateway cancel as stopping billing today', () => {
+            const c = componentFor({});
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now' })).toBe('Stops billing today');
+            // BillingEndsAt is ignored for Now: the gateway stops today whatever the date says.
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now', BillingEndsAt: '2026-12-31T00:00:00.000Z' })).toBe('Stops billing today');
+        });
+
+        it('describes an end-of-coverage gateway cancel with the day billing ends', () => {
+            const c = componentFor({});
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2026-12-31T00:00:00.000Z' }))
+                .toBe("Won't renew; nothing charged after 2026-12-31");
+            // The day is the UTC day of the instant, the same formatting as the other preview rows.
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2027-01-30T23:59:59.000Z' }))
+                .toBe(`Won't renew; nothing charged after ${c.Day('2027-01-30T23:59:59.000Z')}`);
+            expect(c.Day('2027-01-30T23:59:59.000Z')).toBe('2027-01-30');
+        });
+
+        it('falls back to words, never a dash, when the gateway gives no billing end', () => {
+            const c = componentFor({});
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage' }))
+                .toBe("Won't renew; nothing charged after coverage ends");
+        });
+
+        it('shows a gateway refusal on confirm, does not emit, and stays open with nothing reset', async () => {
+            const c = componentFor({ ProviderSubscriptionID: 'sub_x' } as Partial<mjBizAppsOrdersSubscriptionEntity>);
+            mocks.output = { ...PREVIEW, Gateway: { ProviderSubscriptionID: 'sub_x', When: 'Now' } };
+            c.Start();
+            c.Timing = 'Immediate';
+            c.Reason = 'Moved';
+            await c.RunPreview();
+            mocks.output = { Success: false, Message: GATEWAY_REFUSAL };
+            await c.Confirm();
+
+            expect(mocks.calls).toHaveLength(2);
+            expect(mocks.calls[1].input).toMatchObject({ Preview: false, Timing: 'Immediate' });
+            expect(c.Error).toBe(GATEWAY_REFUSAL);
+            expect(c.Canceled.emit).not.toHaveBeenCalled();
+            expect(c.Open).toBe(true);
+            expect(c.Busy).toBe(false);
+            expect(c.Timing).toBe('Immediate');
+            expect(c.Reason).toBe('Moved');
+        });
+
+        it('still emits Canceled and closes when the gateway confirms', async () => {
+            const c = componentFor({ ProviderSubscriptionID: 'sub_x' } as Partial<mjBizAppsOrdersSubscriptionEntity>);
+            const preview = { ...PREVIEW, Gateway: { ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2026-12-31T00:00:00.000Z' } };
+            const done = { ...preview, Gateway: { ...preview.Gateway, Outcome: 'EndsAtPeriodEnd' } };
+            mocks.output = preview;
+            c.Start();
+            await c.RunPreview();
+            expect(c.Preview).toBe(preview);
+            mocks.output = done;
+            await c.Confirm();
+
+            expect(c.Canceled.emit).toHaveBeenCalledOnce();
+            expect(c.Canceled.emit).toHaveBeenCalledWith(done);
+            expect(c.Error).toBeNull();
+            expect(c.Open).toBe(false);
+        });
+    });
 });

@@ -10,7 +10,12 @@ const mocks = vi.hoisted(() => ({
     subscriptionResults: [] as Array<{ ProductID: string; Product: string }>,
     subscriptionSuccess: true,
     /** Subscriptions a gateway bills (the read that names `ProviderSubscriptionID IS NOT NULL`). */
-    providerBilledResults: [] as Array<{ ID: string; ProductID: string }>,
+    providerBilledResults: [] as Array<{ ID: string; ProductID: string; Status?: string }>,
+    /**
+     * Fails ONLY the gateway-billed read (Robert's R4): every other read still answers. Separate from
+     * `subscriptionSuccess`, which fails every read and so cannot tell which read the refusal came from.
+     */
+    failProviderBilledRead: false,
     termResults: [] as Array<{ ID: string; SubscriptionID: string; EndDate: Date }>,
     /** Products with a subscription type (the read that names `SubscriptionTypeID IS NOT NULL`). */
     subscriptionProductResults: [] as Array<{ ID: string }>,
@@ -33,6 +38,22 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         : params.ExtraFilter.includes('ProviderSubscriptionID IS NOT NULL')
                           ? mocks.providerBilledResults
                           : mocks.subscriptionResults;
+                const providerBilledRead = params.EntityName !== 'MJ_BizApps_Orders: Subscription Terms' &&
+                    params.EntityName !== 'MJ_BizApps_Orders: Products' &&
+                    params.ExtraFilter.includes('ProviderSubscriptionID IS NOT NULL');
+                if (providerBilledRead && mocks.failProviderBilledRead) {
+                    return Promise.resolve({ Success: false, ErrorMessage: 'deadlock victim', Results: [] });
+                }
+                if (providerBilledRead) {
+                    // Rows that carry a Status are selected the way SQL would: only when the filter's IN list names it.
+                    const inList = /Status IN \(([^)]*)\)/.exec(params.ExtraFilter)?.[1] ?? '';
+                    const statuses = inList.split(',').map((x) => x.trim().replace(/^'|'$/g, ''));
+                    return Promise.resolve({
+                        Success: mocks.subscriptionSuccess,
+                        ErrorMessage: mocks.subscriptionSuccess ? undefined : 'database unavailable',
+                        Results: mocks.providerBilledResults.filter((r) => !r.Status || statuses.includes(r.Status)),
+                    });
+                }
                 return Promise.resolve({
                     Success: mocks.subscriptionSuccess,
                     ErrorMessage: mocks.subscriptionSuccess ? undefined : 'database unavailable',
@@ -77,6 +98,7 @@ describe('RunPrePurchaseChecks', () => {
         mocks.subscriptionResults = [];
         mocks.subscriptionSuccess = true;
         mocks.providerBilledResults = [];
+        mocks.failProviderBilledRead = false;
         mocks.termResults = [];
         mocks.filters = [];
         hostCheck = null;
@@ -165,6 +187,7 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
         mocks.subscriptionResults = [];
         mocks.subscriptionSuccess = true;
         mocks.providerBilledResults = [];
+        mocks.failProviderBilledRead = false;
         mocks.termResults = [];
         // The draft sells a subscription product unless a test says otherwise.
         mocks.subscriptionProductResults = [{ ID: PRODUCT }];
@@ -200,7 +223,8 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
         expect(refused?.Refusal).toEqual({ Code: 'ProviderBilledSubscription', Source: 'built-in', ProductIDs: [PROFESSIONAL] });
         expect(mocks.filters[0]).toContain("BeneficiaryPersonID = '11111111-0000-4000-8000-000000000001'");
         expect(mocks.filters[0]).toContain("CompanyID = '22222222-0000-4000-8000-000000000001'");
-        expect(mocks.filters[0]).toContain("Status IN ('Active', 'Trialing')");
+        // Every held status, Paused included (Robert, #972): a paused gateway-billed subscription is still billed.
+        expect(mocks.filters[0]).toContain("Status IN ('Active', 'Trialing', 'Paused')");
         expect(mocks.filters[0]).toContain('ProviderSubscriptionID IS NOT NULL');
         // #948's rule for every READER: one top-level AND of the filter (MJ wraps it in a WHERE), no top-level OR.
         expectTopLevelConjunct(`WHERE ${mocks.filters[0]} ORDER BY ID`, 'WHERE', 'ORDER BY ID', 'ProviderSubscriptionID IS NOT NULL');
@@ -245,6 +269,41 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
     it('refuses, rather than builds a filter from, an id that is not a UUID', async () => {
         expect((await RunPrePurchaseChecks(context({ PersonID: "x' OR 1=1 --" })))?.Refusal.Code).toBe('Unverified');
         expect(mocks.filters).toHaveLength(0);
+    });
+
+    it("R4 (R09 isolation): ONLY the gateway-billed read failing still refuses as Unverified, though the held read would allow", async () => {
+        // Kills: `if (!held.Success) return null;` in checkProviderBilledSubscriptions. With that, the
+        // same-product read (which succeeds, empty) and the host check would let a second Stripe-billed
+        // subscription through. `subscriptionSuccess = false` cannot catch it: it fails the held read too.
+        mocks.failProviderBilledRead = true;
+        const refused = await RunPrePurchaseChecks(context());
+        expect(refused).toEqual({
+            Message: 'This purchase could not be verified right now. Please try again later.',
+            Refusal: { Code: 'Unverified', Source: 'built-in', ProductIDs: [] },
+        });
+        // Only the gateway-billed read ran: the refusal came from it, not from a later read.
+        expect(mocks.filters).toHaveLength(1);
+        expect(mocks.filters[0]).toContain('ProviderSubscriptionID IS NOT NULL');
+    });
+
+    it('R4 control: with the gateway-billed read answering (empty), the same buyer is allowed and the held read runs', async () => {
+        // Proves the switch above fails one read only: flip it off and nothing else refuses.
+        expect(await RunPrePurchaseChecks(context())).toBeNull();
+        expect(mocks.filters.some((f) => !f.includes('ProviderSubscriptionID IS NOT NULL'))).toBe(true);
+    });
+
+    it("Jane's PAUSED Stripe-billed SUB-000110 still refuses another subscription purchase", async () => {
+        // Kills: reverting the status list to HELD_SUBSCRIPTION_STATUSES (Active, Trialing).
+        mocks.providerBilledResults = [{ ID: JANE_SUB, ProductID: PROFESSIONAL, Status: 'Paused' }];
+        const refused = await RunPrePurchaseChecks(context({ Lines: [{ ProductID: EXECUTIVE, Quantity: 1 }] }));
+        expect(refused?.Refusal).toEqual({ Code: 'ProviderBilledSubscription', Source: 'built-in', ProductIDs: [PROFESSIONAL] });
+    });
+
+    it('a CANCELED Stripe-billed subscription is not selected, so the buyer may buy again', async () => {
+        // Kills: widening the list to every status (a cancelled member could never come back through checkout).
+        mocks.providerBilledResults = [{ ID: JANE_SUB, ProductID: PROFESSIONAL, Status: 'Canceled' }];
+        expect(await RunPrePurchaseChecks(context({ Lines: [{ ProductID: EXECUTIVE, Quantity: 1 }] }))).toBeNull();
+        expect(mocks.filters[0]).not.toContain("'Canceled'");
     });
 
     it('formats a stored day without shifting it by a zone', () => {

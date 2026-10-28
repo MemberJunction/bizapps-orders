@@ -64,7 +64,11 @@
  *     new key, never Stripe's "same key, other parameters" refusal; and the next day's pass is a new
  *     key, so a refusal staff fixed is asked again rather than replayed from Stripe's cache.
  *   · The id is written only while the column is still empty, re-read just before the write. A
- *     different id already there is an alert, never an overwrite.
+ *     different id already there is an alert, never an overwrite. (Not atomic: two writers that both
+ *     read it empty both save, the later one winning; the search after create is what catches that.)
+ *     `SubscriptionEntity` refuses any change to an id that was already recorded when loaded.
+ *   · After a create the gateway is searched again; two live subscriptions for one Orders subscription
+ *     (two runs straddling business midnight) raise an urgent `AmbiguousAtGateway`.
  *   · A live gateway subscription found for it is recorded even when it bills another price or
  *     quantity than the plan, and raised (`FoundMismatch`): it will bill whatever Orders does, so not
  *     recording it would add Orders' renewal to the gateway's (a double charge) to fix a wrong amount.
@@ -92,6 +96,7 @@ import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
 const PAYMENT_PROVIDER_PRICE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Prices';
+const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 
 /** The gateway metadata key that carries the Orders subscription id, and that a retry searches by. */
 export const ORDERS_SUBSCRIPTION_METADATA_KEY = 'OrdersSubscriptionID';
@@ -141,6 +146,26 @@ export function PlanProviderSubscriptionCharge(
 }
 
 /**
+ * The gateway ids a subscription's lifecycle events name as no longer its own: the `Gateway` a cancel
+ * stopped (`Canceled`), and the id a fresh start retired (`Activated`). Unreadable event data is skipped.
+ */
+export function RetiredGatewayIDsFromEvents(events: Array<{ EventData: string | null }>): Set<string> {
+    const ids = new Set<string>();
+    for (const e of events) {
+        if (!e.EventData) continue;
+        try {
+            const data = JSON.parse(e.EventData) as { Gateway?: { ProviderSubscriptionID?: unknown } | null; RetiredProviderSubscriptionID?: unknown };
+            const cancelled = data.Gateway?.ProviderSubscriptionID;
+            if (typeof cancelled === 'string' && cancelled) ids.add(cancelled);
+            if (typeof data.RetiredProviderSubscriptionID === 'string' && data.RetiredProviderSubscriptionID) ids.add(data.RetiredProviderSubscriptionID);
+        } catch {
+            // Not ours to read; a malformed event names nothing.
+        }
+    }
+    return ids;
+}
+
+/**
  * The idempotency key for one create. It names every parameter, so racing runs (same parameters)
  * share a key and a run after something changed (a new price, a new card) gets a new one.
  *
@@ -149,8 +174,11 @@ export function PlanProviderSubscriptionCharge(
  * card, a customer setting) is answered with the cached refusal by every retry for a day. With it, the
  * next daily pass is a new key and asks again. The races the key exists for are the checkout page and
  * its webhook, seconds apart on the same day, so they still share it. The rare pair that straddles
- * midnight sends two keys; the search that runs before every create, and the record that refuses a
- * second id (`LinkedElsewhere`), still stand between that pair and a silent second subscription.
+ * midnight sends two keys, and if both create before either records, the gateway holds two. The search
+ * before the create does not stop that (both searched first), and neither does the record step: both
+ * read the column empty, so the later save overwrites the earlier id. What makes it loud is the search
+ * after every create (`confirmOnlyOne`): the run that finishes second sees both live and raises an urgent
+ * `AmbiguousAtGateway` naming them.
  * Not finer than a day (an hour, a per-run salt): each step finer widens that midnight window to more
  * boundaries for nothing the daily retry needs.
  */
@@ -187,6 +215,10 @@ export type ProviderSubscriptionOutcomeCode =
     | 'InProgressElsewhere'
     /** Preview: would be created with the values shown. */
     | 'WouldCreate'
+    /** Preview: the gateway already holds one live subscription for it, which a run would record. */
+    | 'WouldRecordFound'
+    /** Preview: a run would raise it for a person (two live at the gateway, only ended ones, or the search failed). */
+    | 'WouldNeedPerson'
     /** The account does not bill subscriptions (capability or switch off). The normal case; silent. */
     | 'NotEnabled'
     /** The first charge is further out than the gateway accepts today; a later run creates it. */
@@ -220,7 +252,12 @@ export type ProviderSubscriptionOutcomeCode =
     | 'AnchorMismatch'
     /** A live gateway subscription found for it bills another price or quantity: recorded, and raised. */
     | 'FoundMismatch'
-    | 'ChargedAtCreation';
+    | 'ChargedAtCreation'
+    /**
+     * The Orders subscription was cancelled (or stopped renewing) while its gateway subscription was being
+     * created, and stopping that gateway subscription failed: it will bill unless a person cancels it (E2b).
+     */
+    | 'UnwantedAtGateway';
 
 /** The codes that raise an alert Task. */
 export const PROVIDER_SUBSCRIPTION_ALERT_CODES: ReadonlySet<ProviderSubscriptionOutcomeCode> = new Set([
@@ -241,6 +278,7 @@ export const PROVIDER_SUBSCRIPTION_ALERT_CODES: ReadonlySet<ProviderSubscription
     'AnchorMismatch',
     'FoundMismatch',
     'ChargedAtCreation',
+    'UnwantedAtGateway',
 ]);
 
 /**
@@ -443,7 +481,10 @@ function summarize(input: EnsureProviderSubscriptionsInput, outcomes: ProviderSu
         `${outcomes.length} subscription(s): ${linked} linked to a gateway subscription, ${deferred} deferred, ` +
         `${unpaid} left with Orders until their latest term is paid, ${alerts} new problem(s) raised for a person, ` +
         `${waiting} already with a person` +
-        (input.Preview ? ` (preview: ${count(['WouldCreate'])} would be created)` : '');
+        (input.Preview
+            ? ` (preview: ${count(['WouldCreate'])} would be created, ${count(['WouldRecordFound'])} found at the gateway and ` +
+              `would be recorded, ${count(['WouldNeedPerson'])} would need a person)`
+            : '');
     if (outcomes.length) LogStatus(`[ProviderSubscriptions] ${message}`);
     return { Success: true, Outcomes: outcomes, Linked: linked, Deferred: deferred, Alerts: alerts, Waiting: waiting, Message: message };
 }
@@ -669,11 +710,22 @@ class ProviderSubscriptionRun {
         const quantity = Number(row.LastTermQuantity ?? 1) || 1;
 
         if (this.input.Preview) {
-            // No gateway call in preview, so the price's period is not read; the limit assumes a yearly price.
+            // Preview reads the gateway but never writes to it: the price's period is not read (the limit
+            // assumes a yearly price), but the search is, so the list says which subscriptions the gateway
+            // already holds (Robert, #972). It finds only gateway subscriptions Orders created (they carry
+            // this subscription's id); one a buyer opened elsewhere is invisible to it.
             const plan = PlanProviderSubscriptionCharge(lastDay, zone, now, driver.LatestFirstChargeAt(now));
             const at = { ...extra, FirstChargeAt: plan.FirstChargeAt.toISOString() };
             if (plan.Kind === 'Passed') return this.chargeDayPassed(row, lastDay, plan.FirstChargeAt, at);
             if (plan.Kind === 'Deferred') return this.deferred(row, plan.FirstChargeAt, plan.LatestAccepted, at);
+            const seen = await this.previewSearch(driver, row);
+            if ('Problem' in seen) return this.outcome(row, 'WouldNeedPerson', seen.Problem, at);
+            if (seen.Live.length === 1) {
+                return this.outcome(row, 'WouldRecordFound', `the gateway already holds ${seen.Live[0]} for it; a run would record it`, {
+                    ...at,
+                    ProviderSubscriptionID: seen.Live[0],
+                });
+            }
             this.committed++;
             return this.outcome(row, 'WouldCreate', `would subscribe ${row.ProviderCustomerRef} to ${priceID} × ${quantity}`, at);
         }
@@ -707,7 +759,11 @@ class ProviderSubscriptionRun {
         if (!found.Success) {
             return this.alert(row, 'GatewayReadFailed', `could not search the gateway for an existing subscription: ${found.Reason}`, at);
         }
-        const matches = found.Subscriptions ?? [];
+        // A gateway subscription this Orders subscription already cancelled is history, never the one to
+        // record: a cancelled subscription bought again (a fresh start, E2b) gets a new one, and the old
+        // one, which still carries this id in its metadata, may run on to its period end.
+        const retired = (found.Subscriptions ?? []).length ? await this.retiredGatewayIDs(row.SubscriptionID) : new Set<string>();
+        const matches = (found.Subscriptions ?? []).filter((m) => !retired.has(m.ProviderSubscriptionID));
         const live = matches.filter((m) => m.IsLive);
         if (live.length > 1) {
             return this.alert(
@@ -821,7 +877,73 @@ class ProviderSubscriptionRun {
             );
             return { ...charged, NewAlert: charged.NewAlert || recorded.NewAlert };
         }
-        return this.checkAnchor(row, recorded, created.ProviderSubscriptionID, created.FirstChargeAt, plan.FirstChargeAt, at);
+        const anchored = await this.checkAnchor(row, recorded, created.ProviderSubscriptionID, created.FirstChargeAt, plan.FirstChargeAt, at);
+        return this.confirmOnlyOne(row, driver, created.ProviderSubscriptionID ?? '', anchored, at);
+    }
+
+    /** The read-only search a preview reports, with the same rules a run applies to what it finds. */
+    private async previewSearch(driver: BasePaymentProvider, row: CandidateRow): Promise<{ Live: string[] } | { Problem: string }> {
+        try {
+            const found = await driver.FindProviderSubscriptions({
+                ProviderCustomerRef: row.ProviderCustomerRef,
+                MetadataKey: ORDERS_SUBSCRIPTION_METADATA_KEY,
+                MetadataValue: row.SubscriptionID,
+            });
+            if (!found.Success) return { Problem: `could not search the gateway: ${found.Reason ?? 'no reason given'}` };
+            const retired = (found.Subscriptions ?? []).length ? await this.retiredGatewayIDs(row.SubscriptionID) : new Set<string>();
+            const matches = (found.Subscriptions ?? []).filter((m) => !retired.has(m.ProviderSubscriptionID));
+            const live = matches.filter((m) => m.IsLive).map((m) => m.ProviderSubscriptionID);
+            if (live.length > 1) return { Problem: `the gateway holds ${live.length} live subscriptions for it (${live.join(', ')})` };
+            if (!live.length && matches.length) {
+                return { Problem: `its gateway subscription ${matches.map((m) => `${m.ProviderSubscriptionID} (${m.Status})`).join(', ')} has ended` };
+            }
+            return { Live: live };
+        } catch (err) {
+            return { Problem: `could not search the gateway: ${err instanceof Error ? err.message : String(err)}` };
+        }
+    }
+
+    /**
+     * After a create, search the gateway again: two runs that straddled business midnight send two
+     * idempotency keys, and if both created, the gateway holds two live subscriptions for one Orders
+     * subscription (Robert, #972). The record step keeps one; this makes the other loud instead of an
+     * orphan nothing finds. A failed search is logged, not raised: the create itself succeeded.
+     */
+    private async confirmOnlyOne(
+        row: CandidateRow,
+        driver: BasePaymentProvider,
+        providerSubscriptionID: string,
+        outcome: ProviderSubscriptionOutcome,
+        at: Partial<ProviderSubscriptionOutcome>,
+    ): Promise<ProviderSubscriptionOutcome> {
+        let live: string[];
+        try {
+            const again = await driver.FindProviderSubscriptions({
+                ProviderCustomerRef: row.ProviderCustomerRef,
+                MetadataKey: ORDERS_SUBSCRIPTION_METADATA_KEY,
+                MetadataValue: row.SubscriptionID,
+            });
+            if (!again.Success) throw new Error(again.Reason ?? 'no reason given');
+            live = (again.Subscriptions ?? []).filter((m) => m.IsLive).map((m) => m.ProviderSubscriptionID);
+            // The retired ids are read only when they could change the answer: two or more live.
+            if (live.length > 1) {
+                const retired = await this.retiredGatewayIDs(row.SubscriptionID);
+                live = live.filter((id) => !retired.has(id));
+            }
+        } catch (err) {
+            LogError(`[ProviderSubscriptions] ${row.SubscriptionNumber}: could not search the gateway again after creating ${providerSubscriptionID}: ${err instanceof Error ? err.message : String(err)}`);
+            return outcome;
+        }
+        if (live.length <= 1) return outcome;
+        const extra = await this.alert(
+            row,
+            'AmbiguousAtGateway',
+            `after creating ${providerSubscriptionID}, the gateway holds ${live.length} live subscriptions for it (${live.join(', ')}): ` +
+                `another run created one at the same time. Cancel every one except the one recorded on the subscription.`,
+            { ...at, ProviderSubscriptionID: providerSubscriptionID },
+            { Urgent: true, Linked: true },
+        );
+        return { ...extra, NewAlert: !!(extra.NewAlert || outcome.NewAlert) };
     }
 
     private chargeDayPassed(row: CandidateRow, lastDay: CalendarDay, firstChargeAt: Date, at: Partial<ProviderSubscriptionOutcome>): Promise<ProviderSubscriptionOutcome> {
@@ -917,6 +1039,12 @@ class ProviderSubscriptionRun {
         if (!subscription) {
             return this.alert(row, 'NotRecorded', `the gateway holds ${providerSubscriptionID}, but the subscription could not be re-read to record it`, linked);
         }
+        if (!IsProviderBilled(subscription) && (!['Active', 'Trialing'].includes(subscription.Status) || !subscription.AutoRenew)) {
+            // Cancelled (or switched off) between the pass's re-read and now: support pressed Cancel
+            // while the gateway was creating it. Recording it would need the cancel's sanction and is
+            // not wanted anyway; leaving it would bill a customer who cancelled. So stop it (E2b).
+            return this.stopUnwanted(row, config, providerSubscriptionID, subscription.Status, linked);
+        }
         if (IsProviderBilled(subscription)) {
             if (subscription.ProviderSubscriptionID === providerSubscriptionID) {
                 return this.outcome(row, 'AlreadyLinked', `recorded by another run as ${providerSubscriptionID}`, { ...linked, Recorded: true });
@@ -946,6 +1074,45 @@ class ProviderSubscriptionRun {
             ...linked,
             Recorded: true,
         });
+    }
+
+    /** Cancel, now, a gateway subscription made for an Orders subscription that no longer wants one. */
+    private async stopUnwanted(
+        row: CandidateRow,
+        config: PaymentProviderConfig,
+        providerSubscriptionID: string,
+        status: string,
+        linked: Partial<ProviderSubscriptionOutcome>,
+    ): Promise<ProviderSubscriptionOutcome> {
+        let stopped: { Success: boolean; Reason?: string };
+        try {
+            const driver = await this.driver(config);
+            stopped = await driver.CancelProviderSubscription({
+                ProviderSubscriptionID: providerSubscriptionID,
+                BillingEndsAt: null,
+                IdempotencyKey: `provider-subscription-unwanted:${row.SubscriptionID.toLowerCase()}:${providerSubscriptionID}`,
+            });
+        } catch (err) {
+            stopped = { Success: false, Reason: err instanceof Error ? err.message : String(err) };
+        }
+        if (stopped.Success) {
+            return this.outcome(
+                row,
+                'NoLongerRenewing',
+                `it was ${status === 'Active' || status === 'Trialing' ? 'switched off' : status.toLowerCase()} while ${providerSubscriptionID} ` +
+                    `was being created, so that gateway subscription was cancelled again and not recorded`,
+                linked,
+            );
+        }
+        return this.alert(
+            row,
+            'UnwantedAtGateway',
+            `the gateway created ${providerSubscriptionID}, but the subscription was ${status.toLowerCase()} meanwhile and cancelling ` +
+                `${providerSubscriptionID} at the gateway failed (${stopped.Reason ?? 'no reason given'}). Cancel it at the gateway, or ` +
+                `the customer will be charged.`,
+            linked,
+            { Urgent: true },
+        );
     }
 
     private metadataFor(row: CandidateRow): Record<string, string> {
@@ -1074,6 +1241,28 @@ class ProviderSubscriptionRun {
             this.zone = BusinessTimeZoneEngine.Instance.Zone;
         }
         return this.zone;
+    }
+
+    /**
+     * The gateway subscriptions this Orders subscription cancelled (its `Canceled` events record the
+     * gateway's part, E2b) or retired on a fresh start (`Activated` events). Read only when the gateway
+     * search found something.
+     */
+    private async retiredGatewayIDs(subscriptionID: string): Promise<Set<string>> {
+        const rv = new RunView(this.provider as unknown as IRunViewProvider);
+        const result = await rv.RunView<{ ID: string; EventData: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_EVENT_ENTITY,
+                ExtraFilter: `SubscriptionID = '${RequireUUID(subscriptionID, 'SubscriptionID')}' AND EventType IN ('Canceled', 'Activated')`,
+                Fields: ['ID', 'EventData'],
+                ResultType: 'simple',
+                IgnoreMaxRows: true,
+                BypassCache: true,
+            },
+            this.user,
+        );
+        if (!result.Success) throw new Error(`could not read the subscription's events: ${result.ErrorMessage}`);
+        return RetiredGatewayIDsFromEvents(result.Results ?? []);
     }
 
     /** The subscription as the database holds it now, never a cached copy. */

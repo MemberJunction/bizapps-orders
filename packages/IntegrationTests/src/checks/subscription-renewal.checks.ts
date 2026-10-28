@@ -126,6 +126,16 @@
  *         refused another subscription in that company; the same buyer in another company, someone
  *         else, a ticket, and a cancelled subscription are not
  *
+ *   Once the gateway bills it, no Orders door changes it unseen (E2b, Robert's review of #972):
+ *   SR66  its billing columns cannot be edited through the object model (AutoRenew, Status, the gateway
+ *         id); the same edit before it was linked saved, and a column the gateway does not bill on still saves
+ *   SR67  cancelling stops the gateway FIRST: a gateway that refuses leaves Orders unchanged; one that
+ *         confirms is told to charge nothing after coverage ends, and Orders records what it did
+ *   SR68  a second order for the same product cannot extend it; once cancelled (the gateway with it), buying
+ *         again is a fresh start: the old gateway id is retired and the hand-over creates a new one
+ *   SR69  a return of the line that sold it, and a Duration concession on its term, are refused; an open
+ *         gateway alert stops a cancel of a subscription whose gateway subscription went unrecorded
+ *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
@@ -134,7 +144,7 @@
  */
 import { BaseAction } from '@memberjunction/actions';
 import type { RunActionParams } from '@memberjunction/actions-base';
-import { BaseRemotableOperation } from '@memberjunction/core';
+import { BaseEntity, BaseRemotableOperation, CompositeKey, Metadata } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import {
     Assert,
@@ -145,7 +155,7 @@ import {
 } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
 import { OrdersEngine, Today, type CustomerPaymentMethodEntity } from '@mj-biz-apps/orders-entities';
-import { BusinessTimeZoneEngine, DayStartUtc } from '@mj-biz-apps/common-entities';
+import { AddDays, BusinessTimeZoneEngine, DayStartUtc } from '@mj-biz-apps/common-entities';
 import { RegisterClass } from '@memberjunction/global';
 import {
     ACCT_SCHEMA,
@@ -172,6 +182,7 @@ import {
     CUSTOMER_PAYMENT_METHOD_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,
+    ORDER_CONCESSION_ENTITY,
     PAYMENT_INTENT_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_PRICE_ENTITY,
@@ -188,10 +199,13 @@ import {
     ChargeRenewals,
     CheckoutSessionService,
     EnsureProviderSubscriptions,
+    raiseProviderSubscriptionAlert,
     OneIntervalLaterAsStripeCounts,
     OneYearLaterAsStripeCounts,
     RunPrePurchaseChecks,
     StripePaymentProvider,
+    type CancelProviderSubscriptionRequest,
+    type CancelProviderSubscriptionResult,
     type CreateProviderSubscriptionRequest,
     type CreateProviderSubscriptionResult,
     type DescribeProviderPriceResult,
@@ -2469,9 +2483,11 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
                 const f = Fx();
                 const person = f.Customers.PersonID;
-                const account = await stubStripeProvider(ctx);
+                // The fake gateway's account, so the cancel at the end can stop it there (E2b).
+                const account = await gatewayBillingAccount(ctx);
                 // P holds SubRolling in company A, billed by the gateway, renewing on its term's last day.
                 const held = await buySubscription(ctx, 'SubRolling', 1200);
                 await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, held.SubscriptionID, { BeneficiaryPersonID: person });
@@ -2499,10 +2515,207 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(await check(f.Customers.SecondPersonID, f.CoA.ID, 'SubCalendar'), null, 'someone else (another e-mail) is not refused');
                 AssertEqual(await check(person, f.CoA.ID, 'EventTicket'), null, 'a ticket (no subscription type) is not refused');
 
-                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, held.SubscriptionID, { Status: 'Canceled' });
+                // Cancelled the only way a gateway-billed subscription can be (E2b): through the cancel, which
+                // stops the gateway first. An edit of its Status is refused (SR66).
+                fakeGateway.held.push({ ProviderSubscriptionID: `sub_it_sr64_${held.SubscriptionID.slice(0, 8)}`, Status: 'active', IsLive: true, Customer: 'cus_it_e2', Metadata: {} });
+                const cancelled = await cancelSubscription(ctx, { SubscriptionID: held.SubscriptionID, RequestDate: '2026-02-01', Timing: 'Immediate' });
+                Assert(cancelled.Success, `cancelled: ${cancelled.Message}`);
                 AssertEqual(await check(person, f.CoA.ID, 'SubCalendar'), null, 'a cancelled gateway-billed subscription does not refuse');
             }),
     },
+    // ─── Once the gateway bills it, no Orders door changes it unseen (E2b) ──────────────────────────
+    {
+        Id: 'subscription-renewal.SR66',
+        Name: "SR66: a gateway-billed subscription's billing columns cannot be edited; the same edit before it was linked saved",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const account = await gatewayBillingAccount(ctx);
+                const sub = await subscriptionWithCard(ctx, account);
+                await flagPrice(ctx, account, Fx().Products.SubRolling, 'price_it_rolling');
+                const edit = async (fields: Record<string, unknown>) => {
+                    const entity = await new Metadata().GetEntityObject<BaseEntity>(SUBSCRIPTION_ENTITY, ctx.User);
+                    Assert(await entity.InnerLoad(CompositeKey.FromID(sub.SubscriptionID)), 'the subscription loads');
+                    for (const [k, v] of Object.entries(fields)) entity.Set(k, v);
+                    const saved = await entity.Save();
+                    const detail = (entity.LatestResult?.Errors ?? []).map((e) => (typeof e === 'string' ? e : (e as { Message?: string }).Message ?? JSON.stringify(e))).join('; ') || entity.LatestResult?.CompleteMessage || '';
+                    return { saved, detail };
+                };
+
+                // Control, before the gateway bills it: the edit saves, as it always has.
+                const before = await edit({ AutoRenew: false });
+                Assert(before.saved, `an Orders-billed subscription's AutoRenew still saves: ${before.detail}`);
+                Assert((await edit({ AutoRenew: true })).saved, 'and back on');
+
+                const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+                AssertEqual(linked.Outcomes[0]?.Code, 'Created', JSON.stringify(linked.Outcomes));
+                const gatewayID = linked.Outcomes[0].ProviderSubscriptionID!;
+
+                for (const fields of [{ AutoRenew: false }, { Status: 'Canceled' }, { ProviderSubscriptionID: null, PaymentProviderID: null }]) {
+                    const refused = await edit(fields);
+                    Assert(!refused.saved, `${JSON.stringify(fields)} is refused on a gateway-billed subscription`);
+                    Assert(/also cancels it at the gateway/.test(refused.detail) && refused.detail.includes(gatewayID), `and says why: ${refused.detail}`);
+                }
+                const row = await TxOne<{ Status: string; AutoRenew: boolean; ProviderSubscriptionID: string }>(
+                    ctx,
+                    `SELECT Status, AutoRenew, ProviderSubscriptionID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`,
+                );
+                AssertEqual(`${row.Status}|${Number(row.AutoRenew)}|${row.ProviderSubscriptionID}`, `Active|1|${gatewayID}`, 'nothing changed in the database');
+
+                // A column the gateway does not bill on still saves.
+                const lead = await edit({ RenewalLeadDays: 45 });
+                Assert(lead.saved, `RenewalLeadDays still saves: ${lead.detail}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR67',
+        Name: 'SR67: cancelling a gateway-billed subscription stops the gateway first; a refusal leaves Orders unchanged',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const account = await gatewayBillingAccount(ctx);
+                const sub = await subscriptionWithCard(ctx, account);
+                await flagPrice(ctx, account, Fx().Products.SubRolling, 'price_it_rolling');
+                const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+                const gatewayID = linked.Outcomes[0].ProviderSubscriptionID!;
+                const state = () =>
+                    TxOne<{ Status: string; AutoRenew: boolean; ProviderSubscriptionID: string }>(
+                        ctx,
+                        `SELECT Status, AutoRenew, ProviderSubscriptionID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`,
+                    );
+
+                // The gateway does not confirm: nothing changes in Orders.
+                fakeGateway.refuseCancel = 'rate limited';
+                const refused = await cancelSubscription(ctx, { SubscriptionID: sub.SubscriptionID, RequestDate: '2026-02-01', Timing: 'EndOfTerm' });
+                Assert(!refused.Success, 'refused while the gateway does not confirm');
+                Assert(/rate limited.*Nothing was changed in Orders/.test(refused.Message ?? ''), `says so: ${refused.Message}`);
+                AssertEqual((await state()).Status, 'Active', 'still Active in Orders');
+                AssertEqual(fakeGateway.cancelled.length, 1, 'the gateway was asked once');
+
+                // It confirms: told to charge nothing after 00:00 business time the day after the term ends.
+                fakeGateway.refuseCancel = null;
+                const done = await cancelSubscription(ctx, { SubscriptionID: sub.SubscriptionID, RequestDate: '2026-02-01', Timing: 'EndOfTerm' });
+                Assert(done.Success, `cancelled: ${done.Message}`);
+                await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+                const expected = DayStartUtc(AddDays(isoDate(sub.Term.EndDate), 1), BusinessTimeZoneEngine.Instance.Zone);
+                AssertEqual(fakeGateway.cancelled[1].ProviderSubscriptionID, gatewayID, 'the recorded gateway subscription');
+                AssertEqual(fakeGateway.cancelled[1].BillingEndsAt?.toISOString(), expected.toISOString(), 'nothing charged after coverage ends');
+                const after = await state();
+                AssertEqual(`${after.Status}|${Number(after.AutoRenew)}|${after.ProviderSubscriptionID}`, `Canceled|0|${gatewayID}`, 'cancelled, the gateway id kept as history');
+                const event = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT TOP 1 EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID = '${sub.SubscriptionID}' AND EventType = 'Canceled' ORDER BY __mj_CreatedAt DESC`,
+                );
+                AssertEqual(JSON.parse(event.EventData).Gateway?.Outcome, 'EndsAtPeriodEnd', 'the event records what the gateway did');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR68',
+        Name: 'SR68: a second order cannot extend a gateway-billed subscription; after a cancel, buying again starts fresh with a new gateway subscription',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const f = Fx();
+                const account = await gatewayBillingAccount(ctx);
+                const sub = await subscriptionWithCard(ctx, account);
+                await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+                const oldID = linked.Outcomes[0].ProviderSubscriptionID!;
+                const buyAgain = (orderDate: string) =>
+                    ConfirmOrder(ctx.User, {
+                        CompanyID: f.CoA.ID,
+                        OrderDate: new Date(`${orderDate}T00:00:00Z`),
+                        BillToOrganizationID: f.Customers.OrganizationID,
+                        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                    });
+
+                // SubRolling extends an existing subscription: here that would bill a year the gateway bills too.
+                const extend = await buyAgain('2026-02-01');
+                Assert(!extend.Saved, 'a second order cannot extend it');
+                Assert(/billed by the payment gateway.*cannot extend it/.test(extend.Message ?? ''), `and says why: ${extend.Message}`);
+
+                // Cancelled now (the gateway with it), then bought again: reactivated without the old id.
+                const cancelled = await cancelSubscription(ctx, { SubscriptionID: sub.SubscriptionID, RequestDate: '2026-02-01', Timing: 'Immediate' });
+                Assert(cancelled.Success, `cancelled: ${cancelled.Message}`);
+                AssertEqual(fakeGateway.held.find((h) => h.ProviderSubscriptionID === oldID)?.IsLive, false, 'the old gateway subscription ended');
+                const again = await buyAgain('2026-03-01');
+                Assert(again.Saved, `buying again confirms: ${again.Message}`);
+                const term = await TxOne<{ SubscriptionID: string }>(
+                    ctx,
+                    `SELECT st.SubscriptionID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID WHERE ol.OrderHeaderID = '${again.Order.ID}'`,
+                );
+                Assert(SameID(term.SubscriptionID, sub.SubscriptionID), 'the same subscription comes back (reactivated)');
+                const row = await TxOne<{ Status: string; ProviderSubscriptionID: string | null; PaymentProviderID: string | null }>(
+                    ctx,
+                    `SELECT Status, ProviderSubscriptionID, PaymentProviderID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`,
+                );
+                AssertEqual(`${row.Status}|${row.ProviderSubscriptionID}|${row.PaymentProviderID}`, 'Active|null|null', 'active, its old gateway id retired');
+                const activated = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT TOP 1 EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID = '${sub.SubscriptionID}' AND EventType = 'Activated' ORDER BY __mj_CreatedAt DESC`,
+                );
+                AssertEqual(JSON.parse(activated.EventData).RetiredProviderSubscriptionID, oldID, 'the retired id is on the event');
+
+                // Paid, then handed over: a NEW gateway subscription, the old one not mistaken for it.
+                await payInFull(ctx, again.Order.ID as string, f.Customers.OrganizationID);
+                const fresh = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID], Now: new Date('2026-03-01T12:00:00Z') });
+                AssertEqual(fresh.Outcomes[0]?.Code, 'Created', `a new one is created: ${JSON.stringify(fresh.Outcomes)}`);
+                Assert(fresh.Outcomes[0].ProviderSubscriptionID !== oldID, 'with a new id');
+                AssertEqual(fakeGateway.created.length, 2, 'two gateway subscriptions in all, one per period of billing');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR69',
+        Name: 'SR69: a return of its sale and a Duration concession on its term are refused; an open gateway alert stops a cancel',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const f = Fx();
+                const account = await gatewayBillingAccount(ctx);
+                const sub = await subscriptionWithCard(ctx, account);
+                await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+
+                const sale = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${sub.OrderID}'`);
+                const ret = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderType: 'Return',
+                    OrderDate: new Date('2026-02-01T00:00:00Z'),
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: -1, ReversesOrderLineID: sale.ID }],
+                });
+                Assert(!ret.Saved, 'a return of the gateway-billed sale is refused');
+                Assert(/payment gateway bills.*Cancel the subscription instead/.test(ret.Message ?? ''), `and says what to do: ${ret.Message}`);
+
+                const concession = await new Metadata().GetEntityObject<BaseEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+                concession.NewRecord();
+                concession.Set('DeliveryForm', 'Duration');
+                concession.Set('SubscriptionTermID', sub.Term.ID);
+                concession.Set('AddedDays', 30);
+                concession.Set('ReasonCategory', 'Retention');
+                concession.Set('Reason', 'keep Jane');
+                Assert(!(await concession.Save()), 'a Duration concession on its term is refused');
+                Assert(/billed by the payment gateway/.test(concession.LatestResult?.CompleteMessage ?? ''), `and says why: ${concession.LatestResult?.CompleteMessage}`);
+
+                // An unlinked subscription whose gateway subscription went unrecorded: the cancel waits for the person.
+                const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
+                const number = (await TxOne<{ SubscriptionNumber: string }>(ctx, `SELECT SubscriptionNumber FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${other.SubscriptionID}'`)).SubscriptionNumber;
+                await raiseProviderSubscriptionAlert(
+                    { SubscriptionID: other.SubscriptionID, SubscriptionNumber: number, Code: 'NotRecorded', Reason: 'SR69 probe' },
+                    ctx.User,
+                    ctx.Provider,
+                );
+                const blocked = await cancelSubscription(ctx, { SubscriptionID: other.SubscriptionID, RequestDate: '2026-02-01', Timing: 'Immediate' });
+                Assert(!blocked.Success, 'the cancel waits for the open alert');
+                Assert(/open gateway alert \(NotRecorded\)/.test(blocked.Message ?? ''), `and names it: ${blocked.Message}`);
+                AssertEqual((await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${other.SubscriptionID}'`)).Status, 'Active', 'nothing changed');
+            }),
+    },
+
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
@@ -2682,12 +2895,18 @@ const IT_GATEWAY_BILLING = 'ITGatewayBilling';
 /** What the fake gateway was asked to create, and what it holds. Reset by each check. */
 const fakeGateway = {
     created: [] as CreateProviderSubscriptionRequest[],
-    held: [] as Array<{ ProviderSubscriptionID: string; Status: string; IsLive: boolean; Customer: string; Metadata: Record<string, string> }>,
+    held: [] as Array<{ ProviderSubscriptionID: string; Status: string; IsLive: boolean; Customer: string; Metadata: Record<string, string>; EndsAt?: Date }>,
     priceInterval: { Unit: 'year', Count: 1 } as GatewayPriceInterval,
+    /** Every cancel the gateway was asked for (E2b). */
+    cancelled: [] as CancelProviderSubscriptionRequest[],
+    /** Set to make the gateway refuse every cancel, as Stripe does when it cannot be reached or says no. */
+    refuseCancel: null as string | null,
     reset(): void {
         this.created = [];
         this.held = [];
         this.priceInterval = { Unit: 'year', Count: 1 };
+        this.cancelled = [];
+        this.refuseCancel = null;
     },
 };
 
@@ -2716,6 +2935,22 @@ export class IntegrationTestGatewayBillingProvider extends StripePaymentProvider
         const id = `sub_it_${fakeGateway.created.length}_${(request.Metadata?.OrdersSubscriptionID ?? '').slice(0, 8)}`;
         fakeGateway.held.push({ ProviderSubscriptionID: id, Status: 'active', IsLive: true, Customer: request.ProviderCustomerRef, Metadata: request.Metadata ?? {} });
         return { Success: true, ProviderSubscriptionID: id, Status: 'active', FirstChargeAt: request.FirstChargeAt, ChargedAtCreation: false };
+    }
+
+    /** In memory, as Stripe answers: now ends it; an instant sets it to end then; an unknown id is refused. */
+    public override async CancelProviderSubscription(request: CancelProviderSubscriptionRequest): Promise<CancelProviderSubscriptionResult> {
+        fakeGateway.cancelled.push(request);
+        if (fakeGateway.refuseCancel) return { Success: false, Reason: fakeGateway.refuseCancel };
+        const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === request.ProviderSubscriptionID);
+        if (!held) return { Success: false, Reason: `No such subscription: '${request.ProviderSubscriptionID}'` };
+        if (!held.IsLive) return { Success: true, Outcome: 'AlreadyEnded', Status: held.Status };
+        if (!request.BillingEndsAt) {
+            held.Status = 'canceled';
+            held.IsLive = false;
+            return { Success: true, Outcome: 'CanceledNow', BillingEndsAt: new Date(), Status: 'canceled' };
+        }
+        held.EndsAt = request.BillingEndsAt;
+        return { Success: true, Outcome: 'EndsAtPeriodEnd', BillingEndsAt: request.BillingEndsAt, Status: held.Status };
     }
 
     public override async FindProviderSubscriptions(request: FindProviderSubscriptionsRequest): Promise<FindProviderSubscriptionsResult> {

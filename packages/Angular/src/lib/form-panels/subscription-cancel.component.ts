@@ -70,6 +70,21 @@ export class MJOSubscriptionCancelComponent {
         return !!user && this.Record.EntityInfo.GetUserPermisions(user).CanUpdate;
     }
 
+    /**
+     * The payment gateway's subscription id when a gateway bills this subscription (E2b). Cancelling
+     * then also cancels it at the gateway, first; the panel says so before anything is pressed.
+     */
+    public get GatewaySubscriptionID(): string | null {
+        return this.Record?.ProviderSubscriptionID ?? null;
+    }
+
+    /** What the gateway will do (preview) or did (after), in words, for the preview's row. */
+    public GatewayLine(gateway: NonNullable<CancelSubscriptionOutput['Gateway']>): string {
+        if (gateway.When === 'Now') return 'Stops billing today';
+        const day = this.Day(gateway.BillingEndsAt);
+        return `Won't renew; nothing charged after ${day === '—' ? 'coverage ends' : day}`;
+    }
+
     /** The type's name for the default option, from the subscription's own view field. */
     public get TypeName(): string {
         return this.Record?.SubscriptionType || 'the subscription type';

@@ -31,6 +31,7 @@
 import { LogError, RunView, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import { CompareDays, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
+import { EXISTING_HOLDING_STATUSES } from '@mj-biz-apps/orders-entities';
 import { SellsSubscription } from './CheckoutSavedInstrument.js';
 import { ProviderBilledSql } from './ProviderBilledSubscriptions.js';
 import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
@@ -156,7 +157,9 @@ async function checkProviderBilledSubscriptions(context: PrePurchaseContext): Pr
     if (!context.PersonID || !context.CompanyID) {
         return null;
     }
-    const statusList = HELD_SUBSCRIPTION_STATUSES.map((s) => `'${s}'`).join(', ');
+    // Every status Orders counts as still held, Paused included (Robert, #972): a paused subscription the
+    // gateway bills is still the gateway's to charge, so a second purchase would still be a double charge.
+    const statusList = EXISTING_HOLDING_STATUSES.map((s) => `'${s}'`).join(', ');
     // The holder first: for nearly every buyer it is empty, and the product read is skipped.
     const held = await new RunView().RunView<{ ID: string; ProductID: string }>(
         {

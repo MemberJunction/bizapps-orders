@@ -5,7 +5,7 @@
       "",
       "IT SHIPS DISABLED, SET TO PREVIEW, AND CAPPED AT 25, the same gate as Spawn Renewals and Charge Renewals:",
       "  - Status Disabled keeps a lower environment from creating gateway subscriptions the moment this metadata lands.",
-      "  - Preview true means an enabled job reports what it would create and calls no gateway.",
+      "  - Preview true means an enabled job searches the gateway read-only and reports what it would create or record; it writes nothing.",
       "  - MaxCount 25 caps the gateway subscriptions one pass creates, so the first live pass (the backfill of buyers from",
       "    before the switch) is staged rather than the whole book at once. The rest are created on the next passes.",
       "Enable it, read the run's Outcomes, then set Preview to false.",

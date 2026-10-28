@@ -36,6 +36,9 @@ import {
     type CreateIntentResult,
     type CreateProviderSubscriptionRequest,
     type CreateProviderSubscriptionResult,
+    type CancelProviderSubscriptionRequest,
+    type CancelProviderSubscriptionResult,
+    type CancelProviderSubscriptionOutcome,
     type EnsureCustomerRequest,
     type EnsureCustomerResult,
     type FindProviderSubscriptionsRequest,
@@ -416,6 +419,71 @@ export class StripePaymentProvider extends BasePaymentProvider {
         };
     }
 
+    /**
+     * Stop Stripe billing a subscription after `BillingEndsAt` (E2b). Reads it first, so a retry, or a
+     * subscription someone already cancelled in Stripe's dashboard, is answered without a second
+     * change; then ends it now (`DELETE`), at its period end (`cancel_at_period_end`) or at the instant
+     * (`cancel_at`), as `PlanStripeCancel` decides. Never refunds and never prorates: refunds are made in
+     * Stripe by a person, and the customer already paid the period through Orders.
+     *
+     * THE STUB REFUSES, as for creating: a stub account has no Stripe subscription to stop, and a
+     * pretend success would let Orders believe a real one had ended.
+     */
+    public override async CancelProviderSubscription(request: CancelProviderSubscriptionRequest): Promise<CancelProviderSubscriptionResult> {
+        if (this.useStub) {
+            return {
+                Success: false,
+                Reason:
+                    `Payment provider '${this.Config?.Name ?? this.Config?.ID}' is not live (IsLiveMode = 0), so its Stripe ` +
+                    `driver is a stub and cannot cancel ${request.ProviderSubscriptionID} in Stripe.`,
+            };
+        }
+        const path = `/subscriptions/${encodeURIComponent(request.ProviderSubscriptionID)}`;
+        const read = await this.call('GET', path, undefined, undefined, { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS });
+        if (!read.Ok) return { Success: false, Reason: `Stripe could not find ${request.ProviderSubscriptionID}: ${read.Reason}` };
+
+        const plan = PlanStripeCancel(StripeCancelState(read.Body), request.BillingEndsAt, new Date());
+        if (plan.Action === 'None') {
+            return { Success: true, Outcome: plan.Outcome, BillingEndsAt: plan.BillingEndsAt, Status: String(read.Body.status ?? '') };
+        }
+        const done =
+            plan.Action === 'CancelNow'
+                ? // No idempotency key: Stripe ignores one on DELETE, and a repeat is answered by the read above.
+                  await this.call('DELETE', path, undefined, undefined, { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS })
+                : await this.call(
+                      'POST',
+                      path,
+                      plan.Action === 'AtPeriodEnd'
+                          ? { cancel_at_period_end: 'true' }
+                          : { cancel_at: String(Math.floor(plan.BillingEndsAt.getTime() / 1000)), proration_behavior: 'none' },
+                      request.IdempotencyKey,
+                      { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS },
+                  );
+        if (!done.Ok) {
+            // Another request may have ended it in between (two people pressing Cancel): read again.
+            const again = await this.call('GET', path, undefined, undefined, { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS });
+            if (again.Ok) {
+                const now = PlanStripeCancel(StripeCancelState(again.Body), request.BillingEndsAt, new Date());
+                if (now.Action === 'None') {
+                    return { Success: true, Outcome: now.Outcome, BillingEndsAt: now.BillingEndsAt, Status: String(again.Body.status ?? '') };
+                }
+            }
+            return { Success: false, Reason: `Stripe refused to cancel ${request.ProviderSubscriptionID}: ${done.Reason}` };
+        }
+        const after = StripeCancelState(done.Body);
+        const settled = PlanStripeCancel(after, request.BillingEndsAt, new Date());
+        if (settled.Action !== 'None') {
+            // Stripe answered success but the subscription would still bill after BillingEndsAt.
+            return {
+                Success: false,
+                Reason: `Stripe accepted the cancel of ${request.ProviderSubscriptionID} but it still shows as billing (status '${after.Status}').`,
+            };
+        }
+        const outcome: CancelProviderSubscriptionOutcome =
+            plan.Action === 'CancelNow' ? 'CanceledNow' : plan.Action === 'AtPeriodEnd' ? 'EndsAtPeriodEnd' : 'EndsAt';
+        return { Success: true, Outcome: outcome, BillingEndsAt: settled.BillingEndsAt, Status: after.Status };
+    }
+
     /** `GET /v1/prices/:id`: whether it is active and how often it bills. */
     public override async DescribeProviderPrice(providerPriceID: string): Promise<DescribeProviderPriceResult> {
         if (this.useStub) return { Success: true, Active: true, Interval: { Unit: 'year', Count: 1 } };
@@ -670,7 +738,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
      * Only transport failures and 5xx throw. Those are faults; the rest are answers.
      */
     protected async call(
-        method: 'POST' | 'GET',
+        method: 'POST' | 'GET' | 'DELETE',
         path: string,
         body?: Record<string, string>,
         idempotencyKey?: string,
@@ -961,6 +1029,73 @@ export function StripeSubscriptionFromObject(object: Record<string, unknown>): G
         Quantity: item && Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : undefined,
         FirstChargeAt: Number.isFinite(anchor) && anchor > 0 ? new Date(anchor * 1000) : undefined,
     };
+}
+
+/** The facts of a Stripe subscription that decide how to stop it. Seconds become instants. */
+export interface StripeCancelStateFacts {
+    Status: string;
+    /** End of the period already paid for (`current_period_end`). */
+    CurrentPeriodEnd: Date | null;
+    /** `cancel_at_period_end`: it will end at `CurrentPeriodEnd` instead of renewing. */
+    CancelAtPeriodEnd: boolean;
+    /** `cancel_at`: it will end at this instant. */
+    CancelAt: Date | null;
+}
+
+/** Read `StripeCancelStateFacts` from a subscription object (`Stripe-Version: 2024-06-20` field names). */
+export function StripeCancelState(object: Record<string, unknown>): StripeCancelStateFacts {
+    const instant = (v: unknown): Date | null => {
+        const n = Number(v);
+        return v != null && Number.isFinite(n) && n > 0 ? new Date(n * 1000) : null;
+    };
+    return {
+        Status: String(object.status ?? ''),
+        CurrentPeriodEnd: instant(object.current_period_end),
+        CancelAtPeriodEnd: object.cancel_at_period_end === true,
+        CancelAt: instant(object.cancel_at),
+    };
+}
+
+/** Statuses in which Stripe is collecting nothing new, and a subscription renews at its period end. */
+const RENEWING_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
+
+export type StripeCancelPlan =
+    | { Action: 'None'; Outcome: 'AlreadyEnded' | 'AlreadyEnding'; BillingEndsAt: Date }
+    | { Action: 'CancelNow' }
+    | { Action: 'AtPeriodEnd'; BillingEndsAt: Date }
+    | { Action: 'CancelAt'; BillingEndsAt: Date };
+
+/**
+ * How to stop Stripe billing after `billingEndsAt` (null = now). Pure, so every case is tested
+ * without Stripe. The rule: Stripe charges at a period end, so a subscription set to end at or before
+ * `billingEndsAt` charges nothing after it.
+ *
+ *   · ended (`canceled`, `incomplete_expired`)                → nothing to do (AlreadyEnded)
+ *   · already set to end no later than asked                  → nothing to do (AlreadyEnding)
+ *   · asked for now, or the instant has passed                → cancel now
+ *   · not `active`/`trialing` (past_due, unpaid, incomplete, paused): Stripe may still be collecting a
+ *     renewal Orders has not sold, so cancel now; cancelling stops collection of its open invoices
+ *   · the period ends at or before the instant                → end at period end (no renewal)
+ *   · the instant falls inside the period                     → end at the instant
+ *
+ * Example: Jane's term 1 ends 30 Oct 2027; cancelled at end of term, Orders asks for nothing after
+ * 00:00 Central 31 Oct 2027. Stripe's period ends 00:00 Central 30 Oct 2027, before that, so:
+ * AtPeriodEnd, and the renewal that would have charged at that moment never happens.
+ */
+export function PlanStripeCancel(state: StripeCancelStateFacts, billingEndsAt: Date | null, now: Date): StripeCancelPlan {
+    if (ENDED_SUBSCRIPTION_STATUSES.includes(state.Status)) {
+        return { Action: 'None', Outcome: 'AlreadyEnded', BillingEndsAt: now };
+    }
+    const endingAt = state.CancelAtPeriodEnd ? state.CurrentPeriodEnd : state.CancelAt;
+    const wanted = billingEndsAt && billingEndsAt.getTime() > now.getTime() ? billingEndsAt : null;
+    if (!wanted || !RENEWING_SUBSCRIPTION_STATUSES.includes(state.Status)) return { Action: 'CancelNow' };
+    if (endingAt && endingAt.getTime() <= wanted.getTime()) {
+        return { Action: 'None', Outcome: 'AlreadyEnding', BillingEndsAt: endingAt };
+    }
+    if (state.CurrentPeriodEnd && state.CurrentPeriodEnd.getTime() <= wanted.getTime()) {
+        return { Action: 'AtPeriodEnd', BillingEndsAt: state.CurrentPeriodEnd };
+    }
+    return { Action: 'CancelAt', BillingEndsAt: wanted };
 }
 
 /** A Stripe price's `recurring` as a `GatewayPriceInterval`; null for a one-time price. */

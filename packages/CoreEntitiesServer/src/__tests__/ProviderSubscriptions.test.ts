@@ -8,7 +8,7 @@
  * refuses visibly, raises a problem once while its Task is open, and never throws.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { UserInfo } from '@memberjunction/core';
+import { LogError, type UserInfo } from '@memberjunction/core';
 import type { PaymentProviderConfig } from '../BasePaymentProvider.js';
 
 const mocks = vi.hoisted(() => ({
@@ -63,6 +63,7 @@ import {
     ProviderBillsNewSubscriptions,
     ProviderSubscriptionFirstChargeAt,
     ProviderSubscriptionIdempotencyKey,
+    RetiredGatewayIDsFromEvents,
 } from '../ProviderSubscriptions.js';
 import { OneYearLaterAsStripeCounts } from '../StripePaymentProvider.js';
 import { expectTopLevelConjunct } from './selectionRule.js';
@@ -233,12 +234,23 @@ let rows: Array<Record<string, unknown>>;
 let sql: string[];
 let prices: Array<Record<string, unknown>>;
 let switchedOn: Array<{ ID: string }>;
-let entity: { Load: ReturnType<typeof vi.fn>; Save: ReturnType<typeof vi.fn>; ProviderSubscriptionID: string | null; PaymentProviderID: string | null; LatestResult: { CompleteMessage: string } };
+let entity: {
+    Load: ReturnType<typeof vi.fn>;
+    Save: ReturnType<typeof vi.fn>;
+    ProviderSubscriptionID: string | null;
+    PaymentProviderID: string | null;
+    Status: string;
+    AutoRenew: boolean;
+    LatestResult: { CompleteMessage: string };
+};
+/** The subscription's lifecycle events, as the retired-id read sees them (E2b). */
+let events: Array<{ ID: string; EventData: string | null }>;
 let driver: {
     LatestFirstChargeAt: ReturnType<typeof vi.fn>;
     DescribeProviderPrice: ReturnType<typeof vi.fn>;
     FindProviderSubscriptions: ReturnType<typeof vi.fn>;
     CreateProviderSubscription: ReturnType<typeof vi.fn>;
+    CancelProviderSubscription: ReturnType<typeof vi.fn>;
 };
 const provider = {
     ExecuteSQL: vi.fn(async (statement: string) => {
@@ -257,12 +269,22 @@ beforeEach(() => {
     sql = [];
     prices = [{ ID: 'p1', PaymentProviderID: PROVIDER_ID, ProductID: PRODUCT_ID, ProviderPriceID: 'price_pro_599' }];
     switchedOn = [{ ID: PROVIDER_ID }];
-    entity = { Load: vi.fn().mockResolvedValue(true), Save: vi.fn().mockResolvedValue(true), ProviderSubscriptionID: null, PaymentProviderID: null, LatestResult: { CompleteMessage: '' } };
+    entity = {
+        Load: vi.fn().mockResolvedValue(true),
+        Save: vi.fn().mockResolvedValue(true),
+        ProviderSubscriptionID: null,
+        PaymentProviderID: null,
+        Status: 'Active',
+        AutoRenew: true,
+        LatestResult: { CompleteMessage: '' },
+    };
+    events = [];
     driver = {
         LatestFirstChargeAt: vi.fn((now: Date) => stripeLimit(now)),
         DescribeProviderPrice: vi.fn().mockResolvedValue({ Success: true, Active: true, Interval: { Unit: 'year', Count: 1 } }),
         FindProviderSubscriptions: vi.fn().mockResolvedValue({ Success: true, Subscriptions: [] }),
         CreateProviderSubscription: vi.fn().mockResolvedValue({ Success: true, ProviderSubscriptionID: 'sub_new', Status: 'active', ChargedAtCreation: false }),
+        CancelProviderSubscription: vi.fn().mockResolvedValue({ Success: true, Outcome: 'CanceledNow' }),
     };
     mocks.loadConfig.mockReset().mockResolvedValue(providerConfig());
     mocks.buildDriver.mockReset().mockImplementation(async () => driver);
@@ -271,7 +293,12 @@ beforeEach(() => {
     mocks.subscriptionType.mockReset().mockReturnValue(ANNUAL);
     mocks.runView.mockReset().mockImplementation(async (params: { EntityName: string }) => ({
         Success: true,
-        Results: params.EntityName === 'MJ_BizApps_Orders: Payment Provider Prices' ? prices : switchedOn,
+        Results:
+            params.EntityName === 'MJ_BizApps_Orders: Payment Provider Prices'
+                ? prices
+                : params.EntityName === 'MJ_BizApps_Orders: Subscription Events'
+                  ? events
+                  : switchedOn,
     }));
     provider.ExecuteSQL.mockClear();
     provider.GetEntityObject.mockClear();
@@ -490,16 +517,50 @@ describe('EnsureProviderSubscriptions', () => {
         expect(mocks.alert.mock.calls[0][0]).toMatchObject({ Code: 'ChargedAtCreation', Urgent: true });
     });
 
-    it('preview reports what would be created and calls no gateway, writes nothing, raises nothing', async () => {
+    it('preview searches the gateway read-only and reports what would be created; it writes, creates and raises nothing', async () => {
         const result = await ensure({ OrderHeaderID: ORDER_ID, Preview: true });
         expect(result.Outcomes[0]).toMatchObject({ Code: 'WouldCreate', FirstChargeAt: '2027-10-30T05:00:00.000Z' });
-        expect(driver.FindProviderSubscriptions).not.toHaveBeenCalled();
+        // Read-only: the search runs (Robert, #972), so the preview list is real; nothing is created or cancelled.
+        expect(driver.FindProviderSubscriptions).toHaveBeenCalledWith({
+            ProviderCustomerRef: 'cus_jane',
+            MetadataKey: 'OrdersSubscriptionID',
+            MetadataValue: SUB_ID,
+        });
         expect(driver.CreateProviderSubscription).not.toHaveBeenCalled();
+        expect(driver.CancelProviderSubscription).not.toHaveBeenCalled();
         expect(entity.Save).not.toHaveBeenCalled();
 
         prices = [];
         expect((await ensure({ OrderHeaderID: ORDER_ID, Preview: true })).Outcomes[0].Code).toBe('NoProviderPrice');
         expect(mocks.alert).not.toHaveBeenCalled();
+    });
+
+    it('preview names a gateway subscription a run would record, and one it would leave for a person, without raising either', async () => {
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({
+            Success: true,
+            Subscriptions: [{ ProviderSubscriptionID: 'sub_from_yesterday', Status: 'active', IsLive: true, Metadata: {} }],
+        });
+        const found = await ensure({ OrderHeaderID: ORDER_ID, Preview: true });
+        expect(found.Outcomes[0]).toMatchObject({ Code: 'WouldRecordFound', ProviderSubscriptionID: 'sub_from_yesterday' });
+        expect(found.Message).toMatch(/1 found at the gateway and would be recorded/);
+
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({
+            Success: true,
+            Subscriptions: [
+                { ProviderSubscriptionID: 'sub_a', Status: 'active', IsLive: true, Metadata: {} },
+                { ProviderSubscriptionID: 'sub_b', Status: 'active', IsLive: true, Metadata: {} },
+            ],
+        });
+        const two = await ensure({ OrderHeaderID: ORDER_ID, Preview: true });
+        expect(two.Outcomes[0]).toMatchObject({ Code: 'WouldNeedPerson', Message: expect.stringMatching(/2 live subscriptions.*sub_a, sub_b/) });
+
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: false, Reason: 'rate limited' });
+        const unread = await ensure({ OrderHeaderID: ORDER_ID, Preview: true });
+        expect(unread.Outcomes[0]).toMatchObject({ Code: 'WouldNeedPerson', Message: expect.stringMatching(/rate limited/) });
+
+        expect(mocks.alert).not.toHaveBeenCalled();
+        expect(entity.Save).not.toHaveBeenCalled();
+        expect(driver.CreateProviderSubscription).not.toHaveBeenCalled();
     });
 
     it('never throws: a selection that fails is reported, not raised', async () => {
@@ -840,5 +901,242 @@ describe('EnsureProviderSubscriptions', () => {
         expect(shared.CreateIndependentInstance).not.toHaveBeenCalled();
         expect(mocks.loadConfig).toHaveBeenCalledWith(PROVIDER_ID, shared, user);
         expect(shared.ExecuteSQL).not.toHaveBeenCalled();
+    });
+});
+
+// ─── E2b: closing every door through which an Orders subscription could drift from its gateway one ───
+
+const EVENTS_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+const eventReads = () => mocks.runView.mock.calls.filter((c) => (c[0] as { EntityName: string }).EntityName === EVENTS_ENTITY);
+const live = (id: string) => ({ ProviderSubscriptionID: id, Status: 'active', IsLive: true, Metadata: {} });
+const ended = (id: string) => ({ ProviderSubscriptionID: id, Status: 'canceled', IsLive: false, Metadata: {} });
+/** The `Canceled` event Orders writes when its cancel also stopped the gateway subscription. */
+const canceledEvent = (gatewayID: string) => ({ ID: 'e-cancel', EventData: JSON.stringify({ Gateway: { ProviderSubscriptionID: gatewayID, Outcome: 'EndsAtPeriodEnd' } }) });
+/** The `Activated` event a fresh start writes, naming the gateway id it retired. */
+const activatedEvent = (gatewayID: string) => ({ ID: 'e-activate', EventData: JSON.stringify({ RetiredProviderSubscriptionID: gatewayID }) });
+
+describe('RetiredGatewayIDsFromEvents', () => {
+    it("picks the cancelled gateway id from a Canceled event and the retired one from an Activated event", () => {
+        // Kills: dropping either `ids.add` line.
+        const ids = RetiredGatewayIDsFromEvents([canceledEvent('sub_old'), activatedEvent('sub_older')]);
+        expect([...ids].sort()).toEqual(['sub_old', 'sub_older']);
+    });
+
+    it('ignores events with no data, malformed JSON, a null Gateway, empty or non-string ids', () => {
+        // Kills: removing the try/catch (malformed JSON throws), or the `typeof === 'string' && id` guards.
+        const ids = RetiredGatewayIDsFromEvents([
+            { EventData: null },
+            { EventData: '' },
+            { EventData: '{not json' },
+            { EventData: '{"Gateway":null}' },
+            { EventData: 'null' },
+            { EventData: JSON.stringify({ Gateway: { ProviderSubscriptionID: '' } }) },
+            { EventData: JSON.stringify({ Gateway: { ProviderSubscriptionID: 42 } }) },
+            { EventData: JSON.stringify({ RetiredProviderSubscriptionID: '' }) },
+            { EventData: JSON.stringify({ RetiredProviderSubscriptionID: { id: 'sub_x' } }) },
+            { EventData: JSON.stringify({ Reason: 'Customer request' }) },
+            canceledEvent('sub_old'),
+        ]);
+        expect([...ids]).toEqual(['sub_old']);
+        expect(RetiredGatewayIDsFromEvents([]).size).toBe(0);
+    });
+});
+
+describe('EnsureProviderSubscriptions (E2b): a cancelled-then-bought-again subscription gets a NEW gateway subscription', () => {
+    it("Jane's SUB-000110 was cancelled (sub_old runs to period end) and bought again: sub_old is not Found; sub_new is created and recorded", async () => {
+        // Kills: dropping the `!retired.has(...)` filter in the hand-over (sub_old would be recorded as Found).
+        events = [canceledEvent('sub_old')];
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_old')] }).mockResolvedValueOnce({
+            Success: true,
+            Subscriptions: [live('sub_old'), live('sub_new')],
+        });
+        const result = await ensure();
+        expect(result.Outcomes).toEqual([expect.objectContaining({ Code: 'Created', ProviderSubscriptionID: 'sub_new', Recorded: true })]);
+        expect(driver.CreateProviderSubscription).toHaveBeenCalledTimes(1);
+        expect(entity.ProviderSubscriptionID).toBe('sub_new');
+        expect(entity.Save).toHaveBeenCalledTimes(1);
+        // The second search still sees sub_old live, but it is retired: no AmbiguousAtGateway.
+        expect(mocks.alert).not.toHaveBeenCalled();
+        // The events read is this subscription's Canceled/Activated events, uncached.
+        expect(eventReads()[0][0]).toMatchObject({
+            ExtraFilter: `SubscriptionID = '${SUB_ID}' AND EventType IN ('Canceled', 'Activated')`,
+            BypassCache: true,
+        });
+    });
+
+    it('the same when sub_old has already ended (retired by a fresh start): no EndedAtGateway alert, sub_new is created', async () => {
+        // Kills: the same filter; without it the ended sub_old makes the run stop with EndedAtGateway.
+        events = [activatedEvent('sub_old')];
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [ended('sub_old')] });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new' });
+        expect(alertCodes()).not.toContain('EndedAtGateway');
+        expect(driver.CreateProviderSubscription).toHaveBeenCalledTimes(1);
+    });
+
+    it('control: with no event naming sub_old, a live sub_old IS recorded as Found and nothing is created (unchanged)', async () => {
+        // Kills: treating every found id as retired (an over-filter would create a second live one).
+        events = [{ ID: 'e-other', EventData: JSON.stringify({ Gateway: { ProviderSubscriptionID: 'sub_unrelated' } }) }];
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_old')] });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Found', ProviderSubscriptionID: 'sub_old' });
+        expect(driver.CreateProviderSubscription).not.toHaveBeenCalled();
+        expect(entity.ProviderSubscriptionID).toBe('sub_old');
+        expect(eventReads()).toHaveLength(1);
+    });
+
+    it('the events are read only when the search found something: an empty search reads none before the create', async () => {
+        // Kills: making the hand-over's retired read unconditional (an extra read for nearly every subscription).
+        // A refused create stops before confirmOnlyOne, so any events read here would be the hand-over's.
+        driver.CreateProviderSubscription.mockResolvedValue({ Success: false, Reason: 'card_declined' });
+        const refused = await ensure();
+        expect(refused.Outcomes[0].Code).toBe('GatewayRefused');
+        expect(eventReads()).toHaveLength(0);
+
+        // On a successful create whose second search sees only it, no events are read at all: the
+        // retired ids could change nothing (confirmOnlyOne reads them only when two or more are live).
+        mocks.runView.mockClear();
+        driver.CreateProviderSubscription.mockResolvedValue({ Success: true, ProviderSubscriptionID: 'sub_new', Status: 'active', ChargedAtCreation: false });
+        const created = await ensure();
+        expect(created.Outcomes[0].Code).toBe('Created');
+        expect(eventReads()).toHaveLength(0);
+    });
+
+    it('an events read that fails never throws out of the run', async () => {
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_old')] });
+        mocks.runView.mockImplementation(async (params: { EntityName: string }) =>
+            params.EntityName === EVENTS_ENTITY ? { Success: false, ErrorMessage: 'timeout', Results: [] } : { Success: true, Results: params.EntityName === 'MJ_BizApps_Orders: Payment Provider Prices' ? prices : switchedOn },
+        );
+        const result = await ensure();
+        expect(result.Success).toBe(true);
+        // Nothing created on an unreadable history: the old one might be the one to keep.
+        expect(driver.CreateProviderSubscription).not.toHaveBeenCalled();
+        expect(entity.Save).not.toHaveBeenCalled();
+    });
+});
+
+describe('EnsureProviderSubscriptions (E2b): an Orders subscription cancelled while its gateway one was being created', () => {
+    for (const [what, change] of [
+        ['cancelled (Status Canceled)', () => (entity.Status = 'Canceled')],
+        ['switched off (AutoRenew false)', () => (entity.AutoRenew = false)],
+    ] as const) {
+        it(`${what} at the record step: sub_new is cancelled now at the gateway, not recorded, NoLongerRenewing, no alert`, async () => {
+            // Kills: removing the stopUnwanted branch in recordOnce (sub_new would be recorded and bill a cancelled customer).
+            change();
+            const result = await ensure();
+            expect(result.Success).toBe(true);
+            expect(result.Outcomes).toEqual([expect.objectContaining({ Code: 'NoLongerRenewing', ProviderSubscriptionID: 'sub_new' })]);
+            expect(driver.CancelProviderSubscription).toHaveBeenCalledTimes(1);
+            expect(driver.CancelProviderSubscription).toHaveBeenCalledWith({
+                ProviderSubscriptionID: 'sub_new',
+                BillingEndsAt: null,
+                IdempotencyKey: `provider-subscription-unwanted:${SUB_ID.toLowerCase()}:sub_new`,
+            });
+            expect(entity.Save).not.toHaveBeenCalled();
+            expect(entity.ProviderSubscriptionID).toBeNull();
+            expect(mocks.alert).not.toHaveBeenCalled();
+        });
+    }
+
+    it('control: an Active, auto-renewing subscription is recorded and nothing is cancelled', async () => {
+        // Kills: inverting the condition (every hand-over would cancel its own new gateway subscription).
+        const result = await ensure();
+        expect(result.Outcomes[0].Code).toBe('Created');
+        expect(driver.CancelProviderSubscription).not.toHaveBeenCalled();
+    });
+
+    it('when that cancel is refused: an urgent UnwantedAtGateway alert naming sub_new, nothing recorded', async () => {
+        // Kills: returning NoLongerRenewing regardless of `stopped.Success` (a customer would be charged silently).
+        entity.Status = 'Canceled';
+        driver.CancelProviderSubscription.mockResolvedValue({ Success: false, Reason: 'resource_missing' });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'UnwantedAtGateway', ProviderSubscriptionID: 'sub_new' });
+        expect(mocks.alert).toHaveBeenCalledTimes(1);
+        expect(mocks.alert.mock.calls[0][0]).toMatchObject({
+            Code: 'UnwantedAtGateway',
+            Urgent: true,
+            Reason: expect.stringMatching(/sub_new.*resource_missing/s),
+        });
+        expect(entity.Save).not.toHaveBeenCalled();
+    });
+
+    it('when that cancel throws: the same urgent alert, and the run never throws', async () => {
+        // Kills: removing the try/catch around the cancel (the throw becomes NotRecorded, not UnwantedAtGateway).
+        entity.AutoRenew = false;
+        driver.CancelProviderSubscription.mockRejectedValue(new Error('ECONNRESET'));
+        const result = await ensure();
+        expect(result.Success).toBe(true);
+        expect(result.Outcomes[0].Code).toBe('UnwantedAtGateway');
+        expect(mocks.alert.mock.calls[0][0]).toMatchObject({ Code: 'UnwantedAtGateway', Urgent: true, Reason: expect.stringMatching(/sub_new.*ECONNRESET/s) });
+    });
+});
+
+describe('EnsureProviderSubscriptions (E2b): after a create, the gateway is searched again (confirmOnlyOne)', () => {
+    it('two runs straddling midnight both created: sub_new and sub_other live raise an urgent, linked AmbiguousAtGateway naming both', async () => {
+        // Kills: dropping the confirmOnlyOne call, or `live.length <= 1` → `<= 2`, or Linked: true → false.
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [] }).mockResolvedValueOnce({
+            Success: true,
+            Subscriptions: [live('sub_new'), live('sub_other')],
+        });
+        const result = await ensure();
+        expect(driver.FindProviderSubscriptions).toHaveBeenCalledTimes(2);
+        expect(driver.FindProviderSubscriptions).toHaveBeenNthCalledWith(2, { ProviderCustomerRef: 'cus_jane', MetadataKey: 'OrdersSubscriptionID', MetadataValue: SUB_ID });
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'AmbiguousAtGateway', ProviderSubscriptionID: 'sub_new', NewAlert: true });
+        expect(mocks.alert).toHaveBeenCalledTimes(1);
+        expect(mocks.alert.mock.calls[0][0]).toMatchObject({
+            Code: 'AmbiguousAtGateway',
+            Urgent: true,
+            Linked: true,
+            Reason: expect.stringMatching(/sub_new, sub_other/),
+        });
+        // The one this run created is still recorded; the alert says which to cancel.
+        expect(entity.ProviderSubscriptionID).toBe('sub_new');
+    });
+
+    it('only sub_new live after the create (or an ended extra): Created, no alert', async () => {
+        // Kills: counting non-live subscriptions (`IsLive` filter dropped) as a second one.
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [] }).mockResolvedValueOnce({
+            Success: true,
+            Subscriptions: [live('sub_new'), ended('sub_gone')],
+        });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new' });
+        expect(driver.FindProviderSubscriptions).toHaveBeenCalledTimes(2);
+        expect(mocks.alert).not.toHaveBeenCalled();
+    });
+
+    it("a retired sub_old still live at the gateway is not counted: Created, no alert", async () => {
+        // Kills: dropping `!retired.has(...)` in confirmOnlyOne.
+        events = [canceledEvent('sub_old')];
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [] }).mockResolvedValueOnce({
+            Success: true,
+            Subscriptions: [live('sub_new'), live('sub_old')],
+        });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new' });
+        expect(mocks.alert).not.toHaveBeenCalled();
+    });
+
+    it('the search after the create failing (refused or thrown) keeps Created, raises nothing, and is logged', async () => {
+        // Kills: raising (or returning a failure code) on a failed confirm search; the create itself succeeded.
+        vi.mocked(LogError).mockClear();
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [] }).mockResolvedValueOnce({ Success: false, Reason: 'rate limited' });
+        const refused = await ensure();
+        expect(refused.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new' });
+        expect(vi.mocked(LogError).mock.calls.some((c) => /could not search the gateway again after creating sub_new: rate limited/.test(String(c[0])))).toBe(true);
+
+        entity.ProviderSubscriptionID = null;
+        entity.PaymentProviderID = null;
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [] }).mockRejectedValueOnce(new Error('socket hang up'));
+        const thrown = await ensure();
+        expect(thrown.Success).toBe(true);
+        expect(thrown.Outcomes[0].Code).toBe('Created');
+        expect(mocks.alert).not.toHaveBeenCalled();
+    });
+
+    it('a Found path does not search again (only a create can make a second one)', async () => {
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_from_yesterday')] });
+        await ensure();
+        expect(driver.FindProviderSubscriptions).toHaveBeenCalledTimes(1);
     });
 });

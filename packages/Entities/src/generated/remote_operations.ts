@@ -486,6 +486,11 @@ export interface CancelSubscriptionOutput {
     /** The reversal order, when one was needed. Absent when nothing was refunded. */
     ReversalOrderID?: string;
     ReversalOrderNumber?: string;
+    /**
+     * What the cancel did (or, on a preview, will do) at the payment gateway that bills the
+     * subscription. Absent when no gateway bills it.
+     */
+    Gateway?: CancelGatewayResult;
 }
 
 /** A later term cancelled alongside the affected one. */
@@ -493,6 +498,21 @@ export interface CanceledLaterTermResult {
     SubscriptionTermID: string;
     TermNumber: number;
     Decision: CancellationDecisionResult;
+}
+
+/**
+ * The payment gateway's part of a cancel, when a gateway bills the subscription (E2b). The gateway is
+ * asked before Orders writes anything; if it does not confirm, the cancel fails and nothing changes.
+ */
+export interface CancelGatewayResult {
+    /** The gateway's subscription id (Stripe `sub_...`). */
+    ProviderSubscriptionID: string;
+    /** `Now`: the gateway stops billing today. `EndOfCoverage`: it charges nothing after coverage ends. */
+    When: 'Now' | 'EndOfCoverage';
+    /** ISO instant after which the gateway charges nothing. */
+    BillingEndsAt?: string;
+    /** The gateway's answer. Absent on a preview. */
+    Outcome?: 'CanceledNow' | 'EndsAtPeriodEnd' | 'EndsAt' | 'AlreadyEnded' | 'AlreadyEnding';
 }
 
 /**

@@ -469,6 +469,49 @@ export interface GatewaySubscription {
     FirstChargeAt?: Date;
 }
 
+/**
+ * Stop the gateway billing a subscription Orders has cancelled (E2b).
+ *
+ * `BillingEndsAt` is the instant after which the gateway must charge nothing: null for now. The
+ * driver decides how: end it now, at its period end, or at that instant, whichever stops every
+ * charge after `BillingEndsAt` without one before it that Orders has not sold.
+ *
+ * Example: Sess cancels Jane's SUB-000110 at the end of term 1 (ends 30 Oct 2027). Orders asks the
+ * gateway to bill nothing after 00:00 Central on 31 Oct 2027; Stripe's period ends at 00:00 Central on
+ * 30 Oct 2027, so it is told not to renew at period end, and the $599 renewal never happens.
+ */
+export interface CancelProviderSubscriptionRequest {
+    /** The gateway's id (`Subscription.ProviderSubscriptionID`). */
+    ProviderSubscriptionID: string;
+    /** The gateway must charge nothing after this instant; null ends the subscription now. */
+    BillingEndsAt: Date | null;
+    /** OUR idempotency key, so a retried request is answered, not repeated. */
+    IdempotencyKey: string;
+}
+
+/** What the gateway did. Each `Success: true` outcome means it will charge nothing after `BillingEndsAt`. */
+export type CancelProviderSubscriptionOutcome =
+    /** Ended now. */
+    | 'CanceledNow'
+    /** Set to end at its current period end instead of renewing. */
+    | 'EndsAtPeriodEnd'
+    /** Set to end at an instant inside its current period. */
+    | 'EndsAt'
+    /** It had already ended (a retry, or someone cancelled it at the gateway). */
+    | 'AlreadyEnded'
+    /** It was already set to end no later than asked. */
+    | 'AlreadyEnding';
+
+export interface CancelProviderSubscriptionResult {
+    Success: boolean;
+    Reason?: string;
+    Outcome?: CancelProviderSubscriptionOutcome;
+    /** When the gateway's billing actually ends: now, its period end or the instant set. */
+    BillingEndsAt?: Date;
+    /** The gateway's own status word after the call. */
+    Status?: string;
+}
+
 /** How often a gateway price bills. */
 export interface GatewayPriceInterval {
     Unit: 'day' | 'week' | 'month' | 'year';
@@ -658,6 +701,17 @@ export class BasePaymentProvider {
      */
     public async FindProviderSubscriptions(_request: FindProviderSubscriptionsRequest): Promise<FindProviderSubscriptionsResult> {
         return { Success: false, Reason: this.notImplemented('finding gateway-billed subscriptions') };
+    }
+
+    /**
+     * Stop the gateway billing a subscription after `BillingEndsAt` (E2b). Called by
+     * `Orders.CancelSubscription` BEFORE it writes anything, so a gateway that does not confirm leaves
+     * Orders unchanged rather than cancelled while the gateway still bills.
+     *
+     * Refuses by default: a driver that cannot cancel must say so, never report success.
+     */
+    public async CancelProviderSubscription(_request: CancelProviderSubscriptionRequest): Promise<CancelProviderSubscriptionResult> {
+        return { Success: false, Reason: this.notImplemented('cancelling a gateway-billed subscription') };
     }
 
     /**

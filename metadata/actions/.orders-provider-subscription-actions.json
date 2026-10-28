@@ -16,7 +16,7 @@
     "fields": {
       "Name": "Create Provider Subscriptions",
       "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
-      "Description": "For accounts whose payment gateway bills renewals itself (PaymentProviderType.SupportsSubscriptionBilling and PaymentProvider.BillsSubscriptions both on): find each active auto-renewing subscription with a saved card and no gateway subscription yet, and create one at the gateway that charges nothing now and first charges at 00:00 business time on the last day of its latest term, then record the gateway's id on the subscription so Orders' renewal jobs skip it. A subscription whose latest term is still unpaid (a renewal order Charge Renewals has not collected yet) stays with Orders until it is paid. The gateway price's billing period must match the term. The gateway is searched first, so a subscription an earlier run created is recorded rather than created twice. A first charge further out than the gateway accepts today is deferred to a later run. Anything a person must act on raises one open alert Task per subscription and problem; a problem only a person can clear at the gateway is not retried while its Task is open. Preview (the default) reports what would be created and calls no gateway.",
+      "Description": "For accounts whose payment gateway bills renewals itself (PaymentProviderType.SupportsSubscriptionBilling and PaymentProvider.BillsSubscriptions both on): find each active auto-renewing subscription with a saved card and no gateway subscription yet, and create one at the gateway that charges nothing now and first charges at 00:00 business time on the last day of its latest term, then record the gateway's id on the subscription so Orders' renewal jobs skip it. A subscription whose latest term is still unpaid (a renewal order Charge Renewals has not collected yet) stays with Orders until it is paid. The gateway price's billing period must match the term. The gateway is searched first, so a subscription an earlier run created is recorded rather than created twice. A first charge further out than the gateway accepts today is deferred to a later run. Anything a person must act on raises one open alert Task per subscription and problem; a problem only a person can clear at the gateway is not retried while its Task is open. Preview (the default) searches the gateway read-only and reports what a run would create, record or leave for a person; it creates and records nothing. Its search finds only gateway subscriptions Orders created.",
       "Type": "Custom",
       "DriverClass": "Orders.CreateProviderSubscriptions",
       "IconClass": "fa-solid fa-arrows-rotate",
@@ -51,7 +51,7 @@
             "ValueType": "Scalar",
             "IsArray": false,
             "IsRequired": false,
-            "Description": "True (the default) reports what WOULD be created and calls no gateway; false creates and records. A value that is neither is refused rather than guessed."
+            "Description": "True (the default) reports what a run WOULD do, searching the gateway read-only and writing nothing; false creates and records. A value that is neither is refused rather than guessed."
           },
           "primaryKey": {
             "ID": "ECAC20AF-BA7B-4E59-81AB-6B8BDE5D7B19"

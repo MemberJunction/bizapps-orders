@@ -37,6 +37,7 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadSubscriptionEntityServer,
     LoadProductPriceEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
@@ -171,6 +172,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     LoadOrderAdjustmentEntityServer();     // a recorded discount is neither re-authorized nor deleted by hand (golive #328)
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadSubscriptionEntityServer();        // a gateway-billed subscription changes only where the gateway is told
     LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
