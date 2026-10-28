@@ -63,6 +63,7 @@ import {
     SnapshotSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
 } from './CheckoutSavedInstrument.js';
+import { EnsureProviderSubscriptionsOnOwnProvider } from './ProviderSubscriptions.js';
 import {
     CheckoutMemberDiscountNotConfiguredError,
     DEFAULT_TYPED_CODE_PRECEDENCE,
@@ -3406,6 +3407,27 @@ export class CheckoutSessionService {
                     mdProvider,
                     contextUser
                 );
+                // On an account whose gateway bills renewals itself, hand the order's new subscriptions
+                // to it now that their card is kept (option E, E2). Never on an update-card renewal:
+                // that order creates no subscription. Never throws, and a problem raises an alert
+                // Task; this is the only call a checkout makes, since a replay of a booked payment
+                // returns before here, so the daily Create Provider Subscriptions action retries it.
+                // On its own provider, like the capture above: the write that records the gateway id
+                // must not be rolled back with another request's transaction (#927). On an account
+                // that does not bill subscriptions it costs one read of the account, on this shared
+                // provider, and returns before making a provider of its own.
+                if (!renewal) {
+                    try {
+                        await EnsureProviderSubscriptionsOnOwnProvider(
+                            { OrderHeaderID: order.ID, CheckoutPaymentProviderID: intent.PaymentProviderID },
+                            mdProvider,
+                            contextUser,
+                        );
+                    } catch (err) {
+                        // Contractually unreachable; kept so a defect there can never report a booked capture as failed.
+                        LogError(`[CheckoutSessionService] Order ${order.ID}: handing subscriptions to the gateway threw: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                }
             }
             return { Attempted: true, Booked: true };
         } catch (err) {

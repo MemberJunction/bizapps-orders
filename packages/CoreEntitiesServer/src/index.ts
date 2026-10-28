@@ -213,6 +213,27 @@ export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from '
 // Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
 export { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 
+// Handing a new auto-renewing subscription to the gateway that will bill it (option E, E2).
+export {
+    EnsureProviderSubscriptions,
+    EnsureProviderSubscriptionsOnOwnProvider,
+    GatewayIntervalMonths,
+    ORDERS_SUBSCRIPTION_METADATA_KEY,
+    PlanProviderSubscriptionCharge,
+    PROVIDER_SUBSCRIPTION_ALERT_CODES,
+    PROVIDER_SUBSCRIPTION_PARKED_CODES,
+    ProviderBillsNewSubscriptions,
+    ProviderSubscriptionFirstChargeAt,
+    ProviderSubscriptionIdempotencyKey,
+} from './ProviderSubscriptions.js';
+export type {
+    EnsureProviderSubscriptionsInput,
+    EnsureProviderSubscriptionsResult,
+    ProviderSubscriptionChargePlan,
+    ProviderSubscriptionOutcome,
+    ProviderSubscriptionOutcomeCode,
+} from './ProviderSubscriptions.js';
+
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
@@ -549,6 +570,13 @@ export type {
     RetrieveChargeResult,
     GatewayWebhookEndpoint,
     ListWebhookEndpointsResult,
+    CreateProviderSubscriptionRequest,
+    CreateProviderSubscriptionResult,
+    FindProviderSubscriptionsRequest,
+    FindProviderSubscriptionsResult,
+    GatewaySubscription,
+    DescribeProviderPriceResult,
+    GatewayPriceInterval,
 } from './BasePaymentProvider.js';
 
 export {
@@ -560,6 +588,10 @@ export {
     StripeChargeFromObject,
     StripeChargeRefusal,
     StubDigest,
+    OneIntervalLaterAsStripeCounts,
+    OneYearLaterAsStripeCounts,
+    StripePriceInterval,
+    StripeSubscriptionFromObject,
 } from './StripePaymentProvider.js';
 export {
     CheckPaymentWebhookEndpoints,
@@ -1004,7 +1036,14 @@ export {
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
+export {
+    OpenProviderSubscriptionAlerts,
+    PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER,
+    ProviderSubscriptionAlertName,
+    raiseCheckoutCaptureTerminalAlert,
+    raiseCheckoutSettledNotBookedAlert,
+    raiseProviderSubscriptionAlert,
+} from './checkoutCaptureAlert.js';
 // The post-payment step record, its review queue and operator replay (#326).
 export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
 export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';

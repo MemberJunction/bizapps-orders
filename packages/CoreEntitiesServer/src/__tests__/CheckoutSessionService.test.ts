@@ -378,6 +378,14 @@ const renewalMocks = vi.hoisted(() => ({
     resolveProvider: null as null | ((...args: unknown[]) => unknown),
 }));
 
+const providerSubscriptionMocks = vi.hoisted(() => ({
+    ensure: vi.fn().mockResolvedValue({ Success: true, Outcomes: [], Linked: 0, Deferred: 0, Alerts: 0, Message: '' }),
+}));
+
+vi.mock('../ProviderSubscriptions.js', () => ({
+    EnsureProviderSubscriptionsOnOwnProvider: (...args: unknown[]) => providerSubscriptionMocks.ensure(...args),
+}));
+
 vi.mock('../CheckoutSavedInstrument.js', () => ({
     SnapshotSellsSubscription: (...args: unknown[]) => renewalMocks.sellsSubscription(...args),
     FindReusableProviderCustomerRef: (...args: unknown[]) => renewalMocks.findCustomer(...args),
@@ -794,6 +802,8 @@ describe('CheckoutSessionService', () => {
                 expect.anything(),
                 testUser
             );
+            // An update-card renewal creates no subscription, so nothing is handed to the gateway (option E).
+            expect(providerSubscriptionMocks.ensure).not.toHaveBeenCalled();
         });
 
         it('refuses a cancelled subscription, or one no longer set to renew, on open and on pay (#683)', async () => {
@@ -2495,6 +2505,31 @@ describe('CheckoutSessionService', () => {
             const order = mocks.mockCaptureExecute.mock.invocationCallOrder[0];
             const save = renewalMocks.saveInstrument.mock.invocationCallOrder[0];
             expect(save).toBeGreaterThan(order);
+            // Then the order's new subscriptions go to a gateway that bills renewals, once the card is kept (option E, E2).
+            expect(providerSubscriptionMocks.ensure).toHaveBeenCalledTimes(1);
+            expect(providerSubscriptionMocks.ensure).toHaveBeenCalledWith(
+                { OrderHeaderID: mocks.mockOrderInstance.ID, CheckoutPaymentProviderID: 'pp-1' },
+                expect.anything(),
+                testUser,
+            );
+            expect(providerSubscriptionMocks.ensure.mock.invocationCallOrder[0]).toBeGreaterThan(save);
+        });
+
+        it('a fault handing subscriptions to the gateway never turns a booked capture into a failed one (option E, E2)', async () => {
+            mocks.mockSessionInstance.Status = 'Confirmed';
+            mocks.mockSessionInstance.DraftOrderID = 'order-999';
+            mocks.mockSessionInstance.PaymentIntentID = 'pi-row-1';
+            mocks.mockOrderInstance.TotalGross = 100;
+            mocks.mockOrderInstance.AmountPaid = 0;
+            mocks.mockOrderInstance.BillToPersonID = 'person-new-1';
+            mocks.mockPaymentIntentInstance.Status = 'Succeeded';
+            mocks.sessionRunViewResults = [{ ID: 'sess-123' }];
+            providerSubscriptionMocks.ensure.mockRejectedValueOnce(new Error('gateway exploded'));
+
+            const book = await CheckoutSessionService.BookSettledCheckoutPaymentIfNeeded('pi-row-1', testUser);
+            expect(book).toMatchObject({ Attempted: true, Booked: true });
+            expect(providerSubscriptionMocks.ensure).toHaveBeenCalledTimes(1);
+            expect(stepMocks.Alert).not.toHaveBeenCalled();
         });
 
         it('does not try to keep the card when the capture fails', async () => {
@@ -2508,6 +2543,7 @@ describe('CheckoutSessionService', () => {
 
             await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
             expect(renewalMocks.saveInstrument).not.toHaveBeenCalled();
+            expect(providerSubscriptionMocks.ensure).not.toHaveBeenCalled();
         });
 
         it('BookSettledCheckoutPaymentIfNeeded books CapturePayment for a Confirmed unpaid session', async () => {

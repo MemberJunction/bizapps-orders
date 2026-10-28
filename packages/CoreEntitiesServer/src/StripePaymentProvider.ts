@@ -34,9 +34,16 @@ import {
     type CaptureResult,
     type CreateIntentRequest,
     type CreateIntentResult,
+    type CreateProviderSubscriptionRequest,
+    type CreateProviderSubscriptionResult,
     type EnsureCustomerRequest,
     type EnsureCustomerResult,
+    type FindProviderSubscriptionsRequest,
+    type FindProviderSubscriptionsResult,
     type GatewayCharge,
+    type DescribeProviderPriceResult,
+    type GatewayPriceInterval,
+    type GatewaySubscription,
     type GatewayRefund,
     type GatewayChargeItem,
     type ListChargeItemsRequest,
@@ -70,6 +77,35 @@ const STRIPE_API = 'https://api.stripe.com/v1';
 
 /** Pages of 100 a list read follows before refusing. */
 const MAX_LIST_PAGES = 50;
+
+/**
+ * How long one subscription call (create, list, price) may take. The payment calls set none and keep
+ * fetch's default, because a payment's state after a timeout is unknown. Here a timeout is safe: it
+ * is reported as a fault, the create carries an idempotency key, and the daily pass searches before
+ * it creates. And a checkout waits on these calls before its success screen, so a hung connection
+ * must not hold the buyer.
+ */
+const PROVIDER_SUBSCRIPTION_TIMEOUT_MS = 15_000;
+
+/**
+ * Whether Stripe billed a new subscription at creation, which the customer already paid through
+ * Orders: its first invoice asks for or took money, or its status is one only a charge (or a failed
+ * one) produces. A $0 invoice on an active subscription is not a charge, and must not raise the
+ * URGENT refund Task. `trialing` charges nothing either.
+ *
+ * `latestInvoice` is the expanded invoice object; an id alone (the expansion not honoured) cannot say
+ * what it charged, so it counts as charged: a person checking a $0 invoice is the cheaper mistake.
+ */
+export function StripeChargedAtCreation(status: string, latestInvoice: unknown): boolean {
+    if (status !== 'active' && status !== 'trialing') return true;
+    if (latestInvoice == null) return false;
+    if (typeof latestInvoice !== 'object') return true;
+    const invoice = latestInvoice as { amount_due?: unknown; amount_paid?: unknown };
+    const due = Number(invoice.amount_due ?? 0);
+    const paid = Number(invoice.amount_paid ?? 0);
+    if (!Number.isFinite(due) || !Number.isFinite(paid)) return true;
+    return due > 0 || paid > 0;
+}
 
 /** Stripe's own event names, kept as strings because they are Stripe's vocabulary and not ours. */
 const HANDLED = [
@@ -297,6 +333,106 @@ export class StripePaymentProvider extends BasePaymentProvider {
         const result = await this.call('POST', '/customers', body, request.IdempotencyKey);
         if (!result.Ok) return { Success: false, Reason: result.Reason };
         return { Success: true, ProviderCustomerRef: String(result.Body.id), WasExisting: false };
+    }
+
+    // ─── Subscriptions Stripe bills (option E, E2) ──────────────────────────────
+
+    /**
+     * `POST /v1/subscriptions` that charges nothing today and first charges at `FirstChargeAt`.
+     *
+     * `billing_cycle_anchor` with `proration_behavior=none` makes the time until the anchor an unbilled
+     * first period: no invoice at creation, the full price at the anchor (proven in a Stripe sandbox).
+     * Never `billing_cycle_anchor_config`: it anchors on the next matching date counting today, so a
+     * same-day date charges a full year at once (also seen in a sandbox).
+     *
+     * THE STUB REFUSES. The stub's other verbs invent ids so the suite can run; here an invented
+     * `sub_stub_…` would be written to the Orders subscription and silently stop Orders renewing it,
+     * with nothing at the gateway billing it either.
+     */
+    public override async CreateProviderSubscription(request: CreateProviderSubscriptionRequest): Promise<CreateProviderSubscriptionResult> {
+        if (this.useStub) {
+            return {
+                Success: false,
+                Reason:
+                    `Payment provider '${this.Config?.Name ?? this.Config?.ID}' is not live (IsLiveMode = 0), so its Stripe ` +
+                    `driver is a stub and cannot create a subscription Stripe would bill. A made-up id would stop Orders ` +
+                    `renewing the subscription with nobody billing it.`,
+            };
+        }
+        if (!Number.isInteger(request.Quantity) || request.Quantity < 1) {
+            return { Success: false, Reason: `Stripe cannot bill a quantity of ${request.Quantity}.` };
+        }
+        const anchorSeconds = Math.floor(request.FirstChargeAt.getTime() / 1000);
+        if (!Number.isFinite(anchorSeconds)) {
+            return { Success: false, Reason: 'The first charge date is not a valid date.' };
+        }
+
+        const body: Record<string, string> = {
+            customer: request.ProviderCustomerRef,
+            'items[0][price]': request.ProviderPriceID,
+            'items[0][quantity]': String(request.Quantity),
+            default_payment_method: request.ProviderInstrumentRef,
+            collection_method: 'charge_automatically',
+            billing_cycle_anchor: String(anchorSeconds),
+            proration_behavior: 'none',
+            // The invoice as an object, so whether creation charged anything is read from its amounts.
+            'expand[0]': 'latest_invoice',
+        };
+        for (const [k, v] of Object.entries(request.Metadata ?? {})) body[`metadata[${k}]`] = v;
+
+        const result = await this.call('POST', '/subscriptions', body, request.IdempotencyKey, { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS });
+        if (!result.Ok) {
+            // 409: another request with this key is still running (the page and the webhook, on two
+            // workers). It will return the subscription; this one has nothing to record.
+            return { Success: false, Reason: result.Reason, InFlightElsewhere: result.Status === 409 ? true : undefined };
+        }
+
+        const status = String(result.Body.status ?? '');
+        const anchor = Number(result.Body.billing_cycle_anchor);
+        return {
+            Success: true,
+            // Never String(undefined): an answer without an id is '' and is refused before it is recorded.
+            ProviderSubscriptionID: typeof result.Body.id === 'string' ? result.Body.id : '',
+            Status: status,
+            FirstChargeAt: Number.isFinite(anchor) && anchor > 0 ? new Date(anchor * 1000) : undefined,
+            ChargedAtCreation: StripeChargedAtCreation(status, result.Body.latest_invoice),
+        };
+    }
+
+    /** Every subscription on the customer, any status, filtered to the metadata value. */
+    public override async FindProviderSubscriptions(request: FindProviderSubscriptionsRequest): Promise<FindProviderSubscriptionsResult> {
+        if (this.useStub) return { Success: true, Subscriptions: [] };
+        const listed = await this.listAll(
+            '/subscriptions',
+            { customer: request.ProviderCustomerRef, status: 'all' },
+            { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS },
+        );
+        if (!listed.Ok) return { Success: false, Reason: listed.Reason };
+        return {
+            Success: true,
+            Subscriptions: listed.Items.map(StripeSubscriptionFromObject).filter(
+                (s) => s.Metadata[request.MetadataKey] === request.MetadataValue,
+            ),
+        };
+    }
+
+    /** `GET /v1/prices/:id`: whether it is active and how often it bills. */
+    public override async DescribeProviderPrice(providerPriceID: string): Promise<DescribeProviderPriceResult> {
+        if (this.useStub) return { Success: true, Active: true, Interval: { Unit: 'year', Count: 1 } };
+        const result = await this.call('GET', `/prices/${encodeURIComponent(providerPriceID)}`, undefined, undefined, {
+            TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS,
+        });
+        if (!result.Ok) return { Success: false, Reason: result.Reason };
+        return { Success: true, Active: result.Body.active !== false, Interval: StripePriceInterval(result.Body) };
+    }
+
+    /**
+     * One billing period from creation, as Stripe computes its "next natural billing date": for a
+     * yearly price, 29 Feb lands on 28 Feb, to the second (proven in a Stripe sandbox). A later anchor
+     * is refused with a 400. Without an interval, a yearly price.
+     */
+    public override LatestFirstChargeAt(createdAt: Date, interval?: GatewayPriceInterval | null): Date | null {
+        return interval ? OneIntervalLaterAsStripeCounts(createdAt, interval) : OneYearLaterAsStripeCounts(createdAt);
     }
 
     // ─── Capture ───────────────────────────────────────────────────────────────
@@ -538,7 +674,8 @@ export class StripePaymentProvider extends BasePaymentProvider {
         path: string,
         body?: Record<string, string>,
         idempotencyKey?: string,
-    ): Promise<{ Ok: boolean; Reason?: string; Body: Record<string, unknown> }> {
+        options?: { TimeoutMs?: number },
+    ): Promise<{ Ok: boolean; Reason?: string; Body: Record<string, unknown>; Status?: number }> {
         const apiKey = this.Credentials?.ApiKey;
         if (!apiKey) {
             return {
@@ -566,10 +703,11 @@ export class StripePaymentProvider extends BasePaymentProvider {
                 method,
                 headers,
                 body: body ? ToFormBody(body) : undefined,
+                signal: options?.TimeoutMs ? AbortSignal.timeout(options.TimeoutMs) : undefined,
             });
         } catch (err) {
             // A fault, not an answer. The caller's payment is in an UNKNOWN state, which is worse than
-            // a decline, so it must not be reported as one.
+            // a decline, so it must not be reported as one. A timeout is the same fault.
             throw new Error(`Stripe was unreachable calling ${method} ${path}: ${(err as Error).message}`);
         }
 
@@ -581,7 +719,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
             parsed = {};
         }
 
-        if (response.ok) return { Ok: true, Body: parsed };
+        if (response.ok) return { Ok: true, Body: parsed, Status: response.status };
 
         if (response.status >= 500) {
             throw new Error(`Stripe returned ${response.status} calling ${method} ${path}. The payment state is unknown.`);
@@ -590,7 +728,7 @@ export class StripePaymentProvider extends BasePaymentProvider {
         const error = (parsed.error ?? {}) as Record<string, unknown>;
         const reason = (error.message as string) ?? `Stripe returned ${response.status} with no message.`;
         LogError(`Stripe ${method} ${path} refused: ${reason}`);
-        return { Ok: false, Body: parsed, Reason: reason };
+        return { Ok: false, Body: parsed, Reason: reason, Status: response.status };
     }
 
     /**
@@ -602,13 +740,14 @@ export class StripePaymentProvider extends BasePaymentProvider {
     protected async listAll(
         path: string,
         query: Record<string, string>,
+        options?: { TimeoutMs?: number },
     ): Promise<{ Ok: boolean; Reason?: string; Items: Array<Record<string, unknown>> }> {
         const items: Array<Record<string, unknown>> = [];
         let startingAfter: string | undefined;
         for (let page = 0; page < MAX_LIST_PAGES; page++) {
             const params = new URLSearchParams({ ...query, limit: '100' });
             if (startingAfter) params.set('starting_after', startingAfter);
-            const result = await this.call('GET', `${path}?${params.toString()}`);
+            const result = await this.call('GET', `${path}?${params.toString()}`, undefined, undefined, options);
             if (!result.Ok) return { Ok: false, Reason: result.Reason, Items: items };
             const data = (result.Body.data as Array<Record<string, unknown>> | undefined) ?? [];
             items.push(...data);
@@ -797,6 +936,68 @@ export function StripeChargeItemFromLineItem(object: Record<string, unknown>): G
         Quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
         Amount: FromMinorUnits(Number(object.amount_total ?? 0), currency),
     };
+}
+
+/** Stripe statuses after which a subscription never bills again. */
+const ENDED_SUBSCRIPTION_STATUSES = ['canceled', 'incomplete_expired'];
+
+/** A Stripe subscription object as a `GatewaySubscription`. */
+export function StripeSubscriptionFromObject(object: Record<string, unknown>): GatewaySubscription {
+    const status = String(object.status ?? '');
+    const metadata: Record<string, string> = {};
+    for (const [k, v] of Object.entries((object.metadata ?? {}) as Record<string, unknown>)) {
+        if (typeof v === 'string') metadata[k] = v;
+    }
+    const item = (((object.items ?? {}) as Record<string, unknown>).data as Array<Record<string, unknown>> | undefined)?.[0];
+    const price = item?.price;
+    const priceID = typeof price === 'string' ? price : typeof price === 'object' && price ? (price as Record<string, unknown>).id : undefined;
+    const anchor = Number(object.billing_cycle_anchor);
+    return {
+        ProviderSubscriptionID: typeof object.id === 'string' ? object.id : '',
+        Status: status,
+        IsLive: !ENDED_SUBSCRIPTION_STATUSES.includes(status),
+        Metadata: metadata,
+        ProviderPriceID: typeof priceID === 'string' ? priceID : undefined,
+        Quantity: item && Number.isFinite(Number(item.quantity)) ? Number(item.quantity) : undefined,
+        FirstChargeAt: Number.isFinite(anchor) && anchor > 0 ? new Date(anchor * 1000) : undefined,
+    };
+}
+
+/** A Stripe price's `recurring` as a `GatewayPriceInterval`; null for a one-time price. */
+export function StripePriceInterval(price: Record<string, unknown>): GatewayPriceInterval | null {
+    const recurring = price.recurring as Record<string, unknown> | null | undefined;
+    const unit = recurring?.interval;
+    if (unit !== 'day' && unit !== 'week' && unit !== 'month' && unit !== 'year') return null;
+    const count = Number(recurring?.interval_count ?? 1);
+    return { Unit: unit, Count: Number.isInteger(count) && count > 0 ? count : 1 };
+}
+
+/**
+ * The same instant one billing period later in UTC, as Stripe counts its "next natural billing date":
+ * months and years keep the day of the month, moved to the month's last day where it has none (31 Jan
+ * + 1 month = 28/29 Feb; 29 Feb + 1 year = 28 Feb); days and weeks add whole days.
+ */
+export function OneIntervalLaterAsStripeCounts(from: Date, interval: GatewayPriceInterval): Date {
+    if (interval.Unit === 'day' || interval.Unit === 'week') {
+        return new Date(from.getTime() + interval.Count * (interval.Unit === 'week' ? 7 : 1) * 86_400_000);
+    }
+    const months = interval.Count * (interval.Unit === 'year' ? 12 : 1);
+    const target = from.getUTCMonth() + months;
+    const year = from.getUTCFullYear() + Math.floor(target / 12);
+    const month = ((target % 12) + 12) % 12;
+    const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+    const day = Math.min(from.getUTCDate(), lastDay);
+    return new Date(Date.UTC(year, month, day, from.getUTCHours(), from.getUTCMinutes(), from.getUTCSeconds(), from.getUTCMilliseconds()));
+}
+
+/**
+ * The same instant one year later in UTC, with 29 Feb moved to 28 Feb in a year that has none: how
+ * Stripe counts a yearly billing period, and therefore the latest `billing_cycle_anchor` it accepts
+ * for a subscription created at `from`. JavaScript's `setUTCFullYear(+1)` gives 1 March instead, which
+ * Stripe refuses.
+ */
+export function OneYearLaterAsStripeCounts(from: Date): Date {
+    return OneIntervalLaterAsStripeCounts(from, { Unit: 'year', Count: 1 });
 }
 
 /** A trimmed string, or null for anything empty or not a string. */

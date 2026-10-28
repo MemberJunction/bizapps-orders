@@ -1,0 +1,161 @@
+[
+  {
+    "_comments": [
+      "THE PROVIDER SUBSCRIPTION RETRY AND BACKFILL (option E, E2). Its own dot-json so parallel work on other actions conflicts on nothing.",
+      "",
+      "WHY AN ACTION. The checkout hands a new auto-renewing subscription to a gateway that bills renewals itself once,",
+      "right after its payment is booked; a replayed checkout never reaches that step again. A failure there, a term that",
+      "starts too late for the gateway to accept its first charge yet, and the subscriptions sold before the account was",
+      "switched on all need something else to run the same code, and MJ's scheduler dispatches Actions. The class behind",
+      "it holds no logic: EnsureProviderSubscriptions in CoreEntitiesServer does the work, the same function checkout calls, on its own provider.",
+      "",
+      "SAFE TO SHIP Active: nothing invokes it until the ScheduledJob in metadata/scheduled-jobs/ is enabled, that job ships",
+      "Disabled and set to Preview, and the action does nothing for an account whose BillsSubscriptions switch is off. A host that",
+      "turns the switch on must enable that job (see its comments)."
+    ],
+    "fields": {
+      "Name": "Create Provider Subscriptions",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "For accounts whose payment gateway bills renewals itself (PaymentProviderType.SupportsSubscriptionBilling and PaymentProvider.BillsSubscriptions both on): find each active auto-renewing subscription with a saved card and no gateway subscription yet, and create one at the gateway that charges nothing now and first charges at 00:00 business time on the last day of its latest term, then record the gateway's id on the subscription so Orders' renewal jobs skip it. A subscription whose latest term is still unpaid (a renewal order Charge Renewals has not collected yet) stays with Orders until it is paid. The gateway price's billing period must match the term. The gateway is searched first, so a subscription an earlier run created is recorded rather than created twice. A first charge further out than the gateway accepts today is deferred to a later run. Anything a person must act on raises one open alert Task per subscription and problem; a problem only a person can clear at the gateway is not retried while its Task is open. Preview (the default) reports what would be created and calls no gateway.",
+      "Type": "Custom",
+      "DriverClass": "Orders.CreateProviderSubscriptions",
+      "IconClass": "fa-solid fa-arrows-rotate",
+      "UserPrompt": "Create the missing gateway subscriptions for subscriptions a payment gateway bills, or preview what would be created.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "2B4D8149-15CF-4B64-9F94-0F30AE30077F"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SubscriptionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Handle only this subscription, for a targeted retry after fixing the cause of an alert. Omit for every eligible subscription with no gateway id."
+          },
+          "primaryKey": {
+            "ID": "B0D3DECF-7B91-4AAE-96C0-E0B0796E7B44"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True (the default) reports what WOULD be created and calls no gateway; false creates and records. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "ECAC20AF-BA7B-4E59-81AB-6B8BDE5D7B19"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "MaxCount",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Cap on gateway subscriptions created in one pass, and on those a preview reports, so a preview shows what the next live pass would start with. It is not a promise of the same list: a live pass reads the gateway, which a preview does not, and the data can change in between, so a subscription can come out deferred, unpaid or needing a person instead. Those do not use the cap; the rest wait for the next pass. A value that is not a whole number of at least 1 is refused."
+          },
+          "primaryKey": {
+            "ID": "533A7F82-1930-484F-A56B-090E01DA012D"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Linked",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many subscriptions this pass recorded a gateway subscription on, created or found."
+          },
+          "primaryKey": {
+            "ID": "8009C59A-4348-4F8D-89B4-CF6BD7356D90"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Deferred",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many could not be created yet because their first charge is further out than the gateway accepts today; a later pass creates them."
+          },
+          "primaryKey": {
+            "ID": "66D0DE8D-3D22-4A00-BF3D-CE66133FE537"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Alerts",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many NEW problems for a person this pass raised (no price mapped, no card, a stub account, a price whose period is not the term's, the gateway refused or failed, the id could not be recorded). Each is an alert Task; the run fails when this is above zero."
+          },
+          "primaryKey": {
+            "ID": "81457394-3CFD-442F-B939-E2537B6BBEA4"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Waiting",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "How many need a person and already have an open alert Task, so this pass raised nothing new for them. They do not fail the run; closing the Task asks the next pass to try again."
+          },
+          "primaryKey": {
+            "ID": "2613DBDE-409C-403A-BDA8-E45039C0E4F2"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Outcomes",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Every subscription looked at: the subscription, the outcome code, the reason, the account, the gateway id and the first charge."
+          },
+          "primaryKey": {
+            "ID": "7364293C-2475-4F5A-A16F-32D0F3196A26"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when this pass reported its list and created nothing. Not named Preview, so the input's value is not overwritten."
+          },
+          "primaryKey": {
+            "ID": "F7F3D21C-97BF-4881-805E-B06D4D456D07"
+          }
+        }
+      ]
+    }
+  }
+]

@@ -7,12 +7,13 @@
  *
  * Reads and writes go through the generated Tasks subclasses, not `.Get()` / `.Set()`.
  */
-import { LogError, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { LogError, Metadata, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type {
     mjBizAppsTasksTaskEntity,
     mjBizAppsTasksTaskTypeEntity,
 } from '@mj-biz-apps/tasks-entities';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from './checkoutCaptureRetry.js';
+import { OPEN_TASK_SQL } from './ConcessionApprovalTask.js';
 import { EscapeText } from './sql-guards.js';
 
 export const CHECKOUT_CAPTURE_TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
@@ -62,26 +63,130 @@ export async function raiseCheckoutSettledNotBookedAlert(
     );
 }
 
+/** The log marker of a gateway subscription Orders could not create or record (option E, E2). */
+export const PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER = '[ProviderSubscriptionAlert]';
+
+const PROVIDER_SUBSCRIPTION_ALERT_TITLE = 'Gateway subscription needs attention: ';
+const URGENT_PREFIX = 'URGENT: ';
+
+/** The alert Task's name: one per subscription and problem, which is what makes it the dedupe key. */
+export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: string, urgent = false): string {
+    return `${urgent ? URGENT_PREFIX : ''}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}${subscriptionNumber} (${code})`;
+}
+
 /**
- * Writes the human-visible Tasks row; the caller has already logged the marker. `OncePerName` skips
- * the write when a Task with this name already exists.
+ * A subscription the gateway should bill has no gateway subscription, or its gateway subscription
+ * needs a person: Orders could not create it, could not record the one the gateway returned, or the
+ * gateway did something it must not (billed at creation).
+ *
+ * One OPEN Task per subscription and code: the checkout and every daily pass report the same failure,
+ * and staff act on it once. Once staff close it, the next report of the same problem raises a new one,
+ * so a problem that comes back is seen again.
+ *
+ * @returns true when this call raised a new Task (or could not look for an open one); false when a
+ *          Task for this subscription and problem is already open, so nobody needs telling again.
+ */
+export async function raiseProviderSubscriptionAlert(
+    alert: { SubscriptionID: string; SubscriptionNumber: string; Code: string; Reason: string; Urgent?: boolean; Linked?: boolean },
+    contextUser?: UserInfo,
+    provider?: IMetadataProvider,
+): Promise<boolean> {
+    LogError(
+        `${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} ${alert.Urgent ? 'URGENT ' : ''}Subscription ${alert.SubscriptionNumber} ` +
+            `(${alert.SubscriptionID}): ${alert.Code}: ${alert.Reason}`,
+    );
+    // What Orders does with the subscription until a person acts depends on whether the gateway's id
+    // is recorded on it.
+    const consequence = alert.Linked
+        ? `The gateway's subscription is recorded on it (ProviderSubscriptionID), so Orders' renewal jobs skip it and the ` +
+          `gateway bills it. Check the gateway subscription and fix it there.`
+        : `No gateway subscription is recorded on it (ProviderSubscriptionID is empty), so Orders' own renewal jobs still ` +
+          `treat it as theirs to renew: if the gateway does hold a subscription for it, the customer will be charged twice. ` +
+          `Fix the cause, close this Task, and the daily Create Provider Subscriptions job (which must be enabled wherever ` +
+          `an account has BillsSubscriptions on) tries again; or run that action for this subscription, or record the ` +
+          `gateway's id by hand.`;
+    const outcome = await raiseAlertTask(
+        ProviderSubscriptionAlertName(alert.SubscriptionNumber, alert.Code, alert.Urgent),
+        `Subscription ${alert.SubscriptionNumber} is sold on an account whose payment gateway bills renewals, and its gateway ` +
+            `subscription needs a person.\n\nSubscription: ${alert.SubscriptionNumber} (${alert.SubscriptionID})\nProblem: ${alert.Code}\n` +
+            `Reason: ${alert.Reason}\n\n${consequence}`,
+        contextUser,
+        { OncePerOpenName: true, Provider: provider },
+    );
+    return outcome !== 'AlreadyRaised';
+}
+
+/**
+ * The problems that have an OPEN alert Task, by subscription number: what the daily pass leaves for a
+ * person rather than asking the gateway again. Empty when the tasks app is not installed or the read
+ * fails (the pass then simply retries everything).
+ */
+export async function OpenProviderSubscriptionAlerts(
+    contextUser: UserInfo,
+    provider?: IMetadataProvider,
+): Promise<Map<string, Set<string>>> {
+    const open = new Map<string, Set<string>>();
+    const md: IMetadataProvider = provider ?? (new Metadata() as unknown as IMetadataProvider);
+    if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) return open;
+    const rv = provider ? new RunView(provider as unknown as IRunViewProvider) : new RunView();
+    const tasks = await rv.RunView<{ ID: string; Name: string }>(
+        {
+            EntityName: CHECKOUT_CAPTURE_TASK_ENTITY,
+            ExtraFilter:
+                `(Name LIKE '${EscapeText(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}%' ` +
+                `OR Name LIKE '${EscapeText(`${URGENT_PREFIX}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}`)}%') AND ${OPEN_TASK_SQL}`,
+            Fields: ['ID', 'Name'],
+            ResultType: 'simple',
+            IgnoreMaxRows: true,
+            BypassCache: true,
+        },
+        contextUser,
+    );
+    if (!tasks.Success) {
+        LogError(`${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} Could not read the open alert Tasks: ${tasks.ErrorMessage ?? 'unknown error'}`);
+        return open;
+    }
+    // The inverse of `ProviderSubscriptionAlertName`, built from the same parts so a reworded title cannot drift.
+    const pattern = new RegExp(`^(?:${escapeRegExp(URGENT_PREFIX)})?${escapeRegExp(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}(.+) \\(([A-Za-z]+)\\)$`);
+    for (const task of tasks.Results ?? []) {
+        const match = pattern.exec(task.Name);
+        if (!match) continue;
+        const codes = open.get(match[1]) ?? new Set<string>();
+        codes.add(match[2]);
+        open.set(match[1], codes);
+    }
+    return open;
+}
+
+function escapeRegExp(text: string): string {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * Writes the human-visible Tasks row; the caller has already logged the marker.
+ *   · `OncePerName` skips the write when a Task with this name exists in any status: for a one-off
+ *     event (a session, an order) that staff resolve once.
+ *   · `OncePerOpenName` skips it only while a Task with this name is still open (`OPEN_TASK_SQL`):
+ *     for a condition that can come back after staff closed it.
+ * `Provider` is the one to read and write through, for a caller working on its own provider; the
+ * global one otherwise.
  */
 async function raiseAlertTask(
     name: string,
     description: string,
     contextUser?: UserInfo,
-    options?: { OncePerName?: boolean },
-): Promise<void> {
+    options?: { OncePerName?: boolean; OncePerOpenName?: boolean; Provider?: IMetadataProvider },
+): Promise<'Raised' | 'AlreadyRaised' | 'NotRaised'> {
     if (!contextUser) {
-        return;
+        return 'NotRaised';
     }
     try {
-        const md = new Metadata();
+        const md: IMetadataProvider = options?.Provider ?? (new Metadata() as unknown as IMetadataProvider);
         if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) {
-            return;
+            return 'NotRaised';
         }
 
-        const rv = new RunView();
+        const rv = options?.Provider ? new RunView(options.Provider as unknown as IRunViewProvider) : new RunView();
         if (options?.OncePerName) {
             const existing = await rv.RunView<{ ID: string }>(
                 {
@@ -94,7 +199,22 @@ async function raiseAlertTask(
                 contextUser,
             );
             if (existing.Success && existing.Results.length > 0) {
-                return;
+                return 'AlreadyRaised';
+            }
+        } else if (options?.OncePerOpenName) {
+            const existing = await rv.RunView<{ ID: string }>(
+                {
+                    EntityName: CHECKOUT_CAPTURE_TASK_ENTITY,
+                    ExtraFilter: `Name = '${EscapeText(name)}' AND ${OPEN_TASK_SQL}`,
+                    Fields: ['ID'],
+                    ResultType: 'simple',
+                    MaxRows: 1,
+                    BypassCache: true,
+                },
+                contextUser,
+            );
+            if (existing.Success && existing.Results.length > 0) {
+                return 'AlreadyRaised';
             }
         }
         const types = await rv.RunView<mjBizAppsTasksTaskTypeEntity>(
@@ -109,7 +229,7 @@ async function raiseAlertTask(
         const typeID = types.Success ? types.Results?.[0]?.ID : undefined;
         if (!typeID) {
             LogError(`${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} No GENERAL TaskType — cannot raise a Task`);
-            return;
+            return 'NotRaised';
         }
 
         const task = await md.GetEntityObject<mjBizAppsTasksTaskEntity>(
@@ -125,10 +245,13 @@ async function raiseAlertTask(
             LogError(
                 `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${task.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
+            return 'NotRaised';
         }
+        return 'Raised';
     } catch (err) {
         LogError(
             `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${err instanceof Error ? err.message : String(err)}`,
         );
+        return 'NotRaised';
     }
 }

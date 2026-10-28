@@ -23,7 +23,8 @@
  * One rule, two forms: `NotProviderBilledSql` for the jobs' SQL selections, `IsProviderBilled` for code
  * that holds a row. They agree by construction (both are `ProviderSubscriptionID IS NOT NULL`).
  *
- *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE)
+ *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE) ·
+ *            ./ProviderSubscriptions.ts (which subscriptions still need a gateway subscription)
  *   SCHEMA:  migrations/V202610230200__v5.39.x__Provider_Billed_Subscriptions.sql
  */
 

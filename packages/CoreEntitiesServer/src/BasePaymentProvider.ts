@@ -46,10 +46,23 @@ export interface PaymentProviderConfig {
      */
     CredentialsRef: string | null;
     IsLiveMode: boolean;
+    /**
+     * `PaymentProvider.BillsSubscriptions`: this account bills the auto-renewing subscriptions sold
+     * through it, so Orders creates a gateway subscription after the first payment. Honoured only
+     * when the type's `Capabilities.SupportsSubscriptionBilling` is also set; see
+     * `ProviderBillsNewSubscriptions` in ./ProviderSubscriptions.ts, the one place the two are combined.
+     * Never consulted by the renewal jobs, which key on the subscription's own marker.
+     */
+    BillsSubscriptions: boolean;
     Capabilities: {
         SupportsTokenization: boolean;
         SupportsRefund: boolean;
         SupportsWebhooks: boolean;
+        /**
+         * `PaymentProviderType.SupportsSubscriptionBilling`: the gateway can bill a subscription itself
+         * (charge the card each period, send its own receipts).
+         */
+        SupportsSubscriptionBilling: boolean;
     };
 }
 
@@ -383,6 +396,102 @@ export interface WebhookEvent {
 }
 
 /**
+ * Ask the gateway to bill a subscription itself from a later day on (option E, E2): Orders took the
+ * first payment, and the gateway charges every renewal on the saved instrument.
+ *
+ * Example: Jane paid year 1 ($599) on the checkout on 31 Oct 2026, her card is `pm_…` on customer
+ * `cus_…`, and her term ends 30 Oct 2027. Orders asks for a subscription on `price_…` whose first
+ * charge is 00:00 business time on 30 Oct 2027; nothing is charged at creation.
+ */
+export interface CreateProviderSubscriptionRequest {
+    /** The gateway customer the instrument belongs to (`PaymentDetail.ProviderCustomerRef`). */
+    ProviderCustomerRef: string;
+    /** The saved instrument every renewal is charged to (`PaymentDetail.ProviderInstrumentRef`). */
+    ProviderInstrumentRef: string;
+    /** The gateway's price (`PaymentProviderPrice.ProviderPriceID` flagged `UseForNewSubscriptions`). */
+    ProviderPriceID: string;
+    /** Units, from the term. A whole number of at least 1. */
+    Quantity: number;
+    /**
+     * When the gateway first charges. The time before it is not billed at all: the customer paid it
+     * through Orders. Must be in the future and no later than `LatestFirstChargeAt` allows.
+     */
+    FirstChargeAt: Date;
+    /** OUR idempotency key, so a retried create does not open a second gateway subscription. */
+    IdempotencyKey: string;
+    /** Stored on the gateway's subscription, so it can be found again from Orders' ids. */
+    Metadata?: Record<string, string>;
+}
+
+export interface CreateProviderSubscriptionResult {
+    Success: boolean;
+    Reason?: string;
+    /** The gateway's id (Stripe `sub_…`), written to `Subscription.ProviderSubscriptionID`. */
+    ProviderSubscriptionID?: string;
+    /** The gateway's own status word, for the log and the alert. */
+    Status?: string;
+    /** The first charge as the gateway recorded it. */
+    FirstChargeAt?: Date;
+    /**
+     * True when the gateway billed something at creation or did not start the subscription cleanly.
+     * Must never happen: the customer already paid this period through Orders, so it is a double
+     * charge, and the caller raises it as urgent.
+     */
+    ChargedAtCreation?: boolean;
+    /**
+     * Set on a refusal that only means another request with the same idempotency key is still being
+     * processed. That request gets the subscription and its caller records it, so this is not a
+     * problem for a person.
+     */
+    InFlightElsewhere?: boolean;
+}
+
+/** Find the gateway subscriptions on a customer that carry one metadata value. */
+export interface FindProviderSubscriptionsRequest {
+    ProviderCustomerRef: string;
+    MetadataKey: string;
+    MetadataValue: string;
+}
+
+/** A subscription the gateway holds, as `FindProviderSubscriptions` reports it. */
+export interface GatewaySubscription {
+    ProviderSubscriptionID: string;
+    /** The gateway's own status word. */
+    Status: string;
+    /** False once the gateway will never bill it again (Stripe: `canceled`, `incomplete_expired`). */
+    IsLive: boolean;
+    Metadata: Record<string, string>;
+    /** The price it bills (its first item), when the gateway reports one. */
+    ProviderPriceID?: string;
+    /** The quantity of that item. */
+    Quantity?: number;
+    /** When it first charges, or charged (Stripe: `billing_cycle_anchor`). */
+    FirstChargeAt?: Date;
+}
+
+/** How often a gateway price bills. */
+export interface GatewayPriceInterval {
+    Unit: 'day' | 'week' | 'month' | 'year';
+    /** Units per billing period: `{ Unit: 'month', Count: 3 }` is quarterly. */
+    Count: number;
+}
+
+export interface DescribeProviderPriceResult {
+    Success: boolean;
+    Reason?: string;
+    /** False when the gateway would refuse to start a new subscription on it. */
+    Active?: boolean;
+    /** How often it bills; null for a one-time price. */
+    Interval?: GatewayPriceInterval | null;
+}
+
+export interface FindProviderSubscriptionsResult {
+    Success: boolean;
+    Reason?: string;
+    Subscriptions?: GatewaySubscription[];
+}
+
+/**
  * The driver contract.
  *
  * Registered against this base by `PaymentProviderType.Code`:
@@ -528,6 +637,46 @@ export class BasePaymentProvider {
      */
     public async EnsureCustomer(_request: EnsureCustomerRequest): Promise<EnsureCustomerResult> {
         return { Success: false, Reason: this.notImplemented('keeping a customer for saved instruments') };
+    }
+
+    /**
+     * Have the gateway bill a subscription from `FirstChargeAt` on (option E, E2).
+     *
+     * Refuses by default. Orders calls it only for an account whose type supports subscription
+     * billing and whose `BillsSubscriptions` switch is on, and a driver that has not implemented it
+     * must say so rather than return an id: an id marks the Orders subscription as gateway-billed, and
+     * Orders then stops renewing it.
+     */
+    public async CreateProviderSubscription(_request: CreateProviderSubscriptionRequest): Promise<CreateProviderSubscriptionResult> {
+        return { Success: false, Reason: this.notImplemented('creating a gateway-billed subscription') };
+    }
+
+    /**
+     * The gateway subscriptions on a customer that carry a metadata value. Read-only. Used before a
+     * retried create, because a gateway forgets idempotency keys (Stripe after about 24 hours) and a
+     * second create would otherwise open a second subscription.
+     */
+    public async FindProviderSubscriptions(_request: FindProviderSubscriptionsRequest): Promise<FindProviderSubscriptionsResult> {
+        return { Success: false, Reason: this.notImplemented('finding gateway-billed subscriptions') };
+    }
+
+    /**
+     * How often a gateway price bills. Read-only. Orders reads it before creating a subscription on the
+     * price, and refuses visibly when the price's period is not the Orders term's: a yearly price on a
+     * monthly product would otherwise be billed on the wrong cadence without a word.
+     */
+    public async DescribeProviderPrice(_providerPriceID: string): Promise<DescribeProviderPriceResult> {
+        return { Success: false, Reason: this.notImplemented('reading a gateway price') };
+    }
+
+    /**
+     * The latest first charge the gateway accepts for a subscription created at `createdAt` on a price
+     * that bills every `interval`, or null when the driver knows no limit. Stripe refuses a first
+     * charge past the price's next natural billing date (one period from creation); the caller defers
+     * creating the subscription until the charge day fits. Without `interval`, a yearly price.
+     */
+    public LatestFirstChargeAt(_createdAt: Date, _interval?: GatewayPriceInterval | null): Date | null {
+        return null;
     }
 
     /**

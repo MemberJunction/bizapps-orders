@@ -28,6 +28,7 @@ import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overla
 import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-progress.action.js';
 import { LoadReconcilePaymentProviderChargesAction } from './custom/reconcile-payment-provider-charges.action.js';
 import { LoadCheckPaymentWebhookEndpointsAction } from './custom/check-payment-webhook-endpoints.action.js';
+import { LoadCreateProviderSubscriptionsAction } from './custom/create-provider-subscriptions.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -226,6 +227,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDetectUnattestedProgressAction(); // 'Orders.DetectUnattestedProgress' — nightly unattested-progress exceptions (golive #279)
     LoadReconcilePaymentProviderChargesAction(); // 'Orders.ReconcilePaymentProviderCharges' — nightly charge reconciliation (#477)
     LoadCheckPaymentWebhookEndpointsAction(); // 'Orders.CheckPaymentWebhookEndpoints' — webhook endpoint drift check (#477)
+    LoadCreateProviderSubscriptionsAction(); // 'Orders.CreateProviderSubscriptions' — retry/backfill of gateway-billed subscriptions (option E)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
