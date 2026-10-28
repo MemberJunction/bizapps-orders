@@ -76,7 +76,7 @@ import { GetOrders } from '../../data/orders-queries';
             <div class="mjo-cr__flow">
                 <div class="mj-card mjo-cr__side mjo-cr__side--from">
                     <div class="mj-card-pad">
-                        <span class="mj-chip mj-chip--success">From (credit)</span>
+                        <span class="mjo-chip mjo-chip--success">From (credit)</span>
                         <div class="mjo-cr__order">{{ Source.OrderNumber }}</div>
                         <mjo-stated-value Label="Available">
                             <b class="mj-money--credit">{{ Available | mjoMoney }}</b>
@@ -96,7 +96,7 @@ import { GetOrders } from '../../data/orders-queries';
 
                 <div class="mj-card mjo-cr__side mjo-cr__side--to">
                     <div class="mj-card-pad">
-                        <span class="mj-chip mj-chip--brand">To (open order)</span>
+                        <span class="mjo-chip mjo-chip--brand">To (open order)</span>
                         <label class="mj-field mjo-cr__field">
                             <label>Target order</label>
                             <mj-dropdown

@@ -190,6 +190,18 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     /**
+     * The subscription type a line of this product starts at confirm: `Product.SubscriptionTypeID`,
+     * otherwise its product type's `DefaultSubscriptionTypeID` — the same resolution confirm uses.
+     * Undefined when the product sells no subscription or the cache has not loaded.
+     */
+    public SubscriptionTypeForProduct(productID: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
+        const product = this.ProductByID(productID);
+        if (!product) return undefined;
+        const id = product.SubscriptionTypeID?.trim() || this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID?.trim();
+        return id ? this.SubscriptionTypeByID(id) : undefined;
+    }
+
+    /**
      * Product.RevenueRecognitionTypeID when set, otherwise the product type's
      * DefaultRevenueRecognitionTypeID. Null means booking cannot tell upfront vs over time.
      */

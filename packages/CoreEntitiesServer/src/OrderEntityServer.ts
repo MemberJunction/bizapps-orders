@@ -79,6 +79,7 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
@@ -325,6 +326,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (same) return Math.abs(Number(line.UnitPrice ?? 0) - price) < 0.005;
         }
         return false;
+    }
+
+    /**
+     * The hand-entered rule, less the lines the renewal pass priced. A renewal order keeps Origin
+     * `Direct`, so the shared rule reads it as typed; but a $0 renewal (a complimentary term, a
+     * product now priced at zero) is the price the pass chose, and refusing it would roll back the
+     * renewal and leave the subscription due on every later run. Once someone changes the price the
+     * line is judged like any other, the same rule the concession gate and order review follow.
+     */
+    public override UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
+        return super.UnpricedLines().filter((line) => !this.isUneditedRenewalPrice(line));
     }
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
@@ -1564,6 +1576,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
+                Booking: this.willBookOnThisSave(),
                 Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
                 SettledTax: this._settledTax,
                 StandingDiscounts: standingDiscounts,
@@ -1776,6 +1789,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // A concession on a draft line goes with the line, decided or not: the line it priced
                 // no longer exists, and the order has committed no customer to it.
                 if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
+                // An adjustment refuses a direct delete; it goes with the line it discounted.
+                if ('RemovedByOrderSave' in row) row.RemovedByOrderSave = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +
@@ -3377,19 +3392,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
-            const detail = (result.Errors ?? [])
-                .map((e) => {
-                    const which =
-                        e.DraftIndex !== undefined
-                            ? ` (order line ${
-                                  unbooked.find((l) => l.ID === drafts[e.DraftIndex!]?.OrderLineID)?.LineNumber ??
-                                  e.DraftIndex
-                              })`
-                            : '';
-                    return `${e.Code}${which}: ${e.Message}`;
-                })
-                .join('; ');
-            throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
+            const lineFor = (index: number) => {
+                const line = unbooked.find((l) => l.ID === drafts[index]?.OrderLineID);
+                return line ? { LineNumber: line.LineNumber, Product: line.Product ?? null } : null;
+            };
+            // The codes go to the log for whoever traces the refusal; the person confirming gets a
+            // sentence per refusal naming the line and what to change (bizapps-orders#742).
+            LogError(
+                `Journal entry booking failed for order ${this.OrderNumber ?? this.ID}: ` +
+                    BookingErrorLogText(result.Errors, lineFor),
+            );
+            throw new Error(`The order could not be booked, and nothing was posted. ${DescribeBookingErrors(result.Errors, lineFor)}`);
         }
 
         await this.stampJournalEntryIDs(lines, drafts, result, options);
@@ -3665,7 +3678,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           decision,
                           !!line.RenewsSubscriptionID,
                           options,
-                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                       );
 
