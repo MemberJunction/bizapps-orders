@@ -102,25 +102,25 @@
  *
  *   Handing a subscription to the gateway that bills it (option E, E2), against a fake gateway driver
  *   (`ITGatewayBilling`) on a live account, so the database half runs for real and no gateway is called:
- *   SR58  created once, first charge 00:00 business time on the term's last day, recorded with its account;
+ *   SR59  created once, first charge 00:00 business time on the term's last day, recorded with its account;
  *         a second run and the checkout's order scope create nothing more; Spawn Renewals then skips it
- *   SR59  a gateway subscription an earlier run created (idempotency key long expired) is found by its
+ *   SR60  a gateway subscription an earlier run created (idempotency key long expired) is found by its
  *         metadata and recorded, never created twice
- *   SR60  refusals are visible and write nothing: no flagged price and a stub account each raise one
+ *   SR61  refusals are visible and write nothing: no flagged price and a stub account each raise one
  *         Task (once, however often reported); switch off is silent; and the unlinked subscription
  *         still renews in Orders
- *   SR61  the daily pass: preview creates nothing; then it links the eligible one, defers a term that
+ *   SR62  the daily pass: preview creates nothing; then it links the eligible one, defers a term that
  *         starts too late for the gateway, and leaves a subscription without automatic renewal alone
- *   SR62  Spawn Renewals, then this pass, then Charge Renewals, in the jobs' own order: the unpaid
+ *   SR63  Spawn Renewals, then this pass, then Charge Renewals, in the jobs' own order: the unpaid
  *         renewal term is NOT handed over; Charge Renewals collects it; the next pass hands over the
  *         term after it. No term is given away
- *   SR63  the real hook: a new buyer's checkout on an account that bills subscriptions ends with the
+ *   SR64  the real hook: a new buyer's checkout on an account that bills subscriptions ends with the
  *         gateway subscription created and recorded on the subscription the checkout sold, then the
  *         same buyer is refused a second subscription purchase at the draft. NEEDS #950: the checkout's
  *         capture and the hand-over run on isolated providers, which join this check's transaction
  *         only through #950's `JoinCallerTransactionForTests`; on a base without it this check fails
  *         like SR46, SR52 and SR53
- *   SR64  the returning-buyer refusal against real rows, both directions: a buyer the gateway bills is
+ *   SR65  the returning-buyer refusal against real rows, both directions: a buyer the gateway bills is
  *         refused another subscription in that company; the same buyer in another company, someone
  *         else, a ticket, and a cancelled subscription are not
  *
@@ -2196,8 +2196,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
     // ─── Handing a subscription to the gateway that bills it (option E, E2) ─────────────────────
     {
-        Id: 'subscription-renewal.SR58',
-        Name: "SR58: a subscription is handed to its account's gateway once, anchored on the term's last day, and Spawn then skips it",
+        Id: 'subscription-renewal.SR59',
+        Name: "SR59: a subscription is handed to its account's gateway once, anchored on the term's last day, and Spawn then skips it",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2232,8 +2232,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR59',
-        Name: 'SR59: a gateway subscription an earlier run created is found by its metadata and recorded, never created twice',
+        Id: 'subscription-renewal.SR60',
+        Name: 'SR60: a gateway subscription an earlier run created is found by its metadata and recorded, never created twice',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2252,8 +2252,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR60',
-        Name: 'SR60: refusals are visible Tasks and write nothing; switch off is silent; the unlinked subscription still renews in Orders',
+        Id: 'subscription-renewal.SR61',
+        Name: 'SR61: refusals are visible Tasks and write nothing; switch off is silent; the unlinked subscription still renews in Orders',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2288,8 +2288,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR61',
-        Name: 'SR61: the daily pass previews, then links the eligible one, defers a late-starting term and leaves a non-renewing one alone',
+        Id: 'subscription-renewal.SR62',
+        Name: 'SR62: the daily pass previews, then links the eligible one, defers a late-starting term and leaves a non-renewing one alone',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2320,8 +2320,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR62',
-        Name: 'SR62: Spawn, then this pass, then Charge: an unpaid renewal term is collected by Orders and only the term after is handed to the gateway',
+        Id: 'subscription-renewal.SR63',
+        Name: 'SR63: Spawn, then this pass, then Charge: an unpaid renewal term is collected by Orders and only the term after is handed to the gateway',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2369,8 +2369,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR63',
-        Name: "SR63: a new buyer's checkout on an account that bills subscriptions hands the subscription to the gateway, and the buyer's next subscription purchase is refused",
+        Id: 'subscription-renewal.SR64',
+        Name: "SR64: a new buyer's checkout on an account that bills subscriptions hands the subscription to the gateway, and the buyer's next subscription purchase is refused",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2430,8 +2430,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
 
     {
-        Id: 'subscription-renewal.SR64',
-        Name: 'SR64: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
+        Id: 'subscription-renewal.SR65',
+        Name: 'SR65: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2659,7 +2659,7 @@ const fakeGateway = {
 
 /**
  * A gateway that bills subscriptions, in memory. Registered under its own type code so no real driver
- * changes. Its payment verbs are the Stripe stub's (so Charge Renewals can charge its cards in SR62);
+ * changes. Its payment verbs are the Stripe stub's (so Charge Renewals can charge its cards in SR63);
  * its subscription verbs are in memory, with Stripe's first-charge limit, so deferral behaves as it
  * does against Stripe.
  */
