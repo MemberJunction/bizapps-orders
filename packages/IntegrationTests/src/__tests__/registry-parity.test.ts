@@ -67,6 +67,7 @@ import '../checks/payment-providers.checks.js';
 import '../checks/ach-settlement.checks.js';
 import '../checks/embedded-payment-detail.checks.js';
 import '../checks/payment-schedule.checks.js';
+import '../checks/schedule-replace.checks.js';
 import '../checks/payment-deposit.checks.js';
 import '../checks/contract-reversal.checks.js';
 import '../checks/party-roster.checks.js';
@@ -92,11 +93,11 @@ const registry = IntegrationCheckRegistry.Instance;
  */
 const EXPECTED_BUNDLES: Record<string, number> = {
     'catalog-world': 1,
-    'order-booking': 30,
-    'revenue-recognition': 8,
+    'order-booking': 32,
+    'revenue-recognition': 10,
     subscriptions: 39,
     'subscription-cancellation': 11,
-    'subscription-renewal': 65,
+    'subscription-renewal': 66,
     'payments-rollups': 9,
     'payment-ledger': 12,
     intercompany: 14,
@@ -126,12 +127,13 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'ach-settlement': 17,
     'embedded-payment-detail': 17,
     'payment-schedule': 23,
+    'schedule-replace': 9,
     'payment-deposit': 15,
     'contract-reversal': 12,
     'party-roster': 2,
     'progress-measurement': 25,
     'outbound-events': 8,
-    concessions: 35,
+    concessions: 37,
     'term-extension': 9,
     'amount-change': 11,
     'term-shift': 6,

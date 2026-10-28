@@ -5,6 +5,11 @@
 }
 
 .mj-checkout-widget-container {
+    /* Widget-local colours with no public theme hook. The widget embeds in host pages that
+       do not load MJ's tokens, so these stay literal. */
+    --mjo-co-border: #cbd5e1;
+    --mjo-co-error: #b91c1c;
+    --mjo-co-success: #15803d;
     max-width: 560px;
     margin: 0 auto;
     background: var(--mj-bg-color, #ffffff);
@@ -457,12 +462,12 @@
     flex: 1 1 auto;
 }
 .mj-checkout-promo__error {
-    color: var(--mj-error-color, #b91c1c);
+    color: var(--mjo-co-error);
     font-size: 0.875rem;
     margin: 0.35rem 0 0;
 }
 .mj-checkout-promo__applied {
-    color: var(--mj-success-color, #15803d);
+    color: var(--mjo-co-success);
     font-size: 0.875rem;
     margin: 0.35rem 0 0;
 }
@@ -474,7 +479,7 @@
     padding: 8px 14px;
     background: transparent;
     color: var(--mj-primary-color, #2563eb);
-    border: 1px solid var(--mj-border-color, #cbd5e1);
+    border: 1px solid var(--mjo-co-border);
     border-radius: var(--mj-border-radius, 8px);
     font-size: 0.875rem;
     font-weight: 600;

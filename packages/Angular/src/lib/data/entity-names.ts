@@ -26,6 +26,7 @@ export const MJO_ENTITIES = {
     Product: 'MJ_BizApps_Orders: Products',
     ProductType: 'MJ_BizApps_Orders: Product Types',
     ProductCategory: 'MJ_BizApps_Orders: Product Categories',
+    ProductBundleItem: 'MJ_BizApps_Orders: Product Bundle Items',
     Subscription: 'MJ_BizApps_Orders: Subscriptions',
     PriceList: 'MJ_BizApps_Orders: Price Lists',
     ProductPrice: 'MJ_BizApps_Orders: Product Prices',
