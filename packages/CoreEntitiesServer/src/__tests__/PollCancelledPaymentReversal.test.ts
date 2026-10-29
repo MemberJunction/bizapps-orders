@@ -16,6 +16,11 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 const mocks = vi.hoisted(() => ({
     /** PaymentHeader rows: the original and any reversal pointing at it. */
     headers: [] as Array<Record<string, unknown>>,
+    /** The `reversalAmount` each BuildUnapplyLines call was asked to spread. */
+    unapplied: [] as number[],
+    /** The provider's stored watermark, and the open rows the re-check reads. */
+    watermark: null as string | null,
+    openRows: [] as Array<Record<string, unknown>>,
     /** What each CreateReversingPayment call was asked to write. */
     created: [] as Array<{ Source: string; Amount: number }>,
     /** Set to make the reversal's save throw. */
@@ -23,6 +28,9 @@ const mocks = vi.hoisted(() => ({
     /** What upsertExternalPayment wrote. */
     written: undefined as Record<string, unknown> | undefined,
     transactions: [] as string[],
+    /** The rail `ResolveInvoiceRail` hands the poller, and the `since` it was asked to fetch from. */
+    rail: undefined as unknown,
+    since: undefined as string | null | undefined,
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -32,6 +40,8 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         RunView: class {
             async RunView(params: { EntityName: string }) {
                 if (params.EntityName.includes('Payment Headers')) return { Success: true, Results: mocks.headers };
+                if (params.EntityName.includes('Sync State')) return { Success: true, Results: mocks.watermark ? [{ ID: 'sync-1', Watermark: mocks.watermark }] : [] };
+                if (params.EntityName.includes('External Payments')) return { Success: true, Results: mocks.openRows };
                 if (params.EntityName.includes('Payment Lines')) return { Success: true, Results: [{ OrderHeaderID: ORDER_A, OrderHeaderPaymentScheduleID: null, Amount: 1.37 }] };
                 return { Success: true, Results: [] };
             }
@@ -39,9 +49,14 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
+vi.mock('../InvoiceRailResolver.js', () => ({ ResolveInvoiceRail: async () => mocks.rail, ListPaymentSourceProviderIDs: async () => [] }));
+
 vi.mock('../PaymentReversalFactory.js', () => ({
     LoadAppliedAllocations: async () => [{ OrderHeaderID: ORDER_A, OrderLineID: null, OrderHeaderPaymentScheduleID: null, Amount: 1.37 }],
-    BuildUnapplyLines: async () => [],
+    BuildUnapplyLines: async (_p: unknown, _u: unknown, _applications: unknown, reversalAmount: number) => {
+        mocks.unapplied.push(reversalAmount);
+        return [];
+    },
     CreateReversingPayment: async (_p: unknown, _u: unknown, _original: unknown, request: { Source: string; Amount: number }) => {
         if (mocks.reversalFails) throw new Error('the reversal did not save');
         mocks.created.push(request);
@@ -51,6 +66,7 @@ vi.mock('../PaymentReversalFactory.js', () => ({
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import type { RailPaymentRecord } from '../BaseInvoiceRail.js';
+import { NormalizeReceivablePayment } from '../BillComInvoiceRail.js';
 import { PollExternalPaymentsOperation } from '../PollExternalPaymentsOperation.js';
 
 const PROVIDER_ID = '11111111-2222-4333-8444-555555555555';
@@ -127,6 +143,10 @@ function poll(status: string, priorRow: ReturnType<typeof prior> | null, opts: {
 
 beforeEach(() => {
     mocks.headers = [original];
+    mocks.unapplied = [];
+    mocks.watermark = null;
+    mocks.openRows = [];
+    mocks.since = undefined;
     mocks.created = [];
     mocks.reversalFails = false;
     mocks.written = undefined;
@@ -137,6 +157,7 @@ describe('a captured Bill.com payment the rail reports cancelled', () => {
     it('is reversed once, as a bank return for the full amount, and the row reads Ignored naming the reversal', async () => {
         const out = await poll('CANCELED', prior('Captured'));
         expect(mocks.created).toEqual([expect.objectContaining({ Source: 'BankReturn', Amount: 1.37 })]);
+        expect(mocks.unapplied).toEqual([1.37]);
         expect(mocks.transactions).toEqual(['begin', 'commit']);
         expect(mocks.written?.Disposition).toBe('Ignored');
         expect(String(mocks.written?.DispositionReason)).toMatch(/^Reversed as PAY-000070 on \d{4}-\d{2}-\d{2}: Bill\.com reports .* 'CANCELED'/);
@@ -175,6 +196,8 @@ describe('a captured Bill.com payment the rail reports cancelled', () => {
         mocks.headers = [original, { ...original, ID: REVERSAL_ID, PaymentNumber: 'PAY-000071', Amount: 0.37, ReversesPaymentHeaderID: HEADER_ID, ReversalSource: 'Refund', Status: 'Refunded' }];
         await poll('CANCELED', prior('Captured'));
         expect(mocks.created).toEqual([expect.objectContaining({ Source: 'BankReturn', Amount: 1 })]);
+        // The lines must un-apply the same 1.00, or the header and its lines disagree and the save is refused.
+        expect(mocks.unapplied).toEqual([1]);
     });
 
     it('a preview reverses nothing and says what it would do', async () => {
@@ -203,5 +226,37 @@ describe('a refund or dispute on a captured payment', () => {
         await poll('REFUNDED', prior('Captured'), { rail: hubSpot });
         expect(mocks.written?.Disposition).toBe('ReversalNeeded');
         expect(mocks.created).toHaveLength(0);
+    });
+});
+
+describe('a row flagged ReversalNeeded that the watermark has moved past', () => {
+    interface Pollable {
+        pollProvider(id: string, opts: { preview: boolean; maxCount: number; since: string | null }, provider: IMetadataProvider, user: UserInfo): Promise<{ Outcomes: Array<{ Disposition: string }> }>;
+    }
+    const cancelled = { id: '0rp02DLMZTFNGM1jmsjx', customerId: 'cus1', amount: 1.37, unappliedAmount: 0, paymentDate: '2026-10-27', status: 'CANCELED', receivablesType: 'CHECK', updatedTime: '2026-10-27T20:00:00Z', invoicePayments: [] };
+
+    beforeEach(() => {
+        // A newer payment moved the watermark three days past the cancel, so the fetch no longer returns it.
+        mocks.watermark = '2026-10-30T20:00:00.000Z';
+        mocks.openRows = [{ ...prior('ReversalNeeded'), ExternalUpdatedAt: '2026-10-27T20:00:00Z', Payload: JSON.stringify(cancelled) }];
+        mocks.rail = {
+            Config: { PaymentProviderID: PROVIDER_ID, Name: 'Bill.com Sandbox', TypeCode: 'BillCom', CompanyID: ORDER_A },
+            CheckConfiguration: async () => ({ Success: true }),
+            FetchPaymentsSince: async (since: string | null) => {
+                mocks.since = since;
+                return { Success: true, Value: { Payments: [], NewWatermark: null } };
+            },
+            RestorePaymentRecord: (ref: string, payload: Record<string, unknown>) => NormalizeReceivablePayment(ref, payload),
+        };
+    });
+
+    it('is reversed from its stored payload although the rail did not return it', async () => {
+        const op = new PollExternalPaymentsOperation() as unknown as Pollable;
+        const out = await op.pollProvider(PROVIDER_ID, { preview: false, maxCount: 100, since: null }, fakeProvider, {} as UserInfo);
+        expect(Date.parse(String(mocks.since))).toBeGreaterThan(Date.parse('2026-10-27T20:00:00Z'));
+        expect(mocks.created).toEqual([expect.objectContaining({ Source: 'BankReturn', Amount: 1.37 })]);
+        expect(mocks.unapplied).toEqual([1.37]);
+        expect(mocks.written?.Disposition).toBe('Ignored');
+        expect(out.Outcomes.map((o) => o.Disposition)).toEqual(['Ignored']);
     });
 });

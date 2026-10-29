@@ -130,7 +130,8 @@ payment voided, cancelled or escheated on BILL after capture is reversed by the 
 bank-return reversal (`ReversalSource = 'BankReturn'`) through `PaymentReversalFactory`, dated the day
 of the poll, after which the row reads `Ignored`, "Reversed as PAY-…". A bank-return reversal already
 pointing at the payment stops a second one; a preview reverses nothing; a reversal that fails leaves
-the row `ReversalNeeded` with the error. A payment re-applied (`Reapplied`) on BILL is flagged, not
+the row `ReversalNeeded` with the error. Open `ReversalNeeded` rows are re-decided every pass from the
+payload stored on the row, so one the watermark has moved past is still reversed. A payment re-applied (`Reapplied`) on BILL is flagged, not
 corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows fails with `ATTENTION`, so the
 job notifies.
 
