@@ -660,6 +660,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const booking = this.willBookOnThisSave();
 
+        // A form that saved the draft and then confirmed reloads the HEADER only. Booking needs the
+        // collection before the gates below, which read the lines (a renewal-only order is exempt from
+        // review and the no-deal check), and before it decides subscriptions.
+        if (booking && this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
@@ -811,12 +816,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // lines, subscription decisions settle the quantities, and each line is priced. None of
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
-            // A form that saved the draft and then confirmed reloads the HEADER only.
-            // Booking is the only caller that MUST have the collection before it decides subscriptions.
-            if (booking && this.IsSaved && !this.Lines.IsLoaded) {
-                await this.Lines.Load();
-            }
-
             await this.expandBundles();
             // EVERY LINE'S PRODUCT IN THE CATALOG CACHE, reloaded once if any is missing (golive #301).
             // Subscription decisions, the company stamp, dimension tags and booking all read the
