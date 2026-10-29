@@ -556,6 +556,41 @@
     color: var(--mj-text-muted);
 }
 
+/* The switch and Export travel together on the right of the bar, which is space-between. */
+.mjo-oh-acct__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    flex-wrap: wrap;
+}
+
+/* Matches the switch's pill geometry so the two read as one control group. */
+.mjo-oh-acct__export {
+    appearance: none;
+    border: 1px solid var(--mj-border-default);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-secondary);
+    font: inherit;
+    font-size: var(--mj-text-xs);
+    font-weight: var(--mj-font-semibold);
+    padding: 5px 12px;
+    border-radius: var(--mj-radius-full);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mjo-oh-acct__export:hover:not(:disabled) {
+    color: var(--mj-text-primary);
+    border-color: var(--mj-border-strong, var(--mj-border-default));
+}
+
+.mjo-oh-acct__export:disabled {
+    opacity: 0.55;
+    cursor: default;
+}
+
 .mjo-oh-switch {
     display: inline-flex;
     padding: 2px;

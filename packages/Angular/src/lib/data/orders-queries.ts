@@ -803,6 +803,8 @@ export interface JournalHeaderRow {
     CompanyID: string;
     Company: string;
     EntryNumber: string | null;
+    /** The entry type's NAME, denormalised on the view: 'Order Booking', 'Payment Receipt' and so on. */
+    EntryType: string | null;
     Description: string | null;
     EffectiveDate: DateCell;
     JournalEntryBatchID: string | null;
@@ -897,7 +899,7 @@ export async function LoadOrderJournalData(
         'EffectiveDate',
         500,
         user,
-        ['ID', 'CompanyID', 'Company', 'EntryNumber', 'Description', 'EffectiveDate', 'JournalEntryBatchID', 'LinkedRecordID'],
+        ['ID', 'CompanyID', 'Company', 'EntryNumber', 'EntryType', 'Description', 'EffectiveDate', 'JournalEntryBatchID', 'LinkedRecordID'],
     );
     if (Journals.length === 0) return { ...EMPTY_DATA, SharedPaymentOrderCounts: origins.SharedPaymentOrderCounts };
 
@@ -1128,6 +1130,163 @@ export function BuildOrderJournalEntryRows(
             SharedWithOtherOrders: sharedCount(data, journal),
         };
     });
+}
+
+/**
+ * ── EXPORTING THE ACCOUNTING TAB (bc-aidp-next-golive#371) ──────────────────────────────────────
+ *
+ * Finance ties AIDP entries out to Business Central in Excel, which needs the GL account and the
+ * dimensions on every row. Those live on the journal LINE, and `BuildOrderJournalEntryRows` above
+ * aggregates a journal's lines into one row per ENTRY — so a By-line export cannot simply be the
+ * table on screen with headers. It is one row per GL LINE, which is a longer sheet than the table
+ * and the only grain at which "account, debit, credit and all dimensions" is a well-formed request.
+ *
+ * Both builders are pure over the SAME filtered snapshot the views use, so the As-of date and the
+ * basis toggle apply to the export exactly as they apply to the screen. An export that quietly
+ * ignored those controls would be worse than no export: it would tie out against a different period
+ * than the one the user is looking at.
+ */
+export interface OrderJournalExport {
+    /** Column keys in order. Fixed columns first, then one per dimension, sorted by name. */
+    Columns: string[];
+    /** One flat row per line. EVERY row carries EVERY key in `Columns` — see `fillDimensions`. */
+    Rows: Record<string, string | number>[];
+}
+
+/** A fresh one each time: `Rows` is mutable, and handing out one shared instance would be a trap. */
+function emptyExport(): OrderJournalExport {
+    return { Columns: [], Rows: [] };
+}
+
+const LINE_EXPORT_COLUMNS = [
+    'Entry number', 'Entry type', 'Description', 'Company',
+    'Effective date', 'Posting date', 'Batch', 'Batch status',
+    'Account code', 'Account name', 'Debit', 'Credit',
+] as const;
+
+const ROLLUP_EXPORT_COLUMNS = [
+    'Company', 'Account code', 'Account name', 'Side', 'Debit', 'Credit', 'Source lines',
+] as const;
+
+/**
+ * Every included journal LINE, with its entry, batch, account and dimensions. Pure.
+ *
+ * @example BuildOrderJournalLineExport(data, { AsOf: '2026-09-30', Basis: 'posting' })
+ */
+export function BuildOrderJournalLineExport(
+    data: OrderJournalData,
+    options: OrderJournalViewOptions = {},
+): OrderJournalExport {
+    const filtered = FilterOrderJournals(data, options);
+    if (filtered.Journals.length === 0) return emptyExport();
+
+    const labels = rollupLabels(filtered.Journals, data.Lines, data.Dims, data.Accounts);
+    const dimsByLine = groupDimensionsByLine(data.Dims);
+    const linesByJournal = groupLinesByJournal(data.Lines);
+
+    const rows: Record<string, string | number>[] = [];
+    const dimensionNames = new Set<string>();
+
+    for (const journal of filtered.Journals) {
+        const batch = batchOf(data, journal);
+        for (const line of linesByJournal.get(journal.ID.toLowerCase()) ?? []) {
+            const account = labels.Account[line.GLAccountID.toLowerCase()];
+            const dims = dimsByLine.get(line.ID.toLowerCase()) ?? [];
+            for (const dim of dims) dimensionNames.add(dim.Name);
+            rows.push({
+                'Entry number': journal.EntryNumber ?? '',
+                'Entry type': journal.EntryType ?? '',
+                Description: journal.Description ?? '',
+                Company: journal.Company,
+                'Effective date': ToISODate(journal.EffectiveDate) ?? '',
+                'Posting date': ToISODate(batch?.PostingDate) ?? '',
+                Batch: batch?.JournalEntryBatchNumber ?? '',
+                'Batch status': batch?.Status ?? 'Not batched',
+                'Account code': account?.Code ?? '',
+                'Account name': account?.Name ?? line.GLAccount ?? '',
+                Debit: line.DebitAmount ?? 0,
+                Credit: line.CreditAmount ?? 0,
+                ...Object.fromEntries(dims.map((dim) => [dim.Name, dim.Value])),
+            });
+        }
+    }
+    return finish([...LINE_EXPORT_COLUMNS], dimensionNames, rows);
+}
+
+/**
+ * The Rolled up view as a sheet: one row per (company × account × dimension combo). Pure.
+ *
+ * Takes the built rollup rather than the snapshot, so the sheet is by construction the same figures
+ * the cards show instead of a second derivation that could drift from them.
+ */
+export function BuildOrderJournalRollupExport(rollup: OrderJournalRollup): OrderJournalExport {
+    const rows: Record<string, string | number>[] = [];
+    const dimensionNames = new Set<string>();
+
+    for (const card of rollup.Cards) {
+        for (const row of card.Rows) {
+            for (const dim of row.Dimensions) dimensionNames.add(dim.Name);
+            rows.push({
+                Company: row.Company,
+                'Account code': row.AccountCode,
+                'Account name': row.AccountName,
+                Side: row.Side,
+                Debit: row.Debit,
+                Credit: row.Credit,
+                'Source lines': row.SourceLineCount,
+                ...Object.fromEntries(row.Dimensions.map((dim) => [dim.Name, dim.Value])),
+            });
+        }
+    }
+    return finish([...ROLLUP_EXPORT_COLUMNS], dimensionNames, rows);
+}
+
+/**
+ * Settle the column list and give every row every column.
+ *
+ * A row that simply OMITS a dimension it does not carry is the bug this rules out: most writers lay
+ * a sheet out from the first row's keys, so one row missing `Venture` either loses the column for
+ * everybody or slides later values into the wrong one. Absent means empty string, explicitly.
+ */
+function finish(
+    fixed: string[],
+    dimensionNames: Set<string>,
+    rows: Record<string, string | number>[],
+): OrderJournalExport {
+    // No rows means nothing to export, and a header-only sheet is a worse answer than none: it
+    // downloads, opens, and shows a reader column titles over an empty period as if that were data.
+    if (rows.length === 0) return emptyExport();
+    const Columns = [...fixed, ...[...dimensionNames].sort((a, b) => a.localeCompare(b))];
+    for (const row of rows) {
+        for (const column of Columns) {
+            if (!(column in row)) row[column] = '';
+        }
+    }
+    return { Columns, Rows: rows };
+}
+
+/** Journal line id (lowercased) → its dimensions, in the order the rows came back. */
+function groupDimensionsByLine(dims: JournalLineDimRow[]): Map<string, OrderJournalDimension[]> {
+    const byLine = new Map<string, OrderJournalDimension[]>();
+    for (const dim of dims) {
+        const key = dim.JournalEntryLineID.toLowerCase();
+        const list = byLine.get(key) ?? [];
+        list.push({ Name: dim.Dimension, Value: dim.DimensionValue });
+        byLine.set(key, list);
+    }
+    return byLine;
+}
+
+/** Journal id (lowercased) → its lines. */
+function groupLinesByJournal(lines: JournalLineRow[]): Map<string, JournalLineRow[]> {
+    const byJournal = new Map<string, JournalLineRow[]>();
+    for (const line of lines) {
+        const key = line.JournalEntryID.toLowerCase();
+        const list = byJournal.get(key) ?? [];
+        list.push(line);
+        byJournal.set(key, list);
+    }
+    return byJournal;
 }
 
 /**

@@ -18,7 +18,9 @@ import {
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     BuildOrderJournalEntryRows,
+    BuildOrderJournalLineExport,
     BuildOrderJournalRollup,
+    BuildOrderJournalRollupExport,
     ExcludedEntriesLabel,
     GetOrderJournalOrigins,
     GetPaymentTypes,
@@ -29,7 +31,11 @@ import {
     type OrderJournalData,
     type OrderJournalDateBasis,
     type OrderJournalEntryRow,
+    type OrderJournalExport,
+    type OrderJournalViewOptions,
 } from '../../data/orders-queries';
+import { ExportService } from '@memberjunction/ng-export-service';
+import type { ExportColumn } from '@memberjunction/export-engine';
 import { FormatDate, FormatMoney, HasCents } from '../../panels/money-format';
 import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersOrderHeader/mjbizappsordersorderheader.form.component';
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
@@ -150,6 +156,15 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     protected navigationService = inject(NavigationService, { optional: true });
+
+    /** The same service the Charges and Payment grids export through (#371). */
+    private exportService = inject(ExportService);
+
+    /** Export is in flight. Guards a second click, which would build the sheet twice. */
+    public ExportingAccounting = false;
+
+    /** Shown under the bar when an export cannot be produced. Cleared on the next attempt. */
+    public ExportError: string | null = null;
 
     override OnFormNavigate(event: FormNavigationEvent): void {
         this.Navigate.emit(event);
@@ -734,13 +749,79 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             this.JournalRows = [];
             return;
         }
-        const options = { AsOf: this.AccountingAsOf, Basis: this.AccountingBasis };
+        const options = this.accountingOptions();
         const rollup = BuildOrderJournalRollup(data, options);
         this.RollupCards = rollup.Cards;
         this.RollupJournalCount = rollup.JournalCount;
         this.RollupExcludedLabel = ExcludedEntriesLabel(rollup, this.AccountingAsOf);
         this.RollupSharedNotes = rollup.SharedPaymentNotes;
         this.JournalRows = BuildOrderJournalEntryRows(data, options);
+    }
+
+    /**
+     * The As-of date and basis, as one object.
+     *
+     * Read by `applyAccountingView` AND by the export, deliberately: an export built from its own
+     * copy of these two fields is one edit away from covering a different period than the screen it
+     * was launched from, and nothing on the sheet would say so.
+     */
+    private accountingOptions(): OrderJournalViewOptions {
+        return { AsOf: this.AccountingAsOf, Basis: this.AccountingBasis };
+    }
+
+    /**
+     * Download the accounting tab as a spreadsheet (bc-aidp-next-golive#371).
+     *
+     * Finance ties these entries out to Business Central in Excel, so By line exports one row per GL
+     * LINE with its account and dimensions, which is a longer sheet than the table on screen shows.
+     * Rolled up exports the cards as they stand. Both come from the snapshot already in memory, so
+     * this issues no query and cannot disagree with what is displayed.
+     */
+    public async ExportAccounting(): Promise<void> {
+        if (this.ExportingAccounting) return;
+        this.ExportError = null;
+        const data = this.journalData;
+        if (!data) {
+            this.ExportError = 'Nothing to export yet — the journals are still loading.';
+            return;
+        }
+        const byLine = this.AccountingView === 'detail';
+        const sheet = byLine
+            ? BuildOrderJournalLineExport(data, this.accountingOptions())
+            : BuildOrderJournalRollupExport(BuildOrderJournalRollup(data, this.accountingOptions()));
+        if (sheet.Rows.length === 0) {
+            this.ExportError = this.RollupExcludedLabel
+                ? `Nothing to export — ${this.RollupExcludedLabel}.`
+                : 'Nothing to export in this view.';
+            return;
+        }
+
+        this.ExportingAccounting = true;
+        this.cdr.detectChanges();
+        try {
+            const result = await this.exportService.toExcel(sheet.Rows, {
+                fileName: this.exportFileName(byLine),
+                columns: ExportColumnsFor(sheet),
+                includeHeaders: true,
+            });
+            if (!result.success) {
+                this.ExportError = 'The export could not be built.';
+                return;
+            }
+            this.exportService.downloadResult(result);
+        } catch (error) {
+            this.ExportError = error instanceof Error ? error.message : 'The export could not be built.';
+        } finally {
+            this.ExportingAccounting = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** `ORD-000045 journal entries 2026-10-28` — the order first, so a folder of these sorts by order. */
+    private exportFileName(byLine: boolean): string {
+        const order = this.record?.OrderNumber || 'Order';
+        const what = byLine ? 'journal entries' : 'order journal';
+        return `${order} ${what} ${new Date().toISOString().slice(0, 10)}`;
     }
 
     /** The As-of box. Blank means lifetime, which is the default and the point of item 1. */
@@ -782,6 +863,32 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             PrimaryKey: CompositeKey.FromID(id),
         });
     }
+}
+
+/**
+ * Columns a spreadsheet can format, from the sheet's own column list (#371).
+ *
+ * Typing matters more than it looks: left as strings, Excel right-aligns nothing, will not total a
+ * column of debits, and shows `2026-08-25` as text that sorts alphabetically. The names come from
+ * the builders, and anything not named here -- every dimension column -- is a string, which is what
+ * a dimension value is.
+ */
+const EXPORT_DATE_COLUMNS = new Set(['Effective date', 'Posting date']);
+const EXPORT_MONEY_COLUMNS = new Set(['Debit', 'Credit']);
+const EXPORT_COUNT_COLUMNS = new Set(['Source lines']);
+
+export function ExportColumnsFor(sheet: OrderJournalExport): ExportColumn[] {
+    return sheet.Columns.map((name) => ({
+        name,
+        displayName: name,
+        dataType: EXPORT_DATE_COLUMNS.has(name)
+            ? ('dateonly' as const)
+            : EXPORT_MONEY_COLUMNS.has(name)
+              ? ('currency' as const)
+              : EXPORT_COUNT_COLUMNS.has(name)
+                ? ('number' as const)
+                : ('string' as const),
+    }));
 }
 
 /** Tree-shaking prevention anchor. */
