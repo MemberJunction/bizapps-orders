@@ -1,4 +1,7 @@
 import '@angular/compiler';
+import { readFileSync, readdirSync } from 'node:fs';
+import { basename, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, it, expect, vi } from 'vitest';
 import { PresetViewRef } from '../lib/data/preset-view';
 import { MJOCustomerARPageComponent } from '../lib/pages/receivables/customer-ar.page';
@@ -141,5 +144,75 @@ describe('every preset view getter is reference-stable across change detection',
         const first = page.FulfillmentQueueView;
         (page as unknown as { Preset: string }).Preset = 'done';
         expect(page.FulfillmentQueueView).not.toBe(first);
+    });
+});
+
+/**
+ * THE CASES ABOVE NAME FOUR PAGES, AND THE FIFTH ONE IS THE PROBLEM.
+ *
+ * Each was written against a binding that exists today. A page added later that binds `[ViewEntity]`
+ * to a getter building its object inline reintroduces #362 exactly, and every case above still
+ * passes, because none of them knows the new page exists.
+ *
+ * So this walks the page sources rather than trusting the list: every `[ViewEntity]` in the package
+ * must bind a getter that goes through `PresetViewRef`, and the set of bindings must be the set
+ * covered above -- which makes adding a page a test failure until a case here names it.
+ */
+describe('every [ViewEntity] in the package is covered, not just the four named above', () => {
+    const PAGES_DIR = fileURLToPath(new URL('../lib/pages/', import.meta.url));
+
+    function SourceFiles(dir: string): string[] {
+        const out: string[] = [];
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+            const full = join(dir, entry.name);
+            if (entry.isDirectory()) out.push(...SourceFiles(full));
+            else if (entry.name.endsWith('.ts')) out.push(full);
+        }
+        return out;
+    }
+
+    /** A getter's text, from its `get X(` to the next member at class indent. */
+    function GetterBody(text: string, name: string): string {
+        const at = text.indexOf(`get ${name}(`);
+        if (at === -1) return '';
+        const rest = text.slice(at);
+        const end = rest.search(/\n {4}(?:public|private|protected|\/\*\*)/);
+        return end === -1 ? rest : rest.slice(0, end);
+    }
+
+    const BINDINGS = SourceFiles(PAGES_DIR)
+        .map((file) => {
+            const text = readFileSync(file, 'utf8');
+            return { file, text, names: [...text.matchAll(/\[ViewEntity\]="([A-Za-z0-9_]+)"/g)].map((m) => m[1]) };
+        })
+        .filter((b) => b.names.length > 0);
+
+    /** The getters the cases above exercise by name. */
+    const COVERED: ReadonlySet<string> = new Set([
+        'CustomerOpenOrdersView',
+        'CreditOrdersView',
+        'OverdueView',
+        'FulfillmentQueueView',
+    ]);
+
+    it('walked the sources and found bindings, so a green run is not an empty walk', () => {
+        expect(BINDINGS.flatMap((b) => b.names).length).toBeGreaterThan(0);
+    });
+
+    it('binds every one of them to a getter that goes through PresetViewRef', () => {
+        const loose: string[] = [];
+        for (const { file, text, names } of BINDINGS) {
+            for (const name of names) {
+                if (!GetterBody(text, name).includes('.For(')) {
+                    loose.push(`${basename(file)}: ${name}`);
+                }
+            }
+        }
+        expect(loose, 'these build a fresh view on every change-detection pass, which is #362').toEqual([]);
+    });
+
+    it('and covers every one of them above, so a new page forces a case here', () => {
+        const found = [...new Set(BINDINGS.flatMap((b) => b.names))].sort();
+        expect(found, 'a binding with no case above is an untested reload loop').toEqual([...COVERED].sort());
     });
 });
