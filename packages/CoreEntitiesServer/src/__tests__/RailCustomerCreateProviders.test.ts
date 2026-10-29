@@ -1,7 +1,7 @@
 /**
  * A send whose bill-to party has no customer on file for the rail creates one only when the payment
  * provider is listed in `RailCustomerCreateProviders` (bc-aidp-next-golive#358). Otherwise the send
- * and its preview refuse, naming the party and the company, and the rail is never asked to create a
+ * and its preview refuse, naming the party and the rail, and the rail is never asked to create a
  * customer: the party's existing rail customer was most likely never mapped, and a new one would
  * split its history. A party already mapped is unaffected. No database.
  */
@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     customerMapped: false,
+    orgEmail: 'ap@cimatri.test' as string | null,
     created: 0,
     writes: [] as Array<Record<string, unknown>>,
 }));
@@ -28,8 +29,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 }
                 if (e.includes('Order Lines')) return { Success: true, Results: [{ ID: LINE, OrderHeaderID: ORDER, CompanyID: COMPANY }] };
                 if (e.includes('External Customers')) return { Success: true, Results: mocks.customerMapped ? [{ ExternalCustomerRef: 'cus-1' }] : [] };
-                if (e.includes('Organizations')) return { Success: true, Results: [{ ID: ORG, Name: 'Cimatri HoldCo', Email: 'ap@cimatri.test', PrimaryEmail: null }] };
-                if (e === 'MJ: Companies') return { Success: true, Results: [{ Name: 'SoundPost' }] };
+                if (e.includes('Organizations')) return { Success: true, Results: [{ ID: ORG, Name: 'Cimatri HoldCo', Email: mocks.orgEmail, PrimaryEmail: null }] };
                 return { Success: true, Results: [] };
             }
         },
@@ -44,11 +44,12 @@ vi.mock('../RailCustomerNameLimit.js', async (importOriginal) => ({
 
 vi.mock('../InvoiceRailResolver.js', () => ({
     FindInvoiceRailForCompany: async () => ({
-        Config: { PaymentProviderID: PROVIDER, Name: 'Bill.com', TypeCode: 'BillCom', CompanyID: COMPANY },
+        Config: { PaymentProviderID: PROVIDER, Name: 'SoundPost — Bill.com', TypeCode: 'BillCom', CompanyID: COMPANY },
         CheckConfiguration: async () => ({ Success: true }),
         CustomerNameTargets: () => [],
         InvoiceNumberTargets: () => [],
-        CheckCustomer: () => null,
+        CheckCustomer: (f: { Email: string | null; Name: string }) =>
+            f.Email ? null : { Code: 'NO_CUSTOMER_EMAIL', Reason: `Bill.com requires a customer email and ${f.Name} has none.` },
         EnsureCustomer: async () => {
             mocks.created++;
             return { Success: true, Value: { ExternalCustomerRef: 'cus-new' } };
@@ -109,6 +110,7 @@ const run = (Preview: boolean) => IssueOneUnit(unit, { Preview, AllowReissue: fa
 
 beforeEach(() => {
     mocks.customerMapped = false;
+    mocks.orgEmail = 'ap@cimatri.test';
     mocks.created = 0;
     mocks.writes = [];
     OrdersSettings.SetOverride('RailCustomerCreateProviders', '');
@@ -117,19 +119,31 @@ beforeEach(() => {
 afterEach(() => OrdersSettings.ClearOverrides());
 
 describe('no customer on file, provider not listed', () => {
-    it.each([true, false])('refuses (Preview=%s), naming the party and the company, and creates nothing', async (preview) => {
+    it.each([true, false])('refuses (Preview=%s), naming the rail once and the party, and creates nothing', async (preview) => {
         const out = await run(preview);
         expect(out.Success).toBe(false);
         expect(out.ResultCode).toBe('RAIL_REFUSED');
-        expect(out.Message).toContain('No Bill.com customer on file for Cimatri HoldCo at SoundPost');
-        expect(out.Message).toContain('External Customers mapping');
+        expect(out.Message).toBe(
+            'No customer on file in SoundPost — Bill.com for Cimatri HoldCo, so nothing was sent. ' +
+                "Find Cimatri HoldCo's customer in SoundPost — Bill.com, or create it there if it has none, then add its ID to the organization's External Customers mapping and send again.",
+        );
+        expect(out.Message).not.toContain('RailCustomerCreateProviders');
         expect(mocks.created).toBe(0);
         expect(mocks.writes.some((w) => 'ExternalCustomerRef' in w)).toBe(false);
     });
 
+    it.each([true, false])('still reports a missing billing email (Preview=%s), with the missing customer', async (preview) => {
+        mocks.orgEmail = null;
+        const out = await run(preview);
+        expect(out.ResultCode).toBe('NO_CUSTOMER_EMAIL');
+        expect(out.Message).toContain('Bill.com requires a customer email and Cimatri HoldCo has none.');
+        expect(out.Message).toContain('No customer on file in SoundPost — Bill.com for Cimatri HoldCo');
+        expect(mocks.created).toBe(0);
+    });
+
     it('records the refused send as Failed, as other customer refusals are', async () => {
         await run(false);
-        expect(mocks.writes).toContainEqual(expect.objectContaining({ Status: 'Failed', LastError: expect.stringContaining('No Bill.com customer on file') }));
+        expect(mocks.writes).toContainEqual(expect.objectContaining({ Status: 'Failed', LastError: expect.stringContaining('No customer on file') }));
     });
 
     it('refuses when another provider is listed', async () => {

@@ -564,9 +564,10 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /**
      * What the operation's preview says would stop a send before the rail is called.
      *
-     * Only the refusals a person fixes on the bill-to party are surfaced: those are the ones the rail
-     * would otherwise reject after the click, leaving a Failed row behind. Anything else the preview
-     * reports (or a preview that cannot run) leaves Send enabled, and the send itself says why.
+     * Only the refusals a person fixes on the bill-to party are surfaced (no billing email; no customer on
+     * file for the rail, golive #358): a send would otherwise refuse after the click, leaving a Failed
+     * row. Anything else the preview reports (or a preview that cannot run) leaves Send enabled, and the
+     * send itself says why.
      */
     private async previewBlock(): Promise<string | null> {
         try {
@@ -576,7 +577,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
                 AllowReissue: SendIsReissue(this.Rows),
             });
             const out = result.Output;
-            return result.Success && out?.ResultCode === 'NO_CUSTOMER_EMAIL' ? (out.Message ?? 'The bill-to party has no billing email.') : null;
+            const blocks = out?.ResultCode === 'NO_CUSTOMER_EMAIL' || out?.ResultCode === 'RAIL_REFUSED';
+            return result.Success && blocks ? (out.Message ?? 'The bill-to party cannot be invoiced on this rail yet.') : null;
         } catch {
             return null;
         }
