@@ -135,6 +135,9 @@
  *         again is a fresh start: the old gateway id is retired and the hand-over creates a new one
  *   SR69  a return of the line that sold it, and a Duration concession on its term, are refused; an open
  *         gateway alert stops a cancel of a subscription whose gateway subscription went unrecorded
+ *   SR70  every concession kind that changes the term (Duration, Shift, Seats, an amount change) is refused
+ *         on a gateway-billed term, recorded through the object model as staff record them; the same four on
+ *         an unlinked subscription are not refused for the gateway
  *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
@@ -171,6 +174,7 @@ import {
     type CheckoutRun,
     TeardownOrdersFixture,
     TxMaybeOne,
+    AcknowledgeAmendmentsWith,
     createViaEntity,
     TxOne,
     TxQuery,
@@ -194,6 +198,7 @@ import {
     TASK_ENTITY,
 } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { grantAuthority } from './term-extension.checks.js';
 import {
     BasePaymentProvider,
     ChargeRenewals,
@@ -219,6 +224,7 @@ import {
     ConfigureRenewalPaymentLinks,
     LoadRenewalPaymentOrder,
     OrdersSettings,
+    ORDERS_SETTING,
     SignRenewalPaymentToken,
     type ChargeRenewalsOutput,
 } from '@mj-biz-apps/orders-core-entities-server';
@@ -2713,6 +2719,74 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 Assert(!blocked.Success, 'the cancel waits for the open alert');
                 Assert(/open gateway alert \(NotRecorded\)/.test(blocked.Message ?? ''), `and names it: ${blocked.Message}`);
                 AssertEqual((await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${other.SubscriptionID}'`)).Status, 'Active', 'nothing changed');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR70',
+        Name: 'SR70: every term-changing concession (Duration, Shift, Seats, amount) is refused on a gateway-billed term; not on an unlinked one',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const f = Fx();
+                const account = await gatewayBillingAccount(ctx);
+                const billed = await subscriptionWithCard(ctx, account);
+                await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                const handed = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [billed.SubscriptionID] });
+                AssertEqual(handed.Outcomes[0]?.Code, 'Created', `precondition: the gateway bills it: ${JSON.stringify(handed.Outcomes)}`);
+                // The control: the same product and holder shape, never handed over.
+                const unlinked = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, f.Customers.SecondOrganizationID);
+
+                const kinds: Array<{ Kind: string; Fields: (sub: { OrderID: string; Term: { ID: string } }) => Promise<Record<string, unknown>> }> = [
+                    { Kind: 'Duration', Fields: async (sub) => ({ DeliveryForm: 'Duration', SubscriptionTermID: sub.Term.ID, AddedDays: 30 }) },
+                    {
+                        Kind: 'Shift',
+                        Fields: async (sub) => {
+                            const t = await TxOne<{ StartDate: string; EndDate: string }>(ctx, `SELECT StartDate, EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID = '${sub.Term.ID}'`);
+                            return {
+                                DeliveryForm: 'Shift',
+                                SubscriptionTermID: sub.Term.ID,
+                                NewStartDate: new Date(AddDays(isoDate(t.StartDate), 10) + 'T00:00:00Z'),
+                                NewEndDate: new Date(AddDays(isoDate(t.EndDate), 10) + 'T00:00:00Z'),
+                            };
+                        },
+                    },
+                    {
+                        Kind: 'Seats',
+                        Fields: async (sub) => {
+                            const line = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${sub.OrderID}'`);
+                            return { DeliveryForm: 'Seats', OrderLineID: line.ID, AddedQuantity: 3 };
+                        },
+                    },
+                    { Kind: 'amount change', Fields: async (sub) => ({ DeliveryForm: 'Price', SubscriptionTermID: sub.Term.ID, NewAmount: 900 }) },
+                ];
+                const record = async (fields: Record<string, unknown>) => {
+                    const c = await new Metadata().GetEntityObject<BaseEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
+                    c.NewRecord();
+                    for (const [k, v] of Object.entries(fields)) c.Set(k, v);
+                    c.Set('ReasonCategory', 'Retention');
+                    c.Set('Reason', 'SR70 probe');
+                    const saved = await c.Save();
+                    return { Saved: saved, Message: c.LatestResult?.CompleteMessage ?? '' };
+                };
+                const gatewayRefusal = /billed by the payment gateway/;
+                // The control's concessions must be ones staff could record: within the requester's authority, and
+                // with an accounting role to tell of the term amendment.
+                await grantAuthority(ctx, 10_000, 365);
+                await AcknowledgeAmendmentsWith(ctx);
+                OrdersSettings.SetOverride(ORDERS_SETTING.TermShiftReviewDays, '30'); // a 10-day shift goes through
+                try {
+                    for (const k of kinds) {
+                        const onBilled = await record(await k.Fields(billed));
+                        Assert(!onBilled.Saved, `a ${k.Kind} concession on the gateway-billed term is refused`);
+                        Assert(gatewayRefusal.test(onBilled.Message), `${k.Kind}: and says the gateway bills it: ${onBilled.Message}`);
+                        const onUnlinked = await record(await k.Fields(unlinked));
+                        Assert(onUnlinked.Saved, `${k.Kind}: the same concession on an unlinked subscription saves: ${onUnlinked.Message}`);
+                    }
+                } finally {
+                    OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+                    OrdersSettings.SetOverride(ORDERS_SETTING.TermShiftReviewDays, undefined);
+                }
             }),
     },
 
