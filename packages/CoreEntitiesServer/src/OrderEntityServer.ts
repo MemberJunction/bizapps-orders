@@ -2828,7 +2828,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     `Order line ${line.LineNumber}: the line it returns sold subscription ${billed.SubscriptionNumber}, which the ` +
                         `payment gateway bills (${billed.ProviderSubscriptionID}). A return here would credit the customer and end ` +
                         `access while the gateway keeps charging. Cancel the subscription instead (it also cancels it at the ` +
-                        `gateway); refunds are made at the gateway.`,
+                        `gateway); refunds of what the gateway charged are made at the gateway.`,
                 );
             }
         }

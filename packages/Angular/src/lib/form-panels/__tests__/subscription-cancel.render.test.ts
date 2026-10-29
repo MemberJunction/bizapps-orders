@@ -124,7 +124,8 @@ describe('Cancel subscription — payment gateway (E2b)', () => {
         const notice = el.querySelector('#mjo-sc-gateway');
         expect(notice).not.toBeNull();
         expect(squash(notice?.textContent)).toBe(
-            'The payment gateway bills this subscription (sub_1Abc). Cancelling here also cancels it there, first: if the gateway does not confirm, nothing changes. Refunds are made at the gateway.',
+            'The payment gateway bills this subscription (sub_1Abc). Cancelling here also cancels it there, first: if the gateway does not confirm, nothing changes. Refunds of what the gateway charged are made at the gateway; ' +
+                'the Refund below is a credit on the order and moves no money.',
         );
         // Placed directly under the title, before the timing choice.
         expect(el.querySelector('#mjo-sc-title')?.nextElementSibling).toBe(notice);
@@ -149,16 +150,22 @@ describe('Cancel subscription — payment gateway (E2b)', () => {
         expect(rows(el)['Payment gateway']).toBe('Stops billing today');
     });
 
-    it('previews the day billing ends for an end-of-coverage gateway cancel', () => {
+    it('previews the coverage end for an end-of-coverage gateway cancel, matching the "Coverage ends" row', () => {
+        // What the server sends for a Chicago business covered through 2026-12-31: the gateway's bound is
+        // 00:00 on 1 Jan in Chicago (06:00Z), the decision's EffectiveDate the coverage end itself.
         const el = renderOpen({
             gatewayId: 'sub_x',
             preview: {
                 Success: true,
-                Decision: DECISION,
-                Gateway: { ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2026-12-31T00:00:00.000Z' },
+                Decision: { ...DECISION, EffectiveDate: '2026-12-31' },
+                Gateway: { ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2027-01-01T06:00:00.000Z' },
             } as Output,
         });
-        expect(rows(el)['Payment gateway']).toBe("Won't renew; nothing charged after 2026-12-31");
+        const r = rows(el);
+        expect(r['Coverage ends']).toBe('2026-12-31');
+        expect(r['Payment gateway']).toBe("Won't renew; nothing charged after coverage ends 2026-12-31");
+        expect(r['Payment gateway']).not.toContain('2027-01-01');
+        expect(el.querySelector('.mjo-sc__preview')?.textContent).not.toContain('2027-01-01');
     });
 
     it('has no gateway row when the output has no Gateway, and the other rows are as before', () => {

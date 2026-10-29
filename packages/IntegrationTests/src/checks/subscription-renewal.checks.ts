@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR72).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR74).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -129,7 +129,7 @@
  *         refused another subscription in that company; the same buyer in another company, someone
  *         else, a ticket, and a cancelled subscription are not
  *
- *   Once the gateway bills it, no Orders door changes it unseen (E2b, Robert's review of #972):
+ *   Once the gateway bills it, no Orders door changes it unseen:
  *   SR68  its billing columns cannot be edited through the object model (AutoRenew, Status, the gateway
  *         id); the same edit before it was linked saved, and a column the gateway does not bill on still saves
  *   SR69  cancelling stops the gateway FIRST: a gateway that refuses leaves Orders unchanged; one that
@@ -141,6 +141,11 @@
  *   SR72  every concession kind that changes the term (Duration, Shift, Seats, an amount change) is refused
  *         on a gateway-billed term, recorded through the object model as staff record them; the same four on
  *         an unlinked subscription are not refused for the gateway
+ *   SR73  the gateway renews at 00:00 on the term's last day: a cancel later that day is refused with nothing
+ *         changed and nothing asked of the gateway (it would keep the renewal it charged); once support ends it
+ *         at the gateway, the cancel finishes in Orders, after the term too, at the coverage it sold
+ *   SR74  a gateway id typed onto an existing subscription is refused, and the row stays unlinked; the
+ *         hand-over's sanctioned link still records one
  *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
@@ -221,6 +226,7 @@ import {
     type EnsureProviderSubscriptionsResult,
     type FindProviderSubscriptionsRequest,
     type FindProviderSubscriptionsResult,
+    type DescribeProviderSubscriptionResult,
     type GatewayPriceInterval,
     type RetrieveIntentRequest,
     type RetrieveIntentResult,
@@ -228,6 +234,7 @@ import {
     LoadRenewalPaymentOrder,
     OrdersSettings,
     ORDERS_SETTING,
+    SanctionProviderBilledChange,
     SignRenewalPaymentToken,
     type ChargeRenewalsOutput,
 } from '@mj-biz-apps/orders-core-entities-server';
@@ -2728,7 +2735,9 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                 // Paid, then handed over: a NEW gateway subscription, the old one not mistaken for it.
                 await payInFull(ctx, again.Order.ID as string, f.Customers.OrganizationID);
-                const fresh = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID], Now: new Date('2026-03-01T12:00:00Z') });
+                // Through the checkout's own scope, the new ORDER: the subscription keeps its original line in
+                // OrderLineID, so the hand-over finds it through the new term's line.
+                const fresh = await ensureProviderSubscriptions(ctx, { OrderHeaderID: again.Order.ID as string, Now: new Date('2026-03-01T12:00:00Z') });
                 AssertEqual(fresh.Outcomes[0]?.Code, 'Created', `a new one is created: ${JSON.stringify(fresh.Outcomes)}`);
                 Assert(fresh.Outcomes[0].ProviderSubscriptionID !== oldID, 'with a new id');
                 AssertEqual(fakeGateway.created.length, 2, 'two gateway subscriptions in all, one per period of billing');
@@ -2848,6 +2857,76 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
                     OrdersSettings.SetOverride(ORDERS_SETTING.TermShiftReviewDays, undefined);
                 }
+            }),
+    },
+
+    {
+        Id: 'subscription-renewal.SR73',
+        Name: "SR73: a cancel on the term's last day, after the gateway renewed at 00:00, is refused; once ended at the gateway, the cancel finishes in Orders",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const f = Fx();
+                const account = await gatewayBillingAccount(ctx);
+                const sub = await subscriptionWithCard(ctx, account);
+                await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+                const gatewayID = linked.Outcomes[0].ProviderSubscriptionID!;
+                const lastDay = isoDate(sub.Term.EndDate);
+                const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === gatewayID)!;
+
+                // The gateway charged the renewal at 00:00 business time on the last day: a period Orders has not booked.
+                held.PeriodStart = DayStartUtc(lastDay, BusinessTimeZoneEngine.Instance.Zone);
+                const status = async () =>
+                    (await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`)).Status;
+                for (const input of [
+                    { RequestDate: lastDay, Timing: 'Immediate' },
+                    { RequestDate: lastDay, Timing: 'EndOfTerm' },
+                ]) {
+                    const refused = await cancelSubscription(ctx, { SubscriptionID: sub.SubscriptionID, ...input });
+                    Assert(!refused.Success, `the last-day cancel (${input.Timing}) is refused`);
+                    Assert(/started a new billing period/.test(refused.Message ?? ''), `and says the gateway already renewed it: ${refused.Message}`);
+                }
+                AssertEqual(fakeGateway.cancelled.length, 0, 'nothing was asked of the gateway');
+                AssertEqual(await status(), 'Active', 'nothing changed in Orders');
+
+                // Support cancels it at the gateway (and refunds the renewal there); a week after the term, Orders finishes.
+                held.IsLive = false;
+                held.Status = 'canceled';
+                const finished = (await cancelSubscription(ctx, {
+                    SubscriptionID: sub.SubscriptionID,
+                    RequestDate: AddDays(lastDay, 7),
+                    Timing: 'Immediate',
+                })) as { Success: boolean; Message?: string; TotalRefundAmount?: number; Decision?: { EffectiveDate?: string }; Gateway?: { Outcome?: string } };
+                Assert(finished.Success, `the cancel finishes once the gateway has ended it: ${finished.Message}`);
+                AssertEqual(await status(), 'Canceled', 'cancelled in Orders');
+                AssertEqual(isoDate(finished.Decision!.EffectiveDate!), lastDay, 'effective at the end of the coverage it sold, not a week later');
+                AssertEqual(finished.TotalRefundAmount ?? 0, 0, 'nothing refunded: the term was served');
+                AssertEqual(finished.Gateway?.Outcome, 'AlreadyEnded', 'the gateway answered that it had already ended');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR74',
+        Name: 'SR74: a gateway id typed onto an existing subscription is refused and the row stays unlinked; the sanctioned link records one',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const account = await gatewayBillingAccount(ctx);
+                const sub = await buySubscription(ctx, 'SubRolling', 1200);
+                let refusal = '';
+                try {
+                    await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, sub.SubscriptionID, { PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_typed' });
+                } catch (e) {
+                    refusal = String(e);
+                }
+                Assert(/recorded by Orders when it creates the gateway subscription/.test(refusal), `typing an id is refused: ${refusal || 'it was allowed'}`);
+                const row = async () =>
+                    TxOne<{ ProviderSubscriptionID: string | null }>(ctx, `SELECT ProviderSubscriptionID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`);
+                AssertEqual((await row()).ProviderSubscriptionID, null, 'the row stays unlinked, so Orders still renews it');
+
+                await markProviderBilled(ctx, sub.SubscriptionID, account, 'sub_it_sanctioned');
+                AssertEqual((await row()).ProviderSubscriptionID, 'sub_it_sanctioned', 'the sanctioned link (the hand-over\'s) records it');
             }),
     },
 
@@ -3030,7 +3109,16 @@ const IT_GATEWAY_BILLING = 'ITGatewayBilling';
 /** What the fake gateway was asked to create, and what it holds. Reset by each check. */
 const fakeGateway = {
     created: [] as CreateProviderSubscriptionRequest[],
-    held: [] as Array<{ ProviderSubscriptionID: string; Status: string; IsLive: boolean; Customer: string; Metadata: Record<string, string>; EndsAt?: Date }>,
+    held: [] as Array<{
+        ProviderSubscriptionID: string;
+        Status: string;
+        IsLive: boolean;
+        Customer: string;
+        Metadata: Record<string, string>;
+        EndsAt?: Date;
+        /** Start of the period it last billed; set by a check to stage a renewal the gateway charged. */
+        PeriodStart?: Date;
+    }>,
     priceInterval: { Unit: 'year', Count: 1 } as GatewayPriceInterval,
     /** Every cancel the gateway was asked for (E2b). */
     cancelled: [] as CancelProviderSubscriptionRequest[],
@@ -3086,6 +3174,19 @@ export class IntegrationTestGatewayBillingProvider extends StripePaymentProvider
         }
         held.EndsAt = request.BillingEndsAt;
         return { Success: true, Outcome: 'EndsAtPeriodEnd', BillingEndsAt: request.BillingEndsAt, Status: held.Status };
+    }
+
+    /** In memory, as Stripe reports it: ended, set to end, or renewing from `PeriodStart`; an unknown id is refused. */
+    public override async DescribeProviderSubscription(providerSubscriptionID: string): Promise<DescribeProviderSubscriptionResult> {
+        const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === providerSubscriptionID);
+        if (!held) return { Success: false, Reason: `No such subscription: '${providerSubscriptionID}'` };
+        return {
+            Success: true,
+            State: !held.IsLive ? 'Ended' : held.EndsAt ? 'Ending' : 'Renewing',
+            CurrentPeriodStart: held.PeriodStart ?? null,
+            EndsAt: held.EndsAt ?? null,
+            Status: held.Status,
+        };
     }
 
     public override async FindProviderSubscriptions(request: FindProviderSubscriptionsRequest): Promise<FindProviderSubscriptionsResult> {
@@ -3207,9 +3308,17 @@ async function alertTasks(ctx: IntegrationCheckContext, subscriptionID: string, 
     return Number(rows[0]?.N ?? 0);
 }
 
-/** Mark a subscription as billed by a gateway: its provider account and the gateway's subscription id, set together. */
+/**
+ * Mark a subscription as billed by a gateway: its provider account and the gateway's subscription id, set
+ * together, with the server sanction the checkout hand-over takes (linking by hand is refused).
+ */
 async function markProviderBilled(ctx: IntegrationCheckContext, subscriptionID: string, providerID: string, gatewayID: string): Promise<void> {
-    await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, subscriptionID, { PaymentProviderID: providerID, ProviderSubscriptionID: gatewayID });
+    const sub = await ctx.Provider.GetEntityObject<BaseEntity>(SUBSCRIPTION_ENTITY, ctx.User);
+    Assert(await sub.InnerLoad(CompositeKey.FromID(subscriptionID)), `precondition: subscription ${subscriptionID} loads`);
+    SanctionProviderBilledChange(sub);
+    sub.Set('PaymentProviderID', providerID);
+    sub.Set('ProviderSubscriptionID', gatewayID);
+    Assert(await sub.Save(), `marked gateway-billed: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`);
 }
 
 /**

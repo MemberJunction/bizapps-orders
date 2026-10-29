@@ -56,6 +56,15 @@ export function ProviderBilledChangeRefusal(providerSubscriptionID: string | nul
     return (
         `The payment gateway bills this subscription${id}, so ${change}cannot be changed here without the ` +
         `gateway hearing of it. To end it, use Cancel subscription, which also cancels it at the gateway. ` +
-        `Card changes and refunds are made at the gateway.`
+        `Card changes, and refunds of what the gateway charged, are made at the gateway.`
+    );
+}
+
+/** The refusal for a gateway id typed onto an existing subscription. */
+export function ProviderLinkRefusal(): string {
+    return (
+        `The payment gateway id is recorded by Orders when it creates the gateway subscription after checkout, ` +
+        `so it cannot be entered here. A wrong id would stop Orders renewing this subscription and point its ` +
+        `Cancel at another gateway subscription, and it could not be removed again.`
     );
 }

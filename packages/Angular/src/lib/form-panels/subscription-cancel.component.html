@@ -16,7 +16,8 @@
             <p class="mjo-sc__gateway" id="mjo-sc-gateway">
                 <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
                 The payment gateway bills this subscription ({{ GatewaySubscriptionID }}). Cancelling here also cancels it there,
-                first: if the gateway does not confirm, nothing changes. Refunds are made at the gateway.
+                first: if the gateway does not confirm, nothing changes. Refunds of what the gateway charged are made at the gateway;
+                the Refund below is a credit on the order and moves no money.
             </p>
         }
         <fieldset class="mjo-sc__timing" [disabled]="Busy">
@@ -54,7 +55,7 @@
                 <div><dt>Access ends</dt><dd>{{ Day(d.AccessThroughDate) }}</dd></div>
                 <div><dt>Refund</dt><dd>{{ Preview?.TotalRefundAmount ?? d.RefundAmount | mjoMoney: { Zero: 'None' } }}</dd></div>
                 @if (Preview?.Gateway; as g) {
-                    <div><dt>Payment gateway</dt><dd>{{ GatewayLine(g) }}</dd></div>
+                    <div><dt>Payment gateway</dt><dd>{{ GatewayLine(g, d.EffectiveDate) }}</dd></div>
                 }
                 @if (Preview?.LaterTerms?.length) {
                     <div><dt>Later terms canceled</dt><dd>{{ Preview?.LaterTerms?.length }}</dd></div>

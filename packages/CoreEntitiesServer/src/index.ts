@@ -240,8 +240,10 @@ export {
     GatewayCancelIdempotencyKey,
     GatewayCancelPreview,
     PlanGatewayCancel,
+    GateGatewayCancel,
+    ReadGatewaySubscription,
 } from './ProviderSubscriptionCancel.js';
-export type { GatewayCancelPlan, GatewayCancelResult, GatewayCancelSummary } from './ProviderSubscriptionCancel.js';
+export type { GatewayCancelGate, GatewayCancelPlan, GatewayCancelResult, GatewayCancelSummary } from './ProviderSubscriptionCancel.js';
 
 // Handing a new auto-renewing subscription to the gateway that will bill it (option E, E2).
 export {
@@ -605,6 +607,8 @@ export type {
     CreateProviderSubscriptionResult,
     CancelProviderSubscriptionRequest,
     CancelProviderSubscriptionResult,
+    DescribeProviderSubscriptionResult,
+    ProviderSubscriptionBillingState,
     CancelProviderSubscriptionOutcome,
     FindProviderSubscriptionsRequest,
     FindProviderSubscriptionsResult,
@@ -628,6 +632,7 @@ export {
     StripeSubscriptionFromObject,
     StripeCancelState,
     PlanStripeCancel,
+    StripeSubscriptionBilling,
 } from './StripePaymentProvider.js';
 export {
     CheckPaymentWebhookEndpoints,
@@ -1074,6 +1079,7 @@ export {
 } from './checkoutCaptureRetry.js';
 export {
     OpenProviderSubscriptionAlerts,
+    ReadOpenProviderSubscriptionAlerts,
     PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER,
     ProviderSubscriptionAlertName,
     raiseCheckoutCaptureTerminalAlert,

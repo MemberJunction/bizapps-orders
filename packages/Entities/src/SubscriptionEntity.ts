@@ -13,21 +13,26 @@
  * record step that links a new gateway subscription) are sanctioned by the server subclass
  * (`SanctionProviderBilledChange`), never by a flag a client could set.
  *
- * Linking — a subscription loaded with no gateway id gaining one — is not a change to a gateway-billed
- * subscription and stays open: the checkout hand-over and the importers do it.
+ * LINKING (an existing subscription gaining its first gateway id) is sanctioned too. It is the write that
+ * makes the gateway bill a subscription and Orders stop renewing it, and once made it cannot be undone
+ * here. Typed by hand it is a guess: a typo renews the subscription free forever, and another customer's
+ * id makes this subscription's Cancel cancel THEIR gateway subscription. Only the checkout hand-over
+ * links, and it takes the sanction. CREATING a subscription with its id stays open: that is how an
+ * importer brings over subscriptions a gateway already bills.
  *
  * @module @mj-biz-apps/orders-entities
  */
 import { BaseEntity, ValidationErrorInfo, ValidationErrorType, type ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersSubscriptionEntity } from './generated/entity_subclasses';
-import { PROVIDER_BILLED_FIELDS, ProviderBilledChangeRefusal } from './provider-billed';
+import { PROVIDER_BILLED_FIELDS, ProviderBilledChangeRefusal, ProviderLinkRefusal } from './provider-billed';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Subscriptions')
 export class SubscriptionEntity extends mjBizAppsOrdersSubscriptionEntity {
     public override Validate(): ValidationResult {
         const result = super.Validate();
         this.refuseUnsanctionedProviderBilledChanges(result);
+        this.refuseUnsanctionedLink(result);
         return result;
     }
 
@@ -47,6 +52,21 @@ export class SubscriptionEntity extends mjBizAppsOrdersSubscriptionEntity {
      */
     protected ProviderBilledChangeSanctioned(): boolean {
         return false;
+    }
+
+    /** True when this save gives a saved subscription its first gateway id. */
+    public get Linking(): boolean {
+        if (!this.IsSaved) return false;
+        const field = this.GetFieldByName('ProviderSubscriptionID');
+        return field != null && field.OldValue == null && field.Dirty && field.Value != null;
+    }
+
+    private refuseUnsanctionedLink(result: ValidationResult): void {
+        if (!this.Linking || this.ProviderBilledChangeSanctioned()) return;
+        result.Success = false;
+        result.Errors.push(
+            new ValidationErrorInfo('ProviderSubscriptionID', ProviderLinkRefusal(), this.ProviderSubscriptionID, ValidationErrorType.Failure),
+        );
     }
 
     private refuseUnsanctionedProviderBilledChanges(result: ValidationResult): void {

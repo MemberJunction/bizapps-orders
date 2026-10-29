@@ -78,11 +78,15 @@ export class MJOSubscriptionCancelComponent {
         return this.Record?.ProviderSubscriptionID ?? null;
     }
 
-    /** What the gateway will do (preview) or did (after), in words, for the preview's row. */
-    public GatewayLine(gateway: NonNullable<CancelSubscriptionOutput['Gateway']>): string {
+    /**
+     * What the gateway will do (preview) or did (after), in words, for the preview's row. Named by the
+     * coverage end beside it: the gateway's own bound (`BillingEndsAt`) is 00:00 the day AFTER coverage
+     * in the business zone, which reads as a day too late next to "Coverage ends".
+     */
+    public GatewayLine(gateway: NonNullable<CancelSubscriptionOutput['Gateway']>, coverageEnds?: string | null): string {
         if (gateway.When === 'Now') return 'Stops billing today';
-        const day = this.Day(gateway.BillingEndsAt);
-        return `Won't renew; nothing charged after ${day === '—' ? 'coverage ends' : day}`;
+        const day = this.Day(coverageEnds);
+        return day === '—' ? `Won't renew; nothing charged after coverage ends` : `Won't renew; nothing charged after coverage ends ${day}`;
     }
 
     /** The type's name for the default option, from the subscription's own view field. */

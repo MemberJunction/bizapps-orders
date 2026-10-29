@@ -92,6 +92,7 @@ import { SubscriptionBehavior, SubscriptionTypeRulesFrom } from './SubscriptionB
 import { OpenProviderSubscriptionAlerts, raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
 import { WithIsolatedProvider } from './isolatedProvider.js';
 import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
@@ -190,9 +191,17 @@ export function ProviderSubscriptionIdempotencyKey(p: {
     FirstChargeAt: Date;
     /** The business day the attempt is made on (`CalendarDayIn(now, zone)`). */
     AttemptDay: CalendarDay;
+    /**
+     * How many gateway subscriptions this one has retired (cancelled, or left behind by a fresh start).
+     * Bought, cancelled and bought again on one day, every other part repeats; without this the gateway
+     * would answer the new create with the CANCELLED subscription it saved for the first key. Left out
+     * of the key at 0, so a first create's key is unchanged.
+     */
+    Generation?: number;
 }): string {
     const anchor = Math.floor(p.FirstChargeAt.getTime() / 1000);
-    return `provider-subscription:${p.SubscriptionID.toLowerCase()}:${p.ProviderPriceID}:${p.ProviderInstrumentRef}:${p.Quantity}:${anchor}:${p.AttemptDay}`;
+    const generation = p.Generation ? `:g${p.Generation}` : '';
+    return `provider-subscription:${p.SubscriptionID.toLowerCase()}:${p.ProviderPriceID}:${p.ProviderInstrumentRef}:${p.Quantity}:${anchor}:${p.AttemptDay}${generation}`;
 }
 
 /** Months in one billing period of a gateway price; null for a period Orders terms cannot have (days, weeks). */
@@ -540,7 +549,11 @@ class ProviderSubscriptionRun {
     private async selectionScope(): Promise<string> {
         let scope: string;
         if (this.input.OrderHeaderID) {
-            scope = `ol.OrderHeaderID = '${RequireUUID(this.input.OrderHeaderID, 'OrderHeaderID')}'`;
+            // The order that sold the latest term as well as the one that created the subscription: a
+            // cancelled subscription bought again keeps its ORIGINAL line in `OrderLineID` (other code reads
+            // that as the line that created it), and the new order sells only its new term.
+            const order = RequireUUID(this.input.OrderHeaderID, 'OrderHeaderID');
+            scope = `(ol.OrderHeaderID = '${order}' OR tol.OrderHeaderID = '${order}')`;
         } else if (this.input.SubscriptionIDs?.length) {
             scope = `s.ID IN (${RequireUUIDs(this.input.SubscriptionIDs, 'SubscriptionID').map((id) => `'${id}'`).join(',')})`;
         } else {
@@ -712,7 +725,7 @@ class ProviderSubscriptionRun {
         if (this.input.Preview) {
             // Preview reads the gateway but never writes to it: the price's period is not read (the limit
             // assumes a yearly price), but the search is, so the list says which subscriptions the gateway
-            // already holds (Robert, #972). It finds only gateway subscriptions Orders created (they carry
+            // already holds. It finds only gateway subscriptions Orders created (they carry
             // this subscription's id); one a buyer opened elsewhere is invisible to it.
             const plan = PlanProviderSubscriptionCharge(lastDay, zone, now, driver.LatestFirstChargeAt(now));
             const at = { ...extra, FirstChargeAt: plan.FirstChargeAt.toISOString() };
@@ -840,6 +853,9 @@ class ProviderSubscriptionRun {
                 Quantity: quantity,
                 FirstChargeAt: plan.FirstChargeAt,
                 AttemptDay: CalendarDayIn(now, zone),
+                // A retired gateway subscription carries this subscription's id in its metadata, so the
+                // search above found it, and read the retired ids, whenever the key could repeat.
+                Generation: retired.size,
             }),
             Metadata: this.metadataFor(row),
         });
@@ -906,7 +922,7 @@ class ProviderSubscriptionRun {
     /**
      * After a create, search the gateway again: two runs that straddled business midnight send two
      * idempotency keys, and if both created, the gateway holds two live subscriptions for one Orders
-     * subscription (Robert, #972). The record step keeps one; this makes the other loud instead of an
+     * subscription. The record step keeps one; this makes the other loud instead of an
      * orphan nothing finds. A failed search is logged, not raised: the create itself succeeded.
      */
     private async confirmOnlyOne(
@@ -1058,6 +1074,20 @@ class ProviderSubscriptionRun {
                 { Linked: true },
             );
         }
+        if (code === 'Created' && (await this.retiredGatewayIDs(row.SubscriptionID)).has(providerSubscriptionID)) {
+            // A create answered with a subscription this one already cancelled or retired: the gateway
+            // replayed an earlier request. Recording it would bill nothing and stop Orders renewing.
+            return this.alert(
+                row,
+                'NotRecorded',
+                `the gateway answered the create with ${providerSubscriptionID}, which this subscription already cancelled or retired ` +
+                    `(a replayed request), so it was not recorded. No new gateway subscription exists yet; the next daily pass asks again.`,
+                linked,
+            );
+        }
+        // Linking is the one write that makes the gateway bill this subscription; only Orders' own
+        // hand-over may make it (the shared entity rule refuses it from a form or API).
+        SanctionProviderBilledChange(subscription);
         subscription.PaymentProviderID = config.ID;
         subscription.ProviderSubscriptionID = providerSubscriptionID;
         if (!(await subscription.Save())) {

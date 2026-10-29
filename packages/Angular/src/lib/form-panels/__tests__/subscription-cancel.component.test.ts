@@ -156,26 +156,35 @@ describe('Cancel subscription', () => {
             expect(componentFor({ ProviderSubscriptionID: null } as unknown as Partial<mjBizAppsOrdersSubscriptionEntity>).GatewaySubscriptionID).toBeNull();
         });
 
-        it('describes an immediate gateway cancel as stopping billing today', () => {
+        // What the server sends for a Chicago business on a term covered through 2026-12-31: the gateway's
+        // own bound is 00:00 the day AFTER coverage in Chicago (06:00Z on 1 Jan), and the decision's
+        // EffectiveDate is the coverage end itself.
+        const CHICAGO_BILLING_ENDS_AT = '2027-01-01T06:00:00.000Z';
+        const CHICAGO_COVERAGE_ENDS = '2026-12-31';
+
+        it('describes an immediate gateway cancel as stopping billing today, whatever dates it is given', () => {
             const c = componentFor({});
             expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now' })).toBe('Stops billing today');
-            // BillingEndsAt is ignored for Now: the gateway stops today whatever the date says.
-            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now', BillingEndsAt: '2026-12-31T00:00:00.000Z' })).toBe('Stops billing today');
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now', BillingEndsAt: CHICAGO_BILLING_ENDS_AT }, CHICAGO_COVERAGE_ENDS))
+                .toBe('Stops billing today');
         });
 
-        it('describes an end-of-coverage gateway cancel with the day billing ends', () => {
+        it('names the coverage end for an end-of-coverage gateway cancel, not the gateway\'s next-day bound', () => {
             const c = componentFor({});
-            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2026-12-31T00:00:00.000Z' }))
-                .toBe("Won't renew; nothing charged after 2026-12-31");
-            // The day is the UTC day of the instant, the same formatting as the other preview rows.
-            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2027-01-30T23:59:59.000Z' }))
-                .toBe(`Won't renew; nothing charged after ${c.Day('2027-01-30T23:59:59.000Z')}`);
-            expect(c.Day('2027-01-30T23:59:59.000Z')).toBe('2027-01-30');
+            const line = c.GatewayLine(
+                { ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: CHICAGO_BILLING_ENDS_AT },
+                CHICAGO_COVERAGE_ENDS,
+            );
+            expect(line).toBe("Won't renew; nothing charged after coverage ends 2026-12-31");
+            // Before: the line read the gateway's bound and said 2027-01-01, a day later than "Coverage ends".
+            expect(line).not.toContain('2027-01-01');
         });
 
-        it('falls back to words, never a dash, when the gateway gives no billing end', () => {
+        it('falls back to words, never a dash, when there is no coverage end to name', () => {
             const c = componentFor({});
-            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage' }))
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: CHICAGO_BILLING_ENDS_AT }))
+                .toBe("Won't renew; nothing charged after coverage ends");
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage' }, null))
                 .toBe("Won't renew; nothing charged after coverage ends");
         });
 

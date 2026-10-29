@@ -157,7 +157,7 @@ async function checkProviderBilledSubscriptions(context: PrePurchaseContext): Pr
     if (!context.PersonID || !context.CompanyID) {
         return null;
     }
-    // Every status Orders counts as still held, Paused included (Robert, #972): a paused subscription the
+    // Every status Orders counts as still held, Paused included: a paused subscription the
     // gateway bills is still the gateway's to charge, so a second purchase would still be a double charge.
     const statusList = EXISTING_HOLDING_STATUSES.map((s) => `'${s}'`).join(', ');
     // The holder first: for nearly every buyer it is empty, and the product read is skipped.

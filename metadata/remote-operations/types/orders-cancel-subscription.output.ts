@@ -55,7 +55,7 @@ export interface CanceledLaterTermResult {
 }
 
 /**
- * The payment gateway's part of a cancel, when a gateway bills the subscription (E2b). The gateway is
+ * The payment gateway's part of a cancel, when a gateway bills the subscription. The gateway is
  * asked before Orders writes anything; if it does not confirm, the cancel fails and nothing changes.
  */
 export interface CancelGatewayResult {

@@ -38,6 +38,8 @@ import {
     type CreateProviderSubscriptionResult,
     type CancelProviderSubscriptionRequest,
     type CancelProviderSubscriptionResult,
+    type DescribeProviderSubscriptionResult,
+    type ProviderSubscriptionBillingState,
     type CancelProviderSubscriptionOutcome,
     type EnsureCustomerRequest,
     type EnsureCustomerResult,
@@ -482,6 +484,23 @@ export class StripePaymentProvider extends BasePaymentProvider {
         const outcome: CancelProviderSubscriptionOutcome =
             plan.Action === 'CancelNow' ? 'CanceledNow' : plan.Action === 'AtPeriodEnd' ? 'EndsAtPeriodEnd' : 'EndsAt';
         return { Success: true, Outcome: outcome, BillingEndsAt: settled.BillingEndsAt, Status: after.Status };
+    }
+
+    /** `GET /v1/subscriptions/:id`: where its billing stands (`StripeSubscriptionBilling`). The stub refuses. */
+    public override async DescribeProviderSubscription(providerSubscriptionID: string): Promise<DescribeProviderSubscriptionResult> {
+        if (this.useStub) {
+            return {
+                Success: false,
+                Reason:
+                    `Payment provider '${this.Config?.Name ?? this.Config?.ID}' is not live (IsLiveMode = 0), so its Stripe ` +
+                    `driver is a stub and cannot read ${providerSubscriptionID} in Stripe.`,
+            };
+        }
+        const read = await this.call('GET', `/subscriptions/${encodeURIComponent(providerSubscriptionID)}`, undefined, undefined, {
+            TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS,
+        });
+        if (!read.Ok) return { Success: false, Reason: `Stripe could not read ${providerSubscriptionID}: ${read.Reason}` };
+        return { Success: true, ...StripeSubscriptionBilling(read.Body) };
     }
 
     /** `GET /v1/prices/:id`: whether it is active and how often it bills. */
@@ -1058,6 +1077,33 @@ export function StripeCancelState(object: Record<string, unknown>): StripeCancel
 
 /** Statuses in which Stripe is collecting nothing new, and a subscription renews at its period end. */
 const RENEWING_SUBSCRIPTION_STATUSES = ['active', 'trialing'];
+
+/**
+ * Where a Stripe subscription's billing stands (`Stripe-Version: 2024-06-20` field names). Pure.
+ *   · `canceled`, `incomplete_expired`                      → Ended
+ *   · `active`/`trialing` set to end (`cancel_at_period_end`
+ *     at its period end, or `cancel_at`)                    → Ending
+ *   · `active`/`trialing` otherwise                         → Renewing at `current_period_end`
+ *   · anything else (`past_due`, `unpaid`, `incomplete`,
+ *     `paused`): an unpaid charge may still be collected     → Collecting
+ */
+export function StripeSubscriptionBilling(object: Record<string, unknown>): {
+    State: ProviderSubscriptionBillingState;
+    CurrentPeriodStart: Date | null;
+    CurrentPeriodEnd: Date | null;
+    EndsAt: Date | null;
+    Status: string;
+} {
+    const facts = StripeCancelState(object);
+    const start = Number(object.current_period_start);
+    const currentPeriodStart = object.current_period_start != null && Number.isFinite(start) && start > 0 ? new Date(start * 1000) : null;
+    const base = { CurrentPeriodStart: currentPeriodStart, CurrentPeriodEnd: facts.CurrentPeriodEnd, Status: facts.Status };
+    if (ENDED_SUBSCRIPTION_STATUSES.includes(facts.Status)) return { ...base, State: 'Ended', EndsAt: null };
+    if (!RENEWING_SUBSCRIPTION_STATUSES.includes(facts.Status)) return { ...base, State: 'Collecting', EndsAt: null };
+    const endsAt = facts.CancelAtPeriodEnd ? facts.CurrentPeriodEnd : facts.CancelAt;
+    if (endsAt) return { ...base, State: 'Ending', EndsAt: endsAt };
+    return { ...base, State: 'Renewing', EndsAt: null };
+}
 
 export type StripeCancelPlan =
     | { Action: 'None'; Outcome: 'AlreadyEnded' | 'AlreadyEnding'; BillingEndsAt: Date }

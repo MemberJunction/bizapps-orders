@@ -16,6 +16,7 @@ import {
     StripeChargedAtCreation,
     StripePaymentProvider,
     StripePriceInterval,
+    StripeSubscriptionBilling,
     StripeSubscriptionFromObject,
     type StripeCancelStateFacts,
 } from '../StripePaymentProvider.js';
@@ -751,5 +752,191 @@ describe('StripePaymentProvider.CancelProviderSubscription (E2b)', () => {
         const result = await base.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY });
         expect(result.Success).toBe(false);
         expect(result.Reason).toMatch(/'Manual' payment provider does not support cancelling a gateway-billed subscription/);
+    });
+});
+
+/**
+ * E2b: where a Stripe subscription's billing stands. Jane's subscription was created 2025-12-31T06:00Z
+ * (00:00 CST) and renews 2026-12-31T06:00Z (00:00 CST on her term's last day).
+ */
+describe('StripeSubscriptionBilling (E2b)', () => {
+    const START_S = 1767160800; // 2025-12-31T06:00:00Z
+    const END_S = 1798696800; // 2026-12-31T06:00:00Z
+    const CANCEL_AT_S = 1785564000; // 2026-08-01T06:00:00Z
+    const START = new Date('2025-12-31T06:00:00.000Z');
+    const END = new Date('2026-12-31T06:00:00.000Z');
+    const object = (overrides: Record<string, unknown> = {}) => ({
+        id: 'sub_x',
+        status: 'active',
+        current_period_start: START_S,
+        current_period_end: END_S,
+        cancel_at_period_end: false,
+        cancel_at: null,
+        ...overrides,
+    });
+
+    it('the fixture instants are what the comments say', () => {
+        expect(new Date(START_S * 1000).toISOString()).toBe('2025-12-31T06:00:00.000Z');
+        expect(new Date(END_S * 1000).toISOString()).toBe('2026-12-31T06:00:00.000Z');
+        expect(new Date(CANCEL_AT_S * 1000).toISOString()).toBe('2026-08-01T06:00:00.000Z');
+    });
+
+    it('active, not set to end → Renewing at current_period_end, with the period start', () => {
+        expect(StripeSubscriptionBilling(object())).toEqual({ State: 'Renewing', CurrentPeriodStart: START, CurrentPeriodEnd: END, EndsAt: null, Status: 'active' });
+    });
+
+    it('trialing, not set to end → Renewing', () => {
+        expect(StripeSubscriptionBilling(object({ status: 'trialing' }))).toEqual({ State: 'Renewing', CurrentPeriodStart: START, CurrentPeriodEnd: END, EndsAt: null, Status: 'trialing' });
+    });
+
+    it('active/trialing with cancel_at_period_end → Ending at current_period_end', () => {
+        for (const status of ['active', 'trialing']) {
+            expect(StripeSubscriptionBilling(object({ status, cancel_at_period_end: true }))).toEqual({ State: 'Ending', CurrentPeriodStart: START, CurrentPeriodEnd: END, EndsAt: END, Status: status });
+        }
+    });
+
+    it('active/trialing with cancel_at (1 Aug 2026) → Ending at cancel_at', () => {
+        for (const status of ['active', 'trialing']) {
+            expect(StripeSubscriptionBilling(object({ status, cancel_at: CANCEL_AT_S }))).toEqual({
+                State: 'Ending',
+                CurrentPeriodStart: START,
+                CurrentPeriodEnd: END,
+                EndsAt: new Date('2026-08-01T06:00:00.000Z'),
+                Status: status,
+            });
+        }
+    });
+
+    it('canceled and incomplete_expired → Ended (even if a cancel flag is still set)', () => {
+        for (const status of ['canceled', 'incomplete_expired']) {
+            expect(StripeSubscriptionBilling(object({ status }))).toEqual({ State: 'Ended', CurrentPeriodStart: START, CurrentPeriodEnd: END, EndsAt: null, Status: status });
+            expect(StripeSubscriptionBilling(object({ status, cancel_at_period_end: true })).State).toBe('Ended');
+        }
+    });
+
+    it('past_due, unpaid, incomplete, paused → Collecting (an unpaid charge may still be collected), even with a cancel flag set', () => {
+        for (const status of ['past_due', 'unpaid', 'incomplete', 'paused']) {
+            expect(StripeSubscriptionBilling(object({ status }))).toEqual({ State: 'Collecting', CurrentPeriodStart: START, CurrentPeriodEnd: END, EndsAt: null, Status: status });
+            expect(StripeSubscriptionBilling(object({ status, cancel_at_period_end: true })).State).toBe('Collecting');
+            expect(StripeSubscriptionBilling(object({ status, cancel_at: CANCEL_AT_S })).State).toBe('Collecting');
+        }
+    });
+
+    it('an unknown or missing status → Collecting (never Renewing)', () => {
+        expect(StripeSubscriptionBilling(object({ status: 'something_new' })).State).toBe('Collecting');
+        expect(StripeSubscriptionBilling({ id: 'sub_x' }).State).toBe('Collecting');
+    });
+
+    it('current_period_start missing, null, 0 or not a number → CurrentPeriodStart null', () => {
+        const { current_period_start: _omit, ...withoutStart } = object();
+        expect(StripeSubscriptionBilling(withoutStart).CurrentPeriodStart).toBeNull();
+        expect(StripeSubscriptionBilling(object({ current_period_start: null })).CurrentPeriodStart).toBeNull();
+        expect(StripeSubscriptionBilling(object({ current_period_start: 0 })).CurrentPeriodStart).toBeNull();
+        expect(StripeSubscriptionBilling(object({ current_period_start: 'soon' })).CurrentPeriodStart).toBeNull();
+    });
+});
+
+describe('StripePaymentProvider.DescribeProviderSubscription (E2b)', () => {
+    const URL_X = 'https://api.stripe.com/v1/subscriptions/sub_x';
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    it('a stub account (IsLiveMode = 0) refuses, naming sub_x, and never calls Stripe', async () => {
+        const { driver, sent, restore } = live([], { IsLiveMode: false });
+        try {
+            const result = await driver.DescribeProviderSubscription('sub_x');
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toMatch(/IsLiveMode = 0/);
+            expect(result.Reason).toMatch(/sub_x/);
+            expect(result.State).toBeUndefined();
+            expect(sent).toHaveLength(0);
+        } finally {
+            restore();
+        }
+    });
+
+    it('one GET /v1/subscriptions/sub_x with the 15 s subscription timeout, Stripe-Version 2024-06-20, no body; maps the state', async () => {
+        const timeout = vi.spyOn(AbortSignal, 'timeout');
+        const { driver, sent, restore } = live([
+            { body: { id: 'sub_x', object: 'subscription', status: 'active', current_period_start: 1798696800, current_period_end: 1830232800, cancel_at_period_end: false, cancel_at: null } },
+        ]);
+        try {
+            expect(await driver.DescribeProviderSubscription('sub_x')).toEqual({
+                Success: true,
+                State: 'Renewing',
+                CurrentPeriodStart: new Date('2026-12-31T06:00:00.000Z'),
+                CurrentPeriodEnd: new Date('2027-12-31T06:00:00.000Z'),
+                EndsAt: null,
+                Status: 'active',
+            });
+            expect(sent).toHaveLength(1);
+            expect(sent[0].method).toBe('GET');
+            expect(sent[0].url).toBe(URL_X);
+            expect(sent[0].headers['Stripe-Version']).toBe('2024-06-20');
+            expect(sent[0].headers['Idempotency-Key']).toBeUndefined();
+            expect([...sent[0].body.keys()]).toEqual([]);
+            expect(sent[0].signal).toBeInstanceOf(AbortSignal);
+            expect(timeout).toHaveBeenCalledWith(15_000);
+        } finally {
+            restore();
+        }
+    });
+
+    it('maps an Ending answer (cancel_at_period_end) through the driver', async () => {
+        const { driver, restore } = live([
+            { body: { id: 'sub_x', status: 'active', current_period_start: 1767160800, current_period_end: 1798696800, cancel_at_period_end: true } },
+        ]);
+        try {
+            const result = await driver.DescribeProviderSubscription('sub_x');
+            expect(result).toMatchObject({ Success: true, State: 'Ending', EndsAt: new Date('2026-12-31T06:00:00.000Z'), Status: 'active' });
+        } finally {
+            restore();
+        }
+    });
+
+    it("the id is URL-encoded into the path", async () => {
+        const { driver, sent, restore } = live([{ body: { id: 'sub/x', status: 'canceled' } }]);
+        try {
+            expect((await driver.DescribeProviderSubscription('sub/x')).State).toBe('Ended');
+            expect(sent[0].url).toBe('https://api.stripe.com/v1/subscriptions/sub%2Fx');
+        } finally {
+            restore();
+        }
+    });
+
+    it("a 404 → Success false naming sub_x and Stripe's message, no State", async () => {
+        const { driver, sent, restore } = live([{ status: 404, body: { error: { message: "No such subscription: 'sub_x'" } } }]);
+        try {
+            const result = await driver.DescribeProviderSubscription('sub_x');
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toMatch(/^Stripe could not read sub_x: /);
+            expect(result.Reason).toContain("No such subscription: 'sub_x'");
+            expect(result.State).toBeUndefined();
+            expect(sent).toHaveLength(1);
+        } finally {
+            restore();
+        }
+    });
+
+    it('a 403 (key lacks Subscriptions: Read) → Success false naming sub_x', async () => {
+        const { driver, restore } = live([{ status: 403, body: { error: { message: 'The key lacks Subscriptions: Read' } } }]);
+        try {
+            const result = await driver.DescribeProviderSubscription('sub_x');
+            expect(result.Success).toBe(false);
+            expect(result.Reason).toContain('sub_x');
+            expect(result.Reason).toContain('The key lacks Subscriptions: Read');
+        } finally {
+            restore();
+        }
+    });
+
+    it('the base driver refuses to read', async () => {
+        const base = new BasePaymentProvider();
+        base.Config = config({ TypeCode: 'Manual' });
+        const result = await base.DescribeProviderSubscription('sub_x');
+        expect(result.Success).toBe(false);
+        expect(result.Reason).toMatch(/'Manual' payment provider does not support reading a gateway-billed subscription/);
     });
 });

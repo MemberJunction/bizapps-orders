@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({
     /** Subscriptions a gateway bills (the read that names `ProviderSubscriptionID IS NOT NULL`). */
     providerBilledResults: [] as Array<{ ID: string; ProductID: string; Status?: string }>,
     /**
-     * Fails ONLY the gateway-billed read (Robert's R4): every other read still answers. Separate from
+     * Fails ONLY the gateway-billed read: every other read still answers. Separate from
      * `subscriptionSuccess`, which fails every read and so cannot tell which read the refusal came from.
      */
     failProviderBilledRead: false,
@@ -223,7 +223,7 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
         expect(refused?.Refusal).toEqual({ Code: 'ProviderBilledSubscription', Source: 'built-in', ProductIDs: [PROFESSIONAL] });
         expect(mocks.filters[0]).toContain("BeneficiaryPersonID = '11111111-0000-4000-8000-000000000001'");
         expect(mocks.filters[0]).toContain("CompanyID = '22222222-0000-4000-8000-000000000001'");
-        // Every held status, Paused included (Robert, #972): a paused gateway-billed subscription is still billed.
+        // Every held status, Paused included: a paused gateway-billed subscription is still billed.
         expect(mocks.filters[0]).toContain("Status IN ('Active', 'Trialing', 'Paused')");
         expect(mocks.filters[0]).toContain('ProviderSubscriptionID IS NOT NULL');
         // #948's rule for every READER: one top-level AND of the filter (MJ wraps it in a WHERE), no top-level OR.

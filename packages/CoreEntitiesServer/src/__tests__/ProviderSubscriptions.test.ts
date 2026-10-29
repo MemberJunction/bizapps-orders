@@ -18,6 +18,10 @@ const mocks = vi.hoisted(() => ({
     openAlerts: vi.fn(),
     runView: vi.fn(),
     subscriptionType: vi.fn(),
+    /** The record step's sanction (E2b): a spy, so the reloaded subscription can be a plain fake. */
+    sanction: vi.fn(),
+    /** The real sanction, which refuses an object the server subclass did not produce. */
+    realSanction: null as null | ((subscription: unknown) => void),
 }));
 
 vi.mock('../PaymentProviderResolver.js', () => ({
@@ -28,6 +32,14 @@ vi.mock('../checkoutCaptureAlert.js', () => ({
     raiseProviderSubscriptionAlert: (...args: unknown[]) => mocks.alert(...args),
     OpenProviderSubscriptionAlerts: (...args: unknown[]) => mocks.openAlerts(...args),
 }));
+// The reloaded subscription in these tests is a plain object, which the real sanction refuses (it is not
+// a SubscriptionEntityServer). The spy records the call and its order against Save; the one test that
+// needs the real refusal installs it.
+vi.mock('../SubscriptionEntityServer.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../SubscriptionEntityServer.js')>();
+    mocks.realSanction = actual.SanctionProviderBilledChange as (subscription: unknown) => void;
+    return { ...actual, SanctionProviderBilledChange: (...args: unknown[]) => mocks.sanction(...args) };
+});
 vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
     return {
@@ -66,7 +78,8 @@ import {
     RetiredGatewayIDsFromEvents,
 } from '../ProviderSubscriptions.js';
 import { OneYearLaterAsStripeCounts } from '../StripePaymentProvider.js';
-import { expectTopLevelConjunct } from './selectionRule.js';
+import { SubscriptionEntityServer } from '../SubscriptionEntityServer.js';
+import { codeOnly, depthAt, expectTopLevelConjunct } from './selectionRule.js';
 
 const ZONE = 'America/Chicago';
 /** Stripe's limit, as the Stripe driver reports it. */
@@ -291,6 +304,7 @@ beforeEach(() => {
     mocks.alert.mockReset().mockResolvedValue(true);
     mocks.openAlerts.mockReset().mockResolvedValue(new Map());
     mocks.subscriptionType.mockReset().mockReturnValue(ANNUAL);
+    mocks.sanction.mockReset();
     mocks.runView.mockReset().mockImplementation(async (params: { EntityName: string }) => ({
         Success: true,
         Results:
@@ -520,7 +534,7 @@ describe('EnsureProviderSubscriptions', () => {
     it('preview searches the gateway read-only and reports what would be created; it writes, creates and raises nothing', async () => {
         const result = await ensure({ OrderHeaderID: ORDER_ID, Preview: true });
         expect(result.Outcomes[0]).toMatchObject({ Code: 'WouldCreate', FirstChargeAt: '2027-10-30T05:00:00.000Z' });
-        // Read-only: the search runs (Robert, #972), so the preview list is real; nothing is created or cancelled.
+        // Read-only: the search runs, so the preview list is real; nothing is created or cancelled.
         expect(driver.FindProviderSubscriptions).toHaveBeenCalledWith({
             ProviderCustomerRef: 'cus_jane',
             MetadataKey: 'OrdersSubscriptionID',
@@ -985,21 +999,25 @@ describe('EnsureProviderSubscriptions (E2b): a cancelled-then-bought-again subsc
         expect(eventReads()).toHaveLength(1);
     });
 
-    it('the events are read only when the search found something: an empty search reads none before the create', async () => {
-        // Kills: making the hand-over's retired read unconditional (an extra read for nearly every subscription).
-        // A refused create stops before confirmOnlyOne, so any events read here would be the hand-over's.
+    it('the hand-over reads events only when the search found something; a recorded create reads them once, as the replay backstop', async () => {
+        // Kills: making the hand-over's retired read unconditional (an extra read before every create).
+        // A refused create stops before the record step, so any events read here would be the hand-over's.
         driver.CreateProviderSubscription.mockResolvedValue({ Success: false, Reason: 'card_declined' });
         const refused = await ensure();
         expect(refused.Outcomes[0].Code).toBe('GatewayRefused');
         expect(eventReads()).toHaveLength(0);
 
-        // On a successful create whose second search sees only it, no events are read at all: the
-        // retired ids could change nothing (confirmOnlyOne reads them only when two or more are live).
+        // A successful create reads the events exactly ONCE, deliberately: the record step checks the
+        // created id is not one this subscription already retired (a replayed request, E2b). That is one
+        // read per gateway subscription created, after the create; the hand-over still read none before
+        // it (the search was empty), and confirmOnlyOne reads none (only sub_new is live).
         mocks.runView.mockClear();
         driver.CreateProviderSubscription.mockResolvedValue({ Success: true, ProviderSubscriptionID: 'sub_new', Status: 'active', ChargedAtCreation: false });
         const created = await ensure();
         expect(created.Outcomes[0].Code).toBe('Created');
-        expect(eventReads()).toHaveLength(0);
+        expect(eventReads()).toHaveLength(1);
+        const readOrder = mocks.runView.mock.invocationCallOrder[mocks.runView.mock.calls.indexOf(eventReads()[0])];
+        expect(readOrder).toBeGreaterThan(driver.CreateProviderSubscription.mock.invocationCallOrder.at(-1)!);
     });
 
     it('an events read that fails never throws out of the run', async () => {
@@ -1138,5 +1156,150 @@ describe('EnsureProviderSubscriptions (E2b): after a create, the gateway is sear
         driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_from_yesterday')] });
         await ensure();
         expect(driver.FindProviderSubscriptions).toHaveBeenCalledTimes(1);
+    });
+});
+
+// ─── E2b: Jane's SUB-000110 bought, cancelled (sub_old) and bought again ─────────────────────────────
+
+describe("EnsureProviderSubscriptions (E2b): the re-buy's checkout finds the subscription through its new term", () => {
+    it("an OrderHeaderID run selects by the subscription's creating line OR its latest term's line, as one parenthesised conjunct", async () => {
+        // Jane's re-buy order sells only term 2; SUB-000110 keeps its ORIGINAL OrderLineID (from ORD-002465), so
+        // the new order is reachable only through `tol`, the latest live term's order line.
+        // Kills: dropping `OR tol.OrderHeaderID` (the re-buy's checkout would select nothing and hand nothing over),
+        // or dropping the parentheses (the OR would let a cancelled or non-renewing row through).
+        const REBUY_ORDER = 'BBBBBBBB-0000-4000-8000-000000002999';
+        await ensure({ OrderHeaderID: REBUY_ORDER });
+        expect(sql[0]).toContain(`(ol.OrderHeaderID = '${REBUY_ORDER}' OR tol.OrderHeaderID = '${REBUY_ORDER}')`);
+        // Every OR in the WHERE sits inside parentheses, so AutoRenew/Status still bind every row.
+        const code = codeOnly(sql[0]);
+        const where = code.indexOf('WHERE s.AutoRenew = 1');
+        const end = code.indexOf('ORDER BY s.SubscriptionNumber', where);
+        const ors = [...code.slice(where, end).matchAll(/\bOR\b/g)];
+        expect(ors).toHaveLength(1);
+        for (const m of ors) expect(depthAt(code, where + m.index!)).toBeGreaterThan(depthAt(code, where));
+        // The other scopes are unchanged: a targeted run and the sweep never mention `tol.OrderHeaderID`.
+        sql = [];
+        await ensure({ SubscriptionIDs: [SUB_ID] });
+        await ensure({});
+        for (const statement of sql) expect(codeOnly(statement)).not.toMatch(/tol\.OrderHeaderID\s*=/);
+    });
+});
+
+describe('ProviderSubscriptionIdempotencyKey (E2b): the generation of a re-bought subscription', () => {
+    const base = {
+        SubscriptionID: SUB_ID,
+        ProviderPriceID: 'price_pro_599',
+        ProviderInstrumentRef: 'pm_jane',
+        Quantity: 1,
+        FirstChargeAt: new Date('2027-10-30T05:00:00Z'),
+        AttemptDay: '2026-10-31' as const,
+    };
+    const FIRST = `provider-subscription:${SUB_ID.toLowerCase()}:price_pro_599:pm_jane:1:1824872400:2026-10-31`;
+
+    it('generation 0 or absent is the key exactly as before (a first create is unchanged); 2 appends :g2', () => {
+        expect(ProviderSubscriptionIdempotencyKey(base)).toBe(FIRST);
+        expect(ProviderSubscriptionIdempotencyKey({ ...base, Generation: undefined })).toBe(FIRST);
+        expect(ProviderSubscriptionIdempotencyKey({ ...base, Generation: 0 })).toBe(FIRST);
+        expect(ProviderSubscriptionIdempotencyKey({ ...base, Generation: 1 })).toBe(`${FIRST}:g1`);
+        expect(ProviderSubscriptionIdempotencyKey({ ...base, Generation: 2 })).toBe(`${FIRST}:g2`);
+    });
+
+    it('Jane re-bought the same day (search finds sub_old, which her cancel retired): the create sends the key ending :g1', async () => {
+        // Kills: dropping the generation (the gateway would answer with the cancelled sub_old it saved for FIRST).
+        events = [canceledEvent('sub_old')];
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_old')] });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new', Recorded: true });
+        expect(driver.CreateProviderSubscription).toHaveBeenCalledTimes(1);
+        expect(driver.CreateProviderSubscription.mock.calls[0][0].IdempotencyKey).toBe(`${FIRST}:g1`);
+    });
+
+    it('control: a first-time buyer (empty search) creates with the key without any :g', async () => {
+        await ensure();
+        expect(driver.CreateProviderSubscription.mock.calls[0][0].IdempotencyKey).toBe(FIRST);
+        expect(driver.CreateProviderSubscription.mock.calls[0][0].IdempotencyKey).not.toMatch(/:g\d+$/);
+    });
+});
+
+describe('EnsureProviderSubscriptions (E2b): a create the gateway answers with a retired subscription is a replay', () => {
+    for (const [lane, found] of [
+        ['the search found sub_old (so the key carried :g1)', [live('sub_old')]],
+        ['the search did not return sub_old (so the key could repeat the first one)', []],
+    ] as const) {
+        it(`${lane}: the create answers sub_old, retired by Jane's cancel: NotRecorded as a replay, nothing saved or sanctioned`, async () => {
+            // Kills: dropping the retired backstop in recordOnce (sub_old, already cancelled, would be recorded:
+            // the gateway bills nothing and Orders stops renewing Jane).
+            events = [canceledEvent('sub_old')];
+            driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [...found] });
+            driver.CreateProviderSubscription.mockResolvedValue({ Success: true, ProviderSubscriptionID: 'sub_old', Status: 'canceled', ChargedAtCreation: false });
+            const result = await ensure();
+            expect(result.Success).toBe(true);
+            expect(result.Outcomes[0]).toMatchObject({ Code: 'NotRecorded', ProviderSubscriptionID: 'sub_old', NewAlert: true });
+            expect(result.Outcomes[0].Recorded).not.toBe(true);
+            expect(result.Outcomes[0].Message).toMatch(/answered the create with sub_old, which this subscription already cancelled or retired \(a replayed request\)/);
+            expect(alertCodes()).toEqual(['NotRecorded']);
+            expect(entity.Save).not.toHaveBeenCalled();
+            expect(entity.ProviderSubscriptionID).toBeNull();
+            expect(entity.PaymentProviderID).toBeNull();
+            expect(mocks.sanction).not.toHaveBeenCalled();
+            expect(result.Linked).toBe(0);
+        });
+    }
+
+    it('control: the same history, but the create answers sub_new: recorded and sanctioned', async () => {
+        events = [canceledEvent('sub_old')];
+        driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_old')] });
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new', Recorded: true });
+        expect(entity.ProviderSubscriptionID).toBe('sub_new');
+        expect(entity.Save).toHaveBeenCalledTimes(1);
+        expect(mocks.sanction).toHaveBeenCalledTimes(1);
+        expect(mocks.alert).not.toHaveBeenCalled();
+    });
+});
+
+describe('EnsureProviderSubscriptions (E2b): the record step sanctions the link it writes', () => {
+    it('sanctions the reloaded subscription BEFORE it is saved, for a created and for a found one', async () => {
+        // Kills: dropping the sanction call (the shared entity rule would refuse the save on the real class).
+        for (const lane of ['created', 'found'] as const) {
+            mocks.sanction.mockClear();
+            entity.Save.mockClear();
+            entity.ProviderSubscriptionID = null;
+            entity.PaymentProviderID = null;
+            if (lane === 'found') driver.FindProviderSubscriptions.mockResolvedValueOnce({ Success: true, Subscriptions: [live('sub_from_yesterday')] });
+            const result = await ensure();
+            expect(result.Outcomes[0], lane).toMatchObject({ Code: lane === 'created' ? 'Created' : 'Found', Recorded: true });
+            expect(mocks.sanction).toHaveBeenCalledTimes(1);
+            expect(mocks.sanction.mock.calls[0][0]).toBe(entity);
+            expect(entity.Save).toHaveBeenCalledTimes(1);
+            expect(mocks.sanction.mock.invocationCallOrder[0]).toBeLessThan(entity.Save.mock.invocationCallOrder[0]);
+        }
+    });
+
+    it('a subscription not loaded through the server subclass cannot be sanctioned: NotRecorded naming sub_new, nothing written', async () => {
+        // The real sanction, against the plain object these tests reload.
+        mocks.sanction.mockImplementation((s: unknown) => mocks.realSanction!(s));
+        const result = await ensure();
+        expect(result.Success).toBe(true);
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'NotRecorded', ProviderSubscriptionID: 'sub_new', NewAlert: true });
+        expect((mocks.alert.mock.calls[0][0] as { Reason: string }).Reason).toMatch(/sub_new.*recording that failed.*server's entity subclass/s);
+        expect(entity.Save).not.toHaveBeenCalled();
+        expect(entity.ProviderSubscriptionID).toBeNull();
+        expect(entity.PaymentProviderID).toBeNull();
+        expect(result.Linked).toBe(0);
+    });
+
+    it('control: the real sanction accepts a SubscriptionEntityServer, and the link is recorded', async () => {
+        // An object whose class IS the server subclass, with its columns as own data properties (the real
+        // ones are accessors over a loaded field map this test has no database for).
+        const server = Object.create(SubscriptionEntityServer.prototype) as SubscriptionEntityServer;
+        const fields = { ...entity };
+        for (const [k, v] of Object.entries(fields)) Object.defineProperty(server, k, { value: v, writable: true, enumerable: true });
+        entity = server as unknown as typeof entity;
+        mocks.sanction.mockImplementation((s: unknown) => mocks.realSanction!(s));
+        const result = await ensure();
+        expect(result.Outcomes[0]).toMatchObject({ Code: 'Created', ProviderSubscriptionID: 'sub_new', Recorded: true });
+        expect(entity.ProviderSubscriptionID).toBe('sub_new');
+        expect(entity.Save).toHaveBeenCalledTimes(1);
     });
 });

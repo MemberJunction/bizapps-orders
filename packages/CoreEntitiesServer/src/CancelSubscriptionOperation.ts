@@ -85,7 +85,7 @@ import {
 import { InstalmentsToCancel } from './ContractBalance.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { LoadReversalContext } from './ReversalResolver.js';
-import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { BusinessTimeZoneEngine, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
 import { IsProviderBilled } from './ProviderBilledSubscriptions.js';
 import { SanctionCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
@@ -93,8 +93,10 @@ import {
     BusinessToday,
     CancelAtGateway,
     CancelBlockingAlerts,
+    GateGatewayCancel,
     GatewayCancelPreview,
     PlanGatewayCancel,
+    ReadGatewaySubscription,
     type GatewayCancelSummary,
 } from './ProviderSubscriptionCancel.js';
 
@@ -241,7 +243,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             };
         }
 
-        const requestDate = await CalendarDayOrToday(requestedDay, provider, user);
+        let requestDate = await CalendarDayOrToday(requestedDay, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
         if (!subscription) {
@@ -252,18 +254,28 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             return { Success: false, Message: `Subscription is already canceled.` };
         }
 
+        const gatewayBilled = IsProviderBilled(subscription);
+
         // A gateway subscription Orders has not recorded, or a second one, would keep billing after a
-        // cancel that stops only the one it knows.
+        // cancel that stops only the one it knows. For a gateway-billed one, alerts that cannot be read
+        // refuse too: "none" would be a guess about money still moving.
         const blocking = await CancelBlockingAlerts(subscription.SubscriptionNumber, user, provider);
-        if (blocking.length) {
+        if (blocking.ReadFailure && gatewayBilled) {
             return {
                 Success: false,
                 Message:
-                    `Subscription ${subscription.SubscriptionNumber} has an open gateway alert (${blocking.join(', ')}): a gateway ` +
+                    `Subscription ${subscription.SubscriptionNumber} is billed by the payment gateway, and its open gateway alerts ` +
+                    `could not be checked (${blocking.ReadFailure}). Nothing was changed. Cancelling needs read access to Tasks; try again.`,
+            };
+        }
+        if (blocking.Codes.length) {
+            return {
+                Success: false,
+                Message:
+                    `Subscription ${subscription.SubscriptionNumber} has an open gateway alert (${blocking.Codes.join(', ')}): a gateway ` +
                     `subscription may be billing that this cancel cannot see. Resolve that Task at the gateway first, then cancel.`,
             };
         }
-        const gatewayBilled = IsProviderBilled(subscription);
 
         const typeRules = await this.loadRules(provider, user, subscription.SubscriptionTypeID);
         if (!typeRules) {
@@ -274,12 +286,50 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         }
 
         const openTerms = await this.loadOpenTerms(provider, user, subscription.ID);
-        const term = this.resolveTerm(openTerms, requestDate);
+        let term = this.resolveTerm(openTerms, requestDate);
         if (!term) {
             return {
                 Success: false,
                 Message: `Subscription has no term to cancel — nothing was ever booked against it.`,
             };
+        }
+        // The gateway first: it, not Orders, knows whether it already charged a period Orders has not booked
+        // (it renews at 00:00 on a term's last day), or has already stopped.
+        let zone: string | null = null;
+        if (gatewayBilled) {
+            zone = await this.businessZone(provider, user);
+            const billing = await ReadGatewaySubscription(
+                { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+                provider,
+                user,
+            );
+            if (!billing.Success) {
+                return {
+                    Success: false,
+                    Message: `Could not read ${subscription.ProviderSubscriptionID} at the payment gateway: ${billing.Reason ?? 'no reason given'}. Nothing was changed; try again.`,
+                };
+            }
+            const latestLastDay = this.latestTermLastDay(openTerms);
+            const gate = latestLastDay ? GateGatewayCancel(billing, latestLastDay, zone) : { Kind: 'Proceed' as const };
+            if (gate.Kind === 'UnbookedPeriod') {
+                return {
+                    Success: false,
+                    Message:
+                        `Subscription ${subscription.SubscriptionNumber} is billed by the payment gateway (${subscription.ProviderSubscriptionID}), ` +
+                        `which started a new billing period on ${gate.PeriodStart.toISOString()} that Orders has not booked: it charges ` +
+                        `the renewal at 00:00 on the term's last day (${latestLastDay}). Cancelling here would stop it without refunding ` +
+                        `that charge. Nothing was changed. At the gateway, cancel the subscription now and refund the renewal charge if ` +
+                        `it was paid; then cancel here, and Orders records it.`,
+                };
+            }
+            if (gate.Kind === 'Finished' && !this.coversOrPrecedes(openTerms, requestDate) && latestLastDay) {
+                // Finishing a cancel the gateway already completed, after Orders' coverage ended: Orders
+                // records it as ending with the coverage it sold, refunding nothing. Moving the request
+                // day onto that coverage is also what keeps the year-2 refusal below from firing: the
+                // gateway is not billing a renewal Orders has not booked, it has stopped.
+                requestDate = new Date(`${latestLastDay}T00:00:00Z`);
+                term = this.resolveTerm(openTerms, requestDate) ?? term;
+            }
         }
         if (gatewayBilled && !this.coversOrPrecedes(openTerms, requestDate)) {
             // The gateway renewed it but no term for the new period is booked here, so the term found is
@@ -340,7 +390,6 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         const message = [decision.Explanation, ...later.map((l) => l.Decision.Explanation)].join(' ');
         const summary = { SubscriptionTermID: term.ID, LaterTerms: laterTerms, TotalRefundAmount: totalRefund };
 
-        const zone = gatewayBilled ? await this.businessZone(provider, user) : null;
         const gatewayPlan = zone ? PlanGatewayCancel(decision.EffectiveDate, BusinessToday(zone), zone) : null;
 
         if (input.Preview) {
@@ -367,6 +416,21 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
+            // Two cancels at once both passed the status check above, before the gateway round trip. Lock
+            // the row and read it again: the second waits for the first to commit, then sees it cancelled
+            // instead of booking a second credit memo.
+            const lockedStatus = await this.lockSubscriptionStatus(provider, subscription.ID);
+            if (lockedStatus !== subscription.Status) {
+                await dbProvider.RollbackTransaction();
+                return {
+                    Success: false,
+                    Message:
+                        lockedStatus === 'Canceled'
+                            ? `Subscription is already canceled.`
+                            : `Subscription ${subscription.SubscriptionNumber} changed while it was being cancelled (now ${lockedStatus ?? 'missing'}). Nothing was recorded; try again.`,
+                    Gateway: gateway,
+                };
+            }
             const toReverse = all.filter((c) => c.Decision.ReversalFraction > 0);
             const reversal =
                 toReverse.length > 0
@@ -493,6 +557,24 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             user,
         );
         return result?.Results ?? [];
+    }
+
+    /**
+     * The subscription's status, read under an update lock that the caller's transaction holds until it
+     * ends (the `GiftCardEngine` pattern), so concurrent cancels of one subscription run one at a time.
+     */
+    private async lockSubscriptionStatus(provider: IMetadataProvider, subscriptionID: string): Promise<string | null> {
+        const sql = provider as unknown as { ExecuteSQL: (sql: string) => Promise<unknown> };
+        const rows = (await sql.ExecuteSQL(
+            `SELECT Status FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${RequireUUID(subscriptionID, 'SubscriptionID')}'`,
+        )) as Array<{ Status?: string }> | { Results?: Array<{ Status?: string }> } | undefined;
+        return (Array.isArray(rows) ? rows : (rows?.Results ?? []))[0]?.Status ?? null;
+    }
+
+    /** The last covered day of the latest open term, or null when there is none. */
+    private latestTermLastDay(terms: TermRow[]): CalendarDay | null {
+        const days = terms.map((t) => ToCalendarDay(new Date(t.EndDate))).filter((d): d is CalendarDay => !!d);
+        return days.sort().pop() ?? null;
     }
 
     /** True when an open term covers the request day or starts after it: the term found is not one already over. */

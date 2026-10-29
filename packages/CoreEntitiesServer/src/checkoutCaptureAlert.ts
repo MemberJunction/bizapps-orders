@@ -117,17 +117,16 @@ export async function raiseProviderSubscriptionAlert(
 }
 
 /**
- * The problems that have an OPEN alert Task, by subscription number: what the daily pass leaves for a
- * person rather than asking the gateway again. Empty when the tasks app is not installed or the read
- * fails (the pass then simply retries everything).
+ * The problems that have an OPEN alert Task, by subscription number, or why the Tasks could not be read.
+ * Empty (and `Ok`) when the tasks app is not installed: such a host raises no alert Tasks at all.
  */
-export async function OpenProviderSubscriptionAlerts(
+export async function ReadOpenProviderSubscriptionAlerts(
     contextUser: UserInfo,
     provider?: IMetadataProvider,
-): Promise<Map<string, Set<string>>> {
+): Promise<{ Ok: true; Open: Map<string, Set<string>> } | { Ok: false; Reason: string }> {
     const open = new Map<string, Set<string>>();
     const md: IMetadataProvider = provider ?? (new Metadata() as unknown as IMetadataProvider);
-    if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) return open;
+    if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) return { Ok: true, Open: open };
     const rv = provider ? new RunView(provider as unknown as IRunViewProvider) : new RunView();
     const tasks = await rv.RunView<{ ID: string; Name: string }>(
         {
@@ -143,8 +142,9 @@ export async function OpenProviderSubscriptionAlerts(
         contextUser,
     );
     if (!tasks.Success) {
-        LogError(`${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} Could not read the open alert Tasks: ${tasks.ErrorMessage ?? 'unknown error'}`);
-        return open;
+        const reason = `could not read the open alert Tasks: ${tasks.ErrorMessage ?? 'unknown error'}`;
+        LogError(`${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} ${reason}`);
+        return { Ok: false, Reason: reason };
     }
     // The inverse of `ProviderSubscriptionAlertName`, built from the same parts so a reworded title cannot drift.
     const pattern = new RegExp(`^(?:${escapeRegExp(URGENT_PREFIX)})?${escapeRegExp(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}(.+) \\(([A-Za-z]+)\\)$`);
@@ -155,7 +155,22 @@ export async function OpenProviderSubscriptionAlerts(
         codes.add(match[2]);
         open.set(match[1], codes);
     }
-    return open;
+    return { Ok: true, Open: open };
+}
+
+
+/**
+ * The problems that have an OPEN alert Task, by subscription number: what the daily pass leaves for a
+ * person rather than asking the gateway again. Empty when the tasks app is not installed or the read
+ * fails (the pass then simply retries everything). A cancel reads `ReadOpenProviderSubscriptionAlerts`
+ * instead, because there "no alert" decides whether money keeps moving.
+ */
+export async function OpenProviderSubscriptionAlerts(
+    contextUser: UserInfo,
+    provider?: IMetadataProvider,
+): Promise<Map<string, Set<string>>> {
+    const read = await ReadOpenProviderSubscriptionAlerts(contextUser, provider);
+    return 'Open' in read ? read.Open : new Map();
 }
 
 function escapeRegExp(text: string): string {

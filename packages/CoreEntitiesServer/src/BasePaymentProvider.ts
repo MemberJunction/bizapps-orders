@@ -512,6 +512,30 @@ export interface CancelProviderSubscriptionResult {
     Status?: string;
 }
 
+/**
+ * Where a gateway subscription's billing stands, read without changing it.
+ *   · `Ended`: it charges nothing more.
+ *   · `Ending`: it is set to end (`EndsAt`) and charges nothing more before then.
+ *   · `Renewing`: it charges again at `CurrentPeriodEnd`.
+ *   · `Collecting`: it is trying to collect a charge it has not been paid (Stripe: `past_due`, `unpaid`,
+ *     `incomplete`, `paused`).
+ */
+export type ProviderSubscriptionBillingState = 'Ended' | 'Ending' | 'Renewing' | 'Collecting';
+
+export interface DescribeProviderSubscriptionResult {
+    Success: boolean;
+    Reason?: string;
+    State?: ProviderSubscriptionBillingState;
+    /** Start of the period the gateway last billed (or tried to): its latest charge, or its creation before the first one. */
+    CurrentPeriodStart?: Date | null;
+    /** End of that period: when it charges next, unless it is set to end. */
+    CurrentPeriodEnd?: Date | null;
+    /** When it ends, for `Ending`. */
+    EndsAt?: Date | null;
+    /** The gateway's own status word. */
+    Status?: string;
+}
+
 /** How often a gateway price bills. */
 export interface GatewayPriceInterval {
     Unit: 'day' | 'week' | 'month' | 'year';
@@ -712,6 +736,17 @@ export class BasePaymentProvider {
      */
     public async CancelProviderSubscription(_request: CancelProviderSubscriptionRequest): Promise<CancelProviderSubscriptionResult> {
         return { Success: false, Reason: this.notImplemented('cancelling a gateway-billed subscription') };
+    }
+
+    /**
+     * Where one gateway subscription's billing stands. Read-only. `Orders.CancelSubscription` reads it
+     * before deciding anything, because the gateway, not Orders, knows whether it has already charged a
+     * period Orders has not booked, or has already stopped.
+     *
+     * Refuses by default: a driver that cannot read the gateway must not let Orders guess.
+     */
+    public async DescribeProviderSubscription(_providerSubscriptionID: string): Promise<DescribeProviderSubscriptionResult> {
+        return { Success: false, Reason: this.notImplemented('reading a gateway-billed subscription') };
     }
 
     /**

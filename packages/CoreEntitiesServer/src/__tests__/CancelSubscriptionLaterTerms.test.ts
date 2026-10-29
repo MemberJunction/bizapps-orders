@@ -108,6 +108,8 @@ function fakeProvider(): { provider: IMetadataProvider; rec: Recorded } {
         BeginTransaction: async () => void rec.tx.push('begin'),
         CommitTransaction: async () => void rec.tx.push('commit'),
         RollbackTransaction: async () => void rec.tx.push('rollback'),
+        // The row lock taken first inside the transaction: answers the status the operation loaded.
+        ExecuteSQL: async () => [{ Status: mocks.rows.get('Subscriptions')?.[0]?.Status ?? null }],
         // No tasks app here, so no gateway alert can be open (E2b reads them before cancelling).
         EntityByName: () => undefined,
         GetEntityObject: async (entityName: string, keyOrUser: unknown) => {
