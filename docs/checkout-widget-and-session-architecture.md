@@ -392,6 +392,18 @@ export class PartnerMemberResolver extends BaseCheckoutMemberDiscountResolver {
 
 The widget names it with `Configuration.memberDiscountResolver: "PARTNER-MEMBER"` (server-side only).
 
+The buyer sees the member price before paying. With a token on the element, once the e-mail is valid and
+the billing location is complete (country, plus state and postal code where the country needs them), the
+element drafts the form in the background with the token and no typed code: 400 ms after the last change
+to the e-mail, location or quantity, and again on each later change, keeping only the newest answer. When
+the draft comes back with `MemberDiscountApplied`, the widget shows a line such as
+"ASAE10 member discount: −$59.90" (the first of `AppliedPromotionCodes`, and `Discount`), the total and
+the Pay button show the server's `TotalGross`, and the promo-code box is hidden while the discount
+applies, so one press of Pay charges the price shown. A draft with `MemberDiscountMessage`, or one that
+fails, changes nothing: the full price stays, and Pay shows the message as before. Without a token
+nothing is sent until Pay. When the host also sets the element's `email` attribute, the e-mail field is
+read-only while the token is attached, since the discount is bound to that address.
+
 The token sits in the host page, so anyone who copies it can replay it. Issue **short-lived** tokens
 (minutes, not days) and tie each to the member's email, then have the resolver compare that email with
 `ctx.Email`, the buyer email captured on the draft, as the sample does.
@@ -542,7 +554,7 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
 | Step | Runs in | Failure leaves |
 |---|---|---|
 | `Confirm` | `CompleteCheckout` once payment has checked out, or the `payment_intent.succeeded` webhook for a session the browser never completed | the session `Open`; the buyer's next complete call, or the gateway's retry of the webhook, retries it |
-| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid |
+| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid; a retryable failure is retried by the buyer's next complete call and by the webhook, which answers 500 so the gateway redelivers |
 
 - Every attempt sets the row `Running`, adds one to `Attempts` and records its source (`Checkout`, `Webhook` or `Replay`). It then ends `Succeeded` or `Failed` with `LastError` and `Retryable`.
 - Rows are written outside the step's own transaction, so a rolled-back `Confirm` still records its failure. A write that fails is logged; it never fails the step.
@@ -552,6 +564,7 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
   - a step still `Running` inside the stale window is refused;
   - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
   - `Confirm` is not replayable here.
+- A capture failure is non-retryable only when every blocker code is in `TERMINAL_CAPTURE_BLOCKER_CODES` (`checkoutCaptureRetry.ts`): a refusal about the data that a retry cannot change, such as `OrderNotFound`, `UnknownTender` or `AllocationMismatch`. Everything else retries, including a thrown error and a read the capture could not complete (`OrderReadFailed`, `TenderReadFailed`, `PaymentReadFailed`, #967): a read that times out on another transaction's lock is "could not read", never "does not exist". The capture reports `OrderNotFound` only after a second read, of the ids the first missed and past the cache, also comes back without them.
 - The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
 - GuestOrder claim minting is not recorded as a step: it is best-effort, and a failure is logged without failing the booked order (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 

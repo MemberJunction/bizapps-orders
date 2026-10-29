@@ -527,7 +527,12 @@ export async function LoadExternalInvoiceByID(id: string, provider: IMetadataPro
     return r.Results?.[0] ?? null;
 }
 
-/** The unit's most relevant row: a live one if any, else the most recent of any status. */
+/**
+ * The unit's most relevant row: a live one if any, else the most recent of any status.
+ *
+ * Throws when the read fails. Read as "no row", a failure means "never sent", and the sweep would
+ * send the unit again: a second invoice for one order on the rail.
+ */
 export async function LoadExternalInvoiceForUnit(
     paymentProviderID: string,
     unit: BillingUnitKey,
@@ -549,6 +554,9 @@ export async function LoadExternalInvoiceForUnit(
         },
         user,
     );
+    if (!r.Success) {
+        throw new Error(`Could not read the external invoice history for order ${unit.OrderHeaderID}, so it was not sent: ${r.ErrorMessage}`);
+    }
     const rows = r.Results ?? [];
     return rows.find((x) => x.Status === 'Sent' || x.Status === 'Sending') ?? rows[0] ?? null;
 }

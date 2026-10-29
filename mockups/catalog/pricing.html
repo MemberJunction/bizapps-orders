@@ -28,7 +28,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="pr-count">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="pr-count">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline" data-open="#pr-why">
@@ -112,9 +112,9 @@
               <thead><tr><th>Rule</th><th>Window</th><th>Status today</th></tr></thead>
               <tbody>
                 <tr><td>Early Bird 2026 — Conference ticket</td><td>Apr 1 – Aug 31, 2026</td>
-                  <td><span class="mj-chip mj-chip--success">in window</span></td></tr>
+                  <td><span class="mjo-chip mjo-chip--success">in window</span></td></tr>
                 <tr><td>Standard — Conference ticket</td><td>Jan 1, 2026 →</td>
-                  <td><span class="mj-chip mj-chip--outline">in window, lower priority</span></td></tr>
+                  <td><span class="mjo-chip mjo-chip--outline">in window, lower priority</span></td></tr>
               </tbody>
             </table>
             <div class="small muted" style="margin-top:var(--mj-space-2)">
@@ -178,7 +178,7 @@ function render() {
   document.getElementById('pr-lists').innerHTML = DB.priceLists.map(l => `
     <div style="padding:var(--mj-space-2) 0;border-bottom:1px solid var(--mj-border-subtle)">
       <div class="row"><b>${l.name}</b>
-        ${l.isDefault ? '<span class="mj-chip mj-chip--brand">default</span>' : ''}
+        ${l.isDefault ? '<span class="mjo-chip mjo-chip--brand">default</span>' : ''}
         <span class="spacer">${H.company(l.companyID)}</span></div>
       <div class="small muted">${F.date(l.from)} → ${l.to ? F.date(l.to) : 'open'} · ${l.products} products</div>
     </div>`).join('');
@@ -190,12 +190,12 @@ function render() {
     return `<tr class="is-clickable" data-row="${pp.id}">
       <td><span class="primary">${p.name}</span><div class="secondary mono">${p.sku}</div></td>
       <td>${list.name} ${H.company(list.companyID)}</td>
-      <td><span class="mj-chip mj-chip--outline">${pp.model}</span></td>
+      <td><span class="mjo-chip mjo-chip--outline">${pp.model}</span></td>
       <td class="num strong">${F.money(pp.unit)}</td>
       <td class="num">${pp.priority}</td>
       <td class="small">${F.dateShort(pp.from)} → ${pp.to ? F.dateShort(pp.to) : 'open'}
         ${expiring ? '<div class="secondary" style="color:var(--mj-status-warning-text)">expires soon</div>' : ''}</td>
-      <td>${pp.tiers.length ? `<span class="mj-chip mj-chip--info">${pp.tiers.length} bands</span>`
+      <td>${pp.tiers.length ? `<span class="mjo-chip mjo-chip--info">${pp.tiers.length} bands</span>`
         : '<span class="muted">—</span>'}</td>
     </tr>`;
   }).join('');

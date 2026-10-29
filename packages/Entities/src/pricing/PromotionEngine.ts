@@ -690,6 +690,10 @@ export function ManualDiscountAmount(request: ManualDiscountRequest, baseAmount:
  *
  * Returns the authority that permitted it, or marks it as needing approval. **No authority row at
  * all means no manual discount** — absence is not permission.
+ *
+ * A discount above the user's authority is HELD rather than refused (golive #328): it is saved with
+ * no authority and no approver, and the confirm gate (`ConcessionGate`) holds the order until an
+ * approved concession covers the line. `Held` says why, for a caller that cannot wait for that.
  */
 export async function AuthorizeManualDiscount(
     request: ManualDiscountRequest,
@@ -702,6 +706,11 @@ export async function AuthorizeManualDiscount(
     NeedsApproval: boolean;
     /** Set when an over-cap discount was permitted, so the exception is visible in the record. */
     ApprovedByUserID?: string | null;
+    /**
+     * Set when the discount is above the user's authority and nobody has approved it: why, in the
+     * words the rep reads. The discount is saved unapproved and the confirm waits for a concession.
+     */
+    Held?: string;
     Refusal?: string;
 }> {
     const amount = ManualDiscountAmount(request, baseAmount);
@@ -778,34 +787,29 @@ export async function AuthorizeManualDiscount(
 
     // ── OUTSIDE AUTHORITY ─────────────────────────────────────────────────────
     // This used to return `NeedsApproval: true` and nothing read it, so an over-cap discount applied
-    // SILENTLY — the cap was decorative. Escalation now actually resolves: a `SalesRule` of type
-    // DiscountLimit names the role that may approve, and the discount is permitted only when the
-    // applying user holds it. Anyone else is refused, and told what would be needed.
+    // SILENTLY — the cap was decorative. A `SalesRule` of type DiscountLimit names a role whose
+    // holders may grant an over-cap discount themselves; anyone else's is HELD (golive #328).
     //
     // Approving one's own over-cap discount is legitimate here: holding the approver role IS the
     // authority. What matters is that it is recorded — `ApprovedByUserID` makes the exception
     // visible rather than indistinguishable from an ordinary discount.
+    //
+    // A held discount is saved with neither an authority nor an approver, which is how the confirm
+    // gate tells it apart. It used to be refused, with "have an approver apply it" — which sent the
+    // rep to find someone to re-type it. Held, it goes through the concession approval every other
+    // give-away uses: the rep records a concession on the line, the ConcessionLimit approver decides
+    // it, and the order confirms once it is approved.
     const breaches = `This discount of ${amount} on ${baseAmount} is outside this user's SalesAuthority: ` +
         `${assessment.Breaches.join('; ')}.`;
     const rule = await findDiscountLimitRule(provider, user);
-    if (!rule?.ApprovalRequiredRoleID) {
+    if (!rule?.ApprovalRequiredRoleID || !(await UserHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
         return {
-            AuthorityID: authority.ID,
+            AuthorityID: null,
             NeedsApproval: true,
-            Refusal:
-                `${breaches} No SalesRule of type 'DiscountLimit' names an approving role, so there is no one ` +
-                `who could authorize it. Either lower the discount, raise the limit, or configure a DiscountLimit ` +
-                `rule with an ApprovalRequiredRoleID.`,
-        };
-    }
-
-    if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {
-        return {
-            AuthorityID: authority.ID,
-            NeedsApproval: true,
-            Refusal:
-                `${breaches} It needs approval from someone holding the role named by SalesRule '${rule.Name}'. ` +
-                `Have an approver apply it, or lower the discount to within the limit.`,
+            ApprovedByUserID: null,
+            Held:
+                `${breaches} It needs approval: the order saves with the discount, and confirms once an ` +
+                `approved concession covers the line.`,
         };
     }
 
@@ -1011,6 +1015,10 @@ export async function DeletePromotionAdjustments(
         throw new PromotionError(`Could not read the promotion adjustments: ${adjustments?.ErrorMessage ?? 'unknown error'}`);
     }
 
+    // The server's adjustment class refuses a direct delete; this is the order's own save replacing
+    // the rows, so it says so on each one. A property of the object, not a field, so an API caller
+    // cannot send it.
+    for (const row of adjustments.Results) (row as { RemovedByOrderSave?: boolean }).RemovedByOrderSave = true;
     for (const row of [...allocations.Results, ...adjustments.Results]) {
         if (!(await row.Delete())) {
             throw new PromotionError(

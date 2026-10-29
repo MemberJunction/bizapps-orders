@@ -1,5 +1,54 @@
 # @mj-biz-apps/orders-ng
 
+## 5.38.0
+
+### Minor Changes
+
+- d0ecc66: The order header's Ship to and Bill to organization and person lookups use the shared fast party picker (`bizapps-party-field` from `@mj-biz-apps/common-ng` 5.56.0): nothing is listed until two characters are typed, then one prefix search finds people by last name, display name, email or email domain and organizations by name, legal name or website domain. Requires `@mj-biz-apps/common-ng` >= 5.56.0.
+
+### Patch Changes
+
+- f5d774f: The Orders dashboard and Customer A/R age open balances by the same rule.
+
+  The dashboard's first aging tile read "Current (0-30 days)" and swept in everything up to thirty days past due, so overdue money was reported as "Due or recently invoiced" while Receivables showed the same balances as 1-30 days late. The totals agreed and only the labels disagreed, which is the hardest kind to notice, because each page looks right on its own. The two also broke the top end differently: 61-90 and 90+ on the dashboard, 61+ on Receivables.
+
+  `AgingBucketOf` now states the rule once, beside the bucket type both screens already shared. Current means NOT YET DUE, then 1-30, 31-60 and 61+ days past due. An order with no due date has no age and counts as current.
+
+  The dashboard's tiles follow the four buckets the shared aging bar draws, which is also what its colour ramp was validated for.
+
+- 0e30741: Receivables → Subscriptions opens a subscription's form (#932). Double-clicking a row, or pressing the new
+  **Open** button in the side panel, now opens the Subscription form, where **Cancel subscription** is.
+  Before, double-click only filled the side panel, the page had no output for the section to route, and the
+  form (and so Cancel) could not be reached from the app. New `SubscriptionOpened` output, wired in the
+  section shell beside `OrderOpened` / `PaymentOpened` / `ProductOpened`.
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+  - @mj-biz-apps/orders-entities@5.38.0
+
+## 5.37.0
+
+### Minor Changes
+
+- 0983af2: Checkout: a verified member sees their discount before pressing Pay (#919). With a `member-token` on `<mj-orders-checkout>`, once the e-mail is valid and the billing location is complete, the element drafts the form in the background (debounced 400 ms, again when the e-mail, location or quantity changes, stale answers dropped) with the token and no typed code. When the draft reports `MemberDiscountApplied`, the widget shows "<code> member discount: −<amount>", the total and the Pay button show the server's total, and the promo-code box is hidden, so one press of Pay charges it. A token that earns nothing keeps the full price and the notice at Pay, as before; without a token nothing is sent early. When the host also sets `email`, the e-mail field is read-only while the token is attached. The widget gains the `memberDiscount` and `lockEmail` inputs and the `quoteRequested` output.
+
+### Patch Changes
+
+- 1cf9fa1: `FindExistingHolding` and `FindUnansweredHeldLines` count every subscription that has not ended (Active, Trialing, Paused) as held, so the extend-or-new question is asked for a paused subscription too. The status set is exported as `EXISTING_HOLDING_STATUSES`.
+
+  The order screen's "extend" choice now says what confirm will do: a next term for an active holding, or the subscription type's reactivation rule (reactivate, or a separate subscription) for a paused one. `ExtendOutcomeFor` and `ExtendChoiceTextFor` give the same wording to other screens.
+
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+  - @mj-biz-apps/orders-entities@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- 0c499b2: A paid checkout no longer shows a parser error when `/complete` outlasts the CDN or proxy in front of the server. The checkout element and the fallback host page read only JSON replies; a gateway error page or no reply becomes "Checkout could not reach the server". After payment, a reply like that, or a session still `Processing`, means the server may still be booking the order, so the checkout shows "Payment received. Finishing your order…" and sends `/complete` again every 3 s for up to 2 minutes. `/complete` is replay-safe, so the retry returns the confirmed order. If the wait runs out, the buyer is told the payment went through and not to pay again.
+  - @mj-biz-apps/orders-entities@5.36.1
+
 ## 5.36.0
 
 ### Patch Changes
@@ -817,8 +866,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                      "FK_EntityFieldValue_EntityField"
+                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

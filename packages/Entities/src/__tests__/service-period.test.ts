@@ -89,6 +89,7 @@ function order(lines: LineStub[], extra: Row = {}): OrderHeaderEntity {
     const stub = {
         IsSaved: true,
         Status: 'Draft',
+        Origin: 'Direct',
         BillToPersonID: 'person-1',
         BillToOrganizationID: null,
         Lines: { Items: lines, Count: lines.length, IsLoaded: true },

@@ -106,6 +106,17 @@
   {
     "fields": {
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "ConcessionSelfApprovalEscalation",
+      "Value": "",
+      "Comments": "Who decides a concession requested by a holder of its ConcessionLimit rule's role, who would otherwise approve their own (bc-aidp-next-golive#320). Comma-separated targets, tried in order: CompanyCFO (the order company's ApprovalCFOUserID in its Accounting Company Profile) or the NAME of an MJ role (its active holders). The first target that names an active user other than the requester is assigned the approval task, and only those users can decide it; the requester never is. When no target names anyone else, the concession is refused. Empty keeps the previous behavior: the requester's own concession is approved on save."
+    },
+    "primaryKey": {
+      "ID": "5C169A56-0698-49DA-A2FC-C8D1DF64FFA3"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "OrderReviewTriggers",
       "Value": "",
       "Comments": "Comma-separated order review triggers that are switched on (bc-aidp-next-golive#320 section 5): any of NoDeal, PriceVariance, ChangedAfterDealOrReview, OverThreshold, ServicePeriod. A Direct order that hits one cannot confirm until the reviewer role approves its review task. Empty switches review off, so orders confirm as before. An entry that names no trigger refuses every reviewed confirm until it is corrected."

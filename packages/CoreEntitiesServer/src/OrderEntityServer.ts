@@ -79,6 +79,7 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
@@ -92,6 +93,7 @@ import { FindUnapprovedConcessions, type ConcessionLineFacts } from './Concessio
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
 import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
 import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
+import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
 import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionRules.js';
 import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
@@ -134,6 +136,7 @@ import {
     type SubscriptionDecision,
     type SubscriptionTypeRules,
     OverlappingCoverage,
+    CoverageEndOf,
     type CoverageOverlap,
     type CoverageOverlapDecision,
     type FamilyCoverageTerm,
@@ -157,9 +160,12 @@ export interface LineCoverageOverlap {
     Overlaps: CoverageOverlap[];
 }
 
-/** Terms created during a confirm, and the recognition cadence each line inherits from its type. */
+/**
+ * Terms created during a confirm, and the recognition cadence each line inherits from its type. A line
+ * that states an end past its first term has several terms, in order (golive #338).
+ */
 interface SubscriptionMaterialization {
-    TermsByLine: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>;
+    TermsByLine: Map<string, Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }>>;
     RecognitionMonthsByLine: Map<string, number>;
 }
 
@@ -259,6 +265,8 @@ interface SubscriptionDecisionForLine {
      * subscription's `Extended` event (golive #299).
      */
     RequestedStart: Date | null;
+    /** The end the line stated before the confirm, or null; kept for the same reason (golive #338). */
+    RequestedEnd: Date | null;
     /**
      * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
      * the term, where entitlement grants and renewals read it.
@@ -318,6 +326,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (same) return Math.abs(Number(line.UnitPrice ?? 0) - price) < 0.005;
         }
         return false;
+    }
+
+    /**
+     * The hand-entered rule, less the lines the renewal pass priced. A renewal order keeps Origin
+     * `Direct`, so the shared rule reads it as typed; but a $0 renewal (a complimentary term, a
+     * product now priced at zero) is the price the pass chose, and refusing it would roll back the
+     * renewal and leave the subscription due on every later run. Once someone changes the price the
+     * line is judged like any other, the same rule the concession gate and order review follow.
+     */
+    public override UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
+        return super.UnpricedLines().filter((line) => !this.isUneditedRenewalPrice(line));
     }
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
@@ -883,6 +902,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // written and priced, and inside the transaction: a raise that fails rolls the
                 // booking back rather than losing the exception.
                 await this.raisePriceBelowEngineExceptions(lines);
+                // A SUBSCRIPTION SOLD FOR A LENGTH OTHER THAN ITS TYPE'S TERM is recorded for finance
+                // too (golive #338), on the same terms: refuses nothing, fails the booking if the raise
+                // fails.
+                await this.raiseTermLengthExceptions(lines, decisions);
 
                 // THE SCHEDULE MUST TIE (plan §4.3). Per company, the instalments must sum to exactly
                 // what the lines just landed as — checked here, inside the transaction, because the
@@ -1378,6 +1401,54 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
     }
 
+    /**
+     * Record every subscription line of this booking whose stated period gives it a length other than
+     * its type's term (golive #338). Refuses nothing; see `TermLengthExceptions`.
+     */
+    private async raiseTermLengthExceptions(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+    ): Promise<void> {
+        const byID = new Map(lines.map((l) => [uuidKey(l.ID), l]));
+        const stated: StatedLengthLine[] = [];
+        for (const [pending, decided] of decisions) {
+            const length = decided.Decision.StatedLength;
+            const terms = decided.Decision.Terms;
+            const line = pending.ID ? byID.get(uuidKey(pending.ID)) : undefined;
+            if (!length || !terms?.length || !line) continue;
+            stated.push({
+                ID: line.ID,
+                LineNumber: line.LineNumber ?? null,
+                ProductName: decided.Product.Name,
+                CompanyID: line.CompanyID,
+                ProductID: line.ProductID,
+                OrderHeaderID: this.ID,
+                Quantity: line.Quantity,
+                UnitPrice: line.UnitPrice,
+                ProductPriceID: line.ProductPriceID,
+                PriceStated: !this.isUneditedRenewalPrice(line),
+                LineTotalNet: Number(line.LineTotalNet ?? 0),
+                CoverageStart: terms[0].StartDate,
+                CoverageEnd: terms[terms.length - 1].EndDate,
+                Months: length.Months,
+                TypeMonths: length.TypeMonths,
+            });
+        }
+        if (stated.length === 0) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser ?? null;
+        await RaiseTermLengthExceptions(
+            {
+                OrderHeaderID: this.ID,
+                OrderNumber: this.OrderNumber ?? null,
+                Lines: stated,
+                BusinessDay: () => BusinessDay(provider, user as UserInfo),
+            },
+            provider,
+            user,
+        );
+    }
+
     // ─── Booking ───────────────────────────────────────────────────────────────
 
     // `bookingInFlight` and `willBookOnThisSave()` moved to OrderHeaderEntity (both `protected`),
@@ -1441,7 +1512,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
             if (term) {
                 if (term.StartDate) line.ServicePeriodStart = term.StartDate;
-                if (term.EndDate) line.ServicePeriodEnd = term.EndDate;
+                // The end of the whole coverage: a line that states an end past its first term buys
+                // several terms, and the line covers all of them (golive #338).
+                const coverageEnd = CoverageEndOf(decided!.Decision);
+                if (coverageEnd) line.ServicePeriodEnd = coverageEnd;
             }
 
             // Events carry their own service period — the event happens when it happens.
@@ -1502,6 +1576,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
+                Booking: this.willBookOnThisSave(),
                 Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
                 SettledTax: this._settledTax,
                 StandingDiscounts: standingDiscounts,
@@ -1714,6 +1789,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // A concession on a draft line goes with the line, decided or not: the line it priced
                 // no longer exists, and the order has committed no customer to it.
                 if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
+                // An adjustment refuses a direct delete; it goes with the line it discounted.
+                if ('RemovedByOrderSave' in row) row.RemovedByOrderSave = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +
@@ -3315,19 +3392,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
-            const detail = (result.Errors ?? [])
-                .map((e) => {
-                    const which =
-                        e.DraftIndex !== undefined
-                            ? ` (order line ${
-                                  unbooked.find((l) => l.ID === drafts[e.DraftIndex!]?.OrderLineID)?.LineNumber ??
-                                  e.DraftIndex
-                              })`
-                            : '';
-                    return `${e.Code}${which}: ${e.Message}`;
-                })
-                .join('; ');
-            throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
+            const lineFor = (index: number) => {
+                const line = unbooked.find((l) => l.ID === drafts[index]?.OrderLineID);
+                return line ? { LineNumber: line.LineNumber, Product: line.Product ?? null } : null;
+            };
+            // The codes go to the log for whoever traces the refusal; the person confirming gets a
+            // sentence per refusal naming the line and what to change (bizapps-orders#742).
+            LogError(
+                `Journal entry booking failed for order ${this.OrderNumber ?? this.ID}: ` +
+                    BookingErrorLogText(result.Errors, lineFor),
+            );
+            throw new Error(`The order could not be booked, and nothing was posted. ${DescribeBookingErrors(result.Errors, lineFor)}`);
         }
 
         await this.stampJournalEntryIDs(lines, drafts, result, options);
@@ -3603,57 +3678,68 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           decision,
                           !!line.RenewsSubscriptionID,
                           options,
-                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                       );
 
             // Remember it so a later line for the same subscription resolves above.
             if (decision.Action === 'CreateNew') createdByDedupeKey.set(decided.DedupeKey, subscriptionID);
 
-            const term = decision.Term!;
+            const planned = decision.Terms ?? [decision.Term!];
 
             // The LINE is the authority on price — `savePendingLines` already inserted it at the
-            // prorated quantity. Taking the term's amount from it makes booking (line net), the
-            // term, and the recognition schedule reconcile exactly; three numbers that must agree
-            // or deferred revenue never clears to zero.
-            term.Amount = line.LineTotalNet ?? term.Amount;
+            // prorated quantity. Taking the terms' amounts from it makes booking (line net), the
+            // terms, and the recognition schedules reconcile exactly; numbers that must agree or
+            // deferred revenue never clears to zero. Several terms split it by their shares, the
+            // last taking the rounding, so they still add up to the line (golive #338).
+            const lineNet = Number(line.LineTotalNet ?? planned.reduce((a, t) => a + t.Amount, 0));
+            let allocated = 0;
+            const written: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number; Quantity: number }> = [];
+            for (const [i, term] of planned.entries()) {
+                term.Amount =
+                    i === planned.length - 1
+                        ? Math.round((lineNet - allocated) * 100) / 100
+                        : Math.round(lineNet * term.Share * 100) / 100;
+                allocated = Math.round((allocated + term.Amount) * 100) / 100;
 
-            const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
-                SUBSCRIPTION_TERM_ENTITY,
-                user,
-            );
-            termEntity.NewRecord();
-            termEntity.SubscriptionID = subscriptionID;
-            termEntity.TermNumber = term.TermNumber;
-            termEntity.OrderLineID = line.ID;
-            termEntity.StartDate = term.StartDate;
-            termEntity.EndDate = term.EndDate;
-            termEntity.Amount = term.Amount;
-            termEntity.IsProrated = term.IsProrated;
-            termEntity.ProrationFactor = term.ProrationFactor;
-            // The seats bought, not `line.Quantity`: by now that is prorated (#589).
-            termEntity.Quantity = decided.Seats;
-            // Frozen at purchase: later changes to the product's rules must never restate a
-            // term that has already been booked.
-            termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
-            termEntity.Status = 'Active';
-
-            if (!(await termEntity.Save(options))) {
-                throw new Error(
-                    `Failed to create the subscription term for order line ${line.LineNumber}: ` +
-                        `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                const termEntity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
+                    SUBSCRIPTION_TERM_ENTITY,
+                    user,
                 );
+                termEntity.NewRecord();
+                termEntity.SubscriptionID = subscriptionID;
+                termEntity.TermNumber = term.TermNumber;
+                termEntity.OrderLineID = line.ID;
+                termEntity.StartDate = term.StartDate;
+                termEntity.EndDate = term.EndDate;
+                termEntity.Amount = term.Amount;
+                termEntity.IsProrated = term.IsProrated;
+                termEntity.ProrationFactor = term.ProrationFactor;
+                // The seats bought, not `line.Quantity`: by now that is prorated (#589).
+                termEntity.Quantity = decided.Seats;
+                // Frozen at purchase: later changes to the product's rules must never restate a
+                // term that has already been booked.
+                termEntity.RevenueRecognitionTypeID = product.RevenueRecognitionTypeID;
+                termEntity.Status = 'Active';
+
+                if (!(await termEntity.Save(options))) {
+                    throw new Error(
+                        `Failed to create subscription term ${term.TermNumber} for order line ${line.LineNumber}: ` +
+                            `${termEntity.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+                written.push({
+                    ID: termEntity.ID,
+                    StartDate: term.StartDate,
+                    EndDate: term.EndDate,
+                    Amount: term.Amount,
+                    Quantity: decided.Seats,
+                });
             }
 
-            // The term is the coverage window the schedule must follow, and its cadence decides
-            // how many slices that window produces.
-            out.TermsByLine.set(line.ID, {
-                ID: termEntity.ID,
-                StartDate: term.StartDate,
-                EndDate: term.EndDate,
-                Amount: term.Amount,
-                Quantity: decided.Seats,
-            });
+            // The terms are the coverage windows the schedules must follow, and the cadence decides
+            // how many slices each window produces.
+            out.TermsByLine.set(line.ID, written);
             out.RecognitionMonthsByLine.set(line.ID, decided.Behavior.RecognitionMonths(rules));
 
             // The line's stored service period is the SETTLED term — the coverage actually sold.
@@ -3664,10 +3750,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // continuing existing coverage), the stored period must follow the term rather than the
             // request, or the line would advertise coverage the subscription does not have.
             //
-            // The END is always the computed one: term length, anchor and proration are the type's
-            // to decide, and a stated end has no rule to reconcile it against.
-            line.ServicePeriodStart = term.StartDate;
-            line.ServicePeriodEnd = term.EndDate;
+            // The END is the last term's. A stated end is honored (golive #338), so it changes only
+            // when an extension moved the start, and then the stated length moves with it.
+            line.ServicePeriodStart = planned[0].StartDate;
+            line.ServicePeriodEnd = planned[planned.length - 1].EndDate;
             // The forward link, which nothing was writing. Subscription.OrderLineID
             // recorded the reverse, so the subscription knew its line while the line
             // did not know its subscription — and PreviewConfirmOperation reads
@@ -3829,6 +3915,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // locked afterward. That lock is load-bearing for this design: were an order ever made
             // re-confirmable, the second pass would read the first pass's term as a stated start.
             const requestedStart = line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null;
+            // The stated END, read under the same rule and for the same reason (golive #338): the
+            // coverage runs to it, as one term or one per type term length.
+            const requestedEnd = line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null;
 
             const decision = behavior.Decide({
                 Rules: rules,
@@ -3842,6 +3931,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // concurrency rule must not refuse it (D55).
                 IsRenewal: !!line.RenewsSubscriptionID,
                 RequestedStartDate: requestedStart,
+                RequestedEndDate: requestedEnd,
                 // The line's answer to "the subscriber already holds this product" (golive #299).
                 RequestedAction: line.SubscriptionAction,
             });
@@ -3859,7 +3949,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // product, so a holder with coverage under a sibling band found nothing and a second
             // subscription for the same dates was created and billed. A renewal names its target
             // outright, so it continues that subscription and is not checked.
-            if (decision.Term && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
+            // The whole coverage the line buys, which spans several terms when it states an end past
+            // the first (golive #338).
+            const coverageEnd = CoverageEndOf(decision);
+            if (decision.Term && coverageEnd && product.SubscriptionFamilyID && !line.RenewsSubscriptionID) {
                 const familyKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|${identity.PersonID ?? ''}`;
                 const noPersonKey = `${uuidKey(product.SubscriptionFamilyID)}|${identity.OrganizationID ?? ''}|`;
                 const siblings = [
@@ -3869,7 +3962,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 const overlaps = OverlappingCoverage(
                     [...siblings, ...(await this.loadFamilyCoverage(product, match, decision.Term.StartDate))],
                     decision.Term.StartDate,
-                    decision.Term.EndDate,
+                    coverageEnd,
                 );
                 const verdict = behavior.DecideCoverageOverlap({
                     Rules: rules,
@@ -3905,7 +3998,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         SubscriptionNumber: null,
                         ProductName: product.Name,
                         StartDate: decision.Term.StartDate,
-                        EndDate: decision.Term.EndDate,
+                        EndDate: coverageEnd,
                         ConcurrencyMode: rules.ConcurrencyMode,
                         SubscriptionTypeCode: rules.Code,
                         CancellationMode: rules.CancellationMode,
@@ -3929,6 +4022,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         `${decision.Term.StartDate.toISOString().slice(0, 10)}.`,
                 );
             }
+            // Its end moves with it: the stated length is kept from the new start (golive #338).
+            if (!preview && decision.EndOverrideIgnored && coverageEnd && requestedEnd) {
+                LogStatus(
+                    `Order ${this.OrderNumber ?? this.ID} line ${line.LineNumber} (${product.Name}): the coverage end ` +
+                        `${requestedEnd.toISOString().slice(0, 10)} stated on the line was not used; coverage ends ` +
+                        `${coverageEnd.toISOString().slice(0, 10)}.`,
+                );
+            }
 
             // Record what this line will produce, so a LATER line covering the same
             // subscription extends it (or is refused) instead of creating a second.
@@ -3947,8 +4048,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     Status: 'Active',
                     HolderOrganizationID: subscriber.OrganizationID,
                     BeneficiaryPersonID: subscriber.PersonID,
-                    LatestTermEnd: decision.Term.EndDate,
-                    LatestTermNumber: decision.Term.TermNumber,
+                    LatestTermEnd: coverageEnd,
+                    LatestTermNumber: decision.Terms ? decision.Terms[decision.Terms.length - 1].TermNumber : decision.Term.TermNumber,
                 });
             }
 
@@ -3960,6 +4061,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Subscriber: subscriber,
                 DedupeKey: dedupeKey,
                 RequestedStart: requestedStart,
+                RequestedEnd: requestedEnd,
                 Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
         }

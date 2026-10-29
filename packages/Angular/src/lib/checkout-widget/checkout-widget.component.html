@@ -122,7 +122,11 @@
                                     [ngModel]="units()[0]?.[field.name]"
                                     (ngModelChange)="updateUnitField(0, field.name, $event)"
                                     [placeholder]="field.placeholder || ''"
+                                    [readonly]="isLockedEmail(0, field.name)"
                                     [required]="field.required || false" />
+                                @if (isLockedEmail(0, field.name)) {
+                                    <p class="mj-field-hint">Your member discount is tied to this verified e-mail.</p>
+                                }
                             }
                         }
                     </div>
@@ -204,7 +208,11 @@
                                                 [ngModel]="unit[field.name]"
                                                 (ngModelChange)="updateUnitField($index, field.name, $event)"
                                                 [placeholder]="field.placeholder || ''"
+                                                [readonly]="isLockedEmail($index, field.name)"
                                                 [required]="field.required || false" />
+                                            @if (isLockedEmail($index, field.name)) {
+                                                <p class="mj-field-hint">Your member discount is tied to this verified e-mail.</p>
+                                            }
                                         }
                                     }
                                 </div>
@@ -392,6 +400,12 @@
                     </p>
                 }
             </div>
+        }
+
+        @if (activeMemberDiscount(); as member) {
+            <p class="mj-checkout-promo__applied mj-checkout-member-discount" role="status">
+                {{ member.code ? member.code + ' member discount' : 'Member discount' }}: −{{ currencySymbol() }}{{ member.discount.toFixed(2) }}
+            </p>
         }
 
         @if (autoRenewConsentText(); as consentText) {

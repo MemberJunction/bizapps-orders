@@ -41,6 +41,7 @@ function componentFor(record: Partial<mjBizAppsOrdersSubscriptionEntity>, canUpd
         Timing: 'Type',
         Reason: '',
         Preview: null,
+        EditMode: false,
     });
     c.Record = {
         ID: SUB,
@@ -69,6 +70,22 @@ describe('Cancel subscription', () => {
         expect(componentFor({ Status: 'Canceled' }).CanCancel).toBe(false);
         expect(componentFor({ IsSaved: false }).CanCancel).toBe(false);
         expect(componentFor({}, false).CanCancel).toBe(false);
+    });
+
+    it('does not open or confirm while the form is in edit mode (#749)', async () => {
+        const c = componentFor({});
+        c.EditMode = true;
+        c.Start();
+        expect(c.Open).toBe(false);
+
+        // Edit mode entered with the panel already open and previewed: Confirm still waits.
+        c.EditMode = false;
+        c.Start();
+        await c.RunPreview();
+        c.EditMode = true;
+        await c.Confirm();
+        expect(mocks.calls).toHaveLength(1);
+        expect(c.Canceled.emit).not.toHaveBeenCalled();
     });
 
     it('defaults to the type\'s own rule, sending no timing, and previews without writing', async () => {

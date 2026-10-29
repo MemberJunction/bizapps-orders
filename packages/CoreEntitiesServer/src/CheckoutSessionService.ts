@@ -71,6 +71,7 @@ import {
     type CheckoutTypedCodePrecedence,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 import { ToIsoCountryCode, type CheckoutLocationEvidence } from './VatLocationEvidence.js';
 import type { RetrieveIntentResult } from './BasePaymentProvider.js';
 import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
@@ -3285,11 +3286,19 @@ export class CheckoutSessionService {
         }
 
         if (!intent.OrderHeaderID) {
-            intent.OrderHeaderID = order.ID;
             // Second step of the gateway description: the intent was opened before the order existed.
             const mdForGateway = Metadata.Provider as IMetadataProvider | undefined;
             if (mdForGateway) {
                 await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
+            }
+            // Re-read after the gateway call, before the save below (#939). The save writes every
+            // field of this object, and a webhook event can land on the same row while the
+            // description is on its way, so a copy read before the call would put its stamp back.
+            if (!(await intent.Load(intent.ID))) {
+                LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} before stamping order ${order.ID}; saving the copy read before the gateway call`);
+            }
+            if (!intent.OrderHeaderID) {
+                intent.OrderHeaderID = order.ID;
             }
         }
         // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
@@ -3328,7 +3337,10 @@ export class CheckoutSessionService {
 
         try {
             const op = new CapturePaymentOperation();
-            const result = await op.ExecuteServer(
+            // On its own transaction, never the shared provider's (#927): the page and the webhook
+            // capture the same session within a second of each other, and on one provider their
+            // transactions nest, so a rollback on one side undid the other's payment.
+            const result = await WithIsolatedProvider((captureProvider) => op.ExecuteServer(
                 {
                     PaymentIntentID: intent.ID,
                     Amount: due,
@@ -3347,11 +3359,11 @@ export class CheckoutSessionService {
                     IdempotencyKey: `checkout-complete:${session.ID}`,
                 },
                 {
-                    provider: mdProvider,
+                    provider: captureProvider,
                     user: contextUser,
                     emitProgress: () => undefined,
                 }
-            );
+            ), mdProvider);
             const output = result.Output;
             if (!result.Success || !output?.Success) {
                 const detail = result.ErrorMessage
@@ -3451,6 +3463,14 @@ export class CheckoutSessionService {
      * Pull the gateway's current intent status onto our row, and return what the gateway said.
      * Fail-soft: a retrieve error leaves the local status unchanged and the paid gate still
      * refuses.
+     *
+     * The row is re-read after the gateway call and before it is written (#939). MJ's `Save()`
+     * sends every field of the object, not only the changed ones, and the webhook writes the same
+     * row while the page waits on the gateway: saving the copy read before the call put the
+     * webhook's `ProviderEventID` back to null, which is the stamp its duplicate check reads. When
+     * the fresh row already holds what the gateway said, the webhook recorded it first, and the row
+     * is left as it wrote it, event time included. The re-read narrows the window to milliseconds;
+     * it does not lock the row (#943). MJ #4339 tracks the every-field save upstream.
      */
     private static async refreshIntentFromGateway(
         intent: mjBizAppsOrdersPaymentIntentEntity,
@@ -3463,12 +3483,23 @@ export class CheckoutSessionService {
         if (retrieved.Status === intent.Status && retrieved.Amount == null) {
             return retrieved;
         }
+        if (!(await intent.Load(intent.ID))) {
+            // Deliberate: this call then refuses (the status stays unsettled), and the caller can retry
+            // while the webhook still books the payment. Setting `Status` from `retrieved` on this copy
+            // instead would let a later save in capture write the stale copy back, the overwrite #939 fixes.
+            LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} to stamp retrieved status ${retrieved.Status}`);
+            return retrieved;
+        }
+        const amount = typeof retrieved.Amount === 'number' && retrieved.Amount > 0 ? retrieved.Amount : null;
+        if (retrieved.Status === intent.Status && (amount === null || amount === intent.Amount)) {
+            return retrieved;
+        }
         intent.Status = retrieved.Status;
         // The gateway's state as of this read, so any webhook event created before now is older
         // than this status and is not allowed to move it backwards (#475).
         intent.LastEventAt = new Date();
-        if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
-            intent.Amount = retrieved.Amount;
+        if (amount !== null) {
+            intent.Amount = amount;
         }
         try {
             if (!(await intent.Save())) {
