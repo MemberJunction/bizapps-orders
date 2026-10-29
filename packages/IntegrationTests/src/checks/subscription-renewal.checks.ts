@@ -102,6 +102,9 @@
  *
  *   SR58  a subscription renewed at a price of zero books: the $0-line refusal leaves the renewal
  *         pass's own price alone (#954)
+ *   SR59  a lead time changed on the subscription type is the one the job uses, and a subscription's
+ *         own lead days still override it (bc-aidp-next-golive#349)
+ *   SR60  a subscription moved to another type renews on that type's lead time (bc-aidp-next-golive#349)
  *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
@@ -569,6 +572,64 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf });
                 AssertEqual(out.Placed, 1, `120 days out is inside a 150-day window: ${out.Message}`);
                 AssertEqual(Number(out.Candidates[0].LeadDays), 150, 'the override was applied, not the default');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR59',
+        Name: "SR59: a lead time changed on the subscription type is the one the job uses; the subscription's own still overrides it",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Lead time is set per subscription type, and finance edits it on the type's form, so a
+                // changed value must reach the next pass with no other change. AnnualRolling ships at 90;
+                // set it to 30.
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const typeID = Fx().SubscriptionTypeIDs.get('AnnualRolling');
+                Assert(typeID != null, 'AnnualRolling subscription type missing');
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.SubscriptionType SET RenewalLeadDays = 30 WHERE ID = '${typeID}'`,
+                );
+
+                // 60 days out is inside the shipped 90-day window and outside the new 30-day one.
+                const early = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 60), Preview: true });
+                AssertEqual(early.Candidates.length, 0, "60 days out is outside the type's 30-day window");
+
+                const due = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 20), Preview: true });
+                AssertEqual(due.Candidates.length, 1, "20 days out is inside the type's 30-day window");
+                AssertEqual(Number(due.Candidates[0].LeadDays), 30, "the type's changed lead time");
+
+                // A value on the subscription still wins over the type's.
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.Subscription SET RenewalLeadDays = 45 WHERE ID = '${SubscriptionID}'`,
+                );
+                const overridden = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 40), Preview: true });
+                AssertEqual(overridden.Candidates.length, 1, "40 days out is inside the subscription's 45-day window");
+                AssertEqual(Number(overridden.Candidates[0].LeadDays), 45, "the subscription's lead time, not the type's");
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR60',
+        Name: "SR60: a subscription moved to another subscription type renews on that type's lead time",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Products that need a different lead time get a type carrying it, and their existing
+                // subscriptions are moved onto that type. The job reads the type the subscription has
+                // now, not the one it was bought on. FiscalYearJul ships at 120 days; AnnualRolling at 90.
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const fiscalID = Fx().SubscriptionTypeIDs.get('FiscalYearJul');
+                Assert(fiscalID != null, 'FiscalYearJul subscription type missing');
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.Subscription SET SubscriptionTypeID = '${fiscalID}' WHERE ID = '${SubscriptionID}'`,
+                );
+
+                // 110 days out is outside AnnualRolling's 90-day window and inside FiscalYearJul's 120.
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 110), Preview: true });
+                AssertEqual(out.Candidates.length, 1, "110 days out is inside the new type's 120-day window");
+                AssertEqual(Number(out.Candidates[0].LeadDays), 120, "the new type's lead time");
             }),
     },
     {
