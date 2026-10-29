@@ -15,16 +15,20 @@ import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
 import {
     OrderHeaderEntity,
+    OrdersCancelExternalInvoiceOperation,
     OrdersGetPriorReturnsOperation,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
-import { Metadata } from '@memberjunction/core';
+import { Metadata, RunView } from '@memberjunction/core';
 
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 
-import { MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJConfirmService, MJDropdownComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
+import { FormatMoney } from '../../panels/money-format';
+
+const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
 
 /** The reason a return opens with, and the one it returns to when the origin changes. */
 const DEFAULT_RETURN_REASON = 'Damaged in transit';
@@ -354,6 +358,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      * first pass on, so later verify passes agree.
      */
     private readonly cdr = inject(ChangeDetectorRef);
+    private readonly confirm = inject(MJConfirmService);
     private readonly entry = inject(MJOPricingScheduler);
 
     /**
@@ -679,11 +684,60 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             // live after a success — and the second attempt exceeds the server's already-returned
             // cap and is refused, which before this PR went into an `Error` nobody rendered.
             this.Lines = this.Lines.map((l) => ({ ...l, AlreadyReturned: l.AlreadyReturned + l.Returning, Returning: 0 }));
+            await this.OfferInvoiceCancel(draft.OrderNumber);
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
         } finally {
             this.Busy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /**
+     * Once the whole order has come back, offer to withdraw each invoice the origin still has open on
+     * the rail (golive #379, O-US7(i)). Offered rather than done: cancelling reaches the customer, so
+     * a person says yes. The confirm already applied the return's credit to the origin, and cancel
+     * leaves that credit out of the money it counts, so the cancel is not refused because of it.
+     */
+    private async OfferInvoiceCancel(returnNumber: string): Promise<void> {
+        const origin = this.Origin;
+        if (!origin || this.Lines.some((l) => this.remaining(l) > 0)) return;
+        const sent = await new RunView().RunView<{ ID: string; DocumentNumber: string; Amount: number }>({
+            EntityName: EXTERNAL_INVOICE_ENTITY,
+            ExtraFilter: `OrderHeaderID = '${origin.ID}' AND Status = 'Sent'`,
+            Fields: ['ID', 'DocumentNumber', 'Amount'],
+            ResultType: 'simple',
+        });
+        if (!sent.Success) {
+            this.Error = `The return was booked, but whether ${origin.OrderNumber} has an open invoice could not be checked: ${sent.ErrorMessage}`;
+            this.cdr.detectChanges();
+            return;
+        }
+        for (const invoice of sent.Results) {
+            const proceed = await this.confirm.Confirm({
+                title: `Cancel invoice ${invoice.DocumentNumber}?`,
+                message: `${origin.OrderNumber} has been returned in full, and its invoice for ${FormatMoney(invoice.Amount)} is still open for the customer to pay.`,
+                detail: 'Cancelling withdraws it from the billing system. Nothing is posted to the ledger.',
+                type: 'warning',
+                confirmText: 'Cancel the invoice',
+                cancelText: 'Leave it open',
+            });
+            if (!proceed) continue;
+            const result = await new OrdersCancelExternalInvoiceOperation().Execute({
+                ExternalInvoiceID: invoice.ID,
+                Reason: `Returned in full on ${returnNumber}: ${this.Reason}`,
+            });
+            const out = result.Output;
+            if (!result.Success || !out?.Success) {
+                this.Error =
+                    `The return was booked, but invoice ${invoice.DocumentNumber} could not be cancelled: ` +
+                    `${out?.Message?.trim() || result.ErrorMessage?.trim() || 'no reason given'}. ` +
+                    `Cancel it from the External invoicing panel on ${origin.OrderNumber}.`;
+                this.cdr.detectChanges();
+                return;
+            }
+            this.Notice = out.Message ?? `Invoice ${invoice.DocumentNumber} was cancelled.`;
             this.cdr.detectChanges();
         }
     }

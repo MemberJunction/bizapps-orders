@@ -324,7 +324,10 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /** What the panel says when nothing has gone to the rail yet. */
     public get EmptyMessage(): string {
         const sent = `Nothing has been sent to ${this.ProviderName} for this order yet.`;
-        return this.Sendable ? `${sent} It is queued, and the scheduled send picks it up.` : sent;
+        // Queued means the scheduled send's worklist, which takes only orders with a balance due: a
+        // return, or an order its return has settled, is never picked up (golive #379).
+        const queued = this.Sendable && Number(this.Record?.Balance ?? 0) > 0;
+        return queued ? `${sent} It is queued, and the scheduled send picks it up.` : sent;
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */

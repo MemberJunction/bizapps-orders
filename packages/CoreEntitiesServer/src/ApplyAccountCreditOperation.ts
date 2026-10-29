@@ -122,6 +122,15 @@ interface OrderShape {
 
 const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
 
+/**
+ * How much of a reversal's credit settles the order it reverses (golive #379): as much as both
+ * sides allow, and 0 when the reversal holds no credit or the origin owes nothing.
+ */
+export function ReturnCreditToNet(reversalBalance: number, originBalance: number): number {
+    const amount = money(Math.min(-reversalBalance, originBalance));
+    return amount > TOLERANCE ? amount : 0;
+}
+
 @RegisterClass(BaseRemotableOperation, 'Orders.ApplyAccountCredit')
 export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperationBase {
     protected async InternalExecute(

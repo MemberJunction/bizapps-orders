@@ -71,6 +71,8 @@ import {
     RunAlongsideRefusal,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
+import { ApplyAccountCreditOperation, ReturnCreditToNet } from './ApplyAccountCreditOperation.js';
+import { StampSubscriptionCanceled, StampTerm } from './CancelSubscriptionOperation.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
@@ -968,6 +970,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // rolls the confirm back rather than being logged. Handles both directions: an
                 // ordinary line issues, a reversal line voids what the origin issued.
                 await this.issueGiftCards(lines, options);
+
+                // A FULLY RETURNED SUBSCRIPTION LINE ENDS ITS TERM, and the subscription once nothing
+                // else keeps it open (golive #379). Without this SUB-000104 stayed Active after its
+                // order came back, and the customer's next order for the product became its next term.
+                await this.cancelReturnedSubscriptions(lines, reversals);
+
+                // A RETURN SETTLES WHAT IT REVERSES (golive #379): its credit pays down the origin's
+                // open balance, so neither order is left showing money owed or held. Last, once every
+                // write above has moved the rollups it reads.
+                await this.netCreditAgainstOrigin();
             }
 
             // LAST WRITE WINS, AND THE DATABASE DID THE LAST WRITE.
@@ -2693,6 +2705,92 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     );
                 }
             }
+        }
+    }
+
+    /**
+     * Cancel the term a fully returned line sold, and its subscription when no other term keeps it
+     * open, effective this order's date (golive #379). A partial return leaves both alone: the
+     * customer still holds some of what the term covers.
+     *
+     * Not on a subscription cancellation's own reversal: `Orders.CancelSubscription` stamps the term
+     * and subscription itself, by its own decision, once that reversal is booked.
+     */
+    private async cancelReturnedSubscriptions(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+    ): Promise<void> {
+        if (this.OrderType === 'Cancellation') return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const effective = new Date(this.OrderDate);
+
+        for (const line of lines) {
+            const context = reversals.get(uuidKey(line.ID));
+            const subscriptionID = context?.Origin.SubscriptionID;
+            if (!context || !subscriptionID) continue;
+            // `AlreadyReversed` was read without this order's own lines; this line completes it or not.
+            if (context.AlreadyReversed + Math.abs(Number(line.Quantity ?? 0)) < context.Origin.Quantity) continue;
+
+            const rv = new RunView(provider as unknown as IRunViewProvider);
+            const open = await rv.RunView<{ ID: string; OrderLineID: string }>(
+                {
+                    EntityName: SUBSCRIPTION_TERM_ENTITY,
+                    ExtraFilter: `SubscriptionID = '${RequireUUID(subscriptionID, 'SubscriptionID')}' AND Status IN ('Scheduled','Active')`,
+                    Fields: ['ID', 'OrderLineID'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                user,
+            );
+            if (!open.Success) throw new Error(`The terms of subscription ${subscriptionID} could not be read: ${open.ErrorMessage}`);
+            const returned = open.Results.filter((t) => uuidKey(t.OrderLineID) === uuidKey(context.Origin.ID));
+            for (const term of returned) {
+                await StampTerm(provider, user, term.ID, { TermStatus: 'Canceled', EffectiveDate: effective });
+            }
+            if (returned.length > 0 && returned.length === open.Results.length) {
+                await StampSubscriptionCanceled(provider, user, subscriptionID, { AccessThroughDate: effective });
+            }
+        }
+    }
+
+    /**
+     * Apply this reversal's credit to the order it reverses, up to what that order still owes (golive
+     * #379), through `Orders.ApplyAccountCredit` so the payment and its ledger entries are the ones a
+     * person applying it by hand would make. A paid origin owes nothing and gets nothing; the credit
+     * stays on this order for the refund. Throws when the application is refused, which rolls the
+     * whole confirm back rather than booking half a return.
+     */
+    private async netCreditAgainstOrigin(): Promise<void> {
+        if (!this.ReversesOrderHeaderID) return;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const originID = RequireUUID(this.ReversesOrderHeaderID, 'ReversesOrderHeaderID');
+
+        const own = await this.readBalanceFromRow();
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const origin = await rv.RunView<{ Balance: number | null }>(
+            { EntityName: ORDER_ENTITY, ExtraFilter: `ID = '${originID}'`, Fields: ['Balance'], ResultType: 'simple', BypassCache: true },
+            user,
+        );
+        if (!origin.Success) throw new Error(`The order this reverses could not be read: ${origin.ErrorMessage}`);
+        const amount = ReturnCreditToNet(Number(own.Balance ?? 0), Number(origin.Results[0]?.Balance ?? 0));
+        if (amount === 0) return;
+
+        const result = await new ApplyAccountCreditOperation().ExecuteServer(
+            {
+                SourceOrderHeaderID: this.ID,
+                TargetOrderHeaderID: originID,
+                Amount: amount,
+                Reason: `Settled by ${this.OrderNumber}, which reverses it`,
+            },
+            { provider, user, emitProgress: () => undefined },
+        );
+        if (!result.Success || !result.Output?.Success) {
+            throw new Error(
+                `The credit from ${this.OrderNumber} could not be applied to the order it reverses: ` +
+                    `${result.Output?.Message ?? result.ErrorMessage ?? 'unknown error'}`,
+            );
         }
     }
 
