@@ -375,6 +375,13 @@ export interface SubscriptionPurchaseContext {
      * subscription it names.
      */
     RequestedAction?: 'ExtendExisting' | 'CreateNew' | null;
+    /**
+     * A renewal the payment gateway already charged for (E4, `SanctionGatewayRenewal`). It always
+     * continues the subscription it names: an active one is extended, a lapsed or cancelled one is
+     * reactivated (never a second subscription, Andrew's rule), and either way the new term starts the
+     * day after the last one ended, because that is the period the gateway was paid for.
+     */
+    GatewayRenewal?: boolean;
 }
 
 function money(v: number): number {
@@ -511,7 +518,10 @@ export class SubscriptionBehavior {
         // An extension starts where the existing coverage ends — never overlapping it. That rule
         // outranks a stated start: honoring one here would either overlap the term still running
         // or leave a gap in coverage the customer has already been sold.
-        const extending = action === 'ExtendExisting';
+        // A gateway renewal of a cancelled subscription continues its coverage too: the gateway charged
+        // for the period right after the last term, not one starting on the day the charge was booked.
+        const extending =
+            action === 'ExtendExisting' || (!!ctx.GatewayRenewal && action === 'Reactivate' && !!ctx.Existing?.LatestTermEnd);
         const existingCoverageEnd = extending ? (ctx.Existing?.LatestTermEnd ?? null) : null;
         const start = existingCoverageEnd
             ? addDays(existingCoverageEnd, 1)
@@ -762,6 +772,9 @@ export class SubscriptionBehavior {
         // Reactivation still applies below when the subscription has lapsed — a renewal arriving
         // after a lapse should revive it rather than silently extend a dead one.
         const isActive = existing.Status === 'Active' || existing.Status === 'Trialing';
+        // The gateway was paid for the next period: continue THIS subscription, whatever the type's
+        // reactivation window says.
+        if (ctx.GatewayRenewal) return isActive ? 'ExtendExisting' : 'Reactivate';
         if (ctx.IsRenewal && isActive) return 'ExtendExisting';
         // The line's own answer, when it gives one (golive #299). Before this the type's rule was
         // the only answer, so every same-product purchase under `ExtendExisting` became the next

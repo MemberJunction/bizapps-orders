@@ -44,7 +44,8 @@ import { ReadOpenProviderSubscriptionAlerts } from './checkoutCaptureAlert.js';
 /**
  * Open E2 alerts after which a cancel could leave a gateway subscription billing: one created but not
  * recorded (`NotRecorded`), a create of unknown result (`GatewayFault`), a second one beside the
- * recorded one (`LinkedElsewhere`, `AmbiguousAtGateway`), or one that charged at creation.
+ * recorded one (`LinkedElsewhere`, `AmbiguousAtGateway`), one that charged at creation, or a renewal the
+ * gateway was paid for that Orders has not booked (`RenewalNotBooked`, E4).
  */
 export const CANCEL_BLOCKING_ALERT_CODES: readonly string[] = [
     'NotRecorded',
@@ -52,6 +53,9 @@ export const CANCEL_BLOCKING_ALERT_CODES: readonly string[] = [
     'LinkedElsewhere',
     'AmbiguousAtGateway',
     'ChargedAtCreation',
+    // E4: the gateway was paid for a renewal Orders could not book. Cancelling now would end coverage the
+    // customer paid for without anyone settling that payment first.
+    'RenewalNotBooked',
 ];
 
 /** When the gateway must stop billing: now, or after an instant. */
