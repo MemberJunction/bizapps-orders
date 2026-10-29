@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR52).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR72).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -102,40 +102,43 @@
  *
  *   SR58  a subscription renewed at a price of zero books: the $0-line refusal leaves the renewal
  *         pass's own price alone (#954)
+ *   SR59  a lead time changed on the subscription type is the one the job uses, and a subscription's
+ *         own lead days still override it (bc-aidp-next-golive#349)
+ *   SR60  a subscription moved to another type renews on that type's lead time (bc-aidp-next-golive#349)
  *
  *   Handing a subscription to the gateway that bills it (option E, E2), against a fake gateway driver
  *   (`ITGatewayBilling`) on a live account, so the database half runs for real and no gateway is called:
- *   SR59  created once, first charge 00:00 business time on the term's last day, recorded with its account;
+ *   SR61  created once, first charge 00:00 business time on the term's last day, recorded with its account;
  *         a second run and the checkout's order scope create nothing more; Spawn Renewals then skips it
- *   SR60  a gateway subscription an earlier run created (idempotency key long expired) is found by its
+ *   SR62  a gateway subscription an earlier run created (idempotency key long expired) is found by its
  *         metadata and recorded, never created twice
- *   SR61  refusals are visible and write nothing: no flagged price and a stub account each raise one
+ *   SR63  refusals are visible and write nothing: no flagged price and a stub account each raise one
  *         Task (once, however often reported); switch off is silent; and the unlinked subscription
  *         still renews in Orders
- *   SR62  the daily pass: preview creates nothing; then it links the eligible one, defers a term that
+ *   SR64  the daily pass: preview creates nothing; then it links the eligible one, defers a term that
  *         starts too late for the gateway, and leaves a subscription without automatic renewal alone
- *   SR63  Spawn Renewals, then this pass, then Charge Renewals, in the jobs' own order: the unpaid
+ *   SR65  Spawn Renewals, then this pass, then Charge Renewals, in the jobs' own order: the unpaid
  *         renewal term is NOT handed over; Charge Renewals collects it; the next pass hands over the
  *         term after it. No term is given away
- *   SR64  the real hook: a new buyer's checkout on an account that bills subscriptions ends with the
+ *   SR66  the real hook: a new buyer's checkout on an account that bills subscriptions ends with the
  *         gateway subscription created and recorded on the subscription the checkout sold, then the
  *         same buyer is refused a second subscription purchase at the draft. The checkout's capture and
  *         the hand-over run on isolated providers, which join this check's transaction through #950's
  *         `JoinCallerTransactionForTests`
- *   SR65  the returning-buyer refusal against real rows, both directions: a buyer the gateway bills is
+ *   SR67  the returning-buyer refusal against real rows, both directions: a buyer the gateway bills is
  *         refused another subscription in that company; the same buyer in another company, someone
  *         else, a ticket, and a cancelled subscription are not
  *
  *   Once the gateway bills it, no Orders door changes it unseen (E2b, Robert's review of #972):
- *   SR66  its billing columns cannot be edited through the object model (AutoRenew, Status, the gateway
+ *   SR68  its billing columns cannot be edited through the object model (AutoRenew, Status, the gateway
  *         id); the same edit before it was linked saved, and a column the gateway does not bill on still saves
- *   SR67  cancelling stops the gateway FIRST: a gateway that refuses leaves Orders unchanged; one that
+ *   SR69  cancelling stops the gateway FIRST: a gateway that refuses leaves Orders unchanged; one that
  *         confirms is told to charge nothing after coverage ends, and Orders records what it did
- *   SR68  a second order for the same product cannot extend it; once cancelled (the gateway with it), buying
+ *   SR70  a second order for the same product cannot extend it; once cancelled (the gateway with it), buying
  *         again is a fresh start: the old gateway id is retired and the hand-over creates a new one
- *   SR69  a return of the line that sold it, and a Duration concession on its term, are refused; an open
+ *   SR71  a return of the line that sold it, and a Duration concession on its term, are refused; an open
  *         gateway alert stops a cancel of a subscription whose gateway subscription went unrecorded
- *   SR70  every concession kind that changes the term (Duration, Shift, Seats, an amount change) is refused
+ *   SR72  every concession kind that changes the term (Duration, Shift, Seats, an amount change) is refused
  *         on a gateway-billed term, recorded through the object model as staff record them; the same four on
  *         an unlinked subscription are not refused for the gateway
  *
@@ -632,6 +635,64 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf });
                 AssertEqual(out.Placed, 1, `120 days out is inside a 150-day window: ${out.Message}`);
                 AssertEqual(Number(out.Candidates[0].LeadDays), 150, 'the override was applied, not the default');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR59',
+        Name: "SR59: a lead time changed on the subscription type is the one the job uses; the subscription's own still overrides it",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Lead time is set per subscription type, and finance edits it on the type's form, so a
+                // changed value must reach the next pass with no other change. AnnualRolling ships at 90;
+                // set it to 30.
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const typeID = Fx().SubscriptionTypeIDs.get('AnnualRolling');
+                Assert(typeID != null, 'AnnualRolling subscription type missing');
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.SubscriptionType SET RenewalLeadDays = 30 WHERE ID = '${typeID}'`,
+                );
+
+                // 60 days out is inside the shipped 90-day window and outside the new 30-day one.
+                const early = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 60), Preview: true });
+                AssertEqual(early.Candidates.length, 0, "60 days out is outside the type's 30-day window");
+
+                const due = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 20), Preview: true });
+                AssertEqual(due.Candidates.length, 1, "20 days out is inside the type's 30-day window");
+                AssertEqual(Number(due.Candidates[0].LeadDays), 30, "the type's changed lead time");
+
+                // A value on the subscription still wins over the type's.
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.Subscription SET RenewalLeadDays = 45 WHERE ID = '${SubscriptionID}'`,
+                );
+                const overridden = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 40), Preview: true });
+                AssertEqual(overridden.Candidates.length, 1, "40 days out is inside the subscription's 45-day window");
+                AssertEqual(Number(overridden.Candidates[0].LeadDays), 45, "the subscription's lead time, not the type's");
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR60',
+        Name: "SR60: a subscription moved to another subscription type renews on that type's lead time",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Products that need a different lead time get a type carrying it, and their existing
+                // subscriptions are moved onto that type. The job reads the type the subscription has
+                // now, not the one it was bought on. FiscalYearJul ships at 120 days; AnnualRolling at 90.
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const fiscalID = Fx().SubscriptionTypeIDs.get('FiscalYearJul');
+                Assert(fiscalID != null, 'FiscalYearJul subscription type missing');
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.Subscription SET SubscriptionTypeID = '${fiscalID}' WHERE ID = '${SubscriptionID}'`,
+                );
+
+                // 110 days out is outside AnnualRolling's 90-day window and inside FiscalYearJul's 120.
+                const out = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: daysBefore(Term.EndDate, 110), Preview: true });
+                AssertEqual(out.Candidates.length, 1, "110 days out is inside the new type's 120-day window");
+                AssertEqual(Number(out.Candidates[0].LeadDays), 120, "the new type's lead time");
             }),
     },
     {
@@ -2250,8 +2311,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
     // ─── Handing a subscription to the gateway that bills it (option E, E2) ─────────────────────
     {
-        Id: 'subscription-renewal.SR59',
-        Name: "SR59: a subscription is handed to its account's gateway once, anchored on the term's last day, and Spawn then skips it",
+        Id: 'subscription-renewal.SR61',
+        Name: "SR61: a subscription is handed to its account's gateway once, anchored on the term's last day, and Spawn then skips it",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2286,8 +2347,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR60',
-        Name: 'SR60: a gateway subscription an earlier run created is found by its metadata and recorded, never created twice',
+        Id: 'subscription-renewal.SR62',
+        Name: 'SR62: a gateway subscription an earlier run created is found by its metadata and recorded, never created twice',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2306,8 +2367,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR61',
-        Name: 'SR61: refusals are visible Tasks and write nothing; switch off is silent; the unlinked subscription still renews in Orders',
+        Id: 'subscription-renewal.SR63',
+        Name: 'SR63: refusals are visible Tasks and write nothing; switch off is silent; the unlinked subscription still renews in Orders',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2342,8 +2403,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR62',
-        Name: 'SR62: the daily pass previews, then links the eligible one, defers a late-starting term and leaves a non-renewing one alone',
+        Id: 'subscription-renewal.SR64',
+        Name: 'SR64: the daily pass previews, then links the eligible one, defers a late-starting term and leaves a non-renewing one alone',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2374,8 +2435,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR63',
-        Name: 'SR63: Spawn, then this pass, then Charge: an unpaid renewal term is collected by Orders and only the term after is handed to the gateway',
+        Id: 'subscription-renewal.SR65',
+        Name: 'SR65: Spawn, then this pass, then Charge: an unpaid renewal term is collected by Orders and only the term after is handed to the gateway',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2423,8 +2484,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR64',
-        Name: "SR64: a new buyer's checkout on an account that bills subscriptions hands the subscription to the gateway, and the buyer's next subscription purchase is refused",
+        Id: 'subscription-renewal.SR66',
+        Name: "SR66: a new buyer's checkout on an account that bills subscriptions hands the subscription to the gateway, and the buyer's next subscription purchase is refused",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2484,8 +2545,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
 
     {
-        Id: 'subscription-renewal.SR65',
-        Name: 'SR65: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
+        Id: 'subscription-renewal.SR67',
+        Name: 'SR67: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2522,7 +2583,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(await check(person, f.CoA.ID, 'EventTicket'), null, 'a ticket (no subscription type) is not refused');
 
                 // Cancelled the only way a gateway-billed subscription can be (E2b): through the cancel, which
-                // stops the gateway first. An edit of its Status is refused (SR66).
+                // stops the gateway first. An edit of its Status is refused (SR68).
                 fakeGateway.held.push({ ProviderSubscriptionID: `sub_it_sr64_${held.SubscriptionID.slice(0, 8)}`, Status: 'active', IsLive: true, Customer: 'cus_it_e2', Metadata: {} });
                 const cancelled = await cancelSubscription(ctx, { SubscriptionID: held.SubscriptionID, RequestDate: '2026-02-01', Timing: 'Immediate' });
                 Assert(cancelled.Success, `cancelled: ${cancelled.Message}`);
@@ -2531,8 +2592,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     // ─── Once the gateway bills it, no Orders door changes it unseen (E2b) ──────────────────────────
     {
-        Id: 'subscription-renewal.SR66',
-        Name: "SR66: a gateway-billed subscription's billing columns cannot be edited; the same edit before it was linked saved",
+        Id: 'subscription-renewal.SR68',
+        Name: "SR68: a gateway-billed subscription's billing columns cannot be edited; the same edit before it was linked saved",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2575,8 +2636,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR67',
-        Name: 'SR67: cancelling a gateway-billed subscription stops the gateway first; a refusal leaves Orders unchanged',
+        Id: 'subscription-renewal.SR69',
+        Name: 'SR69: cancelling a gateway-billed subscription stops the gateway first; a refusal leaves Orders unchanged',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2618,8 +2679,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR68',
-        Name: 'SR68: a second order cannot extend a gateway-billed subscription; after a cancel, buying again starts fresh with a new gateway subscription',
+        Id: 'subscription-renewal.SR70',
+        Name: 'SR70: a second order cannot extend a gateway-billed subscription; after a cancel, buying again starts fresh with a new gateway subscription',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2674,8 +2735,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR69',
-        Name: 'SR69: a return of its sale and a Duration concession on its term are refused; an open gateway alert stops a cancel',
+        Id: 'subscription-renewal.SR71',
+        Name: 'SR71: a return of its sale and a Duration concession on its term are refused; an open gateway alert stops a cancel',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2711,7 +2772,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
                 const number = (await TxOne<{ SubscriptionNumber: string }>(ctx, `SELECT SubscriptionNumber FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${other.SubscriptionID}'`)).SubscriptionNumber;
                 await raiseProviderSubscriptionAlert(
-                    { SubscriptionID: other.SubscriptionID, SubscriptionNumber: number, Code: 'NotRecorded', Reason: 'SR69 probe' },
+                    { SubscriptionID: other.SubscriptionID, SubscriptionNumber: number, Code: 'NotRecorded', Reason: 'SR71 probe' },
                     ctx.User,
                     ctx.Provider,
                 );
@@ -2722,8 +2783,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
     {
-        Id: 'subscription-renewal.SR70',
-        Name: 'SR70: every term-changing concession (Duration, Shift, Seats, amount) is refused on a gateway-billed term; not on an unlinked one',
+        Id: 'subscription-renewal.SR72',
+        Name: 'SR72: every term-changing concession (Duration, Shift, Seats, amount) is refused on a gateway-billed term; not on an unlinked one',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -2765,7 +2826,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     c.NewRecord();
                     for (const [k, v] of Object.entries(fields)) c.Set(k, v);
                     c.Set('ReasonCategory', 'Retention');
-                    c.Set('Reason', 'SR70 probe');
+                    c.Set('Reason', 'SR72 probe');
                     const saved = await c.Save();
                     return { Saved: saved, Message: c.LatestResult?.CompleteMessage ?? '' };
                 };
@@ -2986,7 +3047,7 @@ const fakeGateway = {
 
 /**
  * A gateway that bills subscriptions, in memory. Registered under its own type code so no real driver
- * changes. Its payment verbs are the Stripe stub's (so Charge Renewals can charge its cards in SR63);
+ * changes. Its payment verbs are the Stripe stub's (so Charge Renewals can charge its cards in SR65);
  * its subscription verbs are in memory, with Stripe's first-charge limit, so deferral behaves as it
  * does against Stripe.
  */
