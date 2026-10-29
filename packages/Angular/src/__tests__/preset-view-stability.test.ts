@@ -131,15 +131,17 @@ describe('every preset view getter is reference-stable across change detection',
     it('Fulfillment queue', () => {
         const page = make<MJOFulfillmentPageComponent>(MJOFulfillmentPageComponent.prototype, 'queueView', {
             OrderLineEntityInfo: { ID: 'E2', Name: 'MJ_BizApps_Orders: Order Lines' },
-            Preset: 'open',
+            Preset: 'pending',
         });
         expect(page.FulfillmentQueueView).toBe(page.FulfillmentQueueView);
     });
 
+    // 'pending' and 'done' are two of the three real tab keys ('all' is the third). A key that is
+    // not one of them still exercises the rebuild, but names a tab that cannot exist at runtime.
     it('Fulfillment queue: rebuilds when the preset changes', () => {
         const page = make<MJOFulfillmentPageComponent>(MJOFulfillmentPageComponent.prototype, 'queueView', {
             OrderLineEntityInfo: { ID: 'E2', Name: 'MJ_BizApps_Orders: Order Lines' },
-            Preset: 'open',
+            Preset: 'pending',
         });
         const first = page.FulfillmentQueueView;
         (page as unknown as { Preset: string }).Preset = 'done';
