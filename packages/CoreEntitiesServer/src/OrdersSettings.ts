@@ -127,6 +127,13 @@ export const ORDERS_SETTING = {
      * threshold is set.
      */
     RefundApproverRole: 'RefundApproverRole',
+    /**
+     * Comma-separated IDs of the `PaymentProvider` rows whose sends may create a customer on the rail
+     * when the bill-to party has none on file (bc-aidp-next-golive#358). Any other provider refuses
+     * such a send, so finance maps the party to its existing rail customer rather than the send
+     * creating a duplicate. Empty or unset refuses for every provider.
+     */
+    RailCustomerCreateProviders: 'RailCustomerCreateProviders',
 } as const;
 
 /**
@@ -397,6 +404,14 @@ export class OrdersSettings {
      */
     public static get RefundApprovalThreshold(): number | null {
         return asAmountOrOff(this.rawAppScoped(ORDERS_SETTING.RefundApprovalThreshold));
+    }
+
+    /**
+     * The payment providers whose sends may create a rail customer; empty refuses for every one (#358).
+     * @throws when the Orders application row is missing, since a listed provider would read as unlisted.
+     */
+    public static get RailCustomerCreateProviders(): string[] {
+        return asList(this.rawAppScoped(ORDERS_SETTING.RailCustomerCreateProviders), []);
     }
 
     /** The role that may refund at or below the threshold, or `null` when none is configured. */

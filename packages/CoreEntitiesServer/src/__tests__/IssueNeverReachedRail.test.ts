@@ -9,7 +9,7 @@
  * THE PREVIEW. A preview answers what the send would answer short of calling the rail, so a party
  * the rail cannot take as a customer is reported by a preview, and the preview still writes nothing.
  */
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { afterEach, describe, expect, it, vi, beforeEach } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     history: [] as Array<Record<string, unknown>>,
@@ -94,6 +94,7 @@ vi.mock('../InvoiceBuilder.js', () => ({
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { IssueOneUnit } from '../IssueExternalInvoiceOperation.js';
+import { OrdersSettings } from '../OrdersSettings.js';
 
 const PROVIDER = '11111111-2222-4333-8444-555555555555';
 const ORDER = 'aaaaaaaa-2222-4333-8444-555555555555';
@@ -146,7 +147,11 @@ beforeEach(() => {
     mocks.writes = [];
     mocks.issued = 0;
     loadedID = null;
+    // These sends create the party's rail customer, which only a listed provider may do (#358).
+    OrdersSettings.SetOverride('RailCustomerCreateProviders', PROVIDER);
 });
+
+afterEach(() => OrdersSettings.ClearOverrides());
 
 describe('a send after one the rail refused before creating anything', () => {
     it('sends without AllowReissue once the email is there', async () => {

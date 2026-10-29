@@ -60,6 +60,8 @@ import {
 import {
   BILLCOM_SIGNATURE_HEADER,
   CurrentBillComGatewaySeams,
+  ORDERS_SETTING,
+  OrdersSettings,
   ResolveInvoiceRail,
   SignBillComPayload,
   UseBillComGatewaySeams,
@@ -331,6 +333,7 @@ async function withBillCom(
     await InRolledBackTransaction(ctx, () => body(bill));
   } finally {
     UseBillComGatewaySeams(previous);
+    OrdersSettings.SetOverride(ORDERS_SETTING.RailCustomerCreateProviders, undefined);
   }
 }
 
@@ -402,7 +405,7 @@ interface BillComRail {
  * provider row pointing at it. Built BEFORE any order is confirmed, as in production — a company with
  * a rail checks the bill-to name against BILL's limit at confirm.
  */
-async function configureRail(ctx: IntegrationCheckContext, opts: { live?: boolean } = {}): Promise<BillComRail> {
+async function configureRail(ctx: IntegrationCheckContext, opts: { live?: boolean; mayCreateCustomer?: boolean } = {}): Promise<BillComRail> {
   const f = Fx();
   const integrationID = await ensureBillComIntegration(ctx);
   const companyIntegrationID = await createViaEntity(ctx, COMPANY_INTEGRATION_ENTITY, {
@@ -428,6 +431,9 @@ async function configureRail(ctx: IntegrationCheckContext, opts: { live?: boolea
     IsLiveMode: opts.live ? 1 : 0,
     IsActive: 1,
   });
+  // Most checks send for a party with no Bill.com customer yet, so this provider may create one
+  // (bc-aidp-next-golive#358); `withBillCom` clears it.
+  if (opts.mayCreateCustomer !== false) OrdersSettings.SetOverride(ORDERS_SETTING.RailCustomerCreateProviders, providerID);
   return { ProviderID: providerID, CompanyIntegrationID: companyIntegrationID, CredentialsRef: credentialsRef };
 }
 
@@ -1197,6 +1203,32 @@ export const BillComRailChecks: NamedCheck[] = [
         AssertEqual(resent.ResultCode, "SENT", `the next send goes through without AllowReissue: ${resent.Message}`);
         AssertEqual(resent.DocumentNumber, order.OrderNumber, "under the order's own number: none was spent on Bill.com");
         AssertEqual(bill.Creates("invoices").length, 1, "and Bill.com holds exactly one invoice");
+      }),
+  },
+  {
+    Id: "billcom-rail.BR22",
+    Name: "BR22: a party with no Bill.com customer on file is refused, not created, when the provider may not create one",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      withBillCom(ctx, async (bill) => {
+        const rail = await configureRail(ctx, { mayCreateCustomer: false });
+        const order = await sellOnRail(ctx);
+
+        const preview = await issue(ctx, order.ID, true);
+        AssertEqual(preview.ResultCode, "RAIL_REFUSED", `a preview reports the missing customer: ${preview.Message}`);
+        Assert(/No IT Bill\.com customer on file for /.test(preview.Message ?? ""), `naming the provider and the party: ${preview.Message}`);
+
+        const refused = await issue(ctx, order.ID);
+        AssertEqual(refused.ResultCode, "RAIL_REFUSED", `the send is refused: ${refused.Message}`);
+        const failed = (await externalInvoices(ctx, rail)).filter((r) => r.Status === "Failed");
+        AssertEqual(failed.length, 1, "leaving one Failed row");
+        AssertEqual(failed[0].ExternalInvoiceRef, null, "that never reached Bill.com");
+        AssertEqual(
+          await count(ctx, `${ORDERS_SCHEMA}.ExternalCustomer`, `PaymentProviderID = '${rail.ProviderID}'`),
+          0,
+          "no customer mapping was written",
+        );
+        AssertEqual(bill.Creates("customers").length + bill.Creates("invoices").length, 0, "and Bill.com was never written to");
       }),
   },
 ];

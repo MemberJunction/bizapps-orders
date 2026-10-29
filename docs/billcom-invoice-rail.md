@@ -114,7 +114,7 @@ needs `orders:read`, the others `orders:write`.
 
 | Operation | What it does |
 |---|---|
-| `Orders.IssueExternalInvoice` | Sends one unit. Creates the BILL customer if needed (BILL requires an email), then writes a `Sending` row before asking BILL for the invoice, so a second send fails on `UQ_ExternalInvoice_LiveUnit`; reads the invoice back and archives it if the total does not tie. A transient failure leaves the row `Sending` (`UNCERTAIN`) instead of retrying. `Preview` writes nothing. |
+| `Orders.IssueExternalInvoice` | Sends one unit. Uses the party's `ExternalCustomer` mapping; with none, it creates the BILL customer (BILL requires an email) only when the provider is listed in the `RailCustomerCreateProviders` setting, and otherwise refuses the send and its preview as `RAIL_REFUSED`, naming the party and the company, so finance maps the existing BILL customer instead of a duplicate being created (bc-aidp-next-golive#358). It then writes a `Sending` row before asking BILL for the invoice, so a second send fails on `UQ_ExternalInvoice_LiveUnit`; reads the invoice back and archives it if the total does not tie. A transient failure leaves the row `Sending` (`UNCERTAIN`) instead of retrying. `Preview` writes nothing. |
 | `Orders.CancelExternalInvoice` | Archives a `Sent` invoice. Refused when money is applied to the unit in Orders (`HAS_PAYMENT`) or BILL shows money not yet polled (`PAYMENT_PENDING_ON_RAIL`). Books nothing. |
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
