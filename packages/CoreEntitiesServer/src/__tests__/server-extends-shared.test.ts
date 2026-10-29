@@ -140,3 +140,53 @@ describe('every server entity registration is classified', () => {
         expect(registeredKeys().length).toBeGreaterThanOrEqual(COVERED.size + NO_SHARED_SIBLING.size);
     });
 });
+
+/**
+ * THE OTHER HALF OF THE CLASSIFICATION, WHICH THE BLOCK ABOVE CANNOT SEE.
+ *
+ * `NO_SHARED_SIBLING` is a claim about the SHARED package: that nothing hand-written there registers
+ * those keys. The block above only reads the server package, so it cannot check that claim -- and the
+ * day someone adds a hand-written shared subclass for one of those entities, the server class goes on
+ * extending the generated one, silently replaces the new shared class, and every assertion here still
+ * passes. That is the original bug, re-entered from the other side.
+ *
+ * Rather than resolve constants across two packages, this pins the shared package's hand-written
+ * registrations by FILE. The set is small and changes rarely; when it does change, this fails and
+ * sends the next person to re-check the pairs, which is the whole job.
+ */
+describe('the shared package hand-writes exactly the subclasses the pairs assume', () => {
+    const SHARED_SRC = fileURLToPath(new URL('../../../Entities/src', import.meta.url));
+
+    /** Files outside `generated/` that register an entity class. The generated ones are not siblings. */
+    const registeringFiles = (): string[] =>
+        readdirSync(SHARED_SRC)
+            .filter((f) => f.endsWith('.ts'))
+            .filter((f) => /@RegisterClass\(BaseEntity,/.test(readFileSync(join(SHARED_SRC, f), 'utf8')))
+            .sort();
+
+    /**
+     * Six are the pairs above. `CustomerPaymentMethodEntity` is the odd one out and belongs here: it
+     * is hand-written and shared, but no server class registers that key, so there is no pair to make.
+     */
+    const EXPECTED = [
+        'CustomerPaymentMethodEntity.ts',
+        'OrderHeaderEntity.ts',
+        'OrderLineEntity.ts',
+        'PaymentHeaderEntity.ts',
+        'ProductEntity.ts',
+        'ProductPriceEntity.ts',
+        'SubscriptionTermEntity.ts',
+    ];
+
+    it('registers from exactly these files, so a new shared subclass forces the pairs to be re-checked', () => {
+        expect(
+            registeringFiles(),
+            'a file added here may have a server class registering the same key. If it does, add the '
+                + 'pair above and take the key out of NO_SHARED_SIBLING; if it does not, add the file here.',
+        ).toEqual(EXPECTED);
+    });
+
+    it('found files at all, so an empty scan cannot pass this', () => {
+        expect(registeringFiles().length).toBeGreaterThan(0);
+    });
+});
