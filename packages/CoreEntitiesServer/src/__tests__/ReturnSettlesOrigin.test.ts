@@ -87,7 +87,7 @@ describe('the allocation guard lets a return’s credit be spent', () => {
     });
 
     it('still refuses taking an ordinary order below zero', async () => {
-        expect(await allocation(-1, 3000).checkApplicationTotal()).not.toBeNull();
+        expect(await allocation(-1, 3000).checkApplicationTotal()).toMatch(/: 0 here/);
     });
 });
 
