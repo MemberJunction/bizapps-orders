@@ -992,12 +992,18 @@ export function NewReviewMarker(now: Date = new Date()): string {
     return `${REVIEW_MARKER_PREFIX}${now.getTime().toString(36).toUpperCase()}`;
 }
 
-/** The order guards a purge of committed orders has to lift; both purges disable and re-enable them. */
+/**
+ * The order guards a purge of committed orders has to lift; both purges disable and re-enable them.
+ * review-purge.test.ts reads the guard triggers from the migrations and fails when one that refuses a
+ * DELETE these purges run is missing. trg_PaymentDetail_Immutable is not here: it fires on UPDATE
+ * only, and the one PaymentDetail column a purge updates, SourceCustomerPaymentMethodID, is not guarded.
+ */
 const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
     `${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
     `${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
-    `${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
+    // A Posted progress observation refuses deletion (51030); a progress-measured line has some.
+    `${ORDERS_SCHEMA}.trg_OrderLineProgressMeasurement_Immutable ON ${ORDERS_SCHEMA}.OrderLineProgressMeasurement`,
     // An Invoiced instalment refuses deletion; a renewal paid through the link has one (#950).
     `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
     // Billing rows refuse deletion; an issued instalment always leaves some.

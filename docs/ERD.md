@@ -15,17 +15,17 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-10-11 · latest migration `V202610081700__v5.30.x__PaymentWebhookDelivery.sql`
+> **Verified against the live database:** 2026-10-29 · latest migration `V202610271230__v5.39.x__OrderLine_Freeze_Discount_And_Charge.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
-> **68 tables · 121 internal relationships · 75 cross-app foreign keys ·
-> 189 CHECK constraints · 53 unique indexes** beyond the primary keys ·
-> **12 business triggers** · 69 views.
+> **71 tables · 128 internal relationships · 77 cross-app foreign keys ·
+> 207 CHECK constraints · 60 unique indexes** beyond the primary keys ·
+> **14 business triggers** · 72 views.
 >
-> (68 is the app's own tables. `sys.tables` reports 69 because the migration runner keeps its
+> (71 is the app's own tables. `sys.tables` reports 72 because the migration runner keeps its
 > `flyway_schema_history` in this schema; that table belongs to the migration tool, not to the model.)
 >
-> **CHECK constraint bodies** (§4) were read from the same database, through `OBJECT_DEFINITION` (189/189).
+> **CHECK constraint bodies** (§4) were read from the same database, through `OBJECT_DEFINITION` (207/207).
 >
 > **How to read this.** §1 is the master map: every table, every connection, no columns — an
 > orientation tool, too wide to work from. §2 is the 10 area maps WITH full column lists, small
@@ -45,7 +45,7 @@ belonging to several different companies and still emit journal entries that are
 and balanced — the alternative, a company on the header, makes multi-company orders unrepresentable.
 
 **2 — References point UP the dependency graph, and they are real foreign keys.** Orders depends on
-`common`, `tasks`, `accounting` and MJ core, so it may hold hard FKs into them (75 of them, §3) —
+`common`, `tasks`, `accounting` and MJ core, so it may hold hard FKs into them (77 of them, §3) —
 installs run in dependency order, so the targets always exist. Orders holds NO reference to any app
 that depends on it. Accounting's link back to an order line is a polymorphic
 `LinkedEntityID`/`LinkedRecordID` pair on the journal entry, which is a typed polymorphic link and not
@@ -60,11 +60,12 @@ supply a total that disagrees with what was booked, and a booked figure cannot d
 ## 1. Master map — every table, every connection inside the app
 
 No columns; this is the shape only. **Cross-app foreign keys are deliberately NOT drawn here** — all
-75 of them would join the 121 edges below and hide the app's own structure, which is the one thing
+77 of them would join the 128 edges below and hide the app's own structure, which is the one thing
 this diagram exists to show. They get their own map and full register in §3.
 
 ```mermaid
 erDiagram
+    ChargeType ||--o{ InstalmentLineBilling : "ChargeTypeID"
     ChargeType ||--o{ OrderCharge : "ChargeTypeID"
     CheckoutSession ||--o{ CheckoutSessionStep : "CheckoutSessionID"
     CheckoutWidget ||--o{ CheckoutSession : "CheckoutWidgetID"
@@ -93,9 +94,12 @@ erDiagram
     OrderHeader ||--o{ StoredValueTransaction : "RelatedOrderHeaderID"
     OrderHeader ||--o{ SubscriptionEvent : "RelatedOrderHeaderID"
     OrderHeaderPaymentSchedule ||--o{ ExternalInvoice : "OrderHeaderPaymentScheduleID"
+    OrderHeaderPaymentSchedule ||--o{ InstalmentLineBilling : "OrderHeaderPaymentScheduleID"
+    OrderHeaderPaymentSchedule ||--o{ OrderConcession : "AppliesToPaymentScheduleID"
     OrderHeaderPaymentSchedule ||--o{ PaymentLine : "OrderHeaderPaymentScheduleID"
     OrderLine ||--o{ EntitlementGrant : "OrderLineID"
     OrderLine ||--o{ EventOrderLine : "ID"
+    OrderLine ||--o{ InstalmentLineBilling : "OrderLineID"
     OrderLine ||--o{ OrderAdjustment : "OrderLineID"
     OrderLine ||--o{ OrderAdjustmentAllocation : "OrderLineID"
     OrderLine ||--o{ OrderChargeAllocation : "OrderLineID"
@@ -129,6 +133,7 @@ erDiagram
     PaymentProvider ||--o{ PaymentDetail : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentHeader : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentIntent : "PaymentProviderID"
+    PaymentProvider ||--o{ PaymentProviderPrice : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentProviderSyncState : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentWebhookDelivery : "PaymentProviderID"
     PaymentProvider ||--o{ Subscription : "PaymentProviderID"
@@ -146,6 +151,7 @@ erDiagram
     Product ||--o{ EventProduct : "ID"
     Product ||--o{ OrderLine : "ProductID"
     Product ||--o{ OrderLine : "SourceBundleProductID"
+    Product ||--o{ PaymentProviderPrice : "ProductID"
     Product ||--o{ Product : "SuccessorProductID"
     Product ||--o{ ProductBundleItem : "BundleProductID"
     Product ||--o{ ProductBundleItem : "ComponentProductID"
@@ -166,6 +172,7 @@ erDiagram
     Promotion ||--o{ PromotionTarget : "PromotionID"
     PromotionCode ||--o{ OrderAdjustment : "PromotionCodeID"
     PromotionType ||--o{ Promotion : "PromotionTypeID"
+    ReferralProgram ||--o{ OrderConcession : "ReferralProgramID"
     RevenueRecognitionType ||--o{ Product : "RevenueRecognitionTypeID"
     RevenueRecognitionType ||--o{ ProductType : "DefaultRevenueRecognitionTypeID"
     RevenueRecognitionType ||--o{ SubscriptionTerm : "RevenueRecognitionTypeID"
@@ -188,8 +195,8 @@ erDiagram
     SubscriptionType ||--o{ Subscription : "SubscriptionTypeID"
 ```
 
-**Reading the shape.** Three tables carry the graph: `Product` (10 inbound) is what can be
-sold, `OrderLine` (16 inbound) is what was sold, and `OrderHeader` (16 inbound) groups it. Read the
+**Reading the shape.** Three tables carry the graph: `Product` (11 inbound) is what can be
+sold, `OrderLine` (17 inbound) is what was sold, and `OrderHeader` (16 inbound) groups it. Read the
 app as catalogue → order → what an order leaves behind: subscriptions and entitlements, payments and
 instalments, invoices on an external system, and events for other systems.
 
@@ -208,7 +215,7 @@ are on every table. `PK`/`FK`/`UK` mark the key role; `required` means `NOT NULL
 
 ### 2.1 What can be sold — the catalogue
 
-**`Product` is the hub of the catalogue** — 10 foreign keys from 8 tables point at it.
+**`Product` is the hub of the catalogue** — 11 foreign keys from 9 tables point at it.
 Everything a customer can buy is a Product row, and what KIND of thing it is comes from `ProductType`
 plus the presence of a satellite row: an `EventProduct` row makes it an event with a capacity and a
 date, a `SubscriptionTypeID` makes it recurring, `ProductBundleItem` rows make it a bundle that
@@ -263,6 +270,7 @@ erDiagram
         decimal_18_4 MaxQuantityPerLine
         uuid SubscriptionFamilyID FK
         decimal_7_4 RenewalIncreasePercent
+        bit RequiresSaleApproval
     }
     ProductType {
         uuid ID PK "required"
@@ -282,6 +290,7 @@ erDiagram
         nvarchar_20 DefaultEntitlementValidityMode "required"
         nvarchar_255 PricingDriverClass
         nvarchar_max Configuration
+        bit RequiresSaleApproval
     }
     ProductCategory {
         uuid ID PK "required"
@@ -298,6 +307,7 @@ erDiagram
         nvarchar_20 DefaultEntitlementValidityMode
         nvarchar_255 PricingDriverClass
         decimal_7_4 RenewalIncreasePercent
+        bit RequiresSaleApproval
     }
     ProductBundleItem {
         uuid ID PK "required"
@@ -413,6 +423,7 @@ erDiagram
     Promotion ||--o{ PromotionCode : "PromotionID"
     Promotion ||--o{ PromotionTarget : "PromotionID"
     PromotionType ||--o{ Promotion : "PromotionTypeID"
+    ReferralProgram ||--o{ OrderConcession : "ReferralProgramID"
     SalesAuthority ||--o{ OrderConcession : "AuthorizedBySalesAuthorityID"
     SalesRule ||--o{ OrderConcession : "SalesRuleID"
     ProductPrice {
@@ -492,6 +503,7 @@ erDiagram
         time TimeOfDayEnd
         nvarchar_100 QualifierKey
         nvarchar_10 Status "required"
+        bit AppliesToRenewals "required"
     }
     PromotionCode {
         uuid ID PK "required"
@@ -551,6 +563,11 @@ erDiagram
         nvarchar_max PredicateJson
         uuid ApprovalRequiredRoleID FK
         bit IsActive "required"
+        int ConcessionTier
+        decimal_18_2 MinConcessionValue
+        decimal_7_4 MinConcessionPctOfContract
+        int MinTermExtensionDays
+        bit RequiresDecisionWithinAuthority "required"
     }
     OrderConcession {
         uuid ID PK "required"
@@ -574,12 +591,32 @@ erDiagram
         nvarchar_max DecisionNotes
         uuid PriorPaymentTermsTypeID FK
         uuid NewPaymentTermsTypeID FK
+        nvarchar_500 SignedAmendmentReference
+        uuid ReferralProgramID FK
+        date PriorStartDate
+        date PriorEndDate
+        date NewStartDate
+        date NewEndDate
+        decimal_18_2 NewAmount
+        uuid AppliesToPaymentScheduleID FK
+        decimal_18_2 ScheduleReduction
+        decimal_18_2 CreditMemoAmount
+        nvarchar_50 CreditMemoNumber UK
+        bit RefundRequested "required"
+    }
+    ReferralProgram {
+        uuid ID PK "required"
+        uuid CompanyID FK "required"
+        nvarchar_200 Name UK "required"
+        nvarchar_max Description
+        int DaysPerReferral "required"
+        bit IsActive "required"
     }
 ```
 
-**Leaves this area:** `OrderConcession.NewPaymentTermsTypeID` → `PaymentTermsType`, `OrderConcession.OrderHeaderID` → `OrderHeader`, `OrderConcession.OrderLineID` → `OrderLine`, `OrderConcession.PriorPaymentTermsTypeID` → `PaymentTermsType`, `OrderConcession.SubscriptionTermID` → `SubscriptionTerm`, `ProductPrice.ProductID` → `Product`, `ProductPrice.ProductCategoryID` → `ProductCategory`, `PromotionTarget.ProductID` → `Product`, `PromotionTarget.ProductCategoryID` → `ProductCategory`.
+**Leaves this area:** `OrderConcession.AppliesToPaymentScheduleID` → `OrderHeaderPaymentSchedule`, `OrderConcession.NewPaymentTermsTypeID` → `PaymentTermsType`, `OrderConcession.OrderHeaderID` → `OrderHeader`, `OrderConcession.OrderLineID` → `OrderLine`, `OrderConcession.PriorPaymentTermsTypeID` → `PaymentTermsType`, `OrderConcession.SubscriptionTermID` → `SubscriptionTerm`, `ProductPrice.ProductID` → `Product`, `ProductPrice.ProductCategoryID` → `ProductCategory`, `PromotionTarget.ProductID` → `Product`, `PromotionTarget.ProductCategoryID` → `ProductCategory`.
 
-**Reaches outside the app:** `OrderConcession.DecidedByUserID` → `__mj.User`, `OrderConcession.RequestedByUserID` → `__mj.User`, `PriceListAssignment.OrganizationID` → `__mj_BizAppsCommon.Organization`, `PriceListAssignment.PersonID` → `__mj_BizAppsCommon.Person`, `Promotion.CompanyID` → `__mj.Company`, `PromotionCode.AssignedOrganizationID` → `__mj_BizAppsCommon.Organization`, `PromotionCode.AssignedPersonID` → `__mj_BizAppsCommon.Person`, `SalesAuthority.SalesRepUserID` → `__mj.User`, `SalesRule.ApprovalRequiredRoleID` → `__mj.Role`.
+**Reaches outside the app:** `OrderConcession.DecidedByUserID` → `__mj.User`, `OrderConcession.RequestedByUserID` → `__mj.User`, `PriceListAssignment.OrganizationID` → `__mj_BizAppsCommon.Organization`, `PriceListAssignment.PersonID` → `__mj_BizAppsCommon.Person`, `Promotion.CompanyID` → `__mj.Company`, `PromotionCode.AssignedOrganizationID` → `__mj_BizAppsCommon.Organization`, `PromotionCode.AssignedPersonID` → `__mj_BizAppsCommon.Person`, `ReferralProgram.CompanyID` → `__mj.Company`, `SalesAuthority.SalesRepUserID` → `__mj.User`, `SalesRule.ApprovalRequiredRoleID` → `__mj.Role`.
 
 ### 2.3 The order itself
 
@@ -595,8 +632,7 @@ charge or an order-level discount still lands on a line, which still lands on on
 `OrderLinePriceComponent` is the audit trail of the pricing walk: how the number was arrived at, kept
 beside the number itself. `OrderLineDimension` holds the tags derived for a line, from `DimensionDefault`
 rows and from the line's own facts (§6); the one tag a person types is on the line,
-`OrderLine.DimensionID` / `DimensionValueID`, and on save it replaces the derived row on its axis, so
-the rows are exactly the tags the line books. `OrderCompanyPolicy` is the per-company orders
+`OrderLine.DimensionID` / `DimensionValueID`. `OrderCompanyPolicy` is the per-company orders
 settings row, and its ID is the `__mj.Company` ID: promotion stacking, whether unpriced lines are
 refused, and the company's default price list, payment terms, pricing driver and renewal increase.
 `OrderSequence` is a singleton counter for `ORD-{seq}`, not part of the graph.
@@ -645,7 +681,7 @@ erDiagram
         uuid ReversesOrderHeaderID FK
         nvarchar_max ReversalReason
         date RequestedDeliveryDate
-        uuid ApprovalTaskID
+        uuid ApprovalTaskID FK
         nvarchar_max Description
         nvarchar_max Notes
         datetimeoffset ConfirmedAt
@@ -655,6 +691,8 @@ erDiagram
         nvarchar_max BillToAddressSnapshot
         nvarchar_max ShipToAddressSnapshot
         uuid ConfirmedByUserID FK
+        char IPCountry
+        char CardIssuingCountry
     }
     OrderLine {
         uuid ID PK "required"
@@ -695,7 +733,10 @@ erDiagram
         nvarchar_max ShipToAddressSnapshot
         nvarchar_20 SubscriptionAction
         bit AcknowledgesCoverageOverlap "required"
+        decimal_18_2 ExtendedAmount
         nvarchar_1000 CoverageOverlapReason
+        decimal_18_2 ScheduleReduction
+        decimal_18_2 CreditMemoAmount
     }
     OrderLineDimension {
         uuid ID PK "required"
@@ -804,7 +845,7 @@ erDiagram
 
 **Leaves this area:** `OrderAdjustment.PromotionID` → `Promotion`, `OrderAdjustment.PromotionCodeID` → `PromotionCode`, `OrderAdjustment.AuthorizedBySalesAuthorityID` → `SalesAuthority`, `OrderCharge.ChargeTypeID` → `ChargeType`, `OrderCompanyPolicy.DefaultPriceListID` → `PriceList`, `OrderHeader.SourceCheckoutWidgetID` → `CheckoutWidget`, `OrderHeader.InitialPaymentDetailID` → `PaymentDetail`, `OrderHeader.InitialPaymentTypeID` → `PaymentType`, `OrderHeader.PaymentTermsTypeID` → `PaymentTermsType`, `OrderLine.ProductID` → `Product`, `OrderLine.ProductPriceID` → `ProductPrice`, `OrderLine.SourceBundleProductID` → `Product`, `OrderLine.SubscriptionID` → `Subscription`.
 
-**Reaches outside the app:** `DimensionDefault.DimensionID` → `__mj_BizAppsAccounting.Dimension`, `DimensionDefault.DimensionValueID` → `__mj_BizAppsAccounting.DimensionValue`, `DimensionDefault.EntityID` → `__mj.Entity`, `EventOrderLine.PersonID` → `__mj_BizAppsCommon.Person`, `OrderCompanyPolicy.ID` → `__mj.Company`, `OrderHeader.BillToAddressID` → `__mj_BizAppsCommon.Address`, `OrderHeader.BillToOrganizationID` → `__mj_BizAppsCommon.Organization`, `OrderHeader.BillToPersonID` → `__mj_BizAppsCommon.Person`, `OrderHeader.CompanyID` → `__mj.Company`, `OrderHeader.ConfirmedByUserID` → `__mj.User`, `OrderHeader.PostedByUserID` → `__mj.User`, `OrderHeader.SalesRepUserID` → `__mj.User`, `OrderHeader.ShipToAddressID` → `__mj_BizAppsCommon.Address`, `OrderHeader.ShipToOrganizationID` → `__mj_BizAppsCommon.Organization`, `OrderHeader.ShipToPersonID` → `__mj_BizAppsCommon.Person`, `OrderLine.CompanyID` → `__mj.Company`, `OrderLine.DimensionID` → `__mj_BizAppsAccounting.Dimension`, `OrderLine.DimensionValueID` → `__mj_BizAppsAccounting.DimensionValue`, `OrderLine.JournalEntryID` → `__mj_BizAppsAccounting.JournalEntry`, `OrderLine.ShipToAddressID` → `__mj_BizAppsCommon.Address`, `OrderLine.ShipToOrganizationID` → `__mj_BizAppsCommon.Organization`, `OrderLine.ShipToPersonID` → `__mj_BizAppsCommon.Person`, `OrderLineDimension.DimensionID` → `__mj_BizAppsAccounting.Dimension`, `OrderLineDimension.DimensionValueID` → `__mj_BizAppsAccounting.DimensionValue`, `OrderLinePriceComponent.SourceEntityID` → `__mj.Entity`.
+**Reaches outside the app:** `DimensionDefault.DimensionID` → `__mj_BizAppsAccounting.Dimension`, `DimensionDefault.DimensionValueID` → `__mj_BizAppsAccounting.DimensionValue`, `DimensionDefault.EntityID` → `__mj.Entity`, `EventOrderLine.PersonID` → `__mj_BizAppsCommon.Person`, `OrderCompanyPolicy.ID` → `__mj.Company`, `OrderHeader.ApprovalTaskID` → `__mj_BizAppsTasks.Task`, `OrderHeader.BillToAddressID` → `__mj_BizAppsCommon.Address`, `OrderHeader.BillToOrganizationID` → `__mj_BizAppsCommon.Organization`, `OrderHeader.BillToPersonID` → `__mj_BizAppsCommon.Person`, `OrderHeader.CompanyID` → `__mj.Company`, `OrderHeader.ConfirmedByUserID` → `__mj.User`, `OrderHeader.PostedByUserID` → `__mj.User`, `OrderHeader.SalesRepUserID` → `__mj.User`, `OrderHeader.ShipToAddressID` → `__mj_BizAppsCommon.Address`, `OrderHeader.ShipToOrganizationID` → `__mj_BizAppsCommon.Organization`, `OrderHeader.ShipToPersonID` → `__mj_BizAppsCommon.Person`, `OrderLine.CompanyID` → `__mj.Company`, `OrderLine.DimensionID` → `__mj_BizAppsAccounting.Dimension`, `OrderLine.DimensionValueID` → `__mj_BizAppsAccounting.DimensionValue`, `OrderLine.JournalEntryID` → `__mj_BizAppsAccounting.JournalEntry`, `OrderLine.ShipToAddressID` → `__mj_BizAppsCommon.Address`, `OrderLine.ShipToOrganizationID` → `__mj_BizAppsCommon.Organization`, `OrderLine.ShipToPersonID` → `__mj_BizAppsCommon.Person`, `OrderLineDimension.DimensionID` → `__mj_BizAppsAccounting.Dimension`, `OrderLineDimension.DimensionValueID` → `__mj_BizAppsAccounting.DimensionValue`, `OrderLinePriceComponent.SourceEntityID` → `__mj.Entity`.
 
 ### 2.4 How a web buyer orders — the embeddable checkout
 
@@ -853,7 +894,7 @@ erDiagram
         uuid ID PK "required"
         uuid CheckoutWidgetID FK "required"
         uuid DistributionID FK
-        nvarchar_100 ClientSessionKey "required"
+        nvarchar_100 ClientSessionKey UK "required"
         nvarchar_255 Email
         uuid PersonID FK
         uuid DraftOrderID FK
@@ -945,7 +986,7 @@ erDiagram
         bit AutoRenew "required"
         int RenewalLeadDays
         uuid PaymentProviderID FK
-        nvarchar_100 ProviderSubscriptionID
+        nvarchar_100 ProviderSubscriptionID UK
         uuid MigratesFromSubscriptionID FK
         uuid MigratesToSubscriptionID FK
         uuid DefaultCustomerPaymentMethodID FK
@@ -966,6 +1007,7 @@ erDiagram
         nvarchar_20 Status "required"
         datetimeoffset CanceledAt
         date CancellationEffectiveDate
+        int Quantity "required"
     }
     SubscriptionEvent {
         uuid ID PK "required"
@@ -1082,6 +1124,7 @@ erDiagram
     PaymentProvider ||--o{ PaymentDetail : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentHeader : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentIntent : "PaymentProviderID"
+    PaymentProvider ||--o{ PaymentProviderPrice : "PaymentProviderID"
     PaymentProvider ||--o{ PaymentWebhookDelivery : "PaymentProviderID"
     PaymentProviderType ||--o{ PaymentProvider : "PaymentProviderTypeID"
     PaymentType ||--o{ PaymentDetail : "PaymentTypeID"
@@ -1166,6 +1209,7 @@ erDiagram
         bit IsLiveMode "required"
         bit IsActive "required"
         uuid CompanyIntegrationID FK
+        bit BillsSubscriptions "required"
     }
     PaymentProviderType {
         uuid ID PK "required"
@@ -1178,6 +1222,16 @@ erDiagram
         bit SupportsWebhooks "required"
         int Sequence "required"
         bit IsActive "required"
+        bit SupportsSubscriptionBilling "required"
+    }
+    PaymentProviderPrice {
+        uuid ID PK "required"
+        uuid PaymentProviderID FK "required"
+        nvarchar_255 ProviderPriceID UK "required"
+        uuid ProductID FK "required"
+        nvarchar_255 Description
+        bit IsActive "required"
+        bit UseForNewSubscriptions "required"
     }
     PaymentType {
         uuid ID PK "required"
@@ -1224,7 +1278,7 @@ erDiagram
     }
 ```
 
-**Leaves this area:** `PaymentDetail.SourceOrderHeaderID` → `OrderHeader`, `PaymentDetail.StoredValueAccountID` → `StoredValueAccount`, `PaymentIntent.OrderHeaderID` → `OrderHeader`, `PaymentLine.OrderHeaderID` → `OrderHeader`, `PaymentLine.OrderHeaderPaymentScheduleID` → `OrderHeaderPaymentSchedule`, `PaymentLine.OrderLineID` → `OrderLine`.
+**Leaves this area:** `PaymentDetail.SourceOrderHeaderID` → `OrderHeader`, `PaymentDetail.StoredValueAccountID` → `StoredValueAccount`, `PaymentIntent.OrderHeaderID` → `OrderHeader`, `PaymentLine.OrderHeaderID` → `OrderHeader`, `PaymentLine.OrderHeaderPaymentScheduleID` → `OrderHeaderPaymentSchedule`, `PaymentLine.OrderLineID` → `OrderLine`, `PaymentProviderPrice.ProductID` → `Product`.
 
 **Reaches outside the app:** `CustomerPaymentMethod.OwnerOrganizationID` → `__mj_BizAppsCommon.Organization`, `CustomerPaymentMethod.OwnerPersonID` → `__mj_BizAppsCommon.Person`, `PaymentDetail.CompanyID` → `__mj.Company`, `PaymentHeader.BillToOrganizationID` → `__mj_BizAppsCommon.Organization`, `PaymentHeader.BillToPersonID` → `__mj_BizAppsCommon.Person`, `PaymentHeader.JournalEntryID` → `__mj_BizAppsAccounting.JournalEntry`, `PaymentHeader.ReceivingCompanyID` → `__mj.Company`, `PaymentIntent.BillToOrganizationID` → `__mj_BizAppsCommon.Organization`, `PaymentIntent.BillToPersonID` → `__mj_BizAppsCommon.Person`, `PaymentLine.AllocatedByUserID` → `__mj.User`, `PaymentProvider.CompanyID` → `__mj.Company`, `PaymentProvider.CompanyIntegrationID` → `__mj.CompanyIntegration`.
 
@@ -1248,6 +1302,7 @@ supersedes it, and the superseded row's recognition is reversed.
 
 ```mermaid
 erDiagram
+    OrderHeaderPaymentSchedule ||--o{ InstalmentLineBilling : "OrderHeaderPaymentScheduleID"
     OrderLineProgressMeasurement ||--o{ OrderLineProgressMeasurement : "SupersedesMeasurementID"
     OrderHeaderPaymentSchedule {
         uuid ID PK "required"
@@ -1268,6 +1323,15 @@ erDiagram
         decimal_18_2 Balance
         nvarchar_500 Description
         nvarchar_max Notes
+        decimal_18_2 AmountCredited "required"
+    }
+    InstalmentLineBilling {
+        uuid ID PK "required"
+        uuid OrderHeaderPaymentScheduleID FK "required"
+        uuid OrderLineID FK "required"
+        nvarchar_20 Part UK "required"
+        uuid ChargeTypeID FK
+        decimal_18_2 Amount "required"
     }
     OrderLineProgressMeasurement {
         uuid ID PK "required"
@@ -1291,7 +1355,7 @@ erDiagram
     }
 ```
 
-**Leaves this area:** `OrderHeaderPaymentSchedule.OrderHeaderID` → `OrderHeader`, `OrderLineProgressMeasurement.OrderLineID` → `OrderLine`.
+**Leaves this area:** `InstalmentLineBilling.ChargeTypeID` → `ChargeType`, `InstalmentLineBilling.OrderLineID` → `OrderLine`, `OrderHeaderPaymentSchedule.OrderHeaderID` → `OrderHeader`, `OrderLineProgressMeasurement.OrderLineID` → `OrderLine`.
 
 **Reaches outside the app:** `OrderHeaderPaymentSchedule.CompanyID` → `__mj.Company`, `OrderHeaderPaymentSchedule.InvoicedByUserID` → `__mj.User`, `OrderLineProgressMeasurement.AttestedByUserID` → `__mj.User`, `OrderLineProgressMeasurement.SourceEntityID` → `__mj.Entity`.
 
@@ -1467,12 +1531,28 @@ erDiagram
 
 ## 3. Cross-app reference register
 
-75 foreign keys leave this schema. All point UP the dependency graph (rule 2). Nothing here is
+77 foreign keys leave this schema. All point UP the dependency graph (rule 2). Nothing here is
 optional trivia: **these are the references that break silently when an upstream app re-bakes its
 baseline**, because our generated metadata pins upstream entity IDs by GUID.
 
 ```mermaid
 erDiagram
+    MJ_Company ||--o{ CheckoutWidget : "CompanyID"
+    MJ_Company ||--o{ ExternalInvoice : "CompanyID"
+    MJ_Company ||--o{ OrderCompanyPolicy : "ID"
+    MJ_Company ||--o{ OrderHeader : "CompanyID"
+    MJ_Company ||--o{ OrderHeaderPaymentSchedule : "CompanyID"
+    MJ_Company ||--o{ OrderLine : "CompanyID"
+    MJ_Company ||--o{ PaymentDetail : "CompanyID"
+    MJ_Company ||--o{ PaymentHeader : "ReceivingCompanyID"
+    MJ_Company ||--o{ PaymentProvider : "CompanyID"
+    MJ_Company ||--o{ Product : "CompanyID"
+    MJ_Company ||--o{ ProductCategory : "CompanyID"
+    MJ_Company ||--o{ Promotion : "CompanyID"
+    MJ_Company ||--o{ ReferralProgram : "CompanyID"
+    MJ_Company ||--o{ StoredValueAccount : "IssuingCompanyID"
+    MJ_Company ||--o{ Subscription : "CompanyID"
+    MJ_Company ||--o{ SubscriptionFamily : "CompanyID"
     common_Person ||--o{ CheckoutSession : "PersonID"
     common_Person ||--o{ CustomerPaymentMethod : "OwnerPersonID"
     common_Person ||--o{ CustomerTaxExemption : "PersonID"
@@ -1487,21 +1567,6 @@ erDiagram
     common_Person ||--o{ PromotionCode : "AssignedPersonID"
     common_Person ||--o{ StoredValueAccount : "BeneficiaryPersonID"
     common_Person ||--o{ Subscription : "BeneficiaryPersonID"
-    MJ_Company ||--o{ CheckoutWidget : "CompanyID"
-    MJ_Company ||--o{ ExternalInvoice : "CompanyID"
-    MJ_Company ||--o{ OrderCompanyPolicy : "ID"
-    MJ_Company ||--o{ OrderHeader : "CompanyID"
-    MJ_Company ||--o{ OrderHeaderPaymentSchedule : "CompanyID"
-    MJ_Company ||--o{ OrderLine : "CompanyID"
-    MJ_Company ||--o{ PaymentDetail : "CompanyID"
-    MJ_Company ||--o{ PaymentHeader : "ReceivingCompanyID"
-    MJ_Company ||--o{ PaymentProvider : "CompanyID"
-    MJ_Company ||--o{ Product : "CompanyID"
-    MJ_Company ||--o{ ProductCategory : "CompanyID"
-    MJ_Company ||--o{ Promotion : "CompanyID"
-    MJ_Company ||--o{ StoredValueAccount : "IssuingCompanyID"
-    MJ_Company ||--o{ Subscription : "CompanyID"
-    MJ_Company ||--o{ SubscriptionFamily : "CompanyID"
     MJ_User ||--o{ CheckoutSessionStep : "LastReplayedByUserID"
     MJ_User ||--o{ EntitlementAccessOverride : "DecidedByUserID, RequestedByUserID"
     MJ_User ||--o{ ExternalInvoice : "IssuedByUserID"
@@ -1535,38 +1600,39 @@ erDiagram
     MJ_Entity ||--o{ DimensionDefault : "EntityID"
     MJ_Entity ||--o{ OrderLinePriceComponent : "SourceEntityID"
     MJ_Entity ||--o{ OrderLineProgressMeasurement : "SourceEntityID"
+    tasks_Task ||--o{ EntitlementAccessOverride : "ApprovalTaskID"
+    tasks_Task ||--o{ OrderHeader : "ApprovalTaskID"
     acct_JournalEntry ||--o{ OrderLine : "JournalEntryID"
     acct_JournalEntry ||--o{ PaymentHeader : "JournalEntryID"
     MJ_MagicLinkInvite ||--o{ CheckoutWidgetDistribution : "MagicLinkInviteID"
-    tasks_Task ||--o{ EntitlementAccessOverride : "ApprovalTaskID"
     MJ_CompanyIntegration ||--o{ PaymentProvider : "CompanyIntegrationID"
     MJ_Role ||--o{ SalesRule : "ApprovalRequiredRoleID"
 ```
 
 | → target | count | from |
 |---|---|---|
+| `__mj.Company` | 16 | `CheckoutWidget.CompanyID`, `ExternalInvoice.CompanyID`, `OrderCompanyPolicy.ID`, `OrderHeader.CompanyID`, `OrderHeaderPaymentSchedule.CompanyID`, `OrderLine.CompanyID`, `PaymentDetail.CompanyID`, `PaymentHeader.ReceivingCompanyID`, `PaymentProvider.CompanyID`, `Product.CompanyID`, `ProductCategory.CompanyID`, `Promotion.CompanyID`, `ReferralProgram.CompanyID`, `StoredValueAccount.IssuingCompanyID`, `Subscription.CompanyID`, `SubscriptionFamily.CompanyID` |
 | `__mj_BizAppsCommon.Person` | 15 | `CheckoutSession.PersonID`, `CustomerPaymentMethod.OwnerPersonID`, `CustomerTaxExemption.PersonID`, `EntitlementGrant.BeneficiaryPersonID`, `EventOrderLine.PersonID`, `ExternalCustomer.BillToPersonID`, `OrderHeader.BillToPersonID`, `OrderHeader.ShipToPersonID`, `OrderLine.ShipToPersonID`, `PaymentHeader.BillToPersonID`, `PaymentIntent.BillToPersonID`, `PriceListAssignment.PersonID`, `PromotionCode.AssignedPersonID`, `StoredValueAccount.BeneficiaryPersonID`, `Subscription.BeneficiaryPersonID` |
-| `__mj.Company` | 15 | `CheckoutWidget.CompanyID`, `ExternalInvoice.CompanyID`, `OrderCompanyPolicy.ID`, `OrderHeader.CompanyID`, `OrderHeaderPaymentSchedule.CompanyID`, `OrderLine.CompanyID`, `PaymentDetail.CompanyID`, `PaymentHeader.ReceivingCompanyID`, `PaymentProvider.CompanyID`, `Product.CompanyID`, `ProductCategory.CompanyID`, `Promotion.CompanyID`, `StoredValueAccount.IssuingCompanyID`, `Subscription.CompanyID`, `SubscriptionFamily.CompanyID` |
 | `__mj.User` | 13 | `CheckoutSessionStep.LastReplayedByUserID`, `EntitlementAccessOverride.DecidedByUserID`, `EntitlementAccessOverride.RequestedByUserID`, `ExternalInvoice.IssuedByUserID`, `OrderConcession.DecidedByUserID`, `OrderConcession.RequestedByUserID`, `OrderHeader.ConfirmedByUserID`, `OrderHeader.PostedByUserID`, `OrderHeader.SalesRepUserID`, `OrderHeaderPaymentSchedule.InvoicedByUserID`, `OrderLineProgressMeasurement.AttestedByUserID`, `PaymentLine.AllocatedByUserID`, `SalesAuthority.SalesRepUserID` |
 | `__mj_BizAppsCommon.Organization` | 13 | `CustomerPaymentMethod.OwnerOrganizationID`, `CustomerTaxExemption.OrganizationID`, `EntitlementGrant.BeneficiaryOrganizationID`, `ExternalCustomer.BillToOrganizationID`, `OrderHeader.BillToOrganizationID`, `OrderHeader.ShipToOrganizationID`, `OrderLine.ShipToOrganizationID`, `PaymentHeader.BillToOrganizationID`, `PaymentIntent.BillToOrganizationID`, `PriceListAssignment.OrganizationID`, `PromotionCode.AssignedOrganizationID`, `StoredValueAccount.BeneficiaryOrganizationID`, `Subscription.HolderOrganizationID` |
 | `__mj_BizAppsCommon.Address` | 4 | `EventProduct.VenueAddressID`, `OrderHeader.BillToAddressID`, `OrderHeader.ShipToAddressID`, `OrderLine.ShipToAddressID` |
 | `__mj_BizAppsAccounting.Dimension` | 3 | `DimensionDefault.DimensionID`, `OrderLine.DimensionID`, `OrderLineDimension.DimensionID` |
 | `__mj_BizAppsAccounting.DimensionValue` | 3 | `DimensionDefault.DimensionValueID`, `OrderLine.DimensionValueID`, `OrderLineDimension.DimensionValueID` |
 | `__mj.Entity` | 3 | `DimensionDefault.EntityID`, `OrderLinePriceComponent.SourceEntityID`, `OrderLineProgressMeasurement.SourceEntityID` |
+| `__mj_BizAppsTasks.Task` | 2 | `EntitlementAccessOverride.ApprovalTaskID`, `OrderHeader.ApprovalTaskID` |
 | `__mj_BizAppsAccounting.JournalEntry` | 2 | `OrderLine.JournalEntryID`, `PaymentHeader.JournalEntryID` |
 | `__mj.MagicLinkInvite` | 1 | `CheckoutWidgetDistribution.MagicLinkInviteID` |
-| `__mj_BizAppsTasks.Task` | 1 | `EntitlementAccessOverride.ApprovalTaskID` |
 | `__mj.CompanyIntegration` | 1 | `PaymentProvider.CompanyIntegrationID` |
 | `__mj.Role` | 1 | `SalesRule.ApprovalRequiredRoleID` |
 
-**`__mj.Company` is the multi-company spine.** 15 tables reference it, most through a `CompanyID`
+**`__mj.Company` is the multi-company spine.** 16 tables reference it, most through a `CompanyID`
 column, `OrderLine` among them — that column is what makes a mixed-company order bookable (rule 1).
 
 ---
 
 ## 4. Value lists (CHECK-constrained)
 
-80 columns are constrained to a closed set at the database. These are the ones worth knowing
+81 columns are constrained to a closed set at the database. These are the ones worth knowing
 before writing a query — a value not on this list cannot be in the column. A column §2 does not mark
 `required` can also be NULL, because a CHECK of this shape does not refuse NULL.
 
@@ -1594,9 +1660,10 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `EventProduct.EventFormat` | `In-Person` · `Virtual` · `Hybrid` |
 | `ExternalInvoice.Status` | `Sending` · `Sent` · `Canceled` · `Failed` |
 | `ExternalPayment.Disposition` | `Captured` · `Held` · `Unmatched` · `Refused` · `Ignored` · `Reapplied` · `ReversalNeeded` |
+| `InstalmentLineBilling.Part` | `Net` · `Unallocated` · `Charge` |
 | `OrderCompanyPolicy.StackingMode` | `Sequential` · `Additive` |
-| `OrderConcession.DeliveryForm` | `Price` · `Duration` · `Scope` · `Seats` · `Terms` |
-| `OrderConcession.ReasonCategory` | `Retention` · `Referral` · `Other` |
+| `OrderConcession.DeliveryForm` | `Price` · `Duration` · `Scope` · `Seats` · `Terms` · `Shift` · `Shorten` |
+| `OrderConcession.ReasonCategory` | `Retention` · `Referral` · `Dispute` · `Other` |
 | `OrderConcession.Status` | `Pending` · `Approved` · `Rejected` |
 | `OrderHeader.FulfillmentStatus` | `Pending` · `PartiallyFulfilled` · `Fulfilled` · `NotApplicable` · `Returned` |
 | `OrderHeader.OrderType` | `Sale` · `Return` · `Cancellation` · `Amendment` · `AccountCredit` |
@@ -1640,7 +1707,7 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `StoredValueAccount.Status` | `Active` · `Depleted` · `Expired` · `Suspended` · `Voided` |
 | `StoredValueTransaction.TransactionType` | `Issue` · `Redeem` · `Refund` · `Adjust` · `Expire` |
 | `Subscription.Status` | `Active` · `Paused` · `Canceled` · `Migrated` · `Trialing` |
-| `SubscriptionEvent.EventType` | `Created` · `Activated` · `TrialStarted` · `TrialEnded` · `PaymentSucceeded` · `PaymentFailed` · `Paused` · `Resumed` · `CancellationRequested` · `Canceled` · `Migrated` · `Extended` · `RenewalOrderSpawned` |
+| `SubscriptionEvent.EventType` | `Created` · `Activated` · `TrialStarted` · `TrialEnded` · `PaymentSucceeded` · `PaymentFailed` · `Paused` · `Resumed` · `CancellationRequested` · `Canceled` · `Migrated` · `Extended` · `RenewalOrderSpawned` · `Rescheduled` · `Shortened` · `AmountChanged` |
 | `SubscriptionTerm.Status` | `Scheduled` · `Active` · `Completed` · `Canceled` · `Lapsed` |
 | `SubscriptionType.BenefitModel` | `Holder` · `Individual` · `Organization` |
 | `SubscriptionType.BillingCadence` | `Monthly` · `Quarterly` · `Annual` · `Custom` |
@@ -1653,7 +1720,7 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `SubscriptionType.StartMode` | `Immediate` · `Deferred` · `CalendarAnchored` |
 | `SubscriptionType.SubscriberScope` | `Organization` · `Person` · `Either` |
 
-The other 109 CHECK constraints are rules rather than lists: exactly one of two party columns, a
+The other 126 CHECK constraints are rules rather than lists: exactly one of two party columns, a
 window whose end follows its start, a non-negative amount, a column that must hold valid JSON, a
 field required by another field's value. §2 does not show them; `sys.check_constraints` has their
 bodies.
@@ -1662,7 +1729,7 @@ bodies.
 
 ## 5. The rules that live in TRIGGERS, not in the tables
 
-12 business triggers, and they carry two of the app's load-bearing guarantees: totals the database
+14 business triggers, and they carry two of the app's load-bearing guarantees: totals the database
 derives, and records that cannot change once they are booked, captured or decided. A diagram cannot
 show either, and code that ignores them will fail at runtime rather than at compile time.
 
@@ -1670,7 +1737,8 @@ show either, and code that ignores them will fail at runtime rather than at comp
 |---|---|---|
 | `EntitlementAccessOverride` | `trg_EntitlementAccessOverride_Record` | An update cannot rewrite the override's request or decision. What was requested (order, type, reason, last day, requester) never changes (51023); its status moves only from Requested to Approved, Rejected or Withdrawn, and from Approved to Expired (51024); and the approval task and the decision, once recorded, are not rewritten (51025). The trigger fires on UPDATE only, so a row can still be deleted. That the decision came through the approval task is checked in code (`EntitlementAccessOverrideEntityServer`). |
 | `InstalmentLineBilling` | `trg_InstalmentLineBilling_Immutable` | A billing row records what an issued instalment invoice billed a line, and later instalments are sliced against it, so a row cannot be updated or deleted (51032). A correction is an amount change or a reversal order. Purges of committed test orders disable it with the other order guards. |
-| `OrderHeader` | `trg_OrderHeader_ImmutableAfterConfirm` | Every rule that freezes a confirmed order header. Its status cannot leave Confirmed (51014), and its date, selling company, order type, reversal link and set bill-to party are history (51013); an empty bill-to party may still be filled, which is what claiming a guest order relies on. A set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order (51015); reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. Once `ConfirmedAt` is set, `ConfirmedByUserID` cannot change (51017). Its `PaymentTermsTypeID` changes only to match its latest approved `Terms` `OrderConcession`, prior terms to new (51018); matching the latest, not any, keeps an earlier approval from being replayed, and `DueDate` stays writable. The checks run in that order, so a write that breaks two rules is refused with the first. |
+| `OrderConcession` | `trg_OrderConcession_RollupTotals` | A concession that carries a `ScheduleReduction` or a `CreditMemoAmount` changes what the order still owes, so adding, changing or removing one recomputes the order's totals through `spRecalcOrderHeaderTotals`. Concessions with neither leave the totals alone. |
+| `OrderHeader` | `trg_OrderHeader_ImmutableAfterConfirm` | Every rule that freezes a confirmed order header. Its status cannot leave Confirmed (51014), and its date, selling company, order type, reversal link and set bill-to party are history (51013); an empty bill-to party may still be filled, which is what claiming a guest order relies on (claim minting is dormant: `CheckoutSessionService` calls the local stand-in in `identityClaimContracts.ts`, which throws). A set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order (51015); reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. Once `ConfirmedAt` is set, `ConfirmedByUserID` cannot change (51017). Its `PaymentTermsTypeID` changes only to match its latest approved `Terms` `OrderConcession`, prior terms to new (51018); matching the latest, not any, keeps an earlier approval from being replayed, and `DueDate` stays writable. The checks run in that order, so a write that breaks two rules is refused with the first. |
 | `OrderHeaderPaymentSchedule` | `trg_OrderHeaderPaymentSchedule_Immutable` | An instalment is frozen once it is past Scheduled. Only a Scheduled row may be deleted (51020); after that its order, company, number, due date, amount and invoice identity cannot change, and it cannot return to Scheduled (51021). `DocumentNumber` and `JournalEntryID` are set once and never cleared or replaced, on any status (51022). That the instalments add up to the lines is checked in code, at confirm and at invoicing, because editing a schedule one row at a time passes through states that do not add up. |
 | `OrderHeaderPaymentSchedule` | `trg_OrderHeaderPaymentSchedule_RollupTotals` | Adding, re-amounting or removing an instalment recomputes the order's instalment rollups (`AmountPaid`, `Balance`, `Status` per row). |
 | `OrderLine` | `trg_OrderLine_ImmutableAfterConfirm` | Every rule that freezes a confirmed order line. A line of a confirmed order cannot be deleted (51002), and its product, quantity, money and selling company are history (51003). This is why the server short-circuits its own total recomputation once `JournalEntryID` is stamped — a figure it cannot reproduce from stored state alone would be rejected here and roll back the whole confirm. The same set-once address rule as the header holds for a line's own `ShipToAddressID` and `ShipToAddressSnapshot` (51016); the confirm path writes a draft's line snapshots while the header is still Draft for this reason. A set `JournalEntryID` is never cleared or replaced, on any status (51008). `test-harnesses/order-guard-triggers.mjs` and `address-snapshot-triggers.mjs` exercise both triggers. |
@@ -1682,7 +1750,7 @@ show either, and code that ignores them will fail at runtime rather than at comp
 | `PaymentLine` | `trg_PaymentLine_ImmutableAfterCapture` | Once its payment is captured, an applied payment line cannot be deleted (51010), and its amount, order and order line cannot change (51011); the instalment it names (`OrderHeaderPaymentScheduleID`) is not covered. A set `BookedAt` is never cleared or replaced (51012). |
 | `PaymentLine` | `trg_PaymentLine_RollupTotals` | The order's `AmountPaid` and `Balance`, and its instalments', are recomputed from the lines of its captured payments. |
 
-The other 68 triggers are CodeGen's `trgUpdate*` `__mj_UpdatedAt` maintainers, one per table.
+The other 71 triggers are CodeGen's `trgUpdate*` `__mj_UpdatedAt` maintainers, one per table.
 They are not business logic and are omitted above.
 
 ---
@@ -1698,9 +1766,9 @@ about where its value came from.
 | walk | order tried | on exhaustion |
 |---|---|---|
 | **GL account** | product → its category → that category's ancestors → its product type → the line's company | **Refuses the confirm.** Booked money with nowhere to go is worse than no order. |
-| **Price** | stated `UnitPrice` → the pricing plugin named by `PricingDriverClass` on the product, its category chain, its type or the company policy (refused when that name has no registered plugin) → a pricing plugin registered by ID for the product, its category or an ancestor, or the company → the default resolver, which picks by `Priority` among the `ProductPrice` rows on the product or inherited from its category chain, from the customer's price lists and the base prices | When no price rule is found, the line is refused unless the company's `OrderCompanyPolicy.RefuseUnpricedLines` is off, and then it books at zero. Rules that exist but do not apply to the quantity or date, or two that tie, are refused either way. |
+| **Price** | stated `UnitPrice` → a pricing plugin registered for the product, its category or an ancestor, or the company → the default resolver, which picks by `Priority` among the `ProductPrice` rows on the product or inherited from its category chain, from the customer's price lists and the base prices | When no price rule is found, the line is refused unless the company's `OrderCompanyPolicy.RefuseUnpricedLines` is off, and then it books at zero. Rules that exist but do not apply to the quantity or date, or two that tie, are refused either way. |
 | **Payment terms** | stated `DueDate` → stated `PaymentTermsTypeID` → `CustomerPaymentTerms` → the selling company's default, `OrderCompanyPolicy.DefaultPaymentTermsTypeID` → due on receipt | Falls through to due on receipt. |
-| **GL dimensions** | the tag stated on the line (`OrderLine.DimensionID` / `DimensionValueID`) → tags derived from the line itself (ARR type from its subscription action, vintage from its event's start year) → `DimensionDefault` rows on the product → its category → that category's ancestors → its product type → the line's company, nearest level per dimension; the result, with the line's own tag winning on its axis, is written as `OrderLineDimension` rows | The line books untagged on that dimension. The booking is refused only where the GL account's link requires the dimension. |
+| **GL dimensions** | the tag stated on the line (`OrderLine.DimensionID` / `DimensionValueID`) → tags derived from the line itself (ARR type from its subscription action, vintage from its event's start year) → `DimensionDefault` rows on the product → its category → that category's ancestors → its product type → the line's company, nearest level per dimension; derived tags are written as `OrderLineDimension` rows | The line books untagged on that dimension. The booking is refused only where the GL account's link requires the dimension. |
 
 Two more behaviours are server-side only:
 
