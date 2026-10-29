@@ -141,7 +141,7 @@ The table lists the main ones. The full list, by area, is in [`orders-api-and-ui
 | `Orders.GetFulfillmentQueue` | Computed backlog of unfulfilled confirmed order lines. |
 | `Orders.GetOverdueWorklist` | Computed overdue receivables. |
 | `Orders.CancelSubscription` | Policy in, reversal out. |
-| `Orders.SpawnRenewals` | Long-running: place renewal orders at lead time. |
+| `Orders.SpawnRenewals` | Long-running: place renewal orders at lead time. The lead time is the subscription's `RenewalLeadDays`, else its subscription type's, so products that need a different lead time go on a type carrying it; `scripts/move-subscription-types.mjs` moves a product and its open subscriptions to that type. |
 
 `Orders.ChargeRenewals` is a scheduled Action rather than a remote operation: it charges renewal cards daily and has no browser caller (`packages/Server/src/custom/charge-renewals.action.ts`).
 
@@ -286,7 +286,7 @@ Copy [`.env.example`](../.env.example) to `.env` (gitignored). `mj.config.cjs`, 
 | Keys | Read by |
 |---|---|
 | `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | `mj sync`, `mj test`, the scripts and the harnesses. `mj migrate` and `mj codegen` use the same host, port and database. |
-| `DB_TRUST_SERVER_CERTIFICATE` | The MJ CLI (`mj migrate`, `mj codegen`, `mj sync`, `mj test`) and `scripts/backfill-checkout-answers.mjs`. The harnesses and the shell scripts always trust the certificate. |
+| `DB_TRUST_SERVER_CERTIFICATE` | The MJ CLI (`mj migrate`, `mj codegen`, `mj sync`, `mj test`) `scripts/backfill-checkout-answers.mjs` and `scripts/move-subscription-types.mjs`. The harnesses and the shell scripts always trust the certificate. |
 | `CODEGEN_DB_USERNAME`, `CODEGEN_DB_PASSWORD` | The login `mj migrate` and `mj codegen` connect with; `seed-demo-data.mjs --reset` also uses it to stand down the immutability triggers |
 | `MJ_CORE_SCHEMA` | MJ core schema name; default `__mj` |
 | `MJ_CORE_VERSION`, `BIZAPPS_COMMON_REPO`, `BIZAPPS_TASKS_REPO`, `BIZAPPS_ACCOUNTING_REPO`, `INTEGRATION_USER_EMAIL` | `scripts/rebuild-db.sh` only |
