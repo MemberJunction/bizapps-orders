@@ -314,20 +314,26 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      * A voided order is never invoiced, so it gets no button rather than one that waits forever.
      */
     public get SendShown(): boolean {
-        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.Record?.Status !== 'Voided' && this.hasBalanceDue && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
     }
 
     public get Sendable(): boolean {
-        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.hasBalanceDue && CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+    }
+
+    /**
+     * Nothing to invoice without a balance due (golive #379), the same test the scheduled send's
+     * worklist makes. A return holds credit, and an original its return settled owes nothing; sending
+     * the settled original was refused as part-paid and left a permanent Failed row.
+     */
+    private get hasBalanceDue(): boolean {
+        return Number(this.Record?.Balance ?? 0) > 0;
     }
 
     /** What the panel says when nothing has gone to the rail yet. */
     public get EmptyMessage(): string {
         const sent = `Nothing has been sent to ${this.ProviderName} for this order yet.`;
-        // Queued means the scheduled send's worklist, which takes only orders with a balance due: a
-        // return, or an order its return has settled, is never picked up (golive #379).
-        const queued = this.Sendable && Number(this.Record?.Balance ?? 0) > 0;
-        return queued ? `${sent} It is queued, and the scheduled send picks it up.` : sent;
+        return this.Sendable ? `${sent} It is queued, and the scheduled send picks it up.` : sent;
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */

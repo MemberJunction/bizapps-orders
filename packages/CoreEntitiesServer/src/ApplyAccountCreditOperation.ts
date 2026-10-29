@@ -131,6 +131,37 @@ export function ReturnCreditToNet(reversalBalance: number, originBalance: number
     return amount > TOLERANCE ? amount : 0;
 }
 
+/** One reversal line's credit (a magnitude) and the order whose line it reverses. */
+export interface ReversalCredit {
+    OriginOrderID: string;
+    Credit: number;
+}
+
+/**
+ * What a reversal's credit settles on each order it reverses (golive #379). Each origin gets at most
+ * the credit its own reversed lines carry and at most what it owes, and the total never exceeds what
+ * the reversal holds (`available`). Credit from a line reversing one order never pays down another.
+ * `owed` is keyed by the same IDs as `credits`.
+ */
+export function PlanReturnNetting(
+    credits: ReversalCredit[],
+    available: number,
+    owed: Map<string, number>,
+): Array<{ OriginOrderID: string; Amount: number }> {
+    const byOrigin = new Map<string, number>();
+    for (const c of credits) byOrigin.set(c.OriginOrderID, (byOrigin.get(c.OriginOrderID) ?? 0) + c.Credit);
+
+    const plan: Array<{ OriginOrderID: string; Amount: number }> = [];
+    let left = available;
+    for (const [origin, credit] of byOrigin) {
+        const amount = ReturnCreditToNet(-Math.min(credit, left), owed.get(origin) ?? 0);
+        if (amount === 0) continue;
+        plan.push({ OriginOrderID: origin, Amount: amount });
+        left = money(left - amount);
+    }
+    return plan;
+}
+
 @RegisterClass(BaseRemotableOperation, 'Orders.ApplyAccountCredit')
 export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperationBase {
     protected async InternalExecute(

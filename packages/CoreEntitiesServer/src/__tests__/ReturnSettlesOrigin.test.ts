@@ -32,6 +32,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 });
 
 import type { IMetadataProvider } from '@memberjunction/core';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import { ApplyAccountCreditOperation } from '../ApplyAccountCreditOperation.js';
 import { OrderEntityServer } from '../OrderEntityServer.js';
 import { PaymentLineEntityServer } from '../PaymentLineEntityServer.js';
@@ -93,32 +94,61 @@ describe('the allocation guard lets a return’s credit be spent', () => {
 
 // ── (b) The confirm nets the return's credit against its origin ──────────────────────────────────
 
-type NettingOrder = { netCreditAgainstOrigin(): Promise<void> };
+type NettingOrder = { netCreditAgainstOrigin(lines: unknown[], reversals: Map<string, unknown>): Promise<void> };
 
-function returnOrder(ownBalance: number, fields: Record<string, unknown> = {}): NettingOrder {
-    return withFields(OrderEntityServer.prototype, {
+const ORDER_B = '99999999-0000-4000-8000-00000000000b';
+const SYSTEM_USER = { ID: 'system-user', Name: 'System' };
+const CALLER = { ID: 'account-director', Name: 'Account Director' };
+
+/** A reversal order whose lines each reverse a line of `origin`, carrying `credit` (a magnitude). */
+function reversal(
+    lines: Array<{ origin: string | null; credit: number; memo?: boolean }>,
+    fields: Record<string, unknown> = {},
+): { order: NettingOrder; run: () => Promise<void> } {
+    const own = -lines.reduce((s, l) => s + l.credit, 0);
+    const order = withFields(OrderEntityServer.prototype, {
         ID: RETURN,
         OrderNumber: 'ORD-002481',
         ReversesOrderHeaderID: ORIGIN,
         ProviderToUse: {},
-        ContextCurrentUser: {},
-        readBalanceFromRow: async () => ({ TotalGross: ownBalance, AmountPaid: 0, Balance: ownBalance, FulfillmentStatus: 'NotApplicable' }),
+        ContextCurrentUser: CALLER,
+        readBalanceFromRow: async () => ({ TotalGross: own, AmountPaid: 0, Balance: own, FulfillmentStatus: 'NotApplicable' }),
         ...fields,
     }) as unknown as NettingOrder;
+    const rows = lines.map((l, i) => ({
+        ID: `line-${i}`,
+        LineTotalGross: l.memo ? -99999 : -l.credit,
+        CreditMemoAmount: l.memo ? l.credit : null,
+    }));
+    const reversals = new Map<string, unknown>(
+        lines.flatMap((l, i) => (l.origin ? [[`line-${i}`, { Origin: { OrderHeaderID: l.origin } }] as [string, unknown]] : [])),
+    );
+    return { order, run: () => order.netCreditAgainstOrigin(rows, reversals) };
+}
+
+function owes(balances: Record<string, number>) {
+    mocks.rows['Order Headers'] = Object.entries(balances).map(([ID, Balance]) => ({ ID, Balance }));
 }
 
 function spyOnApply() {
+    vi.spyOn(UserCache.Instance, 'GetSystemUser').mockReturnValue(SYSTEM_USER as never);
     return vi
         .spyOn(ApplyAccountCreditOperation.prototype, 'ExecuteServer')
         .mockResolvedValue({ Success: true, Output: { Success: true } } as never);
 }
 
+const appliedTo = (apply: ReturnType<typeof spyOnApply>) =>
+    apply.mock.calls.map((c) => {
+        const input = c[0] as { TargetOrderHeaderID: string; Amount: number };
+        return [input.TargetOrderHeaderID, input.Amount];
+    });
+
 describe('confirming a return settles the order it reverses', () => {
     it('a full return of an unpaid order applies the whole credit, leaving both balances at zero', async () => {
-        mocks.rows['Order Headers'] = [{ Balance: 3000 }];
+        owes({ [ORIGIN]: 3000 });
         const apply = spyOnApply();
 
-        await returnOrder(-3000).netCreditAgainstOrigin();
+        await reversal([{ origin: ORIGIN, credit: 3000 }]).run();
 
         expect(apply).toHaveBeenCalledTimes(1);
         const input = apply.mock.calls[0][0] as { SourceOrderHeaderID: string; TargetOrderHeaderID: string; Amount: number };
@@ -128,46 +158,97 @@ describe('confirming a return settles the order it reverses', () => {
     });
 
     it('applies nothing when the origin is already paid, leaving the credit for a refund', async () => {
-        mocks.rows['Order Headers'] = [{ Balance: 0 }];
+        owes({ [ORIGIN]: 0 });
         const apply = spyOnApply();
 
-        await returnOrder(-3000).netCreditAgainstOrigin();
+        await reversal([{ origin: ORIGIN, credit: 3000 }]).run();
 
         expect(apply).not.toHaveBeenCalled();
     });
 
     it('a partial return nets only its own amount', async () => {
-        mocks.rows['Order Headers'] = [{ Balance: 3000 }];
+        owes({ [ORIGIN]: 3000 });
         const apply = spyOnApply();
 
-        await returnOrder(-1000).netCreditAgainstOrigin();
+        await reversal([{ origin: ORIGIN, credit: 1000 }]).run();
 
-        expect(apply.mock.calls[0][0]).toMatchObject({ Amount: 1000 });
+        expect(appliedTo(apply)).toEqual([[ORIGIN, 1000]]);
     });
 
     it('nets no more than the origin still owes', async () => {
-        mocks.rows['Order Headers'] = [{ Balance: 400 }];
+        owes({ [ORIGIN]: 400 });
         const apply = spyOnApply();
 
-        await returnOrder(-3000).netCreditAgainstOrigin();
+        await reversal([{ origin: ORIGIN, credit: 3000 }]).run();
 
-        expect(apply.mock.calls[0][0]).toMatchObject({ Amount: 400 });
+        expect(appliedTo(apply)).toEqual([[ORIGIN, 400]]);
+    });
+
+    it('counts a scheduled line at the credit memo it booked, as the balance does', async () => {
+        owes({ [ORIGIN]: 3000 });
+        const apply = spyOnApply();
+
+        await reversal([{ origin: ORIGIN, credit: 250, memo: true }]).run();
+
+        expect(appliedTo(apply)).toEqual([[ORIGIN, 250]]);
+    });
+
+    it('settles an unpaid renewal on a second order, not only the order named on the header', async () => {
+        // Review scenario 1: Term 1 on order A (paid), renewal Term 2 on order B (unpaid), one cancellation.
+        owes({ [ORIGIN]: 0, [ORDER_B]: 1200 });
+        const apply = spyOnApply();
+
+        await reversal([
+            { origin: ORIGIN, credit: 600 },
+            { origin: ORDER_B, credit: 1200 },
+        ]).run();
+
+        expect(appliedTo(apply)).toEqual([[ORDER_B, 1200]]);
+    });
+
+    it('never spends one order’s refund on another order’s balance', async () => {
+        // Review scenario 2: A unpaid and half reversed; B paid in cash and reversed in full.
+        owes({ [ORIGIN]: 1200, [ORDER_B]: 0 });
+        const apply = spyOnApply();
+
+        await reversal([
+            { origin: ORIGIN, credit: 600 },
+            { origin: ORDER_B, credit: 1200 },
+        ]).run();
+
+        expect(appliedTo(apply)).toEqual([[ORIGIN, 600]]);
+    });
+
+    it('applies the credit as the system user, after the caller’s own save got this far', async () => {
+        owes({ [ORIGIN]: 3000 });
+        const apply = spyOnApply();
+
+        await reversal([{ origin: ORIGIN, credit: 3000 }]).run();
+
+        const context = apply.mock.calls[0][1] as { user: unknown };
+        expect(context.user).toBe(SYSTEM_USER);
+        expect((apply.mock.calls[0][0] as { Reason: string }).Reason).toContain('Account Director');
+    });
+
+    it('refuses rather than writing as the caller when there is no system user', async () => {
+        owes({ [ORIGIN]: 3000 });
+        spyOnApply();
+        vi.spyOn(UserCache.Instance, 'GetSystemUser').mockReturnValue(undefined as never);
+
+        await expect(reversal([{ origin: ORIGIN, credit: 3000 }]).run()).rejects.toThrow(/system user/);
     });
 
     it('fails the confirm when the credit cannot be applied, rather than leaving half a return', async () => {
-        mocks.rows['Order Headers'] = [{ Balance: 3000 }];
-        vi.spyOn(ApplyAccountCreditOperation.prototype, 'ExecuteServer').mockResolvedValue({
-            Success: true,
-            Output: { Success: false, Message: 'no AccountCredit type' },
-        } as never);
+        owes({ [ORIGIN]: 3000 });
+        spyOnApply().mockResolvedValue({ Success: true, Output: { Success: false, Message: 'no AccountCredit type' } } as never);
 
-        await expect(returnOrder(-3000).netCreditAgainstOrigin()).rejects.toThrow(/no AccountCredit type/);
+        await expect(reversal([{ origin: ORIGIN, credit: 3000 }]).run()).rejects.toThrow(/no AccountCredit type/);
     });
 
     it('does nothing on an order that reverses nothing', async () => {
         const apply = spyOnApply();
 
-        await returnOrder(-3000, { ReversesOrderHeaderID: null }).netCreditAgainstOrigin();
+        await reversal([{ origin: null, credit: -100 }], { ReversesOrderHeaderID: null }).run();
 
         expect(apply).not.toHaveBeenCalled();
         expect(mocks.views).toHaveLength(0);
@@ -196,7 +277,7 @@ function stampingProvider() {
     return { provider, saved };
 }
 
-function returnOf(quantity: number, originQuantity: number, alreadyReversed = 0, orderType = 'Sale') {
+function returnOf(quantity: number | number[], originQuantity: number, alreadyReversed = 0, orderType = 'Sale') {
     const { provider, saved } = stampingProvider();
     const order = withFields(OrderEntityServer.prototype, {
         OrderNumber: 'ORD-002481',
@@ -205,10 +286,11 @@ function returnOf(quantity: number, originQuantity: number, alreadyReversed = 0,
         ProviderToUse: provider,
         ContextCurrentUser: {},
     }) as unknown as StampingOrder;
-    const lines = [{ ID: RETURN_LINE, Quantity: -quantity, ReversesOrderLineID: ORIGIN_LINE }];
-    const reversals = new Map<string, unknown>([
-        [RETURN_LINE, { Origin: { ID: ORIGIN_LINE, Quantity: originQuantity, SubscriptionID: SUB }, AlreadyReversed: alreadyReversed }],
-    ]);
+    // `quantity` may be split across sibling lines of this one return, all reversing the same origin line.
+    const parts = Array.isArray(quantity) ? quantity : [quantity];
+    const context = { Origin: { ID: ORIGIN_LINE, Quantity: originQuantity, SubscriptionID: SUB }, AlreadyReversed: alreadyReversed };
+    const lines = parts.map((q, i) => ({ ID: `${RETURN_LINE}-${i}`, Quantity: -q, ReversesOrderLineID: ORIGIN_LINE }));
+    const reversals = new Map<string, unknown>(lines.map((l) => [l.ID, context]));
     return { run: () => order.cancelReturnedSubscriptions(lines, reversals), saved };
 }
 
@@ -228,6 +310,24 @@ describe('a full return cancels the subscription the returned line sold', () => 
     it('counts earlier returns of the same line toward a full return', async () => {
         mocks.rows['Subscription Terms'] = [{ ID: TERM, OrderLineID: ORIGIN_LINE }];
         const { run, saved } = returnOf(1, 2, 1);
+
+        await run();
+
+        expect(saved.map((s) => s.row.Status)).toEqual(['Canceled', 'Canceled']);
+    });
+
+    it('adds up sibling lines of the same return that together take the whole line back', async () => {
+        mocks.rows['Subscription Terms'] = [{ ID: TERM, OrderLineID: ORIGIN_LINE }];
+        const { run, saved } = returnOf([0.5, 0.5], 1);
+
+        await run();
+
+        expect(saved.map((s) => s.row.Status)).toEqual(['Canceled', 'Canceled']);
+    });
+
+    it('treats a prorated quantity a hair short of the origin as the whole line', async () => {
+        mocks.rows['Subscription Terms'] = [{ ID: TERM, OrderLineID: ORIGIN_LINE }];
+        const { run, saved } = returnOf(0.19179999, 0.3836, 0.1918);
 
         await run();
 
@@ -273,7 +373,7 @@ describe('OrderEntityServer.Save', () => {
     const commit = source.indexOf('await dbProvider.CommitTransaction()');
     const booking = source.indexOf('if (booking) {\n                const lines = await this.loadLinesForBooking()');
 
-    it.each(['await this.netCreditAgainstOrigin()', 'await this.cancelReturnedSubscriptions(lines, reversals'])(
+    it.each(['await this.netCreditAgainstOrigin(lines, reversals)', 'await this.cancelReturnedSubscriptions(lines, reversals'])(
         '%s runs in the booking block, before the commit',
         (call) => {
             const at = source.indexOf(call);

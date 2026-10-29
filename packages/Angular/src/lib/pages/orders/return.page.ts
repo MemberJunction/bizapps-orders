@@ -235,7 +235,8 @@ interface MJOReturnLine {
 
                     <mj-alert Variant="info" Icon="fa-solid fa-hand-holding-dollar" class="mjo-rt__note">
                             <strong>Settlement.</strong>
-                            The return creates a credit on the customer's account. Apply it to another
+                            The return's credit first pays off whatever the original order still owes.
+                            Any credit left over stays on the customer's account: apply it to another
                             order or issue a refund. Refunds are not issued automatically.
                     </mj-alert>
 
@@ -649,6 +650,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         if (!this.CanReturn || !this.Origin) return;
         this.Busy = true;
         this.Error = null;
+        this.Notice = null;
         try {
             // The company is fixed at construction; everything else the return
             // needs is a header patch. A return belongs to the SAME customer and
