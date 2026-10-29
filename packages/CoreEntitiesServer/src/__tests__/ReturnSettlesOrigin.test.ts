@@ -185,12 +185,19 @@ describe('confirming a return settles the order it reverses', () => {
     });
 
     it('counts a scheduled line at the credit memo it booked, as the balance does', async () => {
-        owes({ [ORIGIN]: 3000 });
+        // The memo line's gross is far larger than its memo; read at the gross it would take order B's credit too.
+        owes({ [ORIGIN]: 3000, [ORDER_B]: 1000 });
         const apply = spyOnApply();
 
-        await reversal([{ origin: ORIGIN, credit: 250, memo: true }]).run();
+        await reversal([
+            { origin: ORIGIN, credit: 250, memo: true },
+            { origin: ORDER_B, credit: 1000 },
+        ]).run();
 
-        expect(appliedTo(apply)).toEqual([[ORIGIN, 250]]);
+        expect(appliedTo(apply)).toEqual([
+            [ORIGIN, 250],
+            [ORDER_B, 1000],
+        ]);
     });
 
     it('settles an unpaid renewal on a second order, not only the order named on the header', async () => {
