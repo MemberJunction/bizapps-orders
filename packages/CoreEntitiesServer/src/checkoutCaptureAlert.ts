@@ -117,6 +117,30 @@ export async function raiseProviderSubscriptionAlert(
 }
 
 /**
+ * A gateway subscription on a price Orders sells, which no Orders subscription records (E3): a subscriber
+ * the import missed or held back, or one someone created at the gateway. Nothing is booked until a person
+ * links it (`LinkProviderSubscription`); one open Task per gateway subscription.
+ */
+export async function raiseUnknownGatewaySubscriptionAlert(
+    alert: { ProviderSubscriptionID: string; Reason: string },
+    contextUser?: UserInfo,
+    provider?: IMetadataProvider,
+): Promise<boolean> {
+    LogError(`${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} Unknown gateway subscription ${alert.ProviderSubscriptionID}: ${alert.Reason}`);
+    const outcome = await raiseAlertTask(
+        `Gateway subscription not recorded in Orders: ${alert.ProviderSubscriptionID} (UnknownGatewaySubscription)`,
+        `The payment gateway bills subscription ${alert.ProviderSubscriptionID} on a price Orders sells, but no Orders ` +
+            `subscription records it, so nothing it charges is booked and the customer's access is not managed by Orders.\n\n` +
+            `Reason: ${alert.Reason}\n\nIf it is a real subscriber, link it to their Orders subscription with the ` +
+            `Link Provider Subscription action; Orders then books everything the gateway charged since that subscription's term ` +
+            `ended. If it is not one of ours, close this Task.`,
+        contextUser,
+        { OncePerOpenName: true, Provider: provider },
+    );
+    return outcome !== 'AlreadyRaised';
+}
+
+/**
  * The problems that have an OPEN alert Task, by subscription number, or why the Tasks could not be read.
  * Empty (and `Ok`) when the tasks app is not installed: such a host raises no alert Tasks at all.
  */

@@ -39,6 +39,8 @@ import {
     type CancelProviderSubscriptionRequest,
     type CancelProviderSubscriptionResult,
     type DescribeProviderSubscriptionResult,
+    type GatewaySubscriptionInvoice,
+    type ListProviderSubscriptionInvoicesResult,
     type ProviderSubscriptionBillingState,
     type CancelProviderSubscriptionOutcome,
     type EnsureCustomerRequest,
@@ -120,10 +122,33 @@ const HANDLED = [
     'charge.refunded',
 ] as const;
 
+/**
+ * The subscription and invoice events AIDP hears (E3). Each only names the `sub_…`; the handler then reads
+ * the subscription and its invoices from Stripe. Not `invoice.payment_succeeded`, which repeats
+ * `invoice.paid`. The endpoint must be subscribed to these before (or with) a deploy that lists them,
+ * or the endpoint check reports drift.
+ */
+const HANDLED_SUBSCRIPTION = [
+    'invoice.paid',
+    'invoice.payment_failed',
+    'invoice.payment_action_required',
+    'invoice.marked_uncollectible',
+    'invoice.voided',
+    'customer.subscription.created',
+    'customer.subscription.updated',
+    'customer.subscription.deleted',
+    'customer.subscription.paused',
+    'customer.subscription.resumed',
+] as const;
+
 @RegisterClass(BasePaymentProvider, 'Stripe')
 export class StripePaymentProvider extends BasePaymentProvider {
     public override get HandledEventKinds(): readonly string[] {
         return HANDLED;
+    }
+
+    public override get HandledSubscriptionEventKinds(): readonly string[] {
+        return HANDLED_SUBSCRIPTION;
     }
 
     /** The stub stands in whenever the configured account is not live. */
@@ -496,11 +521,38 @@ export class StripePaymentProvider extends BasePaymentProvider {
                     `driver is a stub and cannot read ${providerSubscriptionID} in Stripe.`,
             };
         }
-        const read = await this.call('GET', `/subscriptions/${encodeURIComponent(providerSubscriptionID)}`, undefined, undefined, {
+        const read = await this.call('GET', `/subscriptions/${encodeURIComponent(providerSubscriptionID)}?expand[]=customer`, undefined, undefined, {
             TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS,
         });
         if (!read.Ok) return { Success: false, Reason: `Stripe could not read ${providerSubscriptionID}: ${read.Reason}` };
-        return { Success: true, ...StripeSubscriptionBilling(read.Body) };
+        return { Success: true, ...StripeSubscriptionBilling(read.Body), ...StripeSubscriptionDetails(read.Body) };
+    }
+
+    /**
+     * `GET /v1/invoices?subscription=…&created[gte]=…`, every status, oldest first (E3/E4). The stub
+     * refuses: it has no invoices, and an empty list would read as "nothing to book".
+     */
+    public override async ListProviderSubscriptionInvoices(request: {
+        ProviderSubscriptionID: string;
+        CreatedSince?: Date | null;
+    }): Promise<ListProviderSubscriptionInvoicesResult> {
+        if (this.useStub) {
+            return {
+                Success: false,
+                Reason:
+                    `Payment provider '${this.Config?.Name ?? this.Config?.ID}' is not live (IsLiveMode = 0), so its Stripe ` +
+                    `driver is a stub and cannot list the invoices of ${request.ProviderSubscriptionID}.`,
+            };
+        }
+        // No `status` filter: an invoice list without one returns every status.
+        const query: Record<string, string> = { subscription: request.ProviderSubscriptionID };
+        if (request.CreatedSince) query['created[gte]'] = String(Math.floor(request.CreatedSince.getTime() / 1000));
+        const listed = await this.listAll('/invoices', query, { TimeoutMs: PROVIDER_SUBSCRIPTION_TIMEOUT_MS });
+        if (!listed.Ok) return { Success: false, Reason: `Stripe could not list the invoices of ${request.ProviderSubscriptionID}: ${listed.Reason}` };
+        const invoices = listed.Items.map(StripeInvoiceFacts).sort(
+            (a, b) => (a.CreatedAt?.getTime() ?? 0) - (b.CreatedAt?.getTime() ?? 0),
+        );
+        return { Success: true, Invoices: invoices };
     }
 
     /** `GET /v1/prices/:id`: whether it is active and how often it bills. */
@@ -740,6 +792,9 @@ export class StripePaymentProvider extends BasePaymentProvider {
             event.ProviderIntentID = object.payment_intent as string | undefined;
             const refunded = Number(object.amount_refunded ?? 0);
             if (Number.isFinite(refunded) && refunded > 0) event.Amount = FromMinorUnits(refunded, currency);
+        } else if ((HANDLED_SUBSCRIPTION as readonly string[]).includes(kind)) {
+            const subscriptionID = StripeEventSubscriptionID(kind, object);
+            if (subscriptionID) event.ProviderSubscriptionID = subscriptionID;
         }
 
         return event;
@@ -1103,6 +1158,109 @@ export function StripeSubscriptionBilling(object: Record<string, unknown>): {
     const endsAt = facts.CancelAtPeriodEnd ? facts.CurrentPeriodEnd : facts.CancelAt;
     if (endsAt) return { ...base, State: 'Ending', EndsAt: endsAt };
     return { ...base, State: 'Renewing', EndsAt: null };
+}
+
+/**
+ * The `sub_…` a subscription or invoice event is about, from either payload shape. Only the id is read
+ * (the rest is re-read from Stripe at the driver's pinned version), so the endpoint's API version does
+ * not matter. Null when the event names none (a one-off invoice).
+ *
+ *   · `customer.subscription.*`: the object is the subscription, so its `id`;
+ *   · `invoice.*` up to `2025-02-24`: the invoice's `subscription` (an id, or an expanded object);
+ *   · `invoice.*` from `2025-03-31.basil`: `parent.subscription_details.subscription`.
+ */
+export function StripeEventSubscriptionID(kind: string, object: Record<string, unknown>): string | null {
+    const idOf = (v: unknown): string | null => {
+        if (typeof v === 'string' && v.startsWith('sub_')) return v;
+        if (v && typeof v === 'object' && typeof (v as { id?: unknown }).id === 'string') {
+            const id = (v as { id: string }).id;
+            return id.startsWith('sub_') ? id : null;
+        }
+        return null;
+    };
+    if (kind.startsWith('customer.subscription.')) return idOf(object.id);
+    if (kind.startsWith('invoice.')) {
+        const direct = idOf(object.subscription);
+        if (direct) return direct;
+        const parent = object.parent as { subscription_details?: { subscription?: unknown } } | undefined;
+        return idOf(parent?.subscription_details?.subscription);
+    }
+    return null;
+}
+
+/** The facts of a Stripe subscription beyond its billing state: what it bills, whom, and its metadata. */
+export function StripeSubscriptionDetails(object: Record<string, unknown>): {
+    EndedAt: Date | null;
+    ProviderPriceID: string | null;
+    Quantity: number | null;
+    ProviderCustomerRef: string | null;
+    CustomerEmail: string | null;
+    Metadata: Record<string, string>;
+} {
+    const instant = (v: unknown): Date | null => {
+        const n = Number(v);
+        return v != null && Number.isFinite(n) && n > 0 ? new Date(n * 1000) : null;
+    };
+    const items = ((object.items as { data?: Array<Record<string, unknown>> } | undefined)?.data ?? [])[0];
+    const price = items?.price as { id?: unknown } | string | undefined;
+    const quantity = Number(items?.quantity);
+    const customer = object.customer as unknown;
+    const customerObject = customer && typeof customer === 'object' ? (customer as { id?: unknown; email?: unknown }) : null;
+    const metadata: Record<string, string> = {};
+    for (const [k, v] of Object.entries((object.metadata as Record<string, unknown> | undefined) ?? {})) {
+        if (typeof v === 'string') metadata[k] = v;
+    }
+    return {
+        EndedAt: instant(object.ended_at),
+        ProviderPriceID: typeof price === 'string' ? price : typeof price?.id === 'string' ? price.id : null,
+        Quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+        ProviderCustomerRef: typeof customer === 'string' ? customer : typeof customerObject?.id === 'string' ? customerObject.id : null,
+        CustomerEmail: typeof customerObject?.email === 'string' && customerObject.email ? customerObject.email : null,
+        Metadata: metadata,
+    };
+}
+
+/** A Stripe invoice (`2024-06-20` field names) as `GatewaySubscriptionInvoice`. Pure. */
+export function StripeInvoiceFacts(object: Record<string, unknown>): GatewaySubscriptionInvoice {
+    const currency = String(object.currency ?? 'usd');
+    const major = (v: unknown): number => {
+        const n = Number(v ?? 0);
+        return Number.isFinite(n) ? FromMinorUnits(n, currency) : 0;
+    };
+    const instant = (v: unknown): Date | null => {
+        const n = Number(v);
+        return v != null && Number.isFinite(n) && n > 0 ? new Date(n * 1000) : null;
+    };
+    const idOf = (v: unknown): string | null =>
+        typeof v === 'string' ? v : v && typeof v === 'object' && typeof (v as { id?: unknown }).id === 'string' ? (v as { id: string }).id : null;
+    const line = ((object.lines as { data?: Array<Record<string, unknown>> } | undefined)?.data ?? [])[0];
+    const price = line?.price as { id?: unknown } | string | undefined;
+    const quantity = Number(line?.quantity);
+    const discountAmounts = (object.total_discount_amounts as Array<{ amount?: unknown }> | undefined) ?? [];
+    const discounted =
+        discountAmounts.some((d) => Number(d.amount ?? 0) > 0) ||
+        (Array.isArray(object.discounts) && (object.discounts as unknown[]).length > 0) ||
+        !!object.discount;
+    const transitions = (object.status_transitions as { paid_at?: unknown } | undefined) ?? {};
+    return {
+        ProviderInvoiceID: String(object.id ?? ''),
+        Status: String(object.status ?? ''),
+        BillingReason: typeof object.billing_reason === 'string' ? object.billing_reason : null,
+        AmountPaid: major(object.amount_paid),
+        AmountDue: major(object.amount_due),
+        Tax: major(object.tax),
+        CurrencyCode: currency.toUpperCase(),
+        ProviderIntentID: idOf(object.payment_intent),
+        ProviderChargeID: idOf(object.charge),
+        CreatedAt: instant(object.created),
+        PaidAt: instant(transitions.paid_at),
+        PaidOutOfBand: object.paid_out_of_band === true,
+        Discounted: discounted,
+        AttemptCount: Number.isFinite(Number(object.attempt_count)) ? Number(object.attempt_count) : 0,
+        NextAttemptAt: instant(object.next_payment_attempt),
+        ProviderPriceID: typeof price === 'string' ? price : typeof price?.id === 'string' ? price.id : null,
+        Quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : null,
+    };
 }
 
 export type StripeCancelPlan =

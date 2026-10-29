@@ -49,7 +49,18 @@ export type WebhookDeliveryOutcome = mjBizAppsOrdersPaymentWebhookDeliveryEntity
  * `PaymentWebhookDelivery.ReasonCode`. Short and stable so a view can filter on it; the words live
  * in `Reason`.
  */
-export type WebhookDeliveryReasonCode = WebhookReasonCode | 'unreadable' | 'apply_failed';
+export type WebhookDeliveryReasonCode =
+    | WebhookReasonCode
+    | 'unreadable'
+    | 'apply_failed'
+    /** A subscription event (E3) for a gateway subscription no Orders subscription records, on a mapped price. */
+    | 'unknown_subscription'
+    /** A subscription event (E3) for a gateway subscription on a price Orders does not sell here: not ours. */
+    | 'not_ours'
+    /** A subscription event (E3) whose sync failed; the gateway redelivers. */
+    | 'sync_failed'
+    /** A subscription event (E3) for an account whose BillsSubscriptions switch is off: nothing changes. */
+    | 'provider_off';
 
 /** What the handler decided about one delivery. */
 export interface WebhookDeliveryRecord {

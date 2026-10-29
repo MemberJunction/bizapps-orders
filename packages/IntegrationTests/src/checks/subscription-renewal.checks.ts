@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR74).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR88).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -147,6 +147,35 @@
  *   SR74  a gateway id typed onto an existing subscription is refused, and the row stays unlinked; the
  *         hand-over's sanctioned link still records one
  *
+ *   Hearing the gateway and booking what it did (E3 + E4 + E6), against the same fake gateway, which now also
+ *   reports its invoices, charges and refunds and carries a staged webhook event:
+ *   SR75  a renewal the gateway charged is booked once: term 2 the day after term 1, a confirmed ProviderPayment
+ *         order on the subscription's product at what was charged, one payment keyed by the charge, the events
+ *         and term 2's grants; a second sync does nothing; Spawn Renewals still places nothing
+ *   SR76  charged on another price ($399 Foundation): the product is kept, the price is what was charged, and a
+ *         person is told (RenewalAmountUnusual); a $1 renewal with a coupon is confirmed as charged, no Task, no hold
+ *   SR77  a failed charge: one PaymentFailed event, no term, access kept to the end of the retry's business day
+ *         (Q4); a rerun records nothing twice; the retry that collects books term 2 from the day after term 1
+ *   SR78  the gateway gives up and ends it: cancelled at the end of term, the gateway asked nothing, nothing booked
+ *   SR79  a portal cancel at period end turns automatic renewal off with its event (no Task); withdrawn, back on;
+ *         set to end months before the coverage sold, a person is told and Orders keeps it
+ *   SR80  ended now at the gateway (a dashboard cancel): an immediate cancel on the day it ended
+ *   SR81  Q5: the gateway renews a subscription Orders cancelled: the SAME subscription reactivated with its
+ *         gateway id, the renewal booked, one Task for support, never a second subscription
+ *   SR82  the webhook: a renewal's event books it (Applied), the same event again is AlreadyApplied and books
+ *         nothing; an unknown gateway subscription on a price Orders sells raises one Task however often it is
+ *         reported; one on another price is not_ours with none
+ *   SR83  linking: an id the gateway lacks, one it ended, another customer's, one recorded elsewhere are refused
+ *         writing nothing; a preview writes nothing; the link books what the gateway charged; a second is refused
+ *   SR84  controls: a subscription the gateway does not bill is not synced and Spawn Renewals still renews it; an
+ *         account with its switch off changes nothing, and the first sync after it is on catches up
+ *   SR85  E2b holds: an ordinary order, and a hand-made renewal line naming it, are refused; Charge Renewals
+ *         charges nothing
+ *   SR86  a $0 renewal is booked once at the last price 100% off, nothing owed; a refund the gateway made before
+ *         the booking is booked once after the capture
+ *   SR87  the nightly pass: preview reports and writes nothing; live, it books and reports
+ *   SR88  the nightly sync Action and its schedule ship Disabled and in Preview; the link Action is registered
+ *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
@@ -170,6 +199,7 @@ import { AddDays, BusinessTimeZoneEngine, DayStartUtc } from '@mj-biz-apps/commo
 import { RegisterClass } from '@memberjunction/global';
 import {
     ACCT_SCHEMA,
+    COMMON_SCHEMA,
     CreateOrdersFixture,
     CreateProductPrice,
     CreatePromotion,
@@ -230,6 +260,19 @@ import {
     type GatewayPriceInterval,
     type RetrieveIntentRequest,
     type RetrieveIntentResult,
+    type GatewayRefund,
+    type GatewaySubscriptionInvoice,
+    type ListProviderSubscriptionInvoicesResult,
+    type ListRefundsRequest,
+    type ListRefundsResult,
+    type RetrieveChargeRequest,
+    type RetrieveChargeResult,
+    type WebhookEvent,
+    HandlePaymentWebhook,
+    LinkProviderSubscription,
+    SyncProviderSubscription,
+    SyncProviderSubscriptions,
+    type SyncProviderSubscriptionResult,
     ConfigureRenewalPaymentLinks,
     LoadRenewalPaymentOrder,
     OrdersSettings,
@@ -2930,6 +2973,418 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
             }),
     },
 
+    // ─── E3 + E4: hearing what the gateway did, and booking it ──────────────────────────────────────
+    {
+        Id: 'subscription-renewal.SR75',
+        Name: 'SR75: a renewal the gateway charged is booked once: term 2 the day after term 1, a confirmed order on the subscription\'s product, the payment captured by charge, events and grants; then nothing more',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                g.held.Invoices = [renewalInvoice(g, 'r1')];
+                const first = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                AssertEqual(first.Outcome, 'Changed', `the sync booked it: ${JSON.stringify(first)}`);
+
+                const terms = await termsOf(ctx, g.SubscriptionID);
+                AssertEqual(terms.length, 2, 'a second term');
+                AssertEqual(`${isoDate(terms[1].StartDate)}→${isoDate(terms[1].EndDate)}`, `${AddDays(g.lastDay, 1)}→2027-12-31`, 'contiguous with term 1, a year long');
+                const order = await renewalOrderOf(ctx, g.SubscriptionID);
+                AssertEqual(`${order.Status}|${order.Origin}|${isoDate(order.OrderDate)}`, `Confirmed|ProviderPayment|${g.lastDay}`, 'a confirmed ProviderPayment order dated the business day it was charged');
+                AssertEqual(`${order.ProductID.toLowerCase()}|${Number(order.UnitPrice)}|${order.RenewsSubscriptionID.toLowerCase()}`, `${Fx().Products.SubRolling.toLowerCase()}|1200|${g.SubscriptionID.toLowerCase()}`, "one line, the subscription's own product, at what was charged, renewing it");
+                const pay = await TxOne<{ N: number; Amount: number }>(
+                    ctx,
+                    `SELECT COUNT(*) AS N, SUM(Amount) AS Amount FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE IdempotencyKey = 'provider-charge:${g.account.toLowerCase()}:ch_it_r1'`,
+                );
+                AssertEqual(`${pay.N}|${Number(pay.Amount)}`, '1|1200', 'one payment, keyed by the gateway charge');
+                AssertEqual(Number((await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${order.ID}'`)).Balance), 0, 'the renewal is paid');
+                const events = await gatewayEvents(ctx, g.SubscriptionID);
+                AssertEqual(events.filter((e) => e.EventType === 'PaymentSucceeded' || e.EventType === 'RenewalOrderSpawned').length, 2, 'PaymentSucceeded and RenewalOrderSpawned, from the gateway');
+                const grants = await TxQuery<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionTermID = '${terms[1].ID}'`);
+                Assert(Number(grants[0].N) > 0, 'term 2 granted its access');
+
+                const again = await syncNow(ctx, g.SubscriptionID, new Date(g.anchor.getTime() + 3600_000));
+                AssertEqual(again.Outcome, 'InLine', `the second sync finds nothing to do: ${JSON.stringify(again)}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'still two terms');
+                // Spawn Renewals still leaves it alone (E1), now that the gateway renews it.
+                AssertEqual((await spawnRenewals(ctx, { SubscriptionID: g.SubscriptionID, AsOfDate: '2027-12-20' })).Placed, 0, 'Spawn Renewals places nothing');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR76',
+        Name: "SR76: a renewal charged on another price keeps the subscription's product and is booked as charged; below the last price with no coupon a person is told, with a coupon not",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                // The $399 "Foundation" price a Professional subscriber was imported on.
+                g.held.Invoices = [renewalInvoice(g, 'r1', { AmountPaid: 399, AmountDue: 399, ProviderPriceID: 'price_it_foundation' })];
+                const synced = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                Assert(synced.Notices.includes('RenewalAmountUnusual'), `a person is told: ${JSON.stringify(synced)}`);
+                const order = await renewalOrderOf(ctx, g.SubscriptionID);
+                AssertEqual(`${order.ProductID.toLowerCase()}|${Number(order.UnitPrice)}`, `${Fx().Products.SubRolling.toLowerCase()}|399`, 'the product is kept; the price is what was charged');
+                AssertEqual(await namedTasks(ctx, `Gateway subscription needs attention: ${g.SubscriptionNumber} (RenewalAmountUnusual)`), 1, 'one Task');
+
+                // Control: a deep coupon ($1 a year, far below today's list price) is booked and confirmed as charged,
+                // with no Task and never held as a concession: the price is what the gateway took, not one someone typed.
+                const h = await gatewayBilled(ctx, Fx().Customers.SecondOrganizationID);
+                h.held.Invoices = [renewalInvoice(h, 'r2', { AmountPaid: 1, AmountDue: 1, Discounted: true })];
+                const quiet = await syncNow(ctx, h.SubscriptionID, h.anchor);
+                AssertEqual(`${quiet.Outcome}|${quiet.Notices.length}`, 'Changed|0', `booked, nobody told: ${JSON.stringify(quiet)}`);
+                const deepOrder = await renewalOrderOf(ctx, h.SubscriptionID);
+                AssertEqual(`${deepOrder.Status}|${Number(deepOrder.UnitPrice)}`, 'Confirmed|1', '$1 a year, confirmed as charged');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR77',
+        Name: 'SR77: a failed renewal charge is recorded once and keeps access to the end of the retry day (Q4); the retry that succeeds books term 2 from the day after term 1',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                const retry = new Date(`${AddDays(g.lastDay, 3)}T15:00:00Z`);
+                g.held.State = 'Collecting';
+                g.held.Invoices = [renewalInvoice(g, 'r1', { Status: 'open', AmountPaid: 0, PaidAt: null, ProviderChargeID: null, NextAttemptAt: retry })];
+                const before = await grantEnd(ctx, g.TermID);
+                const failed = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                AssertEqual(failed.Outcome, 'Changed', `recorded: ${JSON.stringify(failed)}`);
+                const failures = (await gatewayEvents(ctx, g.SubscriptionID)).filter((e) => e.EventType === 'PaymentFailed');
+                AssertEqual(failures.length, 1, 'one PaymentFailed event');
+                AssertEqual(JSON.parse(failures[0].EventData).Attempt, 1, 'naming the attempt');
+                const kept = await grantEnd(ctx, g.TermID);
+                const endOfRetryDay = DayStartUtc(AddDays(g.lastDay, 4), BusinessTimeZoneEngine.Instance.Zone);
+                AssertEqual(kept?.toISOString(), endOfRetryDay.toISOString(), `access kept to the end of the retry's business day (was ${before?.toISOString()})`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 1, 'no term booked for a charge that failed');
+
+                const rerun = await syncNow(ctx, g.SubscriptionID, new Date(g.anchor.getTime() + 3600_000));
+                AssertEqual(rerun.Outcome, 'InLine', `a rerun records nothing twice: ${JSON.stringify(rerun)}`);
+
+                // The retry collects.
+                g.held.State = undefined;
+                g.held.Invoices = [renewalInvoice(g, 'r1', { AttemptCount: 2, PaidAt: retry })];
+                const paid = await syncNow(ctx, g.SubscriptionID, retry);
+                AssertEqual(paid.Outcome, 'Changed', `booked: ${JSON.stringify(paid)}`);
+                const terms = await termsOf(ctx, g.SubscriptionID);
+                AssertEqual(isoDate(terms[1].StartDate), AddDays(g.lastDay, 1), 'term 2 still starts the day after term 1');
+                AssertEqual(isoDate((await renewalOrderOf(ctx, g.SubscriptionID)).OrderDate), AddDays(g.lastDay, 3), 'the order is dated the day it was collected');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR78',
+        Name: 'SR78: the gateway gives up and ends it: Orders records the cancel at the end of the term, nothing refunded, nothing booked',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                const endedAt = new Date(`${AddDays(g.lastDay, 15)}T15:00:00Z`);
+                g.held.IsLive = false;
+                g.held.Status = 'canceled';
+                g.held.EndedAt = endedAt;
+                g.held.Invoices = [renewalInvoice(g, 'r1', { Status: 'uncollectible', AmountPaid: 0, PaidAt: null, ProviderChargeID: null, AttemptCount: 4 })];
+                const synced = await syncNow(ctx, g.SubscriptionID, endedAt);
+                AssertEqual(synced.Outcome, 'Changed', `the cancel is recorded: ${JSON.stringify(synced)}`);
+                const row = await subscriptionRow(ctx, g.SubscriptionID);
+                AssertEqual(`${row.Status}|${row.ProviderSubscriptionID}`, `Canceled|${g.gatewayID}`, 'cancelled, the gateway id kept as history');
+                const ev = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT TOP 1 EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID = '${g.SubscriptionID}' AND EventType = 'Canceled' ORDER BY __mj_CreatedAt DESC`,
+                );
+                const data = JSON.parse(ev.EventData) as { Gateway?: { Outcome?: string } };
+                AssertEqual(data.Gateway?.Outcome, 'AlreadyEnded', 'the gateway had already ended it, so nothing was asked of it');
+                AssertEqual(fakeGateway.cancelled.length, 1, 'one read-only cancel call answered AlreadyEnded');
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 1, 'nothing booked');
+                const again = await syncNow(ctx, g.SubscriptionID, new Date(endedAt.getTime() + 3600_000));
+                AssertEqual(again.Outcome, 'InLine', `the next sync agrees: ${JSON.stringify(again)}`);
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR79',
+        Name: "SR79: a cancel at period end made at the gateway turns automatic renewal off with an event; withdrawn, it turns back on; one ending before the coverage sold tells a person",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                g.held.EndsAt = g.anchor; // the portal's "cancel at period end"
+                const off = await syncNow(ctx, g.SubscriptionID, new Date('2026-03-03T15:00:00Z'));
+                AssertEqual(`${off.Outcome}|${off.Notices.length}`, 'Changed|0', `recorded, no Task for a routine cancel: ${JSON.stringify(off)}`);
+                AssertEqual(`${(await subscriptionRow(ctx, g.SubscriptionID)).Status}|${Number((await subscriptionRow(ctx, g.SubscriptionID)).AutoRenew)}`, 'Active|0', 'still active, automatic renewal off');
+                const requested = (await gatewayEvents(ctx, g.SubscriptionID)).filter((e) => e.EventType === 'CancellationRequested');
+                AssertEqual(JSON.parse(requested[0].EventData).EndsAt, g.anchor.toISOString(), 'the event says when the gateway ends it');
+                AssertEqual(fakeGateway.cancelled.length, 0, 'nothing asked of the gateway');
+
+                g.held.EndsAt = undefined; // withdrawn in the portal
+                const on = await syncNow(ctx, g.SubscriptionID, new Date('2026-03-05T15:00:00Z'));
+                AssertEqual(on.Outcome, 'Changed', `${JSON.stringify(on)}`);
+                AssertEqual(Number((await subscriptionRow(ctx, g.SubscriptionID)).AutoRenew), 1, 'automatic renewal back on');
+                const withdrawn = (await gatewayEvents(ctx, g.SubscriptionID)).filter((e) => e.EventType === 'CancellationRequested');
+                AssertEqual(JSON.parse(withdrawn[withdrawn.length - 1].EventData).Withdrawn, true, 'with an event saying the cancel was withdrawn');
+
+                // Ending at the gateway months before the coverage Orders sold: access is kept, a person is told.
+                g.held.EndsAt = new Date('2026-06-01T05:00:00Z');
+                const early = await syncNow(ctx, g.SubscriptionID, new Date('2026-03-06T15:00:00Z'));
+                Assert(early.Notices.includes('GatewayEndsBeforeCoverage'), `a person is told: ${JSON.stringify(early)}`);
+                AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Active', 'Orders keeps it to its term end');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR80',
+        Name: 'SR80: ended now at the gateway (a dashboard cancel): Orders records an immediate cancel on the day it ended',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                const endedAt = new Date('2026-06-01T15:00:00Z');
+                g.held.IsLive = false;
+                g.held.Status = 'canceled';
+                g.held.EndedAt = endedAt;
+                const synced = await syncNow(ctx, g.SubscriptionID, endedAt);
+                AssertEqual(synced.Outcome, 'Changed', `${JSON.stringify(synced)}`);
+                Assert(synced.Actions.some((a) => /Immediate, 2026-06-01/.test(a)), `an immediate cancel on 1 Jun: ${synced.Actions.join(' | ')}`);
+                AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Canceled', 'cancelled');
+                const ev = await TxOne<{ EventData: string }>(
+                    ctx,
+                    `SELECT TOP 1 EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID = '${g.SubscriptionID}' AND EventType = 'Canceled' ORDER BY __mj_CreatedAt DESC`,
+                );
+                AssertEqual(isoDate(JSON.parse(ev.EventData).EffectiveDate ?? JSON.parse(ev.EventData).Decision?.EffectiveDate ?? '2026-06-01'), '2026-06-01', 'effective the day the gateway ended it');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR81',
+        Name: 'SR81: Q5 the gateway renews a subscription Orders cancelled: the SAME subscription is reactivated with its gateway id, the renewal booked, and support told',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                const cancelled = await cancelSubscription(ctx, { SubscriptionID: g.SubscriptionID, RequestDate: '2026-06-01', Timing: 'EndOfTerm' });
+                Assert(cancelled.Success, `cancelled in Orders: ${cancelled.Message}`);
+                AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Canceled', 'precondition: cancelled');
+                // The customer withdrew the cancel at the gateway, and it charged.
+                g.held.EndsAt = undefined;
+                g.held.Invoices = [renewalInvoice(g, 'r1')];
+                const synced = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                Assert(synced.Notices.includes('ReactivatedByGateway'), `support is told: ${JSON.stringify(synced)}`);
+                const row = await subscriptionRow(ctx, g.SubscriptionID);
+                AssertEqual(`${row.Status}|${Number(row.AutoRenew)}|${row.ProviderSubscriptionID}`, `Active|1|${g.gatewayID}`, 'the same subscription, active, its gateway id kept');
+                const subs = await TxOne<{ N: number }>(
+                    ctx,
+                    `SELECT COUNT(DISTINCT st.SubscriptionID) AS N FROM ${ORDERS_SCHEMA}.SubscriptionTerm st JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID WHERE oh.BillToOrganizationID = '${Fx().Customers.OrganizationID}' AND oh.Origin = 'ProviderPayment'`,
+                );
+                AssertEqual(Number(subs.N), 1, 'never a second subscription');
+                const terms = await termsOf(ctx, g.SubscriptionID);
+                AssertEqual(isoDate(terms[terms.length - 1].StartDate), AddDays(g.lastDay, 1), 'its term continues from the last one');
+                AssertEqual(await namedTasks(ctx, `Gateway subscription needs attention: ${g.SubscriptionNumber} (ReactivatedByGateway)`), 1, 'one Task for support');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR82',
+        Name: "SR82: the webhook: a paid renewal's event books it and is recorded Applied, the same event again books nothing; an unknown gateway subscription on a price Orders sells raises one Task, one on another price none",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx, undefined, { webhooks: true });
+                g.held.Invoices = [renewalInvoice(g, 'r1')];
+                const deliver = async (event: WebhookEvent) => {
+                    fakeGateway.event = event;
+                    return HandlePaymentWebhook({ RawBody: '{}', Headers: {}, PaymentProviderID: g.account }, ctx.Provider, ctx.User);
+                };
+                const paid: WebhookEvent = { EventID: 'evt_it_paid_1', Kind: 'invoice.paid', ProviderSubscriptionID: g.gatewayID, OccurredAt: g.anchor };
+                AssertEqual((await deliver(paid)).Status, 200, 'answered 200');
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'the renewal is booked');
+                const delivery = async (id: string) =>
+                    TxQuery<{ Outcome: string; ReasonCode: string | null }>(ctx, `SELECT Outcome, ReasonCode FROM ${ORDERS_SCHEMA}.PaymentWebhookDelivery WHERE ProviderEventID = '${id}'`);
+                AssertEqual((await delivery('evt_it_paid_1'))[0]?.Outcome, 'Applied', 'recorded Applied');
+                const again = await deliver(paid);
+                AssertEqual(`${again.Status}|${(again.Body as { outcome?: string }).outcome}`, '200|AlreadyApplied', 'the same event again: already applied');
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'nothing booked twice');
+
+                // Not recorded in Orders, on the price Orders sells here: one Task, however often the gateway says so.
+                fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_unknown', Status: 'active', IsLive: true, Customer: 'cus_sam', Metadata: {}, PriceID: 'price_it_rolling', Email: 'ethan.testing.bc+sam@gmail.com' });
+                await deliver({ EventID: 'evt_it_unknown_1', Kind: 'invoice.paid', ProviderSubscriptionID: 'sub_it_unknown' });
+                await deliver({ EventID: 'evt_it_unknown_2', Kind: 'invoice.paid', ProviderSubscriptionID: 'sub_it_unknown' });
+                AssertEqual(await namedTasks(ctx, 'Gateway subscription not recorded in Orders: sub_it_unknown (UnknownGatewaySubscription)'), 1, 'one Task');
+                AssertEqual((await delivery('evt_it_unknown_1'))[0]?.ReasonCode, 'unknown_subscription', 'recorded as unknown');
+                // A legacy subscriber on a price Orders does not sell here: not ours, no Task.
+                fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_legacy', Status: 'active', IsLive: true, Customer: 'cus_old', Metadata: {}, PriceID: 'price_it_legacy_175' });
+                await deliver({ EventID: 'evt_it_legacy', Kind: 'invoice.paid', ProviderSubscriptionID: 'sub_it_legacy' });
+                AssertEqual((await delivery('evt_it_legacy'))[0]?.ReasonCode, 'not_ours', 'recorded as not ours');
+                AssertEqual(await namedTasks(ctx, 'Gateway subscription not recorded in Orders: sub_it_legacy (UnknownGatewaySubscription)'), 0, 'and no Task');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR83',
+        Name: 'SR83: linking a gateway subscription is checked first (not at the gateway, ended, recorded elsewhere, another e-mail, already linked are refused, writing nothing); a good link books what the gateway charged',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                fakeGateway.reset();
+                const f = Fx();
+                const account = await gatewayBillingAccount(ctx);
+                await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                const sub = await subscriptionWithCard(ctx, account);
+                const link = (gatewayID: string, preview = false) =>
+                    LinkProviderSubscription({ SubscriptionID: sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: gatewayID, Preview: preview }, ctx.Provider, ctx.User);
+                const lastDay = isoDate(sub.Term.EndDate);
+                const anchor = DayStartUtc(lastDay, BusinessTimeZoneEngine.Instance.Zone);
+
+                AssertEqual((await link('sub_it_missing')).Code, 'NotAtGateway', 'an id the gateway does not have');
+                fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_ended', Status: 'canceled', IsLive: false, Customer: 'cus_x', Metadata: {} });
+                AssertEqual((await link('sub_it_ended')).Code, 'EndedAtGateway', 'one the gateway ended');
+                // Another customer's id: a subscription whose subscriber has an e-mail, and a gateway subscription billing
+                // someone else. The same id with the subscriber's own e-mail passes this check (the control).
+                const personal = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, f.Customers.SecondOrganizationID, f.Customers.SecondPersonID);
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.Subscription SET BeneficiaryPersonID = '${f.Customers.SecondPersonID}' WHERE ID = '${personal.SubscriptionID}' AND BeneficiaryPersonID IS NULL`);
+                await TxQuery(ctx, `UPDATE ${COMMON_SCHEMA}.Person SET Email = 'ethan.testing.bc+sr83-jane@gmail.com' WHERE ID = '${f.Customers.SecondPersonID}'`);
+                const otherCustomer = { ProviderSubscriptionID: 'sub_it_other', Status: 'active', IsLive: true, Customer: 'cus_y', Metadata: {} as Record<string, string>, Email: 'ethan.testing.bc+someone-else@gmail.com' };
+                fakeGateway.held.push(otherCustomer);
+                const linkPersonal = (preview: boolean) =>
+                    LinkProviderSubscription({ SubscriptionID: personal.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_other', Preview: preview }, ctx.Provider, ctx.User);
+                AssertEqual((await linkPersonal(true)).Code, 'EmailMismatch', "another customer's");
+                otherCustomer.Email = 'ETHAN.testing.bc+sr83-jane@gmail.com';
+                AssertEqual((await linkPersonal(true)).Code, 'WouldLink', 'control: the same e-mail (any case) passes');
+                const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
+                await markProviderBilled(ctx, other.SubscriptionID, account, 'sub_it_taken');
+                fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_taken', Status: 'active', IsLive: true, Customer: 'cus_z', Metadata: {} });
+                AssertEqual((await link('sub_it_taken')).Code, 'LinkedElsewhere', 'one another subscription records');
+                AssertEqual((await subscriptionRow(ctx, sub.SubscriptionID)).ProviderSubscriptionID, null, 'nothing written by any refusal');
+
+                // The real one, with a renewal it already charged.
+                const held = { ProviderSubscriptionID: 'sub_it_real', Status: 'active', IsLive: true, Customer: 'cus_it_e2', Metadata: {} as Record<string, string>, Invoices: [] as GatewaySubscriptionInvoice[] };
+                fakeGateway.held.push(held);
+                held.Invoices = [renewalInvoice({ anchor, currency: await booksIn(ctx) }, 'r1')];
+                AssertEqual((await link('sub_it_real', true)).Code, 'WouldLink', 'a preview checks and writes nothing');
+                AssertEqual((await subscriptionRow(ctx, sub.SubscriptionID)).ProviderSubscriptionID, null, 'still unlinked after the preview');
+                const linked = await link('sub_it_real');
+                AssertEqual(linked.Code, 'Linked', `linked: ${linked.Message}`);
+                AssertEqual(linked.Sync?.Outcome, 'Changed', `and synced: ${JSON.stringify(linked.Sync)}`);
+                AssertEqual((await termsOf(ctx, sub.SubscriptionID)).length, 2, 'the renewal it charged is booked');
+                AssertEqual((await link('sub_it_real')).Code, 'AlreadyLinked', 'a recorded id is never replaced');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR84',
+        Name: 'SR84: controls: a subscription the gateway does not bill is not synced; an account whose switch is off changes nothing; a team subscription invoiced in Orders still renews in Orders',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                g.held.Invoices = [renewalInvoice(g, 'r1')];
+                // A team subscription invoiced through Orders (as the Bill.com rail bills it): never handed over.
+                const team = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, Fx().Customers.SecondOrganizationID);
+                const unlinked = await syncNow(ctx, team.SubscriptionID, g.anchor);
+                AssertEqual(unlinked.Outcome, 'NotBilledByGateway', 'not synced');
+                AssertEqual((await spawnRenewals(ctx, { SubscriptionID: team.SubscriptionID, AsOfDate: daysBefore(team.Term.EndDate, 10) })).Placed, 1, 'and Spawn Renewals still renews it');
+
+                // The account's switch off: the gateway-billed one is left exactly as it is.
+                await upsertViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, g.account, { BillsSubscriptions: 0 });
+                const off = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                AssertEqual(off.Outcome, 'NotBilledByGateway', `switched off: ${JSON.stringify(off)}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 1, 'nothing booked while it is off');
+                // Turned back on, the first run catches up.
+                await upsertViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, g.account, { BillsSubscriptions: 1 });
+                const on = await syncNow(ctx, g.SubscriptionID, new Date(g.anchor.getTime() + 86_400_000));
+                AssertEqual(on.Outcome, 'Changed', `caught up once on: ${JSON.stringify(on)}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'the renewal is booked');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR85',
+        Name: "SR85: an order that is not the gateway's renewal still cannot extend a gateway-billed subscription after E4 (E2b holds), and Charge Renewals charges nothing for it",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                const f = Fx();
+                const extend = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-02-01T00:00:00Z'),
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                });
+                Assert(!extend.Saved && /billed by the payment gateway/.test(extend.Message ?? ''), `refused: ${extend.Message}`);
+                const renewalLine = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-12-01T00:00:00Z'),
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, RenewsSubscriptionID: g.SubscriptionID }],
+                });
+                Assert(!renewalLine.Saved, `a hand-made renewal line naming it is refused too: ${renewalLine.Message}`);
+                const charged = await chargeRenewals(ctx, { SubscriptionID: g.SubscriptionID, AsOfDate: AddDays(g.lastDay, 1) });
+                AssertEqual(charged.Charged, 0, 'Charge Renewals charges nothing');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR86',
+        Name: "SR86: a $0 renewal is booked once with no payment; a refund the gateway made before the booking is booked after the capture",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                g.held.Invoices = [renewalInvoice(g, 'r0', { AmountPaid: 0, AmountDue: 0, ProviderIntentID: null, ProviderChargeID: null, Discounted: true })];
+                const zero = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                AssertEqual(zero.Outcome, 'Changed', `booked: ${JSON.stringify(zero)}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'term 2');
+                const zeroOrder = await renewalOrderOf(ctx, g.SubscriptionID);
+                const owed = await TxOne<{ Net: number; Balance: number }>(
+                    ctx,
+                    `SELECT ol.LineTotalNet AS Net, oh.Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders oh JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.OrderHeaderID = oh.ID WHERE oh.ID = '${zeroOrder.ID}'`,
+                );
+                AssertEqual(`${Number(zeroOrder.UnitPrice)}|${Number(owed.Net)}|${Number(owed.Balance)}`, '1200|0|0', 'the last price, 100% off: nothing owed');
+                AssertEqual((await syncNow(ctx, g.SubscriptionID, new Date(g.anchor.getTime() + 3600_000))).Outcome, 'InLine', 'and not again');
+
+                const h = await gatewayBilled(ctx, Fx().Customers.SecondOrganizationID);
+                h.held.Invoices = [renewalInvoice(h, 'rr')];
+                fakeGateway.refunds.set('ch_it_rr', [{ ProviderRefundID: 're_it_rr', ProviderChargeID: 'ch_it_rr', Amount: 200, CurrencyCode: h.currency, Status: 'succeeded' }]);
+                const booked = await syncNow(ctx, h.SubscriptionID, h.anchor);
+                AssertEqual(booked.Outcome, 'Changed', `${JSON.stringify(booked)}`);
+                const refund = await TxOne<{ N: number; Amount: number }>(ctx, `SELECT COUNT(*) AS N, SUM(Amount) AS Amount FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ProviderRefundID = 're_it_rr'`);
+                AssertEqual(`${refund.N}|${Math.abs(Number(refund.Amount))}`, '1|200', 'the refund is booked once, for 200');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR87',
+        Name: 'SR87: the nightly pass in preview reports what it would do and writes nothing; live, it brings each one in line and reports it',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                g.held.Invoices = [renewalInvoice(g, 'r1')];
+                const h = await gatewayBilled(ctx, Fx().Customers.SecondOrganizationID);
+                const ids = [g.SubscriptionID, h.SubscriptionID];
+                const preview = await SyncProviderSubscriptions({ SubscriptionIDs: ids, Preview: true, Now: g.anchor }, ctx.Provider, ctx.User);
+                AssertEqual(`${preview.Read}|${preview.Changed}|${preview.Failed}`, '2|1|0', `one would change: ${preview.Message}`);
+                Assert(preview.Results.find((r) => SameID(r.SubscriptionID, g.SubscriptionID))!.Actions.some((a) => /book renewal/.test(a)), 'and says what');
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 1, 'preview wrote nothing');
+                const live = await SyncProviderSubscriptions({ SubscriptionIDs: ids, Now: g.anchor }, ctx.Provider, ctx.User);
+                AssertEqual(`${live.Read}|${live.Changed}|${live.Failed}`, '2|1|0', `${live.Message}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'live, it booked');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR88',
+        Name: 'SR88: the nightly sync Action and its schedule: the job points at the Action and ships disabled and in preview',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const action = await TxMaybeOne<{ ID: string; DriverClass: string; Status: string }>(
+                    ctx,
+                    `SELECT ID, DriverClass, Status FROM __mj.Action WHERE Name = 'Sync Provider Subscriptions'`,
+                );
+                Assert(action != null, 'the action row exists — push the app metadata if not');
+                AssertEqual(`${action!.Status}|${action!.DriverClass}`, 'Active|Orders.SyncProviderSubscriptions', 'active, pointing at the registered key');
+                const job = await TxMaybeOne<{ Configuration: string; Status: string }>(
+                    ctx,
+                    `SELECT Configuration, Status FROM __mj.ScheduledJob WHERE Name = N'Orders — Sync Provider Subscriptions (nightly)'`,
+                );
+                Assert(job != null, 'the scheduled job row exists — push the app metadata if not');
+                const config = JSON.parse(job!.Configuration ?? '{}') as { ActionID?: string; Params?: Array<{ ActionParamID: string; Value: string }> };
+                Assert(config.ActionID != null && SameID(config.ActionID, action!.ID), `the job names this action: ${job!.Configuration}`);
+                AssertEqual(job!.Status, 'Disabled', 'it ships disabled');
+                const previewParam = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM __mj.ActionParam WHERE ActionID = '${action!.ID}' AND Name = 'Preview'`);
+                AssertEqual(String(config.Params?.find((p) => SameID(p.ActionParamID, previewParam.ID))?.Value), 'true', 'and in preview');
+                const linkAction = await TxMaybeOne<{ DriverClass: string }>(ctx, `SELECT DriverClass FROM __mj.Action WHERE Name = 'Link Provider Subscription'`);
+                AssertEqual(linkAction?.DriverClass, 'Orders.LinkProviderSubscription', 'the link Action is registered too');
+            }),
+    },
+
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
@@ -3118,7 +3573,20 @@ const fakeGateway = {
         EndsAt?: Date;
         /** Start of the period it last billed; set by a check to stage a renewal the gateway charged. */
         PeriodStart?: Date;
+        /** E3: what the gateway says it bills, who, and when it ended; set by a check. */
+        PriceID?: string;
+        Quantity?: number;
+        Email?: string;
+        EndedAt?: Date;
+        /** E3: a state to report instead of the one derived (Collecting, while the gateway retries). */
+        State?: 'Renewing' | 'Ending' | 'Ended' | 'Collecting';
+        /** E3: the gateway's invoices for it, as a check stages them. */
+        Invoices?: GatewaySubscriptionInvoice[];
     }>,
+    /** E4: refunds the gateway made, by charge. */
+    refunds: new Map<string, GatewayRefund[]>(),
+    /** E3: the event the next webhook delivery carries. */
+    event: null as WebhookEvent | null,
     priceInterval: { Unit: 'year', Count: 1 } as GatewayPriceInterval,
     /** Every cancel the gateway was asked for (E2b). */
     cancelled: [] as CancelProviderSubscriptionRequest[],
@@ -3130,6 +3598,8 @@ const fakeGateway = {
         this.priceInterval = { Unit: 'year', Count: 1 };
         this.cancelled = [];
         this.refuseCancel = null;
+        this.refunds = new Map();
+        this.event = null;
     },
 };
 
@@ -3182,11 +3652,55 @@ export class IntegrationTestGatewayBillingProvider extends StripePaymentProvider
         if (!held) return { Success: false, Reason: `No such subscription: '${providerSubscriptionID}'` };
         return {
             Success: true,
-            State: !held.IsLive ? 'Ended' : held.EndsAt ? 'Ending' : 'Renewing',
+            State: held.State ?? (!held.IsLive ? 'Ended' : held.EndsAt ? 'Ending' : 'Renewing'),
             CurrentPeriodStart: held.PeriodStart ?? null,
             EndsAt: held.EndsAt ?? null,
+            EndedAt: held.EndedAt ?? null,
             Status: held.Status,
+            ProviderPriceID: held.PriceID ?? 'price_it_rolling',
+            Quantity: held.Quantity ?? 1,
+            ProviderCustomerRef: held.Customer,
+            CustomerEmail: held.Email ?? null,
+            Metadata: held.Metadata,
         };
+    }
+
+    /** E3: the invoices a check staged; an unknown id is refused. */
+    public override async ListProviderSubscriptionInvoices(request: { ProviderSubscriptionID: string; CreatedSince?: Date | null }): Promise<ListProviderSubscriptionInvoicesResult> {
+        const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === request.ProviderSubscriptionID);
+        if (!held) return { Success: false, Reason: `No such subscription: '${request.ProviderSubscriptionID}'` };
+        return { Success: true, Invoices: held.Invoices ?? [] };
+    }
+
+    /** E4: a charge of a staged invoice, with the refunds the gateway made on it. */
+    public override async RetrieveCharge(request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        const invoice = fakeGateway.held.flatMap((h) => h.Invoices ?? []).find((i) => i.ProviderChargeID === request.ProviderChargeID);
+        if (!invoice) return { Success: false, NotFound: true, Reason: `No such charge: '${request.ProviderChargeID}'` };
+        const refunded = (fakeGateway.refunds.get(request.ProviderChargeID) ?? []).reduce((sum, r) => sum + r.Amount, 0);
+        return {
+            Success: true,
+            Charge: {
+                ProviderChargeID: request.ProviderChargeID,
+                ProviderIntentID: invoice.ProviderIntentID,
+                Amount: invoice.AmountPaid,
+                AmountRefunded: refunded,
+                CurrencyCode: invoice.CurrencyCode,
+                Status: 'succeeded',
+            },
+        };
+    }
+
+    public override async ListRefunds(request: ListRefundsRequest): Promise<ListRefundsResult> {
+        return { Success: true, Refunds: request.ProviderChargeID ? (fakeGateway.refunds.get(request.ProviderChargeID) ?? []) : [] };
+    }
+
+    /** E3: every delivery verifies, and carries the event a check staged. */
+    public override async VerifyWebhook(): Promise<{ Valid: boolean; Reason?: string }> {
+        return { Valid: true };
+    }
+
+    public override ParseWebhookEvent(): WebhookEvent | null {
+        return fakeGateway.event;
     }
 
     public override async FindProviderSubscriptions(request: FindProviderSubscriptionsRequest): Promise<FindProviderSubscriptionsResult> {
@@ -3460,3 +3974,117 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('subscription-renewal', {
     },
     Teardown: TeardownOrdersFixture,
 });
+
+
+// ─── E3 + E4 fixtures ───────────────────────────────────────────────────────────────────────────
+
+type HeldGatewaySubscription = (typeof fakeGateway.held)[number];
+
+/**
+ * An annual subscription the fake gateway bills (handed over by E2's own pass), with its anchor: 00:00
+ * business time on its term's last day, when the gateway charges the renewal.
+ */
+async function gatewayBilled(ctx: IntegrationCheckContext, organizationID?: string, opts: { webhooks?: boolean } = {}) {
+    if (!organizationID) fakeGateway.reset();
+    const f = Fx();
+    const account = await gatewayBillingAccount(ctx);
+    if (opts.webhooks) {
+        const type = await TxOne<{ ID: string }>(ctx, `SELECT PaymentProviderTypeID AS ID FROM ${ORDERS_SCHEMA}.PaymentProvider WHERE ID = '${account}'`);
+        await upsertViaEntity(ctx, PAYMENT_PROVIDER_TYPE_ENTITY, type.ID, { SupportsWebhooks: 1 });
+    }
+    const sub = await subscriptionWithCard(ctx, account, organizationID);
+    await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+    const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+    AssertEqual(linked.Outcomes[0]?.Code, 'Created', `precondition: the gateway bills it: ${JSON.stringify(linked.Outcomes)}`);
+    const gatewayID = linked.Outcomes[0].ProviderSubscriptionID!;
+    const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === gatewayID)!;
+    const lastDay = isoDate(sub.Term.EndDate);
+    const number = (await TxOne<{ SubscriptionNumber: string }>(ctx, `SELECT SubscriptionNumber FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`)).SubscriptionNumber;
+    return {
+        account,
+        currency: await booksIn(ctx),
+        SubscriptionID: sub.SubscriptionID,
+        SubscriptionNumber: number,
+        TermID: sub.Term.ID,
+        gatewayID,
+        held: held as HeldGatewaySubscription,
+        lastDay,
+        anchor: DayStartUtc(lastDay, BusinessTimeZoneEngine.Instance.Zone),
+    };
+}
+
+/** A renewal invoice the gateway was paid for at the anchor, as Stripe reports one; `key` names its ids. */
+function renewalInvoice(g: { anchor: Date; currency: string }, key: string, over: Partial<GatewaySubscriptionInvoice> = {}): GatewaySubscriptionInvoice {
+    return {
+        ProviderInvoiceID: `in_it_${key}`,
+        Status: 'paid',
+        BillingReason: 'subscription_cycle',
+        AmountPaid: 1200,
+        AmountDue: 1200,
+        Tax: 0,
+        CurrencyCode: g.currency,
+        ProviderIntentID: `pi_it_${key}`,
+        ProviderChargeID: `ch_it_${key}`,
+        CreatedAt: g.anchor,
+        PaidAt: g.anchor,
+        PaidOutOfBand: false,
+        Discounted: false,
+        AttemptCount: 1,
+        NextAttemptAt: null,
+        ProviderPriceID: 'price_it_rolling',
+        Quantity: 1,
+        ...over,
+    };
+}
+
+/** The fixture company's booking currency (the world picks one at random): the gateway charges in it. */
+async function booksIn(ctx: IntegrationCheckContext): Promise<string> {
+    return (await TxOne<{ Code: string }>(ctx, `SELECT FunctionalCurrencyCode AS Code FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID = '${Fx().CoA.ID}'`)).Code.trim().toUpperCase();
+}
+
+/** One sync, on the check's transaction, at `now`; asserts it did not fail. */
+async function syncNow(ctx: IntegrationCheckContext, subscriptionID: string, now: Date): Promise<SyncProviderSubscriptionResult> {
+    const result = await SyncProviderSubscription(subscriptionID, { Now: now }, ctx.Provider, ctx.User);
+    Assert(result.Outcome !== 'Failed', `the sync did not fail: ${result.Error}`);
+    return result;
+}
+
+/** The renewal order the gateway's charge booked (the newest ProviderPayment order renewing it). */
+async function renewalOrderOf(ctx: IntegrationCheckContext, subscriptionID: string) {
+    return TxOne<{ ID: string; Status: string; Origin: string; OrderDate: string; ProductID: string; UnitPrice: number; RenewsSubscriptionID: string }>(
+        ctx,
+        `SELECT TOP 1 oh.ID, oh.Status, oh.Origin, oh.OrderDate, ol.ProductID, ol.UnitPrice, ol.RenewsSubscriptionID
+           FROM ${ORDERS_SCHEMA}.OrderLine ol JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+          WHERE ol.RenewsSubscriptionID = '${subscriptionID}' AND oh.Origin = 'ProviderPayment'
+          ORDER BY oh.__mj_CreatedAt DESC`,
+    );
+}
+
+const subscriptionRow = (ctx: IntegrationCheckContext, subscriptionID: string) =>
+    TxOne<{ Status: string; AutoRenew: boolean | number; ProviderSubscriptionID: string | null }>(
+        ctx,
+        `SELECT Status, AutoRenew, ProviderSubscriptionID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${subscriptionID}'`,
+    );
+
+/** The subscription's events, oldest first. */
+const gatewayEvents = (ctx: IntegrationCheckContext, subscriptionID: string) =>
+    TxQuery<{ EventType: string; EventData: string }>(
+        ctx,
+        `SELECT EventType, EventData FROM ${ORDERS_SCHEMA}.SubscriptionEvent WHERE SubscriptionID = '${subscriptionID}' ORDER BY __mj_CreatedAt, OccurredAt`,
+    );
+
+/** The latest end of a term's live grants. */
+async function grantEnd(ctx: IntegrationCheckContext, termID: string): Promise<Date | null> {
+    const row = await TxMaybeOne<{ ValidTo: string | null }>(
+        ctx,
+        `SELECT MAX(ValidTo) AS ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionTermID = '${termID}' AND Status IN ('Active','Suspended')`,
+    );
+    return row?.ValidTo ? new Date(row.ValidTo) : null;
+}
+
+/** How many alert Tasks carry exactly this name. */
+async function namedTasks(ctx: IntegrationCheckContext, name: string): Promise<number> {
+    Assert(ctx.Provider.Entities.some((e) => e.Name === TASK_ENTITY), 'precondition: bizapps-tasks is installed, so alerts are Tasks');
+    const rows = await TxQuery<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM __mj_BizAppsTasks.Task WHERE Name = N'${name.replace(/'/g, "''")}'`);
+    return Number(rows[0]?.N ?? 0);
+}

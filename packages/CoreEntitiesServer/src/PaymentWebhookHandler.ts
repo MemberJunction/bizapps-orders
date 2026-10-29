@@ -65,12 +65,19 @@ import { BookProviderRefunds } from './ProviderRefundBooking.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { BasePaymentProvider, WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
+import { raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
+import { SyncProviderSubscription } from './ProviderSubscriptionSync.js';
+import { ORDERS_SUBSCRIPTION_METADATA_KEY, ProviderBillsNewSubscriptions } from './ProviderSubscriptions.js';
 import {
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+const PAYMENT_PROVIDER_PRICE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Prices';
+/** The subscription events that say the gateway has started billing a subscription (E3). */
+const SUBSCRIPTION_STARTED_KINDS = ['invoice.paid', 'customer.subscription.created'];
 /** The gateway event that reports a charge's cumulative refunded amount. */
 const REFUND_EVENT_KIND = 'charge.refunded';
 
@@ -152,6 +159,39 @@ export async function HandlePaymentWebhook(
             user,
         );
         return { Status: 400, Body: { received: false } };
+    }
+
+    // ── 3b. A gateway subscription changed (E3) ───────────────────────────
+    // Only its id is read from the event: what the subscription is now comes from the gateway itself.
+    if (event.ProviderSubscriptionID && driver.HandledSubscriptionEventKinds.includes(event.Kind)) {
+        const prior = await findPriorDeliverySafely(providerID, event.EventID, provider, user);
+        const handled =
+            prior?.Outcome === 'Applied'
+                ? {
+                      Response: { Status: 200 as const, Body: { received: true, outcome: 'AlreadyApplied' as const } },
+                      Outcome: 'AlreadyApplied' as const,
+                      ReasonCode: 'duplicate' as const,
+                      Reason: `event ${event.EventID} has already been applied`,
+                  }
+                : await handleSubscriptionEvent(event, driver, provider, user);
+        await RecordWebhookDelivery(
+            {
+                PaymentProviderID: providerID,
+                ProviderEventID: event.EventID,
+                EventKind: event.Kind,
+                PaymentIntentID: null,
+                ProviderIntentID: null,
+                ProviderChargeID: null,
+                OccurredAt: event.OccurredAt ?? null,
+                Outcome: handled.Outcome,
+                ReasonCode: handled.ReasonCode ?? null,
+                Reason: handled.Reason,
+            },
+            prior,
+            provider,
+            user,
+        );
+        return handled.Response;
     }
 
     // ── 4. Have we seen it, and do we care? ────────────────────────────────
@@ -268,6 +308,98 @@ async function act(
         LogError(`Failed to apply webhook ${event.EventID}: ${(err as Error).message}`);
         return failed((err as Error).message);
     }
+}
+
+/**
+ * A subscription or invoice event (E3). The Orders subscription that records this gateway subscription is
+ * synced with the gateway (`SyncProviderSubscription`); a failure answers 500 so the gateway redelivers,
+ * and the nightly pass is the backstop. A gateway subscription no Orders subscription records is classified:
+ *   · created by Orders' own hand-over (its metadata names an Orders subscription): E2 records it, nothing to do;
+ *   · on a price Orders does not sell on this account: not ours, recorded only;
+ *   · on a price Orders sells: unknown, and when the gateway starts billing it, one alert Task for a person.
+ */
+async function handleSubscriptionEvent(
+    event: WebhookEvent,
+    driver: BasePaymentProvider,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<HandledDelivery> {
+    const providerID = driver.Config.ID;
+    const gatewayID = event.ProviderSubscriptionID!;
+    // The account's switch is the kill switch for option E: off, an event changes nothing (no sync, no alert).
+    // The nightly pass catches up once it is on (it reads every invoice since the latest term began).
+    if (!ProviderBillsNewSubscriptions(driver.Config)) {
+        return ignored('provider_off', `this account does not bill subscriptions (BillsSubscriptions is off); ${gatewayID} was not synced`);
+    }
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const found = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: SUBSCRIPTION_ENTITY,
+            ExtraFilter: `PaymentProviderID = '${EscapeSQLString(providerID)}' AND ProviderSubscriptionID = '${EscapeSQLString(gatewayID)}'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!found.Success) return failedSync(`could not look up the subscription for ${gatewayID}: ${found.ErrorMessage}`);
+    const subscriptionID = found.Results?.[0]?.ID;
+    if (subscriptionID) {
+        const synced = await SyncProviderSubscription(subscriptionID, {}, provider, user);
+        if (synced.Outcome === 'Failed') return failedSync(synced.Error ?? 'the sync failed');
+        return {
+            Response: { Status: 200, Body: { received: true, outcome: 'Apply' } },
+            Outcome: 'Applied',
+            Reason:
+                `${synced.SubscriptionNumber ?? subscriptionID} ${synced.Outcome}` +
+                (synced.Actions.length ? `: ${synced.Actions.join('; ')}` : '') +
+                (synced.Notices.length ? ` (notices: ${synced.Notices.join(', ')})` : ''),
+        };
+    }
+
+    const described = await driver.DescribeProviderSubscription(gatewayID);
+    if (!described.Success) {
+        return ignored('unknown_subscription', `no Orders subscription records ${gatewayID}, and the gateway could not be read to classify it: ${described.Reason ?? ''}`.trim());
+    }
+    if (described.Metadata?.[ORDERS_SUBSCRIPTION_METADATA_KEY]) {
+        return ignored(
+            'unknown_subscription',
+            `${gatewayID} was created by Orders' hand-over for ${described.Metadata[ORDERS_SUBSCRIPTION_METADATA_KEY]} and is not recorded yet; the hand-over records it (and raises its own alert if it cannot)`,
+        );
+    }
+    const mapped = described.ProviderPriceID ? await priceIsMapped(providerID, described.ProviderPriceID, rv, user) : false;
+    if (!mapped) {
+        return ignored('not_ours', `${gatewayID} bills price ${described.ProviderPriceID ?? 'unknown'}, which Orders does not sell on this account`);
+    }
+    const reason =
+        `the gateway bills ${gatewayID} (customer ${described.ProviderCustomerRef ?? 'unknown'}${described.CustomerEmail ? `, ${described.CustomerEmail}` : ''}) ` +
+        `on price ${described.ProviderPriceID}, which Orders sells, but no Orders subscription records it`;
+    if (SUBSCRIPTION_STARTED_KINDS.includes(event.Kind)) {
+        await raiseUnknownGatewaySubscriptionAlert({ ProviderSubscriptionID: gatewayID, Reason: reason }, user, provider);
+    }
+    return ignored('unknown_subscription', reason);
+}
+
+async function priceIsMapped(paymentProviderID: string, providerPriceID: string, rv: RunView, user: UserInfo): Promise<boolean> {
+    const rows = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: PAYMENT_PROVIDER_PRICE_ENTITY,
+            ExtraFilter: `PaymentProviderID = '${EscapeSQLString(paymentProviderID)}' AND ProviderPriceID = '${EscapeSQLString(providerPriceID)}' AND IsActive = 1`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return !!rows.Success && (rows.Results ?? []).length > 0;
+}
+
+function ignored(code: WebhookDeliveryReasonCode, reason: string): HandledDelivery {
+    return { Response: { Status: 200, Body: { received: true, outcome: 'Ignore' } }, Outcome: 'Ignored', ReasonCode: code, Reason: reason };
+}
+
+function failedSync(reason: string): HandledDelivery {
+    return { Response: { Status: 500, Body: { received: false } }, Outcome: 'Failed', ReasonCode: 'sync_failed', Reason: reason };
 }
 
 /** A valid event we could not finish with: 500, so the gateway redelivers. */
