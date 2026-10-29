@@ -868,7 +868,11 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
-export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export { EntitlementGrantEntityServer, GrantChangedFields, LoadEntitlementGrantEntityServer, type GrantChangedField } from './EntitlementGrantEntityServer.js';
+// A term's days, each covered in full in the business zone: the instants a term grant and the evaluator read.
+export { TermDayEnd, TermDayStart, TermGrantWindow, type TermDay } from './TermGrantWindow.js';
+// Every Orders alert Task is assigned to the holders of the AlertTaskRole role.
+export { AssignAlertTask, type AlertTaskAssignmentOutcome } from './AlertTaskAssignment.js';
 export {
     GetCheckoutAccessStatus,
     SummarizeAccessDeliveries,
@@ -1017,7 +1021,12 @@ export {
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
+export {
+    OUTBOUND_DEAD_LETTER_LOG_MARKER,
+    raiseCheckoutCaptureTerminalAlert,
+    raiseCheckoutSettledNotBookedAlert,
+    raiseOutboundDeadLetterAlert,
+} from './checkoutCaptureAlert.js';
 // The post-payment step record, its review queue and operator replay (#326).
 export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
 export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';

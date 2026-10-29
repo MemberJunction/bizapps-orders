@@ -63,6 +63,13 @@ export const ORDERS_SETTING = {
      */
     AccessOverrideFallbackApproverRole: 'AccessOverrideFallbackApproverRole',
     /**
+     * The NAME of the MJ role whose active holders are assigned every alert Task Orders raises: a checkout
+     * payment that could not be booked, a provider subscription that needs a person, an outbound delivery
+     * that was dead-lettered. Assignment is what makes the tasks app notify someone; an unassigned alert is
+     * a row nobody is told about. Unset or empty leaves alerts unassigned, as before this setting existed.
+     */
+    AlertTaskRole: 'AlertTaskRole',
+    /**
      * Days a booked term's start and end may move together before the shift goes to finance review
      * (bizapps-orders#507). A shift is a term change, not a sales concession, so this is one figure for
      * the app rather than a rep's SalesAuthority limit. At or above it is reviewed. Unset or unreadable
@@ -332,6 +339,12 @@ export class OrdersSettings {
     }
 
     /** The role that acknowledges amendments, or `null` when none is configured. */
+    /** The role whose holders are assigned Orders' alert Tasks, or null when none is configured. */
+    public static get AlertTaskRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.AlertTaskRole)?.trim();
+        return value ? value : null;
+    }
+
     public static get AmendmentAcknowledgmentRole(): string | null {
         const value = this.raw(ORDERS_SETTING.AmendmentAcknowledgmentRole)?.trim();
         return value ? value : null;

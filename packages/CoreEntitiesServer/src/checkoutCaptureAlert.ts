@@ -6,12 +6,16 @@
  * Code. TypeID is NOT NULL with no default; writing a Task without it always fails.
  *
  * Reads and writes go through the generated Tasks subclasses, not `.Get()` / `.Set()`.
+ *
+ * Every alert Task is assigned to the holders of the `AlertTaskRole` role (`AssignAlertTask`), so the
+ * tasks app tells a person; with no role configured it stays unassigned, as before.
  */
-import { LogError, Metadata, RunView, type UserInfo } from '@memberjunction/core';
+import { LogError, Metadata, RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import type {
     mjBizAppsTasksTaskEntity,
     mjBizAppsTasksTaskTypeEntity,
 } from '@mj-biz-apps/tasks-entities';
+import { AssignAlertTask } from './AlertTaskAssignment.js';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from './checkoutCaptureRetry.js';
 import { EscapeText } from './sql-guards.js';
 
@@ -62,9 +66,55 @@ export async function raiseCheckoutSettledNotBookedAlert(
     );
 }
 
+/** Log marker for a dead-lettered outbound delivery; the alert floor when no tasks app is installed. */
+export const OUTBOUND_DEAD_LETTER_LOG_MARKER = '[ORDERS-OUTBOUND-DEAD-LETTER]';
+
+/**
+ * An outbound delivery was retried until its deadline and gave up: the consumer (the Learning Hub, a CRM)
+ * never heard of a change Orders made. Its copy is now wrong until a person re-sends it.
+ *
+ * One Task per dead-lettered EVENT: the event id is in the name, so a second delivery failure for the same
+ * event (another pass, a replay) raises nothing new, while a later change to the same grant that also
+ * fails is a new Task, because it is a different change nobody heard of.
+ *
+ * Example: the Learning Hub is down for a day; Jane's access change (Status Active, until 31 Dec) is never
+ * delivered. "Outbound delivery failed: sidecar-lxp, GrantStatusChanged, grant 6F1…" is raised, assigned to
+ * the alert role, naming the last error.
+ */
+export async function raiseOutboundDeadLetterAlert(
+    delivery: { ID: string; ConsumerKey: string; Attempts: number | null; LastError: string | null },
+    event: { ID: string; EventType: string; OrderHeaderID: string | null; EntitlementGrantID: string | null } | null,
+    contextUser?: UserInfo,
+): Promise<void> {
+    const subject = event?.EntitlementGrantID ? `grant ${event.EntitlementGrantID}` : event?.OrderHeaderID ? `order ${event.OrderHeaderID}` : 'an unreadable event';
+    LogError(
+        `${OUTBOUND_DEAD_LETTER_LOG_MARKER} delivery ${delivery.ID} to '${delivery.ConsumerKey}' (${event?.EventType ?? 'unknown event'}, ${subject}) ` +
+            `was dead-lettered after ${delivery.Attempts ?? 0} attempts: ${delivery.LastError ?? 'no error recorded'}`,
+    );
+    await raiseAlertTask(
+        `Outbound delivery failed: ${delivery.ConsumerKey}, ${event?.EventType ?? 'unknown event'}, ${subject} (event ${event?.ID ?? delivery.ID})`,
+        `Orders could not tell '${delivery.ConsumerKey}' about a change after retrying until the delivery's deadline, so that ` +
+            `system's copy is out of date (for the Learning Hub, the person's access).
+
+` +
+            `Event: ${event?.EventType ?? '(unknown)'} ${event?.ID ?? ''}
+` +
+            `About: ${subject}${event?.OrderHeaderID ? ` (order ${event.OrderHeaderID})` : ''}
+` +
+            `Attempts: ${delivery.Attempts ?? 0}
+Last error: ${delivery.LastError ?? '(none recorded)'}
+
+` +
+            `Once '${delivery.ConsumerKey}' answers again, re-send this change to it.`,
+        contextUser,
+        { OncePerName: true },
+    );
+}
+
 /**
  * Writes the human-visible Tasks row; the caller has already logged the marker. `OncePerName` skips
- * the write when a Task with this name already exists.
+ * the write when a Task with this name already exists. A written Task is assigned to the alert role's
+ * holders (`AssignAlertTask`), which never fails the alert.
  */
 async function raiseAlertTask(
     name: string,
@@ -125,7 +175,11 @@ async function raiseAlertTask(
             LogError(
                 `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${task.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
+            return;
         }
+        // Told to a person, not left in a list: the tasks app notifies an assignee. The provider is the one the
+        // `Metadata` facade above delegates to: the facade itself has no RunView, so passing it failed every read.
+        await AssignAlertTask(task.ID, Metadata.Provider as unknown as IMetadataProvider, contextUser);
     } catch (err) {
         LogError(
             `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${err instanceof Error ? err.message : String(err)}`,

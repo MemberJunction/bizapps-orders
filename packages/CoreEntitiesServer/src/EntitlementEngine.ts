@@ -52,6 +52,8 @@ import {
 import { ResolveLineParty, type LineParty } from './LineParty.js';
 import { RequireUUID } from './sql-guards.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { TermDayEnd } from './TermGrantWindow.js';
 
 const PRODUCT_ENTITLEMENT_ENTITY = 'MJ_BizApps_Orders: Product Entitlements';
 const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
@@ -132,6 +134,9 @@ export async function CreateEntitlementGrants(
     const out: GrantOutcome = { Created: 0, Grants: [] };
     await OrdersSettings.Load(provider, user);
     const cutoffDaysPastDue = OrdersSettings.RenewalAccessCutoffDaysPastDue;
+    // A term-following grant covers each of its term's days in full, in the business zone.
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
 
     // Reversal lines and anything with no positive quantity confer nothing.
     const grantable = lines.filter((l) => Number(l.Quantity ?? 0) > 0);
@@ -281,6 +286,7 @@ export async function CreateEntitlementGrants(
                     AccessLagHours: template.AccessLagHours,
                     TermStartDate: term ? new Date(term.StartDate) : null,
                     TermEndDate: term ? new Date(term.EndDate) : null,
+                    BusinessZone: zone,
                 });
 
                 const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(ENTITLEMENT_GRANT_ENTITY, user);
@@ -639,11 +645,21 @@ export async function ResizeTermGrants(
 }
 
 /**
- * After a subscription cancel, make stored grant Status less of a lie — still not the read path.
+ * After a subscription cancel, make the stored grants tell the truth.
  *
- * Access-through in the future (grace) leaves the rows `Active`; `EvaluateGrantAccess` honours
- * `subscription.EndDate`. Access-through already passed (immediate cancel, no remaining grace)
- * REVOKES, with a reason, so a poll of Status at least stops saying Active.
+ * Access-through already passed (an immediate cancel, no remaining grace) REVOKES, with a reason.
+ *
+ * Access-through in the future (end of term, a grace period, a cancel cut short at a billing boundary)
+ * leaves the rows `Active` and MOVES THEIR END to it: through 00:00 business time on the day after the
+ * access-through day (`TermDayEnd`), the instant `EvaluateGrantAccess` already reads from
+ * `subscription.EndDate`. Before, the rows kept their old end, so a downstream copy that follows the
+ * grant (the Learning Hub, through `GrantStatusChanged`) ended access on a different day from Orders:
+ * earlier with a grace period, later when the cancel cut the term short. Each moved grant records the
+ * date change as an outbound event (`EntitlementGrantEntityServer`).
+ *
+ * A grant that starts at or after the new end (a later term, which begins exactly where the cancelled
+ * one's coverage ends) is left as it is: it never comes into force, and an end at or before its start
+ * would be an empty window, or refused by the database.
  */
 export async function RevokeGrantsForCanceledSubscription(
     subscriptionID: string,
@@ -653,7 +669,7 @@ export async function RevokeGrantsForCanceledSubscription(
     user: UserInfo,
     options?: EntitySaveOptions,
     now: Date = new Date(),
-): Promise<{ Revoked: number; LeftStanding: number }> {
+): Promise<{ Revoked: number; LeftStanding: number; EndMoved: number }> {
     const id = RequireUUID(subscriptionID, 'SubscriptionID');
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const grants = await rv.RunView<{ ID: string; Status: string }>(
@@ -666,10 +682,33 @@ export async function RevokeGrantsForCanceledSubscription(
         user,
     );
     const rows = grants?.Results ?? [];
-    if (!rows.length) return { Revoked: 0, LeftStanding: 0 };
+    if (!rows.length) return { Revoked: 0, LeftStanding: 0, EndMoved: 0 };
 
     if (!ShouldRevokeGrantsOnCancel(accessThroughDate, now)) {
-        return { Revoked: 0, LeftStanding: rows.length };
+        await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+        const accessEnds = TermDayEnd(accessThroughDate, BusinessTimeZoneEngine.Instance.Zone);
+        let moved = 0;
+        for (const row of rows) {
+            const grant = await provider.GetEntityObject<mjBizAppsOrdersEntitlementGrantEntity>(
+                ENTITLEMENT_GRANT_ENTITY,
+                CompositeKey.FromID(row.ID),
+                user,
+            );
+            // Starting at or after the end, it never comes into force (a later term begins exactly where the
+            // cancelled one's coverage ends): leave it, rather than write an empty window and send an event.
+            const startsAfter = grant.ValidFrom != null && new Date(grant.ValidFrom).getTime() >= accessEnds.getTime();
+            const alreadyThere = grant.ValidTo != null && new Date(grant.ValidTo).getTime() === accessEnds.getTime();
+            if (startsAfter || alreadyThere) continue;
+            grant.ValidTo = accessEnds;
+            if (!(await grant.Save(options))) {
+                throw new Error(
+                    `Failed to move entitlement grant ${row.ID}'s end to the cancel's access-through: ` +
+                        `${grant.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                );
+            }
+            moved++;
+        }
+        return { Revoked: 0, LeftStanding: rows.length, EndMoved: moved };
     }
 
     let revoked = 0;
@@ -690,5 +729,5 @@ export async function RevokeGrantsForCanceledSubscription(
         }
         revoked++;
     }
-    return { Revoked: revoked, LeftStanding: 0 };
+    return { Revoked: revoked, LeftStanding: 0, EndMoved: 0 };
 }

@@ -45,6 +45,8 @@ import type { ApprovalTaskContext } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { BusinessTimeZoneEngine, CalendarDayIn } from '@mj-biz-apps/common-entities';
+import { TermDayEnd, TermDayStart } from './TermGrantWindow.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 import { SanctionTermAmendment, SubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
 import {
@@ -368,21 +370,32 @@ async function moveSubscriptionStart(checked: CheckedTermShift, ctx: ApprovalTas
 }
 
 /**
- * A grant that follows the term now runs over the new dates. It starts on the new start unless it started
- * later than that, as a grant given on payment can.
+ * A grant that follows the term now runs over the new dates, each day covered in full in the business zone
+ * (`TermDayStart` / `TermDayEnd`), as a grant made at booking does. It starts on the new start unless it
+ * started later than that, as a grant given on payment can.
+ *
+ * "Started on the term's start" is read in the business zone, and also in UTC: a grant written before
+ * grants covered business days held 00:00 UTC on the start day, which is the previous evening in the
+ * Americas.
  */
 async function moveTermGrants(checked: CheckedTermShift, ctx: ApprovalTaskContext): Promise<void> {
+    await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
+    const newStart = TermDayStart(checked.NewStartDate, zone);
+    const currentStartDay = IsoDay(checked.CurrentStartDate);
     const grants = await ReadRows<mjBizAppsOrdersEntitlementGrantEntity>(ctx, {
         EntityName: ENTITLEMENT_GRANT_ENTITY,
         ExtraFilter: `SubscriptionTermID = '${RequireUUID(checked.TermID, 'SubscriptionTermID')}' AND ValidityModeApplied = 'SubscriptionTerm'`,
         ResultType: 'entity_object',
     });
     for (const grant of grants) {
-        const from = grant.ValidFrom ? AsDay(grant.ValidFrom) : null;
-        if (!from || IsoDay(from) === IsoDay(checked.CurrentStartDate) || from.getTime() < checked.NewStartDate.getTime()) {
-            grant.ValidFrom = checked.NewStartDate;
+        const from = grant.ValidFrom ? new Date(grant.ValidFrom) : null;
+        const startedOnTermStart =
+            !!from && (CalendarDayIn(from, zone) === currentStartDay || IsoDay(AsDay(from)) === currentStartDay);
+        if (!from || startedOnTermStart || from.getTime() < newStart.getTime()) {
+            grant.ValidFrom = newStart;
         }
-        grant.ValidTo = checked.NewEndDate;
+        grant.ValidTo = TermDayEnd(checked.NewEndDate, zone);
         if (!(await grant.Save())) {
             throw new Error(`Access granted by term ${checked.TermNumber} could not be moved: ${grant.LatestResult?.CompleteMessage}`);
         }

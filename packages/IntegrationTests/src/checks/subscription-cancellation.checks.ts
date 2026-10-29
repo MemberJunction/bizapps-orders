@@ -1,5 +1,5 @@
 /**
- * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC11).
+ * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC13).
  *
  * `Orders.CancelSubscription` is where the `SubscriptionType` cancellation columns finally do
  * something. The user picks a DATE; the operation applies `CancellationMode` /
@@ -19,10 +19,15 @@
  *   SC10  an unknown subscription fails as OUTPUT, not as a thrown fault
  *   SC11  a later term sold and invoiced on the same order is canceled, and under NoRefund its
  *         invoiced amount is kept: nothing is reversed (#406, #560)
+ *   SC12  a cancel whose access ends later (the type's 30-day grace) moves the standing grants' end to
+ *         the end of the access-through day, still Active, so a copy of access ends when Orders does
+ *   SC13  control: an Immediate cancel still revokes the grants at once, their dates untouched
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { BaseRemotableOperation, Metadata } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { TermDayEnd } from '@mj-biz-apps/orders-core-entities-server';
 import {
     Assert,
     AssertEqual,
@@ -115,6 +120,24 @@ async function buyAndFindSubscription(ctx: IntegrationCheckContext, productKey: 
 }
 
 const isoDate = (v: string | Date) => new Date(v).toISOString().slice(0, 10);
+
+/** Buy a subscription product on a given day; returns its subscription and term. */
+async function buyOn(ctx: IntegrationCheckContext, productKey: string, price: number, day: Date) {
+    const f = Fx();
+    const result = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        OrderDate: day,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
+    });
+    Assert(result.Saved, `confirm failed: ${result.Message}`);
+    const term = await TxOne<{ ID: string; SubscriptionID: string }>(
+        ctx,
+        `SELECT st.ID, st.SubscriptionID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+         JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+    );
+    return { OrderID: result.Order.ID as string, SubscriptionID: term.SubscriptionID };
+}
 
 export const SubscriptionCancellationChecks: NamedCheck[] = [
     {
@@ -514,6 +537,62 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                     `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${sold[1].OrderLineID}'`,
                 );
                 AssertEqual(Number(billed.BilledToDate), 1200, "term 2's invoiced amount stays billed, so it stays on AR");
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC12',
+        Name: "SC12: a cancel whose access ends later moves the standing grants' end to the end of the access-through day",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Bought today, so the access-through day (the type's rule plus SubCalendar's 30-day grace) is
+                // in the future whatever day the suite runs.
+                const today = new Date(`${BusinessTimeZoneEngine.Instance.Today()}T00:00:00Z`); // business today, as a date column holds it
+                const { SubscriptionID } = await buyOn(ctx, 'SubCalendar', 1200, today);
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: isoDate(today) });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+                const accessThrough = isoDate(out.Decision!.AccessThroughDate);
+                Assert(accessThrough > isoDate(today), `precondition: access ends later (${accessThrough})`);
+
+                const grants = await TxQuery<{ ID: string; Status: string; ValidTo: Date | null }>(
+                    ctx,
+                    `SELECT ID, Status, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID = '${SubscriptionID}'`,
+                );
+                Assert(grants.length > 0, 'precondition: the subscription granted access');
+                const end = TermDayEnd(accessThrough, BusinessTimeZoneEngine.Instance.Zone).toISOString();
+                for (const g of grants) {
+                    AssertEqual(g.Status, 'Active', 'the grant stays in force until access ends');
+                    AssertEqual(g.ValidTo ? new Date(g.ValidTo).toISOString() : null, end, `its end is the end of ${accessThrough} (grace included)`);
+                }
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC13',
+        Name: 'SC13: control: an Immediate cancel still revokes the grants at once, their dates untouched',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const today = new Date(`${BusinessTimeZoneEngine.Instance.Today()}T00:00:00Z`); // business today, as a date column holds it
+                const { SubscriptionID } = await buyOn(ctx, 'SubCalendar', 1200, today);
+                const before = await TxQuery<{ ID: string; ValidTo: Date | null }>(
+                    ctx,
+                    `SELECT ID, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID = '${SubscriptionID}'`,
+                );
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: isoDate(today), Timing: 'Immediate' });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+                const after = await TxQuery<{ ID: string; Status: string; ValidTo: Date | null }>(
+                    ctx,
+                    `SELECT ID, Status, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID = '${SubscriptionID}'`,
+                );
+                Assert(after.length > 0 && after.every((g) => g.Status === 'Revoked'), 'every grant is revoked at once');
+                for (const g of after) {
+                    const was = before.find((b) => SameID(b.ID, g.ID));
+                    AssertEqual(
+                        g.ValidTo ? new Date(g.ValidTo).toISOString() : null,
+                        was?.ValidTo ? new Date(was.ValidTo).toISOString() : null,
+                        'and its dates are left as they were',
+                    );
+                }
             }),
     },
 ];

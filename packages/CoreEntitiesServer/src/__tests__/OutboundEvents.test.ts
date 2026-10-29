@@ -7,6 +7,12 @@ import { MJGlobal } from '@memberjunction/global';
 
 const mocks = vi.hoisted(() => ({
     events: [] as Array<Record<string, unknown>>,
+    deadLetterAlert: vi.fn(),
+}));
+
+// The dead-letter alert's content is checkoutCaptureAlert's (its own tests); here: when it is raised.
+vi.mock('../checkoutCaptureAlert.js', () => ({
+    raiseOutboundDeadLetterAlert: (...args: unknown[]) => mocks.deadLetterAlert(...args),
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -298,6 +304,36 @@ describe('outbound events', () => {
             const out = await DispatchOutboundDeliveries({}, provider as never, undefined);
             expect(out.DeadLettered).toBe(1);
             expect(lastSave(saved)).toMatchObject({ Status: 'DeadLettered', Attempts: 9 });
+        });
+
+        it('a dead letter raises one alert naming the consumer, the event and the last error, after it is recorded', async () => {
+            mocks.deadLetterAlert.mockReset().mockResolvedValue(undefined);
+            deliver.crm.mockRejectedValue(new Error('still down'));
+            const { provider } = setUp('crm', { Attempts: 8, DeadlineAt: new Date(Date.now() - 1000) });
+            await DispatchOutboundDeliveries({}, provider as never, undefined);
+            expect(mocks.deadLetterAlert).toHaveBeenCalledTimes(1);
+            const [delivery, event] = mocks.deadLetterAlert.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>];
+            expect(delivery).toMatchObject({ ConsumerKey: 'crm', Attempts: 9, LastError: 'still down' });
+            expect(event).toMatchObject({ ID: EVENT_ID, EventType: 'OrderConfirmed', OrderHeaderID: ORDER_ID });
+        });
+
+        it('an alert that throws never fails the pass: the dead letter is still recorded and counted', async () => {
+            mocks.deadLetterAlert.mockReset().mockRejectedValue(new Error('tasks app down'));
+            deliver.crm.mockRejectedValue(new Error('still down'));
+            const { provider, saved } = setUp('crm', { Attempts: 8, DeadlineAt: new Date(Date.now() - 1000) });
+            const out = await DispatchOutboundDeliveries({}, provider as never, undefined);
+            expect(out).toMatchObject({ Success: true, DeadLettered: 1 });
+            expect(lastSave(saved)).toMatchObject({ Status: 'DeadLettered' });
+        });
+
+        it('a delivered or retrying row raises no alert', async () => {
+            mocks.deadLetterAlert.mockReset().mockResolvedValue(undefined);
+            const ok = setUp('crm');
+            await DispatchOutboundDeliveries({}, ok.provider as never, undefined);
+            deliver.crm.mockRejectedValue(new Error('CRM is down'));
+            const retrying = setUp('crm');
+            await DispatchOutboundDeliveries({}, retrying.provider as never, undefined);
+            expect(mocks.deadLetterAlert).not.toHaveBeenCalled();
         });
 
         it('fails a row whose consumer is no longer registered, and keeps retrying it', async () => {

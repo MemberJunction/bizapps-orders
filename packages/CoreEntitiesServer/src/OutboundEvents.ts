@@ -9,7 +9,8 @@
  *      cannot lose it. Nothing is sent here.
  *   2. DISPATCH — after the commit, never inside a booking. `DispatchOutboundDeliveries` claims due
  *      Pending rows with an atomic lease, calls each consumer, and records Delivered, or backs off
- *      and tries again until the row's deadline, when it is DeadLettered.
+ *      and tries again until the row's deadline, when it is DeadLettered and an alert Task, assigned
+ *      to the alert role (`AlertTaskRole`), tells a person to re-send it.
  *
  * Delivery is at least once: a consumer can see the same event twice (a timed-out call that later
  * succeeded, a crash between its success and our write). The event id is stable, so a
@@ -21,6 +22,7 @@ import { LogError, RunView, UserInfo, type EntitySaveOptions, type IMetadataProv
 import { MJGlobal } from '@memberjunction/global';
 import type { mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEventEntity } from '@mj-biz-apps/orders-entities';
 import { RequireUUID } from './sql-guards.js';
+import { raiseOutboundDeadLetterAlert } from './checkoutCaptureAlert.js';
 
 export const OUTBOUND_EVENT_ENTITY = 'MJ_BizApps_Orders: Outbound Events';
 export const OUTBOUND_DELIVERY_ENTITY = 'MJ_BizApps_Orders: Outbound Deliveries';
@@ -285,6 +287,20 @@ export async function DispatchOutboundDeliveries(
         if (!(await delivery.Save())) {
             out.Success = false;
             LogError(`[OutboundEvents] could not record the result of delivery ${delivery.ID}: ${delivery.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+        } else if (delivery.Status === 'DeadLettered') {
+            // A person must re-send it, so a person is told (an alert Task assigned to the alert role).
+            // Raised only once the dead letter is recorded; it never fails or slows the pass.
+            try {
+                await raiseOutboundDeadLetterAlert(
+                    { ID: delivery.ID, ConsumerKey: delivery.ConsumerKey, Attempts: delivery.Attempts, LastError: delivery.LastError },
+                    event
+                        ? { ID: event.ID, EventType: event.EventType, OrderHeaderID: event.OrderHeaderID ?? null, EntitlementGrantID: event.EntitlementGrantID ?? null }
+                        : null,
+                    user
+                );
+            } catch (err) {
+                LogError(`[OutboundEvents] delivery ${delivery.ID} was dead-lettered, but its alert could not be raised: ${err instanceof Error ? err.message : String(err)}`);
+            }
         }
     }
     if (!out.Success) out.Message = 'Some delivery results could not be recorded; those rows are retried when their lease runs out.';
