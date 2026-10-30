@@ -15,7 +15,7 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-10-29 · latest migration `V202610271230__v5.39.x__OrderLine_Freeze_Discount_And_Charge.sql`
+> **Verified against the live database:** 2026-10-29 · latest migration `V202610301630__v5.39.x__OrderLine_Freeze_Discount_And_Charge.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
 > **71 tables · 128 internal relationships · 77 cross-app foreign keys ·

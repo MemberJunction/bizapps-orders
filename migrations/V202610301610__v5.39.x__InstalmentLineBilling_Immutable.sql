@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610271210 — InstalmentLineBilling rows are written once (#713)
+-- V202610301610 — InstalmentLineBilling rows are written once (#713)
 -- =============================================================================
 -- InstalmentLineBilling records what each instalment invoice billed each line,
 -- and later instalments are sliced against those rows. Nothing stopped an

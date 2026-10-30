@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610271230__v5.39.x__OrderLine_Freeze_Discount_And_Charge.sql
+-- PostgreSQL counterpart of V202610301630__v5.39.x__OrderLine_Freeze_Discount_And_Charge.sql
 -- =============================================================================================
 -- Written by hand in PL/pgSQL from the T-SQL (the converter passes T-SQL triggers through
 -- untranslated). The trigger function is replaced whole from V202610131504 with two added

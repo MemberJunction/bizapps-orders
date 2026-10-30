@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610271200__v5.39.x__OrderHeader_ApprovalTask_FK.sql
+-- PostgreSQL counterpart of V202610301600__v5.39.x__OrderHeader_ApprovalTask_FK.sql
 -- =============================================================================================
 -- Written by hand from the T-SQL: one foreign key and one column comment. CodeGen's output for
 -- the change is not here; a PostgreSQL host runs `mj codegen` after installing.

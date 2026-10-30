@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610271220__v5.39.x__CheckoutSession_OneOpenPerClientKey.sql
+-- PostgreSQL counterpart of V202610301620__v5.39.x__CheckoutSession_OneOpenPerClientKey.sql
 -- =============================================================================================
 -- Written by hand: `mj sql-convert --from tsql --to postgres` (MJ CLI 6.1.5) reordered the two
 -- statements, added an existence guard to the index and emitted an UPDATE ... FROM ... JOIN that
@@ -14,7 +14,7 @@ CREATE SCHEMA IF NOT EXISTS __mj_bizappsorders;
 SET search_path TO __mj_bizappsorders, public;
 
 -- =============================================================================
--- V202610271220 — One open checkout session per widget and client key (#782)
+-- V202610301620 — One open checkout session per widget and client key (#782)
 -- =============================================================================
 -- Session resume is a read-then-insert. Two InitializeSession calls for the
 -- same widget and client key that overlap both found nothing and both inserted.
