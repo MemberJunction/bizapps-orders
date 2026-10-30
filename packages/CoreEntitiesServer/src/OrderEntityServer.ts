@@ -82,7 +82,7 @@ import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type R
 import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';
-import { IsCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
+import { IsCancellationReversal, IsGatewayRenewal, IsMoneyOnlyReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
@@ -275,6 +275,11 @@ interface SubscriptionDecisionForLine {
      * reactivation, so the checkout hand-over creates a new gateway subscription.
      */
     RetireGatewaySubscriptionID?: string;
+    /**
+     * True when this line books a renewal the payment gateway already charged (E4): reactivating a
+     * cancelled gateway-billed subscription is then sanctioned, and its gateway id is kept.
+     */
+    GatewayRenewal?: boolean;
     /**
      * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
      * the term, where entitlement grants and renewals read it.
@@ -956,8 +961,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // back rather than being logged and shrugged at.
                 await this.grantEntitlements(lines, subs, options);
 
-                // And the mirror: a returned line takes its access with it.
-                await this.revokeEntitlementsForReversals(lines, reversals, options);
+                // And the mirror: a returned line takes its access with it, unless the reversal credits money only
+                // (D20: a gateway refund of a renewal, which is not a cancel).
+                await this.settleAccessForReversals(lines, reversals, options);
 
                 // What a return had not yet been invoiced for comes off the origin's instalments
                 // (#661). Before the cancel below, which withdraws them all on a whole-order return:
@@ -2729,6 +2735,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * origin's quantity is what the proportion is taken against, so it is read from the origin rather
      * than inferred from the reversal.
      */
+    /**
+     * A returned line takes its access with it (`revokeEntitlementsForReversals`), except on a reversal Orders marked
+     * money-only (`SanctionMoneyOnlyReversal`, D20: a gateway refund of a renewal credits money and is not a cancel).
+     */
+    protected async settleAccessForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        if (IsMoneyOnlyReversal(this)) return;
+        await this.revokeEntitlementsForReversals(lines, reversals, options);
+    }
+
     private async revokeEntitlementsForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
         reversals: Map<string, ReversalContext>,
@@ -3718,6 +3737,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                           decided.RetireGatewaySubscriptionID,
+                          decided.GatewayRenewal,
                       );
 
             // Remember it so a later line for the same subscription resolves above.
@@ -3972,6 +3992,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RequestedEndDate: requestedEnd,
                 // The line's answer to "the subscriber already holds this product" (golive #299).
                 RequestedAction: line.SubscriptionAction,
+                // A renewal the payment gateway already charged for (E4): continue the subscription it names.
+                GatewayRenewal: !!line.RenewsSubscriptionID && IsGatewayRenewal(this),
             });
 
             if (decision.Action === 'Reject') {
@@ -3987,7 +4009,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // move it while the gateway keeps charging on its own schedule. A cancelled one may come
             // back as a fresh start: its old gateway id is retired, and the checkout hand-over gives
             // it a new gateway subscription once paid.
-            const gatewayVerdict = ProviderBilledPurchaseVerdict(decision.Action, existing, !!line.RenewsSubscriptionID);
+            const gatewayVerdict = ProviderBilledPurchaseVerdict(
+                decision.Action,
+                existing,
+                !!line.RenewsSubscriptionID,
+                !!line.RenewsSubscriptionID && IsGatewayRenewal(this),
+            );
             if (gatewayVerdict.Kind === 'Refuse') {
                 if (preview) continue;
                 throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${gatewayVerdict.Message}`);
@@ -4111,6 +4138,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RequestedStart: requestedStart,
                 RequestedEnd: requestedEnd,
                 RetireGatewaySubscriptionID: gatewayVerdict.Kind === 'FreshStart' ? (existing?.ProviderSubscriptionID ?? undefined) : undefined,
+                GatewayRenewal: !!line.RenewsSubscriptionID && IsGatewayRenewal(this),
                 Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
         }
@@ -4740,6 +4768,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         displacedStart?: DisplacedTermStartEventData,
         renewedOnto?: { ProductID: string; SubscriptionTypeID: string },
         retireGatewaySubscriptionID?: string,
+        gatewayRenewal?: boolean,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -4773,6 +4802,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
         }
         if (decision.Action === 'Reactivate') {
+            // A renewal the gateway already charged for (E4, Andrew's rule): the gateway is billing this
+            // subscription again, so it comes back with its gateway id. The one write that lets a cancelled
+            // gateway-billed subscription become Active without a fresh start.
+            if (gatewayRenewal) SanctionProviderBilledChange(sub);
             sub.Status = 'Active';
             sub.CanceledAt = null;
             sub.EndDate = null;

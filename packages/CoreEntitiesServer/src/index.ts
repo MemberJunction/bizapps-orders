@@ -268,6 +268,30 @@ export type {
     ProviderSubscriptionOutcomeCode,
 } from './ProviderSubscriptions.js';
 
+// Hearing the gateway that bills a subscription and booking what it does (option E, E3 + E4 + E6).
+export {
+    CoverageEndsAt,
+    PlanProviderSubscriptionSync,
+    RENEWAL_BILLING_REASON,
+    RETRY_ACCESS_CAP_DAYS,
+} from './ProviderSubscriptionSyncPlan.js';
+export type { SyncGatewayFacts, SyncNoticeCode, SyncOrdersFacts, SyncPlan, SyncStep } from './ProviderSubscriptionSyncPlan.js';
+export { SYNC_CANCELLED_LOOKBACK_DAYS, SyncProviderSubscription, SyncProviderSubscriptions } from './ProviderSubscriptionSync.js';
+export type {
+    SyncOutcome,
+    SyncProviderSubscriptionOptions,
+    SyncProviderSubscriptionResult,
+    SyncProviderSubscriptionsInput,
+    SyncProviderSubscriptionsResult,
+} from './ProviderSubscriptionSync.js';
+export { BookProviderRenewal } from './ProviderRenewalBooking.js';
+export type { RenewalBookingOutcome, RenewalSubscription } from './ProviderRenewalBooking.js';
+export { LinkProviderSubscription } from './LinkProviderSubscription.js';
+export type { LinkProviderSubscriptionCode, LinkProviderSubscriptionInput, LinkProviderSubscriptionResult } from './LinkProviderSubscription.js';
+export { raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
+export { IsGatewayRenewal, SanctionGatewayRenewal } from './SubscriptionEntityServer.js';
+export { StripeEventSubscriptionID, StripeInvoiceFacts, StripeSubscriptionDetails } from './StripePaymentProvider.js';
+
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
@@ -609,6 +633,8 @@ export type {
     CancelProviderSubscriptionRequest,
     CancelProviderSubscriptionResult,
     DescribeProviderSubscriptionResult,
+    GatewaySubscriptionInvoice,
+    ListProviderSubscriptionInvoicesResult,
     ProviderSubscriptionBillingState,
     CancelProviderSubscriptionOutcome,
     FindProviderSubscriptionsRequest,

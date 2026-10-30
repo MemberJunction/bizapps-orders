@@ -62,6 +62,7 @@ import {
     raiseProviderSubscriptionAlert,
 } from '../checkoutCaptureAlert.js';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from '../checkoutCaptureRetry.js';
+import { ORDERS_ALERT_TASK_PREFIX } from '../AlertTaskAssignment.js';
 import { IsOpenApprovalTask, OPEN_TASK_SQL } from '../ConcessionApprovalTask.js';
 
 const user = { ID: 'user-1', Email: 'ops@example.com' } as unknown as UserInfo;
@@ -363,6 +364,36 @@ describe('OpenProviderSubscriptionAlerts (option E, E2)', () => {
         // The SQL and the in-memory rule are the same rule.
         expect(OPEN_TASK_SQL).toBe(`Status NOT IN ('Completed', 'Cancelled')`);
         expect(['Open', 'In Progress', 'Completed', 'Cancelled'].filter(IsOpenApprovalTask)).toEqual(['Open', 'In Progress']);
+    });
+
+    it("#987's assignment sweep finds every gateway-subscription alert, keyed names included", () => {
+        // ORDERS_ALERT_TASK_PREFIX is the ONE list of alert-name prefixes (the duplicate export was removed, #989 review):
+        // every name a gateway-subscription alert is raised under starts with one of them.
+        const swept = Object.values(ORDERS_ALERT_TASK_PREFIX) as string[];
+        for (const name of [
+            ProviderSubscriptionAlertName('SUB-000130', 'NotRecorded'),
+            ProviderSubscriptionAlertName('SUB-000130', 'GatewayRenewalRefunded', false, 'ORD-000901'),
+            ProviderSubscriptionAlertName('SUB-000130', 'RenewalNotBooked', true),
+        ]) {
+            expect(swept.some((p) => name.startsWith(p))).toBe(true);
+        }
+    });
+    it('a KEYED name (one per occurrence: each refund credited) is its own Task, and still reads back by subscription and code', async () => {
+        const a = ProviderSubscriptionAlertName('SUB-000130', 'GatewayRenewalRefunded', false, 'ORD-000901');
+        const b = ProviderSubscriptionAlertName('SUB-000130', 'GatewayRenewalRefunded', false, 'ORD-000902');
+        expect(a).toBe('Gateway subscription needs attention: SUB-000130 (GatewayRenewalRefunded) ORD-000901');
+        expect(a).not.toBe(b);
+        expect(ProviderSubscriptionAlertName('SUB-000130', 'RenewalNotBooked')).toBe('Gateway subscription needs attention: SUB-000130 (RenewalNotBooked)');
+        mockRunView.mockResolvedValue({
+            Success: true,
+            Results: [
+                { ID: 't1', Name: a },
+                { ID: 't2', Name: ProviderSubscriptionAlertName('SUB-000130', 'RenewalNotBooked', true) },
+            ],
+        });
+        const open = await OpenProviderSubscriptionAlerts(user);
+        expect([...(open.get('SUB-000130') ?? [])].sort()).toEqual(['GatewayRenewalRefunded', 'RenewalNotBooked']);
+        expect(open.has('SUB-000130 (GatewayRenewalRefunded) ORD-000901')).toBe(false);
     });
 
     it('is empty, not an error, when the tasks app is not installed or the read fails', async () => {
