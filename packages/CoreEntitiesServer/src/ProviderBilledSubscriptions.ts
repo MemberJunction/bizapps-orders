@@ -20,12 +20,20 @@
  * neither job selects it, whatever that account's switch says. A team subscription invoiced through
  * Bill.com has no id, so both jobs treat it exactly as before.
  *
- * One rule, two forms: `NotProviderBilledSql` for the jobs' SQL selections, `IsProviderBilled` for code
- * that holds a row. They agree by construction (both are `ProviderSubscriptionID IS NOT NULL`).
+ * One rule, three forms: `NotProviderBilledSql` for the jobs' SQL selections, `ProviderBilledSql` for a
+ * filter that wants the gateway-billed ones, `IsProviderBilled` for code that holds a row. They agree by
+ * construction (all are `ProviderSubscriptionID IS NOT NULL`, or its negation).
  *
- *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE)
+ *   READERS: ./SpawnRenewalsOperation.ts (findDue) · ./RenewalCharging.ts (findCandidates, OUTER WHERE) ·
+ *            ./ProviderSubscriptions.ts (which subscriptions still need a gateway subscription) ·
+ *            ./CheckoutPrePurchaseCheck.ts (the returning buyer the gateway already bills)
  *   SCHEMA:  migrations/V202610230200__v5.39.x__Provider_Billed_Subscriptions.sql
  */
+
+import { IsProviderBilled } from '@mj-biz-apps/orders-entities';
+
+/** The row form lives in the shared package so the entity rule on every tier uses the same predicate. */
+export { IsProviderBilled };
 
 /** A plain SQL identifier, which is all a table alias here can be. */
 const SQL_ALIAS = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -46,9 +54,51 @@ export function NotProviderBilledSql(alias: string): string {
 }
 
 /**
- * True when a gateway bills this subscription, so Orders must not renew or charge it. Takes the
- * subscription alone, on purpose: see the header for why the account's switch is not consulted.
+ * The SQL condition "a gateway bills this subscription": the positive twin of `NotProviderBilledSql`.
+ *
+ * @param alias - the alias of `__mj_BizAppsOrders.Subscription`, or none for a RunView `ExtraFilter`
+ *                on the Subscriptions entity.
  */
-export function IsProviderBilled(subscription: { ProviderSubscriptionID?: string | null }): boolean {
-    return subscription.ProviderSubscriptionID != null;
+export function ProviderBilledSql(alias?: string): string {
+    if (alias === undefined) return 'ProviderSubscriptionID IS NOT NULL';
+    if (!SQL_ALIAS.test(alias)) {
+        throw new Error(`ProviderBilledSql: '${alias}' is not a plain SQL table alias.`);
+    }
+    return `${alias}.ProviderSubscriptionID IS NOT NULL`;
 }
+
+/**
+ * What an order may do to a subscription it would attach to, when a payment gateway bills that
+ * subscription (E2b). Pure: the caller passes the decision `SubscriptionBehavior.Decide` made.
+ *
+ *   · a new subscription, or one no gateway bills → as before
+ *   · a CANCELLED one coming back (`Reactivate`)  → `FreshStart`: its old gateway id is retired (the
+ *     cancel already stopped that gateway subscription) and the checkout hand-over creates a new one
+ *   · anything else (extend, renew, reactivate a live one) → refused: Orders would bill or cover a period
+ *     the gateway also charges for, or change one the gateway keeps charging as it was
+ *
+ * Example: Jane's SUB-000110 is Stripe-billed through 30 Oct 2027. An admin order for another year of
+ * Professional for Jane would extend it to 2028 and invoice her, while Stripe charges her on 30 Oct 2027
+ * as well: refused. After Sess cancelled SUB-000110 (and Stripe with it), a new Professional order
+ * reactivates it, without the old `sub_...`, and the checkout gives it a new Stripe subscription.
+ */
+export type ProviderBilledPurchaseVerdictResult = { Kind: 'Allow' } | { Kind: 'FreshStart' } | { Kind: 'Refuse'; Message: string };
+
+export function ProviderBilledPurchaseVerdict(
+    action: 'CreateNew' | 'ExtendExisting' | 'Reactivate' | 'Reject',
+    existing: { Status: string; ProviderSubscriptionID?: string | null; SubscriptionNumber?: string | null } | null | undefined,
+    isRenewal: boolean,
+): ProviderBilledPurchaseVerdictResult {
+    if (action === 'CreateNew' || action === 'Reject' || !existing || !IsProviderBilled(existing)) return { Kind: 'Allow' };
+    if (action === 'Reactivate' && !isRenewal && existing.Status === 'Canceled') return { Kind: 'FreshStart' };
+    const name = existing.SubscriptionNumber ?? 'The subscription';
+    return {
+        Kind: 'Refuse',
+        Message:
+            `${name} is billed by the payment gateway (${existing.ProviderSubscriptionID}), so this order cannot ` +
+            `${isRenewal ? 'renew' : action === 'Reactivate' ? 'reactivate' : 'extend'} it: the gateway charges for its periods ` +
+            `itself and would charge for the same period again. Cancel it first (which also cancels it at the gateway), ` +
+            `or change it at the gateway.`,
+    };
+}
+

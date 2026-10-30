@@ -630,8 +630,9 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
             // stamped from the clock, and the ternary fallback. Neither can see
             // `const requestDate = new Date();`: no column name at the assignment, no ternary.
             // These two sites launder the day through exactly such a binding, so each is pinned
-            // positively to the expression it must use.
-            ['CancelSubscriptionOperation.ts', /const requestDate = await CalendarDayOrToday\(requestedDay, provider, user\)/, "the cancellation's request day"],
+            // positively to the expression it must use. `let` since E2b: a cancel the gateway already
+            // finished is recorded at the latest term's last day (a day, never the clock).
+            ['CancelSubscriptionOperation.ts', /(?:const|let) requestDate = await CalendarDayOrToday\(requestedDay, provider, user\)/, "the cancellation's request day"],
             ['OrderEntityServer.ts', /const purchaseDay = await CalendarDayOrToday\(\s*this\.OrderDate,/, "the booking day behind every subscription term"],
             // Declaring the day is half of it. The first version of these two guards asserted only
             // that the `const` existed, which a revert that leaves the binding in place and stamps
