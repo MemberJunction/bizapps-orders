@@ -4,6 +4,7 @@ import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-e
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { AgingBucketOf, EmptyAgingBuckets, MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
+import { PresetViewRef } from '../../data/preset-view';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
@@ -375,16 +376,22 @@ export class MJOCustomerARPageComponent implements OnInit {
     public Customers: MJOCustomerSummary[] = [];
     public SelectedKey: string | null = null;
 
+    private readonly openOrdersView = new PresetViewRef();
+
     public get CustomerOpenOrdersView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo || !this.Selected) return null;
         const col = this.Selected.IsOrganization ? 'BillToOrganizationID' : 'BillToPersonID';
-        return {
-            EntityID: this.OrderEntityInfo.ID,
-            Entity: this.OrderEntityInfo.Name,
-            WhereClause: `${col} = '${this.Selected.Key}' AND Balance > 0`,
-            ID: `preset-customer-orders-${this.Selected.Key}`,
-            Name: `${this.Selected.Name} Open Items`
-        } as unknown as MJUserViewEntityExtended;
+        // Keyed on every input the view reads: a new object each pass deadlocks the grid (#362).
+        return this.openOrdersView.For(
+            `${this.OrderEntityInfo.ID}|${this.Selected.Key}|${col}|${this.Selected.Name}`,
+            () => ({
+                EntityID: this.OrderEntityInfo!.ID,
+                Entity: this.OrderEntityInfo!.Name,
+                WhereClause: `${col} = '${this.Selected!.Key}' AND Balance > 0`,
+                ID: `preset-customer-orders-${this.Selected!.Key}`,
+                Name: `${this.Selected!.Name} Open Items`
+            } as unknown as MJUserViewEntityExtended),
+        );
     }
 
     public async ngOnInit(): Promise<void> {

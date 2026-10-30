@@ -59,6 +59,9 @@ function byEntity(rowsByEntity: Record<string, unknown[] | ReturnType<typeof fai
 
 beforeEach(() => {
     runViewImpl.mockReset();
+    // The read compares a term's days and a cancel's access-through day as business days, in this zone.
+    vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+    vi.spyOn(BusinessTimeZoneEngine.Instance, 'Zone', 'get').mockReturnValue('UTC');
 });
 
 describe('CheckPersonEntitlement — caller bugs throw', () => {
@@ -250,7 +253,8 @@ describe('CheckPersonEntitlement — evaluation through the loader', () => {
         );
         expect(r.HasAccess).toBe(true);
         expect(r.Decision).toBe('Granted');
-        expect(r.ValidTo).toBe('2026-07-15T00:00:00.000Z');
+        // Access-through 15 Jul is covered in full: access ends at 00:00 (UTC here) on 16 Jul.
+        expect(r.ValidTo).toBe('2026-07-16T00:00:00.000Z');
     });
 
     it('a cancelled subscription past access-through is SubscriptionInactive', async () => {
@@ -283,7 +287,8 @@ describe('CheckPersonEntitlement — evaluation through the loader', () => {
             HasAccess: false,
             Decision: 'SubscriptionInactive',
             GrantID: GRANT,
-            ValidTo: '2026-06-01T00:00:00.000Z',
+            // Access-through 1 Jun, covered in full: it ended at 00:00 on 2 Jun.
+            ValidTo: '2026-06-02T00:00:00.000Z',
         });
     });
 
