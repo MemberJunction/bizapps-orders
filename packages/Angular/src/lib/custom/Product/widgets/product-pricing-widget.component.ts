@@ -859,6 +859,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         const md = new Metadata();
         const out: FilterFieldInfo[] = [];
         for (const src of PRICE_APPLICABILITY_SOURCES) {
+            if (src.fields) {
+                for (const f of src.fields) {
+                    out.push({ name: `${src.key}.${f.name}`, displayName: `${src.label} · ${f.label}`, type: f.type });
+                }
+                continue;
+            }
+            if (!src.entityName) continue;
             const ent = md.EntityByName(src.entityName);
             if (!ent) continue;
             for (const f of ent.Fields) {

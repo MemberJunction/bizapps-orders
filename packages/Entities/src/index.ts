@@ -102,6 +102,7 @@ export * from './sql-guards';
 export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
+export * from './pricing/organizationRevenue';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
