@@ -19,7 +19,12 @@ Orders now hears what a gateway that bills a subscription did, and books it (opt
   keeping its gateway id, with a Task for support. A $0 renewal is booked at the last price, 100% off.
 - **A gateway refund of a renewal (D20)** is a money-only credit order applied to the renewal (`Orders.ApplyAccountCredit`),
   so the renewal owes nothing, full refund or partial; access is unchanged; a Task per credit. The refund door and a
-  recorded cancel decide under one subscription lock and never credit one refund twice.
+  cancel decide under one subscription lock and never credit one refund twice. **A cancel follows the same per-term
+  figure for every renewal the gateway charged and has refunded any of** (what it refunded less what Orders already
+  credited, applied to the renewal), on every path: a recorded gateway end, the term D19 skips, an `Immediate` cancel
+  and a backdated request alike; the type's refund rule no longer credits such a renewal on top of the gateway's refund.
+  A renewal the gateway refunded nothing of, and every term Orders billed, follow the type's rule as before. A $0
+  renewal (100% off) is never read as refunded in full.
 - **Spending a return's credit.** An order's applied total may go below zero by the credit the order itself carries
   (a return or cancellation), never by cash; `Orders.ApplyAccountCredit` now settles only the credit's own customer's
   orders, only between CONFIRMED orders (a Draft, Quoted or Voided order holds no credit and owes nothing), and locks
