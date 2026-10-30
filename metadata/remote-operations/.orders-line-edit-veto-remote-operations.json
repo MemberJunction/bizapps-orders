@@ -1,0 +1,29 @@
+[
+  {
+    "_comments": [
+      "WHETHER A REGISTERED ORDER-LINE VETO WOULD REFUSE AN EDIT (bizapps-sales#328). Its own dot-json so it conflicts with",
+      "no other change to the remote operations. Called by the order lines editor to show lines read-only."
+    ],
+    "fields": {
+      "Name": "Check Order Lines Editable",
+      "OperationKey": "Orders.CheckOrderLinesEditable",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "Whether the order-line veto another app registered on this host would refuse adding, changing or removing a line of a saved order, and the refusal it would give. Read-only. Asks the same veto the line save asks, as the caller, so the editor can show lines read-only before anyone types a change the save would refuse. A vetoer that fails counts as a refusal. With no vetoer registered, every answer is null.",
+      "InputTypeName": "OrdersCheckOrderLinesEditableInput",
+      "InputTypeDefinition": "@file:types/orders-check-order-lines-editable.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCheckOrderLinesEditableOutput",
+      "OutputTypeDefinition": "@file:types/orders-check-order-lines-editable.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "5A6C7C80-D2D7-4D5B-B3A8-D3BD35DBCCDB"
+    }
+  }
+]
