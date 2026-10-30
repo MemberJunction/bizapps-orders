@@ -22,7 +22,10 @@ export interface RenewalCandidate {
     SkippedReason?: string;
     /** The product the renewal is placed on: the subscription's own, or its successor. */
     RenewalProductID?: string;
-    /** The renewal's unit price before the increase. */
+    /**
+     * The renewal's unit price before the increase. When the line that bought the expiring term bought
+     * several terms (a 24-month line on a 12-month type), one term's share of that line's price.
+     */
     BasePrice?: number;
     /** Where the base price came from: the prior term's price, its list price, or the successor's list. */
     BasePriceSource?: 'PriorPrice' | 'PriorList' | 'SuccessorList';
@@ -34,6 +37,10 @@ export interface RenewalCandidate {
     UnitPrice?: number;
     /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
     DiscountPct?: number;
+    /** First day of the term the renewal buys, `YYYY-MM-DD`, as the confirm will set it. */
+    RenewalTermStart?: string;
+    /** Last day of the term the renewal buys, `YYYY-MM-DD`, as the confirm will set it. */
+    RenewalTermEnd?: string;
     /**
      * Promotion codes that carried into the renewal and discounted it: codes recorded on the line that
      * bought the expiring term whose promotion has `AppliesToRenewals` set. Absent when none were presented.
