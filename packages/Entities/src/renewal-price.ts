@@ -13,8 +13,10 @@
  *      an anniversary of the subscription's start. Every invoice in a term carries one price, so the
  *      increase belongs to a term, never to part of one.
  *   4. A renewal buys one term. A line that bought several terms at once (24 months sold as one line
- *      on a 12-month type) has a price covering all of them, so the prior price is cut to one term's
- *      share of it before the rules above apply (golive #338). See {@link PriorTermShare}.
+ *      on a 12-month type) with a typed price (`PriceOverridden`) has a price covering all of them, so
+ *      the prior price is cut to one term's share of it before the rules above apply (golive #338).
+ *      An engine-priced line carries one term's price whatever period it states, and is not cut.
+ *      See {@link PriorTermShare}.
  *
  * Pure: the caller resolves the prices and the increase levels, and this decides.
  *
@@ -146,11 +148,14 @@ export interface RenewalPrice {
  */
 export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
     const discount = input.CarryDiscount ? Number(input.PriorDiscountPct ?? 0) : 0;
-    // One term's worth of the prior price. The list price is not scaled: the engine prices a product
-    // per term whatever period a line states, so it is already one term's price. Comparing it with
-    // the scaled prior price is what tells a multi-term line sold below list from one sold at it.
+    // One term's worth of the prior price, for a price someone typed. The engine prices a product
+    // per term whatever period a line states, so an engine-priced multi-term line already carries one
+    // term's price and is not scaled; only a typed price can cover the whole period. The list price is
+    // not scaled either, for the same reason: comparing it with the scaled typed price is what tells a
+    // multi-term line sold below list from one sold at it.
     const share = input.PriorTermShare ?? 1;
-    const priorPrice = share < 1 ? cents(Number(input.PriorUnitPrice) * share) : Number(input.PriorUnitPrice);
+    const priorPrice =
+        share < 1 && input.PriorPriceOverridden ? cents(Number(input.PriorUnitPrice) * share) : Number(input.PriorUnitPrice);
 
     let base: number;
     let source: RenewalBaseSource;

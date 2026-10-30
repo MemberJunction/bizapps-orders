@@ -163,8 +163,10 @@ describe('a line that bought several terms renews at one term of its price (goli
     const priced = (lineMonths: number, unitPrice: number, overrides: Partial<RenewalPriceInput> = {}) =>
         PriceRenewal(
             input({
+                // A whole-period price is one someone typed: the engine prices one term.
                 PriorUnitPrice: unitPrice,
                 PriorDiscountPct: 0,
+                PriorPriceOverridden: true,
                 PriorListPrice: null,
                 PriorTermShare: PriorTermShare(lineMonths, annual),
                 ...overrides,
@@ -218,6 +220,20 @@ describe('a line that bought several terms renews at one term of its price (goli
         const p = priced(24, 22000, { PriorPriceOverridden: true, PriorListPrice: 10000 });
         expect(p.BaseSource).toBe('PriorPrice');
         expect(p.BasePrice).toBe(11000);
+    });
+
+    it('an engine-priced multi-term line carries one term of price already, and renews at it', () => {
+        // The engine charged one 10,000 term for the 24 months, so cutting it would renew at 5,000.
+        const p = priced(24, 10000, { PriorPriceOverridden: false });
+        expect(p.BaseSource).toBe('PriorPrice');
+        expect(p.BasePrice).toBe(10000);
+        expect(p.UnitPrice).toBe(10000);
+    });
+
+    it('a typed one-term discount on a multi-term line lapses to list, as a scaled one does', () => {
+        const p = priced(24, 9000, { PriorListPrice: 10000 });
+        expect(p.BaseSource).toBe('PriorList');
+        expect(p.BasePrice).toBe(10000);
     });
 
     it('a successor renews at its own list, whatever the prior line covered', () => {

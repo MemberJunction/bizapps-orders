@@ -79,7 +79,10 @@ import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntitySe
 import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
+import { ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';
+import { IsCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
@@ -267,6 +270,12 @@ interface SubscriptionDecisionForLine {
     /** The end the line stated before the confirm, or null; kept for the same reason (golive #338). */
     RequestedEnd: Date | null;
     /**
+     * The gateway id a cancelled, gateway-billed subscription carried, when this line reactivates it
+     * as a fresh start (E2b, `ProviderBilledPurchaseVerdict`): retired from the subscription on
+     * reactivation, so the checkout hand-over creates a new gateway subscription.
+     */
+    RetireGatewaySubscriptionID?: string;
+    /**
      * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
      * the term, where entitlement grants and renewals read it.
      */
@@ -325,6 +334,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
             if (same) return Math.abs(Number(line.UnitPrice ?? 0) - price) < 0.005;
         }
         return false;
+    }
+
+    /**
+     * The hand-entered rule, less the lines the renewal pass priced. A renewal order keeps Origin
+     * `Direct`, so the shared rule reads it as typed; but a $0 renewal (a complimentary term, a
+     * product now priced at zero) is the price the pass chose, and refusing it would roll back the
+     * renewal and leave the subscription due on every later run. Once someone changes the price the
+     * line is judged like any other, the same rule the concession gate and order review follow.
+     */
+    public override UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
+        return super.UnpricedLines().filter((line) => !this.isUneditedRenewalPrice(line));
     }
     /** Why a line owes no tax, by line index — written as a zero-amount component (D73). */
     private _taxReasons = new Map<number, string>();
@@ -1564,6 +1584,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 Lines: [...this.Lines.Items],
                 PromotionCodes: this.PromotionCodes.Codes,
                 ManualDiscounts: this._manualDiscounts,
+                Booking: this.willBookOnThisSave(),
                 Charges: restatedTax.length ? [...this._charges, ...restatedTax] : this._charges,
                 SettledTax: this._settledTax,
                 StandingDiscounts: standingDiscounts,
@@ -1776,6 +1797,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // A concession on a draft line goes with the line, decided or not: the line it priced
                 // no longer exists, and the order has committed no customer to it.
                 if ('WithdrawWithDraftLine' in row) row.WithdrawWithDraftLine = true;
+                // An adjustment refuses a direct delete; it goes with the line it discounted.
+                if ('RemovedByOrderSave' in row) row.RemovedByOrderSave = true;
                 if (!(await row.Delete())) {
                     throw new Error(
                         `Failed to delete ${entityName} for removed order line ${line.LineNumber}: ` +
@@ -2795,6 +2818,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
             throw new Error(`Order line ${line.LineNumber}: ${refusal}`);
         }
 
+        // A RETURN OF A GATEWAY-BILLED SALE (E2b). Reversing the line that sold a subscription a
+        // payment gateway bills would credit the customer and remove access while the gateway keeps
+        // charging. The cancel's own reversal is the exception: it stopped the gateway first.
+        if (context.Origin.SubscriptionID && !IsCancellationReversal(this)) {
+            const billed = await this.gatewayBilledSubscription(context.Origin.SubscriptionID);
+            if (billed) {
+                throw new Error(
+                    `Order line ${line.LineNumber}: the line it returns sold subscription ${billed.SubscriptionNumber}, which the ` +
+                        `payment gateway bills (${billed.ProviderSubscriptionID}). A return here would credit the customer and end ` +
+                        `access while the gateway keeps charging. Cancel the subscription instead (it also cancels it at the ` +
+                        `gateway); refunds of what the gateway charged are made at the gateway.`,
+                );
+            }
+        }
+
         // Due as of the REVERSAL's date, not today: a return back-dated to November names the
         // instalment that was due in November (Andrew, #237).
         const asOfDay = ToISODate(this.OrderDate) ?? Today();
@@ -3377,19 +3415,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const result = await this.submitDrafts(drafts, provider, user);
 
         if (!result.Success) {
-            const detail = (result.Errors ?? [])
-                .map((e) => {
-                    const which =
-                        e.DraftIndex !== undefined
-                            ? ` (order line ${
-                                  unbooked.find((l) => l.ID === drafts[e.DraftIndex!]?.OrderLineID)?.LineNumber ??
-                                  e.DraftIndex
-                              })`
-                            : '';
-                    return `${e.Code}${which}: ${e.Message}`;
-                })
-                .join('; ');
-            throw new Error(`Journal entry booking failed — no entries were written. ${detail}`);
+            const lineFor = (index: number) => {
+                const line = unbooked.find((l) => l.ID === drafts[index]?.OrderLineID);
+                return line ? { LineNumber: line.LineNumber, Product: line.Product ?? null } : null;
+            };
+            // The codes go to the log for whoever traces the refusal; the person confirming gets a
+            // sentence per refusal naming the line and what to change (bizapps-orders#742).
+            LogError(
+                `Journal entry booking failed for order ${this.OrderNumber ?? this.ID}: ` +
+                    BookingErrorLogText(result.Errors, lineFor),
+            );
+            throw new Error(`The order could not be booked, and nothing was posted. ${DescribeBookingErrors(result.Errors, lineFor)}`);
         }
 
         await this.stampJournalEntryIDs(lines, drafts, result, options);
@@ -3665,8 +3701,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           decision,
                           !!line.RenewsSubscriptionID,
                           options,
-                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart),
+                          DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
+                          decided.RetireGatewaySubscriptionID,
                       );
 
             // Remember it so a later line for the same subscription resolves above.
@@ -3932,6 +3969,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
 
+            // A subscription a payment gateway bills (E2b): another order must not extend, renew or
+            // move it while the gateway keeps charging on its own schedule. A cancelled one may come
+            // back as a fresh start: its old gateway id is retired, and the checkout hand-over gives
+            // it a new gateway subscription once paid.
+            const gatewayVerdict = ProviderBilledPurchaseVerdict(decision.Action, existing, !!line.RenewsSubscriptionID);
+            if (gatewayVerdict.Kind === 'Refuse') {
+                if (preview) continue;
+                throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${gatewayVerdict.Message}`);
+            }
+
             // ANOTHER BAND of the same offering (golive #276). The lookup above matches on the
             // product, so a holder with coverage under a sibling band found nothing and a second
             // subscription for the same dates was created and billed. A renewal names its target
@@ -4049,6 +4096,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 DedupeKey: dedupeKey,
                 RequestedStart: requestedStart,
                 RequestedEnd: requestedEnd,
+                RetireGatewaySubscriptionID: gatewayVerdict.Kind === 'FreshStart' ? (existing?.ProviderSubscriptionID ?? undefined) : undefined,
                 Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
         }
@@ -4490,6 +4538,24 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * When the filter matches several, the most live one wins: Active or Trialing, then Paused,
      * then Canceled, then the rest; among equals, one stored for `personID`, then the newest.
      */
+    /** The subscription's number and gateway id when a payment gateway bills it, else null (E2b). */
+    private async gatewayBilledSubscription(subscriptionID: string): Promise<{ SubscriptionNumber: string; ProviderSubscriptionID: string } | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string; SubscriptionNumber: string; ProviderSubscriptionID: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID='${RequireUUID(subscriptionID, 'SubscriptionID')}'`,
+                Fields: ['ID', 'SubscriptionNumber', 'ProviderSubscriptionID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res?.Success) throw new Error(`Could not read subscription ${subscriptionID}: ${res?.ErrorMessage ?? 'unknown error'}`);
+        const row = res.Results?.[0];
+        return row && row.ProviderSubscriptionID ? { SubscriptionNumber: row.SubscriptionNumber, ProviderSubscriptionID: row.ProviderSubscriptionID } : null;
+    }
+
     private async loadSubscriptionState(filter: string, personID?: string | null): Promise<ExistingSubscription | null> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const res = await rv.RunView<{
@@ -4497,11 +4563,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
             Status: string;
             HolderOrganizationID: string | null;
             BeneficiaryPersonID: string | null;
+            ProviderSubscriptionID: string | null;
+            SubscriptionNumber: string | null;
         }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: filter,
-                Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID'],
+                Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID', 'ProviderSubscriptionID', 'SubscriptionNumber'],
                 OrderBy: '__mj_CreatedAt DESC',
                 ResultType: 'simple',
                 BypassCache: true,
@@ -4539,6 +4607,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             BeneficiaryPersonID: sub.BeneficiaryPersonID,
             LatestTermEnd: latest?.EndDate ? new Date(latest.EndDate) : null,
             LatestTermNumber: latest?.TermNumber ?? 0,
+            ProviderSubscriptionID: sub.ProviderSubscriptionID,
+            SubscriptionNumber: sub.SubscriptionNumber,
         };
     }
 
@@ -4655,6 +4725,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         options?: EntitySaveOptions,
         displacedStart?: DisplacedTermStartEventData,
         renewedOnto?: { ProductID: string; SubscriptionTypeID: string },
+        retireGatewaySubscriptionID?: string,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -4662,6 +4733,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
             CompositeKey.FromID(decision.SubscriptionID!),
             this.ContextCurrentUser,
         );
+        // A cancelled gateway-billed subscription coming back (E2b): its old gateway subscription was
+        // stopped when it was cancelled, so the id is retired here — the one write the shared entity
+        // lets through for it — and the checkout hand-over creates a new one once this order is paid.
+        // Only for exactly the id the decision saw, so a subscription linked again since is refused.
+        if (retireGatewaySubscriptionID) {
+            if (decision.Action !== 'Reactivate' || sub.ProviderSubscriptionID !== retireGatewaySubscriptionID) {
+                throw new Error(
+                    `Subscription ${sub.SubscriptionNumber} changed while this order was confirmed (its payment gateway id is ` +
+                        `now ${sub.ProviderSubscriptionID ?? 'empty'}, not ${retireGatewaySubscriptionID}); confirm the order again.`,
+                );
+            }
+            SanctionProviderBilledChange(sub);
+            sub.ProviderSubscriptionID = null;
+            sub.PaymentProviderID = null;
+        }
         if (renewedOnto && sub.ProductID.toLowerCase() !== renewedOnto.ProductID.toLowerCase()) {
             sub.ProductID = renewedOnto.ProductID;
             sub.SubscriptionTypeID = renewedOnto.SubscriptionTypeID;
@@ -4694,7 +4780,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 decision.SubscriptionID!,
                 decision.Action === 'Reactivate' ? 'Activated' : 'Extended',
                 options,
-                { TermNumber: decision.Term?.TermNumber, Action: decision.Action, ...displacedStart },
+                {
+                    TermNumber: decision.Term?.TermNumber,
+                    Action: decision.Action,
+                    ...displacedStart,
+                    // The gateway subscription the cancelled one carried, retired by this fresh start.
+                    ...(retireGatewaySubscriptionID ? { RetiredProviderSubscriptionID: retireGatewaySubscriptionID } : {}),
+                },
             );
         }
         return decision.SubscriptionID!;

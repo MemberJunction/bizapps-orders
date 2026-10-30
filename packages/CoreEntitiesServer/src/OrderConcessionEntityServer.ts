@@ -132,6 +132,7 @@ import {
 } from './ConcessionApprovalTask.js';
 import {
     FindConcessionTier,
+    HeldManualDiscounts,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
@@ -150,6 +151,7 @@ import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftCo
 import { ApplySeatAddition, CheckSeatAddition } from './SeatAddition.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
@@ -211,6 +213,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         const recording = !this.IsSaved;
         if (this.escalation) return this.saveEscalation(options);
+        const gatewayProblem = await this.refuseOnGatewayBilledTerm(recording);
+        if (gatewayProblem) {
+            this.RegisterResultHistoryEntry(this.buildRejection(gatewayProblem));
+            return false;
+        }
         const problem = recording ? await this.prepareNew() : await this.applyDecision();
         if (problem) {
             this.RegisterResultHistoryEntry(this.buildRejection(problem));
@@ -860,7 +867,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
-        const concession = await LinePriceConcessionFor(line, this.provider(), user);
+        // A manual discount held for approval is part of what the line gives away (golive #328).
+        const held = await HeldManualDiscounts(line.OrderHeaderID, this.provider(), user);
+        const concession = await LinePriceConcessionFor(
+            { ...line, HeldDiscount: held.get(line.ID.toLowerCase()) ?? 0 },
+            this.provider(),
+            user,
+        );
         this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
         if (!concession && this.saleApprovalRequired) {
             // Nothing given away against an engine price, often because the product has none: the approval is
@@ -1087,6 +1100,53 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     }
 
     // ─── Reads ────────────────────────────────────────────────────────────────
+
+    /**
+     * A concession that would change a term a payment gateway bills (E2b): more days, a moved term,
+     * more seats or a lower amount. The gateway charges on its own date, seats and price, so the term
+     * and the gateway would disagree and the customer be charged for what Orders no longer says. Refused
+     * when recorded and again when approved (a Pending one may predate the gateway subscription).
+     * A Price or Scope concession on a draft line prices the sale itself and is not refused.
+     */
+    private async refuseOnGatewayBilledTerm(recording: boolean): Promise<string | null> {
+        const changesTerm =
+            this.DeliveryForm === 'Duration' || this.DeliveryForm === 'Shift' || this.DeliveryForm === 'Seats' || this.IsAmountChange;
+        const approving = !recording && this.GetFieldByName('Status')?.Dirty === true && this.Status === 'Approved';
+        if (!changesTerm || !(recording || approving)) return null;
+        const user = this.ContextCurrentUser as UserInfo;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const termFilter = this.SubscriptionTermID
+            ? `ID = '${RequireUUID(this.SubscriptionTermID, 'SubscriptionTermID')}'`
+            : this.OrderLineID
+              ? `OrderLineID = '${RequireUUID(this.OrderLineID, 'OrderLineID')}'`
+              : null;
+        if (!termFilter) return null;
+        const terms = await rv.RunView<{ ID: string; SubscriptionID: string }>(
+            { EntityName: SUBSCRIPTION_TERM_ENTITY, ExtraFilter: termFilter, Fields: ['ID', 'SubscriptionID'], ResultType: 'simple', BypassCache: true },
+            user,
+        );
+        if (!terms.Success) return `Could not read the term this concession changes: ${terms.ErrorMessage}`;
+        const subscriptionIDs = [...new Set((terms.Results ?? []).map((t) => t.SubscriptionID).filter(Boolean))];
+        if (!subscriptionIDs.length) return null;
+        const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; ProviderSubscriptionID: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID IN (${subscriptionIDs.map((id) => `'${RequireUUID(id, 'SubscriptionID')}'`).join(', ')}) AND ProviderSubscriptionID IS NOT NULL`,
+                Fields: ['ID', 'SubscriptionNumber', 'ProviderSubscriptionID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        if (!subs.Success) return `Could not read the subscription this concession changes: ${subs.ErrorMessage}`;
+        const billed = subs.Results?.[0];
+        if (!billed) return null;
+        return (
+            `Subscription ${billed.SubscriptionNumber} is billed by the payment gateway (${billed.ProviderSubscriptionID}), which ` +
+            `charges on its own date, seats and price. A ${this.IsAmountChange ? 'lower amount' : this.DeliveryForm} concession here ` +
+            `would change the term without the gateway, and the customer would still be charged as before. Make the change at the gateway.`
+        );
+    }
 
     private provider(): IMetadataProvider {
         return this.ProviderToUse as unknown as IMetadataProvider;

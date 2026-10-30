@@ -205,6 +205,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `maxQuantity` | Highest quantity the selector offers (default 50). The server's cap comes from the product and product type instead. |
 | `stripePublishableKey` | Stripe publishable key the widget mounts its card form with. The payment provider's `<CredentialsRef>_PUBLISHABLE_KEY`, when the server has it, takes its place (see [Step 2](#step-2-create-a-checkout-widget-record)). |
 | `autoRenewConsentText` | Wording of the automatic-renewal agreement. When set, the buyer must tick it, the server refuses to open a payment intent without that agreement, and the session records the text and the time. |
+| `providerBilledSubscriptionMessage` | What a buyer who already holds a subscription their payment gateway bills, in this widget's company, is told when another subscription purchase is refused (see [Pre-Purchase Checks](#pre-purchase-checks)). `{renewalDate}` becomes the day the gateway next charges, written in US English (`October 30, 2027`) whatever the widget's language. Unset shows a neutral default. |
 | `allowCoupons` | Shows a promotion-code field and lets the draft take a code. Otherwise codes are refused. |
 | `successMessage` | Success-screen text in place of the default confirmation line. |
 | `accessMessages` | `pending`, `ready` and `failed` texts for the success screen while access is provisioned after the confirm; shown only when a registered consumer gates access (see [Outbound events](outbound-events.md#access-status-on-the-checkouts-success-screen)). |
@@ -509,7 +510,9 @@ When the draft sells a product with a subscription type, the intent is opened wi
 
 `UpdateDraft` refuses a purchase before pricing it when either check says no, and `OpenPaymentIntentForSession` runs both again before any money moves. A refused draft persists nothing.
 
-1. **Built in.** The Person the e-mail resolves to already holds an `Active` or `Trialing` subscription (as its beneficiary) to a product on the draft. This applies whatever the subscription type's `ConcurrencyMode` says. A buyer the system does not know yet holds nothing, so the rule is skipped.
+1. **Built in**, two rules; the first that refuses answers. A buyer the system does not know yet holds nothing, so both are skipped.
+   - The draft sells a subscription product (one with a subscription type) and the Person the e-mail resolves to already holds an `Active`, `Trialing` or `Paused` subscription (as its beneficiary) **in the widget's company** that a payment gateway bills (`ProviderSubscriptionID` set), whatever its product. Orders would extend or add a term the gateway knows nothing about, and the gateway would still charge at its own renewal, so the buyer would pay twice; an upgrade would open a second gateway subscription. A ticket or another purchase with no subscription product goes through. Refused with its own code, `ProviderBilledSubscription` (its `ProductIDs` are the subscriptions the buyer holds, and the widget's `checkout-already-subscribed` event does not fire for it). The buyer sees the widget's `providerBilledSubscriptionMessage` (a neutral default otherwise), with `{renewalDate}` replaced by the last day of that subscription's latest term, the day the gateway charges, e.g. *"You already have a subscription that renews automatically on October 30, 2027. …"*. Buying for someone else works: their e-mail resolves to another Person. **Known limit:** a buyer who cancelled in the gateway's own portal (`cancel_at_period_end`) stays Active in Orders until Orders hears the gateway's events (E3/E4), so until then they are still refused, and told their subscription renews.
+   - The Person already holds an `Active`, `Trialing` or `Paused` subscription (as its beneficiary) to a product on the draft. This applies whatever the subscription type's `ConcurrencyMode` says. Refused as `AlreadySubscribed`, which fires the widget's `checkout-already-subscribed` event.
 2. **Host.** Subclass `CheckoutPrePurchaseCheck` from `@mj-biz-apps/orders-core-entities-server` and register it. The highest-priority registration runs; with none, only the built-in rule applies.
 
 ```typescript
@@ -554,7 +557,7 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
 | Step | Runs in | Failure leaves |
 |---|---|---|
 | `Confirm` | `CompleteCheckout` once payment has checked out, or the `payment_intent.succeeded` webhook for a session the browser never completed | the session `Open`; the buyer's next complete call, or the gateway's retry of the webhook, retries it |
-| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid |
+| `Capture` | `CompleteCheckout`, its replay, and the `payment_intent.succeeded` webhook | the order `Confirmed` and unpaid; a retryable failure is retried by the buyer's next complete call and by the webhook, which answers 500 so the gateway redelivers |
 
 - Every attempt sets the row `Running`, adds one to `Attempts` and records its source (`Checkout`, `Webhook` or `Replay`). It then ends `Succeeded` or `Failed` with `LastError` and `Retryable`.
 - Rows are written outside the step's own transaction, so a rolled-back `Confirm` still records its failure. A write that fails is logged; it never fails the step.
@@ -564,6 +567,7 @@ Each post-payment step of a paid checkout writes one `CheckoutSessionStep` row p
   - a step still `Running` inside the stale window is refused;
   - `Capture` re-runs the same idempotent `CapturePayment` (`checkout-complete:${session.ID}`);
   - `Confirm` is not replayable here.
+- A capture failure is non-retryable only when every blocker code is in `TERMINAL_CAPTURE_BLOCKER_CODES` (`checkoutCaptureRetry.ts`): a refusal about the data that a retry cannot change, such as `OrderNotFound`, `UnknownTender` or `AllocationMismatch`. Everything else retries, including a thrown error and a read the capture could not complete (`OrderReadFailed`, `TenderReadFailed`, `PaymentReadFailed`, #967): a read that times out on another transaction's lock is "could not read", never "does not exist". The capture reports `OrderNotFound` only after a second read, of the ids the first missed and past the cache, also comes back without them.
 - The terminal-capture Task is raised on the first non-retryable failure only, not again on every replay of it.
 - GuestOrder claim minting is not recorded as a step: it is best-effort, and a failure is logged without failing the booked order (see [Guest Record Claiming Workflow](#guest-record-claiming-workflow)).
 

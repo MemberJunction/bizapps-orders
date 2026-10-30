@@ -290,6 +290,10 @@ describe('order header link wiring', () => {
         expect(lines).toContain('<mjo-line-price-picker');
         expect(lines).toContain('Use Default Price');
         expect(picker).toContain('Override Explanation');
+        // The explanation box exists only on an overridden line, never as a disabled box (#723).
+        expect(picker).toMatch(/@if \(CanExplainOverride\(Line\)\) \{\s*<label class="mjo-lpp__reason"/);
+        expect(picker).not.toContain('is-off');
+        expect(picker).not.toContain('[disabled]="!CanExplainOverride(Line)"');
         expect(picker).toContain('(input)="SetOverrideReason(Line, $event)"');
         expect(rules).toContain("stamp(line, 'PriceOverridden', true)");
         expect(rules).toContain("stamp(line, 'PriceOverrideReason', trimmed === '' ? null : trimmed)");

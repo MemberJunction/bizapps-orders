@@ -31,8 +31,8 @@
 <template id="page">
 
   <div slot="meta">
-    <span class="mj-chip mj-chip--error" id="ov-count">—</span>
-    <span class="mj-chip mj-chip--outline" id="ov-value">—</span>
+    <span class="mjo-chip mjo-chip--error" id="ov-count">—</span>
+    <span class="mjo-chip mjo-chip--outline" id="ov-value">—</span>
   </div>
 
   <div slot="actions">
@@ -110,7 +110,7 @@
     <div class="grid-2" style="margin-top:var(--mj-space-4)">
       <div class="mj-card">
         <div class="mj-card-head"><i class="fa-solid fa-gear"></i><h3>Dunning settings</h3>
-          <span class="right"><span class="mj-chip mj-chip--outline">app setting, not a constant</span></span></div>
+          <span class="right"><span class="mjo-chip mjo-chip--outline">app setting, not a constant</span></span></div>
         <div class="mj-card-pad">
           <div class="mj-stated"><span class="muted small" style="width:210px">Grace period after a failed renewal</span>
             <span class="value">7 days</span><span class="from">default</span></div>
@@ -223,7 +223,7 @@ function render() {
       <td>${F.dateShort(r.due)}</td>
       <td>${r.lastContact
         ? `${F.dateShort(r.lastContact)}<div class="secondary">${r.contactKind} · ${r.attempts} attempt${r.attempts === 1 ? '' : 's'}</div>`
-        : '<span class="mj-chip mj-chip--info">never</span>'}</td>
+        : '<span class="mjo-chip mjo-chip--info">never</span>'}</td>
       <td><span class="ov-next"><i class="fa-solid ${act.icon}"
         style="color:var(--mj-status-${act.tone})"></i> ${act.text}</span></td>
       <td class="small">${r.owner}</td>

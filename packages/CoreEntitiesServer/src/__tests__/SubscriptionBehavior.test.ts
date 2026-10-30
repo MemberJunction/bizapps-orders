@@ -432,6 +432,8 @@ describe('a stated term end (golive #338)', () => {
             expect(MultiTermLineMonths(d('2026-11-01'), d('2027-04-30'), d('2026-11-01'))).toBeNull();
             // A line with no stated period.
             expect(MultiTermLineMonths(null, null, d('2026-11-01'))).toBeNull();
+            // A stated start with no end: the line's length is unknown, so no share is taken.
+            expect(MultiTermLineMonths(d('2026-11-01'), null, d('2027-11-01'))).toBeNull();
         });
     });
 });

@@ -40,9 +40,10 @@
  * it was reached are reported on every candidate, preview included, written into the order's notes
  * and logged on the renewal event, so the figure can be checked before a live pass books it.
  *
- * A line that bought several terms at once (golive #338: 24 months stated on a 12-month type) has a
- * price covering all of them, while the renewal buys one term. The prior price is cut to one term's
- * share of it (`PriorTermShare`) before the rules above apply. Every candidate also reports the
+ * A line that bought several terms at once (golive #338: 24 months stated on a 12-month type) at a
+ * typed price (`PriceOverridden`) has a price covering all of them, while the renewal buys one term.
+ * That price is cut to one term's share of it (`PriorTermShare`) before the rules above apply. An
+ * engine-priced line already carries one term's price, whatever period it states, and is not cut. Every candidate also reports the
  * renewal term's start and end, decided by the same subscription behaviour the confirm runs.
  *
  * PROMOTIONS THAT CARRY INTO RENEWALS (#289)
@@ -106,6 +107,7 @@ import {
     SubscriptionTypeRulesFrom,
     type SubscriptionTypeRules,
 } from './SubscriptionBehavior.js';
+import { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { RenewalDueDate, RenewalScheduleRows } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
@@ -400,7 +402,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
      * Raw SQL rather than RunView because the selection is inherently a JOIN across four tables with
      * a "latest term per subscription" window — expressible in one statement and awkward as several
      * round trips. `RenewalLeadDays` falls back from the subscription to its type, which is the
-     * inheritance rule the schema documents.
+     * inheritance rule the schema documents. A subscription a gateway bills itself
+     * (`ProviderSubscriptionID` set) is never due here: the gateway renews it (./ProviderBilledSubscriptions.ts).
      */
     private async findDue(
         provider: IMetadataProvider,
@@ -448,6 +451,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
               -- lapsed subscription from being silently revived months later by a routine pass.
               AND l.EndDate >= DATEADD(DAY, -1, '${asOfDate}')
               AND l.EndDate <= DATEADD(DAY, COALESCE(s.RenewalLeadDays, t.RenewalLeadDays, 0), '${asOfDate}')
+              -- A gateway that bills the subscription itself renews it; Orders placing an order too
+              -- would bill twice. Keyed on the marker, never the account's switch.
+              AND ${NotProviderBilledSql('s')}
               ${only}
             ORDER BY l.EndDate, s.SubscriptionNumber
         `)) as DueRow[];
@@ -711,7 +717,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             MovesToSuccessor: movesToSuccessor,
             Quantity: quantity,
             Price: price,
-            PriorLineMonths: share < 1 ? priorLineMonths : null,
+            // Only a typed price is cut (see `PriceRenewal`), so only that one is reported as a share.
+            PriorLineMonths: share < 1 && source.PriceOverridden ? priorLineMonths : null,
             Term: this.renewalTerm(due, product),
             PromotionCodes: await this.loadRenewalPromotionCodes(provider, source),
         };
