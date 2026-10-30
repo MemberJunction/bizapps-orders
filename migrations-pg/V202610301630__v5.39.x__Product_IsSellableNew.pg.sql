@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610281700__v5.39.x__Product_IsSellableNew.sql
+-- PostgreSQL counterpart of V202610301630__v5.39.x__Product_IsSellableNew.sql
 -- =============================================================================================
 -- `mj sql-convert --from tsql --to postgres --schema __mj_BizAppsOrders` (MJ CLI 6.1.6) output,
 -- finished by hand:
@@ -56,7 +56,7 @@ SET standard_conforming_strings = on;
 -- ===================== DDL: Tables, PKs, Indexes =====================
 
 -- =============================================================================
--- V202610281700 — Product.IsSellableNew: products kept for history, not for a
+-- V202610301630 — Product.IsSellableNew: products kept for history, not for a
 --                 new sale
 -- =============================================================================
 -- Some Active products exist only so that past or recurring business has
