@@ -256,12 +256,27 @@ describe("L3 finding 5: an imported first-year subscriber's creation invoice, wh
         const fiveUnrecorded = new Set([...recorded].filter((c) => !['ch_y1_0', 'ch_y1_1', 'ch_y1_2', 'ch_y1_3', 'ch_y1_4'].includes(c)));
         expect(count(sam({ BookedChargeIDs: fiveUnrecorded }))).toBe(5);
     });
-    it('a proration or one-off invoice whose charge Orders records (booked by hand) raises no notice; unrecorded it still does', () => {
-        for (const reason of ['subscription_update', 'manual']) {
-            const charged = invoice({ BillingReason: reason, AmountPaid: 50, ProviderChargeID: 'ch_hand' });
-            expect(plan(orders({ BookedChargeIDs: new Set(['ch_hand']) }), gateway({}, [charged]))).toEqual({ Steps: [], Differences: [] });
-            expect(plan(orders(), gateway({}, [charged])).Steps).toHaveLength(1);
-        }
+    it('a one-off (manual) invoice whose charge this subscription records (booked by hand) is in line; unrecorded it is GatewayChargeNotBooked', () => {
+        const charged = invoice({ BillingReason: 'manual', AmountPaid: 50, ProviderChargeID: 'ch_hand' });
+        expect(plan(orders({ BookedChargeIDs: new Set(['ch_hand']) }), gateway({}, [charged]))).toEqual({ Steps: [], Differences: [] });
+        const unbooked = plan(orders(), gateway({}, [charged]));
+        expect(kinds(unbooked.Steps)).toEqual(['Notice:GatewayChargeNotBooked']);
+        expect(unbooked.Differences[0]).toMatch(/Orders booked nothing for it/);
+    });
+    it('a proration (subscription_update) whose charge is booked KEEPS GatewayPlanChanged, saying the charge is booked but the plan changed (old → new)', () => {
+        const proration = invoice({ BillingReason: 'subscription_update', AmountPaid: 120, ProviderChargeID: 'ch_prorate', ProviderPriceID: 'price_exec' });
+        const p = plan(orders({ BookedChargeIDs: new Set(['ch_prorate']), LastGatewayPriceID: 'price_pro' }), gateway({}, [proration]));
+        expect(kinds(p.Steps)).toEqual(['Notice:GatewayPlanChanged']);
+        const reason = (p.Steps[0] as Extract<SyncStep, { Kind: 'Notice' }>).Reason;
+        expect(reason).toMatch(/the charge is booked, but the plan changed: price_pro → price_exec/);
+        expect(reason).not.toMatch(/booked nothing/);
+        expect(p.Differences).toEqual([reason]);
+    });
+    it('control: the same proration unbooked is GatewayPlanChanged saying Orders booked nothing for it', () => {
+        const proration = invoice({ BillingReason: 'subscription_update', AmountPaid: 120, ProviderChargeID: 'ch_prorate' });
+        const p = plan(orders(), gateway({}, [proration]));
+        expect(kinds(p.Steps)).toEqual(['Notice:GatewayPlanChanged']);
+        expect((p.Steps[0] as Extract<SyncStep, { Kind: 'Notice' }>).Reason).toMatch(/Orders booked nothing for it/);
     });
 });
 

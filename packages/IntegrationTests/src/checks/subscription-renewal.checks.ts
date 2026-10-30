@@ -178,7 +178,8 @@
  *   SR89  an imported subscriber (Chicago): the year it already paid is never booked again, whether its payment
  *         records the charge (no intent) or nothing records it, through the link or the sanction; its next renewal is
  *   SR99  an imported FIRST-YEAR subscriber (current invoice subscription_create, its charge on the importer's
- *         payment) is in line: preview reports 0 differences; a creation charge nothing records is still reported
+ *         payment) is in line: preview reports 0 differences for it; a creation charge nothing records, or recorded
+ *         only on another subscription's payment or a Failed one, is still reported
  *   SR90  recording a cancel the gateway made is never blocked: an open RenewalNotBooked does not stop it; a
  *         refused attempt raises the non-blocking GatewayCancelNotRecorded; the next sync records it
  *   SR91  a renewal invoice with tax is not booked: urgent RenewalNotBooked, nothing written
@@ -3493,7 +3494,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR99',
-        Name: "SR99: an imported FIRST-YEAR subscriber (its current invoice is Stripe's subscription_create, its charge on the importer's payment) is in line: the nightly preview reports 0 differences; one whose creation charge nothing records is still reported",
+        Name: "SR99: an imported FIRST-YEAR subscriber (its current invoice is Stripe's subscription_create, its charge on the importer's payment) is in line: the nightly preview reports 0 differences for it; a creation charge nothing records, one recorded only on ANOTHER subscription's payment, or only on a Failed payment, is still reported",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () =>
@@ -3514,7 +3515,6 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.PaymentHeader SET ProviderChargeID = NULL WHERE ProviderChargeID = 'ch_it_y1bare_now'`);
                     await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
                     await markProviderBilled(ctx, unbooked.sub.SubscriptionID, account, 'sub_it_y1bare');
-
                     const now = new Date(`${AddDays(first.lastDay, -200)}T12:00:00Z`);
                     const ids = [first.sub.SubscriptionID, unbooked.sub.SubscriptionID];
                     const preview = await SyncProviderSubscriptions({ SubscriptionIDs: ids, Preview: true, Now: now }, ctx.Provider, ctx.User);
@@ -3532,6 +3532,14 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     );
                     AssertEqual(`${control.Actions.length}|${control.Notices.length}`, '0|0', 'and nothing is booked or raised for it');
 
+                    // Control: the control's creation invoice now names y1's charge, which IS recorded, but on ANOTHER
+                    // subscription's payment (y1's): not this subscription's money, so still a difference.
+                    unbooked.held.Invoices[0] = { ...unbooked.held.Invoices[0], ProviderChargeID: 'ch_it_y1_now' };
+                    const elsewhere = await SyncProviderSubscription(unbooked.sub.SubscriptionID, { Preview: true, Now: now }, ctx.Provider, ctx.User);
+                    Assert(
+                        elsewhere.Outcome !== 'Failed' && elsewhere.Differences.length === 1 && /in_it_y1bare_now: charged .* at creation/.test(elsewhere.Differences[0]),
+                        `control: a charge recorded only on another subscription's payment is still reported: ${JSON.stringify(elsewhere)}`,
+                    );
                     // Live, the imported one is still in line and nothing is booked.
                     const live = await syncNow(ctx, first.sub.SubscriptionID, now);
                     AssertEqual(`${live.Outcome}|${live.Differences.length}|${(await termsOf(ctx, first.sub.SubscriptionID)).length}`, 'InLine|0|1', `live: ${JSON.stringify(live)}`);
@@ -3539,6 +3547,16 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     first.held.Invoices.push({ ...renewalInvoice({ anchor: first.nextStart, currency }, 'y1_next') });
                     const renewed = await syncNow(ctx, first.sub.SubscriptionID, new Date(first.nextStart.getTime() + 3_600_000));
                     AssertEqual(`${renewed.Outcome}|${(await termsOf(ctx, first.sub.SubscriptionID)).length}`, 'Changed|2', `the next renewal is booked: ${JSON.stringify(renewed)}`);
+
+                    // Control: the same payment, Failed, is not money: the creation invoice is a difference again.
+                    await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.PaymentHeader SET Status = 'Failed' WHERE ProviderChargeID = 'ch_it_y1_now'`);
+                    await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    const failedRun = await SyncProviderSubscription(first.sub.SubscriptionID, { Preview: true, Now: new Date(first.nextStart.getTime() + 7_200_000) }, ctx.Provider, ctx.User);
+                    Assert(
+                        failedRun.Outcome !== 'Failed' && failedRun.Differences.some((d) => /in_it_y1_now: charged .* at creation/.test(d)),
+                        `control: a Failed payment recording the charge does not make it booked: ${JSON.stringify(failedRun)}`,
+                    );
                 }),
             ),
     },

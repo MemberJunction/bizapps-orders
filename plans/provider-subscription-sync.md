@@ -36,7 +36,7 @@ have reached 30 Oct 2027, been charged $599 by Stripe, and lost access in Orders
 1. The gateway's records are the truth; events trigger a re-read (`SyncProviderSubscription`).
 2. Money first, then failures and the access they keep, then the end state (`PlanProviderSubscriptionSync`, pure).
 3. Book on the subscription's product, at what was charged (Q3); never refuse money taken, except a taxed renewal, which a person books.
-3a. A paid invoice is a renewal only when the period it bills starts on or after the latest term's last day (`StartsUnbookedPeriod`, shared with the cancel gate); a charge an Orders payment already records is booked, whatever the invoice's billing reason, so it is never a difference.
+3a. A paid invoice is a renewal only when the period it bills starts on or after the latest term's last day (`StartsUnbookedPeriod`, shared with the cancel gate); a charge this subscription's payments already record (not Failed, on its own orders) is booked, whatever the invoice's billing reason, so it is never a "not booked" difference; a booked proration still raises `GatewayPlanChanged`, because the product did not change with it.
 4. No order until the gateway is paid; keep access through the retry window; end it when the gateway gives up (Q4, Q-N4).
 5. Only the gateway's renewal order may renew a gateway-billed subscription (`SanctionGatewayRenewal`); every other
    order is still refused (E2b).

@@ -62,8 +62,9 @@ export interface SyncOrdersFacts {
     /** Invoices of $0 already booked (they have no intent). */
     BookedZeroInvoiceIDs: ReadonlySet<string>;
     /**
-     * Gateway charges any Orders payment already records (`PaymentHeader.ProviderChargeID`, whatever its key):
-     * the importer's payment for an imported subscriber's current year has a charge and no intent.
+     * Gateway charges this subscription's payments already record (`PaymentHeader.ProviderChargeID`, whatever its
+     * key): payments not Failed, applied to an order buying one of its terms or renewing it (`BookedChargeFilter`).
+     * The importer's payment for an imported subscriber's current year has a charge and no intent.
      */
     BookedChargeIDs: ReadonlySet<string>;
     /** Failed attempts already recorded, as `<invoice id>#<attempt>`. */
@@ -180,13 +181,26 @@ export function PlanProviderSubscriptionSync(orders: SyncOrdersFacts, gateway: S
         }
         if (reason !== RENEWAL_BILLING_REASON) {
             // A plan change's proration, or a one-off invoice someone raised at the gateway. Not a renewal,
-            // so never booked as one; finance decides, unless an Orders payment already records its charge
-            // (someone booked it): then "Orders booked nothing for it" would be false, and it is in line.
-            if (invoice.AmountPaid > 0 && !chargeRecorded(invoice, orders)) {
-                const code: SyncNoticeCode = reason === 'subscription_update' ? 'GatewayPlanChanged' : 'GatewayChargeNotBooked';
-                const why = `the gateway charged ${money(invoice.AmountPaid)} on invoice ${invoice.ProviderInvoiceID} (${reason || 'no reason given'}), which is not a renewal, so Orders booked nothing for it. Decide at the gateway whether to keep or refund it.`;
-                steps.push({ Kind: 'Notice', Code: code, Reason: why });
-                differences.push(why);
+            // so never booked as one; finance decides.
+            if (invoice.AmountPaid > 0) {
+                const booked = chargeRecorded(invoice, orders);
+                if (reason === 'subscription_update') {
+                    // A plan change. Booking its money (by hand) does not reconcile the product: the notice stays,
+                    // saying only what is still true.
+                    const why = booked
+                        ? `the gateway charged ${money(invoice.AmountPaid)} on invoice ${invoice.ProviderInvoiceID} (subscription_update) and ` +
+                          `the charge is booked, but the plan changed: ${orders.LastGatewayPriceID ?? 'unknown'} → ` +
+                          `${invoice.ProviderPriceID ?? sub.ProviderPriceID ?? 'unknown'}. Orders kept the subscription's product; plans ` +
+                          `change by cancelling and buying again.`
+                        : `the gateway charged ${money(invoice.AmountPaid)} on invoice ${invoice.ProviderInvoiceID} (subscription_update), which is not a renewal, so Orders booked nothing for it. Decide at the gateway whether to keep or refund it.`;
+                    steps.push({ Kind: 'Notice', Code: 'GatewayPlanChanged', Reason: why });
+                    differences.push(why);
+                } else if (!booked) {
+                    // Any other invoice: only the "not booked" half exists, so a recorded charge is in line.
+                    const why = `the gateway charged ${money(invoice.AmountPaid)} on invoice ${invoice.ProviderInvoiceID} (${reason || 'no reason given'}), which is not a renewal, so Orders booked nothing for it. Decide at the gateway whether to keep or refund it.`;
+                    steps.push({ Kind: 'Notice', Code: 'GatewayChargeNotBooked', Reason: why });
+                    differences.push(why);
+                }
             }
             continue;
         }
@@ -357,8 +371,9 @@ export function PlanProviderSubscriptionSync(orders: SyncOrdersFacts, gateway: S
 }
 
 /**
- * Whether an Orders payment already records this invoice's gateway charge (`BookedChargeIDs`: any payment, any
- * key). The one test for "Orders has this money", whatever the invoice's billing reason.
+ * Whether this subscription's payments already record this invoice's gateway charge (`BookedChargeIDs`: any key,
+ * not Failed, on this subscription's orders). The one test for "Orders has this money", whatever the invoice's
+ * billing reason.
  *
  * Example: Sam, imported in his first year. Stripe's current invoice is `in_…` (subscription_create) paid by
  * `ch_sam`; the importer's term-1 payment records `ch_sam` → true, so the sync reports nothing for it.
