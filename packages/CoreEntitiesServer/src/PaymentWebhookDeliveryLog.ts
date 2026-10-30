@@ -49,7 +49,14 @@ export type WebhookDeliveryOutcome = mjBizAppsOrdersPaymentWebhookDeliveryEntity
  * `PaymentWebhookDelivery.ReasonCode`. Short and stable so a view can filter on it; the words live
  * in `Reason`.
  */
-export type WebhookDeliveryReasonCode = WebhookReasonCode | 'unreadable' | 'apply_failed';
+export type WebhookDeliveryReasonCode = WebhookReasonCode | 'unreadable' | 'apply_failed' | 'refund_not_booked';
+
+/**
+ * An applied `charge.refunded` event whose refund Orders could not book (#872). The event is still
+ * `Applied` (the gateway must not resend it, and the money has already left), so this code is what
+ * lets the "Not Applied" view list it next to the deliveries that need attention.
+ */
+export const REFUND_NOT_BOOKED_REASON_CODE = 'refund_not_booked' satisfies WebhookDeliveryReasonCode;
 
 /** What the handler decided about one delivery. */
 export interface WebhookDeliveryRecord {
@@ -84,6 +91,17 @@ export function DeliveryOutcomeFor(action: WebhookAction): WebhookDeliveryOutcom
 export interface PriorDelivery {
     ID: string;
     Outcome: WebhookDeliveryOutcome;
+}
+
+/**
+ * Whether the recorded row shows this event was applied by an earlier delivery.
+ *
+ * A redelivery rewrites the row's outcome to `AlreadyApplied`, so that outcome counts as applied too:
+ * otherwise only the first redelivery is recognized from the row and every later one falls through to
+ * the intent stamp and the event-order rule (#873).
+ */
+export function PriorDeliveryWasApplied(prior: Pick<PriorDelivery, 'Outcome'> | null | undefined): boolean {
+    return prior?.Outcome === 'Applied' || prior?.Outcome === 'AlreadyApplied';
 }
 
 /**
@@ -177,9 +195,15 @@ async function saveDelivery(
         row.DeliveryCount = 1;
     }
     row.LastReceivedAt = now;
+    // A duplicate of an event whose refund was not booked keeps that reason: the redelivery does not
+    // re-run the booking, so the refund is still unbooked and the row must stay on the view (#872).
+    const keepRefundFlag =
+        prior != null && record.Outcome === 'AlreadyApplied' && row.ReasonCode === REFUND_NOT_BOOKED_REASON_CODE;
     row.Outcome = record.Outcome;
-    row.ReasonCode = record.ReasonCode ?? null;
-    row.Reason = record.Reason ? record.Reason.slice(0, 1000) : null;
+    if (!keepRefundFlag) {
+        row.ReasonCode = record.ReasonCode ?? null;
+        row.Reason = record.Reason ? record.Reason.slice(0, 1000) : null;
+    }
     // Facts about the event only ever fill in; a later delivery that knows less does not erase them.
     if (record.EventKind) row.EventKind = record.EventKind;
     if (record.PaymentIntentID) row.PaymentIntentID = record.PaymentIntentID;

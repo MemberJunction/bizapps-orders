@@ -24,8 +24,8 @@
   ],
   "scripts": {
     "build": "tsc && tsc-alias -f",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. packages/CoreEntitiesServer/",
+    "test:watch": "vitest --root ../.. packages/CoreEntitiesServer/"
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",

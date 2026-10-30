@@ -94,11 +94,15 @@ describe('OrdersEngine catalog cache', () => {
                 { ID: 'type-mem', DefaultSubscriptionTypeID: 'ST-TYPE' },
                 { ID: 'type-merch', DefaultSubscriptionTypeID: null },
             ],
+            subTypes: [{ ID: 'ST-TYPE' }],
         });
         expect(OrdersEngine.Instance.ResolveSubscriptionTypeID('p-blank')).toBe('ST-TYPE');
         expect(OrdersEngine.Instance.ResolveSubscriptionTypeID('p-explicit')).toBe('ST-PRODUCT');
         expect(OrdersEngine.Instance.ResolveSubscriptionTypeID('p-merch')).toBeNull();
         expect(OrdersEngine.Instance.ResolveSubscriptionTypeID('missing')).toBeNull();
+        // The entity form reads the same rule, from the cache.
+        expect(OrdersEngine.Instance.SubscriptionTypeForProduct('p-blank')?.ID).toBe('ST-TYPE');
+        expect(OrdersEngine.Instance.SubscriptionTypeForProduct('p-merch')).toBeUndefined();
     });
 
     it('returns active base-channel prices highest priority first', () => {

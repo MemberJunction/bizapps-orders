@@ -32,6 +32,22 @@ import {
 // `billcom-rail` drives the webhook through `HandleBillComWebhook`, which lives in the server
 // package; importing it loads that same config. Registration never calls it, so a stub stands in.
 vi.mock('@mj-biz-apps/orders-server', () => ({ HandleBillComWebhook: vi.fn() }));
+
+// Every Id handed to `Register`, in order, however the check built it. `Register` replaces a check
+// with the same Id, so the registry itself cannot show a collision; this record can. It is filled
+// as the check modules below are imported, which is why it is installed in a mock factory: that
+// runs before any of those imports.
+const registered = vi.hoisted(() => [] as string[]);
+vi.mock('@memberjunction/testing-integration', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@memberjunction/testing-integration')>();
+    const registry = actual.IntegrationCheckRegistry.Instance;
+    const register = registry.Register.bind(registry);
+    registry.Register = (check) => {
+        registered.push(check.Id);
+        register(check);
+    };
+    return actual;
+});
 import '../checks/catalog-world.checks.js';
 import '../checks/order-booking.checks.js';
 import '../checks/revenue-recognition.checks.js';
@@ -342,10 +358,24 @@ describe('no check file escapes this test', () => {
 });
 
 describe('no two checks share an Id', () => {
+    it('registers every check Id once, including Ids built at runtime', () => {
+        // The source scan below reads only literal Ids, so a check built in a loop or a template
+        // (`progress-measurement.PM${16 + i}`) escapes it (#874). This reads what was registered.
+        expect(registered.length, 'the Register record saw the check modules load').toBeGreaterThan(0);
+        expect(registered, 'includes the loop-built progress-measurement Ids').toEqual(
+            expect.arrayContaining(['progress-measurement.PM16', 'progress-measurement.PM17']),
+        );
+        const counts = new Map<string, number>();
+        for (const id of registered) counts.set(id, (counts.get(id) ?? 0) + 1);
+        const dupes = [...counts.entries()].filter(([, n]) => n > 1).map(([id, n]) => `${id} (x${n})`);
+        expect(dupes, `check Ids registered more than once: ${dupes.join('; ')}`).toEqual([]);
+    });
+
     it('declares every literal check Id once across the check files', () => {
-        // Read from SOURCE because the registry cannot show this. `Register` keys checks by Id, so a
-        // second check with the same Id replaces the first: the registry holds one, its count matches
-        // EXPECTED_BUNDLES, and the replaced check never runs and is never reported missing.
+        // Read from SOURCE too, because this also covers the client-only `wire-` bundles this file
+        // does not import. `Register` keys checks by Id, so a second check with the same Id
+        // replaces the first: the registry holds one, its count matches EXPECTED_BUNDLES, and the
+        // replaced check never runs and is never reported missing.
         const checksDir = resolve(dirname(fileURLToPath(import.meta.url)), '../checks');
         const seen = new Map<string, string[]>();
         for (const file of readdirSync(checksDir).filter((f) => f.endsWith('.checks.ts'))) {

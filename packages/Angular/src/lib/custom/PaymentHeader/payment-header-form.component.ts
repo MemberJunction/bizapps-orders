@@ -151,6 +151,8 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
 
     override async ngOnInit(): Promise<void> {
         await super.ngOnInit();
+        // Stamped when the form opens a new payment, so a repeated save of it is refused (#847).
+        this.record?.EnsureIdempotencyKey('form');
 
         this.AmountManuallySet = Boolean(this.record?.Amount && this.record.Amount > 0 && this.record.IsSaved);
 
@@ -381,6 +383,22 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
 
     public get RequiresInstrument(): boolean {
         return Boolean(this.SelectedPaymentType?.RequiresInstrument || this.PaymentTypeCode === 'card' || this.PaymentTypeCode === 'ach');
+    }
+
+    /**
+     * Which instrument panel the tender shows. Decided on the type's code before `RequiresInstrument`,
+     * because Gift Card and Account Credit both require an instrument and neither is a card (#846):
+     * a gift card asks for its number, and account credit names a source order, not an instrument.
+     */
+    public get InstrumentPanel(): 'check' | 'ach' | 'giftcard' | 'card' | 'reference' | 'none' {
+        const code = this.PaymentTypeCode;
+        if (code === 'check') return 'check';
+        if (code === 'ach') return 'ach';
+        if (code === 'giftcard') return 'giftcard';
+        if (code === 'accountcredit') return 'none';
+        if (code === 'card' || this.RequiresInstrument) return 'card';
+        if (this.RequiresReference) return 'reference';
+        return 'none';
     }
 
     public EnsurePaymentDetail(): mjBizAppsOrdersPaymentDetailEntity | null {
@@ -1104,7 +1122,10 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             this.record.Status = 'Pending';
             this.requireReceivingCompany();
             await this.SyncAllocationsToRecord();
-            await this.SaveRecord(false);
+            const saved = await this.SaveRecord(false);
+            if (!saved && (await this.reloadAfterDuplicateSave())) {
+                this.AllocationError = null;
+            }
         } catch (err) {
             this.AllocationError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -1143,7 +1164,16 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             await this.SyncAllocationsToRecord();
 
             if (!(await this.record.SaveStatus('Captured'))) {
-                throw new Error(uniqueErrorLines(this.record.LatestResult?.Message) || 'Failed to capture and book payment.');
+                // An earlier attempt was saved but its response never arrived (#847): show that payment
+                // instead of reporting the refusal, and never insert a second one.
+                if (!(await this.reloadAfterDuplicateSave())) {
+                    throw new Error(uniqueErrorLines(this.record.LatestResult?.Message) || 'Failed to capture and book payment.');
+                }
+                if (this.record.Status !== 'Captured') {
+                    throw new Error(
+                        'An earlier attempt already saved this payment as a draft, and it has been reloaded. Check it and press Capture & Book again.',
+                    );
+                }
             }
 
             this.ActiveTab = 'accounting';
@@ -1155,6 +1185,20 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             this.Capturing = false;
             this.cdr?.detectChanges?.();
         }
+    }
+
+    /**
+     * After a save the idempotency key refused, load the payment the earlier attempt wrote into the
+     * form (#847). False when the refusal was for another reason or that payment cannot be read.
+     */
+    private async reloadAfterDuplicateSave(): Promise<boolean> {
+        if (!this.record?.SaveRefusedAsDuplicateKey) return false;
+        if (!(await this.record.LoadByIdempotencyKey())) return false;
+        if (!this.IsCaptured) {
+            await this.record.Lines.Load();
+            this.populateExistingAllocations();
+        }
+        return true;
     }
 
     // ── Applied Lines (Captured Payments) ───────────────────────────────────

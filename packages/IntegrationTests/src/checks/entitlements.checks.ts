@@ -1175,7 +1175,8 @@ export const EntitlementsChecks: NamedCheck[] = [
           // CheckEntitlement refuses a future AsOf, so the dates are placed behind today instead: the
           // first annual term ended a few days ago, so its renewal is in force now. The renewal is
           // placed in time, so confirm grants it Active (EN25 covers one confirmed past its cutoff).
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const firstStart = new Date(`${addDays(today, -3)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {
@@ -1269,7 +1270,8 @@ export const EntitlementsChecks: NamedCheck[] = [
 
           // The first annual term ended a few days ago and its renewal, placed five days before that,
           // is in force now: due, unpaid, and not yet at the cutoff.
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const firstStart = new Date(`${addDays(today, -3)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {
@@ -1398,7 +1400,8 @@ export const EntitlementsChecks: NamedCheck[] = [
 
           // The waiver's last day is two days back, a day's margin for the business zone. The pass run
           // on that day lifts the hold, as it did while the waiver was in force.
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const lastDay = addDays(today, -2);
           await TxQuery(ctx,
             `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
@@ -1452,7 +1455,8 @@ export const EntitlementsChecks: NamedCheck[] = [
 
           // Confirm decides from today's payment facts, the same rule the nightly job applies: the
           // first annual term ended 90 days ago, so its renewal is placed already long past due.
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const firstStart = new Date(`${addDays(today, -90)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {

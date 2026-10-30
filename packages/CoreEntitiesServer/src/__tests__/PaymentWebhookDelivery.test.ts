@@ -19,6 +19,7 @@ const state = vi.hoisted(() => ({
     deliveries: [] as Row[],
     saved: [] as Row[],
     intentSaveFails: false,
+    refundReview: undefined as string | undefined,
     /** Runs when the handler books the checkout capture: stands for the page's work happening then. */
     onBook: null as null | (() => void),
     errors: [] as string[],
@@ -59,7 +60,7 @@ vi.mock('../PaymentProviderResolver.js', () => ({
     }),
     BuildPaymentProvider: async () => ({
         Config: { ID: PROVIDER_ID, CompanyID: 'c' },
-        HandledEventKinds: ['payment_intent.succeeded', 'payment_intent.processing'],
+        HandledEventKinds: ['payment_intent.succeeded', 'payment_intent.processing', 'charge.refunded'],
         SettlesAsynchronously: false,
         VerifyWebhook: async () => ({ Valid: state.verified, Reason: state.verified ? undefined : 'bad signature' }),
         ParseWebhookEvent: () => state.event,
@@ -67,6 +68,9 @@ vi.mock('../PaymentProviderResolver.js', () => ({
 }));
 
 vi.mock('../PaymentSettlement.js', () => ({ SettlePaymentForEvent: async () => undefined }));
+vi.mock('../ProviderRefundBooking.js', () => ({
+    BookProviderRefunds: async () => ({ Booked: [], ReviewReason: state.refundReview }),
+}));
 vi.mock('../CheckoutSessionService.js', () => ({
     CheckoutSessionService: {
         BookSettledCheckoutPaymentIfNeeded: async () => {
@@ -78,7 +82,7 @@ vi.mock('../CheckoutSessionService.js', () => ({
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { HandlePaymentWebhook } from '../PaymentWebhookHandler.js';
-import { DeliveryOutcomeFor } from '../PaymentWebhookDeliveryLog.js';
+import { DeliveryOutcomeFor, PriorDeliveryWasApplied } from '../PaymentWebhookDeliveryLog.js';
 
 /** A fake entity: fields live on the object, Save records a snapshot. */
 function entity(kind: 'intent' | 'delivery'): Row {
@@ -131,6 +135,7 @@ beforeEach(() => {
     state.deliveries = [];
     state.saved = [];
     state.intentSaveFails = false;
+    state.refundReview = undefined;
     state.onBook = null;
     state.errors = [];
 });
@@ -179,6 +184,66 @@ describe('payment webhook deliveries are recorded (#474)', () => {
         expect(res.Body.outcome).toBe('AlreadyApplied');
         expect(state.saved[0]).toMatchObject({ ID: 'd1', Outcome: 'AlreadyApplied', ReasonCode: 'duplicate', DeliveryCount: 2 });
         expect(state.intent.Status).toBe('Succeeded');
+    });
+
+    it('a third delivery of an applied event is still recognized from its row (#873)', async () => {
+        // The second delivery rewrote the row to AlreadyApplied; the intent carries a later event's id.
+        state.intent = { ID: INTENT_ID, Status: 'Succeeded', ProviderEventID: 'evt_test_2', LastEventAt: null };
+        state.deliveries = [{ ID: 'd1', ProviderEventID: 'evt_test_1', Outcome: 'AlreadyApplied', DeliveryCount: 2 }];
+        state.event = event({ Status: 'Processing', Kind: 'payment_intent.processing', OccurredAt: undefined });
+        const res = await deliver();
+        expect(res.Body.outcome).toBe('AlreadyApplied');
+        expect(state.saved[0]).toMatchObject({ ID: 'd1', Outcome: 'AlreadyApplied', ReasonCode: 'duplicate', DeliveryCount: 3 });
+        expect(state.intent.Status).toBe('Succeeded');
+    });
+
+    it('treats Applied and AlreadyApplied rows as applied, and nothing else (#873)', () => {
+        expect(PriorDeliveryWasApplied({ Outcome: 'Applied' })).toBe(true);
+        expect(PriorDeliveryWasApplied({ Outcome: 'AlreadyApplied' })).toBe(true);
+        expect(PriorDeliveryWasApplied({ Outcome: 'Failed' })).toBe(false);
+        expect(PriorDeliveryWasApplied({ Outcome: 'Ignored' })).toBe(false);
+        expect(PriorDeliveryWasApplied(null)).toBe(false);
+    });
+
+    it('a refund event whose refund went to review is Applied with reason refund_not_booked (#872)', async () => {
+        state.intent = { ID: INTENT_ID, Status: 'Succeeded', ProviderEventID: 'evt_test_0', LastEventAt: null };
+        state.refundReview = 'The gateway reports 150 refunded, more than the 100 Orders captured.';
+        state.event = event({ EventID: 'evt_refund_1', Kind: 'charge.refunded', Amount: 150 });
+        const res = await deliver();
+        expect(res.Status).toBe(200);
+        expect(state.saved[0]).toMatchObject({ Outcome: 'Applied', ReasonCode: 'refund_not_booked' });
+        expect(String(state.saved[0].Reason)).toContain('more than the 100 Orders captured');
+    });
+
+    it('a refund event that booked is Applied with no reason code (#872)', async () => {
+        state.intent = { ID: INTENT_ID, Status: 'Succeeded', ProviderEventID: 'evt_test_0', LastEventAt: null };
+        state.event = event({ EventID: 'evt_refund_1', Kind: 'charge.refunded', Amount: 50 });
+        await deliver();
+        expect(state.saved[0]).toMatchObject({ Outcome: 'Applied' });
+        expect(state.saved[0].ReasonCode ?? null).toBeNull();
+    });
+
+    it('a redelivery of a refund event that was not booked keeps refund_not_booked on its row (#872)', async () => {
+        state.intent = { ID: INTENT_ID, Status: 'Succeeded', ProviderEventID: 'evt_refund_1', LastEventAt: null };
+        state.deliveries = [
+            {
+                ID: 'd1',
+                ProviderEventID: 'evt_refund_1',
+                Outcome: 'Applied',
+                ReasonCode: 'refund_not_booked',
+                Reason: 'refund not booked: over-refund',
+                DeliveryCount: 1,
+            },
+        ];
+        state.event = event({ EventID: 'evt_refund_1', Kind: 'charge.refunded', Amount: 150 });
+        const res = await deliver();
+        expect(res.Body.outcome).toBe('AlreadyApplied');
+        expect(state.saved[0]).toMatchObject({
+            Outcome: 'AlreadyApplied',
+            ReasonCode: 'refund_not_booked',
+            Reason: 'refund not booked: over-refund',
+            DeliveryCount: 2,
+        });
     });
 
     it('an event Orders failed to apply is recorded as Failed and the gateway is asked to retry', async () => {

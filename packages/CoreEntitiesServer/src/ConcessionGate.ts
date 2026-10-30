@@ -179,7 +179,8 @@ export interface LineConcessionFacts extends PricedLineFacts {
 /** What a line's price and discount give away, when they give anything away. */
 export interface LinePriceConcession {
     Form: 'Price' | 'Scope';
-    EngineUnitPrice: number;
+    /** Null when nothing resolves an engine price; only the `DiscountPct` is then counted (#905). */
+    EngineUnitPrice: number | null;
     Valuation: ConcessionValuation;
     /** The part given away by a stated price below the engine's. */
     PriceValue: number;
@@ -195,7 +196,8 @@ export interface LinePriceConcession {
  * The concession a line carries: a stated price below the engine's, plus what its `DiscountPct` and its
  * held manual discounts take off the price it is charged. Null when none of them gives anything away.
  * The engine's own price and a named list pick give nothing away by price, but a discount on either
- * still does. With no engine price only a held manual discount is counted, against the stated price.
+ * still does. With no engine price, its `DiscountPct` and held manual discounts are counted against the
+ * stated price (#905).
  *
  * A line charged nothing once its concession is taken off is Scope — a product given away — rather than
  * Price: a typed price of zero, or a price kept with a 100% discount (golive #328). Its value is then
@@ -212,7 +214,6 @@ export async function LinePriceConcessionFor(
     const held = Money(Math.max(0, Number(line.HeldDiscount ?? 0)));
     const standing = await ResolveLinePriceStanding(line, provider, user);
     const engine = standing?.EngineUnitPrice ?? null;
-    if (engine == null && !(held > 0)) return null;
     const quantity = Math.abs(Number(line.Quantity ?? 0));
     const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
 
@@ -221,8 +222,12 @@ export async function LinePriceConcessionFor(
         ? ConcessionValue({ Form: 'Price', ReferenceUnitPrice: engine, ChargedUnitPrice: charged, Quantity: quantity }).Value
         : 0;
 
+    // With no engine price the discount is counted against the stated price (#905); a line with no
+    // stated price either has nothing a discount can be valued against.
     const discountPct =
-        engine == null || line.RenewsSubscriptionID ? 0 : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
+        line.RenewsSubscriptionID || (engine == null && line.PriceStated === false)
+            ? 0
+            : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
     const discountValue = Money(Math.max(0, charged) * quantity * discountPct);
 
     const value = Money(priceValue + discountValue + held);
@@ -233,7 +238,7 @@ export async function LinePriceConcessionFor(
     const chargedNothing = (priceConcession && charged <= 0) || (base > 0 && value + MONEY_TOLERANCE >= base);
     return {
         Form: chargedNothing ? 'Scope' : 'Price',
-        EngineUnitPrice: engine ?? charged,
+        EngineUnitPrice: engine,
         Valuation: { Value: value, Percent: base > 0 ? value / base : null },
         PriceValue: priceValue,
         DiscountValue: discountValue,
@@ -251,7 +256,7 @@ export function LineConcessionTerms(line: PricedLineFacts, concession: LinePrice
     if (concession.PriceValue > 0) {
         parts.push(
             `priced at ${Number(line.UnitPrice ?? 0).toFixed(2)} against an engine price of ` +
-                `${concession.EngineUnitPrice.toFixed(2)}`,
+                `${(concession.EngineUnitPrice ?? 0).toFixed(2)}`,
         );
     }
     if (concession.DiscountValue > 0) {

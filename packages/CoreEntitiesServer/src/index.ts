@@ -125,7 +125,7 @@ export {
     UnattestedException,
 } from './DetectUnattestedProgressOperation.js';
 
-export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export { InstalmentsToCancel, RefuseCancellingPaidInstalments, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     BackDatedWarning,
@@ -478,6 +478,7 @@ export type {
 export {
     ACCESS_OVERRIDE_AUTH,
     ACCESS_OVERRIDE_TASK_TYPE_CODE,
+    AccessOverrideNotAppliedNote,
     ApplyAccessOverrideDecision,
     RecordAccessOverrideDecision,
     RequestAccessOverride,
@@ -518,6 +519,7 @@ export {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
 } from './GiftCardBehavior.js';
 export type {
     GiftCardLineFacts,
@@ -1068,6 +1070,7 @@ export {
     type CheckoutAccountResult,
     type CheckoutAccountStatus,
     type CheckoutAccountResponse,
+    type CheckoutConfirmationView,
     type CheckoutPasswordResult,
 } from './CheckoutAccountStep.js';
 export {

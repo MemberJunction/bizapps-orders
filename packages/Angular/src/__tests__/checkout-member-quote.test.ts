@@ -162,7 +162,8 @@ describe('CheckoutPublicHostComponent background member quote', () => {
 
         draftReplies.push(NOT_EARNED);
         await c.onSubmitted(submission());
-        expect(c.errorMessage).toBe('Membership has lapsed. Submit again to continue at the standard rate.');
+        expect(c.errorMessage).toBeNull();
+        expect(c.noticeMessage).toBe('Membership has lapsed. Submit again to continue at the standard rate.');
         expect(posts.map((p) => p.path)).not.toContain('/payment-intent');
     });
 

@@ -44,6 +44,7 @@ import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
 import { KeptPartyOrganizationsCompanion } from './KeptPartyOrganizationsCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
+import { DescendantLines } from './bundle-lines';
 import { DescribeStatedTermLength, StatedTermLengthOf } from './subscription-term-length';
 import { RequireUUID } from './sql-guards';
 
@@ -775,6 +776,19 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 !(line.ServicePeriodStart && line.ServicePeriodEnd) &&
                 engine.ServicePeriodSource(line.ProductID) === 'Line',
         );
+    }
+
+    /**
+     * Removes a line from the order, with every line expanded beneath it when it is a bundle (#793).
+     *
+     * A bundle's components name it through `ParentOrderLineID`, and that foreign key does not
+     * cascade. Removing the bundle alone left its components in the collection pointing at a row
+     * the save then tried to delete, and the save failed on the parent foreign key.
+     */
+    public RemoveLine(line: OrderHeaderEntity['Lines']['Items'][number]): void {
+        const descendants = DescendantLines(line, this.Lines.Items);
+        this.Lines.Remove(line);
+        for (const child of descendants) this.Lines.Remove(child);
     }
 
     /**

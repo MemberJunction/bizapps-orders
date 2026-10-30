@@ -20,6 +20,10 @@
             <span class="mj-error-icon">⚠️</span>
             <span>{{ displayErrorMessage() }}</span>
         </div>
+    } @else if (displayNoticeMessage()) {
+        <div class="mj-widget-notice-banner" role="status">
+            <span>{{ displayNoticeMessage() }}</span>
+        </div>
     }
 
     <!-- Order Item & Pricing Summary -->

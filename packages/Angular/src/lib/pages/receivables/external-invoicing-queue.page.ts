@@ -241,7 +241,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     public PollJobsMixed = false;
 
     public readonly InvoiceColumns: MJOColumn<ExternalInvoicingWorklistRow>[] = [
-        { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `instalment ${r.InstallmentNumber}` : 'whole order') },
+        { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `installment ${r.InstallmentNumber}` : 'whole order') },
         { Key: 'CustomerName', Label: 'Customer' },
         { Key: 'CompanyName', Label: 'Billed by', HideBelow: 1000 },
         { Key: 'Amount', Label: 'Amount', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.Amount) },

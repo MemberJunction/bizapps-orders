@@ -191,14 +191,12 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     /**
-     * The subscription type a line of this product starts at confirm: `Product.SubscriptionTypeID`,
-     * otherwise its product type's `DefaultSubscriptionTypeID` — the same resolution confirm uses.
-     * Undefined when the product sells no subscription or the cache has not loaded.
+     * The subscription type a line of this product starts at confirm, resolved by
+     * {@link ResolveSubscriptionTypeID}. Undefined when the product sells no subscription or the
+     * cache has not loaded.
      */
     public SubscriptionTypeForProduct(productID: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
-        const product = this.ProductByID(productID);
-        if (!product) return undefined;
-        const id = product.SubscriptionTypeID?.trim() || this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID?.trim();
+        const id = this.ResolveSubscriptionTypeID(productID);
         return id ? this.SubscriptionTypeByID(id) : undefined;
     }
 

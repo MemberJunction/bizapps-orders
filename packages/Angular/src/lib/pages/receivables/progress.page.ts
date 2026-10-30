@@ -55,7 +55,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
         <div class="mj-stat-grid mjo-pg__tiles">
             <mjo-stat-tile Label="Open project lines" Icon="fa-solid fa-diagram-project" [Value]="String(OpenRows.length)" Detail="Percentage of completion, not yet at 100%" />
             <mjo-stat-tile Label="Contract value" Icon="fa-solid fa-file-signature" [Value]="money(TotalAmount, true)" Detail="Across the open lines" />
-            <mjo-stat-tile Label="Recognised to date" Icon="fa-solid fa-chart-line" Tone="alert" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
+            <mjo-stat-tile Label="Recognized to date" Icon="fa-solid fa-chart-line" Tone="alert" [Value]="money(TotalRecognized, true)" [Detail]="RemainingDetail" />
         </div>
 
         @if (LoadError) {
@@ -104,7 +104,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
             <div class="small muted mjo-pg__context">
                 {{ row.OrderNumber }} line {{ row.LineNumber }} · {{ row.ProductName }} · {{ money(row.LineAmount) }} ·
                 last attested {{ row.LastMeasurementDate ? FormatDate(row.LastMeasurementDate, { Short: true }) + ' at ' + percent(row.LastPercentComplete) : 'never' }}
-                · recognised {{ money(row.RecognizedToDate) }}
+                · recognized {{ money(row.RecognizedToDate) }}
                 @if (Draft) {
                     <strong> → {{ Draft.Message }}</strong>
                 }
@@ -200,7 +200,7 @@ export class MJOProgressPageComponent implements OnInit {
         { Key: 'LineAmount', Label: 'Contract', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.LineAmount) },
         { Key: 'LastMeasurementDate', Label: 'Last attested', Kind: 'date', Width: '130px', Format: (r) => (r.LastMeasurementDate ? FormatDate(r.LastMeasurementDate, { Short: true }) : 'never'), Secondary: (r) => (r.LastAttestedBy ? `by ${r.LastAttestedBy}` : null) },
         { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline') },
-        { Key: 'RecognizedToDate', Label: 'Recognised', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
+        { Key: 'RecognizedToDate', Label: 'Recognized', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
     ];
 
     public async ngOnInit(): Promise<void> {

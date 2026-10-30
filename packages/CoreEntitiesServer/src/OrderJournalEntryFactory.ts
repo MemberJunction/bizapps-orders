@@ -84,7 +84,9 @@ import {
     ProratedCreditMemo,
     RefuseEarnedNotBilled,
     SplitContraLegs,
+    StagedDeferredAfter,
     StagedEarnedThrough,
+    TrueUpFinalMirrors,
     type DatedRelease,
     type ReversalPosition,
     type ReversalScheduleRow,
@@ -282,6 +284,13 @@ export interface ValueEntryAccounts {
 export interface CreditMemoForLine extends ReversalPosition {
     /** The origin's net, which is what its staged releases were built from. */
     OriginNet: number;
+    /**
+     * The origin's own service window, which its staged releases were built over (#839). Earned to
+     * date is measured on it, not on the reversing line's window, which a return may state shorter.
+     * Absent, the reversing line's window is used.
+     */
+    OriginServicePeriodStart?: Date | string | null;
+    OriginServicePeriodEnd?: Date | string | null;
     /** Earlier reversals of the same origin, whose mirrored releases are no longer earned. */
     PriorReversals: PriorReversal[];
     /** The origin order's instalments, so an earned-ahead refusal can name the one to issue. */
@@ -947,7 +956,7 @@ export class OrderJournalEntryFactory {
                 // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
                 // unearned part, so only the releases still to come are mirrored; mirroring the whole
                 // term would also un-recognise the months already delivered and strand them in Deferred.
-                const releases = scheduledOrigin
+                let releases = scheduledOrigin
                     ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
                     : schedule.Entries;
                 const shares = new Map<(typeof schedule.Entries)[number], number>();
@@ -955,6 +964,25 @@ export class OrderJournalEntryFactory {
                     const before = discountThrough(releasedNet);
                     releasedNet = money(releasedNet + entry.Amount);
                     shares.set(entry, money(discountThrough(releasedNet) - before));
+                }
+                // THE REVERSAL THAT TAKES THE LAST UNITS BACK EMPTIES DEFERRED EXACTLY (#841). Each
+                // reversing line's rounding remainder sits in its own first month, before its date, so
+                // partial reversals of an uneven amount mirror a few cents more or less than the origin
+                // deferred. The final one trues its last mirror to what the origin still holds. A
+                // reversing line creates no terms, so it has one window and this runs once.
+                if (scheduledOrigin && releases.length && Math.abs(Number(line.Quantity)) >= Number(scheduledOrigin.RemainingQuantity) - 1e-9) {
+                    const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths);
+                    const target = StagedDeferredAfter(Own, PriorMirrors, effectiveDate);
+                    // One cent per release of the origin and of each earlier reversal is the most rounding can drift.
+                    const tolerance = 0.01 * Own.length * (1 + scheduledOrigin.PriorReversals.length);
+                    const amounts = TrueUpFinalMirrors(releases.map((e) => Number(e.Amount)), target, tolerance);
+                    // A trued-up mirror keeps the discount share of the release it replaces.
+                    releases = releases.map((e, i) => {
+                        if (amounts[i] === Number(e.Amount)) return e;
+                        const trued = { ...e, Amount: amounts[i] };
+                        shares.set(trued, shares.get(e) ?? 0);
+                        return trued;
+                    });
                 }
                 for (const entry of releases) {
                     const share = releaseDiscountAccount ? (shares.get(entry) ?? 0) : 0;
@@ -1013,7 +1041,7 @@ export class OrderJournalEntryFactory {
      * releases earlier reversals of it already mirrored back — see {@link StagedEarnedThrough}.
      *
      * Both are rebuilt from the same driver and the same code the staging used: the origin at its
-     * net over the window this reversing line inherited, and each earlier reversal at its own net,
+     * net over its own window (#839), and each earlier reversal at its own net,
      * window and date, keeping only the releases after that date exactly as its booking did. Needed
      * because `RecognizedToDate` does not count staged releases.
      */
@@ -1024,6 +1052,21 @@ export class OrderJournalEntryFactory {
         asOf: string,
         recognitionMonths?: number,
     ): number {
+        const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, origin, asOf, recognitionMonths);
+        return StagedEarnedThrough(Own, PriorMirrors, asOf);
+    }
+
+    /**
+     * The origin's staged releases and the releases earlier reversals of it mirrored back, rebuilt
+     * as {@link stagedEarnedThrough} describes.
+     */
+    private stagedReleaseSets(
+        revRec: RevRecTypeRow,
+        line: mjBizAppsOrdersOrderLineEntity,
+        origin: CreditMemoForLine,
+        asOf: string,
+        recognitionMonths?: number,
+    ): { Own: DatedRelease[]; PriorMirrors: DatedRelease[] } {
         const releases = (amount: number, booked: string, start?: Date | string | null, end?: Date | string | null): DatedRelease[] =>
             this.driverFor(revRec)
                 .BuildSchedule({
@@ -1046,8 +1089,13 @@ export class OrderJournalEntryFactory {
             const after = prior.OrderDate;
             return releases(prior.Net, after, prior.ServicePeriodStart, prior.ServicePeriodEnd).filter((r) => r.Date > after);
         });
-        const own = releases(origin.OriginNet, asOf, line.ServicePeriodStart, line.ServicePeriodEnd);
-        return StagedEarnedThrough(own, priorMirrors, asOf);
+        // The origin's window, not this line's: a return stating a shorter window would otherwise
+        // shrink what the origin earned and grow the memo (#839).
+        const hasOriginWindow = !!(origin.OriginServicePeriodStart || origin.OriginServicePeriodEnd);
+        const own = hasOriginWindow
+            ? releases(origin.OriginNet, asOf, origin.OriginServicePeriodStart, origin.OriginServicePeriodEnd)
+            : releases(origin.OriginNet, asOf, line.ServicePeriodStart, line.ServicePeriodEnd);
+        return { Own: own, PriorMirrors: priorMirrors };
     }
 
     /**

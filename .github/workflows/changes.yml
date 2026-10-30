@@ -107,6 +107,11 @@ jobs:
           node ./.github/scripts/check-migration-no-prune.mjs --self-test
           node ./.github/scripts/check-migration-no-prune.mjs ${{ steps.mb.outputs.sha }} HEAD
 
+      - name: EntityFieldValue inserts must not key on a foreign EntityFieldID
+        run: |
+          node ./.github/scripts/check-migration-entityfieldvalue-ids.mjs --self-test
+          node ./.github/scripts/check-migration-entityfieldvalue-ids.mjs ${{ steps.mb.outputs.sha }} HEAD
+
       # Advisory here: a missing Postgres counterpart annotates the PR but never fails it, so a
       # migration can land and get its converted file in a later PR. The release gate
       # (`rr: pg counterparts`) is where it becomes required.

@@ -21,7 +21,7 @@ first: the MJ CLI, `scripts/` and `test-harnesses/` read their database settings
 | `pnpm run test:unit` | Vitest over `packages/*/src/**/*.test.ts`. No database, but build first: tests load the other workspace packages from `dist/`. |
 | `pnpm run test:integration` | The integration suite (`test-harnesses/integration.mjs`) against the database in `.env`, using the built packages, so build first. Each check's orders, journal entries, payments and subscription terms roll back; the shared ORD-WORLD catalog and the catalog rows a bundle's Setup adds are committed. |
 | `pnpm run verify` | Unit tests, build, integration suite, then `scripts/assert-check-count.mjs`, which fails when any check failed or fewer ran than `registry-parity.test.ts` declares. |
-| `pnpm run mj:migrate` | Apply `migrations/` to the `__mj_BizAppsOrders` schema. |
+| `pnpm run mj:migrate` | Apply `migrations/` to the `__mj_BizAppsOrders` schema (`migrations-pg/` when `DB_PLATFORM=postgresql`). |
 | `pnpm run mj:codegen` | Run MJ CodeGen against the database in `.env`. Needs an AI key; see "CodeGen output must be reproducible from this repo" below. |
 | `scripts/append-codegen.sh migrations/V<new>.sql` | Put CodeGen's SQL below a new migration's banner. Refuses a migration already on `origin/next`. |
 

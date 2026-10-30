@@ -4,6 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { AccessOverrideDecisionRefusal, type AccessOverrideDecisionFacts } from '@mj-biz-apps/orders-entities';
 import { AccessOverrideApprovers } from '../EntitlementBehavior.js';
+import { AccessOverrideNotAppliedNote } from '../AccessOverride.js';
 
 const REQUESTER = 'AAAAAAAA-0000-0000-0000-000000000001';
 const CFO = 'AAAAAAAA-0000-0000-0000-000000000002';
@@ -84,5 +85,19 @@ describe('AccessOverrideDecisionRefusal', () => {
     it('refuses an approval after the last day but lets a rejection close it', () => {
         expect(AccessOverrideDecisionRefusal(facts({ Today: '2026-11-01' }))).toMatch(/last day/);
         expect(AccessOverrideDecisionRefusal(facts({ Today: '2026-11-01', Approving: false }))).toBeNull();
+    });
+});
+
+describe('AccessOverrideNotAppliedNote (#875)', () => {
+    it('tells the approver the approval did not take effect, why, and that the request can be made again', () => {
+        const note = AccessOverrideNotAppliedNote(true, 'The override ended on 2026-10-31.');
+        expect(note).toMatch(/approval was not applied/);
+        expect(note).toMatch(/Withdrawn/);
+        expect(note).toContain('The override ended on 2026-10-31.');
+        expect(note).toMatch(/ask for the override again/);
+    });
+
+    it('names a rejection as a rejection', () => {
+        expect(AccessOverrideNotAppliedNote(false, 'Not assigned.')).toMatch(/rejection was not applied/);
     });
 });
