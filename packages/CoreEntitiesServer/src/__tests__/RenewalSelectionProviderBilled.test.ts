@@ -26,6 +26,7 @@ vi.mock('../OrdersSettings.js', () => ({
 
 import { ChargeRenewals } from '../RenewalCharging.js';
 import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
+import { codeOnly, depthAt, expectTopLevelConjunct } from './selectionRule.js';
 
 const MARKER = 's.ProviderSubscriptionID IS NULL';
 const USER = { ID: 'user-1' } as unknown as UserInfo;
@@ -42,70 +43,6 @@ function recordingProvider(): { provider: IMetadataProvider; sql: string[] } {
     return { provider, sql };
 }
 
-/**
- * The statement with every comment and string literal blanked to spaces, the same length so indexes line
- * up. A rule that is commented out (`AND 1=1 -- s.ProviderSubscriptionID IS NULL`) is not part of the
- * statement, and an apostrophe inside a comment (`the account's switch`) must not open a string.
- */
-function codeOnly(sql: string): string {
-    let out = '';
-    let i = 0;
-    const blank = (from: number, to: number): void => {
-        out += sql.slice(from, to).replace(/[^\n]/g, ' ');
-        i = to;
-    };
-    while (i < sql.length) {
-        if (sql.startsWith('--', i)) {
-            const eol = sql.indexOf('\n', i);
-            blank(i, eol < 0 ? sql.length : eol);
-        } else if (sql.startsWith('/*', i)) {
-            const end = sql.indexOf('*/', i + 2);
-            blank(i, end < 0 ? sql.length : end + 2);
-        } else if (sql[i] === "'") {
-            // A literal runs to the next quote that is not doubled ('' is an escaped quote inside it).
-            let j = i + 1;
-            while (j < sql.length && !(sql[j] === "'" && sql[j + 1] !== "'")) j += sql[j] === "'" ? 2 : 1;
-            blank(i, Math.min(j + 1, sql.length));
-        } else {
-            out += sql[i++];
-        }
-    }
-    return out;
-}
-
-/** Parenthesis depth at `index` of a statement already passed through `codeOnly`. */
-function depthAt(code: string, index: number): number {
-    let depth = 0;
-    for (let i = 0; i < index; i++) {
-        if (code[i] === '(') depth++;
-        else if (code[i] === ')') depth--;
-    }
-    return depth;
-}
-
-/**
- * Asserts the marker is one top-level conjunct of the WHERE that starts at `whereAt` and ends at
- * `endAt`: present outside comments, at parenthesis depth 0, joined by AND on both sides, and in a WHERE
- * with no top-level OR (which would let a row in without it). Returns where it sits.
- */
-function expectTopLevelConjunct(sql: string, whereAt: string, endAt: string): number {
-    const code = codeOnly(sql);
-    const where = code.indexOf(whereAt);
-    const end = code.indexOf(endAt, where);
-    expect(where, `"${whereAt}" in the statement`).toBeGreaterThan(-1);
-    expect(end, `"${endAt}" after the WHERE`).toBeGreaterThan(where);
-    const at = code.indexOf(MARKER, where);
-    expect(at, 'the rule outside any comment, inside this WHERE').toBeGreaterThan(where);
-    expect(at).toBeLessThan(end);
-    expect(depthAt(code, at), 'parenthesis depth of the rule').toBe(depthAt(code, where));
-    expect(code.slice(where, at), 'joined to the conditions before it by AND').toMatch(/\bAND\s*$/);
-    expect(code.slice(at + MARKER.length, end), 'followed by AND or the end of the WHERE').toMatch(/^\s*(AND\b|$)/);
-    const base = depthAt(code, where);
-    for (const m of code.slice(where, end).matchAll(/\bOR\b/g)) {
-        expect(depthAt(code, where + m.index!), 'an OR at the top level of the WHERE').toBeGreaterThan(base);
-    }
-    return at;
-}
 /** The statement the job sent that selects from Subscription with this alias. */
 function selection(sql: string[], from: RegExp): string {
     const found = sql.filter((q) => from.test(q));
@@ -131,7 +68,7 @@ describe('Spawn Renewals selection (findDue)', () => {
 
     it('puts the rule in the main WHERE, beside AutoRenew, not inside a subquery or an OR group', async () => {
         const q = await spawnSql();
-        expect(depthAt(codeOnly(q), expectTopLevelConjunct(q, 'WHERE s.AutoRenew = 1', 'ORDER BY l.EndDate'))).toBe(0);
+        expect(depthAt(codeOnly(q), expectTopLevelConjunct(q, 'WHERE s.AutoRenew = 1', 'ORDER BY l.EndDate', MARKER))).toBe(0);
     });
 
     it('keys on the marker alone: nothing about the provider account or its switch is read', async () => {
@@ -157,7 +94,7 @@ describe('Charge Renewals selection (findCandidates)', () => {
         const q = await chargeSql();
         const code = codeOnly(q);
         const group = code.indexOf('AND ((oh.NextDueDate');
-        const at = expectTopLevelConjunct(q, 'WHERE oh.Status NOT IN', 'ORDER BY oh.NextDueDate');
+        const at = expectTopLevelConjunct(q, 'WHERE oh.Status NOT IN', 'ORDER BY oh.NextDueDate', MARKER);
         expect(group).toBeGreaterThan(code.indexOf('WHERE oh.Status NOT IN'));
         // Depth 0: a sibling of the other outer conditions, so it applies to both branches of the group.
         expect(depthAt(code, at)).toBe(0);
