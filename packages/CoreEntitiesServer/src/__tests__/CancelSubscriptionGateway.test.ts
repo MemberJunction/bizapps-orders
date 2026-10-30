@@ -57,7 +57,15 @@ vi.mock('@mj-biz-apps/common-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/common-entities')>();
     return {
         ...actual,
-        BusinessTimeZoneEngine: { Instance: { Config: vi.fn().mockResolvedValue(undefined), Zone: 'America/Chicago' } },
+        // Today is the business day of the (faked) clock in Chicago, as the real engine computes it: the cancel
+        // reads it to decide whether access ends at once (#987).
+        BusinessTimeZoneEngine: {
+            Instance: {
+                Config: vi.fn().mockResolvedValue(undefined),
+                Zone: 'America/Chicago',
+                Today: () => actual.CalendarDayIn(new Date(), 'America/Chicago'),
+            },
+        },
     };
 });
 vi.mock('../ProviderSubscriptionCancel.js', async (importOriginal) => {

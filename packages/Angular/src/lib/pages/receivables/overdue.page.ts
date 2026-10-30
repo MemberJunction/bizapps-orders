@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { PresetViewRef } from '../../data/preset-view';
 import {
     OrdersGetOverdueWorklistOperation,
     OverdueFilter,
@@ -182,17 +183,20 @@ export class MJOOverduePageComponent implements OnInit {
     /** Exposed so the template can stringify without a pipe. */
     public readonly String = String;
 
+    private readonly overdueView = new PresetViewRef();
+
     public get OverdueView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo) return null;
         const today = Today();
-        return {
-            EntityID: this.OrderEntityInfo.ID,
-            Entity: this.OrderEntityInfo.Name,
+        // Keyed on the DAY as well as the entity: the filter moves at midnight and the grid must follow.
+        return this.overdueView.For(`${this.OrderEntityInfo.ID}|${today}`, () => ({
+            EntityID: this.OrderEntityInfo!.ID,
+            Entity: this.OrderEntityInfo!.Name,
             // ONE definition of overdue (overdue.ts), the same one the worklist operation filters by.
             WhereClause: OverdueFilter(today),
             ID: 'preset-overdue-worklist',
             Name: 'Overdue Collections'
-        } as unknown as MJUserViewEntityExtended;
+        } as unknown as MJUserViewEntityExtended));
     }
 
     public async ngOnInit(): Promise<void> {

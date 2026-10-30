@@ -10,6 +10,7 @@ import { MJAlertComponent, MJButtonDirective, MJTabNavComponent, type TabConfig 
 import { EntityViewerModule, type RecordOpenedEvent, type RecordSelectedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { PresetViewRef } from '../../data/preset-view';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
 /**
@@ -159,6 +160,8 @@ export class MJOFulfillmentPageComponent implements OnInit {
         { key: 'all', label: 'All Lines' },
     ];
 
+    private readonly queueView = new PresetViewRef();
+
     public get FulfillmentQueueView(): MJUserViewEntityExtended | null {
         if (!this.OrderLineEntityInfo) return null;
         let whereClause = `FulfillmentStatus IN ('Pending', 'PartiallyFulfilled', 'Unfulfilled')`;
@@ -167,13 +170,13 @@ export class MJOFulfillmentPageComponent implements OnInit {
         } else if (this.Preset === 'all') {
             whereClause = '';
         }
-        return {
-            EntityID: this.OrderLineEntityInfo.ID,
-            Entity: this.OrderLineEntityInfo.Name,
+        return this.queueView.For(`${this.OrderLineEntityInfo.ID}|${this.Preset}`, () => ({
+            EntityID: this.OrderLineEntityInfo!.ID,
+            Entity: this.OrderLineEntityInfo!.Name,
             WhereClause: whereClause,
             ID: `preset-fulfillment-${this.Preset}`,
             Name: 'Fulfillment Queue'
-        } as unknown as MJUserViewEntityExtended;
+        } as unknown as MJUserViewEntityExtended));
     }
 
     /** Line ids the picker has ticked. */
