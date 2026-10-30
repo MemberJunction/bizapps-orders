@@ -201,5 +201,16 @@
     "primaryKey": {
       "ID": "495299D2-D154-4F0B-9C9B-A4A3D7CDE526"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "RailCustomerCreateProviders",
+      "Value": "",
+      "Comments": "Comma-separated IDs of the Payment Provider rows (for example a company's Bill.com connection) whose invoice sends may create a customer on the rail when the bill-to organization or person has no External Customers mapping for that provider (bc-aidp-next-golive#358). For any provider not listed, such a send and its preview are refused with a message naming the party and the rail, so finance adds the existing rail customer's ID to the mapping instead of a duplicate customer being created. Empty, the default, refuses for every provider. A party that already has a mapping is sent as before."
+    },
+    "primaryKey": {
+      "ID": "D5FE3D2E-4F4A-4D8D-84C7-3ACE46401798"
+    }
   }
 ]

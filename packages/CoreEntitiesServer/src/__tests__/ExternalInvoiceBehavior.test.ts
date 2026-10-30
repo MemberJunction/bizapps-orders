@@ -275,6 +275,10 @@ describe('ClassifyIssueFailure', () => {
         expect(ClassifyIssueFailure('Bill.com refused the invoice (HTTP 503).')).toBe('Transient');
         expect(ClassifyIssueFailure('Request failed with status 429')).toBe('Transient');
     });
+    it('a party with no customer on file is permanent, whatever its name or the rail ID holds (#358)', () => {
+        // 504a… after a space reads as an HTTP 504 to the transient pattern; so do "500" and "session".
+        expect(ClassifyIssueFailure('No customer on file in 504a1111-2222-4333-8444-555555555555 for Fortune 500 Session Media, so nothing was sent.')).toBe('Permanent');
+    });
 });
 
 describe('DecideAdoption', () => {

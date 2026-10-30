@@ -363,7 +363,7 @@ export function ClassifyIssueFailure(reason: string | null | undefined): 'Transi
 }
 
 /** The reasons `BuildExternalInvoicePayload` and the rail emit for facts about the unit itself. */
-const PERMANENT_REFUSAL = /does not tie|already has .* applied|has nothing owed|not an invoice|no frozen document number|requires a customer email|no bill-to party/i;
+const PERMANENT_REFUSAL = /does not tie|already has .* applied|has nothing owed|not an invoice|no frozen document number|requires a customer email|no bill-to party|customer on file/i;
 
 export type AdoptCode = 'OK' | 'ARCHIVED' | 'WRONG_DOCUMENT' | 'TIE_FAILED';
 

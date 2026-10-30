@@ -4,6 +4,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     /** Answers handed out in call order: each RunView call takes the next one. */
     answers: [] as Array<{ gate: Promise<void> | null; rows: Array<{ ID: string; Status: string }> }>,
+    /** What the issue operation's preview answers. */
+    preview: null as { ResultCode: string; Message: string } | null,
+}));
+
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@mj-biz-apps/orders-entities')>()),
+    OrdersIssueExternalInvoiceOperation: class {
+        async Execute() {
+            return { Success: true, Output: { Success: false, ...mocks.preview } };
+        }
+    },
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -67,5 +78,20 @@ describe('External invoices panel — overlapping loads', () => {
         release();
         await older;
         expect(p.Rows.map((r) => r.ID)).toEqual(['new']);
+    });
+});
+
+describe('External invoices panel — what the preview blocks', () => {
+    const previewBlock = (p: ExternalInvoicesPanel) =>
+        (ExternalInvoicesPanel.prototype as unknown as { previewBlock(this: ExternalInvoicesPanel): Promise<string | null> }).previewBlock.call(p);
+
+    it.each(['NO_CUSTOMER_EMAIL', 'RAIL_REFUSED'])('blocks Send on %s, with the operation\'s message', async (code) => {
+        mocks.preview = { ResultCode: code, Message: 'No customer on file in SoundPost — Bill.com for Cimatri HoldCo.' };
+        expect(await previewBlock(panel())).toBe('No customer on file in SoundPost — Bill.com for Cimatri HoldCo.');
+    });
+
+    it('leaves Send enabled for any other refusal', async () => {
+        mocks.preview = { ResultCode: 'NOT_INVOICEABLE', Message: 'Nothing is owed.' };
+        expect(await previewBlock(panel())).toBeNull();
     });
 });

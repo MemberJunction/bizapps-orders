@@ -53,6 +53,7 @@ import {
 import { FindInvoiceRailForCompany } from './InvoiceRailResolver.js';
 import { MAX_DOCUMENT_NUMBER_LENGTH, ReissueDocumentNumber } from './InvoiceBehavior.js';
 import { BuildInvoiceDocuments } from './InvoiceBuilder.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 import { CheckRailCustomerName, CheckRailInvoiceNumber, OrganizationCustomerName, PersonCustomerName } from './RailCustomerNameLimit.js';
 
@@ -779,6 +780,17 @@ async function checkCustomerForRail(rail: BaseInvoiceRail, order: OrderRow, prov
 
     const facts = await loadPartyFacts(orgID, personID, provider, user);
     if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
+    // A party with no customer on file is usually one whose existing rail customer was never mapped,
+    // not a new one: creating it splits the party's history across two rail customers
+    // (bc-aidp-next-golive#358). Only a provider listed in the setting may create one. The rail's own
+    // refusal (Bill.com: no email) is still reported, so the order form keeps saying so.
+    if (!OrdersSettings.RailCustomerCreateProviders.some((id) => UUIDsEqual(id, rail.Config.PaymentProviderID))) {
+        const missing = rail.CheckCustomer(facts);
+        const reason =
+            `No customer on file in ${rail.Config.Name} for ${facts.Name}, so nothing was sent. ` +
+            `Find ${facts.Name}'s customer in ${rail.Config.Name}, or create it there if it has none, then add its ID to the ${facts.PartyKind.toLowerCase()}'s External Customers mapping and send again.`;
+        return missing ? { OK: false, Code: missing.Code, Reason: `${missing.Reason} ${reason}` } : { OK: false, Code: 'RAIL_REFUSED', Reason: reason };
+    }
     // Refused here rather than by the rail: the rail would refuse the same name, days after entry,
     // with an error that does not say which field or limit (bc-aidp-next-golive#280).
     const tooLong = await CheckRailCustomerName(rail, facts.PartyKind, facts.Name, provider, user);

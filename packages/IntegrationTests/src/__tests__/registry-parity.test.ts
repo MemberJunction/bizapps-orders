@@ -137,7 +137,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'term-extension': 9,
     'amount-change': 11,
     'term-shift': 6,
-    'billcom-rail': 21,
+    'billcom-rail': 22,
     'service-period-lock': 6,
 };
 
