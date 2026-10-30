@@ -40,6 +40,15 @@ describe('the add-product catalog and IsSellableNew', () => {
         expect(ids).toEqual(['p-sell']);
     });
 
+    it('keeps it, marked, when the caller also describes existing lines', async () => {
+        vi.spyOn(RunView.prototype, 'RunView').mockResolvedValue({ Success: true, Results: [] } as never);
+        const options = await GetCatalogOptions(undefined, true);
+        expect(options.map((o) => [o.ID, !!o.NotSellableNew])).toEqual([
+            ['p-sell', false],
+            ['p-catch', true],
+        ]);
+    });
+
     it('keeps it among the Active products other readers see', async () => {
         const ids = (await GetProducts()).map((p) => p.ID);
         expect(ids).toContain('p-catch');
