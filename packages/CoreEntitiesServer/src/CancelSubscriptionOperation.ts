@@ -72,7 +72,7 @@ import {
 import type { OrderEntityServer } from './OrderEntityServer.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { RevokeGrantsForCanceledSubscription } from './EntitlementEngine.js';
+import { RevokeGrantsForCanceledSubscription, type CancelAccessEnd } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
     CANCELLATION_TIMINGS,
@@ -244,6 +244,9 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         }
 
         let requestDate = await CalendarDayOrToday(requestedDay, provider, user);
+        // The business day now, to tell a cancel that ends access at once from one that ends it later. Taken
+        // before the gateway path can move requestDate, so it is always the real day.
+        const today = requestedDay == null ? requestDate : await CalendarDayOrToday(null, provider, user);
 
         const subscription = await this.loadSubscription(provider, user, input.SubscriptionID);
         if (!subscription) {
@@ -345,11 +348,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
 
         const behavior = this.behaviorFor(typeRules);
         const rules = behavior.RulesForTiming(typeRules, input.Timing);
-        const decision = behavior.DecideCancellation({
-            Rules: rules,
-            RequestDate: requestDate,
-            Term: this.cancellableTerm(term),
-        });
+        const cancellation = { Rules: rules, RequestDate: requestDate, Term: this.cancellableTerm(term) };
+        const decision = behavior.DecideCancellation(cancellation);
 
         // A later term would otherwise stay booked and billed after the subscription it belongs to
         // has ended (#406). One that starts on or before the effective date overlaps the cancelled
@@ -441,7 +441,13 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 await this.stampTerm(provider, user, c.Term.ID, c.Decision);
             }
             await this.stampSubscription(provider, user, subscription.ID, decision, !!gateway);
-            await this.syncGrantsOnCancel(provider, user, subscription.ID, decision, input.Reason);
+            await this.syncGrantsOnCancel(
+                provider,
+                user,
+                subscription.ID,
+                { AccessThroughDate: decision.AccessThroughDate, EndsNow: behavior.EndsAccessOnCancel(cancellation, decision, today) },
+                input.Reason,
+            );
             await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input, reversal?.ID, gateway);
 
             await dbProvider.CommitTransaction();
@@ -870,19 +876,19 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
 
     /**
      * Stored grant Status is a lie after cancel unless we revoke when access has already
-     * ended. Grace (AccessThroughDate still in the future) leaves the rows standing — the
-     * evaluator honours subscription.EndDate rather than the original ValidTo.
+     * ended; access that ends later moves the term grants' end to it. `end.EndsNow` is this
+     * operation's call (`SubscriptionBehavior.EndsAccessOnCancel`): only it knows the mode it applied.
      */
     private async syncGrantsOnCancel(
         provider: IMetadataProvider,
         user: UserInfo,
         subscriptionID: string,
-        decision: CancellationDecision,
+        end: CancelAccessEnd,
         reason?: string,
     ): Promise<void> {
         await RevokeGrantsForCanceledSubscription(
             subscriptionID,
-            decision.AccessThroughDate,
+            end,
             reason ? `Subscription canceled: ${reason}` : 'Subscription canceled',
             provider,
             user,
