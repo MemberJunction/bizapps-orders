@@ -202,6 +202,15 @@ export async function GatewayRenewalCreditFor(
     };
 }
 
+/**
+ * True when the gateway has refunded ALL of the renewal's charge (net of tax, to the cent): the term is no longer
+ * coverage the customer paid for. The ONE rule D19 uses to skip a refunded term when it picks the latest booked term
+ * an end-of-term cancel ends with (#989 review, Q2), on the same `Refunded` / `Paid` figures the credit doors use.
+ */
+export function IsGatewayChargeFullyRefunded(credit: Pick<RenewalTermCredit, 'Paid' | 'Refunded'>): boolean {
+    return Number(credit.Paid) > 0 && money(Number(credit.Refunded)) >= money(Number(credit.Paid));
+}
+
 export interface GatewayRenewalCreditOutcome {
     Credited: number;
     CreditOrderNumber?: string;
@@ -560,19 +569,19 @@ async function emitCredit(term: RenewalTermCredit, credit: number, provider: IMe
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const original = (
         await rv.RunView<{ ID: string; OrderHeaderID: string; ProductID: string; Quantity: number; CompanyID: string }>(
-            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `ID='${term.OrderLineID}'`, Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity', 'CompanyID'], ResultType: 'simple', BypassCache: true },
+            { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `ID='${RequireUUID(term.OrderLineID, 'OrderLineID')}'`, Fields: ['ID', 'OrderHeaderID', 'ProductID', 'Quantity', 'CompanyID'], ResultType: 'simple', BypassCache: true },
             user,
         )
     ).Results?.[0];
     const header = (
         await rv.RunView<{ ID: string; CompanyID: string; BillToOrganizationID: string | null; BillToPersonID: string | null }>(
-            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${term.OrderID}'`, Fields: ['ID', 'CompanyID', 'BillToOrganizationID', 'BillToPersonID'], ResultType: 'simple', BypassCache: true },
+            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${RequireUUID(term.OrderID, 'OrderID')}'`, Fields: ['ID', 'CompanyID', 'BillToOrganizationID', 'BillToPersonID'], ResultType: 'simple', BypassCache: true },
             user,
         )
     ).Results?.[0];
     const termRow = (
         await rv.RunView<{ StartDate: string; EndDate: string }>(
-            { EntityName: SUBSCRIPTION_TERM_ENTITY, ExtraFilter: `OrderLineID='${term.OrderLineID}'`, Fields: ['ID', 'StartDate', 'EndDate'], ResultType: 'simple', BypassCache: true },
+            { EntityName: SUBSCRIPTION_TERM_ENTITY, ExtraFilter: `OrderLineID='${RequireUUID(term.OrderLineID, 'OrderLineID')}'`, Fields: ['ID', 'StartDate', 'EndDate'], ResultType: 'simple', BypassCache: true },
             user,
         )
     ).Results?.[0];

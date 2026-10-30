@@ -32,6 +32,12 @@ const state = vi.hoisted(() => ({
     describeFails: false,
     refunded: 0,
     cap: null as number | null,
+    /** Gateway charge ids an Orders payment records (the importer's: a charge and no intent), and every filter read. */
+    paymentCharges: [] as string[],
+    paymentFilters: [] as string[],
+    /** What the sync asked the gateway for (`CreatedSince`), and how many renewals it booked. */
+    listedSince: [] as unknown[],
+    booked: 0,
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -64,8 +70,15 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                         ],
                     };
                 }
+                if (e.endsWith('Payment Headers')) {
+                    // HONOURS the filter: only payments recording one of the charges asked for come back.
+                    const f = (params as { ExtraFilter?: string }).ExtraFilter ?? '';
+                    state.paymentFilters.push(f);
+                    const asked = /ProviderChargeID IN \(([^)]*)\)/.exec(f)?.[1]?.split(',').map((c) => c.trim().replace(/^'|'$/g, '')) ?? [];
+                    return { Success: true, Results: state.paymentCharges.filter((c) => asked.includes(c)).map((c, i) => ({ ID: `pay-${i}`, ProviderChargeID: c })) };
+                }
                 if (e.endsWith('Subscription Terms')) {
-                    return { Success: true, Results: [{ ID: 't1', TermNumber: 1, StartDate: '2026-10-31', EndDate: '2027-10-30', OrderLineID: null, Quantity: 1 }] };
+                    return { Success: true, Results: [{ ID: '22222222-2222-4222-8222-0000000000f1', TermNumber: 1, StartDate: '2026-10-31', EndDate: '2027-10-30', OrderLineID: null, Quantity: 1 }] };
                 }
                 return { Success: true, Results: [] };
             }
@@ -77,7 +90,10 @@ vi.mock('../PaymentProviderResolver.js', () => ({
     LoadPaymentProviderConfig: async () => ({ ID: 'acct', CompanyID: 'c', BillsSubscriptions: true, Capabilities: { SupportsSubscriptionBilling: true } }),
     BuildPaymentProvider: async () => ({
         DescribeProviderSubscription: async () => (state.describeFails ? { Success: false, Reason: 'Stripe unreachable' } : state.describe),
-        ListProviderSubscriptionInvoices: async () => ({ Success: true, Invoices: state.invoices }),
+        ListProviderSubscriptionInvoices: async (req: { CreatedSince: unknown }) => {
+            state.listedSince.push(req.CreatedSince);
+            return { Success: true, Invoices: state.invoices };
+        },
         RetrieveCharge: async () => ({ Success: true, Charge: { AmountRefunded: state.refunded } }),
     }),
 }));
@@ -103,6 +119,7 @@ vi.mock('../GatewayRenewalCredit.js', () => ({
 }));
 vi.mock('../ProviderRenewalBooking.js', () => ({
     BookProviderRenewal: async () => {
+        state.booked++;
         if ((state.book as unknown) instanceof Error) throw state.book;
         return state.book;
     },
@@ -158,6 +175,10 @@ beforeEach(() => {
     state.cap = null;
     state.settle = 0;
     state.settleCalls = 0;
+    state.paymentCharges = [];
+    state.paymentFilters = [];
+    state.listedSince = [];
+    state.booked = 0;
     vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined as never);
     vi.spyOn(BusinessTimeZoneEngine.Instance, 'Zone', 'get').mockReturnValue('America/Chicago');
 });
@@ -165,7 +186,7 @@ beforeEach(() => {
 describe('the gateway ended it: recording the cancel', () => {
     it('recorded: Changed, no notice', async () => {
         const r = await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
-        expect(r.Outcome).toBe('Changed');
+        expect(r.Outcome, r.Error).toBe('Changed');
         expect(state.alerts).toEqual([]);
     });
     it('refused because another delivery recorded it a moment ago (now Canceled): success, no notice', async () => {
@@ -291,5 +312,65 @@ describe('the gateway charged the renewal and then ended it', () => {
         state.invoices = [];
         await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
         expect(state.alerts).toEqual([]);
+    });
+});
+
+describe("BookedChargeIDs: the fact behind the imported-subscriber rule (#989 review's top pick)", () => {
+    beforeEach(() => {
+        state.describe = { Success: true, State: 'Renewing', Status: 'active' };
+        state.invoices = [paidRenewal()];
+    });
+    it("an Orders payment already records the renewal's charge (the importer's: a charge, no intent): never booked again", async () => {
+        state.paymentCharges = ['ch_renew'];
+        const r = await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
+        expect(state.booked).toBe(0);
+        expect(r.Outcome).toBe('InLine');
+        // Read by the charge, across every key and account.
+        expect(state.paymentFilters[0]).toBe(`ProviderChargeID IN ('ch_renew')`);
+    });
+    it('control: no payment records that charge: the renewal is booked once', async () => {
+        const r = await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
+        expect(state.booked).toBe(1);
+        expect(r.Outcome).toBe('Changed');
+    });
+    it("control: a payment recording ANOTHER charge does not hide this one", async () => {
+        state.paymentCharges = ['ch_other'];
+        await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
+        expect(state.booked).toBe(1);
+    });
+    it('every invoice charge is asked for, de-duplicated; an invoice with no charge asks nothing', async () => {
+        state.invoices = [paidRenewal(), { ...paidRenewal(), ProviderInvoiceID: 'in_dup' }, { ...paidRenewal(), ProviderInvoiceID: 'in_2', ProviderIntentID: 'pi_2', ProviderChargeID: 'ch_2' }];
+        state.paymentCharges = ['ch_renew', 'ch_2'];
+        await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
+        expect(state.paymentFilters[0]).toBe(`ProviderChargeID IN ('ch_renew','ch_2')`);
+        expect(state.booked).toBe(0);
+        state.paymentFilters = [];
+        state.invoices = [{ ...paidRenewal(), ProviderChargeID: null }];
+        await SyncProviderSubscription(SUB, { Now: NOW, Preview: true }, provider, user);
+        expect(state.paymentFilters).toEqual([]);
+    });
+});
+
+describe('the invoices read: since 24 h BEFORE the latest term began', () => {
+    it("term 1 starts 2026-10-31: the gateway is asked for invoices created since 2026-10-30T00:00Z (StartDate − 24 h, never + 24 h)", async () => {
+        state.describe = { Success: true, State: 'Renewing', Status: 'active' };
+        await SyncProviderSubscription(SUB, { Now: NOW, Preview: true }, provider, user);
+        expect((state.listedSince[0] as Date).toISOString()).toBe('2026-10-30T00:00:00.000Z');
+    });
+});
+
+describe('the nightly pass passes Preview down to each subscription', () => {
+    beforeEach(() => {
+        state.describe = { Success: true, State: 'Renewing', Status: 'active' };
+        state.invoices = [paidRenewal()];
+    });
+    it('Preview: nothing is booked, and the subscription reports Previewed', async () => {
+        const out = (await SyncProviderSubscriptions({ Now: NOW, Preview: true }, provider, user)) as { Results?: { Outcome: string }[] };
+        expect(state.booked).toBe(0);
+        expect(out.Results?.map((r) => r.Outcome)).toEqual(['Previewed']);
+    });
+    it('control: Preview off books the renewal', async () => {
+        await SyncProviderSubscriptions({ Now: NOW, Preview: false }, provider, user);
+        expect(state.booked).toBe(1);
     });
 });

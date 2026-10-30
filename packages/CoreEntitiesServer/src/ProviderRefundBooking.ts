@@ -226,7 +226,7 @@ async function creditRenewalRefunds(paymentIntentID: string, driver: BasePayment
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const intent = (
         await rv.RunView<{ OrderHeaderID: string | null }>(
-            { EntityName: PAYMENT_INTENT_ENTITY, ExtraFilter: `ID = '${EscapeSQLString(paymentIntentID)}'`, Fields: ['ID', 'OrderHeaderID'], ResultType: 'simple', BypassCache: true },
+            { EntityName: PAYMENT_INTENT_ENTITY, ExtraFilter: `ID = '${RequireUUID(paymentIntentID, 'PaymentIntentID')}'`, Fields: ['ID', 'OrderHeaderID'], ResultType: 'simple', BypassCache: true },
             user,
         )
     ).Results?.[0];
@@ -234,7 +234,7 @@ async function creditRenewalRefunds(paymentIntentID: string, driver: BasePayment
     const lines = await rv.RunView<{ ID: string }>(
         {
             EntityName: 'MJ_BizApps_Orders: Order Lines',
-            ExtraFilter: `OrderHeaderID = '${EscapeSQLString(intent.OrderHeaderID)}' AND RenewsSubscriptionID IS NOT NULL`,
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(intent.OrderHeaderID, 'OrderHeaderID')}' AND RenewsSubscriptionID IS NOT NULL`,
             Fields: ['ID'],
             ResultType: 'simple',
             BypassCache: true,

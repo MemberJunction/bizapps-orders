@@ -108,9 +108,11 @@ vi.mock('../GatewayRenewalCredit.js', async () => ({
     GatewayRenewalCreditFor: async (lineID: string, _d: unknown, _p: unknown, _u: unknown, known?: unknown) => {
         if (lineID === '22222222-0000-4000-8000-000000000002') mocks.knownSeen.push(known);
         const c = mocks.credit.get(lineID);
+        if ((c as unknown) === 'throw') throw new Error('charge read failed');
         return c ? { OrderID: `order-of-${lineID}`, ...c } : null;
     },
     ApplyGatewayCredit: async (...args: unknown[]) => void mocks.applied.push(args),
+    IsGatewayChargeFullyRefunded: (await vi.importActual<typeof import('../GatewayRenewalCredit.js')>('../GatewayRenewalCredit.js')).IsGatewayChargeFullyRefunded,
     // The real lock statement and the real quantity rule; only the gateway read and the reversal lookup are faked.
     LockSubscriptionForCredit: async (provider: { ExecuteSQL: (q: string) => Promise<unknown> }, id: string) => {
         const rows = (await provider.ExecuteSQL(`SELECT Status FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${id}'`)) as
@@ -530,6 +532,157 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
             mocks.describe.mockResolvedValue({ Success: true, State: 'Ended', Status: 'canceled', CurrentPeriodStart: new Date('2026-12-31T06:00:00Z') });
             const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
             expect(out.SubscriptionTermID).toBe(T1);
+        });
+    });
+
+    describe('D19 limits (#989 review): a backdated request, a refunded term, three terms, and the terms it stamps', () => {
+        const PRORATE_EOT = { CancellationMode: 'EndOfTerm', CancellationRefundMode: 'ProrateUnused' };
+        const M1 = '33333333-0000-4000-8000-000000000001';
+        const M2 = '33333333-0000-4000-8000-000000000002';
+        const M3 = '33333333-0000-4000-8000-000000000003';
+        const term = (n: number, line: string, year: number) => ({
+            ID: `term-${n}`,
+            SubscriptionID: SUB,
+            TermNumber: n,
+            OrderLineID: line,
+            StartDate: `${year}-01-01`,
+            EndDate: `${year}-12-31`,
+            Amount: 599,
+            Status: 'Active',
+        });
+        /** Terms 2026, 2027 (and 2028); Stripe renewed the latest at 00:00 Central on the previous term's last day. */
+        const booked = (three: boolean, rules: Record<string, unknown> = PRORATE_EOT) => {
+            seed(rules);
+            mocks.credit.clear();
+            mocks.applied.length = 0;
+            mocks.lockedCreditRows.length = 0;
+            mocks.rows.set('Subscription Terms', [term(1, M1, 2026), term(2, M2, 2027), ...(three ? [term(3, M3, 2028)] : [])]);
+            mocks.rows.set('Order Lines', [M1, M2, M3].map((ID, i) => ({ ID, OrderHeaderID: `oh-${i + 1}`, ProductID: 'p-1', Quantity: 1, UnitPrice: 599, DiscountPct: 0 })));
+            const renewed = three ? '2027-12-31T06:00:00Z' : '2026-12-31T06:00:00Z';
+            mocks.describe.mockResolvedValue({ Success: true, State: 'Renewing', Status: 'active', CurrentPeriodStart: new Date(renewed) });
+        };
+        const refundedInFull = (line: string, n: number) =>
+            mocks.credit.set(line, { Outstanding: 599, Paid: 599, Refunded: 599, Credited: 0, ChargeID: `ch_t${n}`, OrderNumber: `ORD-T${n}` } as never);
+        afterEach(() => mocks.credit.clear());
+
+        it('Q1: a request made on 10 Mar 2026, recorded after Stripe renewed (2 terms, ProrateEOT): term 1, term 2 cancelled, refund 599 — as before D19', async () => {
+            booked(false);
+            vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-1');
+            expect(out.LaterTerms?.map((l) => [l.SubscriptionTermID, l.Decision.RefundAmount])).toEqual([['term-2', 599]]);
+            expect(out.TotalRefundAmount).toBe(599);
+        });
+        it('Q1: the same with 3 terms: term 1, terms 2 and 3 cancelled, refund 1198', async () => {
+            booked(true);
+            vi.setSystemTime(new Date('2028-01-05T18:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-1');
+            expect(out.LaterTerms?.map((l) => l.SubscriptionTermID)).toEqual(['term-2', 'term-3']);
+            expect(out.TotalRefundAmount).toBe(1198);
+        });
+        it('Q1 edge: a request on the renewal day itself (31 Dec 2026, the day Stripe charged term 2) is D19: term 2, nothing refunded', async () => {
+            booked(false);
+            vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.TotalRefundAmount ?? 0).toBe(0);
+        });
+        it('Q1 edge: the day before the renewal (30 Dec 2026) is backdated: term 1, term 2 refunded 599', async () => {
+            booked(false);
+            vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2026-12-30', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe('term-1');
+            expect(out.TotalRefundAmount).toBe(599);
+        });
+        it('three terms, cancelled on term 2\'s last day (Stripe charged term 3 that morning): ends with term 3, the LATEST, not the second-latest', async () => {
+            booked(true);
+            vi.setSystemTime(new Date('2027-12-31T21:00:00Z'));
+            const { out, rec } = await cancel({ RequestDate: '2027-12-31', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-3');
+            expect(String(out.Decision?.EffectiveDate).slice(0, 10)).toBe('2028-12-31');
+            expect(out.LaterTerms ?? []).toEqual([]);
+            expect(out.TotalRefundAmount ?? 0).toBe(0);
+            // Every open term is stamped, consistently: the ones ridden past Completed at their own end.
+            const stamp = (id: string) => [rec.terms.get(id)?.Status, (rec.terms.get(id)?.CancellationEffectiveDate as Date).toISOString().slice(0, 10)];
+            expect(stamp('term-1')).toEqual(['Completed', '2026-12-31']);
+            expect(stamp('term-2')).toEqual(['Completed', '2027-12-31']);
+            expect(stamp('term-3')).toEqual(['Completed', '2028-12-31']);
+            expect(rec.terms.get('term-1')?.CanceledAt).toBeInstanceOf(Date);
+        });
+        it('two terms, D19: term 1 Completed at 2026-12-31 and term 2 Completed at 2027-12-31; no term left Active', async () => {
+            booked(false);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            const { rec } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect([...rec.terms.keys()].sort()).toEqual(['term-1', 'term-2']);
+            expect([...rec.terms.values()].map((t) => t.Status)).toEqual(['Completed', 'Completed']);
+            expect((rec.terms.get('term-1')?.CancellationEffectiveDate as Date).toISOString().slice(0, 10)).toBe('2026-12-31');
+        });
+        it('control: outside D19 no earlier term is stamped (a request in term 2 recorded after term 3 was charged: term 1 untouched, as before)', async () => {
+            booked(true);
+            vi.setSystemTime(new Date('2028-01-05T18:00:00Z'));
+            const { out, rec } = await cancel({ RequestDate: '2027-03-10', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.LaterTerms?.map((l) => [l.SubscriptionTermID, l.Decision.RefundAmount])).toEqual([['term-3', 599]]);
+            expect([...rec.terms.keys()].sort()).toEqual(['term-2', 'term-3']);
+        });
+        it('control: the backdated (pre-D19) path stamps as before: term 1 Completed, term 2 Canceled', async () => {
+            booked(false);
+            vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+            const { rec } = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+            expect(rec.terms.get('term-1')?.Status).toBe('Completed');
+            expect(rec.terms.get('term-2')?.Status).toBe('Canceled');
+        });
+        it('Q2: term 2\'s charge refunded in full at Stripe: EndOfTerm ends with term 1; term 2 cancelled reversing the 599 refunded; the message says so', async () => {
+            booked(false, NO_REFUND_END_OF_TERM);
+            refundedInFull(M2, 2);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            const { out, rec } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-1');
+            expect(String(out.Decision?.EffectiveDate).slice(0, 10)).toBe('2026-12-31');
+            // NoRefund type, but the gateway gave the money back: the D20 figure, not the type's rule (which keeps it).
+            expect(out.LaterTerms?.map((l) => [l.SubscriptionTermID, l.Decision.RefundAmount])).toEqual([['term-2', 599]]);
+            expect(out.Message).toMatch(/refunded term 2 \(renewal ORD-T2, charge ch_t2\) in full/);
+            // Its credit lands on the renewal it refunds, as the refund door's would.
+            expect(mocks.applied.map((a) => a[0])).toEqual([M2]);
+            expect(rec.terms.get('term-2')?.Status).toBe('Canceled');
+        });
+        it('Q2: already credited by the refund door (599 of 599): term 2 reverses 0, nothing credited twice', async () => {
+            booked(false, NO_REFUND_END_OF_TERM);
+            mocks.credit.set(M2, { Outstanding: 0, Paid: 599, Refunded: 599, Credited: 599, ChargeID: 'ch_t2', OrderNumber: 'ORD-T2' } as never);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe('term-1');
+            expect(out.TotalRefundAmount).toBe(0);
+        });
+        it('Q2 control: a PARTIAL refund (598.99 of 599) is still paid coverage: D19 ends with term 2', async () => {
+            booked(false, NO_REFUND_END_OF_TERM);
+            mocks.credit.set(M2, { Outstanding: 598.99, Paid: 599, Refunded: 598.99, Credited: 0, ChargeID: 'ch_t2', OrderNumber: 'ORD-T2' } as never);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe('term-2');
+        });
+        it('Q2, three terms: term 3 refunded in full, cancel on 31 Dec 2027: ends with term 2', async () => {
+            booked(true, NO_REFUND_END_OF_TERM);
+            refundedInFull(M3, 3);
+            vi.setSystemTime(new Date('2027-12-31T21:00:00Z'));
+            const { out } = await cancel({ RequestDate: '2027-12-31', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.LaterTerms?.map((l) => [l.SubscriptionTermID, l.Decision.RefundAmount])).toEqual([['term-3', 599]]);
+        });
+        it('Q2: the gateway refund cannot be read: refused, nothing sent to Stripe or written', async () => {
+            booked(false, NO_REFUND_END_OF_TERM);
+            mocks.credit.set(M2, 'throw' as never);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            const { out, rec } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.Success).toBe(false);
+            expect(out.Message).toMatch(/Could not read what the payment gateway refunded of term 2's renewal.*Nothing was changed/);
+            expect(mocks.cancelAtDriver).not.toHaveBeenCalled();
+            expect(rec.tx).toEqual([]);
         });
     });
 

@@ -3239,7 +3239,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR83',
-        Name: 'SR83: linking a gateway subscription is checked first (not at the gateway, ended, recorded elsewhere, another e-mail, already linked are refused, writing nothing); a good link books what the gateway charged',
+        Name: 'SR83: linking a gateway subscription is checked first (not at the gateway, ended, recorded elsewhere, created for another, another e-mail, an unverifiable customer unless confirmed, already linked are refused, writing nothing); a good link books what the gateway charged',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -3248,8 +3248,13 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const account = await gatewayBillingAccount(ctx);
                 await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
                 const sub = await subscriptionWithCard(ctx, account);
-                const link = (gatewayID: string, preview = false) =>
-                    LinkProviderSubscription({ SubscriptionID: sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: gatewayID, Preview: preview }, ctx.Provider, ctx.User);
+                // An organization holds `sub`, so the e-mails cannot be compared: a person confirms the customer (#989 review).
+                const link = (gatewayID: string, preview = false, confirmed = true) =>
+                    LinkProviderSubscription(
+                        { SubscriptionID: sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: gatewayID, Preview: preview, CustomerConfirmed: confirmed },
+                        ctx.Provider,
+                        ctx.User,
+                    );
                 const lastDay = isoDate(sub.Term.EndDate);
                 const anchor = DayStartUtc(lastDay, BusinessTimeZoneEngine.Instance.Zone);
 
@@ -3273,7 +3278,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_plan', Status: 'active', IsLive: true, Customer: 'cus_p', Metadata: {}, PriceID: 'price_it_other_plan' });
                 AssertEqual((await link('sub_it_plan', true)).Code, 'PriceForAnotherProduct', "a plan that is not this subscription's product");
                 AssertEqual(
-                    (await LinkProviderSubscription({ SubscriptionID: sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_plan', Preview: true, AllowPriceOfAnotherProduct: true }, ctx.Provider, ctx.User)).Code,
+                    (await LinkProviderSubscription({ SubscriptionID: sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_plan', Preview: true, AllowPriceOfAnotherProduct: true, CustomerConfirmed: true }, ctx.Provider, ctx.User)).Code,
                     'WouldLink',
                     'control: confirmed by a person (an imported subscriber on an older price), it passes',
                 );
@@ -3281,12 +3286,16 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 await markProviderBilled(ctx, other.SubscriptionID, account, 'sub_it_taken');
                 fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_taken', Status: 'active', IsLive: true, Customer: 'cus_z', Metadata: {} });
                 AssertEqual((await link('sub_it_taken')).Code, 'LinkedElsewhere', 'one another subscription records');
+                // Orders' own hand-over created it for ANOTHER subscription (its OrdersSubscriptionID metadata).
+                fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_created', Status: 'active', IsLive: true, Customer: 'cus_c', Metadata: { OrdersSubscriptionID: other.SubscriptionID } });
+                AssertEqual((await link('sub_it_created')).Code, 'CreatedForAnother', "one Orders created for another subscription");
                 AssertEqual((await subscriptionRow(ctx, sub.SubscriptionID)).ProviderSubscriptionID, null, 'nothing written by any refusal');
 
                 // The real one, with a renewal it already charged.
                 const held = { ProviderSubscriptionID: 'sub_it_real', Status: 'active', IsLive: true, Customer: 'cus_it_e2', Metadata: {} as Record<string, string>, Invoices: [] as GatewaySubscriptionInvoice[] };
                 fakeGateway.held.push(held);
                 held.Invoices = [renewalInvoice({ anchor, currency: await booksIn(ctx) }, 'r1')];
+                AssertEqual((await link('sub_it_real', true, false)).Code, 'CustomerUnverified', 'an organization holds it and nobody confirmed the customer: refused');
                 AssertEqual((await link('sub_it_real', true)).Code, 'WouldLink', 'a preview checks and writes nothing');
                 AssertEqual((await subscriptionRow(ctx, sub.SubscriptionID)).ProviderSubscriptionID, null, 'still unlinked after the preview');
                 const linked = await link('sub_it_real');
@@ -3475,7 +3484,11 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     // Second year (the current period was a renewal at Stripe), linked through the checked link: the
                     // link's own sync must not book the year the importer already recorded.
                     const second = await imported('y2', f.Customers.OrganizationID, 'subscription_cycle');
-                    const linked = await LinkProviderSubscription({ SubscriptionID: second.sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_y2' }, ctx.Provider, ctx.User);
+                    const linked = await LinkProviderSubscription(
+                        { SubscriptionID: second.sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_y2', CustomerConfirmed: true },
+                        ctx.Provider,
+                        ctx.User,
+                    );
                     AssertEqual(
                         `${linked.Code}|${linked.Sync?.Outcome}|${await termCount(second.sub.SubscriptionID)}|${await intents('pi_it_y2_now')}`,
                         'Linked|InLine|1|0',

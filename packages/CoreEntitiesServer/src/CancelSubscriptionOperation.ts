@@ -97,7 +97,17 @@ import { LoadReversalContext } from './ReversalResolver.js';
 import { BusinessTimeZoneEngine, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
 import { IsProviderBilled } from './ProviderBilledSubscriptions.js';
 import { SanctionCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
-import { ApplyGatewayCredit, CreditReversalQuantity, GatewayCreditQuantity, GatewayRenewalCreditFor, LockGatewayCreditRows, LockSubscriptionForCredit, ReversedQuantityOf } from './GatewayRenewalCredit.js';
+import {
+    ApplyGatewayCredit,
+    CreditReversalQuantity,
+    GatewayCreditQuantity,
+    GatewayRenewalCreditFor,
+    IsGatewayChargeFullyRefunded,
+    LockGatewayCreditRows,
+    LockSubscriptionForCredit,
+    ReversedQuantityOf,
+    type RenewalTermCredit,
+} from './GatewayRenewalCredit.js';
 import { raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
 import {
     BusinessToday,
@@ -404,12 +414,38 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // term covering the request day would instead end coverage a year early and cancel a paid term. Not for
         // a subscription Orders bills (a renewal it booked ahead may be unpaid, and cancelling out of it is the
         // point, #406/#560), and not when the gateway has already ended it (Orders then records the gateway's end).
+        // Two limits (#989 review): only a term the gateway had CHARGED BY THE REQUEST DAY (a backdated request made
+        // before the renewal keeps the term covering it and the type's refund rule), and never a term whose charge the
+        // gateway has refunded IN FULL (that is not coverage the customer paid for; see `endOfTermOnGateway`).
         // The context below is the one access is ended from too (#987's EndsNow), so it carries the term actually
         // cancelled: end of term keeps access, a recorded gateway end on a past day ends it at once.
         const recording = gatewayEndRecorded.getStore();
-        if (gatewayStillBills && !recording && rules.CancellationMode === 'EndOfTerm') term = this.latestOpenTerm(openTerms) ?? term;
+        const covering = term;
+        let refundedSkipped: { Term: TermRow; Credit: RenewalTermCredit }[] = [];
+        if (gatewayStillBills && !recording && rules.CancellationMode === 'EndOfTerm') {
+            const pick = await this.endOfTermOnGateway(subscription, term, openTerms, requestDate, provider, user);
+            if ('Refusal' in pick) return { Success: false, Message: pick.Refusal };
+            term = pick.Term;
+            refundedSkipped = pick.Refunded;
+        }
+        // The open terms D19 rode past (before the one it ends with): they are served in full, so they are stamped
+        // Completed at their own end, as the old rule stamped the term it ended with. Without this they kept Active
+        // under a Canceled subscription (#989 review).
+        const servedBefore = term.ID === covering.ID ? [] : openTerms.filter((t) => t.ID !== term.ID && new Date(t.StartDate).getTime() < new Date(term.StartDate).getTime());
         const cancellation = { Rules: rules, RequestDate: requestDate, Term: this.cancellableTerm(term) };
         let decision = behavior.DecideCancellation(cancellation);
+        if (refundedSkipped.length) {
+            const named = refundedSkipped
+                .map((r) => `term ${r.Term.TermNumber} (renewal ${r.Credit.OrderNumber}, charge ${r.Credit.ChargeID})`)
+                .join(' and ');
+            decision = {
+                ...decision,
+                Explanation:
+                    `${decision.Explanation} The payment gateway refunded ${named} in full, so it is not coverage the customer paid for: ` +
+                    `the end of term is term ${term.TermNumber}'s, and the refunded term is cancelled, reversing what the gateway ` +
+                    `refunded and Orders has not already credited.`,
+            };
+        }
 
         // A later term would otherwise stay booked and billed after the subscription it belongs to
         // has ended (#406). One that starts on or before the effective date overlaps the cancelled
@@ -449,7 +485,11 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // locked (`recredit`): the refund door decides under that same lock, so a refund credited on another worker
         // meanwhile is seen and never credited twice.
         let recredit: (() => Promise<void>) | null = null;
-        if (gatewayBilled && (recording || gatewayEnded)) {
+        // Every term when the gateway has ended it; otherwise only a renewal D19 skipped because the gateway refunded it
+        // in full (its money went back: the type's refund rule would credit it a second time).
+        const skippedIDs = new Set(refundedSkipped.map((r) => r.Term.ID));
+        const gatewayRules = (t: TermRow): boolean => !!recording || gatewayEnded || skippedIDs.has(t.ID);
+        if (gatewayBilled && (recording || gatewayEnded || skippedIDs.size > 0)) {
             const built = await gatewayDriver(
                 { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
                 provider,
@@ -458,8 +498,9 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             if ('Reason' in built) return { Success: false, Message: `${built.Reason} Nothing was changed.` };
             // The gateway's refund per line, read once before the lock; the re-read under it reads only Orders' side.
             const gatewayRead = new Map<string, { ChargeID: string; Refunded: number }>();
+            for (const r of refundedSkipped) gatewayRead.set(r.Term.OrderLineID, { ChargeID: r.Credit.ChargeID, Refunded: r.Credit.Refunded });
             const exact = async (t: TermRow, d: CancellationDecision): Promise<CancellationDecision> => {
-                if (!t.OrderLineID) return d;
+                if (!t.OrderLineID || !gatewayRules(t)) return d;
                 const credit = await GatewayRenewalCreditFor(t.OrderLineID, built.Driver, provider, user, gatewayRead.get(t.OrderLineID));
                 if (!credit) return d;
                 gatewayRead.set(t.OrderLineID, { ChargeID: credit.ChargeID, Refunded: credit.Refunded });
@@ -570,6 +611,17 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
 
             for (const c of all) {
                 await this.stampTerm(provider, user, c.Term.ID, c.Decision);
+            }
+            for (const t of servedBefore) {
+                const end = new Date(t.EndDate);
+                await this.stampTerm(provider, user, t.ID, {
+                    EffectiveDate: end,
+                    AccessThroughDate: end,
+                    RefundAmount: 0,
+                    ReversalFraction: 0,
+                    TermStatus: 'Completed',
+                    Explanation: '',
+                });
             }
             await this.stampSubscription(provider, user, subscription.ID, decision, !!gateway);
             await this.syncGrantsOnCancel(
@@ -729,9 +781,64 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
      * none is left booked (#406); a late one, after everything lapsed, acts on the latest term.
      * Cancelling always has to act on SOMETHING for the reversal to point at.
      */
-    /** The open term that ends last (the latest booked one). */
-    private latestOpenTerm(terms: TermRow[]): TermRow | null {
-        return [...terms].sort((a, b) => new Date(b.EndDate).getTime() - new Date(a.EndDate).getTime() || b.TermNumber - a.TermNumber)[0] ?? null;
+    /**
+     * D19's pick: the term an end-of-term cancel ends with on a subscription the gateway still bills.
+     *
+     * The latest booked term AFTER the one covering the request day that (1) the gateway had charged by the request
+     * day — it charges a renewal at 00:00 on the preceding term's last day, so a term starting the day after the
+     * request at the latest — and (2) whose charge the gateway has not refunded in full (`IsGatewayChargeFullyRefunded`,
+     * the figure the credit doors use). None qualifying: the term covering the request day, exactly as before D19.
+     *
+     * Examples (term 1 = 2026, term 2 = 2027, Stripe renewed at 00:00 Central on 31 Dec 2026):
+     *   · cancel on 31 Dec 2026 → term 2 (paid; D19).
+     *   · support records a request made on 10 Mar 2026 → term 1, term 2 cancelled under the type's refund rule.
+     *   · term 2's $599 refunded in full at Stripe, cancel on 31 Dec 2026 → term 1; term 2 cancelled, reversing what
+     *     the gateway refunded and Orders has not credited.
+     * Only terms later than the covering one are read at the gateway (in practice one: a renewal is charged on the
+     * covering term's last day). A gateway that cannot be read refuses the cancel: a guess here decides coverage.
+     */
+    private async endOfTermOnGateway(
+        subscription: SubscriptionRow,
+        covering: TermRow,
+        openTerms: TermRow[],
+        requestDate: Date,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<{ Term: TermRow; Refunded: { Term: TermRow; Credit: RenewalTermCredit }[] } | { Refusal: string }> {
+        const DAY = 86_400_000;
+        const start = (t: TermRow): number => new Date(t.StartDate).getTime();
+        const chargedBy = requestDate.getTime() + DAY; // charged on the day before it starts, on or before the request day
+        const candidates = openTerms
+            .filter((t) => t.ID !== covering.ID && start(t) > start(covering) && start(t) <= chargedBy)
+            .sort((a, b) => start(b) - start(a) || b.TermNumber - a.TermNumber);
+        if (candidates.length === 0) return { Term: covering, Refunded: [] };
+        const built = await gatewayDriver(
+            { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+            provider,
+            user,
+        );
+        if ('Reason' in built) return { Refusal: `${built.Reason} Nothing was changed.` };
+        const refunded: { Term: TermRow; Credit: RenewalTermCredit }[] = [];
+        for (const t of candidates) {
+            let credit: RenewalTermCredit | null = null;
+            if (t.OrderLineID) {
+                try {
+                    credit = await GatewayRenewalCreditFor(t.OrderLineID, built.Driver, provider, user);
+                } catch (err) {
+                    return {
+                        Refusal:
+                            `Could not read what the payment gateway refunded of term ${t.TermNumber}'s renewal ` +
+                            `(${err instanceof Error ? err.message : String(err)}). Nothing was changed; try again.`,
+                    };
+                }
+            }
+            if (credit && IsGatewayChargeFullyRefunded(credit)) {
+                refunded.push({ Term: t, Credit: credit });
+                continue;
+            }
+            return { Term: t, Refunded: refunded };
+        }
+        return { Term: covering, Refunded: refunded };
     }
 
     private resolveTerm(terms: TermRow[], requestDate: Date): TermRow | null {

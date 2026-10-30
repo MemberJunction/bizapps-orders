@@ -23,7 +23,8 @@ import { boolParam, setOutput, strParam, supplied, UUID } from './action-params.
 const refuse = (ResultCode: string, Message: string): ActionResultSimple => ({ Success: false, ResultCode, Message });
 
 /**
- * Inputs: `SubscriptionID`, `PaymentProviderID`, `ProviderSubscriptionID` (required), `Preview` (default true).
+ * Inputs: `SubscriptionID`, `PaymentProviderID`, `ProviderSubscriptionID` (required), `Preview` (default true),
+ * `AllowPriceOfAnotherProduct` and `CustomerConfirmed` (default false: a person's confirmation, see the function).
  * Outputs: `Code`, `Sync`, `PreviewedOnly`.
  */
 @RegisterClass(BaseAction, 'Orders.LinkProviderSubscription')
@@ -44,10 +45,18 @@ export class LinkProviderSubscriptionAction extends BaseAction {
                 if (value === null) return refuse('INVALID_PREVIEW', `Preview takes true or false — got '${strParam(params, 'Preview')}'.`);
                 preview = value;
             }
+            // Two confirmations a person gives after checking at the gateway. Absent is false; anything but true/false is refused.
+            const flags: Record<'AllowPriceOfAnotherProduct' | 'CustomerConfirmed', boolean> = { AllowPriceOfAnotherProduct: false, CustomerConfirmed: false };
+            for (const name of Object.keys(flags) as (keyof typeof flags)[]) {
+                if (!supplied(params, name)) continue;
+                const value = boolParam(params, name);
+                if (value === null) return refuse(`INVALID_${name.toUpperCase()}`, `${name} takes true or false — got '${strParam(params, name)}'.`);
+                flags[name] = value;
+            }
 
             const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;
             const result = await LinkProviderSubscription(
-                { SubscriptionID: subscriptionID, PaymentProviderID: providerID, ProviderSubscriptionID: gatewayID, Preview: preview },
+                { SubscriptionID: subscriptionID, PaymentProviderID: providerID, ProviderSubscriptionID: gatewayID, Preview: preview, ...flags },
                 provider,
                 user,
             );

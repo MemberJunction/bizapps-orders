@@ -431,7 +431,7 @@ async function loadTerms(subscriptionID: string, rv: RunView, user: UserInfo): P
     const r = await rv.RunView<TermRow>(
         {
             EntityName: SUBSCRIPTION_TERM_ENTITY,
-            ExtraFilter: `SubscriptionID = '${subscriptionID}'`,
+            ExtraFilter: `SubscriptionID = '${RequireUUID(subscriptionID, 'SubscriptionID')}'`,
             Fields: ['ID', 'TermNumber', 'StartDate', 'EndDate', 'OrderLineID', 'Quantity'],
             OrderBy: 'TermNumber',
             ResultType: 'simple',
@@ -513,7 +513,7 @@ async function loadOrdersFacts(
     const events = await rv.RunView<{ EventType: string; EventData: string | null; OccurredAt: Date | string }>(
         {
             EntityName: SUBSCRIPTION_EVENT_ENTITY,
-            ExtraFilter: `SubscriptionID = '${sub.ID}' AND EventType IN ('PaymentSucceeded','PaymentFailed')`,
+            ExtraFilter: `SubscriptionID = '${RequireUUID(sub.ID, 'SubscriptionID')}' AND EventType IN ('PaymentSucceeded','PaymentFailed')`,
             Fields: ['ID', 'EventType', 'EventData', 'OccurredAt'],
             OrderBy: 'OccurredAt',
             ResultType: 'simple',
@@ -564,7 +564,7 @@ async function loadOrdersFacts(
         const grants = await rv.RunView<{ ValidTo: Date | string | null }>(
             {
                 EntityName: ENTITLEMENT_GRANT_ENTITY,
-                ExtraFilter: `SubscriptionTermID = '${latest.ID}' AND Status IN ('Active','Suspended')`,
+                ExtraFilter: `SubscriptionTermID = '${RequireUUID(latest.ID, 'SubscriptionTermID')}' AND Status IN ('Active','Suspended')`,
                 Fields: ['ID', 'ValidTo'],
                 ResultType: 'simple',
                 BypassCache: true,

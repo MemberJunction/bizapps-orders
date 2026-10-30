@@ -11,6 +11,8 @@ const db = vi.hoisted(() => ({
     orders: new Map<string, Record<string, unknown>>(),
     /** Applied to the source when its row lock is taken: what another request committed meanwhile. */
     spentMeanwhile: 0,
+    /** A status the source row reads as once locked (defence in depth: Confirmed cannot change, but decide under the lock). */
+    sourceStatusOnLock: null as string | null,
     /** Applied to the target when its row lock is taken: another credit or payment settled it meanwhile. */
     paidMeanwhile: 0,
     log: [] as string[],
@@ -39,7 +41,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
 });
 
 const { BusinessTimeZoneEngine } = await import('@mj-biz-apps/common-entities');
-const { ApplyAccountCreditOperation, SameCustomerRefusal } = await import('../ApplyAccountCreditOperation.js');
+const { ApplyAccountCreditOperation, CreditOrderStatusRefusal, SameCustomerRefusal } = await import('../ApplyAccountCreditOperation.js');
 
 const order = (id: string, over: Record<string, unknown>) => db.orders.set(id, { ID: id, OrderNumber: id === SOURCE ? 'ORD-CR' : 'ORD-RENEW', Status: 'Confirmed', TotalGross: 0, CompanyID: 'c', BillToOrganizationID: null, BillToPersonID: null, ...over });
 
@@ -59,6 +61,7 @@ const provider = {
             if (id === SOURCE) {
                 const s = db.orders.get(SOURCE)!;
                 s.Balance = Number(s.Balance) + db.spentMeanwhile;
+                if (db.sourceStatusOnLock) s.Status = db.sourceStatusOnLock;
             } else {
                 const t = db.orders.get(TARGET)!;
                 t.Balance = Number(t.Balance) - db.paidMeanwhile;
@@ -78,6 +81,7 @@ const run = (Amount?: number) =>
 beforeEach(() => {
     db.orders.clear();
     db.spentMeanwhile = 0;
+    db.sourceStatusOnLock = null;
     db.paidMeanwhile = 0;
     db.log = [];
     vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined as never);
@@ -155,5 +159,52 @@ describe('Orders.ApplyAccountCredit', () => {
         db.spentMeanwhile = 99;
         const out = (await run(300)) as { Success: boolean; RemainingCredit?: number; TargetBalanceAfter?: number };
         expect(out).toMatchObject({ Success: true, RemainingCredit: 200, TargetBalanceAfter: 299 });
+    });
+
+    it.each(['Draft', 'Quoted', 'Voided'])('a credit held on a %s order is no credit: refused before anything is written', async (Status) => {
+        order(SOURCE, { Balance: -599, BillToPersonID: 'jane', Status });
+        order(TARGET, { Balance: 599, BillToPersonID: 'jane' });
+        const out = await run();
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(new RegExp(`ORD-CR is ${Status}, so its balance is no credit to spend`));
+        expect(db.log).toEqual([]);
+    });
+    it.each(['Draft', 'Quoted', 'Voided'])('a %s target owes nothing yet: refused before anything is written', async (Status) => {
+        order(SOURCE, { Balance: -599, BillToPersonID: 'jane' });
+        order(TARGET, { Balance: 599, BillToPersonID: 'jane', Status });
+        const out = await run();
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(new RegExp(`ORD-RENEW is ${Status}: a credit settles only a confirmed order`));
+        expect(db.log).toEqual([]);
+    });
+    it('decided again under the lock: a source that reads Voided once locked is refused and rolled back', async () => {
+        order(SOURCE, { Balance: -599, BillToPersonID: 'jane' });
+        order(TARGET, { Balance: 599, BillToPersonID: 'jane' });
+        db.sourceStatusOnLock = 'Voided';
+        const out = await run();
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/Nothing was applied/);
+        expect(db.log).toEqual(['BEGIN', 'LOCK source', 'LOCK target', 'ROLLBACK']);
+    });
+    it('a Preview of a Draft credit is refused too (the review drove Preview: it returned success)', async () => {
+        order(SOURCE, { Balance: -599, BillToPersonID: 'jane', Status: 'Draft' });
+        order(TARGET, { Balance: 599, BillToPersonID: 'jane' });
+        const out = await (new ApplyAccountCreditOperation() as unknown as { InternalExecute(i: unknown, p: unknown, u: unknown): Promise<{ Success: boolean }> }).InternalExecute(
+            { SourceOrderHeaderID: SOURCE, TargetOrderHeaderID: TARGET, Preview: true },
+            provider,
+            { ID: 'u' },
+        );
+        expect(out.Success).toBe(false);
+    });
+});
+
+describe('CreditOrderStatusRefusal', () => {
+    it('only Confirmed gives or takes a credit', () => {
+        expect(CreditOrderStatusRefusal({ OrderNumber: 'O', Status: 'Confirmed' }, 'source')).toBeNull();
+        expect(CreditOrderStatusRefusal({ OrderNumber: 'O', Status: 'Confirmed' }, 'target')).toBeNull();
+        for (const Status of ['Draft', 'Quoted', 'Voided', '', 'confirmed']) {
+            expect(CreditOrderStatusRefusal({ OrderNumber: 'O', Status }, 'source')).not.toBeNull();
+            expect(CreditOrderStatusRefusal({ OrderNumber: 'O', Status }, 'target')).not.toBeNull();
+        }
     });
 });

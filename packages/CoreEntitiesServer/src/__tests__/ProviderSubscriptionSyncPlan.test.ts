@@ -446,6 +446,26 @@ describe('a paid period inside the booked term, and a charge-then-end in one run
         const zero = invoice({ ProviderInvoiceID: 'in_zero_mid', AmountPaid: 0, AmountDue: 0, ProviderIntentID: null, ProviderChargeID: null, PeriodStart: new Date('2027-04-15T05:00:00.000Z') });
         expect(plan(orders(), gateway({}, [zero])).Steps).toEqual([]);
     });
+    describe('the 36-hour silent window around the latest term\'s start (#989 review: its upper edge was unpinned)', () => {
+        // Term 1 starts 31 Oct 2026 in Chicago (CDT): 05:00 UTC.
+        const TERM_START = new Date('2026-10-31T05:00:00.000Z').getTime();
+        const H36 = 36 * 3600 * 1000;
+        const at = (ms: number) => invoice({ ProviderInvoiceID: 'in_edge', ProviderIntentID: 'pi_edge', ProviderChargeID: 'ch_edge', PeriodStart: new Date(ms) });
+        it('exactly 36 h after the term start: the period that term was booked for, silent', () => {
+            expect(plan(orders(), gateway({}, [at(TERM_START + H36)])).Steps).toEqual([]);
+        });
+        it('one millisecond past 36 h: money nobody booked, urgent RenewalNotBooked', () => {
+            expect(kinds(plan(orders(), gateway({}, [at(TERM_START + H36 + 1)])).Steps)).toEqual(['Notice:RenewalNotBooked']);
+        });
+        it('30 h in (an anchor reset a day in): still inside the window, silent; 48 h in: a notice', () => {
+            expect(plan(orders(), gateway({}, [at(TERM_START + 30 * 3600 * 1000)])).Steps).toEqual([]);
+            expect(kinds(plan(orders(), gateway({}, [at(TERM_START + 48 * 3600 * 1000)])).Steps)).toEqual(['Notice:RenewalNotBooked']);
+        });
+        it('the lower edge: 36 h before is silent, one millisecond more is a notice', () => {
+            expect(plan(orders(), gateway({}, [at(TERM_START - H36)])).Steps).toEqual([]);
+            expect(kinds(plan(orders(), gateway({}, [at(TERM_START - H36 - 1)])).Steps)).toEqual(['Notice:RenewalNotBooked']);
+        });
+    });
     it('control: the same invoice recorded in Orders (its charge or intent) is silent', () => {
         expect(plan(orders({ BookedChargeIDs: new Set(['ch_renew']) }), gateway({}, [invoice({ PeriodStart: new Date('2027-04-15T05:00:00.000Z') })])).Steps).toEqual([]);
     });

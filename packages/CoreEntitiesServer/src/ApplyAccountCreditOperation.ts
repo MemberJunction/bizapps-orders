@@ -125,6 +125,20 @@ interface OrderShape {
 const same = (a: string | null | undefined, b: string | null | undefined): boolean => !!a && !!b && a.toLowerCase() === b.toLowerCase();
 
 /**
+ * Whether an order may give or take a credit: only a CONFIRMED one. A Draft or Quoted order is not booked (its
+ * negative balance is no money anyone paid; it owes nothing yet), and a Voided one never will be. The repo's own
+ * credit lookups already exclude the three (`GetOverdueWorklistOperation`'s credits, the `unpaid` preset:
+ * `Status NOT IN ('Draft','Quoted','Voided')`, i.e. Confirmed); this is that rule at the door that spends it
+ * (#989 review). Null when it may; the reason when it may not. Pure.
+ */
+export function CreditOrderStatusRefusal(order: Pick<OrderShape, 'OrderNumber' | 'Status'>, side: 'source' | 'target'): string | null {
+    if (order.Status === 'Confirmed') return null;
+    return side === 'source'
+        ? `Order ${order.OrderNumber} is ${order.Status || 'not confirmed'}, so its balance is no credit to spend: only a confirmed order's credit is real money.`
+        : `Order ${order.OrderNumber} is ${order.Status || 'not confirmed'}: a credit settles only a confirmed order, which is what owes money.`;
+}
+
+/**
  * Whether a credit may settle another order: only that customer's. A credit belongs to whoever earned it, so an
  * organization's credit settles that organization's orders, and a person's (an order billed to a person, no
  * organization) settles that person's own person-billed orders. Null when it may; the reason when it may not.
@@ -186,6 +200,8 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         if (!target) return { Success: false, Message: `Order ${input.TargetOrderHeaderID} was not found.` };
         const otherCustomer = SameCustomerRefusal(source, target);
         if (otherCustomer) return { Success: false, Message: otherCustomer };
+        const unconfirmed = CreditOrderStatusRefusal(source, 'source') ?? CreditOrderStatusRefusal(target, 'target');
+        if (unconfirmed) return { Success: false, Message: unconfirmed };
 
         // The credit is the source order's negative balance, expressed positive.
         const available = money(-Number(source.Balance ?? 0));
@@ -267,6 +283,13 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
             await LockOrderRows(provider, [source.ID, target.ID]);
             const lockedSource = await this.loadOrder(provider, user, source.ID);
             const lockedTarget = await this.loadOrder(provider, user, target.ID);
+            // A status cannot leave Confirmed, but the rows are read again under the lock anyway: decide on them.
+            const lockedUnconfirmed =
+                (lockedSource && CreditOrderStatusRefusal(lockedSource, 'source')) || (lockedTarget && CreditOrderStatusRefusal(lockedTarget, 'target'));
+            if (lockedUnconfirmed) {
+                await db.RollbackTransaction();
+                return { Success: false, Message: `${lockedUnconfirmed} Nothing was applied.` };
+            }
             const stillAvailable = money(-Number(lockedSource?.Balance ?? 0));
             const stillOwing = money(Number(lockedTarget?.Balance ?? 0));
             if (requested > stillAvailable + TOLERANCE) {

@@ -224,14 +224,14 @@ describe('BookProviderRefunds', () => {
     });
 
     it('D20: once the refund is booked, every renewal line of the order the intent paid is credited (and nothing else)', async () => {
-        state.intentOrder = 'order-renew';
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
         state.renewalLines = ['line-a', 'line-b'];
         const out = await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
         expect(out.Booked).toHaveLength(1);
         expect(state.credits).toEqual(['line-a after 1 refund booking(s)', 'line-b after 1 refund booking(s)']);
     });
     it('R5-1/R6-1: the refund booking AND the credit run on ONE provider of their own (never the shared one), booking first, then released', async () => {
-        state.intentOrder = 'order-renew';
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
         state.renewalLines = ['line-a'];
         const events: string[] = [];
         const own = { ...txProvider(), ReleaseIndependentInstance: async () => void events.push('released') };
@@ -244,14 +244,14 @@ describe('BookProviderRefunds', () => {
     });
     it('two deliveries of one refund at once: the cash booking runs under the intent row lock, in a transaction, before the credit', async () => {
         txLog.length = 0;
-        state.intentOrder = 'order-renew';
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
         state.renewalLines = ['line-a'];
         await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
         expect(txLog).toEqual(['BEGIN', 'LOCK PaymentIntent', 'COMMIT']);
     });
     it('the cash booking fails: rolled back, and nothing is credited', async () => {
         txLog.length = 0;
-        state.intentOrder = 'order-renew';
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
         state.renewalLines = ['line-a'];
         listed = [];
         state.payments = [];
@@ -265,7 +265,7 @@ describe('BookProviderRefunds', () => {
         expect(state.credits).toEqual([]);
     });
     it('D20: crediting fails (gateway unreadable): the refund stays booked, and the review says so', async () => {
-        state.intentOrder = 'order-renew';
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
         state.renewalLines = ['line-a'];
         state.creditThrows = 'could not read charge ch_x';
         const out = await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);

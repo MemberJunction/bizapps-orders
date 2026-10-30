@@ -121,16 +121,6 @@ const URGENT_PREFIX = 'URGENT: ';
 const UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE = ORDERS_ALERT_TASK_PREFIX.UnknownGatewaySubscription;
 
 /**
- * Every name prefix the gateway-subscription alert Tasks are raised under (E2, E3/E4). One list, so a sweep that
- * finds Orders' alert Tasks by name (e.g. assigning them to a role after the fact) can take them all.
- */
-export const PROVIDER_SUBSCRIPTION_ALERT_TASK_PREFIXES: readonly string[] = [
-    PROVIDER_SUBSCRIPTION_ALERT_TITLE,
-    `${URGENT_PREFIX}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}`,
-    UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE,
-];
-
-/**
  * The alert Task's name: one per subscription and problem, which is what makes it the dedupe key. A `key` makes it one
  * per occurrence instead (each gateway refund credited is its own notice, never swallowed by an earlier open one).
  */

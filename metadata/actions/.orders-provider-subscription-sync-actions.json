@@ -200,7 +200,7 @@
     "fields": {
       "Name": "Link Provider Subscription",
       "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
-      "Description": "Record that a payment gateway already bills an existing Orders subscription, after checking the gateway subscription: it must exist and not have ended, no other Orders subscription may record it, the Orders subscription must record no gateway id yet, and the gateway customer's e-mail must be the subscriber's when both are known. Then link it and sync it, booking everything the gateway charged since the subscription's term ended. Linking cannot be undone. Preview (the default) runs every check and links nothing. Use it for an UnknownGatewaySubscription Task.",
+      "Description": "Record that a payment gateway already bills an existing Orders subscription, after checking the gateway subscription: the account must be the subscription's company's and bill subscriptions; the gateway subscription must exist and not have ended, no other Orders subscription may record it, and it must not have been created by Orders for another subscription; the Orders subscription must record no gateway id and no other payment provider yet; the gateway customer's e-mail must be the subscriber's (a mismatch always refuses; with nothing to compare, such as no e-mail at the gateway or an organization's subscription naming no subscriber, a person must confirm the customer with CustomerConfirmed); and the price it bills must map to the subscription's product (unless a person confirms an older price with AllowPriceOfAnotherProduct). Then link it and sync it, booking everything the gateway charged since the subscription's term ended. Linking cannot be undone. Preview (the default) runs every check and links nothing. Use it for an UnknownGatewaySubscription Task.",
       "Type": "Custom",
       "DriverClass": "Orders.LinkProviderSubscription",
       "IconClass": "fa-solid fa-link",
@@ -283,6 +283,34 @@
           "sync": {
             "lastModified": "2026-10-29T21:20:42.453Z",
             "checksum": "48e5178f013f66430aec0d1ca4df8d3fd76ec00115864c6a96ee57e17eb251ac"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AllowPriceOfAnotherProduct",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True links although the gateway bills a price this account maps to another product, or to none: a person checked that the subscription's product is right (an imported subscriber on an older price). False (the default) refuses such a link. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "4EEAC249-D0C1-4F39-9D22-E0C899BB03FF"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CustomerConfirmed",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when a person checked at the gateway that it bills this subscription's customer, for a link with nothing to compare (no e-mail at the gateway, or no subscriber e-mail, as for most organization-held subscriptions). It never overrides an e-mail mismatch. False (the default) refuses such a link. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "D376D73B-627D-4A5E-B0B2-458CA985BCAE"
           }
         },
         {

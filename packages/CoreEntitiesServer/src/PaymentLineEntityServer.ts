@@ -426,7 +426,10 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // its balance to 0. Its value is Balance + AmountPaid (lines, less credit memos and reductions: everything but
         // cash, as spRecalcOrderHeaderTotals computes them). An order worth zero or more carries no credit: its floor
         // stays 0, so cash is never un-applied past what was applied (D20, 30 Oct).
-        const value = Math.round((Number(order.Balance ?? 0) + Number(order.AmountPaid ?? 0)) * 100) / 100;
+        // A part that is not a finite number counts as 0, so a malformed read can only RAISE the floor (fail closed):
+        // `proposed < NaN` is false, which would otherwise allow any application.
+        const finite = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+        const value = Math.round((finite(order.Balance ?? 0) + finite(order.AmountPaid ?? 0)) * 100) / 100;
         const floor = Math.min(0, value);
         if (proposed < floor - TOLERANCE) {
             return (

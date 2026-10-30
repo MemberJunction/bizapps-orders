@@ -287,8 +287,7 @@ export { BookProviderRenewal } from './ProviderRenewalBooking.js';
 export type { RenewalBookingOutcome, RenewalSubscription } from './ProviderRenewalBooking.js';
 export { LinkProviderSubscription } from './LinkProviderSubscription.js';
 export type { LinkProviderSubscriptionCode, LinkProviderSubscriptionInput, LinkProviderSubscriptionResult } from './LinkProviderSubscription.js';
-export { PROVIDER_SUBSCRIPTION_ALERT_TASK_PREFIXES,
-    raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
+export { raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
 export { IsGatewayRenewal, SanctionGatewayRenewal } from './SubscriptionEntityServer.js';
 export { StripeEventSubscriptionID, StripeInvoiceFacts, StripeSubscriptionDetails } from './StripePaymentProvider.js';
 

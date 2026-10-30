@@ -55,7 +55,6 @@ import {
     OUTBOUND_DEAD_LETTER_LOG_MARKER,
     OpenProviderSubscriptionAlerts,
     PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER,
-    PROVIDER_SUBSCRIPTION_ALERT_TASK_PREFIXES,
     ProviderSubscriptionAlertName,
     raiseCheckoutCaptureTerminalAlert,
     raiseCheckoutSettledNotBookedAlert,
@@ -368,9 +367,11 @@ describe('OpenProviderSubscriptionAlerts (option E, E2)', () => {
     });
 
     it("#987's assignment sweep finds every gateway-subscription alert, keyed names included", () => {
+        // ORDERS_ALERT_TASK_PREFIX is the ONE list of alert-name prefixes (the duplicate export was removed, #989 review):
+        // every name a gateway-subscription alert is raised under starts with one of them.
         const swept = Object.values(ORDERS_ALERT_TASK_PREFIX) as string[];
-        for (const prefix of PROVIDER_SUBSCRIPTION_ALERT_TASK_PREFIXES) expect(swept).toContain(prefix);
         for (const name of [
+            ProviderSubscriptionAlertName('SUB-000130', 'NotRecorded'),
             ProviderSubscriptionAlertName('SUB-000130', 'GatewayRenewalRefunded', false, 'ORD-000901'),
             ProviderSubscriptionAlertName('SUB-000130', 'RenewalNotBooked', true),
         ]) {

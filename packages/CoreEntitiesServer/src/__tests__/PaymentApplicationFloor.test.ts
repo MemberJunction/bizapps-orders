@@ -70,4 +70,13 @@ describe('the application floor', () => {
         db.order = { ID: ORDER, OrderNumber: 'ORD-0', TotalGross: 0, Balance: 0, AmountPaid: 0 };
         expect(await check(-1)).toMatch(/nothing more to un-apply/);
     });
+    it('a non-numeric Balance or AmountPaid cannot fail open: it counts as 0, so the floor stays 0 (#989 review)', async () => {
+        db.order = { ID: ORDER, OrderNumber: 'ORD-X', TotalGross: 0, Balance: 'n/a', AmountPaid: 0 };
+        expect(await check(-1_000_000)).toMatch(/nothing more to un-apply/);
+        db.order = { ID: ORDER, OrderNumber: 'ORD-X', TotalGross: 0, Balance: -599, AmountPaid: 'n/a' };
+        // The finite part still counts: a -599 credit order with a garbled AmountPaid spends at most its 599.
+        expect(await check(-599.01)).toMatch(/carries 599 of credit/);
+        db.order = { ID: ORDER, OrderNumber: 'ORD-X', TotalGross: 0, Balance: Number.NaN, AmountPaid: Number.POSITIVE_INFINITY };
+        expect(await check(-1)).toMatch(/nothing more to un-apply/);
+    });
 });

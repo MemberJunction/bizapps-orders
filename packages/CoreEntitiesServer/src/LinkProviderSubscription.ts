@@ -9,12 +9,17 @@
  * the checkout hand-over (E2, which created the gateway subscription itself) and this function, which
  * checks the gateway subscription first:
  *
+ *   · the account's gateway can bill subscriptions, and the account is the subscription's company's;
  *   · it exists at the gateway and has not ended;
- *   · no other Orders subscription records it;
- *   · the Orders subscription records no gateway id yet;
- *   · the gateway customer's e-mail is the subscriber's, when both are known;
- *   · the price it bills maps to the subscription's product (unless a person confirms an older price);
- *   · the account's gateway can bill subscriptions.
+ *   · no other Orders subscription records it, and it was not created by Orders for another one (the
+ *     `OrdersSubscriptionID` metadata E2 writes, which the webhook reads too);
+ *   · the Orders subscription records no gateway id yet, and no other payment provider;
+ *   · it bills the subscriber: the gateway customer's e-mail is the beneficiary's. A MISMATCH is evidence of
+ *     another customer and always refuses. When there is nothing to compare (no e-mail at the gateway, no
+ *     beneficiary, or a beneficiary with no e-mail; typically an organization's subscription), a person must
+ *     say they checked (`CustomerConfirmed`): absence of evidence can be confirmed, contrary evidence cannot,
+ *     and the check is never skipped silently;
+ *   · the price it bills maps to the subscription's product (unless a person confirms an older price).
  *
  * Then it links (sanctioned) and syncs, so everything the gateway charged since the subscription's term
  * ended is booked (E4). Used for an `UnknownGatewaySubscription` Task (a subscriber the import missed or
@@ -28,6 +33,7 @@
 import { CompositeKey, LogStatus, RunView, type DatabaseProviderBase, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type { mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 import { PERSON_ENTITY } from './entity-names.js';
+import { ORDERS_SUBSCRIPTION_METADATA_KEY } from './ProviderSubscriptions.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import { SyncProviderSubscription, type SyncProviderSubscriptionResult } from './ProviderSubscriptionSync.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
@@ -43,6 +49,12 @@ export interface LinkProviderSubscriptionInput {
     /** Check only; link nothing. */
     Preview?: boolean;
     /**
+     * A person checked at the gateway that it bills this subscription's customer, for a link with nothing to compare
+     * (no e-mail at the gateway, or no beneficiary e-mail, as for most organization-held subscriptions). Never
+     * overrides a MISMATCH.
+     */
+    CustomerConfirmed?: boolean;
+    /**
      * Link although the gateway bills it on a price this account maps to ANOTHER product (or maps to none): a
      * person confirmed the subscription's product is right (an imported Professional subscriber on the $399
      * Foundation price). Off by default, so a typed id for the wrong customer's plan is refused.
@@ -56,6 +68,10 @@ export type LinkProviderSubscriptionCode =
     | 'BadInput'
     | 'SubscriptionNotFound'
     | 'AlreadyLinked'
+    | 'OtherProvider'
+    | 'CompanyMismatch'
+    | 'CreatedForAnother'
+    | 'CustomerUnverified'
     | 'ProviderCannotBill'
     | 'NotAtGateway'
     | 'EndedAtGateway'
@@ -92,11 +108,20 @@ export async function LinkProviderSubscription(
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const sub = (
-        await rv.RunView<{ ID: string; SubscriptionNumber: string; ProviderSubscriptionID: string | null; BeneficiaryPersonID: string | null; ProductID: string }>(
+        await rv.RunView<{
+            ID: string;
+            SubscriptionNumber: string;
+            CompanyID: string;
+            PaymentProviderID: string | null;
+            ProviderSubscriptionID: string | null;
+            BeneficiaryPersonID: string | null;
+            HolderOrganizationID: string | null;
+            ProductID: string;
+        }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: `ID = '${subscriptionID}'`,
-                Fields: ['ID', 'SubscriptionNumber', 'ProviderSubscriptionID', 'BeneficiaryPersonID', 'ProductID'],
+                Fields: ['ID', 'SubscriptionNumber', 'CompanyID', 'PaymentProviderID', 'ProviderSubscriptionID', 'BeneficiaryPersonID', 'HolderOrganizationID', 'ProductID'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -110,6 +135,12 @@ export async function LinkProviderSubscription(
             `${sub.SubscriptionNumber} already records gateway subscription ${sub.ProviderSubscriptionID}. A recorded id is never replaced.`,
         );
     }
+    if (sub.PaymentProviderID && sub.PaymentProviderID.toLowerCase() !== providerID.toLowerCase()) {
+        return refuse(
+            'OtherProvider',
+            `${sub.SubscriptionNumber} already names payment provider ${sub.PaymentProviderID}, not ${providerID}. A recorded provider is never replaced here.`,
+        );
+    }
 
     let config;
     let driver;
@@ -121,6 +152,12 @@ export async function LinkProviderSubscription(
     }
     if (!config.Capabilities?.SupportsSubscriptionBilling) {
         return refuse('ProviderCannotBill', `Payment provider '${config.Name}' is not a gateway that bills subscriptions.`);
+    }
+    if ((config.CompanyID ?? '').toLowerCase() !== (sub.CompanyID ?? '').toLowerCase()) {
+        return refuse(
+            'CompanyMismatch',
+            `Payment provider '${config.Name}' belongs to company ${config.CompanyID}, but ${sub.SubscriptionNumber} is company ${sub.CompanyID}'s. Nothing was linked.`,
+        );
     }
 
     const described = await driver.DescribeProviderSubscription(gatewayID);
@@ -144,8 +181,19 @@ export async function LinkProviderSubscription(
         )
     ).Results?.[0];
     if (elsewhere) return refuse('LinkedElsewhere', `Gateway subscription ${gatewayID} is already recorded on ${elsewhere.SubscriptionNumber}.`);
+    // Orders' own hand-over (E2) stamps the subscription it created the gateway one for; the webhook reads the same key.
+    const createdFor = (described.Metadata?.[ORDERS_SUBSCRIPTION_METADATA_KEY] ?? '').trim();
+    if (createdFor && createdFor.toLowerCase() !== subscriptionID.toLowerCase()) {
+        return refuse(
+            'CreatedForAnother',
+            `Gateway subscription ${gatewayID} was created by Orders for subscription ${createdFor} (its ${ORDERS_SUBSCRIPTION_METADATA_KEY}), not ${sub.SubscriptionNumber}. Nothing was linked.`,
+        );
+    }
 
-    if (described.CustomerEmail && sub.BeneficiaryPersonID) {
+    // It must bill this subscription's customer. Compared by e-mail when both are known (a mismatch always refuses);
+    // with nothing to compare, a person says they checked.
+    let personEmail = '';
+    if (sub.BeneficiaryPersonID) {
         const person = (
             await rv.RunView<{ Email: string | null }>(
                 {
@@ -158,14 +206,28 @@ export async function LinkProviderSubscription(
                 user,
             )
         ).Results?.[0];
-        const email = (person?.Email ?? '').trim().toLowerCase();
-        if (email && email !== described.CustomerEmail.trim().toLowerCase()) {
+        personEmail = (person?.Email ?? '').trim();
+    }
+    const gatewayEmail = (described.CustomerEmail ?? '').trim();
+    if (personEmail && gatewayEmail) {
+        if (personEmail.toLowerCase() !== gatewayEmail.toLowerCase()) {
             return refuse(
                 'EmailMismatch',
-                `Gateway subscription ${gatewayID} bills ${described.CustomerEmail}, but ${sub.SubscriptionNumber}'s subscriber is ${person?.Email}. ` +
+                `Gateway subscription ${gatewayID} bills ${gatewayEmail}, but ${sub.SubscriptionNumber}'s subscriber is ${personEmail}. ` +
                     `Check it is the same customer; nothing was linked.`,
             );
         }
+    } else if (!input.CustomerConfirmed) {
+        const why = !gatewayEmail
+            ? `the gateway customer has no e-mail`
+            : sub.BeneficiaryPersonID
+              ? `${sub.SubscriptionNumber}'s subscriber has no e-mail`
+              : `${sub.SubscriptionNumber} names no subscriber${sub.HolderOrganizationID ? ' (an organization holds it)' : ''}`;
+        return refuse(
+            'CustomerUnverified',
+            `Cannot check that gateway subscription ${gatewayID} bills ${sub.SubscriptionNumber}'s customer: ${why}. Nothing was linked. ` +
+                `Check the customer at the gateway, then link again with CustomerConfirmed.`,
+        );
     }
 
     // The plan it bills must be this subscription's product: a typed id for another customer's plan is refused.
@@ -212,7 +274,8 @@ export async function LinkProviderSubscription(
             );
             const mine = rows(
                 await db.ExecuteSQL(
-                    `SELECT ID FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${subscriptionID}' AND ProviderSubscriptionID IS NULL`,
+                    `SELECT ID FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${subscriptionID}' AND ProviderSubscriptionID IS NULL ` +
+                        `AND (PaymentProviderID IS NULL OR PaymentProviderID = '${providerID}')`,
                 ),
             );
             if (taken.length || !mine.length) {

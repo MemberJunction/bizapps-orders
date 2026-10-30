@@ -9,7 +9,7 @@ import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntit
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { CrossesLegalEntities } from '../../panels/allocation-math';
-import { CreditTargetFilter, OwnCreditTargets } from './credit-targets';
+import { CREDITS_HELD_WHERE, CreditTargetFilter, OwnCreditTargets } from './credit-targets';
 import { LegalEntityForHint } from '../../panels/legal-entity-hint';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -230,7 +230,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         return this.creditOrdersView.For(this.OrderEntityInfo.ID, () => ({
             EntityID: this.OrderEntityInfo!.ID,
             Entity: this.OrderEntityInfo!.Name,
-            WhereClause: `Balance < 0`,
+            WhereClause: CREDITS_HELD_WHERE,
             ID: 'preset-credit-orders',
             Name: 'Credits Held'
         } as unknown as MJUserViewEntityExtended));

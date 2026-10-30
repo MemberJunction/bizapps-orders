@@ -45,6 +45,7 @@ import {
   InRolledBackTransaction,
   ORDERS_SCHEMA,
   OutsideTransaction,
+  PurgeCheckoutRun,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
@@ -602,16 +603,22 @@ export const AccountCreditChecks: NamedCheck[] = [
     Id: "account-credit.AC-OT1",
     Name: "AC-OT1: outside the harness transaction, two spends of one 60 credit at the same instant, each on its own provider (two workers), spend it once",
     RequiresMutation: true,
-    Fn: async (ctx) =>
-      OutsideTransaction(
+    Fn: async (ctx) => {
+      // Committed rows, deleted afterwards. They book on the world's company, which the fixture teardown does NOT
+      // sweep, so the check purges its own three orders and every payment on them (#989 review round 1: each run
+      // had left 3 orders and 2 payments behind).
+      const made: string[] = [];
+      return OutsideTransaction(
         async () => {
-          // A 60 credit (100 paid 160) and two orders of the same customer owing 60 each. Committed: the
-          // teardown purges the fixture companies' orders and payments.
+          // A 60 credit (100 paid 160) and two orders of the same customer owing 60 each.
           const source = await confirmOrder(ctx, 100);
+          made.push(source.Order.ID as string);
           const paid = await payToCoA(ctx, source.Order.ID as string, 160);
           Assert(paid.Saved, `precondition: the over-payment saved: ${paid.Message}`);
           const t1 = await confirmOrder(ctx, 60);
+          made.push(t1.Order.ID as string);
           const t2 = await confirmOrder(ctx, 60);
+          made.push(t2.Order.ID as string);
           const db = ctx.Provider as unknown as { CreateIndependentInstance: () => Promise<unknown> };
           const workers = await Promise.all([db.CreateIndependentInstance(), db.CreateIndependentInstance()]);
           let outcomes: Array<{ Success: boolean; Message?: string }> = [];
@@ -638,8 +645,11 @@ export const AccountCreditChecks: NamedCheck[] = [
           const owed = [Number((await orderRow(ctx, t1.Order.ID as string)).Balance), Number((await orderRow(ctx, t2.Order.ID as string)).Balance)].sort();
           AssertEqual(JSON.stringify(owed), JSON.stringify([0, 60]), "one order settled, the other still owes 60");
         },
-        async () => undefined,
-      ),
+        async () => {
+          if (made.length) await PurgeCheckoutRun(ctx, { OrderIDs: made, SubscriptionIDs: [] });
+        },
+      );
+    },
   },
 ];
 
