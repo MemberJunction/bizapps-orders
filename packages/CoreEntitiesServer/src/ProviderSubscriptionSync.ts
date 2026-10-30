@@ -33,13 +33,13 @@ import { CompositeKey, LogError, LogStatus, Metadata, RunView, type IMetadataPro
 import { AddDays, BusinessTimeZoneEngine, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
 import type { mjBizAppsOrdersSubscriptionEntity, mjBizAppsOrdersSubscriptionEventEntity } from '@mj-biz-apps/orders-entities';
 import type { BasePaymentProvider, GatewaySubscriptionInvoice, PaymentProviderConfig } from './BasePaymentProvider.js';
-import { CancelSubscriptionOperation } from './CancelSubscriptionOperation.js';
+import { CancelSubscriptionOperation, WithGatewayEndRecorded } from './CancelSubscriptionOperation.js';
+import { SettleGatewayRenewalCredits } from './GatewayRenewalCredit.js';
 import { functionalCurrency } from './CreateOrderFromProviderPaymentOperation.js';
 import { raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
 import { WithIsolatedProvider } from './isolatedProvider.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import { ProviderPaymentIdempotencyKey } from './ProviderPaymentOrder.js';
-import { ProviderBillsNewSubscriptions } from './ProviderSubscriptions.js';
 import { BookProviderRenewal, type RenewalSubscription } from './ProviderRenewalBooking.js';
 import {
     PlanProviderSubscriptionSync,
@@ -198,13 +198,6 @@ async function syncOne(
         result.Error = `The payment provider that bills ${sub.ProviderSubscriptionID} cannot be used: ${err instanceof Error ? err.message : String(err)}`;
         return result;
     }
-    // The account's switch is the kill switch for option E (the same rule the hand-over uses): off, nothing
-    // is read or written. The first run after it is turned on catches up, from the latest term's start.
-    if (!ProviderBillsNewSubscriptions(config)) {
-        result.Outcome = 'NotBilledByGateway';
-        result.Differences.push(`the account that bills ${sub.ProviderSubscriptionID} has BillsSubscriptions off; not synced`);
-        return result;
-    }
 
     // ── The gateway's side ──────────────────────────────────────────────────────────────────────────
     const terms = await loadTerms(id, rv, user);
@@ -236,6 +229,16 @@ async function syncOne(
         return result;
     }
     await applyPlan(plan, sub, latest, config, driver, provider, user, result, orders.LastUnitPrice);
+    // A gateway refund's credit still on account (booked before the renewal owed it, or a refund booked by hand):
+    // applied to its renewal now (D20). Nothing to do for almost every subscription, so nothing is written then.
+    if (result.Outcome !== 'Failed') {
+        try {
+            const settled = await SettleGatewayRenewalCredits(sub.ID, provider, user);
+            if (settled > 0) result.Actions.push(`applied ${settled.toFixed(2)} of a gateway refund's credit to its renewal`);
+        } catch (err) {
+            result.Notices.push(`could not apply a gateway refund's credit to its renewal: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
     if (result.Outcome !== 'Failed') {
         const wrote = result.Actions.length > 0;
         result.Outcome = wrote ? 'Changed' : result.Notices.length ? 'NeedsPerson' : 'InLine';
@@ -310,15 +313,56 @@ async function applyPlan(
                     result.Actions.push(step.On ? 'automatic renewal back on (cancel withdrawn at the gateway)' : `automatic renewal off (the gateway ends it ${step.EndsAt?.toISOString() ?? 'at its period end'})`);
                     break;
                 case 'FinishCancel': {
+                    // The gateway charged a renewal and then ended it: what it refunded of that charge is what the
+                    // cancel may reverse (nothing when it kept it), and a person is told either way.
+                    let refunded = 0;
+                    for (const inv of step.RenewalsCharged) {
+                        if (!inv.ProviderChargeID) continue;
+                        const charge = await driver.RetrieveCharge({ ProviderChargeID: inv.ProviderChargeID });
+                        if (!charge.Success || !charge.Charge) {
+                            throw new Error(`could not read charge ${inv.ProviderChargeID} to see what the gateway refunded: ${charge.Reason ?? 'no reason given'}`);
+                        }
+                        refunded += Math.min(charge.Charge.AmountRefunded, inv.AmountPaid);
+                    }
                     const op = new CancelSubscriptionOperation();
-                    const cancelled = await op.ExecuteServer(
-                        { SubscriptionID: sub.ID, RequestDate: step.RequestDay, Timing: step.Timing, Reason: 'Ended at the payment gateway' },
-                        { provider, user, emitProgress: () => undefined },
-                    );
+                    const run = () =>
+                        op.ExecuteServer(
+                            { SubscriptionID: sub.ID, RequestDate: step.RequestDay, Timing: step.Timing, Reason: 'Ended at the payment gateway' },
+                            { provider, user, emitProgress: () => undefined },
+                        );
+                    // Always as a RECORD of the gateway's end (never extended to a later booked term, D19 is for a
+                    // person's cancel); the renewals' reversal capped at what the gateway refunded of them.
+                    const cancelled = await WithGatewayEndRecorded(run);
+                    if (step.RenewalsCharged.length) {
+                        const charged = step.RenewalsCharged.reduce((n, i) => n + i.AmountPaid, 0);
+                        const kept = Math.round((charged - refunded) * 100) / 100;
+                        const which = step.RenewalsCharged.map((i) => i.ProviderInvoiceID).join(', ');
+                        await notice(
+                            sub,
+                            'EndedAfterRenewal',
+                            kept > 0
+                                ? `the gateway charged the renewal (${which}, ${charged.toFixed(2)}) and then ended ${sub.ProviderSubscriptionID}, keeping ${kept.toFixed(2)}: ` +
+                                  `the customer paid for a period they will not get. Orders booked the renewal and cancelled without reversing what was kept. ` +
+                                  `Refund it at the gateway (Orders then books the refund) or record why it is kept.`
+                                : `the gateway charged the renewal (${which}, ${charged.toFixed(2)}), refunded ${refunded.toFixed(2)} of it, and ended ${sub.ProviderSubscriptionID}; ` +
+                                  `Orders booked the renewal and reversed what was refunded. Nothing to do unless that is unexpected.`,
+                            false,
+                            provider,
+                            user,
+                            result,
+                        );
+                    }
                     const out = cancelled.Output;
                     if (!cancelled.Success || !out?.Success) {
+                        // Another delivery (a second worker, or the webhook and the nightly pass together) may have
+                        // recorded it a moment ago: cancelled already is what was wanted.
+                        if (await currentStatus(sub.ID, provider, user) === 'Canceled') {
+                            result.Actions.push(`the cancel the gateway made was already recorded`);
+                            break;
+                        }
                         const why = cancelled.ErrorMessage ?? out?.Message ?? 'unknown error';
-                        await notice(sub, 'RenewalNotBooked', `the gateway ended ${sub.ProviderSubscriptionID}, but recording the cancel in Orders was refused: ${why}`, false, provider, user, result);
+                        // Not RenewalNotBooked: that code blocks every later cancel, and this one must be retried.
+                        await notice(sub, 'GatewayCancelNotRecorded', `the gateway ended ${sub.ProviderSubscriptionID}, but recording the cancel in Orders was refused: ${why}`, false, provider, user, result);
                     } else {
                         result.Actions.push(`recorded the cancel the gateway made (${step.Timing}, ${step.RequestDay})`);
                     }
@@ -355,6 +399,15 @@ function describeStep(step: SyncStep): string {
         case 'Notice':
             return `notice ${step.Code}`;
     }
+}
+
+async function currentStatus(subscriptionID: string, provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<{ Status: string }>(
+        { EntityName: SUBSCRIPTION_ENTITY, ExtraFilter: `ID = '${RequireUUID(subscriptionID, 'SubscriptionID')}'`, Fields: ['ID', 'Status'], ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    return r.Results?.[0]?.Status ?? null;
 }
 
 async function notice(
@@ -400,6 +453,24 @@ async function loadOrdersFacts(
     user: UserInfo,
 ): Promise<SyncOrdersFacts> {
     const intents = [...new Set(invoices.map((i) => i.ProviderIntentID).filter((v): v is string => !!v))];
+    const charges = [...new Set(invoices.map((i) => i.ProviderChargeID).filter((v): v is string => !!v))];
+    const bookedCharges = new Set<string>();
+    if (charges.length) {
+        // Any payment that records the charge, whatever its key or account (a gateway charge id is unique at the
+        // gateway): the importer writes an imported subscriber's current-year payment with the charge and no intent.
+        const rows = await rv.RunView<{ ProviderChargeID: string }>(
+            {
+                EntityName: PAYMENT_HEADER_ENTITY,
+                ExtraFilter: `ProviderChargeID IN (${charges.map((c) => `'${EscapeText(c)}'`).join(',')})`,
+                Fields: ['ID', 'ProviderChargeID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        if (!rows.Success) throw new Error(`Could not read the payments of the gateway's charges: ${rows.ErrorMessage}`);
+        for (const r of rows.Results ?? []) bookedCharges.add(r.ProviderChargeID);
+    }
     const captured = new Set<string>();
     const uncaptured = new Set<string>();
     if (intents.length) {
@@ -512,11 +583,13 @@ async function loadOrdersFacts(
         Status: sub.Status,
         AutoRenew: !!sub.AutoRenew,
         LatestTermEnd: latest ? (ToCalendarDay(new Date(latest.EndDate)) as CalendarDay | null) : null,
+        LatestTermStart: latest ? (ToCalendarDay(new Date(latest.StartDate)) as CalendarDay | null) : null,
         Zone: BusinessTimeZoneEngine.Instance.Zone,
-        CurrencyCode: await functionalCurrency(config.CompanyID, provider, user),
+        CurrencyCode: await functionalCurrency(sub.CompanyID, provider, user),
         CapturedIntentIDs: captured,
         UncapturedIntentIDs: uncaptured,
         BookedZeroInvoiceIDs: zero,
+        BookedChargeIDs: bookedCharges,
         RecordedFailures: failures,
         LastGatewayPriceID: lastPrice,
         LastGatewayQuantity: lastQuantity,
@@ -658,7 +731,24 @@ export async function SyncProviderSubscriptions(
     }
     const results: SyncProviderSubscriptionResult[] = [];
     for (const row of rows.Results ?? []) {
-        results.push(await SyncProviderSubscription(row.ID, { Preview: input.Preview, Now: now }, provider, user));
+        const synced = await SyncProviderSubscription(row.ID, { Preview: input.Preview, Now: now }, provider, user);
+        results.push(synced);
+        // A subscription the nightly pass cannot sync (a renewal that will not book, a gateway it cannot read)
+        // tells a person every night it fails, preview or not: one open Task, urgent.
+        if (synced.Outcome === 'Failed') {
+            await raiseProviderSubscriptionAlert(
+                {
+                    SubscriptionID: row.ID,
+                    SubscriptionNumber: synced.SubscriptionNumber ?? row.ID,
+                    Code: 'GatewaySyncFailed',
+                    Reason: `the nightly sync of ${synced.ProviderSubscriptionID ?? 'its gateway subscription'} failed: ${synced.Error ?? 'unknown error'}`,
+                    Urgent: true,
+                    Linked: true,
+                },
+                user,
+                provider,
+            ).catch((err) => LogError(`[ProviderSubscriptionSync] could not raise GatewaySyncFailed for ${row.ID}: ${err}`));
+        }
     }
     const count = (o: SyncOutcome) => results.filter((r) => r.Outcome === o).length;
     const differences = results.reduce((n, r) => n + r.Differences.length, 0);

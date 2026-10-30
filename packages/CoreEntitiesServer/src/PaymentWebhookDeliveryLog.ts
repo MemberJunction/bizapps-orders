@@ -58,9 +58,7 @@ export type WebhookDeliveryReasonCode =
     /** A subscription event (E3) for a gateway subscription on a price Orders does not sell here: not ours. */
     | 'not_ours'
     /** A subscription event (E3) whose sync failed; the gateway redelivers. */
-    | 'sync_failed'
-    /** A subscription event (E3) for an account whose BillsSubscriptions switch is off: nothing changes. */
-    | 'provider_off';
+    | 'sync_failed';
 
 /** What the handler decided about one delivery. */
 export interface WebhookDeliveryRecord {

@@ -381,11 +381,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
 
-        const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string }>(
+        const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string; Balance: number | null; AmountPaid: number | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID='${this.OrderHeaderID}'`,
-                Fields: ['TotalGross', 'OrderNumber'],
+                Fields: ['ID', 'TotalGross', 'OrderNumber', 'Balance', 'AmountPaid'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -420,11 +420,20 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // recorded for what actually arrived. Consistency between a payment and its own allocations is
         // enforced instead, on the payment side (PaymentHeaderEntityServer, D68).
 
-        if (proposed < -TOLERANCE) {
+        // THE FLOOR: an order's applied total may go below zero only by the credit the order ITSELF carries. An order
+        // worth less than nothing (a return or credit memo, worth -599) holds that credit without any cash, and spending
+        // it (Orders.ApplyAccountCredit: -599 here, +599 on the order it settles) takes its applied total to -599 and
+        // its balance to 0. Its value is Balance + AmountPaid (lines, less credit memos and reductions: everything but
+        // cash, as spRecalcOrderHeaderTotals computes them). An order worth zero or more carries no credit: its floor
+        // stays 0, so cash is never un-applied past what was applied (D20, 30 Oct).
+        const value = Math.round((Number(order.Balance ?? 0) + Number(order.AmountPaid ?? 0)) * 100) / 100;
+        const floor = Math.min(0, value);
+        if (proposed < floor - TOLERANCE) {
             return (
                 `Applying ${this.Amount} would take the total applied against order ${order.OrderNumber} ` +
-                `to ${proposed}. Only ${existing} has ever been applied, so there is nothing more to ` +
-                `un-apply.`
+                `to ${proposed}. Only ${existing} has ever been applied` +
+                (floor < 0 ? ` and the order carries ${-floor} of credit` : '') +
+                `, so there is nothing more to un-apply.`
             );
         }
 

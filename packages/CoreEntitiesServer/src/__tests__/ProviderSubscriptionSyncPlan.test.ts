@@ -27,11 +27,13 @@ function orders(over: Partial<SyncOrdersFacts> = {}): SyncOrdersFacts {
         Status: 'Active',
         AutoRenew: true,
         LatestTermEnd: '2027-10-30',
+        LatestTermStart: '2026-10-31',
         Zone: ZONE,
         CurrencyCode: 'USD',
         CapturedIntentIDs: new Set(),
         UncapturedIntentIDs: new Set(),
         BookedZeroInvoiceIDs: new Set(),
+        BookedChargeIDs: new Set(),
         RecordedFailures: new Set(),
         LastGatewayPriceID: null,
         LastGatewayQuantity: null,
@@ -60,6 +62,9 @@ function invoice(over: Partial<GatewaySubscriptionInvoice> = {}): GatewaySubscri
         NextAttemptAt: null,
         ProviderPriceID: 'price_pro',
         Quantity: 1,
+        // The period Stripe's renewal bills: from the anchor, a year.
+        PeriodStart: CHARGE_AT,
+        PeriodEnd: new Date('2028-10-30T05:00:00.000Z'),
         ...over,
     };
 }
@@ -195,10 +200,11 @@ describe('Q3 notices on a booked renewal: booked as charged, a person told when 
     it('control: the same price as last term raises nothing', () => {
         expect(kinds(plan(orders({ LastUnitPrice: 599 }), gateway({}, [invoice()])).Steps)).toEqual(['BookRenewal']);
     });
-    it('tax on the invoice → booked net, with a notice', () => {
+    it('tax on the invoice → NOT booked (net booked, gross captured would leave the tax as credit): urgent RenewalNotBooked', () => {
         const p = plan(orders(), gateway({}, [invoice({ AmountPaid: 647.92, Tax: 48.92 })]));
-        expect(kinds(p.Steps)).toEqual(['BookRenewal', 'Notice:RenewalAmountUnusual']);
-        expect((p.Steps[1] as { Reason: string }).Reason).toMatch(/\$48\.92 of tax/);
+        expect(kinds(p.Steps)).toEqual(['Notice:RenewalNotBooked']);
+        expect(p.Steps[0]).toMatchObject({ Urgent: true });
+        expect((p.Steps[0] as { Reason: string }).Reason).toMatch(/\$48\.92 of tax/);
     });
     it('S12 the gateway now bills another price than the last booked renewal → GatewayPlanChanged (product kept)', () => {
         const p = plan(orders({ LastGatewayPriceID: 'price_pro' }), gateway({ ProviderPriceID: 'price_exec' }, [invoice({ ProviderPriceID: 'price_exec' })]));
@@ -303,15 +309,15 @@ describe('S6/S7/S8 cancel at period end, set or withdrawn at the gateway', () =>
 describe('S5/S9/S10 the gateway ended it', () => {
     it('S9 ended mid-term (cancelled now in the dashboard) → FinishCancel Immediate on the business day it ended', () => {
         const p = plan(orders(), gateway({ State: 'Ended', Status: 'canceled', EndedAt: new Date('2027-03-03T18:00:00.000Z') }));
-        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'Immediate', RequestDay: '2027-03-03' }]);
+        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'Immediate', RequestDay: '2027-03-03', RenewalsCharged: [] }]);
     });
     it('S10/S5 ended after the coverage (at period end, or after retries) → FinishCancel EndOfTerm', () => {
         const p = plan(orders(), gateway({ State: 'Ended', Status: 'canceled', EndedAt: new Date('2027-11-20T06:00:00.000Z') }));
-        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'EndOfTerm', RequestDay: '2027-11-20' }]);
+        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'EndOfTerm', RequestDay: '2027-11-20', RenewalsCharged: [] }]);
     });
     it('S10 ended at its period end, the anchor (00:00 Central on the last day) → EndOfTerm, not Immediate', () => {
         const p = plan(orders(), gateway({ State: 'Ended', Status: 'canceled', EndedAt: CHARGE_AT }));
-        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'EndOfTerm', RequestDay: '2027-10-30' }]);
+        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'EndOfTerm', RequestDay: '2027-10-30', RenewalsCharged: [] }]);
     });
     it('the business day, not the UTC day: ended 02:00 UTC on 4 Mar is still 3 Mar in Chicago', () => {
         const p = plan(orders(), gateway({ State: 'Ended', Status: 'canceled', EndedAt: new Date('2027-03-04T02:00:00.000Z') }));
@@ -321,9 +327,14 @@ describe('S5/S9/S10 the gateway ended it', () => {
         expect(plan(orders({ Status: 'Canceled' }), gateway({ State: 'Ended', Status: 'canceled', EndedAt: CHARGE_AT })).Steps).toEqual([]);
         expect(plan(orders({ Status: 'Expired' }), gateway({ State: 'Ended', Status: 'canceled', EndedAt: CHARGE_AT })).Steps).toEqual([]);
     });
-    it('S9 a renewal charged that morning, then the subscription cancelled: book first, then the cancel', () => {
+    it('S9 a renewal charged that morning, then the subscription cancelled: book first, then the cancel, which carries the charged renewal (reverse only what was refunded; tell a person)', () => {
         const p = plan(orders(), gateway({ State: 'Ended', Status: 'canceled', EndedAt: new Date('2027-10-30T15:00:00.000Z') }, [invoice()]));
         expect(kinds(p.Steps)).toEqual(['BookRenewal', 'FinishCancel']);
+        expect((p.Steps[1] as { RenewalsCharged: GatewaySubscriptionInvoice[] }).RenewalsCharged.map((i) => i.ProviderInvoiceID)).toEqual(['in_renew']);
+    });
+    it("control: a renewal for a period before the cancel day (ended months into term 2) is not carried: E2b's ordinary rule", () => {
+        const p = plan(orders({ LatestTermEnd: '2028-10-30', LatestTermStart: '2027-10-31', CapturedIntentIDs: new Set(['pi_renew']) }), gateway({ State: 'Ended', Status: 'canceled', EndedAt: new Date('2028-03-03T15:00:00.000Z') }, [invoice({ PeriodEnd: new Date('2027-10-30T05:00:00.000Z'), PeriodStart: new Date('2026-10-30T05:00:00.000Z') })]));
+        expect(p.Steps).toEqual([{ Kind: 'FinishCancel', Timing: 'Immediate', RequestDay: '2028-03-03', RenewalsCharged: [] }]);
     });
     it('no EndedAt from the gateway: the run time is used', () => {
         const p = plan(orders(), gateway({ State: 'Ended', Status: 'canceled', EndedAt: null }));
@@ -356,5 +367,104 @@ describe('E6 nothing silent; in line means in line', () => {
     });
     it('a paused Orders subscription is left to a person (no automatic writes for an Ending gateway subscription)', () => {
         expect(plan(orders({ Status: 'Paused' }), gateway({ State: 'Ending', EndsAt: COVERAGE_ENDS })).Steps).toEqual([]);
+    });
+});
+
+describe('the period an invoice bills (one rule with the cancel gate: StartsUnbookedPeriod)', () => {
+    // Sam, imported: Stripe period 15 Mar 2027 14:23 UTC → 15 Mar 2028; the importer's term 1 ends 15 Mar 2028
+    // (the business day Stripe charges next) and its payment records the current charge with no intent.
+    const samCurrent = invoice({
+        ProviderInvoiceID: 'in_sam_2027',
+        ProviderIntentID: 'pi_sam_2027',
+        ProviderChargeID: 'ch_sam_2027',
+        PeriodStart: new Date('2027-03-15T14:23:00.000Z'),
+        PeriodEnd: new Date('2028-03-15T14:23:00.000Z'),
+        PaidAt: new Date('2027-03-15T14:23:05.000Z'),
+    });
+    const sam = (over: Partial<SyncOrdersFacts> = {}) => orders({ LatestTermEnd: '2028-03-15', LatestTermStart: '2027-03-16', ...over });
+    it("an imported subscriber's current year (its period started before the latest term's last day) is never booked again", () => {
+        const p = plan(sam(), gateway({ CurrentPeriodStart: samCurrent.PeriodStart }, [samCurrent]));
+        expect(p.Steps).toEqual([]);
+    });
+    it("…even when nothing in Orders records its charge (the importer's payment has none)", () => {
+        expect(plan(sam({ BookedChargeIDs: new Set() }), gateway({}, [samCurrent])).Steps).toEqual([]);
+    });
+    it("Sam's next renewal (period starts 14:23 UTC on his term's last day) IS booked", () => {
+        const next = invoice({ ProviderInvoiceID: 'in_sam_2028', ProviderIntentID: 'pi_sam_2028', ProviderChargeID: 'ch_sam_2028', PeriodStart: new Date('2028-03-15T14:23:00.000Z') });
+        expect(kinds(plan(sam(), gateway({}, [samCurrent, next])).Steps)).toEqual(['BookRenewal']);
+    });
+    it('a charge any Orders payment already records is booked, whatever its period', () => {
+        expect(plan(orders({ BookedChargeIDs: new Set(['ch_renew']) }), gateway({}, [invoice()])).Steps).toEqual([]);
+    });
+    it('boundary: a period starting a second before the last day begins is inside the booked term (money nobody booked: urgent RenewalNotBooked); at the instant it begins, it is new', () => {
+        const before = invoice({ PeriodStart: new Date(CHARGE_AT.getTime() - 1000) });
+        expect(kinds(plan(orders(), gateway({}, [before])).Steps)).toEqual(['Notice:RenewalNotBooked']);
+        expect(kinds(plan(orders(), gateway({}, [invoice({ PeriodStart: CHARGE_AT })])).Steps)).toEqual(['BookRenewal']);
+    });
+    it('after the renewal is booked the latest term moves on, so the same invoice is covered (in line)', () => {
+        expect(plan(orders({ LatestTermEnd: '2028-10-30', LatestTermStart: '2027-10-31' }), gateway({}, [invoice()])).Steps).toEqual([]);
+    });
+    it('a booking whose capture failed is still finished after the term moved on', () => {
+        const p = plan(orders({ LatestTermEnd: '2028-10-30', UncapturedIntentIDs: new Set(['pi_renew']) }), gateway({}, [invoice()]));
+        expect(kinds(p.Steps)).toEqual(['FinishCapture']);
+    });
+    it('an invoice that names no period is parked for a person, never guessed', () => {
+        const p = plan(orders(), gateway({}, [invoice({ PeriodStart: null })]));
+        expect(kinds(p.Steps)).toEqual(['Notice:RenewalNotBooked']);
+    });
+    it('a subscription with no term in Orders is parked', () => {
+        expect(kinds(plan(orders({ LatestTermEnd: null }), gateway({}, [invoice()])).Steps)).toContain('Notice:RenewalNotBooked');
+    });
+    it('a failed attempt on an invoice for a covered period is not recorded (it is not this renewal)', () => {
+        const old = invoice({ Status: 'open', AmountPaid: 0, PaidAt: null, AttemptCount: 2, PeriodStart: new Date('2026-10-30T05:00:00.000Z') });
+        expect(kinds(plan(orders(), gateway({ State: 'Collecting' }, [old])).Steps)).toEqual([]);
+    });
+});
+
+describe('the gateway stopped retrying but did not end it', () => {
+    it('Collecting with no next attempt → GatewayStoppedRetrying, and no access kept', () => {
+        const stuck = invoice({ Status: 'open', AmountPaid: 0, PaidAt: null, AttemptCount: 4, NextAttemptAt: null });
+        const p = plan(orders({ RecordedFailures: new Set(['in_renew#1', 'in_renew#2', 'in_renew#3', 'in_renew#4']) }), gateway({ State: 'Collecting', Status: 'past_due' }, [stuck]));
+        expect(kinds(p.Steps)).toEqual(['Notice:GatewayStoppedRetrying']);
+        expect(p.Differences.join(' ')).toMatch(/stopped retrying/);
+    });
+    it('control: still retrying → no notice', () => {
+        const retrying = invoice({ Status: 'open', AmountPaid: 0, PaidAt: null, AttemptCount: 1, NextAttemptAt: new Date('2027-11-03T15:00:00Z') });
+        expect(kinds(plan(orders({ RecordedFailures: new Set(['in_renew#1']) }), gateway({ State: 'Collecting' }, [retrying])).Steps)).not.toContain('Notice:GatewayStoppedRetrying');
+    });
+});
+
+describe('a paid period inside the booked term, and a charge-then-end in one run', () => {
+    it("a paid renewal whose period starts INSIDE the booked term (an anchor reset), not recorded: urgent RenewalNotBooked, never silent", () => {
+        const reset = invoice({ ProviderInvoiceID: 'in_reset', ProviderIntentID: 'pi_reset', ProviderChargeID: 'ch_reset', PeriodStart: new Date('2027-04-15T05:00:00.000Z') });
+        const p = plan(orders(), gateway({}, [reset]));
+        expect(kinds(p.Steps)).toEqual(['Notice:RenewalNotBooked']);
+        expect(p.Steps[0]).toMatchObject({ Urgent: true });
+        expect((p.Steps[0] as { Reason: string }).Reason).toMatch(/inside the term Orders already booked/);
+    });
+    it('control: a $0 invoice inside the booked term is not money: silent', () => {
+        const zero = invoice({ ProviderInvoiceID: 'in_zero_mid', AmountPaid: 0, AmountDue: 0, ProviderIntentID: null, ProviderChargeID: null, PeriodStart: new Date('2027-04-15T05:00:00.000Z') });
+        expect(plan(orders(), gateway({}, [zero])).Steps).toEqual([]);
+    });
+    it('control: the same invoice recorded in Orders (its charge or intent) is silent', () => {
+        expect(plan(orders({ BookedChargeIDs: new Set(['ch_renew']) }), gateway({}, [invoice({ PeriodStart: new Date('2027-04-15T05:00:00.000Z') })])).Steps).toEqual([]);
+    });
+    it('charged at 00:00 on the last day and ended that afternoon: ONE run plans Immediate on that day (the gateway ended inside the period it charged), exactly as two runs do', () => {
+        const ended = { State: 'Ended' as const, Status: 'canceled', EndedAt: new Date('2027-10-30T20:00:00.000Z') };
+        const one = plan(orders(), gateway(ended, [invoice()]));
+        expect(kinds(one.Steps)).toEqual(['BookRenewal', 'FinishCancel']);
+        // the second run: term 2 booked (2027-10-31 → 2028-10-30), its charge recorded
+        const two = plan(orders({ LatestTermEnd: '2028-10-30', LatestTermStart: '2027-10-31', CapturedIntentIDs: new Set(['pi_renew']) }), gateway(ended, [invoice()]));
+        const pick = (p: ReturnType<typeof plan>) => {
+            const f = p.Steps.find((x) => x.Kind === 'FinishCancel') as { Timing: string; RequestDay: string; RenewalsCharged: GatewaySubscriptionInvoice[] };
+            return [f.Timing, f.RequestDay, f.RenewalsCharged.map((i) => i.ProviderInvoiceID)];
+        };
+        expect(pick(one)).toEqual(['Immediate', '2027-10-30', ['in_renew']]);
+        expect(pick(two)).toEqual(pick(one));
+    });
+    it('refunded two days later: the renewal is still carried (its period ends after the cancel day)', () => {
+        const p = plan(orders({ LatestTermEnd: '2028-10-30', LatestTermStart: '2027-10-31', CapturedIntentIDs: new Set(['pi_renew']) }), gateway({ State: 'Ended', Status: 'canceled', EndedAt: new Date('2027-11-01T16:00:00.000Z') }, [invoice()]));
+        const f = p.Steps.find((x) => x.Kind === 'FinishCancel') as { Timing: string; RenewalsCharged: GatewaySubscriptionInvoice[] };
+        expect([f.Timing, f.RenewalsCharged.length]).toEqual(['Immediate', 1]);
     });
 });

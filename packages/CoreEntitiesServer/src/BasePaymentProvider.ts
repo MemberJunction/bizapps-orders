@@ -586,6 +586,13 @@ export interface GatewaySubscriptionInvoice {
     /** The price and quantity of its subscription line. */
     ProviderPriceID: string | null;
     Quantity: number | null;
+    /**
+     * The billing period the subscription's own line covers (not a proration line). A renewal invoice bills
+     * the period that starts at the renewal; the invoice that paid the period Orders already covers (an
+     * imported subscriber's current year) starts before the latest term's last day.
+     */
+    PeriodStart: Date | null;
+    PeriodEnd: Date | null;
 }
 
 export interface ListProviderSubscriptionInvoicesResult {

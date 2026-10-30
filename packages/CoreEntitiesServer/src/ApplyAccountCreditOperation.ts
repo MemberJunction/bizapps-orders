@@ -118,9 +118,45 @@ interface OrderShape {
     Balance: number;
     TotalGross: number;
     CompanyID: string;
+    BillToOrganizationID: string | null;
+    BillToPersonID: string | null;
+}
+
+const same = (a: string | null | undefined, b: string | null | undefined): boolean => !!a && !!b && a.toLowerCase() === b.toLowerCase();
+
+/**
+ * Whether a credit may settle another order: only that customer's. A credit belongs to whoever earned it, so an
+ * organization's credit settles that organization's orders, and a person's (an order billed to a person, no
+ * organization) settles that person's own person-billed orders. Null when it may; the reason when it may not.
+ * Pure. (The page lists only this customer's unpaid orders as targets; this is the same rule, server-side.)
+ */
+export function SameCustomerRefusal(source: Pick<OrderShape, 'OrderNumber' | 'BillToOrganizationID' | 'BillToPersonID'>, target: Pick<OrderShape, 'OrderNumber' | 'BillToOrganizationID' | 'BillToPersonID'>): string | null {
+    if (source.BillToOrganizationID) {
+        return same(source.BillToOrganizationID, target.BillToOrganizationID)
+            ? null
+            : `Order ${source.OrderNumber}'s credit belongs to its organization; order ${target.OrderNumber} is billed to someone else, so the credit cannot settle it.`;
+    }
+    if (source.BillToPersonID) {
+        return !target.BillToOrganizationID && same(source.BillToPersonID, target.BillToPersonID)
+            ? null
+            : `Order ${source.OrderNumber}'s credit belongs to the person it is billed to; order ${target.OrderNumber} is billed to someone else, so the credit cannot settle it.`;
+    }
+    return `Order ${source.OrderNumber} is billed to no customer, so whose credit it is cannot be told; it cannot settle another order.`;
 }
 
 const money = (v: number): number => Math.round((v + Number.EPSILON) * 100) / 100;
+
+/**
+ * Lock order rows `WITH (UPDLOCK, ROWLOCK)` in ONE order (by id, lower case), inside the caller's transaction: every
+ * writer that locks more than one order row takes them this way, before the payment-number lock, so two of them never
+ * wait on each other in a circle.
+ */
+export async function LockOrderRows(provider: IMetadataProvider, orderIDs: string[]): Promise<void> {
+    const sql = provider as unknown as { ExecuteSQL: (sql: string) => Promise<unknown> };
+    for (const id of [...new Set(orderIDs.map((i) => RequireUUID(i, 'OrderHeaderID').toLowerCase()))].sort()) {
+        await sql.ExecuteSQL(`SELECT ID FROM __mj_BizAppsOrders.OrderHeader WITH (UPDLOCK, ROWLOCK) WHERE ID = '${id}'`);
+    }
+}
 
 @RegisterClass(BaseRemotableOperation, 'Orders.ApplyAccountCredit')
 export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperationBase {
@@ -148,6 +184,8 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         if (!source) return { Success: false, Message: `Order ${input.SourceOrderHeaderID} was not found.` };
         const target = await this.loadOrder(provider, user, input.TargetOrderHeaderID);
         if (!target) return { Success: false, Message: `Order ${input.TargetOrderHeaderID} was not found.` };
+        const otherCustomer = SameCustomerRefusal(source, target);
+        if (otherCustomer) return { Success: false, Message: otherCustomer };
 
         // The credit is the source order's negative balance, expressed positive.
         const available = money(-Number(source.Balance ?? 0));
@@ -190,8 +228,9 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
             };
         }
 
-        const remainingCredit = money(available - requested);
-        const targetBalanceAfter = money(owing - requested);
+        // From the reads above for a preview; recomputed under the locks before anything is written.
+        let remainingCredit = money(available - requested);
+        let targetBalanceAfter = money(owing - requested);
 
         if (input.Preview) {
             return {
@@ -222,6 +261,32 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         const db = provider as unknown as DatabaseProviderBase;
         await db.BeginTransaction();
         try {
+            // TWO SPENDS OF ONE CREDIT AT ONCE: both read the source's balance above. Lock the source and read it
+            // again: the second waits for the first to commit, then finds the credit spent and refuses.
+            // Both rows, in the one lock order (by id) every multi-order writer uses, before the payment-number lock.
+            await LockOrderRows(provider, [source.ID, target.ID]);
+            const lockedSource = await this.loadOrder(provider, user, source.ID);
+            const lockedTarget = await this.loadOrder(provider, user, target.ID);
+            const stillAvailable = money(-Number(lockedSource?.Balance ?? 0));
+            const stillOwing = money(Number(lockedTarget?.Balance ?? 0));
+            if (requested > stillAvailable + TOLERANCE) {
+                await db.RollbackTransaction();
+                return {
+                    Success: false,
+                    Message: `Order ${source.OrderNumber} now has only ${Math.max(0, stillAvailable)} of credit (it was spent meanwhile); ${requested} was requested. Nothing was applied.`,
+                };
+            }
+            // Two credits applied to one order at once: the second finds it settled (or settled in part) and does not
+            // over-pay it.
+            if (requested > stillOwing + TOLERANCE) {
+                await db.RollbackTransaction();
+                return {
+                    Success: false,
+                    Message: `Order ${target.OrderNumber} now owes only ${Math.max(0, stillOwing)} (it was paid meanwhile); applying ${requested} would over-pay it. Nothing was applied.`,
+                };
+            }
+            remainingCredit = money(stillAvailable - requested);
+            targetBalanceAfter = money(stillOwing - requested);
             const detail = await provider.GetEntityObject<mjBizAppsOrdersPaymentDetailEntity>(PAYMENT_DETAIL_ENTITY, user);
             detail.NewRecord();
             detail.CompanyID = target.CompanyID;
@@ -297,7 +362,7 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID='${id}'`,
-                Fields: ['ID', 'OrderNumber', 'Status', 'Balance', 'TotalGross', 'CompanyID'],
+                Fields: ['ID', 'OrderNumber', 'Status', 'Balance', 'TotalGross', 'CompanyID', 'BillToOrganizationID', 'BillToPersonID'],
                 ResultType: 'simple',
                 BypassCache: true,
             },

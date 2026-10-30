@@ -13,6 +13,7 @@
  *   · no other Orders subscription records it;
  *   · the Orders subscription records no gateway id yet;
  *   · the gateway customer's e-mail is the subscriber's, when both are known;
+ *   · the price it bills maps to the subscription's product (unless a person confirms an older price);
  *   · the account's gateway can bill subscriptions.
  *
  * Then it links (sanctioned) and syncs, so everything the gateway charged since the subscription's term
@@ -24,13 +25,14 @@
  *   SYNC:    ./ProviderSubscriptionSync.ts
  *   RULE:    @mj-biz-apps/orders-entities SubscriptionEntity (the link refusal) · ./SubscriptionEntityServer.ts
  */
-import { CompositeKey, LogStatus, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { CompositeKey, LogStatus, RunView, type DatabaseProviderBase, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type { mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 import { PERSON_ENTITY } from './entity-names.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import { SyncProviderSubscription, type SyncProviderSubscriptionResult } from './ProviderSubscriptionSync.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 import { SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 
@@ -40,6 +42,12 @@ export interface LinkProviderSubscriptionInput {
     ProviderSubscriptionID: string;
     /** Check only; link nothing. */
     Preview?: boolean;
+    /**
+     * Link although the gateway bills it on a price this account maps to ANOTHER product (or maps to none): a
+     * person confirmed the subscription's product is right (an imported Professional subscriber on the $399
+     * Foundation price). Off by default, so a typed id for the wrong customer's plan is refused.
+     */
+    AllowPriceOfAnotherProduct?: boolean;
 }
 
 export type LinkProviderSubscriptionCode =
@@ -53,6 +61,7 @@ export type LinkProviderSubscriptionCode =
     | 'EndedAtGateway'
     | 'LinkedElsewhere'
     | 'EmailMismatch'
+    | 'PriceForAnotherProduct'
     | 'LinkFailed';
 
 export interface LinkProviderSubscriptionResult {
@@ -83,11 +92,11 @@ export async function LinkProviderSubscription(
 
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const sub = (
-        await rv.RunView<{ ID: string; SubscriptionNumber: string; ProviderSubscriptionID: string | null; BeneficiaryPersonID: string | null }>(
+        await rv.RunView<{ ID: string; SubscriptionNumber: string; ProviderSubscriptionID: string | null; BeneficiaryPersonID: string | null; ProductID: string }>(
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: `ID = '${subscriptionID}'`,
-                Fields: ['ID', 'SubscriptionNumber', 'ProviderSubscriptionID', 'BeneficiaryPersonID'],
+                Fields: ['ID', 'SubscriptionNumber', 'ProviderSubscriptionID', 'BeneficiaryPersonID', 'ProductID'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -159,17 +168,75 @@ export async function LinkProviderSubscription(
         }
     }
 
+    // The plan it bills must be this subscription's product: a typed id for another customer's plan is refused.
+    if (!input.AllowPriceOfAnotherProduct) {
+        const mapped = described.ProviderPriceID
+            ? (
+                  await rv.RunView<{ ProductID: string }>(
+                      {
+                          EntityName: 'MJ_BizApps_Orders: Payment Provider Prices',
+                          ExtraFilter: `PaymentProviderID = '${providerID}' AND ProviderPriceID = '${EscapeText(described.ProviderPriceID)}' AND IsActive = 1`,
+                          Fields: ['ID', 'ProductID'],
+                          ResultType: 'simple',
+                          BypassCache: true,
+                      },
+                      user,
+                  )
+              ).Results ?? []
+            : [];
+        if (!mapped.some((m) => m.ProductID?.toLowerCase() === sub.ProductID?.toLowerCase())) {
+            return refuse(
+                'PriceForAnotherProduct',
+                `Gateway subscription ${gatewayID} bills price ${described.ProviderPriceID ?? '(none)'}, which this account ` +
+                    `${mapped.length ? 'maps to another product' : 'does not map to any product'}, not ${sub.SubscriptionNumber}'s. ` +
+                    `If the subscription's product is right (an imported subscriber on an older price), link again with AllowPriceOfAnotherProduct.`,
+            );
+        }
+    }
+
     if (input.Preview) {
         return { Success: true, Code: 'WouldLink', Message: `${sub.SubscriptionNumber} can be linked to ${gatewayID} (${described.State}).` };
     }
 
-    const entity = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(SUBSCRIPTION_ENTITY, CompositeKey.FromID(subscriptionID), user);
-    SanctionProviderBilledChange(entity);
-    entity.PaymentProviderID = providerID;
-    entity.ProviderSubscriptionID = gatewayID;
-    if (!(await entity.Save())) {
-        return refuse('LinkFailed', `Could not link ${sub.SubscriptionNumber}: ${entity.LatestResult?.CompleteMessage ?? 'unknown error'}`);
-    }
+    // The elsewhere-check and the write, under locks, on a provider of its own: two links of one gateway id (or of
+    // one subscription) at once cannot both pass the checks above and both save. The unique index backs it up.
+    const linked = await WithIsolatedProvider(async (own) => {
+        const db = own as unknown as DatabaseProviderBase & { ExecuteSQL: (q: string) => Promise<unknown> };
+        await db.BeginTransaction();
+        try {
+            const rows = (r: unknown) => (Array.isArray(r) ? r : ((r as { Results?: unknown[] })?.Results ?? [])) as Array<{ ID: string }>;
+            const taken = rows(
+                await db.ExecuteSQL(
+                    `SELECT ID FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, HOLDLOCK) WHERE PaymentProviderID = '${providerID}' AND ProviderSubscriptionID = '${EscapeText(gatewayID)}'`,
+                ),
+            );
+            const mine = rows(
+                await db.ExecuteSQL(
+                    `SELECT ID FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${subscriptionID}' AND ProviderSubscriptionID IS NULL`,
+                ),
+            );
+            if (taken.length || !mine.length) {
+                await db.RollbackTransaction();
+                return taken.length
+                    ? refuse('LinkedElsewhere', `Gateway subscription ${gatewayID} was just recorded on another subscription.`)
+                    : refuse('AlreadyLinked', `${sub.SubscriptionNumber} was just linked by another request.`);
+            }
+            const entity = await own.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(SUBSCRIPTION_ENTITY, CompositeKey.FromID(subscriptionID), user);
+            SanctionProviderBilledChange(entity);
+            entity.PaymentProviderID = providerID;
+            entity.ProviderSubscriptionID = gatewayID;
+            if (!(await entity.Save())) {
+                await db.RollbackTransaction();
+                return refuse('LinkFailed', `Could not link ${sub.SubscriptionNumber}: ${entity.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            }
+            await db.CommitTransaction();
+            return null;
+        } catch (err) {
+            await db.RollbackTransaction().catch(() => undefined);
+            return refuse('LinkFailed', `Could not link ${sub.SubscriptionNumber}: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }, provider);
+    if (linked) return linked;
     LogStatus(`[LinkProviderSubscription] ${sub.SubscriptionNumber} linked to ${gatewayID} on '${config.Name}'.`);
     const sync = await SyncProviderSubscription(subscriptionID, {}, provider, user);
     return {

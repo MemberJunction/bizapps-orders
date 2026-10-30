@@ -9,6 +9,7 @@ import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntit
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { CrossesLegalEntities } from '../../panels/allocation-math';
+import { CreditTargetFilter, OwnCreditTargets } from './credit-targets';
 import { LegalEntityForHint } from '../../panels/legal-entity-hint';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -320,9 +321,8 @@ export class MJOAccountCreditPageComponent implements OnInit {
     private async applySource(row: mjBizAppsOrdersOrderHeaderEntity): Promise<void> {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
-        // whoever earned it.
-        const customerID = (row['BillToOrganizationID'] as string) ?? undefined;
-        this.Targets = await GetOrders({ Preset: 'unpaid', BillToOrganizationID: customerID });
+        // whoever earned it (the server refuses any other: SameCustomerRefusal).
+        this.Targets = OwnCreditTargets(row, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(row) }));
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
@@ -384,10 +384,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         const first = !this.SourceID ? credits[0] : undefined;
 
         const targets = first
-            ? await GetOrders({
-                  Preset: 'unpaid',
-                  BillToOrganizationID: (first['BillToOrganizationID'] as string) ?? undefined,
-              })
+            ? OwnCreditTargets(first, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(first) }))
             : [];
 
         this.Credits = credits;

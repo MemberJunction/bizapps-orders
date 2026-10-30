@@ -118,10 +118,24 @@ export const PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER = '[ProviderSubscriptionAler
 
 const PROVIDER_SUBSCRIPTION_ALERT_TITLE = ORDERS_ALERT_TASK_PREFIX.GatewaySubscription;
 const URGENT_PREFIX = 'URGENT: ';
+const UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE = ORDERS_ALERT_TASK_PREFIX.UnknownGatewaySubscription;
 
-/** The alert Task's name: one per subscription and problem, which is what makes it the dedupe key. */
-export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: string, urgent = false): string {
-    return `${urgent ? URGENT_PREFIX : ''}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}${subscriptionNumber} (${code})`;
+/**
+ * Every name prefix the gateway-subscription alert Tasks are raised under (E2, E3/E4). One list, so a sweep that
+ * finds Orders' alert Tasks by name (e.g. assigning them to a role after the fact) can take them all.
+ */
+export const PROVIDER_SUBSCRIPTION_ALERT_TASK_PREFIXES: readonly string[] = [
+    PROVIDER_SUBSCRIPTION_ALERT_TITLE,
+    `${URGENT_PREFIX}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}`,
+    UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE,
+];
+
+/**
+ * The alert Task's name: one per subscription and problem, which is what makes it the dedupe key. A `key` makes it one
+ * per occurrence instead (each gateway refund credited is its own notice, never swallowed by an earlier open one).
+ */
+export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: string, urgent = false, key?: string): string {
+    return `${urgent ? URGENT_PREFIX : ''}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}${subscriptionNumber} (${code})${key ? ` ${key}` : ''}`;
 }
 
 /**
@@ -137,7 +151,7 @@ export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: 
  *          Task for this subscription and problem is already open, so nobody needs telling again.
  */
 export async function raiseProviderSubscriptionAlert(
-    alert: { SubscriptionID: string; SubscriptionNumber: string; Code: string; Reason: string; Urgent?: boolean; Linked?: boolean },
+    alert: { SubscriptionID: string; SubscriptionNumber: string; Code: string; Reason: string; Urgent?: boolean; Linked?: boolean; Key?: string },
     contextUser?: UserInfo,
     provider?: IMetadataProvider,
 ): Promise<boolean> {
@@ -156,7 +170,7 @@ export async function raiseProviderSubscriptionAlert(
           `an account has BillsSubscriptions on) tries again; or run that action for this subscription, or record the ` +
           `gateway's id by hand.`;
     const outcome = await raiseAlertTask(
-        ProviderSubscriptionAlertName(alert.SubscriptionNumber, alert.Code, alert.Urgent),
+        ProviderSubscriptionAlertName(alert.SubscriptionNumber, alert.Code, alert.Urgent, alert.Key),
         `Subscription ${alert.SubscriptionNumber} is sold on an account whose payment gateway bills renewals, and its gateway ` +
             `subscription needs a person.\n\nSubscription: ${alert.SubscriptionNumber} (${alert.SubscriptionID})\nProblem: ${alert.Code}\n` +
             `Reason: ${alert.Reason}\n\n${consequence}`,
@@ -178,7 +192,7 @@ export async function raiseUnknownGatewaySubscriptionAlert(
 ): Promise<boolean> {
     LogError(`${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} Unknown gateway subscription ${alert.ProviderSubscriptionID}: ${alert.Reason}`);
     const outcome = await raiseAlertTask(
-        `Gateway subscription not recorded in Orders: ${alert.ProviderSubscriptionID} (UnknownGatewaySubscription)`,
+        `${UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE}${alert.ProviderSubscriptionID} (UnknownGatewaySubscription)`,
         `The payment gateway bills subscription ${alert.ProviderSubscriptionID} on a price Orders sells, but no Orders ` +
             `subscription records it, so nothing it charges is booked and the customer's access is not managed by Orders.\n\n` +
             `Reason: ${alert.Reason}\n\nIf it is a real subscriber, link it to their Orders subscription with the ` +
@@ -222,7 +236,7 @@ export async function ReadOpenProviderSubscriptionAlerts(
         return { Ok: false, Reason: reason };
     }
     // The inverse of `ProviderSubscriptionAlertName`, built from the same parts so a reworded title cannot drift.
-    const pattern = new RegExp(`^(?:${escapeRegExp(URGENT_PREFIX)})?${escapeRegExp(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}(.+) \\(([A-Za-z]+)\\)$`);
+    const pattern = new RegExp(`^(?:${escapeRegExp(URGENT_PREFIX)})?${escapeRegExp(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}(.+?) \\(([A-Za-z]+)\\)(?: .+)?$`);
     for (const task of tasks.Results ?? []) {
         const match = pattern.exec(task.Name);
         if (!match) continue;

@@ -65,9 +65,9 @@ import { BookProviderRefunds } from './ProviderRefundBooking.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
 import type { BasePaymentProvider, WebhookEvent } from './BasePaymentProvider.js';
 import { CheckoutSessionService } from './CheckoutSessionService.js';
-import { raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
+import { raiseProviderSubscriptionAlert, raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
 import { SyncProviderSubscription } from './ProviderSubscriptionSync.js';
-import { ORDERS_SUBSCRIPTION_METADATA_KEY, ProviderBillsNewSubscriptions } from './ProviderSubscriptions.js';
+import { ORDERS_SUBSCRIPTION_METADATA_KEY } from './ProviderSubscriptions.js';
 import {
     CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER,
     webhookEventExceedsRetryWindow,
@@ -326,11 +326,6 @@ async function handleSubscriptionEvent(
 ): Promise<HandledDelivery> {
     const providerID = driver.Config.ID;
     const gatewayID = event.ProviderSubscriptionID!;
-    // The account's switch is the kill switch for option E: off, an event changes nothing (no sync, no alert).
-    // The nightly pass catches up once it is on (it reads every invoice since the latest term began).
-    if (!ProviderBillsNewSubscriptions(driver.Config)) {
-        return ignored('provider_off', `this account does not bill subscriptions (BillsSubscriptions is off); ${gatewayID} was not synced`);
-    }
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const found = await rv.RunView<{ ID: string }>(
         {
@@ -346,7 +341,27 @@ async function handleSubscriptionEvent(
     const subscriptionID = found.Results?.[0]?.ID;
     if (subscriptionID) {
         const synced = await SyncProviderSubscription(subscriptionID, {}, provider, user);
-        if (synced.Outcome === 'Failed') return failedSync(synced.Error ?? 'the sync failed');
+        if (synced.Outcome === 'Failed') {
+            const reason = `${gatewayID}: ${synced.Error ?? 'the sync failed'}`;
+            // The gateway redelivers, and most failures pass. The third failed attempt for this subscription (the
+            // same event redelivered, or several events) tells a person (one open Task), so a renewal that will not
+            // book is never silent.
+            if ((await priorSyncFailures(providerID, gatewayID, rv, user)) + 1 >= SYNC_FAILURES_BEFORE_TASK) {
+                await raiseProviderSubscriptionAlert(
+                    {
+                        SubscriptionID: subscriptionID,
+                        SubscriptionNumber: synced.SubscriptionNumber ?? subscriptionID,
+                        Code: 'GatewaySyncFailed',
+                        Reason: `the gateway's events for ${gatewayID} have failed to sync ${SYNC_FAILURES_BEFORE_TASK} times: ${synced.Error ?? 'unknown error'}`,
+                        Urgent: true,
+                        Linked: true,
+                    },
+                    user,
+                    provider,
+                );
+            }
+            return failedSync(reason);
+        }
         return {
             Response: { Status: 200, Body: { received: true, outcome: 'Apply' } },
             Outcome: 'Applied',
@@ -378,6 +393,34 @@ async function handleSubscriptionEvent(
         await raiseUnknownGatewaySubscriptionAlert({ ProviderSubscriptionID: gatewayID, Reason: reason }, user, provider);
     }
     return ignored('unknown_subscription', reason);
+}
+
+/** Failed deliveries of a subscription event before a person is told (GatewaySyncFailed). */
+const SYNC_FAILURES_BEFORE_TASK = 3;
+/** Only failures redelivered within this window count toward it. */
+const SYNC_FAILURE_WINDOW_DAYS = 7;
+
+/**
+ * Failed deliveries so far for this gateway subscription's events. The log keeps ONE row per event (a
+ * redelivery updates it and bumps `DeliveryCount`), so the attempts are the sum of `DeliveryCount` over the
+ * rows whose latest outcome is a failed sync, not the number of rows.
+ */
+async function priorSyncFailures(paymentProviderID: string, gatewayID: string, rv: RunView, user: UserInfo): Promise<number> {
+    const r = await rv.RunView<{ ID: string; DeliveryCount: number | null }>(
+        {
+            EntityName: 'MJ_BizApps_Orders: Payment Webhook Deliveries',
+            ExtraFilter:
+                `PaymentProviderID = '${EscapeSQLString(paymentProviderID)}' AND ReasonCode = 'sync_failed' ` +
+                `AND Reason LIKE '${EscapeSQLString(gatewayID)}:%' ` +
+                // Failures that have stopped (a week without a redelivery) are history, not a run of them.
+                `AND LastReceivedAt >= DATEADD(day, -${SYNC_FAILURE_WINDOW_DAYS}, SYSDATETIMEOFFSET())`,
+            Fields: ['ID', 'DeliveryCount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    return r.Success ? (r.Results ?? []).reduce((n, row) => n + Math.max(1, Number(row.DeliveryCount ?? 1)), 0) : 0;
 }
 
 async function priceIsMapped(paymentProviderID: string, providerPriceID: string, rv: RunView, user: UserInfo): Promise<boolean> {

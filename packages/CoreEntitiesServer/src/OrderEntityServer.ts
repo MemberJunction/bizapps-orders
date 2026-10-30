@@ -82,7 +82,7 @@ import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type R
 import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';
-import { IsCancellationReversal, IsGatewayRenewal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
+import { IsCancellationReversal, IsGatewayRenewal, IsMoneyOnlyReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
@@ -961,8 +961,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // back rather than being logged and shrugged at.
                 await this.grantEntitlements(lines, subs, options);
 
-                // And the mirror: a returned line takes its access with it.
-                await this.revokeEntitlementsForReversals(lines, reversals, options);
+                // And the mirror: a returned line takes its access with it, unless the reversal credits money only
+                // (D20: a gateway refund of a renewal, which is not a cancel).
+                await this.settleAccessForReversals(lines, reversals, options);
 
                 // What a return had not yet been invoiced for comes off the origin's instalments
                 // (#661). Before the cancel below, which withdraws them all on a whole-order return:
@@ -2720,6 +2721,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * origin's quantity is what the proportion is taken against, so it is read from the origin rather
      * than inferred from the reversal.
      */
+    /**
+     * A returned line takes its access with it (`revokeEntitlementsForReversals`), except on a reversal Orders marked
+     * money-only (`SanctionMoneyOnlyReversal`, D20: a gateway refund of a renewal credits money and is not a cancel).
+     */
+    protected async settleAccessForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        if (IsMoneyOnlyReversal(this)) return;
+        await this.revokeEntitlementsForReversals(lines, reversals, options);
+    }
+
     private async revokeEntitlementsForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
         reversals: Map<string, ReversalContext>,

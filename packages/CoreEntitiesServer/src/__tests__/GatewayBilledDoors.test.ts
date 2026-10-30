@@ -1,5 +1,5 @@
 /**
- * The doors around a gateway-billed subscription, pinned at unit level (E2b, Robert R2-5).
+ * The doors around a gateway-billed subscription, pinned at unit level (E2b).
  *
  * A subscription a payment gateway bills (`ProviderSubscriptionID` set) changes only where the gateway is
  * told. The shared entity guards its own columns; these are the OTHER doors that could change what the

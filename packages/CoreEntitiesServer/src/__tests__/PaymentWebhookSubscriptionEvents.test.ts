@@ -31,6 +31,7 @@ const state = vi.hoisted(() => ({
     alerts: [] as Row[],
     filters: [] as string[],
     billsSubscriptions: true,
+    syncAlerts: [] as Row[],
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -50,6 +51,22 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     return { Success: true, Results: state.mappedPrices.includes(price ?? '') ? [{ ID: 'ppp-1' }] : [] };
                 }
                 if (params.EntityName.endsWith('Payment Webhook Deliveries')) {
+                    if ((params.ExtraFilter ?? '').includes("ReasonCode = 'sync_failed'")) {
+                        // As the database answers: only this gateway subscription's failures (their reason starts with its id).
+                        const prefix = /Reason LIKE '([^%']*)%'/.exec(params.ExtraFilter ?? '')?.[1] ?? '';
+                        // And only those received within the window the filter names (a row with no time: just now).
+                        const days = Number(/DATEADD\(day, -(\d+), SYSDATETIMEOFFSET\(\)\)/.exec(params.ExtraFilter ?? '')?.[1] ?? NaN);
+                        const since = Date.now() - days * 86_400_000;
+                        return {
+                            Success: true,
+                            Results: state.deliveries.filter(
+                                (d) =>
+                                    d.ReasonCode === 'sync_failed' &&
+                                    String(d.Reason ?? `${prefix}`).startsWith(prefix) &&
+                                    !(new Date(String(d.LastReceivedAt ?? new Date().toISOString())).getTime() < since),
+                            ),
+                        };
+                    }
                     const id = /ProviderEventID = '([^']*)'/.exec(params.ExtraFilter ?? '')?.[1];
                     return { Success: true, Results: state.deliveries.filter((d) => d.ProviderEventID === id) };
                 }
@@ -80,6 +97,10 @@ vi.mock('../ProviderSubscriptionSync.js', () => ({
 vi.mock('../checkoutCaptureAlert.js', () => ({
     raiseUnknownGatewaySubscriptionAlert: async (alert: Row) => {
         state.alerts.push(alert);
+        return true;
+    },
+    raiseProviderSubscriptionAlert: async (alert: Row) => {
+        state.syncAlerts.push(alert);
         return true;
     },
 }));
@@ -126,6 +147,7 @@ beforeEach(() => {
     state.alerts = [];
     state.filters = [];
     state.billsSubscriptions = true;
+    state.syncAlerts = [];
 });
 
 describe('a subscription event for a subscription Orders records', () => {
@@ -151,6 +173,65 @@ describe('a subscription event for a subscription Orders records', () => {
         expect(res.Status).toBe(500);
         expect(state.saved[0]).toMatchObject({ Outcome: 'Failed', ReasonCode: 'sync_failed' });
         expect(String(state.saved[0].Reason)).toMatch(/unreachable/);
+    });
+    it('a failed sync names the gateway id first in its reason (what the failure count reads)', async () => {
+        state.event = subEvent();
+        state.subscriptions = [{ ID: SUB_ID }];
+        state.syncResult = { Outcome: 'Failed', Error: 'boom', Actions: [], Notices: [] };
+        await deliver();
+        expect(String(state.saved[0].Reason)).toMatch(/^sub_jane: boom/);
+    });
+    it("the SAME event redelivered: the log keeps one row (DeliveryCount 1, then 2); the third attempt raises the Task", async () => {
+        state.event = subEvent();
+        state.subscriptions = [{ ID: SUB_ID }];
+        state.syncResult = { Outcome: 'Failed', Error: 'renewal refused', SubscriptionNumber: 'SUB-000110', Actions: [], Notices: [] };
+        // As the real log answers: the earlier deliveries of evt_sub_1 are one row whose count grows.
+        state.deliveries = [{ ID: 'd-1', ProviderEventID: 'evt_sub_1', Outcome: 'Failed', ReasonCode: 'sync_failed', DeliveryCount: 1 }];
+        await deliver();
+        expect(state.syncAlerts).toEqual([]);
+        state.deliveries[0].DeliveryCount = 2;
+        await deliver();
+        expect(state.syncAlerts).toHaveLength(1);
+    });
+    it('the third failed delivery for one subscription raises one urgent GatewaySyncFailed Task; the first two do not', async () => {
+        state.event = subEvent();
+        state.subscriptions = [{ ID: SUB_ID }];
+        state.syncResult = { Outcome: 'Failed', Error: 'renewal refused', SubscriptionNumber: 'SUB-000110', Actions: [], Notices: [] };
+        state.deliveries = [{ ID: 'f1', ProviderEventID: 'evt_other_1', Outcome: 'Failed', ReasonCode: 'sync_failed' }];
+        await deliver();
+        expect(state.syncAlerts).toEqual([]);
+        state.deliveries.push({ ID: 'f2', ProviderEventID: 'evt_other_2', Outcome: 'Failed', ReasonCode: 'sync_failed' });
+        await deliver();
+        expect(state.syncAlerts).toHaveLength(1);
+        expect(state.syncAlerts[0]).toMatchObject({ Code: 'GatewaySyncFailed', Urgent: true, SubscriptionNumber: 'SUB-000110' });
+    });
+    it('only failures in the last 7 days count: two from 8 days ago do not make this the third (two from 6 days ago do)', async () => {
+        state.event = subEvent();
+        state.subscriptions = [{ ID: SUB_ID }];
+        state.syncResult = { Outcome: 'Failed', Error: 'renewal refused', SubscriptionNumber: 'SUB-000110', Actions: [], Notices: [] };
+        const ago = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString();
+        state.deliveries = [
+            { ID: 'o1', ProviderEventID: 'evt_old_1', Outcome: 'Failed', ReasonCode: 'sync_failed', LastReceivedAt: ago(8) },
+            { ID: 'o2', ProviderEventID: 'evt_old_2', Outcome: 'Failed', ReasonCode: 'sync_failed', LastReceivedAt: ago(8) },
+        ];
+        await deliver();
+        expect(state.syncAlerts).toEqual([]);
+        state.deliveries = [
+            { ID: 'n1', ProviderEventID: 'evt_new_1', Outcome: 'Failed', ReasonCode: 'sync_failed', LastReceivedAt: ago(6) },
+            { ID: 'n2', ProviderEventID: 'evt_new_2', Outcome: 'Failed', ReasonCode: 'sync_failed', LastReceivedAt: ago(6) },
+        ];
+        await deliver();
+        expect(state.syncAlerts).toHaveLength(1);
+    });
+    it("another gateway subscription's failures do not count toward this one's Task", async () => {
+        state.event = subEvent();
+        state.subscriptions = [{ ID: SUB_ID }];
+        state.syncResult = { Outcome: 'Failed', Error: 'boom', SubscriptionNumber: 'SUB-000110', Actions: [], Notices: [] };
+        state.deliveries = [
+            { ID: 'x1', ProviderEventID: 'evt_x1', Outcome: 'Failed', ReasonCode: 'sync_failed', Reason: 'sub_other: down', DeliveryCount: 5 },
+        ];
+        await deliver();
+        expect(state.syncAlerts).toEqual([]);
     });
     it('the same event already Applied: 200 AlreadyApplied, and the sync does not run again', async () => {
         state.event = subEvent();
@@ -224,17 +305,14 @@ describe('controls', () => {
         expect(state.syncCalls).toEqual([]);
         expect(state.saved[0]).toMatchObject({ Outcome: 'Ignored', ReasonCode: 'unknown_intent' });
     });
-    it("an account whose BillsSubscriptions switch is off: Ignored, provider_off; no lookup, no sync, no alert", async () => {
+    it('an account whose BillsSubscriptions switch is off still follows a subscription it already bills (the switch gates creation only)', async () => {
         state.event = subEvent();
         state.subscriptions = [{ ID: SUB_ID }];
-        state.mappedPrices = ['price_pro'];
         state.billsSubscriptions = false;
         const res = await deliver();
         expect(res.Status).toBe(200);
-        expect(state.syncCalls).toEqual([]);
-        expect(state.alerts).toEqual([]);
-        expect(state.filters.some((f) => f.includes('Subscriptions:'))).toBe(false);
-        expect(state.saved[0]).toMatchObject({ Outcome: 'Ignored', ReasonCode: 'provider_off' });
+        expect(state.syncCalls).toEqual([SUB_ID]);
+        expect(state.saved[0]).toMatchObject({ Outcome: 'Applied' });
     });
     it('a subscription event kind the driver does not list is not routed to the sync', async () => {
         state.event = subEvent({ Kind: 'invoice.upcoming' });

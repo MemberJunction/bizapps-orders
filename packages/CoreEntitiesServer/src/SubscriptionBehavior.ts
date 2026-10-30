@@ -216,6 +216,16 @@ export interface CancellationDecision {
      */
     ReversalFraction: number;
     /**
+     * The exact amount the reversal credits, when it must be a figure and not a rounded fraction of the line
+     * (a refund the payment gateway made: the reversal must equal it to the cent). Absent: quantity × price.
+     */
+    ReversalAmount?: number;
+    /**
+     * With `ReversalAmount`, for a gateway renewal's refund: what its charge took and what is already credited back, so
+     * the reversal's quantity is sized by the shared rule (`CreditReversalQuantity`) from the money still owed back.
+     */
+    ReversalBasis?: { Paid: number; Credited: number };
+    /**
      * `Canceled` when coverage is cut short, `Completed` when the customer simply declines renewal
      * and rides the term out — the difference matters for "why did this lapse" reporting.
      */

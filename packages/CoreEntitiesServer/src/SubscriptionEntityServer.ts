@@ -12,7 +12,8 @@
  * it: a client that set a flag on its own object would still be refused.
  *
  * CONNECTS TO:
- *   CALLERS: ./CancelSubscriptionOperation.ts · ./OrderEntityServer.ts (touchExistingSubscription)
+ *   CALLERS: ./ProviderSubscriptions.ts (the hand-over records the gateway id) · ./CancelSubscriptionOperation.ts ·
+ *            ./OrderEntityServer.ts (touchExistingSubscription) · ./ProviderSubscriptionSync.ts · ./LinkProviderSubscription.ts
  *   BASE:    @mj-biz-apps/orders-entities SubscriptionEntity
  */
 import { BaseEntity } from '@memberjunction/core';
@@ -57,6 +58,21 @@ export function SanctionCancellationReversal(order: object): void {
 /** True for the reversal order a gateway-confirmed cancel books. Only this server can mark one. */
 export function IsCancellationReversal(order: object): boolean {
     return CANCELLATION_REVERSALS.has(order);
+}
+
+const MONEY_ONLY_REVERSALS = new WeakSet<object>();
+
+/**
+ * Mark a reversal order that credits MONEY only (D20: the gateway refunded a renewal it charged): its lines reverse
+ * part of the sale's amount, but no grant is reduced and no term changes, because a refund is not a cancel.
+ */
+export function SanctionMoneyOnlyReversal(order: object): void {
+    MONEY_ONLY_REVERSALS.add(order);
+}
+
+/** True for a money-only reversal order (no access is taken away). Only this server can mark one. */
+export function IsMoneyOnlyReversal(order: object): boolean {
+    return MONEY_ONLY_REVERSALS.has(order);
 }
 
 const GATEWAY_RENEWALS = new WeakSet<object>();

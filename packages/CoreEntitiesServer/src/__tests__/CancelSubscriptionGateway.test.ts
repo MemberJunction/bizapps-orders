@@ -16,6 +16,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    /** Renewal lines whose credit rows the cancel locked (in one order) before applying. */
+    lockedCreditRows: [] as string[],
+    /** The `known` figure each GatewayRenewalCreditFor call for term 2's line was given (undefined = read the gateway). */
+    knownSeen: [] as unknown[],
+    /** Quantity of the line already reversed (earlier credits), as ReversedQuantityOf reads it. */
+    reversedQty: 0,
     rows: new Map<string, Record<string, unknown>[]>(),
     cancelAtGateway: vi.fn(),
     blocking: vi.fn(),
@@ -24,6 +30,10 @@ const mocks = vi.hoisted(() => ({
     alert: vi.fn(),
     /** The payment driver's read of the gateway subscription, and its cancel. */
     describe: vi.fn(),
+    /** D20's per-term refund position, by the order line that sold the term (absent: not a gateway renewal). */
+    credit: new Map<string, { Outstanding: number; Refunded: number; Credited: number; ChargeID: string }>(),
+    /** ApplyGatewayCredit calls: [reversal order, renewal order, amount]. */
+    applied: [] as unknown[][],
     cancelAtDriver: vi.fn(),
     /** The open-alert Tasks read behind the real `CancelBlockingAlerts`. */
     readAlerts: vi.fn(),
@@ -94,6 +104,34 @@ vi.mock('../PaymentProviderResolver.js', () => ({
         CancelProviderSubscription: (...args: unknown[]) => mocks.cancelAtDriver(...args),
     })),
 }));
+vi.mock('../GatewayRenewalCredit.js', async () => ({
+    GatewayRenewalCreditFor: async (lineID: string, _d: unknown, _p: unknown, _u: unknown, known?: unknown) => {
+        if (lineID === '22222222-0000-4000-8000-000000000002') mocks.knownSeen.push(known);
+        const c = mocks.credit.get(lineID);
+        return c ? { OrderID: `order-of-${lineID}`, ...c } : null;
+    },
+    ApplyGatewayCredit: async (...args: unknown[]) => void mocks.applied.push(args),
+    // The real lock statement and the real quantity rule; only the gateway read and the reversal lookup are faked.
+    LockSubscriptionForCredit: async (provider: { ExecuteSQL: (q: string) => Promise<unknown> }, id: string) => {
+        const rows = (await provider.ExecuteSQL(`SELECT Status FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${id}'`)) as
+            | Array<{ Status?: string }>
+            | { Results?: Array<{ Status?: string }> }
+            | undefined;
+        return (Array.isArray(rows) ? rows : (rows?.Results ?? []))[0]?.Status ?? null;
+    },
+    CreditReversalQuantity: (await vi.importActual<typeof import('../GatewayRenewalCredit.js')>('../GatewayRenewalCredit.js')).CreditReversalQuantity,
+    ReversedQuantityOf: async () => mocks.reversedQty,
+    LockGatewayCreditRows: async (lines: string[]) => void mocks.lockedCreditRows.push(...lines),
+    // The real rule on the line's quantity (1) and what is reversed: a tail too small to split is held (0).
+    GatewayCreditQuantity: async (term: { Paid: number; Credited: number }, amount: number) =>
+        (await vi.importActual<typeof import('../GatewayRenewalCredit.js')>('../GatewayRenewalCredit.js')).CreditReversalQuantity({
+            Quantity: 1,
+            AlreadyReversed: mocks.reversedQty,
+            Credit: amount,
+            Paid: term.Paid,
+            Credited: term.Credited,
+        }),
+}));
 vi.mock('../ReversalResolver.js', () => ({
     LoadReversalContext: vi.fn().mockResolvedValue({ OriginScheduled: false, Origin: {}, ScheduleRows: [] }),
 }));
@@ -101,7 +139,7 @@ vi.mock('../EntitlementEngine.js', () => ({ RevokeGrantsForCanceledSubscription:
 vi.mock('../OrderLineEntityServer.js', () => ({ MarkAsOrdersOwnWrite: vi.fn() }));
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { CancelSubscriptionOperation, type CancelSubscriptionOutput } from '../CancelSubscriptionOperation.js';
+import { CancelSubscriptionOperation, WithGatewayEndRecorded, type CancelSubscriptionOutput } from '../CancelSubscriptionOperation.js';
 
 const SUB = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const T1 = 'term-1';
@@ -149,6 +187,8 @@ interface ProviderOptions {
     failEvent?: boolean;
     /** What the row lock reads back; the status the operation loaded unless a concurrent cancel changed it. */
     lockedStatus?: string;
+    /** Runs when the row lock is taken: what another worker committed while this one waited for it. */
+    onLock?: () => void;
 }
 
 function fakeProvider(opts: ProviderOptions = {}): { provider: IMetadataProvider; rec: Recorded } {
@@ -159,6 +199,7 @@ function fakeProvider(opts: ProviderOptions = {}): { provider: IMetadataProvider
         RollbackTransaction: async () => void rec.tx.push('rollback'),
         ExecuteSQL: async (sql: string) => {
             rec.sql.push(sql);
+            if (/UPDLOCK/.test(sql)) opts.onLock?.();
             return [{ Status: opts.lockedStatus ?? mocks.rows.get('Subscriptions')?.[0]?.Status ?? null }];
         },
         EntityByName: () => undefined,
@@ -370,7 +411,7 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
 
     // ─── Reading the gateway before cancelling (E2b follow-up) ──────────────────────────────────────
     //
-    // Robert's case: Stripe renews Jane's SUB-000110 at 00:00 Central on 31 Dec 2026 (06:00 UTC), the
+    // The last-day case: Stripe renews Jane's SUB-000110 at 00:00 Central on 31 Dec 2026 (06:00 UTC), the
     // term's last day, and charges $599 for year 2. Orders has not booked year 2 yet (E4 does). A cancel at
     // 3 pm that day used to plan "end at period end" and stop Stripe without refunding the charge it took
     // that morning. Now the gateway is read first and the cancel refused until a person settles it there.
@@ -404,7 +445,7 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
         ['Timing EndOfTerm, request dated the last day', { RequestDate: '2026-12-31', Timing: 'EndOfTerm' }],
         ['Timing EndOfTerm, request backdated to 30 Dec', { RequestDate: '2026-12-30', Timing: 'EndOfTerm' }],
     ])(
-        "Robert's case: 3 pm Chicago on 31 Dec 2026, Stripe already renewed at 06:00Z, %s: refused, Stripe untouched, nothing written",
+        "The last-day case: 3 pm Chicago on 31 Dec 2026, Stripe already renewed at 06:00Z, %s: refused, Stripe untouched, nothing written",
         async (_label, input) => {
             seed(NO_REFUND_END_OF_TERM);
             vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
@@ -421,6 +462,264 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
             expectNothingDone(rec);
         },
     );
+
+    describe("END OF TERM on a gateway-billed subscription ends with the LATEST BOOKED term (Ethan, 29 Oct)", () => {
+        const T2 = { ID: 'term-2', SubscriptionID: SUB, TermNumber: 2, OrderLineID: L1, StartDate: '2027-01-01', EndDate: '2027-12-31', Amount: 599, Status: 'Active' };
+        const withTerm2 = (billed = true) => {
+            seed(NO_REFUND_END_OF_TERM, billed);
+            mocks.rows.set('Subscription Terms', [
+                { ID: T1, SubscriptionID: SUB, TermNumber: 1, OrderLineID: L1, StartDate: '2026-01-01', EndDate: '2026-12-31', Amount: 599, Status: 'Active' },
+                T2,
+            ]);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            // Stripe renewed at 00:00 Central on the last day, and E4 booked term 2.
+            mocks.describe.mockResolvedValue({ ...RENEWED_ON_LAST_DAY });
+        };
+        it('term 2 booked: an EndOfTerm cancel on term 1\'s last day ends with term 2 (paid), cancels nothing, and asks Stripe to stop at the end of term 2', async () => {
+            withTerm2();
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(String(out.Decision?.EffectiveDate).slice(0, 10)).toBe('2027-12-31');
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.LaterTerms ?? []).toEqual([]);
+            expect(out.TotalRefundAmount ?? 0).toBe(0);
+            const asked = mocks.cancelAtDriver.mock.calls[0][0] as { BillingEndsAt: Date | null };
+            expect(asked.BillingEndsAt).not.toBeNull();
+            expect(asked.BillingEndsAt!.toISOString() >= '2027-12-31').toBe(true);
+        });
+        it('the customer already set cancel-at-period-end at Stripe (Ending, nothing unbooked): EndOfTerm still ends with the paid term 2', async () => {
+            withTerm2();
+            mocks.describe.mockResolvedValue({
+                Success: true,
+                State: 'Ending',
+                Status: 'active',
+                CurrentPeriodStart: new Date('2026-12-31T06:00:00Z'),
+                EndsAt: new Date('2027-12-31T06:00:00Z'),
+            });
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.LaterTerms ?? []).toEqual([]);
+        });
+        it('the type\'s default (CancellationMode EndOfTerm, no Timing given) does the same', async () => {
+            withTerm2();
+            const { out } = await cancel({ RequestDate: '2026-12-31' });
+            expect(String(out.Decision?.EffectiveDate).slice(0, 10)).toBe('2027-12-31');
+        });
+        it('control: Immediate stays "cancel now": term 1, and term 2 cancelled under the type\'s rule', async () => {
+            withTerm2();
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'Immediate' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe(T1);
+            expect(out.LaterTerms?.map((l) => l.SubscriptionTermID)).toEqual(['term-2']);
+        });
+        it('control: a subscription Orders bills keeps #406: EndOfTerm ends with the term covering the request, the later one cancelled', async () => {
+            withTerm2(false);
+            const { out } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe(T1);
+            expect(out.LaterTerms?.map((l) => l.SubscriptionTermID)).toEqual(['term-2']);
+        });
+        it("control: a cancel that only RECORDS the gateway's end (the sync) is never extended to the latest term, even if the gateway still reads as billing", async () => {
+            withTerm2();
+            const { out } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' }));
+            expect(out.SubscriptionTermID).toBe(T1);
+        });
+        it('control: the gateway already ENDED it: Orders records the gateway\'s end (term 1), not the latest term', async () => {
+            withTerm2();
+            mocks.describe.mockResolvedValue({ Success: true, State: 'Ended', Status: 'canceled', CurrentPeriodStart: new Date('2026-12-31T06:00:00Z') });
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.SubscriptionTermID).toBe(T1);
+        });
+    });
+
+    describe("the gateway ENDED it: every renewal term reverses exactly what the gateway refunded of ITS OWN charge (D20)", () => {
+        const L2 = '22222222-0000-4000-8000-000000000002';
+        const L3 = '22222222-0000-4000-8000-000000000003';
+        const kept = (line: string, refunded = 0, credited = 0) =>
+            mocks.credit.set(line, { Outstanding: Math.max(0, refunded - credited), Paid: 599, Refunded: refunded, Credited: credited, ChargeID: `ch_${line.slice(-1)}` });
+        const terms = (three = false) => {
+            seed(PRORATE_NOW);
+            mocks.lockedCreditRows.length = 0;
+            mocks.credit.clear();
+            mocks.applied.length = 0;
+            mocks.rows.set('Subscription Terms', [
+                { ID: T1, SubscriptionID: SUB, TermNumber: 1, OrderLineID: L1, StartDate: '2026-01-01', EndDate: '2026-12-31', Amount: 599, Status: 'Active' },
+                { ID: 'term-2', SubscriptionID: SUB, TermNumber: 2, OrderLineID: L2, StartDate: '2027-01-01', EndDate: '2027-12-31', Amount: 599, Status: 'Active' },
+                ...(three ? [{ ID: 'term-3', SubscriptionID: SUB, TermNumber: 3, OrderLineID: L3, StartDate: '2028-01-01', EndDate: '2028-12-31', Amount: 599, Status: 'Active' }] : []),
+            ]);
+            mocks.rows.set('Order Lines', [
+                { ID: L1, OrderHeaderID: 'oh-1', ProductID: 'p-1', Quantity: 1, UnitPrice: 599, DiscountPct: 0 },
+                { ID: L2, OrderHeaderID: 'oh-2', ProductID: 'p-1', Quantity: 1, UnitPrice: 599, DiscountPct: 0 },
+                { ID: L3, OrderHeaderID: 'oh-3', ProductID: 'p-1', Quantity: 1, UnitPrice: 599, DiscountPct: 0 },
+            ]);
+            vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+            mocks.describe.mockResolvedValue({ Success: true, State: 'Ended', Status: 'canceled', CurrentPeriodStart: new Date('2026-12-31T06:00:00Z') });
+        };
+        it('the type refunds, but the gateway kept the charge: nothing of term 2 is reversed (no credit Stripe never paid)', async () => {
+            terms();
+            kept(L2, 0);
+            const { out } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' }));
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.LaterTerms?.[0]?.Decision?.RefundAmount).toBe(0);
+            expect(out.TotalRefundAmount).toBe(0);
+        });
+        it('the gateway refunded 300: exactly 300 reversed', async () => {
+            terms();
+            kept(L2, 300);
+            const { out } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' }));
+            expect(out.LaterTerms?.[0]?.Decision?.RefundAmount).toBe(300);
+        });
+        it('BLOCKING case: terms 2 and 3 both gateway renewals; Stripe charged term 3 on term 2\'s last day and refunded THAT $599: term 2 (served) reverses 0, term 3 reverses 599 — never pooled', async () => {
+            terms(true);
+            kept(L2, 0);
+            kept(L3, 599);
+            vi.setSystemTime(new Date('2027-12-31T21:00:00Z'));
+            const { out } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-12-31', Timing: 'EndOfTerm' }));
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.Decision?.RefundAmount).toBe(0);
+            expect(out.LaterTerms?.map((l) => [l.SubscriptionTermID, l.Decision?.RefundAmount])).toEqual([['term-3', 599]]);
+        });
+        it('what is already credited (a D20 credit at refund time) is not reversed again: refunded 599, credited 200 → 399', async () => {
+            terms();
+            kept(L2, 599, 200);
+            const { out } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' }));
+            expect(out.LaterTerms?.[0]?.Decision?.RefundAmount).toBe(399);
+        });
+        it('R4-1: a refund credited on another worker while this cancel waited for the lock is seen: it reverses 399, not 599', async () => {
+            terms();
+            kept(L2, 599);
+            vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+            const { out, rec } = await WithGatewayEndRecorded(() =>
+                cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }, { onLock: () => kept(L2, 599, 200) }),
+            );
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.TotalRefundAmount).toBe(399);
+            const line = (rec.orders[0].Lines as Array<{ Quantity: number; UnitPrice: number }>)[0];
+            expect(Math.round(Math.abs(line.Quantity * line.UnitPrice) * 100) / 100).toBe(399);
+            // Decided under the one lock both doors take.
+            expect(rec.sql[0]).toMatch(/__mj_BizAppsOrders\.Subscription WITH \(UPDLOCK, ROWLOCK\)/);
+            // And its credit lands ON the renewal it refunds (D20, the credit-note model), inside the transaction.
+            expect(mocks.applied.map((a) => a[0])).toEqual([L2]);
+            expect(mocks.lockedCreditRows).toEqual([L2]);
+        });
+        it('a partial credit already booked (200 of 599, 0.3339 of the line reversed): the cancel reverses the REST of the line, exactly 399, to the cent', async () => {
+            terms();
+            kept(L2, 599, 200);
+            mocks.reversedQty = 0.3339;
+            try {
+                vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+                const { out, rec } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }));
+                expect(out.TotalRefundAmount).toBe(399);
+                const line = (rec.orders[0].Lines as Array<{ Quantity: number; UnitPrice: number }>)[0];
+                // The remainder of the line (1 − 0.3339), not a fresh share of it: the slices sum to the line.
+                expect(line.Quantity).toBe(-0.6661);
+                // The unit price is stated at the column's 4dp, so quantity × price is the refund to the cent.
+                expect(Number.isInteger(Math.round(line.UnitPrice * 1e4 * 1e6) / 1e6)).toBe(true);
+                expect(Math.round(Math.abs(line.Quantity * line.UnitPrice) * 100) / 100).toBe(399);
+            } finally {
+                mocks.reversedQty = 0;
+            }
+        });
+        it('R6-4: a tail too small to split off the line (0.9999 reversed, 0.05 of 0.10 left): HELD, and the gateway end is still recorded', async () => {
+            terms();
+            kept(L2, 1199.85, 1199.8);
+            mocks.credit.set(L2, { ...mocks.credit.get(L2)!, Paid: 1200 });
+            mocks.reversedQty = 0.9999;
+            try {
+                vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+                const { out, rec } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }));
+                expect(out.Success, out.Message).toBe(true);
+                expect(out.TotalRefundAmount).toBe(0);
+                expect(out.Message).toMatch(/0\.05 is held: too small to split off what is left of the line/);
+                expect(rec.subscriptions[0]).toMatchObject({ Status: 'Canceled' });
+            } finally {
+                mocks.reversedQty = 0;
+            }
+        });
+        it('the gateway is read ONCE per line, before the lock: the re-read under the lock passes that figure in', async () => {
+            terms();
+            kept(L2, 599);
+            mocks.knownSeen.length = 0;
+            vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+            await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }));
+            expect(mocks.knownSeen.filter((k) => k === undefined).length).toBe(1);
+            expect(mocks.knownSeen.filter((k) => k !== undefined)).toEqual([{ ChargeID: 'ch_2', Refunded: 599 }]);
+        });
+        it('R4-1 control: nothing credited meanwhile: the full 599 is reversed, as the pre-lock read said', async () => {
+            terms();
+            kept(L2, 599);
+            vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+            const { out } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }));
+            expect(out.TotalRefundAmount).toBe(599);
+        });
+        it('control: a recorded cancel that reverses nothing (the gateway kept the charge) applies nothing', async () => {
+            terms();
+            kept(L2, 0);
+            vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+            await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }));
+            expect(mocks.applied).toEqual([]);
+        });
+        it.each([
+            ['nothing refunded', 0],
+            ['a partial refund', 200],
+            ['refunded in full', 599],
+        ])('recording a dashboard cancel two days INTO term 2 (Immediate): term 2 reverses exactly what the gateway refunded, %s', async (_l, refunded) => {
+            terms();
+            kept(L2, refunded);
+            vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+            const { out, rec } = await WithGatewayEndRecorded(() => cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' }));
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.SubscriptionTermID).toBe('term-2');
+            expect(out.Decision?.RefundAmount).toBe(refunded);
+            expect(out.TotalRefundAmount).toBe(refunded);
+            if (refunded > 0) {
+                // To the cent: the reversal line's unit price is stated so quantity × price is the refund.
+                const line = (rec.orders[0].Lines as Array<{ Quantity: number; UnitPrice: number }>)[0];
+                expect(Math.round(Math.abs(line.Quantity * line.UnitPrice) * 100) / 100).toBe(refunded);
+            }
+        });
+        it('DESIGN CHANGE: a person finishing a cancel the gateway already ENDED follows the same rule (the gateway kept the charge → 0), not the type\'s', async () => {
+            terms();
+            kept(L2, 0);
+            const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+            expect(out.LaterTerms?.[0]?.Decision?.RefundAmount).toBe(0);
+        });
+        it("control: while the gateway still bills, a person's Immediate cancel follows the type's refund rule (Ethan, D19)", async () => {
+            terms();
+            kept(L2, 0);
+            vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+            mocks.describe.mockResolvedValue({ Success: true, State: 'Renewing', Status: 'active', CurrentPeriodStart: new Date('2026-12-31T06:00:00Z') });
+            const { out } = await cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' });
+            expect(out.Success, out.Message).toBe(true);
+            expect(out.Decision?.RefundAmount).toBeGreaterThan(590);
+        });
+    });
+
+    it('the last day, and the gateway answered a 2xx that is not this subscription (no status): a failed read, refused, nothing sent or written', async () => {
+        seed(NO_REFUND_END_OF_TERM);
+        vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+        // What the Stripe driver now answers for a malformed 200 (StripeProviderSubscription.test.ts, fail closed).
+        mocks.describe.mockResolvedValue({ Success: false, Reason: "Stripe's answer for sub_jane named no status; treated as a failed read" });
+        const { out, rec } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/Could not read sub_jane at the payment gateway: .*named no status.*Nothing was changed/);
+        expectNothingDone(rec);
+    });
+
+    it('two open terms: the gate reads the LATEST term\'s last day (T2 to 2027-12-31), so a period that began on T1\'s last day is booked, and a March cancel proceeds', async () => {
+        seed(NO_REFUND_END_OF_TERM);
+        mocks.rows.set('Subscription Terms', [
+            { ID: T1, SubscriptionID: SUB, TermNumber: 1, OrderLineID: L1, StartDate: '2026-01-01', EndDate: '2026-12-31', Amount: 599, Status: 'Active' },
+            { ID: 'term-2', SubscriptionID: SUB, TermNumber: 2, OrderLineID: L1, StartDate: '2027-01-01', EndDate: '2027-12-31', Amount: 599, Status: 'Active' },
+        ]);
+        vi.setSystemTime(new Date('2027-03-15T18:00:00Z'));
+        mocks.describe.mockResolvedValue({ ...RENEWED_ON_LAST_DAY });
+        const { out } = await cancel({ RequestDate: '2027-03-15', Timing: 'EndOfTerm' });
+        expect(out.Message ?? '').not.toMatch(/started a new billing period/);
+        expect(out.Success).toBe(true);
+    });
 
     it('control, the day before: 3 pm Chicago on 30 Dec 2026, Stripe still in its creation period: cancelled at Stripe at end of coverage as before', async () => {
         seed(NO_REFUND_END_OF_TERM);
@@ -535,6 +834,58 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
         );
         expect(mocks.readAlerts).toHaveBeenCalledTimes(1);
         expect(mocks.describe).not.toHaveBeenCalled();
+        expectNothingDone(rec);
+    });
+
+    it('an open blocking alert does NOT stop recording a cancel the gateway already ENDED (it bills nothing more): finished, the gateway read once', async () => {
+        seed(NO_REFUND_END_OF_TERM);
+        mocks.blocking.mockResolvedValue({ Codes: ['RenewalNotBooked'] });
+        mocks.describe.mockResolvedValue({ Success: true, State: 'Ended', Status: 'canceled', CurrentPeriodStart: new Date('2026-01-01T06:00:00Z') });
+        const { out } = await cancel({ RequestDate: '2026-07-01' });
+        expect(out.Success, out.Message).toBe(true);
+        // The early read is reused by the gate, not repeated.
+        expect(mocks.describe).toHaveBeenCalledTimes(1);
+    });
+
+    it.each([
+        ['Ending (set to end, still billing this period)', { Success: true, State: 'Ending', Status: 'active', CurrentPeriodStart: new Date('2026-01-01T06:00:00Z'), EndsAt: new Date('2026-12-31T06:00:00Z') }],
+        ['Collecting (retrying a charge)', { Success: true, State: 'Collecting', Status: 'past_due', CurrentPeriodStart: new Date('2026-01-01T06:00:00Z') }],
+    ])('control: an open RenewalNotBooked while the gateway is %s: refused (only ENDED lets it through)', async (_l, billing) => {
+        seed(NO_REFUND_END_OF_TERM);
+        mocks.blocking.mockResolvedValue({ Codes: ['RenewalNotBooked'] });
+        mocks.describe.mockResolvedValue(billing);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/open gateway alert \(RenewalNotBooked\)/);
+        expectNothingDone(rec);
+    });
+
+    it('control: an alert about ANOTHER gateway subscription (NotRecorded) still blocks although this one ENDED: the other may still bill', async () => {
+        seed(NO_REFUND_END_OF_TERM);
+        mocks.blocking.mockResolvedValue({ Codes: ['NotRecorded', 'RenewalNotBooked'] });
+        mocks.describe.mockResolvedValue({ Success: true, State: 'Ended', Status: 'canceled', CurrentPeriodStart: new Date('2026-01-01T06:00:00Z') });
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+        expect(out.Success).toBe(false);
+        expectNothingDone(rec);
+    });
+
+    it('control: ENDED at the gateway but the alert Tasks cannot be read: refused (an unread list could hold another subscription\'s alert)', async () => {
+        seed(NO_REFUND_END_OF_TERM);
+        mocks.blocking.mockResolvedValue({ Codes: [], ReadFailure: 'permission denied' });
+        mocks.describe.mockResolvedValue({ Success: true, State: 'Ended', Status: 'canceled', CurrentPeriodStart: new Date('2026-01-01T06:00:00Z') });
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/could not be checked/);
+        expectNothingDone(rec);
+    });
+
+    it('control: the same open alert while the gateway still bills: refused, as before', async () => {
+        seed(NO_REFUND_END_OF_TERM);
+        mocks.blocking.mockResolvedValue({ Codes: ['RenewalNotBooked'] });
+        mocks.describe.mockResolvedValue({ Success: true, State: 'Renewing', Status: 'active', CurrentPeriodStart: new Date('2026-01-01T06:00:00Z') });
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/open gateway alert \(RenewalNotBooked\)/);
         expectNothingDone(rec);
     });
 

@@ -174,7 +174,12 @@ export async function BookProviderRenewal(
         // run one at a time, and the second finds the first's intent (or event) below.
         const locked = await lockSubscription(subscription.ID, provider);
         if (!locked) throw new Error(`Subscription ${subscription.SubscriptionNumber} could not be read for the renewal.`);
-        if (zero ? await zeroRenewalBooked(subscription.ID, invoice.ProviderInvoiceID, provider, user) : await findIntent(invoice.ProviderIntentID!, provider, user)) {
+        // Re-checked under the lock: a second delivery of this renewal on another worker waited here, and now
+        // finds the first's intent, its event, or any payment of the charge (the importer's has no intent).
+        const bookedMeanwhile = zero
+            ? await zeroRenewalBooked(subscription.ID, invoice.ProviderInvoiceID, provider, user)
+            : (await findIntent(invoice.ProviderIntentID!, provider, user)) != null || (await chargePaid(config.ID, invoice.ProviderChargeID!, provider, user));
+        if (bookedMeanwhile) {
             await db.RollbackTransaction();
             return { Outcome: 'AlreadyBooked', OrderID: null, Message: `Renewal invoice ${invoice.ProviderInvoiceID} was booked by another run.` };
         }
@@ -312,7 +317,8 @@ async function captureAndRefunds(
         {
             PaymentIntentID: intentID,
             Amount: amount,
-            ReceivingCompanyID: config.CompanyID,
+            // The subscription's own company (it sold it), not the account's default company.
+            ReceivingCompanyID: subscription.CompanyID,
             // CapturePayment takes exactly one payer: the organization when the subscription is held by one.
             BillToPersonID: subscription.HolderOrganizationID ? null : subscription.BeneficiaryPersonID,
             BillToOrganizationID: subscription.HolderOrganizationID,
@@ -397,6 +403,24 @@ async function paymentExists(paymentProviderID: string, providerChargeID: string
         user,
     );
     if (!r.Success) throw new Error(`Could not look for the payment of charge ${providerChargeID}: ${r.ErrorMessage}`);
+    return (r.Results ?? []).length > 0;
+}
+
+/** True when any payment records this charge: by the charge itself (any key), or by the gateway-payment key. */
+async function chargePaid(paymentProviderID: string, providerChargeID: string, provider: IMetadataProvider, user: UserInfo): Promise<boolean> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const charge = EscapeText(providerChargeID);
+    const r = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: PAYMENT_HEADER_ENTITY,
+            ExtraFilter: `ProviderChargeID = '${charge}' OR IdempotencyKey = '${EscapeText(ProviderPaymentIdempotencyKey(paymentProviderID, providerChargeID))}'`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!r.Success) throw new Error(`Could not look for a payment of charge ${providerChargeID}: ${r.ErrorMessage}`);
     return (r.Results ?? []).length > 0;
 }
 

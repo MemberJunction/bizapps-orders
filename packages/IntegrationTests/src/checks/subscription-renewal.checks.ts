@@ -1,5 +1,5 @@
 /**
- * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR88).
+ * subscription-renewal.checks.ts — the `subscription-renewal` bundle (SR1–SR97).
  *
  * `Orders.SpawnRenewals` closes the subscription lifecycle: `AutoRenew` and `RenewalLeadDays` were
  * columns with no consumer, so a subscription reached the end of its term and simply stopped.
@@ -175,11 +175,31 @@
  *         the booking is booked once after the capture
  *   SR87  the nightly pass: preview reports and writes nothing; live, it books and reports
  *   SR88  the nightly sync Action and its schedule ship Disabled and in Preview; the link Action is registered
+ *   SR89  an imported subscriber (Chicago): the year it already paid is never booked again, whether its payment
+ *         records the charge (no intent) or nothing records it, through the link or the sanction; its next renewal is
+ *   SR90  recording a cancel the gateway made is never blocked: an open RenewalNotBooked does not stop it; a
+ *         refused attempt raises the non-blocking GatewayCancelNotRecorded; the next sync records it
+ *   SR91  a renewal invoice with tax is not booked: urgent RenewalNotBooked, nothing written
+ *   SR93  on the last day, once E4 booked term 2, a cancel is no longer refused: end of term ends with term 2 (the
+ *         latest booked term) and stops the gateway there; Immediate cancels now
+ *   SR94  the gateway charged the renewal and then ended it: booked, the cancel reverses only what the gateway
+ *         refunded (nothing when it kept the charge), and a person is told (EndedAfterRenewal)
+ *   SR95  booked, then ended at Stripe two days into term 2 with a partial or no refund: the recorded immediate
+ *         cancel reverses exactly what Stripe refunded
+ *   SR96  D20: a gateway refund on a renewal's charge credits that renewal order (nothing owed, access unchanged, a
+ *         notice), once, whenever it lands; with a cancel before or after, the total credit is the refund; full or
+ *         partial, the credit is applied ON the renewal (the credit-note model), which keeps its total
+ *   SR97  two gateway renewals; the second's charge refunded and ended: each term reverses its OWN charge's
+ *         refund (term 2 served: 0; term 3: 1,200), in one run and in two
+ *   SR92-OT  two syncs of one paid renewal at once, each on its own provider (two workers): booked once
+ *   SR98-OT  D20's two doors on one refund, committed: two refund deliveries at once on ONE provider; the refund
+ *            door and the cancel door each reading the gateway before the other commits, in both orders: credited
+ *            once, applied on the renewal (owes 0)
  *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
- * Deterministic. Every check runs inside a rolled-back transaction, except SR46-OT, which commits and
+ * Deterministic. Every check runs inside a rolled-back transaction, except SR46-OT and SR92-OT, which commit and
  * deletes its rows afterwards (`PurgeCheckoutRun`).
  */
 import { BaseAction } from '@memberjunction/actions';
@@ -233,9 +253,11 @@ import {
     PRODUCT_ENTITY,
     PROMOTION_ENTITY,
     SUBSCRIPTION_ENTITY,
+    SUBSCRIPTION_TYPE_ENTITY,
     TASK_ENTITY,
 } from '../entity-names.js';
 import { BuildOrder, ConfirmOrder } from '../order-builder.js';
+import { WithGatewayEndRecorded } from '@mj-biz-apps/orders-core-entities-server/testing';
 import { grantAuthority } from './term-extension.checks.js';
 import {
     BasePaymentProvider,
@@ -273,6 +295,12 @@ import {
     SyncProviderSubscription,
     SyncProviderSubscriptions,
     type SyncProviderSubscriptionResult,
+    BookProviderRenewal,
+    BookProviderRefunds,
+    CancelSubscriptionOperation,
+    BuildPaymentProvider,
+    LoadPaymentProviderConfig,
+    type RenewalSubscription,
     ConfigureRenewalPaymentLinks,
     LoadRenewalPaymentOrder,
     OrdersSettings,
@@ -3240,6 +3268,15 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual((await linkPersonal(true)).Code, 'EmailMismatch', "another customer's");
                 otherCustomer.Email = 'ETHAN.testing.bc+sr83-jane@gmail.com';
                 AssertEqual((await linkPersonal(true)).Code, 'WouldLink', 'control: the same e-mail (any case) passes');
+                // A plan this subscription is not on (a price the account maps to no product, or another product): refused
+                // unless a person confirms the subscription's product is right.
+                fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_plan', Status: 'active', IsLive: true, Customer: 'cus_p', Metadata: {}, PriceID: 'price_it_other_plan' });
+                AssertEqual((await link('sub_it_plan', true)).Code, 'PriceForAnotherProduct', "a plan that is not this subscription's product");
+                AssertEqual(
+                    (await LinkProviderSubscription({ SubscriptionID: sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_plan', Preview: true, AllowPriceOfAnotherProduct: true }, ctx.Provider, ctx.User)).Code,
+                    'WouldLink',
+                    'control: confirmed by a person (an imported subscriber on an older price), it passes',
+                );
                 const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
                 await markProviderBilled(ctx, other.SubscriptionID, account, 'sub_it_taken');
                 fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_taken', Status: 'active', IsLive: true, Customer: 'cus_z', Metadata: {} });
@@ -3261,7 +3298,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
     {
         Id: 'subscription-renewal.SR84',
-        Name: 'SR84: controls: a subscription the gateway does not bill is not synced; an account whose switch is off changes nothing; a team subscription invoiced in Orders still renews in Orders',
+        Name: 'SR84: controls: a subscription the gateway does not bill is not synced; a team subscription invoiced in Orders still renews in Orders; an account whose switch is off still follows the subscriptions the gateway already bills',
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
@@ -3273,16 +3310,17 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(unlinked.Outcome, 'NotBilledByGateway', 'not synced');
                 AssertEqual((await spawnRenewals(ctx, { SubscriptionID: team.SubscriptionID, AsOfDate: daysBefore(team.Term.EndDate, 10) })).Placed, 1, 'and Spawn Renewals still renews it');
 
-                // The account's switch off: the gateway-billed one is left exactly as it is.
+                // The account's switch off: it gates handing NEW subscriptions to the gateway (E2), never following one
+                // the gateway already bills, whose renewals the gateway charges whatever the switch says.
                 await upsertViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, g.account, { BillsSubscriptions: 0 });
                 const off = await syncNow(ctx, g.SubscriptionID, g.anchor);
-                AssertEqual(off.Outcome, 'NotBilledByGateway', `switched off: ${JSON.stringify(off)}`);
-                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 1, 'nothing booked while it is off');
-                // Turned back on, the first run catches up.
-                await upsertViaEntity(ctx, PAYMENT_PROVIDER_ENTITY, g.account, { BillsSubscriptions: 1 });
-                const on = await syncNow(ctx, g.SubscriptionID, new Date(g.anchor.getTime() + 86_400_000));
-                AssertEqual(on.Outcome, 'Changed', `caught up once on: ${JSON.stringify(on)}`);
-                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'the renewal is booked');
+                AssertEqual(off.Outcome, 'Changed', `followed with the switch off: ${JSON.stringify(off)}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'the renewal the gateway charged is booked');
+                // …while the switch still stops a new hand-over (E2's rule, unchanged).
+                const fresh = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, Fx().Customers.SecondOrganizationID);
+                await payInFull(ctx, fresh.OrderID, Fx().Customers.SecondOrganizationID);
+                const handed = await EnsureProviderSubscriptions({ SubscriptionIDs: [fresh.SubscriptionID], Now: new Date('2026-01-01T12:00:00Z') }, ctx.Provider, ctx.User);
+                AssertEqual(handed.Outcomes.filter((o) => o.Code === 'Created').length, 0, `no new gateway subscription with the switch off: ${JSON.stringify(handed.Outcomes)}`);
             }),
     },
     {
@@ -3383,6 +3421,699 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 const linkAction = await TxMaybeOne<{ DriverClass: string }>(ctx, `SELECT DriverClass FROM __mj.Action WHERE Name = 'Link Provider Subscription'`);
                 AssertEqual(linkAction?.DriverClass, 'Orders.LinkProviderSubscription', 'the link Action is registered too');
             }),
+    },
+
+    {
+        Id: 'subscription-renewal.SR89',
+        Name: "SR89: an imported subscriber (Chicago): the year it already paid is never booked again (payment by charge with no intent, or no charge recorded at all; through the link or the sanction); its next renewal is",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withChicago(async () => {
+                    fakeGateway.reset();
+                    const f = Fx();
+                    const account = await gatewayBillingAccount(ctx);
+                    await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                    const currency = await booksIn(ctx);
+                    // The importer's shape: term 1 = the day after Stripe's period start → the business day of its end;
+                    // a captured payment recording the current charge, under the importer's own key, with no intent.
+                    const imported = async (tag: string, organizationID: string, reason: 'subscription_create' | 'subscription_cycle') => {
+                        const sub = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, organizationID);
+                        await payInFull(ctx, sub.OrderID, organizationID);
+                        const lastDay = isoDate(sub.Term.EndDate);
+                        await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                        await TxQuery(
+                            ctx,
+                            `UPDATE ph SET ProviderChargeID = 'ch_it_${tag}_now', IdempotencyKey = 'csv-sub-pay:it:${tag}', PaymentIntentID = NULL
+                               FROM ${ORDERS_SCHEMA}.PaymentHeader ph JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID WHERE pl.OrderHeaderID = '${sub.OrderID}'`,
+                        );
+                        await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                        // Stripe's current period: 14:23 UTC on the day before term 1 began, to 14:23 UTC on term 1's last day.
+                        const periodStart = new Date(`${AddDays(isoDate(sub.Term.EndDate), -365)}T14:23:00Z`);
+                        const nextStart = new Date(`${lastDay}T14:23:00Z`);
+                        const current: GatewaySubscriptionInvoice = {
+                            ...renewalInvoice({ anchor: periodStart, currency }, `${tag}_now`),
+                            BillingReason: reason,
+                            PeriodStart: periodStart,
+                            PeriodEnd: nextStart,
+                        };
+                        const held = {
+                            ProviderSubscriptionID: `sub_it_${tag}`,
+                            Status: 'active',
+                            IsLive: true,
+                            Customer: `cus_${tag}`,
+                            Metadata: {} as Record<string, string>,
+                            PeriodStart: periodStart,
+                            Invoices: [current] as GatewaySubscriptionInvoice[],
+                        };
+                        fakeGateway.held.push(held);
+                        return { sub, lastDay, held, nextStart };
+                    };
+                    const termCount = async (id: string) => (await termsOf(ctx, id)).length;
+                    const intents = async (pi: string) => Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID = '${pi}'`)).N);
+
+                    // Second year (the current period was a renewal at Stripe), linked through the checked link: the
+                    // link's own sync must not book the year the importer already recorded.
+                    const second = await imported('y2', f.Customers.OrganizationID, 'subscription_cycle');
+                    const linked = await LinkProviderSubscription({ SubscriptionID: second.sub.SubscriptionID, PaymentProviderID: account, ProviderSubscriptionID: 'sub_it_y2' }, ctx.Provider, ctx.User);
+                    AssertEqual(
+                        `${linked.Code}|${linked.Sync?.Outcome}|${await termCount(second.sub.SubscriptionID)}|${await intents('pi_it_y2_now')}`,
+                        'Linked|InLine|1|0',
+                        `linked; the year it paid is not booked again: ${JSON.stringify(linked.Sync)}`,
+                    );
+                    // Its next renewal, charged 14:23 UTC on term 1's last day, is.
+                    second.held.Invoices.push({ ...renewalInvoice({ anchor: second.nextStart, currency }, 'y2_next') });
+                    const s2 = await syncNow(ctx, second.sub.SubscriptionID, new Date(second.nextStart.getTime() + 3_600_000));
+                    AssertEqual(`${s2.Outcome}|${await termCount(second.sub.SubscriptionID)}`, 'Changed|2', `the next renewal is booked: ${JSON.stringify(s2)}`);
+                    AssertEqual(isoDate((await termsOf(ctx, second.sub.SubscriptionID))[1].StartDate), AddDays(second.lastDay, 1), 'term 2 starts the day after term 1');
+                    const charged = await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE ProviderChargeID = 'ch_it_y2_now' OR IdempotencyKey LIKE '%:ch_it_y2_now'`);
+                    AssertEqual(Number(charged.N), 1, "the current year's charge is on the books once");
+
+                    // Second year again, with NO charge recorded (a sheet row without one: the importer writes no payment
+                    // charge), linked by the importer's own sanction (D20) and synced as the webhook or the nightly pass
+                    // would. Only the period rule keeps the year it paid from being booked again. The gateway also still
+                    // lists last year's first invoice (subscription_create), which is never a renewal.
+                    const bare = await imported('y2bare', f.Customers.SecondOrganizationID, 'subscription_cycle');
+                    await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.PaymentHeader SET ProviderChargeID = NULL WHERE ProviderChargeID = 'ch_it_y2bare_now'`);
+                    await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    const created = bare.held.Invoices[0].PeriodStart!;
+                    bare.held.Invoices.unshift({
+                        ...renewalInvoice({ anchor: new Date(created.getTime() - 365 * 86_400_000), currency }, 'y2bare_first'),
+                        BillingReason: 'subscription_create',
+                    });
+                    await markProviderBilled(ctx, bare.sub.SubscriptionID, account, 'sub_it_y2bare');
+                    const s1 = await syncNow(ctx, bare.sub.SubscriptionID, new Date(`${AddDays(bare.lastDay, -200)}T12:00:00Z`));
+                    AssertEqual(`${s1.Outcome}|${await termCount(bare.sub.SubscriptionID)}|${await intents('pi_it_y2bare_now')}`, 'InLine|1|0', `nothing booked again: ${JSON.stringify(s1)}`);
+                }),
+            ),
+    },
+    {
+        Id: 'subscription-renewal.SR90',
+        Name: "SR90: recording a cancel the gateway already made is never blocked: an open RenewalNotBooked alert does not stop it; a refused attempt raises a non-blocking notice and the next sync records it",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                await raiseProviderSubscriptionAlert(
+                    { SubscriptionID: g.SubscriptionID, SubscriptionNumber: g.SubscriptionNumber, Code: 'RenewalNotBooked', Reason: 'SR90 probe', Urgent: true, Linked: true },
+                    ctx.User,
+                    ctx.Provider,
+                );
+                // Control: while the gateway still bills it, the alert stops a cancel (E2b's rule, unchanged).
+                const blocked = await cancelSubscription(ctx, { SubscriptionID: g.SubscriptionID, RequestDate: '2026-06-01', Timing: 'Immediate' });
+                Assert(!blocked.Success && /open gateway alert \(RenewalNotBooked\)/.test(blocked.Message ?? ''), `blocked while billing: ${blocked.Message}`);
+
+                // The gateway ends it. The first attempt to record that hits a transient gateway read (the cancel's
+                // own read, the sync's second describe): a non-blocking notice, nothing changed.
+                g.held.IsLive = false;
+                g.held.Status = 'canceled';
+                g.held.EndedAt = new Date('2026-06-01T15:00:00Z');
+                fakeGateway.describeCalls = 0;
+                fakeGateway.failDescribeOnCall = 2;
+                const refused = await syncNow(ctx, g.SubscriptionID, new Date('2026-06-01T16:00:00Z'));
+                Assert(refused.Notices.includes('GatewayCancelNotRecorded') && !refused.Notices.includes('RenewalNotBooked'), `a non-blocking notice: ${JSON.stringify(refused)}`);
+                AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Active', 'nothing changed yet');
+
+                // The next sync records it, although RenewalNotBooked (and now GatewayCancelNotRecorded) are open.
+                fakeGateway.failDescribeOnCall = 0;
+                const recorded = await syncNow(ctx, g.SubscriptionID, new Date('2026-06-02T03:00:00Z'));
+                AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Canceled', `recorded: ${JSON.stringify(recorded)}`);
+                const again = await syncNow(ctx, g.SubscriptionID, new Date('2026-06-02T04:00:00Z'));
+                AssertEqual(again.Outcome, 'InLine', 'a duplicate deleted event later changes nothing and raises nothing');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR91',
+        Name: 'SR91: a renewal invoice that carries tax is not booked (net booked, gross captured would leave the tax as spendable credit): urgent RenewalNotBooked, nothing written',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const g = await gatewayBilled(ctx);
+                g.held.Invoices = [renewalInvoice(g, 'tx', { AmountPaid: 1296, AmountDue: 1296, Tax: 96 })];
+                const r = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                AssertEqual(`${r.Outcome}|${r.Notices.join(',')}`, 'NeedsPerson|RenewalNotBooked', `${JSON.stringify(r)}`);
+                AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 1, 'no term');
+                AssertEqual(Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID = 'pi_it_tx'`)).N), 0, 'no intent, no payment');
+                AssertEqual(await namedTasks(ctx, `URGENT: Gateway subscription needs attention: ${g.SubscriptionNumber} (RenewalNotBooked)`), 1, 'one urgent Task');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR93',
+        Name: "SR93: on the term's last day, once E4 has booked term 2, a cancel is no longer refused: end of term ends with term 2 (the latest booked) and stops the gateway there; Immediate follows E2b's rule",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                for (const timing of ['EndOfTerm', 'Immediate'] as const) {
+                    const g = await gatewayBilled(ctx, timing === 'EndOfTerm' ? undefined : Fx().Customers.SecondOrganizationID);
+                    g.held.PeriodStart = g.anchor; // Stripe renewed at 00:00 on the last day
+                    g.held.Invoices = [renewalInvoice(g, `x14${timing}`)];
+                    const booked = await syncNow(ctx, g.SubscriptionID, g.anchor);
+                    AssertEqual(booked.Outcome, 'Changed', `term 2 booked: ${JSON.stringify(booked)}`);
+                    const terms = await termsOf(ctx, g.SubscriptionID);
+                    const cancelled = (await cancelSubscription(ctx, { SubscriptionID: g.SubscriptionID, RequestDate: g.lastDay, Timing: timing })) as {
+                        Success: boolean;
+                        Message?: string;
+                        Decision?: { EffectiveDate?: string };
+                        Gateway?: { Outcome?: string };
+                    };
+                    Assert(cancelled.Success, `${timing}: not refused once term 2 is booked: ${cancelled.Message}`);
+                    Assert(!/started a new billing period/.test(cancelled.Message ?? ''), `${timing}: not the unbooked-period refusal`);
+                    const asked = fakeGateway.cancelled[fakeGateway.cancelled.length - 1];
+                    if (timing === 'EndOfTerm') {
+                        // Ethan, 29 Oct: end of term on a subscription the gateway still bills is the end of the LATEST
+                        // booked term (term 2, which the gateway was paid for), and the gateway stops at that period end.
+                        AssertEqual(isoDate(cancelled.Decision!.EffectiveDate!), isoDate(terms[1].EndDate), 'ends with term 2, the term the gateway was paid for');
+                        // "Charge nothing after the end of term 2's last day"; Stripe's period ends at its anchor on that
+                        // day, before it, so the driver sets cancel_at_period_end and term 3 is never charged
+                        // (PlanStripeCancel → AtPeriodEnd, #972's tests).
+                        AssertEqual(isoDate(asked!.BillingEndsAt!), AddDays(isoDate(terms[1].EndDate), 1), 'the gateway is told: nothing after term 2');
+                        AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'term 2 stays booked');
+                    } else {
+                        AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Canceled', 'cancelled now');
+                    }
+                }
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR94',
+        Name: 'SR94: the gateway charged the renewal and then ended the subscription: the renewal is booked, the cancel reverses only what the gateway refunded (nothing when it kept the charge), and a person is told',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A type that REFUNDS on cancel: the case where reversing the gateway's renewal in full would book a
+                // credit memo Stripe never paid out.
+                const typeID = (await TxOne<{ ID: string }>(ctx, `SELECT SubscriptionTypeID AS ID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${Fx().Products.SubRolling}'`)).ID;
+                const was = (await TxOne<{ Mode: string }>(ctx, `SELECT CancellationRefundMode AS Mode FROM ${ORDERS_SCHEMA}.SubscriptionType WHERE ID = '${typeID}'`)).Mode;
+                await upsertViaEntity(ctx, SUBSCRIPTION_TYPE_ENTITY, typeID, { CancellationRefundMode: 'ProrateUnused' });
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+                try {
+                for (const refunded of [0, 1200]) {
+                    const g = await gatewayBilled(ctx, refunded ? Fx().Customers.SecondOrganizationID : undefined);
+                    const key = refunded ? 'ear_refunded' : 'ear_kept';
+                    g.held.Invoices = [renewalInvoice(g, key)];
+                    if (refunded) fakeGateway.refunds.set(`ch_it_${key}`, [{ ProviderRefundID: `re_it_${key}`, ProviderChargeID: `ch_it_${key}`, Amount: refunded, CurrencyCode: g.currency, Status: 'succeeded' }]);
+                    // Stripe ended it that afternoon (support cancelled it in the dashboard after the 00:00 charge).
+                    g.held.IsLive = false;
+                    g.held.Status = 'canceled';
+                    g.held.EndedAt = new Date(g.anchor.getTime() + 9 * 3_600_000);
+                    const r = await syncNow(ctx, g.SubscriptionID, new Date(g.anchor.getTime() + 10 * 3_600_000));
+                    const reversals = await TxQuery<{ ID: string; Total: number }>(
+                        ctx,
+                        `SELECT oh.ID, SUM(ol.LineTotalNet) AS Total FROM ${ORDERS_SCHEMA}.OrderHeader oh JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.OrderHeaderID = oh.ID
+                          WHERE ol.ReversesOrderLineID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${g.SubscriptionID}') GROUP BY oh.ID`,
+                    );
+                    const reversed = reversals.reduce((sum, x) => sum + Math.abs(Number(x.Total)), 0);
+                    console.log(`      SR94 refunded=${refunded}: outcome ${r.Outcome}; actions ${r.Actions.join(' | ')}; notices ${r.Notices.join(',')}; reversed ${reversed}`);
+                    AssertEqual((await subscriptionRow(ctx, g.SubscriptionID)).Status, 'Canceled', 'cancelled in Orders');
+                    AssertEqual(reversed, refunded, refunded ? 'reversed exactly what the gateway refunded' : 'nothing reversed: the gateway kept the charge');
+                    Assert(r.Notices.includes('EndedAfterRenewal'), `a person is told: ${r.Notices.join(',')}`);
+                }
+                } finally {
+                    // Put back before reloading: the engine's cache outlives this check's rollback.
+                    await upsertViaEntity(ctx, SUBSCRIPTION_TYPE_ENTITY, typeID, { CancellationRefundMode: was });
+                    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+                }
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR95',
+        Name: 'SR95: the renewal booked, then two days into term 2 Stripe ends it (refunding in part, or not at all): the immediate cancel reverses exactly what Stripe refunded, and a person is told',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const typeID = (await TxOne<{ ID: string }>(ctx, `SELECT SubscriptionTypeID AS ID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${Fx().Products.SubRolling}'`)).ID;
+                const was = (await TxOne<{ Mode: string }>(ctx, `SELECT CancellationRefundMode AS Mode FROM ${ORDERS_SCHEMA}.SubscriptionType WHERE ID = '${typeID}'`)).Mode;
+                await upsertViaEntity(ctx, SUBSCRIPTION_TYPE_ENTITY, typeID, { CancellationRefundMode: 'ProrateUnused' });
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+                try {
+                // The usual flow: the renewal booked at 00:00 on the last day; two days into term 2 support cancels in the
+                // dashboard (and refunds, in full, in part, or not at all). The sync records an IMMEDIATE cancel inside
+                // term 2, and term 2 reverses exactly what Stripe refunded.
+                for (const [refunded, org] of [[0, undefined], [500, Fx().Customers.SecondOrganizationID]] as const) {
+                    const g = await gatewayBilled(ctx, org);
+                    const key = `ear2_${refunded}`;
+                    g.held.Invoices = [renewalInvoice(g, key)];
+                    AssertEqual((await syncNow(ctx, g.SubscriptionID, g.anchor)).Outcome, 'Changed', 'the renewal booked at the anchor');
+                    if (refunded) fakeGateway.refunds.set(`ch_it_${key}`, [{ ProviderRefundID: `re_it_${key}`, ProviderChargeID: `ch_it_${key}`, Amount: refunded, CurrencyCode: g.currency, Status: 'succeeded' }]);
+                    g.held.IsLive = false;
+                    g.held.Status = 'canceled';
+                    g.held.EndedAt = new Date(g.anchor.getTime() + 2 * 86_400_000 + 9 * 3_600_000);
+                    const r = await syncNow(ctx, g.SubscriptionID, new Date(g.held.EndedAt.getTime() + 3_600_000));
+                    const reversals = await TxQuery<{ Total: number }>(
+                        ctx,
+                        `SELECT SUM(ol.LineTotalNet) AS Total FROM ${ORDERS_SCHEMA}.OrderLine ol
+                          WHERE ol.ReversesOrderLineID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${g.SubscriptionID}')`,
+                    );
+                    const reversed = Math.abs(Number(reversals[0]?.Total ?? 0));
+                    console.log(`      SR95 two days later, refunded=${refunded}: ${r.Actions.join(' | ')}; notices ${r.Notices.join(',')}; reversed ${reversed}`);
+                    Assert(r.Actions.some((a) => /Immediate/.test(a)), `an immediate cancel inside term 2: ${r.Actions.join(' | ')}`);
+                    AssertEqual(reversed, refunded, 'term 2 reverses exactly what the gateway refunded');
+                    Assert(r.Notices.includes('EndedAfterRenewal'), 'and a person is told');
+                }
+                } finally {
+                    await upsertViaEntity(ctx, SUBSCRIPTION_TYPE_ENTITY, typeID, { CancellationRefundMode: was });
+                    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+                }
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR96',
+        Name: "SR96: D20 a gateway refund on a renewal's charge credits THAT renewal order (nothing owed, access unchanged, a notice), whenever it lands, once; with a cancel, the total credit is the refund, never double",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // What the renewal order itself owes (D20, the credit-note model: the refund's credit is booked as a credit
+                // order and APPLIED to the renewal, so it reads sold − credit applied: nothing owed).
+                const owed = async (subscriptionID: string) => {
+                    const order = await renewalOrderOf(ctx, subscriptionID);
+                    return Math.round(Number((await TxOne<{ Balance: number }>(ctx, `SELECT Balance FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${order.ID}'`)).Balance) * 100) / 100;
+                };
+                // Net of every reversal of it: the credit order(s) hold nothing back once applied.
+                const owedNet = async (subscriptionID: string) => {
+                    const order = await renewalOrderOf(ctx, subscriptionID);
+                    const r = await TxOne<{ Net: number }>(ctx, `SELECT SUM(Balance) AS Net FROM ${ORDERS_SCHEMA}.vwOrderHeaders WHERE ID = '${order.ID}' OR ReversesOrderHeaderID = '${order.ID}'`);
+                    return Math.round(Number(r.Net ?? 0) * 100) / 100;
+                };
+                const credited = async (subscriptionID: string) => {
+                    const r = await TxOne<{ Reversed: number; Memos: number }>(
+                        ctx,
+                        `SELECT ABS(COALESCE((SELECT SUM(ol.LineTotalNet) FROM ${ORDERS_SCHEMA}.OrderLine ol
+                                 WHERE ol.ReversesOrderLineID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${subscriptionID}')), 0)) AS Reversed,
+                                COALESCE((SELECT SUM(COALESCE(c.CreditMemoAmount, 0) + COALESCE(c.ScheduleReduction, 0)) FROM ${ORDERS_SCHEMA}.OrderConcession c
+                                 JOIN ${ORDERS_SCHEMA}.SubscriptionTerm st ON st.ID = c.SubscriptionTermID
+                                 WHERE st.SubscriptionID = '${subscriptionID}' AND c.Status = 'Approved' AND c.DeliveryForm = 'Price' AND c.NewAmount IS NOT NULL), 0) AS Memos`,
+                    );
+                    return Math.round((Number(r.Reversed) + Number(r.Memos)) * 100) / 100;
+                };
+                const refundEvent = (g: Awaited<ReturnType<typeof gatewayBilled>>, key: string, amount: number, n: number): WebhookEvent => ({
+                    EventID: `evt_it_refund_${key}_${n}`,
+                    Kind: 'charge.refunded',
+                    ProviderIntentID: `pi_it_${key}`,
+                    ProviderChargeID: `ch_it_${key}`,
+                    Amount: amount,
+                });
+                const refundAtStripe = (key: string, currency: string, amounts: number[]) =>
+                    fakeGateway.refunds.set(
+                        `ch_it_${key}`,
+                        amounts.map((a, i) => ({ ProviderRefundID: `re_it_${key}_${i}`, ProviderChargeID: `ch_it_${key}`, Amount: a, CurrencyCode: currency, Status: 'succeeded' })),
+                    );
+
+                // No amount change, so no acknowledgment role: none is configured here, and none is needed.
+                OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+                // 1. Five days into term 2, no cancel: Stripe refunds $200 (partial); it lands once.
+                const g = await gatewayBilled(ctx, undefined, { webhooks: true });
+                const deliver = (event: WebhookEvent) => {
+                    fakeGateway.event = event;
+                    return HandlePaymentWebhook({ RawBody: '{}', Headers: {}, PaymentProviderID: g.account }, ctx.Provider, ctx.User);
+                };
+                g.held.Invoices = [renewalInvoice(g, 'd20')];
+                await syncNow(ctx, g.SubscriptionID, g.anchor);
+                const termsBefore = await termsOf(ctx, g.SubscriptionID);
+                const grantsBefore = await grantEnd(ctx, termsBefore[1].ID);
+                const seats = async () =>
+                    Number((await TxOne<{ Q: number }>(ctx, `SELECT SUM(Quantity) AS Q FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionTermID = '${termsBefore[1].ID}' AND Status IN ('Active','Suspended')`)).Q ?? 0);
+                const seatsBefore = await seats();
+                // One notice per credit (keyed by the credit order), so a later refund is told even while this one is open.
+                const notices = async () =>
+                    Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM __mj_BizAppsTasks.Task WHERE Name LIKE N'Gateway subscription needs attention: ${g.SubscriptionNumber} (GatewayRenewalRefunded) %'`)).N);
+                refundAtStripe('d20', g.currency, [200]);
+                await deliver(refundEvent(g, 'd20', 200, 1));
+                AssertEqual(`${await credited(g.SubscriptionID)}|${await owed(g.SubscriptionID)}`, '200|0', '$200 credited ON the renewal, which owes nothing');
+                await deliver(refundEvent(g, 'd20', 200, 1)); // replayed
+                AssertEqual(await credited(g.SubscriptionID), 200, 'a replayed refund credits nothing more');
+                const after = await termsOf(ctx, g.SubscriptionID);
+                AssertEqual(`${after.length}|${isoDate(after[1].EndDate)}|${(await subscriptionRow(ctx, g.SubscriptionID)).Status}`, `2|${isoDate(termsBefore[1].EndDate)}|Active`, 'access unchanged: term 2 and the subscription as they were');
+                AssertEqual((await grantEnd(ctx, termsBefore[1].ID))?.toISOString(), grantsBefore?.toISOString(), "term 2's access does not end sooner");
+                AssertEqual(await seats(), seatsBefore, "and no grant quantity is reduced (a money-only credit)");
+                AssertEqual(await notices(), 1, 'a person is told, once (the replay told nobody again)');
+
+                // 2. Support ends it at Stripe (keeping the other $1,000): the recorded cancel reverses only what is refunded
+                // and not yet credited (nothing more), then Stripe refunds the rest AFTER the cancel: credited then, once.
+                g.held.IsLive = false;
+                g.held.Status = 'canceled';
+                g.held.EndedAt = new Date(g.anchor.getTime() + 6 * 86_400_000);
+                await syncNow(ctx, g.SubscriptionID, new Date(g.held.EndedAt.getTime() + 3_600_000));
+                AssertEqual(await credited(g.SubscriptionID), 200, 'refund then cancel: the cancel credits nothing more (200 in all)');
+                refundAtStripe('d20', g.currency, [200, 1000]);
+                await deliver(refundEvent(g, 'd20', 1200, 2));
+                AssertEqual(
+                    `${await credited(g.SubscriptionID)}|${await owed(g.SubscriptionID)}|${await owedNet(g.SubscriptionID)}`,
+                    '1200|0|0',
+                    'cancel then refund: the rest credited once (1,200 in all), applied to the renewal (owes nothing)',
+                );
+                AssertEqual(await notices(), 2, "the second refund is its own notice (the first one's Task is still open)");
+
+                // 3. A FULL refund with no cancel (another subscription): the whole of it credited once, and still no access is
+                // taken (a full reversal of a line would otherwise revoke its grants; only a cancel ends access).
+                const h = await gatewayBilled(ctx, Fx().Customers.SecondOrganizationID, { webhooks: true });
+                const deliverH = (event: WebhookEvent) => {
+                    fakeGateway.event = event;
+                    return HandlePaymentWebhook({ RawBody: '{}', Headers: {}, PaymentProviderID: h.account }, ctx.Provider, ctx.User);
+                };
+                h.held.Invoices = [renewalInvoice(h, 'd20h')];
+                await syncNow(ctx, h.SubscriptionID, h.anchor);
+                const hTerms = await termsOf(ctx, h.SubscriptionID);
+                const hSeats = async () =>
+                    Number((await TxOne<{ Q: number }>(ctx, `SELECT SUM(Quantity) AS Q FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionTermID = '${hTerms[1].ID}' AND Status IN ('Active','Suspended')`)).Q ?? 0);
+                const hSeatsBefore = await hSeats();
+                Assert(hSeatsBefore > 0, 'precondition: term 2 grants access');
+                refundAtStripe('d20h', h.currency, [1200]);
+                await deliverH(refundEvent(h, 'd20h', 1200, 1));
+                AssertEqual(
+                    `${await credited(h.SubscriptionID)}|${await owed(h.SubscriptionID)}|${await owedNet(h.SubscriptionID)}`,
+                    '1200|0|0',
+                    'a full refund: credited 1,200 once and applied ON the renewal, which owes nothing (sold 1,200, credit 1,200)',
+                );
+                const renewalTotal = await TxOne<{ T: number }>(ctx, `SELECT TotalGross AS T FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${(await renewalOrderOf(ctx, h.SubscriptionID)).ID}'`);
+                AssertEqual(Number(renewalTotal.T), 1200, "the renewal keeps its total: only what it owes falls");
+                AssertEqual(await hSeats(), hSeatsBefore, 'and term 2 still grants its access');
+                AssertEqual((await subscriptionRow(ctx, h.SubscriptionID)).Status, 'Active', 'still active: a refund is not a cancel');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR97',
+        Name: "SR97: two gateway renewals; Stripe charged term 3 on term 2's last day, refunded THAT charge and ended it: term 2 (served) reverses 0 and term 3 reverses its own $1,200 — in one run and in two",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const typeID = (await TxOne<{ ID: string }>(ctx, `SELECT SubscriptionTypeID AS ID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${Fx().Products.SubRolling}'`)).ID;
+                const was = (await TxOne<{ Mode: string }>(ctx, `SELECT CancellationRefundMode AS Mode FROM ${ORDERS_SCHEMA}.SubscriptionType WHERE ID = '${typeID}'`)).Mode;
+                await upsertViaEntity(ctx, SUBSCRIPTION_TYPE_ENTITY, typeID, { CancellationRefundMode: 'ProrateUnused' });
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+                try {
+                    for (const runs of [1, 2]) {
+                        const g = await gatewayBilled(ctx, runs === 1 ? undefined : Fx().Customers.SecondOrganizationID);
+                        const year = 365 * 86_400_000;
+                        const r2 = renewalInvoice(g, `t2_${runs}`);
+                        await (g.held.Invoices = [r2], syncNow(ctx, g.SubscriptionID, g.anchor));
+                        const terms2 = await termsOf(ctx, g.SubscriptionID);
+                        const anchor3 = DayStartUtc(isoDate(terms2[1].EndDate), BusinessTimeZoneEngine.Instance.Zone);
+                        const r3 = { ...renewalInvoice({ anchor: anchor3, currency: g.currency }, `t3_${runs}`), PeriodEnd: new Date(anchor3.getTime() + year) };
+                        g.held.Invoices = [r2, r3];
+                        fakeGateway.refunds.set(`ch_it_t3_${runs}`, [{ ProviderRefundID: `re_it_t3_${runs}`, ProviderChargeID: `ch_it_t3_${runs}`, Amount: 1200, CurrencyCode: g.currency, Status: 'succeeded' }]);
+                        if (runs === 2) await syncNow(ctx, g.SubscriptionID, anchor3); // term 3 booked in its own run first
+                        g.held.IsLive = false;
+                        g.held.Status = 'canceled';
+                        g.held.EndedAt = new Date(anchor3.getTime() + 9 * 3_600_000);
+                        await syncNow(ctx, g.SubscriptionID, new Date(anchor3.getTime() + 10 * 3_600_000));
+                        const byTerm = await TxQuery<{ TermNumber: number; Reversed: number }>(
+                            ctx,
+                            `SELECT st.TermNumber, ABS(COALESCE((SELECT SUM(r.LineTotalNet) FROM ${ORDERS_SCHEMA}.OrderLine r WHERE r.ReversesOrderLineID = st.OrderLineID), 0)) AS Reversed
+                               FROM ${ORDERS_SCHEMA}.SubscriptionTerm st WHERE st.SubscriptionID = '${g.SubscriptionID}' ORDER BY st.TermNumber`,
+                        );
+                        AssertEqual(
+                            byTerm.map((t) => `${t.TermNumber}:${Number(t.Reversed)}`).join(','),
+                            '1:0,2:0,3:1200',
+                            `${runs} run(s): each term reverses its OWN charge's refund`,
+                        );
+                    }
+                } finally {
+                    await upsertViaEntity(ctx, SUBSCRIPTION_TYPE_ENTITY, typeID, { CancellationRefundMode: was });
+                    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+                }
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR92-OT',
+        Name: 'SR92-OT: outside the harness transaction, two bookings of one paid renewal at the same instant, each on its own provider (two workers), book it once',
+        RequiresMutation: true,
+        Fn: async (ctx) => {
+            const run: CheckoutRun = { OrderIDs: [], SubscriptionIDs: [] };
+            const typeExisted = !!(await TxMaybeOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code = '${IT_GATEWAY_BILLING}'`));
+            let outcomes: string[] = [];
+            await OutsideTransaction(
+                async () => {
+                    fakeGateway.reset();
+                    const f = Fx();
+                    const account = await gatewayBillingAccount(ctx);
+                    run.PaymentProviderID = account;
+                    const sub = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
+                    run.OrderIDs.push(sub.OrderID);
+                    run.SubscriptionIDs.push(sub.SubscriptionID);
+                    await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                    const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+                    const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === linked.Outcomes[0].ProviderSubscriptionID)!;
+                    await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+                    const anchor = DayStartUtc(isoDate(sub.Term.EndDate), BusinessTimeZoneEngine.Instance.Zone);
+                    held.Invoices = [renewalInvoice({ anchor, currency: await booksIn(ctx) }, 'race')];
+
+                    // 1. Two deliveries of one renewal at the same instant, each on a provider of its own (two workers),
+                    //    straight into the booking so neither can see the other's commit before it starts: both find no
+                    //    intent, then queue on the subscription row's lock; the second finds the first's booking under it.
+                    const row = await TxOne<Record<string, unknown>>(
+                        ctx,
+                        `SELECT ID, SubscriptionNumber, Status, ProductID, CompanyID, HolderOrganizationID, BeneficiaryPersonID, PaymentProviderID, ProviderSubscriptionID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`,
+                    );
+                    const renewal = {
+                        ...(row as object),
+                        LatestTermOrderLineID: null,
+                        LatestTermQuantity: 1,
+                        LatestTermUnitPrice: 1200,
+                    } as RenewalSubscription;
+                    const config = await LoadPaymentProviderConfig(account, ctx.Provider, ctx.User);
+                    const driver = await BuildPaymentProvider(config, ctx.Provider, ctx.User);
+                    const db = ctx.Provider as unknown as { CreateIndependentInstance: () => Promise<unknown> };
+                    const workers = await Promise.all([db.CreateIndependentInstance(), db.CreateIndependentInstance()]);
+                    try {
+                        const booked = await Promise.all(
+                            workers.map((w) => BookProviderRenewal(renewal, held.Invoices![0], config, driver, w as never, ctx.User).catch((e: unknown) => ({ Outcome: `threw: ${e}` }))),
+                        );
+                        outcomes = booked.map((b) => b.Outcome).sort();
+                    } finally {
+                        for (const w of workers) await (w as { ReleaseIndependentInstance: () => Promise<void> }).ReleaseIndependentInstance().catch(() => undefined);
+                    }
+                    AssertEqual(JSON.stringify(outcomes), JSON.stringify(['AlreadyBooked', 'Booked']), 'one books; the other finds it under the lock');
+
+                    // 1b. The same race for a $0 renewal (a 100% coupon: no intent, so the guard is the invoice's event).
+                    const zeroSub = await subscriptionWithCard(ctx, account, f.Customers.OrganizationID);
+                    run.OrderIDs.push(zeroSub.OrderID);
+                    run.SubscriptionIDs.push(zeroSub.SubscriptionID);
+                    const zeroLinked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [zeroSub.SubscriptionID] });
+                    const zeroRow = await TxOne<Record<string, unknown>>(
+                        ctx,
+                        `SELECT ID, SubscriptionNumber, Status, ProductID, CompanyID, HolderOrganizationID, BeneficiaryPersonID, PaymentProviderID, ProviderSubscriptionID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${zeroSub.SubscriptionID}'`,
+                    );
+                    const zeroInvoice = { ...renewalInvoice({ anchor, currency: await booksIn(ctx) }, 'race0'), AmountPaid: 0, AmountDue: 0, ProviderIntentID: null, ProviderChargeID: null, Discounted: true };
+                    const zeroWorkers = await Promise.all([db.CreateIndependentInstance(), db.CreateIndependentInstance()]);
+                    try {
+                        const zeroBooked = await Promise.all(
+                            zeroWorkers.map((w) =>
+                                BookProviderRenewal({ ...(zeroRow as object), LatestTermOrderLineID: null, LatestTermQuantity: 1, LatestTermUnitPrice: 1200 } as RenewalSubscription, zeroInvoice, config, driver, w as never, ctx.User).catch(
+                                    (e: unknown) => ({ Outcome: `threw: ${e}` }),
+                                ),
+                            ),
+                        );
+                        AssertEqual(JSON.stringify(zeroBooked.map((b) => b.Outcome).sort()), JSON.stringify(['AlreadyBooked', 'Booked']), `the $0 renewal booked once (${zeroLinked.Outcomes[0]?.Code})`);
+                    } finally {
+                        for (const w of zeroWorkers) await (w as { ReleaseIndependentInstance: () => Promise<void> }).ReleaseIndependentInstance().catch(() => undefined);
+                    }
+                    AssertEqual(
+                        Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID = '${zeroSub.SubscriptionID}'`)).N),
+                        2,
+                        'one term added for the $0 renewal',
+                    );
+
+                    // 2. And the sync's own path, twice at once: the same single booking (both now in line).
+                    const results = await Promise.all([
+                        SyncProviderSubscription(sub.SubscriptionID, { Now: anchor }, ctx.Provider, ctx.User),
+                        SyncProviderSubscription(sub.SubscriptionID, { Now: anchor }, ctx.Provider, ctx.User),
+                    ]);
+                    Assert(results.every((r) => r.Outcome === 'InLine'), `two later syncs at once find it booked: ${JSON.stringify(results.map((r) => [r.Outcome, r.Error]))}`);
+                    const counts = await TxOne<{ Terms: number; Intents: number; Payments: number; Orders: number }>(
+                        ctx,
+                        `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID = '${sub.SubscriptionID}') AS Terms,
+                                (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID = 'pi_it_race') AS Intents,
+                                (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentHeader WHERE IdempotencyKey = 'provider-charge:${account.toLowerCase()}:ch_it_race') AS Payments,
+                                (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${sub.SubscriptionID}') AS Orders`,
+                    );
+                    AssertEqual(`${counts.Terms}|${counts.Intents}|${counts.Payments}|${counts.Orders}`, '2|1|1|1', `booked once: ${JSON.stringify(counts)}`);
+                },
+                async () => {
+                    await PurgeCheckoutRun(ctx, run);
+                    if (!typeExisted) await TxQuery(ctx, `DELETE FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code = '${IT_GATEWAY_BILLING}'`);
+                },
+            );
+            const left = await TxOne<{ N: number }>(
+                ctx,
+                `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.Subscription WHERE ID IN (${run.SubscriptionIDs.map((i) => `'${i}'`).join(',') || 'NULL'}))
+                      + (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentProvider WHERE ID = ${run.PaymentProviderID ? `'${run.PaymentProviderID}'` : 'NULL'}) AS N`,
+            );
+            AssertEqual(Number(left.N), 0, "the check's committed rows are deleted afterwards");
+        },
+    },
+
+    {
+        Id: 'subscription-renewal.SR98-OT',
+        Name: "SR98-OT: outside the harness transaction, one $200 gateway refund of a renewal is credited ONCE (and applied, the renewal owes 0): two deliveries at once on one provider; refund door vs cancel door, whichever locks first",
+        RequiresMutation: true,
+        Fn: async (ctx) => {
+            const run: CheckoutRun = { OrderIDs: [], SubscriptionIDs: [] };
+            const typeExisted = !!(await TxMaybeOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code = '${IT_GATEWAY_BILLING}'`));
+            const numbers: string[] = [];
+            const user = ctx.User;
+            // The committed rows' clean-up: the credit orders and the alert Tasks too (the purge below takes the rest).
+            const seenSubs: string[] = [];
+            const seenOrders: string[] = [];
+            const purgeSubscriptions = async () => {
+                fakeGateway.chargeGate = null;
+                const subs = run.SubscriptionIDs.map((i) => `'${i}'`).join(',') || 'NULL';
+                const credits = await TxQuery<{ ID: string }>(
+                    ctx,
+                    `SELECT DISTINCT OrderHeaderID AS ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ReversesOrderLineID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID IN (${subs}) OR SubscriptionID IN (${subs}))`,
+                );
+                run.OrderIDs.push(...credits.map((r) => r.ID));
+                for (const n of numbers.filter(Boolean)) {
+                    const like = `N'%${n.replace(/'/g, "''")} (%'`;
+                    await TxQuery(ctx, `DELETE FROM __mj_BizAppsTasks.TaskLink WHERE TaskID IN (SELECT ID FROM __mj_BizAppsTasks.Task WHERE Name LIKE ${like})`).catch(() => undefined);
+                    await TxQuery(ctx, `DELETE FROM __mj_BizAppsTasks.TaskAssignment WHERE TaskID IN (SELECT ID FROM __mj_BizAppsTasks.Task WHERE Name LIKE ${like})`).catch(() => undefined);
+                    await TxQuery(ctx, `DELETE FROM __mj_BizAppsTasks.Task WHERE Name LIKE ${like}`).catch(() => undefined);
+                }
+                seenSubs.push(...run.SubscriptionIDs);
+                seenOrders.push(...run.OrderIDs);
+            };
+            await OutsideTransaction(
+                async () => {
+                    fakeGateway.reset();
+                    const f = Fx();
+                    const account = await gatewayBillingAccount(ctx);
+                    run.PaymentProviderID = account;
+                    const config = await LoadPaymentProviderConfig(account, ctx.Provider, user);
+                    const currency = await booksIn(ctx);
+                    await BusinessTimeZoneEngine.Instance.Config(false, user, ctx.Provider);
+                    const zone = BusinessTimeZoneEngine.Instance.Zone;
+                    let priceFlagged = false;
+
+                    // What is credited against THIS renewal (the latest one booked): part 3 sells part 1's customer again,
+                    // and Orders reactivates the same subscription (Q5), so the subscription alone does not pick it.
+                    const credited = async (subscriptionID: string) =>
+                        Math.round(
+                            Number(
+                                (
+                                    await TxOne<{ R: number }>(
+                                        ctx,
+                                        `SELECT ABS(COALESCE(SUM(ol.LineTotalNet), 0)) AS R FROM ${ORDERS_SCHEMA}.OrderLine ol
+                                          WHERE ol.ReversesOrderLineID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${(await renewalOrderOf(ctx, subscriptionID)).ID}')`,
+                                    )
+                                ).R,
+                            ) * 100,
+                        ) / 100;
+                    const owed = async (subscriptionID: string) => {
+                        const o = await renewalOrderOf(ctx, subscriptionID);
+                        return Math.round(Number((await TxOne<{ B: number }>(ctx, `SELECT Balance AS B FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${o.ID}'`)).B) * 100) / 100;
+                    };
+                    // One gateway-billed subscription with its renewal booked (committed), Stripe having refunded $200 of it.
+                    const renewed = async (organizationID: string | undefined, key: string, ended: boolean) => {
+                        const sub = await subscriptionWithCard(ctx, account, organizationID);
+                        run.OrderIDs.push(sub.OrderID);
+                        run.SubscriptionIDs.push(sub.SubscriptionID);
+                        if (!priceFlagged) {
+                            await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                            priceFlagged = true;
+                        }
+                        const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
+                        const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === linked.Outcomes[0].ProviderSubscriptionID)!;
+                        const anchor = DayStartUtc(isoDate(sub.Term.EndDate), zone);
+                        held.Invoices = [renewalInvoice({ anchor, currency }, key)];
+                        const synced = await SyncProviderSubscription(sub.SubscriptionID, { Now: anchor }, ctx.Provider, user);
+                        Assert(synced.Outcome !== 'Failed', `precondition: the renewal booked: ${synced.Error}`);
+                        numbers.push((await TxOne<{ N: string }>(ctx, `SELECT SubscriptionNumber AS N FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${sub.SubscriptionID}'`)).N);
+                        fakeGateway.refunds.set(`ch_it_${key}`, [{ ProviderRefundID: `re_it_${key}_0`, ProviderChargeID: `ch_it_${key}`, Amount: 200, CurrencyCode: currency, Status: 'succeeded' }]);
+                        const endedAt = new Date(anchor.getTime() + 6 * 86_400_000);
+                        if (ended) {
+                            held.IsLive = false;
+                            held.Status = 'canceled';
+                            held.EndedAt = endedAt;
+                        }
+                        const intent = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID = 'pi_it_${key}'`);
+                        const event = (n: number): WebhookEvent => ({ EventID: `evt_it_${key}_${n}`, Kind: 'charge.refunded', ProviderIntentID: `pi_it_${key}`, ProviderChargeID: `ch_it_${key}`, Amount: 200 });
+                        const refundDoor = async (n: number, driver?: Awaited<ReturnType<typeof BuildPaymentProvider>>) =>
+                            BookProviderRefunds(event(n), intent.ID, driver ?? (await BuildPaymentProvider(config, ctx.Provider, user)), ctx.Provider, user);
+                        const cancelDoor = async () => {
+                            const w = await (ctx.Provider as unknown as { CreateIndependentInstance: () => Promise<unknown> }).CreateIndependentInstance();
+                            try {
+                                return await WithGatewayEndRecorded(() =>
+                                    new CancelSubscriptionOperation().ExecuteServer(
+                                        { SubscriptionID: sub.SubscriptionID, RequestDate: isoDate(endedAt), Timing: 'Immediate', Reason: 'Ended at the payment gateway' },
+                                        { provider: w as never, user, emitProgress: () => undefined },
+                                    ),
+                                );
+                            } finally {
+                                await (w as { ReleaseIndependentInstance: () => Promise<void> }).ReleaseIndependentInstance().catch(() => undefined);
+                            }
+                        };
+                        const end = () => {
+                            held.IsLive = false;
+                            held.Status = 'canceled';
+                            held.EndedAt = endedAt;
+                        };
+                        return { SubscriptionID: sub.SubscriptionID, refundDoor, cancelDoor, end };
+                    };
+                    /** Hold the next gateway charge read (not one by a `bypass` driver) after it reads; returns the release. */
+                    const gate = (bypass: object[] = []) => {
+                        let release!: () => void;
+                        let reached!: () => void;
+                        const atGate = new Promise<void>((res) => (reached = res));
+                        fakeGateway.chargeGate = { bypass: new Set(bypass), reached, release: new Promise<void>((res) => (release = res)) };
+                        return { atGate, release: () => release() };
+                    };
+
+                    // 1. Two refund deliveries of one refund at the same instant, both on ONE (shared) provider: each runs
+                    //    on its own instance, so the subscription lock really makes one wait: credited once.
+                    const a = await renewed(f.Customers.OrganizationID, 'd20ra', false);
+                    const both = await Promise.all([a.refundDoor(1), a.refundDoor(2)]);
+                    Assert(both.every((o) => !o.ReviewReason), `neither delivery raised a review: ${JSON.stringify(both)}`);
+                    AssertEqual(`${await credited(a.SubscriptionID)}|${await owed(a.SubscriptionID)}`, '200|0', 'two deliveries at once: 200 credited once, applied (the renewal owes 0)');
+
+                    // 2. The refund door LOCKS FIRST: the cancel has read the gateway (200 refunded, nothing credited) and
+                    //    waits; the refund credits 200 and commits; the cancel then locks, re-reads, and reverses nothing more.
+                    const b = await renewed(f.Customers.SecondOrganizationID, 'd20rb', true);
+                    const refundDriver = await BuildPaymentProvider(config, ctx.Provider, user);
+                    const g1 = gate([refundDriver]);
+                    const cancelling = b.cancelDoor();
+                    await g1.atGate;
+                    await b.refundDoor(1, refundDriver);
+                    g1.release();
+                    const c1 = await cancelling;
+                    Assert(c1.Success && c1.Output?.Success, `the cancel recorded: ${c1.Output?.Message ?? c1.ErrorMessage}`);
+                    AssertEqual(`${await credited(b.SubscriptionID)}|${await owed(b.SubscriptionID)}`, '200|0', 'refund locked first: 200 credited once (the cancel reversed nothing more), the renewal owes 0');
+
+                    // 3. The cancel door LOCKS FIRST: the refund door has read the gateway and waits; the cancel reverses
+                    //    the 200 and commits; the refund door then locks, re-reads, and credits nothing more.
+                    // The fixture has two customers, each holding one of these subscriptions: part 1's is ended (recorded
+                    // as the gateway's end) so part 3 can sell its customer a new one.
+                    a.end();
+                    const ca = await a.cancelDoor();
+                    Assert(ca.Success && ca.Output?.Success, `part 1's subscription recorded as ended: ${ca.Output?.Message ?? ca.ErrorMessage}`);
+                    const c = await renewed(f.Customers.OrganizationID, 'd20rc', true);
+                    const g2 = gate();
+                    const refunding = c.refundDoor(1);
+                    await g2.atGate;
+                    const c2 = await c.cancelDoor();
+                    Assert(c2.Success && c2.Output?.Success, `the cancel recorded: ${c2.Output?.Message ?? c2.ErrorMessage}`);
+                    g2.release();
+                    await refunding;
+                    const detail = await TxQuery<Record<string, unknown>>(
+                        ctx,
+                        `SELECT oh.OrderNumber, oh.OrderType, LEFT(oh.Notes, 120) AS Notes, ol.Quantity, ol.LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine ol JOIN ${ORDERS_SCHEMA}.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+                          WHERE ol.ReversesOrderLineID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${c.SubscriptionID}')`,
+                    );
+                    AssertEqual(`${await credited(c.SubscriptionID)}|${await owed(c.SubscriptionID)}`, '200|0', `cancel locked first: 200 credited once (the refund door credited nothing more), the renewal owes 0: ${JSON.stringify(detail)}`);
+                },
+                async () => {
+                    await purgeSubscriptions();
+                    await PurgeCheckoutRun(ctx, run);
+                    if (!typeExisted) await TxQuery(ctx, `DELETE FROM ${ORDERS_SCHEMA}.PaymentProviderType WHERE Code = '${IT_GATEWAY_BILLING}'`);
+                },
+            );
+            const left = await TxOne<{ N: number }>(
+                ctx,
+                `SELECT (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.Subscription WHERE ID IN (${seenSubs.map((i) => `'${i}'`).join(',') || 'NULL'}))
+                      + (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID IN (${seenOrders.map((i) => `'${i}'`).join(',') || 'NULL'}))
+                      + (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.PaymentProvider WHERE ID = ${run.PaymentProviderID ? `'${run.PaymentProviderID}'` : 'NULL'}) AS N`,
+            );
+            AssertEqual(Number(left.N), 0, "the check's committed rows are deleted afterwards");
+        },
     },
 
 ];
@@ -3585,8 +4316,13 @@ const fakeGateway = {
     }>,
     /** E4: refunds the gateway made, by charge. */
     refunds: new Map<string, GatewayRefund[]>(),
+    /** A race check's gate on the next RetrieveCharge (not on a `bypass` driver): see the driver's RetrieveCharge. */
+    chargeGate: null as null | { bypass: Set<object>; reached: () => void; release: Promise<void> },
     /** E3: the event the next webhook delivery carries. */
     event: null as WebhookEvent | null,
+    /** Describe calls so far, and the call number that fails (a transient gateway read failure); 0 = none. */
+    describeCalls: 0,
+    failDescribeOnCall: 0,
     priceInterval: { Unit: 'year', Count: 1 } as GatewayPriceInterval,
     /** Every cancel the gateway was asked for (E2b). */
     cancelled: [] as CancelProviderSubscriptionRequest[],
@@ -3600,6 +4336,9 @@ const fakeGateway = {
         this.refuseCancel = null;
         this.refunds = new Map();
         this.event = null;
+        this.describeCalls = 0;
+        this.failDescribeOnCall = 0;
+        this.chargeGate = null;
     },
 };
 
@@ -3648,6 +4387,10 @@ export class IntegrationTestGatewayBillingProvider extends StripePaymentProvider
 
     /** In memory, as Stripe reports it: ended, set to end, or renewing from `PeriodStart`; an unknown id is refused. */
     public override async DescribeProviderSubscription(providerSubscriptionID: string): Promise<DescribeProviderSubscriptionResult> {
+        fakeGateway.describeCalls++;
+        if (fakeGateway.failDescribeOnCall && fakeGateway.describeCalls === fakeGateway.failDescribeOnCall) {
+            return { Success: false, Reason: 'the gateway timed out (staged)' };
+        }
         const held = fakeGateway.held.find((h) => h.ProviderSubscriptionID === providerSubscriptionID);
         if (!held) return { Success: false, Reason: `No such subscription: '${providerSubscriptionID}'` };
         return {
@@ -3674,6 +4417,20 @@ export class IntegrationTestGatewayBillingProvider extends StripePaymentProvider
 
     /** E4: a charge of a staged invoice, with the refunds the gateway made on it. */
     public override async RetrieveCharge(request: RetrieveChargeRequest): Promise<RetrieveChargeResult> {
+        // A race check's gate: the read is made NOW, then held until the check lets it return (the caller has read
+        // the gateway and not yet locked anything).
+        const gate = fakeGateway.chargeGate;
+        if (gate && !gate.bypass.has(this)) {
+            const result = this.chargeNow(request);
+            fakeGateway.chargeGate = null;
+            gate.reached();
+            await gate.release;
+            return result;
+        }
+        return this.chargeNow(request);
+    }
+
+    private chargeNow(request: RetrieveChargeRequest): RetrieveChargeResult {
         const invoice = fakeGateway.held.flatMap((h) => h.Invoices ?? []).find((i) => i.ProviderChargeID === request.ProviderChargeID);
         if (!invoice) return { Success: false, NotFound: true, Reason: `No such charge: '${request.ProviderChargeID}'` };
         const refunded = (fakeGateway.refunds.get(request.ProviderChargeID) ?? []).reduce((sum, r) => sum + r.Amount, 0);
@@ -4033,6 +4790,8 @@ function renewalInvoice(g: { anchor: Date; currency: string }, key: string, over
         NextAttemptAt: null,
         ProviderPriceID: 'price_it_rolling',
         Quantity: 1,
+        PeriodStart: g.anchor,
+        PeriodEnd: new Date(g.anchor.getTime() + 365 * 86_400_000),
         ...over,
     };
 }
@@ -4087,4 +4846,15 @@ async function namedTasks(ctx: IntegrationCheckContext, name: string): Promise<n
     Assert(ctx.Provider.Entities.some((e) => e.Name === TASK_ENTITY), 'precondition: bizapps-tasks is installed, so alerts are Tasks');
     const rows = await TxQuery<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM __mj_BizAppsTasks.Task WHERE Name = N'${name.replace(/'/g, "''")}'`);
     return Number(rows[0]?.N ?? 0);
+}
+
+/** Run `body` with the business zone America/Chicago (AIDP's), restored after; the engine is read by every caller. */
+async function withChicago<T>(body: () => Promise<T>): Promise<T> {
+    const engine = BusinessTimeZoneEngine.Instance;
+    Object.defineProperty(engine, 'Zone', { get: () => 'America/Chicago', configurable: true });
+    try {
+        return await body();
+    } finally {
+        delete (engine as unknown as { Zone?: string }).Zone;
+    }
 }

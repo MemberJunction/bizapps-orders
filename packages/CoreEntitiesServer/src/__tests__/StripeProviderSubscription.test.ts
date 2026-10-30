@@ -926,6 +926,42 @@ describe('StripePaymentProvider.DescribeProviderSubscription (E2b)', () => {
         }
     });
 
+    it.each([
+        ['an unreadable body (parsed as {})', {}],
+        ['no status', { id: 'sub_x', current_period_start: 1798696800 }],
+        ['an empty status', { id: 'sub_x', status: '  ' }],
+        ['another subscription', { id: 'sub_other', status: 'active', current_period_start: 1767160800 }],
+        ['an active one naming no period', { id: 'sub_x', status: 'active' }],
+        ['an unknown status', { id: 'sub_x', status: 'weird', current_period_start: 1767160800 }],
+        ['a period that is not a number', { id: 'sub_x', status: 'active', current_period_start: 'abc' }],
+    ])('fails closed on a 2xx that is not this subscription: %s → Success false, no State (a cancel then refuses, nothing sent)', async (_, body) => {
+        const { driver, restore } = live([{ body: body as Record<string, unknown> }]);
+        try {
+            const result = await driver.DescribeProviderSubscription('sub_x');
+            expect(result.Success).toBe(false);
+            expect(result.State).toBeUndefined();
+            expect(result.Reason).toMatch(/treated as a failed read/);
+        } finally {
+            restore();
+        }
+    });
+
+    it('a 2025-03-31.basil shape (the period on the item, not the subscription) is read from the item', async () => {
+        const { driver, restore } = live([
+            { body: { id: 'sub_x', status: 'active', items: { data: [{ price: { id: 'price_pro' }, quantity: 1, current_period_start: 1798696800, current_period_end: 1830232800 }] } } },
+        ]);
+        try {
+            expect(await driver.DescribeProviderSubscription('sub_x')).toMatchObject({
+                Success: true,
+                State: 'Renewing',
+                CurrentPeriodStart: new Date('2026-12-31T06:00:00.000Z'),
+                CurrentPeriodEnd: new Date('2027-12-31T06:00:00.000Z'),
+            });
+        } finally {
+            restore();
+        }
+    });
+
     it("a 404 → Success false naming sub_x and Stripe's message, no State", async () => {
         const { driver, sent, restore } = live([{ status: 404, body: { error: { message: "No such subscription: 'sub_x'" } } }]);
         try {

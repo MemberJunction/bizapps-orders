@@ -159,7 +159,7 @@ describe('StripeInvoiceFacts (2024-06-20 names)', () => {
         attempt_count: 1,
         next_payment_attempt: null,
         total_discount_amounts: [],
-        lines: { data: [{ price: { id: 'price_pro' }, quantity: 1 }] },
+        lines: { data: [{ type: 'subscription', proration: false, price: { id: 'price_pro' }, quantity: 1, period: { start: 1830142800, end: 1861678800 } }] },
     };
     it('maps a paid renewal: major units, ids from strings or objects, paid_at', () => {
         expect(StripeInvoiceFacts(paid)).toEqual({
@@ -180,7 +180,25 @@ describe('StripeInvoiceFacts (2024-06-20 names)', () => {
             NextAttemptAt: null,
             ProviderPriceID: 'price_pro',
             Quantity: 1,
+            PeriodStart: new Date(1830142800 * 1000),
+            PeriodEnd: new Date(1861678800 * 1000),
         });
+    });
+    it("reads the subscription's own line, not a proration or an invoice item listed first", () => {
+        const withProration = {
+            ...paid,
+            lines: {
+                data: [
+                    { type: 'invoiceitem', proration: false, price: { id: 'price_setup' }, quantity: 1, period: { start: 1, end: 2 } },
+                    { type: 'subscription', proration: true, price: { id: 'price_old' }, quantity: 2, period: { start: 3, end: 4 } },
+                    { type: 'subscription', proration: false, price: { id: 'price_pro' }, quantity: 1, period: { start: 1830142800, end: 1861678800 } },
+                ],
+            },
+        };
+        expect(StripeInvoiceFacts(withProration)).toMatchObject({ ProviderPriceID: 'price_pro', Quantity: 1, PeriodStart: new Date(1830142800 * 1000) });
+    });
+    it('no period on the line → PeriodStart null (the planner parks it)', () => {
+        expect(StripeInvoiceFacts({ ...paid, lines: { data: [{ price: 'price_pro', quantity: 1 }] } }).PeriodStart).toBeNull();
     });
     it('Discounted from a discount amount, a discounts list, or the legacy discount object', () => {
         expect(StripeInvoiceFacts({ ...paid, total_discount_amounts: [{ amount: 20000 }] }).Discounted).toBe(true);
