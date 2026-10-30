@@ -117,6 +117,16 @@ export interface CheckoutWidgetConfiguration {
      */
     autoRenewConsentText?: string;
     /**
+     * What a buyer who already holds a subscription their payment gateway bills (one with a gateway id,
+     * `ProviderSubscriptionID`, in this widget's company) is told when they try to buy another
+     * subscription. Such a purchase is refused, whatever the plan: Orders would extend or add a term
+     * the gateway knows nothing about, and the gateway would still charge at its own renewal, so the
+     * buyer would pay twice. A purchase with no subscription product is not refused. `{renewalDate}` is
+     * replaced with the last day of that subscription's latest term (the day the gateway charges), in
+     * US English. Unset, a neutral default is shown.
+     */
+    providerBilledSubscriptionMessage?: string;
+    /**
      * When true, the widget shows a promotion-code field and the anonymous draft accepts one code
      * (validated, priced and booked server-side by the promotion engine). Absent or false: codes are
      * refused.

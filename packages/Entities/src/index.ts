@@ -43,6 +43,8 @@ export * from './order-review';
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
 export * from './SubscriptionTermEntity';
+export * from './SubscriptionEntity';
+export * from './provider-billed';
 export * from './ProductPriceEntity';
 export * from './ProductEntity';
 export * from './OrderLineExtensionCompanion';
