@@ -1230,16 +1230,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * the move to Confirmed waits, so the work is kept and the concession stays visible as a queue.
      */
     private async passesConcessionGate(): Promise<boolean> {
-        const user = this.ContextCurrentUser;
-        if (!user) return true;
-        const lines = this.concessionLineFacts();
-        const problems = await FindUnapprovedConcessions(
-            this.IsSaved ? this.ID : null,
-            lines,
-            true,
-            this.ProviderToUse as unknown as IMetadataProvider,
-            user,
-        );
+        const problems = await this.concessionGateProblems();
         if (problems.length === 0) return true;
 
         this.RegisterResultHistoryEntry(
@@ -1251,6 +1242,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ),
         );
         return false;
+    }
+
+    /**
+     * What the concession gate would refuse this order's confirm for, without confirming (golive #340).
+     * Writes nothing. Loads the saved lines first when they are not in memory, so a freshly loaded
+     * order is judged on the lines confirm would book. `Orders.ConfirmReadiness` answers with this.
+     */
+    public async PreviewConcessionProblems(): Promise<string[]> {
+        if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        return this.concessionGateProblems();
+    }
+
+    /** The gate's problems, one clause each as `FindUnapprovedConcessions` words them. None without a context user. */
+    private async concessionGateProblems(): Promise<string[]> {
+        const user = this.ContextCurrentUser;
+        if (!user) return [];
+        return FindUnapprovedConcessions(
+            this.IsSaved ? this.ID : null,
+            this.concessionLineFacts(),
+            true,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
     }
 
     /**
