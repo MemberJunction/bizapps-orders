@@ -153,6 +153,19 @@
                 }
             </div>
         }
+        <!-- Subscription lengths other than the type's term (golive #338). They do not block confirm, so
+             they sit under their own neutral heading rather than under "Before this can be confirmed". -->
+        @if (TermLengthNotes.length > 0) {
+            <div class="mjo-oh-todo mjo-oh-todo--info">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>When this is confirmed</span>
+                <ul class="mjo-oh-moved__list">
+                    @for (note of TermLengthNotes; track $index) {
+                        <li>{{ note }}</li>
+                    }
+                </ul>
+            </div>
+        }
 
         @if (StatusError) {
             <div class="mjo-oh-todo mjo-oh-todo--err" role="alert">

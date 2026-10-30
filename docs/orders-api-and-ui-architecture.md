@@ -94,6 +94,7 @@ metadata descriptions predate the code.
 | `Orders.GetOverdueWorklist` | `orders:read` | Sync | The collections worklist. Overdue changes with the clock, so it is computed, not stored. |
 | `Orders.GetBillingWorklist` | `orders:read` | Sync | Scheduled instalments inside their billing window with no invoice behind them. |
 | `Orders.IssueInstalmentInvoice` | `orders:write` | Sync | Issues one Scheduled instalment: freezes its document number, stamps `InvoicedAt`, moves it to Invoiced and books its billing entry, in one transaction. Issuing twice changes nothing. |
+| `Orders.ReplacePaymentSchedule` | `orders:write` | Sync | Sets an order's payment schedule to a supplied list of rows. Instalments already invoiced must be in the list unchanged and are kept; the rest replace the Scheduled rows, numbered by due date, and must tie to the order's lines. Refuses adding a schedule to an order confirmed without one, and removing one from a confirmed order. All or none; Sales calls it at Close Won and when a won deal's schedule changes. |
 | **Progress (percentage of completion)** | | | |
 | `Orders.RecordProgress` | `orders:write` | Sync | Records one attested percent-complete observation on a line and posts the cumulative revenue catch-up. Preview writes nothing. |
 | `Orders.GetProgressWorklist` | `orders:read` | Sync | The monthly attestation list: each booked percentage-of-completion line with its last observation and revenue recognised to date. |

@@ -80,7 +80,24 @@ This works because the booking path's own transaction and accounting's `CreateJo
 savepoints nest correctly three deep — verified by a spike before any check was written
 (`plans/archive/integration-testing-plan.md` §0).
 
-Apart from those two teardowns, removing committed data is a separate, manual step.
+Work the product runs on an isolated provider (`WithIsolatedProvider` in CoreEntitiesServer: the
+checkout capture, the webhook's delivery row) would write on another pooled connection, outside the
+check's transaction, and wait on that transaction's locks until the request timeout (#947).
+`InRolledBackTransaction` runs its body inside `JoinCallerTransactionForTests` (imported from
+`@mj-biz-apps/orders-core-entities-server/testing`; the package root does not export it), so that work
+joins the check's transaction instead. A check run that way proves what isolated work writes, not that it
+writes on its own transaction. Two things cover the isolation itself: `isolatedProvider.test.ts`, and
+`subscription-renewal.SR46-OT`, which runs SR46's payment `OutsideTransaction` so the capture uses its own
+provider as in production. A capture that waited on a transaction its own request holds times out there
+while SR46 still passes. `capture-payment.CP13-OT` (#967) also runs `OutsideTransaction`, because the lock
+it needs must belong to another connection: a second, independent provider holds an open transaction that
+has written the order, the capture's order read waits on it, and the check ends that wait with `KILL` as
+soon as `sys.dm_exec_requests` shows it, so the capture sees a failed read in about a second rather than
+after the 60 s request timeout. It needs locking READ COMMITTED and `ALTER ANY CONNECTION`, and says so
+when either is missing. Both checks commit, so they delete their rows afterwards (`PurgeCheckoutRun`,
+scoped to the IDs they made) and fail if any are left.
+
+Apart from those teardowns, removing committed data is a separate, manual step.
 `node test-harnesses/purge-fixture-data.mjs` deletes what older per-run fixtures left behind
 (companies named `IT-ORD-…` and everything hanging off them), and `seed-review-data.mjs` runs the
 same purge before it seeds unless given `--keep-existing`.
