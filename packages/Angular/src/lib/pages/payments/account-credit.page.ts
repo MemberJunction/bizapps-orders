@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { PresetViewRef } from '../../data/preset-view';
 import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
@@ -234,15 +235,17 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
     public Targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
+    private readonly creditOrdersView = new PresetViewRef();
+
     public get CreditOrdersView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo) return null;
-        return {
-            EntityID: this.OrderEntityInfo.ID,
-            Entity: this.OrderEntityInfo.Name,
+        return this.creditOrdersView.For(this.OrderEntityInfo.ID, () => ({
+            EntityID: this.OrderEntityInfo!.ID,
+            Entity: this.OrderEntityInfo!.Name,
             WhereClause: `Balance < 0`,
             ID: 'preset-credit-orders',
             Name: 'Credits Held'
-        } as unknown as MJUserViewEntityExtended;
+        } as unknown as MJUserViewEntityExtended));
     }
 
     /**
