@@ -47,6 +47,7 @@ import type {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
+import { ResolveSubscriptionTypeID } from '../subscription-type';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
@@ -190,26 +191,12 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     /**
-     * The subscription type a product uses: Product.SubscriptionTypeID when set, otherwise the
-     * product type's DefaultSubscriptionTypeID. Null means the product is not a subscription. The
-     * same rule confirm applies (`ResolveSubscriptionTypeID`), so the editor and bundle expansion
-     * agree with it about which lines are subscriptions (#903).
-     */
-    public SubscriptionTypeIDForProduct(productID: string | null | undefined): string | null {
-        const product = this.ProductByID(productID);
-        if (!product) return null;
-        const explicit = product.SubscriptionTypeID?.trim();
-        if (explicit) return explicit;
-        return this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID?.trim() || null;
-    }
-
-    /**
      * The subscription type a line of this product starts at confirm, resolved by
-     * {@link SubscriptionTypeIDForProduct}. Undefined when the product sells no subscription or the
+     * {@link ResolveSubscriptionTypeID}. Undefined when the product sells no subscription or the
      * cache has not loaded.
      */
     public SubscriptionTypeForProduct(productID: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
-        const id = this.SubscriptionTypeIDForProduct(productID);
+        const id = this.ResolveSubscriptionTypeID(productID);
         return id ? this.SubscriptionTypeByID(id) : undefined;
     }
 
@@ -223,6 +210,15 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const explicit = product.RevenueRecognitionTypeID?.trim();
         if (explicit) return explicit;
         return this.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID?.trim() || null;
+    }
+    /**
+     * Product.SubscriptionTypeID when set, otherwise the product type's DefaultSubscriptionTypeID:
+     * the type confirm builds a term from (golive #339). Null means the line is not a subscription.
+     */
+    public ResolveSubscriptionTypeID(productID: string | null | undefined): string | null {
+        const product = this.ProductByID(productID);
+        if (!product) return null;
+        return ResolveSubscriptionTypeID(product.SubscriptionTypeID, this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID);
     }
     public EventProductByID(id: string | null | undefined): mjBizAppsOrdersEventProductEntity | undefined {
         return byID(this.EventProducts, id);
@@ -340,8 +336,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         if ((type?.Code ?? '').trim().toLowerCase() === GIFT_CARD_TYPE_CODE) return 'NotRequired';
         const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
         if (!revRec?.RequiresServicePeriod) return 'NotRequired';
-        // The product's own subscription type or its type's default, as confirm resolves it (#903).
-        if (this.SubscriptionTypeIDForProduct(productID)) return 'Subscription';
+        if (this.ResolveSubscriptionTypeID(productID)) return 'Subscription';
         // The ROW, not the product type: the order save stamps the window from the Event Products row
         // (`applyEventServicePeriod`), so an event-type product loaded without one has no dates to
         // stamp and has to be asked for them like any other line.

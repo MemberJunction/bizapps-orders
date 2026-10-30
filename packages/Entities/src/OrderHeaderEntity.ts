@@ -32,7 +32,11 @@
 import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, RunView, type FieldValueCollection, type IRunViewProvider } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
-import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
+import {
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersPaymentDetailEntity,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
+} from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
@@ -42,8 +46,10 @@ import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
 import { DescendantLines } from './bundle-lines';
 import { DescribeStatedTermLength, StatedTermLengthOf } from './subscription-term-length';
+import { RequireUUID } from './sql-guards';
 
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+const PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 
 /** What {@link OrderHeaderEntity.Confirm} reports beyond success. */
 export interface OrderConfirmOutcome {
@@ -861,6 +867,35 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return (result.Results ?? [])
             .map((row) => ParseDisplacedTermStart(row.EventData, lines))
             .filter((d): d is DisplacedTermStart => d !== null);
+    }
+
+    /**
+     * This order's payment schedule, in instalment order. Empty for an unsaved order or one with no
+     * schedule.
+     *
+     * The schedule is what dates the order's receivable: an order with rows raises AR one instalment
+     * at a time, when each is invoiced, and an order without rows raises all of it at confirm. Each
+     * row carries its own due date, status, invoice number and the journal entry its invoice posted,
+     * so a screen can show when AR rises without working anything out.
+     */
+    public async LoadPaymentSchedule(): Promise<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity[]> {
+        if (!this.IsSaved) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return [];
+
+        const result = await new RunView(provider).RunView<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity>(
+            {
+                EntityName: PAYMENT_SCHEDULE_ENTITY,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'OrderHeaderID')}'`,
+                OrderBy: 'InstallmentNumber',
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read this order's payment schedule: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        return result.Results ?? [];
     }
 
     /**
