@@ -51,6 +51,7 @@ import {
     LoadOrdersEngine,
     OrdersEngine,
     OverdueFilter,
+    ResolveSubscriptionTypeID,
     Today,
     ToISODate,
     type DateCell,
@@ -2078,8 +2079,9 @@ export interface MJOProductOption {
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
     /**
-     * Set when buying this product starts a subscription — the same column the server reads to
-     * decide which lines get a term (`OrderEntityServer.subscriptionLines`).
+     * Set when buying this product starts a subscription: the product's own type, or its product
+     * type's default, resolved the way the server decides which lines get a term
+     * (`OrderEntityServer.subscriptionLines`, golive #339).
      *
      * The catalog row carries it because a line editor otherwise cannot tell a membership from a
      * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
@@ -2110,7 +2112,7 @@ export function CatalogOptionFrom(
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
-    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
+    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity' | 'DefaultSubscriptionTypeID'> | undefined,
     listPrice: number | null,
     containsSubscription = false,
 ): MJOProductOption {
@@ -2126,7 +2128,7 @@ export function CatalogOptionFrom(
         ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
-        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
+        SubscriptionTypeID: ResolveSubscriptionTypeID(product.SubscriptionTypeID, type?.DefaultSubscriptionTypeID),
         ContainsSubscription: containsSubscription,
     };
 }
@@ -2139,8 +2141,8 @@ export interface MJOBundleItemRow {
 
 /**
  * The bundles (lower-cased ids) with a subscription product among their components. A component sells
- * a subscription when its product names a subscription type, the same test bundle expansion uses to
- * decide which components take the bundle line's term start.
+ * a subscription when its product names a subscription type or inherits its product type's, the same
+ * test bundle expansion uses to decide which components take the bundle line's term start.
  */
 export function BundlesWithSubscription(
     items: readonly MJOBundleItemRow[],
@@ -2254,7 +2256,7 @@ async function getBundlesWithSubscription(user?: UserInfo): Promise<Set<string>>
         return new Set();
     }
     const engine = OrdersEngine.Instance;
-    return BundlesWithSubscription(result.Results ?? [], (id) => !!engine.ProductByID(id)?.SubscriptionTypeID);
+    return BundlesWithSubscription(result.Results ?? [], (id) => !!engine.ResolveSubscriptionTypeID(id));
 }
 
 /** Promotions, newest window first. */

@@ -229,7 +229,12 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
         // #948's rule for every READER: one top-level AND of the filter (MJ wraps it in a WHERE), no top-level OR.
         expectTopLevelConjunct(`WHERE ${mocks.filters[0]} ORDER BY ID`, 'WHERE', 'ORDER BY ID', 'ProviderSubscriptionID IS NOT NULL');
         // The draft's products are checked for a subscription type, the test the card prompt uses.
-        expect(mocks.filters[1]).toBe(`ID IN ('${EXECUTIVE}') AND SubscriptionTypeID IS NOT NULL`);
+        // A product with no type of its own inherits its product type's default (golive #339), so the
+        // read widened when the deal→order handoff landed; option E's original string is the first half.
+        expect(mocks.filters[1]).toBe(
+            `ID IN ('${EXECUTIVE}') AND (SubscriptionTypeID IS NOT NULL ` +
+                `OR ProductTypeID IN (SELECT ID FROM __mj_BizAppsOrders.ProductType WHERE DefaultSubscriptionTypeID IS NOT NULL))`,
+        );
     });
 
     it('allows a purchase that sells no subscription (a ticket, a one-off) to the same buyer', async () => {
