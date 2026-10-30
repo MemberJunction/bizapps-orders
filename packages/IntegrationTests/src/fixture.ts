@@ -32,9 +32,10 @@
 import { randomUUID } from 'node:crypto';
 import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import { OrdersEngine, RequireUUID, RequireUUIDs, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
-import { ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
+import { ORDERS_SETTING, OrdersSettings, TermDayEnd, TermDayStart } from '@mj-biz-apps/orders-core-entities-server';
 import { JoinCallerTransactionForTests } from '@mj-biz-apps/orders-core-entities-server/testing';
 import { LoadWorld } from './world/load-world.js';
 import { SetWorld } from './world/world.js';
@@ -235,6 +236,69 @@ const provider = (ctx: IntegrationCheckContext) =>
         BeginTransaction(): Promise<void>;
         RollbackTransaction(): Promise<void>;
     };
+
+/**
+ * Run `body` inside a rolled-back transaction with the business time zone set to `iana`, as a host that
+ * set `BizApps.BusinessTimeZone` sees it. The setting row is changed inside the transaction (so the
+ * rollback undoes it) and the zone engine reloaded; AFTER the rollback the engine is reloaded again, so
+ * no later check inherits this zone from the process-wide engine.
+ *
+ * Example: `WithBusinessZone(ctx, 'America/Chicago', 'Central Standard Time', async () => { ... })`.
+ */
+export async function WithBusinessZone(
+    ctx: IntegrationCheckContext,
+    iana: string,
+    sqlName: string,
+    body: () => Promise<void>,
+): Promise<void> {
+    try {
+        await InRolledBackTransaction(ctx, async () => {
+            await TxQuery(
+                ctx,
+                `UPDATE __mj.InstanceConfiguration SET Value = '${JSON.stringify({ iana, sql: sqlName }).replace(/'/g, "''")}' ` +
+                    `WHERE FeatureKey = 'BizApps.BusinessTimeZone'`,
+            );
+            await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
+            if (BusinessTimeZoneEngine.Instance.Zone !== iana) {
+                throw new Error(`precondition: the business zone reads ${BusinessTimeZoneEngine.Instance.Zone}, not ${iana}`);
+            }
+            await body();
+        });
+    } finally {
+        await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
+    }
+}
+
+/**
+ * Assert a term's standing SubscriptionTerm grants cover its days in full, in the business zone (access sync G5):
+ * from 00:00 business time on `firstDay` (when given) to 00:00 business time on the day after `lastDay`. The
+ * writers are booking, TermExtension and TermShift; each must land on `TermGrantWindow`'s instants.
+ *
+ * Example: a term ending 2026-12-31 under UTC must have grants ending 2027-01-01T00:00:00.000Z.
+ */
+export async function AssertTermGrantWindow(
+    ctx: IntegrationCheckContext,
+    termID: string,
+    firstDay: string | null,
+    lastDay: string,
+    what: string,
+): Promise<void> {
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
+    const grants = await TxQuery<{ ID: string; ValidFrom: Date | null; ValidTo: Date | null }>(
+        ctx,
+        `SELECT ID, ValidFrom, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant ` +
+            `WHERE SubscriptionTermID = '${RequireUUID(termID, 'termID')}' AND ValidityModeApplied = 'SubscriptionTerm' AND Status = 'Active'`,
+    );
+    Assert(grants.length > 0, `${what}: the term has standing SubscriptionTerm grants to check`);
+    const end = TermDayEnd(lastDay, zone).toISOString();
+    const start = firstDay ? TermDayStart(firstDay, zone).toISOString() : null;
+    for (const g of grants) {
+        Assert(g.ValidTo != null && new Date(g.ValidTo).toISOString() === end, `${what}: grant ${g.ID} ends ${g.ValidTo ? new Date(g.ValidTo).toISOString() : 'never'}, expected ${end} (00:00 ${zone} after ${lastDay})`);
+        if (start) {
+            Assert(g.ValidFrom != null && new Date(g.ValidFrom).toISOString() === start, `${what}: grant ${g.ID} starts ${g.ValidFrom ? new Date(g.ValidFrom).toISOString() : 'never'}, expected ${start}`);
+        }
+    }
+}
 
 /**
  * Run `body` inside a transaction that ALWAYS rolls back — the isolation primitive every mutating

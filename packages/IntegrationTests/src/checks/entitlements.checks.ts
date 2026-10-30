@@ -29,6 +29,8 @@
  *         its other holders
  *   EN31  the requester's decision is refused and the request stays open; the assignee's approval lands
  *   EN32  past the last day an approval is refused and a rejection is accepted
+ *   EN33  in Chicago a subscription grant covers its term's last day to 00:00 Central after it (not 00:00 UTC
+ *         on it), and CheckEntitlement agrees a minute either side
  *
  * CONNECTS TO:
  *   PURE:   packages/CoreEntitiesServer/src/EntitlementBehavior.ts (38 unit tests on the rules)
@@ -59,6 +61,7 @@ import {
   TxOne,
   TxQuery,
   upsertViaEntity,
+  WithBusinessZone,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
 import { PERSON_ENTITY } from "../entity-names.js";
@@ -66,7 +69,13 @@ import { BaseRemotableOperation, UserInfo, UserRoleInfo } from "@memberjunction/
 import { MJGlobal } from "@memberjunction/global";
 import { BusinessTimeZoneEngine } from "@mj-biz-apps/common-entities";
 import { OrdersEngine } from "@mj-biz-apps/orders-entities";
-import { EnforcePaymentGatedAccess, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import {
+  EnforcePaymentGatedAccess,
+  ORDERS_SETTING,
+  OrdersSettings,
+  TermDayEnd,
+  TermDayStart,
+} from "@mj-biz-apps/orders-core-entities-server";
 
 /**
  * Price a product ONCE, however many times a check asks.
@@ -514,18 +523,20 @@ export const EntitlementsChecks: NamedCheck[] = [
         Assert(seats!.TermID != null, "and the grant POINTS at that term — one grant per term (D76)");
 
         // The window must be the term's own, not the order date's. Compared against the row rather
-        // than a computed guess, because the term may be anchored or prorated.
+        // than a computed guess, because the term may be anchored or prorated. Each of the term's days is
+        // covered in full in the business zone: from 00:00 on the first to 00:00 on the day after the last.
         const term = await TxOne<{ StartDate: Date; EndDate: Date }>(ctx,
           `SELECT StartDate, EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID='${seats!.TermID}'`);
+        const zone = BusinessTimeZoneEngine.Instance.Zone;
         AssertEqual(
-          new Date(seats!.ValidFrom!).toISOString().slice(0, 10),
-          new Date(term.StartDate).toISOString().slice(0, 10),
-          "the grant starts when the term starts",
+          new Date(seats!.ValidFrom!).toISOString(),
+          TermDayStart(new Date(term.StartDate), zone).toISOString(),
+          "the grant starts when the term's first day starts",
         );
         AssertEqual(
-          new Date(seats!.ValidTo!).toISOString().slice(0, 10),
-          new Date(term.EndDate).toISOString().slice(0, 10),
-          "and ends when it ends",
+          new Date(seats!.ValidTo!).toISOString(),
+          TermDayEnd(new Date(term.EndDate), zone).toISOString(),
+          "and ends when the term's last day ends, not at its start",
         );
       }),
   },
@@ -1650,6 +1661,43 @@ export const EntitlementsChecks: NamedCheck[] = [
             "and the grants stay held for payment",
           );
         });
+      }),
+  },
+  {
+    Id: "entitlements.EN33",
+    Name: "EN33: in Chicago, a subscription grant covers its last day to midnight Central, and CheckEntitlement agrees at 23:59 and 00:01",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      WithBusinessZone(ctx, "America/Chicago", "Central Standard Time", async () => {
+        const f = Fx();
+        // Held by a person (Jordan), as a checkout sale is, so the person read path can be asked too; on a
+        // term that has already ended, because the read refuses an as-of in the future.
+        const order = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2025-01-15"),
+          BillToPersonID: f.Customers.PersonID,
+          ShipToPersonID: f.Customers.PersonID,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        });
+        Assert(order.Saved, `confirm failed: ${order.Message}`);
+        const seats = byCode(await grantsFor(ctx, order.Order.ID as string)).get("SUB-SEATS");
+        Assert(seats != null && seats.TermID != null, "the subscription granted its seats, on its term");
+        const term = await TxOne<{ StartDate: Date; EndDate: Date }>(ctx,
+          `SELECT StartDate, EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID='${seats!.TermID}'`);
+        const lastDay = new Date(term.EndDate).toISOString().slice(0, 10);
+        const end = new Date(seats!.ValidTo!);
+        AssertEqual(end.toISOString(), TermDayEnd(lastDay, "America/Chicago").toISOString(), "the grant ends at 00:00 Central after the last day");
+        Assert(
+          end.getTime() > new Date(`${lastDay}T00:00:00Z`).getTime() + 5 * 3600 * 1000,
+          `not at 00:00 UTC on the last day (6 or 7 pm Central the evening before): ${end.toISOString()}`,
+        );
+        AssertEqual(seats!.Person?.toLowerCase(), f.Customers.PersonID.toLowerCase(), "precondition: the grant is Jordan's");
+        AssertEqual(seats!.Status, "Active", "precondition: the grant is in force, so the read answers on its dates");
+        // Orders.CheckEntitlement agrees with the stored grant, a minute either side of its end.
+        const check = async (asOf: Date) =>
+          (await readAccess<{ HasAccess: boolean }>(ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS", AsOf: asOf.toISOString() })).HasAccess;
+        Assert(await check(new Date(end.getTime() - 60_000)), "23:59 Central on the last day: access");
+        Assert(!(await check(new Date(end.getTime() + 60_000))), "00:01 Central the next day: no access");
       }),
   },
 ];
