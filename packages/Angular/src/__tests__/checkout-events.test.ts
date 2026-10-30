@@ -171,6 +171,56 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
     });
 
+    describe('/complete outlasting the gateway in front of the server', () => {
+        const GATEWAY_504 = {
+            status: 504,
+            json: () => Promise.reject(new SyntaxError(`Unexpected token '<', "<!DOCTYPE "... is not valid JSON`)),
+        };
+
+        /** Answers /complete from `replies` in turn; every other path as the suite does. */
+        const completeAnswers = (replies: unknown[]): void => {
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            let i = 0;
+            vi.mocked(fetch).mockImplementation((url: string, init?: RequestInit) => {
+                if (!url.endsWith('/complete')) return base(url, init);
+                const reply = replies[Math.min(i++, replies.length - 1)];
+                return Promise.resolve(reply === GATEWAY_504 ? reply : { status: 200, json: () => Promise.resolve(reply) });
+            });
+        };
+
+        it('waits, asks again, and reports the sale once the order is confirmed', async () => {
+            completeAnswers([
+                GATEWAY_504,
+                { Success: false, Status: 'Processing', ErrorMessage: 'Session is not in an Open status' },
+                { Success: true, Status: 'Confirmed', OrderNumber: 'SO-1', TotalGross: 0 },
+            ]);
+            const c = create();
+            c.completeRetryIntervalMs = 0;
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
+            expect(c.orderNumber).toBe('SO-1');
+            expect(c.finishingMessage).toBeNull();
+            expect(c.errorMessage).toBeNull();
+            expect(vi.mocked(fetch).mock.calls.filter(([url]) => String(url).endsWith('/complete'))).toHaveLength(3);
+        });
+
+        it('tells a paid buyer not to pay again, never a parser error, when the wait runs out', async () => {
+            completeAnswers([GATEWAY_504]);
+            const c = create();
+            c.completeRetryIntervalMs = 0;
+            c.completeRetryTimeoutMs = 0;
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(c.finishingMessage).toContain('Please do not pay again.');
+            expect(c.errorMessage).toBeNull();
+            expect(seen.some((e) => e.type === 'checkout-error')).toBe(false);
+            expect(JSON.stringify(seen)).not.toContain('Unexpected token');
+        });
+    });
+
     describe('account step password form (#396)', () => {
         const SALE = [
             { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
@@ -422,6 +472,101 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(inits).toBe(2);
             expect(c.successMessage).toBeNull();
             expect(c.config).not.toBeNull();
+        });
+    });
+
+    describe('after the host removes the element', () => {
+        let calls: string[];
+        let stored: Record<string, string>;
+        let location: { href: string };
+        let onAccessStatus: () => void;
+
+        beforeEach(() => {
+            calls = [];
+            stored = {};
+            onAccessStatus = () => undefined;
+            location = { href: 'https://shop.example/buy' };
+            vi.stubGlobal('window', { location });
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => stored[k] ?? null,
+                setItem: (k: string, v: string) => void (stored[k] = v),
+                removeItem: (k: string) => void delete stored[k],
+            });
+            responses['/initialize'] = { Success: true, SessionID: 'sess-1', Configuration: { ...CONFIG, redirectUrl: 'https://shop.example/thanks' } };
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+                    const path = url.replace('/checkout', '');
+                    calls.push(path);
+                    if (path === '/access-status') onAccessStatus();
+                    return base(url, init);
+                })
+            );
+        });
+
+        /** Holds `/complete` until the test lets it answer, and says when it was asked. */
+        const holdComplete = () => {
+            let release!: () => void;
+            let asked!: () => void;
+            const wasAsked = new Promise<void>((r) => (asked = r));
+            const gate = new Promise<void>((r) => (release = r));
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.mocked(fetch).mockImplementation(async (url: string, init?: { body?: string }) => {
+                if (String(url).endsWith('/complete')) {
+                    asked();
+                    await gate;
+                }
+                return base(url, init);
+            });
+            return { release, wasAsked };
+        };
+
+        it('still completes a sale removed mid-/complete, but sends no event and does not redirect', async () => {
+            const c = create();
+            await c.ngOnInit();
+            seen = [];
+            const { release, wasAsked } = holdComplete();
+            const run = c.onSubmitted(submission());
+            await wasAsked;
+            c.ngOnDestroy();
+            release();
+            await run;
+            expect(calls).toContain('/complete');
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'PROCESSING' } }]);
+            expect(calls).not.toContain('/access-status');
+            expect(location.href).toBe('https://shop.example/buy');
+        });
+
+        it('skips the account step but keeps the marker that lets a reload resume it', async () => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            const c = create();
+            await c.ngOnInit();
+            const { release, wasAsked } = holdComplete();
+            const run = c.onSubmitted(submission());
+            await wasAsked;
+            c.ngOnDestroy();
+            release();
+            await run;
+            expect(calls).not.toContain('/account');
+            expect(stored['mj-checkout-completing:annual']).toBe('sess-1');
+        });
+
+        it('stops polling for access once removed', async () => {
+            const c = create();
+            c.accessPollIntervalMs = 0;
+            let answers = 0;
+            responses['/access-status'] = { Success: true, State: 'Pending' };
+            onAccessStatus = () => {
+                answers++;
+                c.ngOnDestroy();
+            };
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(answers).toBe(1);
+            expect(calls.filter((p) => p === '/access-status')).toHaveLength(1);
+            expect(location.href).toBe('https://shop.example/buy');
         });
     });
 });

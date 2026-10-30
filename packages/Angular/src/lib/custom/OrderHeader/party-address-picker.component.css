@@ -57,7 +57,7 @@
     padding: var(--mj-space-2);
     border: 1px solid var(--mj-border-default);
     border-radius: var(--mj-radius-md);
-    background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
+    background: var(--mj-bg-surface-card);
 }
 
 .mjo-addr__row {

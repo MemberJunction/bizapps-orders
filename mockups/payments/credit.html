@@ -29,7 +29,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--success" id="cr-total">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--success" id="cr-total">—</span></div>
 
   <div slot="actions">
     <a class="mj-btn mj-btn--outline" href="refund.html"><i class="fa-solid fa-arrow-rotate-left"></i> Refund instead</a>
@@ -59,7 +59,7 @@
     <div class="cr-flow">
       <div class="cr-side is-from">
         <div class="row" style="margin-bottom:var(--mj-space-2)">
-          <span class="mj-chip mj-chip--success">From — the credit</span>
+          <span class="mjo-chip mjo-chip--success">From — the credit</span>
         </div>
         <div id="cr-from"></div>
       </div>
@@ -68,7 +68,7 @@
 
       <div class="cr-side is-to">
         <div class="row" style="margin-bottom:var(--mj-space-2)">
-          <span class="mj-chip mj-chip--brand">To — an open order</span>
+          <span class="mjo-chip mjo-chip--brand">To — an open order</span>
         </div>
         <div id="cr-to"></div>
       </div>
@@ -77,7 +77,7 @@
     <div class="grid-2" style="margin-top:var(--mj-space-6)">
       <div class="mj-card">
         <div class="mj-card-head"><i class="fa-solid fa-file-invoice"></i><h3>The payment this writes</h3>
-          <span class="right"><span class="mj-chip mj-chip--outline">Amount $0.00</span></span></div>
+          <span class="right"><span class="mjo-chip mjo-chip--outline">Amount $0.00</span></span></div>
         <div class="mj-card-pad" id="cr-payment"></div>
       </div>
 
@@ -171,8 +171,8 @@ function render() {
     <div class="row wrap" style="margin-top:var(--mj-space-3);gap:6px">
       ${H.company(to.companyID)}
       ${to.companyID !== from.companyID
-        ? '<span class="mj-chip mj-chip--warning"><i class="fa-solid fa-building-columns"></i> crosses companies</span>'
-        : '<span class="mj-chip mj-chip--outline">same company</span>'}
+        ? '<span class="mjo-chip mjo-chip--warning"><i class="fa-solid fa-building-columns"></i> crosses companies</span>'
+        : '<span class="mjo-chip mjo-chip--outline">same company</span>'}
     </div>` : '<div class="mj-empty"><i class="fa-regular fa-circle"></i><div class="t">No open orders</div></div>';
 
   document.getElementById('cr-payment').innerHTML = `
@@ -239,7 +239,7 @@ function render() {
     </details>
     ${crossCo ? `<details class="mj-panel" open>
       <summary><i class="fa-solid fa-building-columns"></i> Intercompany legs
-        <span class="right"><span class="mj-chip mj-chip--warning">required</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--warning">required</span></span></summary>
       <div class="mj-panel-body small">Two entries, one per company, raised through the ordinary allocation path.
         A missing intercompany account match is a hard refusal rather than a guess.</div>
     </details>` : ''}

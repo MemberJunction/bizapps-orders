@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, OnInit, inject } from '@angular/core';
 import { RunView } from '@memberjunction/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
@@ -15,7 +15,18 @@ import {
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
-import { BilledOnScheduleFromRows, CanCancel, CanResolveInFlight, CanSend, StateChipClass, StateLabel, type ExternalInvoiceLike } from '../panels/external-invoice-view';
+import {
+    BilledOnScheduleFromRows,
+    CanCancel,
+    CanResolveInFlight,
+    CanSend,
+    SendApplies,
+    SendDisabledReason,
+    SendIsReissue,
+    StateChipClass,
+    StateLabel,
+    type ExternalInvoiceLike,
+} from '../panels/external-invoice-view';
 
 /** One `ExternalInvoice` row as this panel needs it. Read by name; the panel never writes one. */
 interface ExternalInvoiceRow {
@@ -40,6 +51,12 @@ const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Pa
 /** Provider type codes that invoice through an external rail. Mirrors `INVOICE_RAIL_TYPE_CODES`. */
 const RAIL_TYPE_CODES = ['BillCom'];
 
+/** The form toolbar key of the Send button this panel registers. */
+const SEND_TOOLBAR_KEY = 'send-external-invoice';
+
+/** The panel's `SectionKey`; Send opens it so the result and the new row are in view. */
+const SECTION_KEY = 'externalInvoices';
+
 /**
  * `mjo-external-invoices-panel` — the rail's side of one order, on the order.
  *
@@ -52,6 +69,13 @@ const RAIL_TYPE_CODES = ['BillCom'];
  * today; a second is a row and a class. A button reading "Send to Bill.com" would be a second place to
  * edit on that day, and simply wrong on an order whose companies sit on different rails.
  *
+ * SEND LIVES IN THE FORM TOOLBAR, NOT IN THE PANEL. Once an order is confirmed, sending it is the next
+ * thing a person does with it, and the panel sits collapsed at the foot of the form. The panel
+ * registers the button next to Confirm order, so it sits where the eye already goes; the panel keeps
+ * the rows, the warning that blocks a send, and the acts on one selected invoice. The button shows on
+ * every order the rail applies to and is greyed out, with the reason as its tooltip, until the order
+ * is confirmed and saved.
+ *
  * IT HIDES ITSELF when no company on the order has an active rail, so the overwhelming majority of
  * orders — the ones invoiced natively — look exactly as they did before this feature existed.
  *
@@ -63,7 +87,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
     template: `
         @if (Visible) {
             <mj-collapsible-panel
-                SectionKey="externalInvoices"
+                [SectionKey]="SectionKey"
                 SectionName="External invoicing"
                 Icon="fa-solid fa-paper-plane"
                 [Form]="FormComponent"
@@ -81,10 +105,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
                 }
 
                 @if (!Rows.length && !LoadError) {
-                    <p class="mjo-xi__empty">
-                        Nothing has been sent to {{ ProviderName }} for this order yet.
-                        @if (Sendable) { {{ QueuedNote }} }
-                    </p>
+                    <mj-empty-state Size="inline" [Message]="EmptyMessage" />
                 }
 
                 @if (Rows.length) {
@@ -104,7 +125,7 @@ const RAIL_TYPE_CODES = ['BillCom'];
                                     <td class="mono">{{ row.DocumentNumber }}</td>
                                     <td class="num">{{ money(row.Amount) }}</td>
                                     <td>
-                                        <span class="mj-chip" [class]="ChipClass(row)">{{ StateLabel(row) }}</span>
+                                        <span class="mjo-chip" [class]="ChipClass(row)">{{ StateLabel(row) }}</span>
                                     </td>
                                     <td class="mono muted">{{ row.ExternalInvoiceRef ?? '—' }}</td>
                                     <td class="muted">{{ row.SentAt ? date(row.SentAt) : '—' }}</td>
@@ -145,13 +166,14 @@ const RAIL_TYPE_CODES = ['BillCom'];
                     </div>
                 }
 
+                @if (Sendable && SendBlocked) {
+                    <mj-alert Variant="warning" Icon="fa-solid fa-envelope-circle-check" class="mjo-xi__note">
+                        <strong>Not ready to send.</strong>
+                        {{ SendBlocked }}
+                    </mj-alert>
+                }
+
                 <div class="row mjo-xi__actions">
-                    @if (Sendable) {
-                        <button type="button" mjButton variant="primary" [disabled]="Busy" (click)="Send()">
-                            <i class="fa-solid fa-paper-plane" aria-hidden="true"></i>
-                            {{ Busy ? 'Working…' : 'Send to ' + ProviderName }}
-                        </button>
-                    }
                     @if (Cancellable) {
                         <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="Cancel()">
                             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel in {{ ProviderName }}
@@ -167,18 +189,17 @@ const RAIL_TYPE_CODES = ['BillCom'];
     styles: [
         `
             .mjo-xi__note { margin-bottom: var(--mj-space-3); display: block; }
-            .mjo-xi__empty { color: var(--mj-color-text-muted); margin: 0 0 var(--mj-space-3); }
             .mjo-xi__table { width: 100%; border-collapse: collapse; margin-bottom: var(--mj-space-3); }
-            .mjo-xi__table th { text-align: left; font-weight: 600; font-size: 0.82rem; color: var(--mj-color-text-muted); padding: var(--mj-space-2); border-bottom: 1px solid var(--mj-color-border); }
-            .mjo-xi__table td { padding: var(--mj-space-2); border-bottom: 1px solid var(--mj-color-border-subtle, var(--mj-color-border)); cursor: pointer; }
-            .mjo-xi__table tr.is-selected td { background: var(--mj-color-surface-selected, rgba(0, 0, 0, 0.04)); }
-            .mjo-xi__errrow td { color: var(--mj-color-danger, #b42318); cursor: default; padding-top: 0; }
+            .mjo-xi__table th { text-align: left; font-weight: 600; font-size: 0.82rem; color: var(--mj-text-muted); padding: var(--mj-space-2); border-bottom: 1px solid var(--mj-border-default); }
+            .mjo-xi__table td { padding: var(--mj-space-2); border-bottom: 1px solid var(--mj-border-subtle); cursor: pointer; }
+            .mjo-xi__table tr.is-selected td { background: var(--mj-bg-surface-active); }
+            .mjo-xi__errrow td { color: var(--mj-status-error); cursor: default; padding-top: 0; }
             .mjo-xi__table .num { text-align: right; font-variant-numeric: tabular-nums; }
             .mjo-xi__actions { align-items: center; gap: var(--mj-space-3); }
-            .mjo-xi__inflight { border: 1px solid var(--mj-color-border); border-radius: var(--mj-radius-2, 6px); padding: var(--mj-space-3); margin-bottom: var(--mj-space-3); }
+            .mjo-xi__inflight { border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-md); padding: var(--mj-space-3); margin-bottom: var(--mj-space-3); }
             .mjo-xi__inflight p { margin: 0 0 var(--mj-space-2); }
             .mjo-xi__inflight-row { align-items: center; gap: var(--mj-space-2); flex-wrap: wrap; }
-            .mjo-xi__ref { flex: 1 1 18rem; min-width: 12rem; padding: var(--mj-space-2); border: 1px solid var(--mj-color-border); border-radius: var(--mj-radius-1, 4px); font-family: var(--mj-font-mono, monospace); }
+            .mjo-xi__ref { flex: 1 1 18rem; min-width: 12rem; padding: var(--mj-space-2); border: 1px solid var(--mj-border-default); border-radius: var(--mj-radius-sm); font-family: var(--mj-font-family-mono); }
         `,
     ],
 })
@@ -192,10 +213,11 @@ const RAIL_TYPE_CODES = ['BillCom'];
         inclusion: 'Primary' as const,
     },
 })
-export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHeaderEntity> implements OnInit {
+export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHeaderEntity> implements OnInit, OnDestroy {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly confirm = inject(MJConfirmService);
 
+    public readonly SectionKey = SECTION_KEY;
     public Visible = false;
     public LoadError: string | null = null;
     public Notice: { Tone: 'success' | 'error' | 'warning'; Text: string } | null = null;
@@ -210,24 +232,112 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public BilledOnSchedule = false;
     /** Whether the scheduled send would pick this order up; null when it could not be read. */
     public SendJob: SendJobState | null = null;
+    /**
+     * Why Send would be refused before anything reached the rail — today, a bill-to party the rail
+     * cannot take as a customer (no billing email). Read from the operation's own preview on load, so
+     * the rule lives on the server and the panel only repeats its answer. Null when nothing blocks.
+     */
+    public SendBlocked: string | null = null;
+
+    private sendRegistered = false;
+    private recordEvents: { unsubscribe(): void } | null = null;
+
+    /** Counts loads, so one that finishes after a later one started cannot overwrite the later one's state. */
+    private loadSeq = 0;
 
     public readonly money = (n: number): string => FormatMoney(n);
     /** `SentAt` is a `datetimeoffset`: shown as the business day it happened on. */
     public readonly date = (iso: string): string => FormatInstantDate(iso, { Short: true });
 
     public async ngOnInit(): Promise<void> {
+        // A save changes what Send is decided from: the status, the bill-to party the preview reads,
+        // and, on a new order, whether there is a saved order to look at yet. Reloading here lets a
+        // person fix the data, save, and find Send enabled without reopening the form.
+        this.recordEvents =
+            this.Record?.RegisterEventHandler((event) => {
+                if (event.type === 'save') void this.reload();
+            }) ?? null;
+        await this.reload();
+    }
+
+    public ngOnDestroy(): void {
+        this.recordEvents?.unsubscribe();
+        this.recordEvents = null;
+        if (this.sendRegistered) this.UnregisterToolbarItem(SEND_TOOLBAR_KEY);
+    }
+
+    /** The toolbar's Refresh, or an operation that changed the order on the server (Confirm order). */
+    public override OnRecordRefreshed(): void {
+        void this.reload();
+    }
+
+    private async reload(): Promise<void> {
         await this.load();
+        this.registerSendButton();
         this.cdr.detectChanges();
     }
 
+    /**
+     * Send, in the form toolbar. Registered after a load finds a rail, because the label carries the
+     * provider's name, which is read from data. Order 5.5 puts it straight after Confirm order (5) and
+     * before Void (6): before the order is confirmed both show, Send greyed out beside Confirm, and
+     * once it is booked Confirm hides and Send takes its place.
+     *
+     * Shown in edit mode too, greyed out: the send uses the saved order, and a button that vanishes
+     * while editing reads as a step that went away.
+     */
+    private registerSendButton(): void {
+        if (!this.Visible || this.sendRegistered) return;
+        this.sendRegistered = true;
+        this.RegisterToolbarItem({
+            Key: SEND_TOOLBAR_KEY,
+            Text: `Send to ${this.ProviderName}`,
+            Icon: 'fa-solid fa-paper-plane',
+            Variant: 'primary',
+            Mode: 'both',
+            Order: 5.5,
+            Visible: () => this.SendShown,
+            Disabled: (_record, editMode) => this.sendDisabledReason(editMode),
+            IsLoading: () => this.Busy,
+            OnClick: async () => this.Send(),
+        });
+    }
+
+    /** The Send button's tooltip when greyed out, or `false` when it can be clicked. */
+    private sendDisabledReason(editMode = this.EditMode): string | false {
+        return SendDisabledReason({
+            OrderStatus: this.Record?.Status,
+            EditMode: editMode,
+            Dirty: !!this.Record?.Dirty,
+            Busy: this.Busy,
+            Blocked: this.SendBlocked,
+        });
+    }
+
     /* ── What a person may do ───────────────────────────────────────────── */
+
+    /**
+     * Whether the toolbar shows Send at all; {@link sendDisabledReason} decides whether it is enabled.
+     * A voided order is never invoiced, so it gets no button rather than one that waits forever.
+     */
+    public get SendShown(): boolean {
+        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+    }
 
     public get Sendable(): boolean {
         return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
     }
 
+    /** What the scheduled send will do with an order nothing has sent yet; empty when the job could not be read. */
     public get QueuedNote(): string {
         return SendQueuedNote(this.SendJob);
+    }
+
+    /** What the panel says when nothing has gone to the rail yet. */
+    public get EmptyMessage(): string {
+        const sent = `Nothing has been sent to ${this.ProviderName} for this order yet.`;
+        const note = this.Sendable ? this.QueuedNote : '';
+        return note ? `${sent} ${note}` : sent;
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */
@@ -257,13 +367,15 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /* ── Actions ────────────────────────────────────────────────────────── */
 
     public async Send(): Promise<void> {
-        if (this.Busy) return;
-        const failed = this.Rows.find((r) => r.Status === 'Failed' || r.Status === 'Canceled');
-        const job = failed ? null : (this.SendJob = await this.loadSendJob());
+        if (this.sendDisabledReason()) return;
+        // A Failed row the rail never created an invoice for is not "on the rail before": warning about
+        // billing twice there sends a person to look for an invoice that does not exist.
+        const reissue = SendIsReissue(this.Rows);
+        const job = reissue ? null : (this.SendJob = await this.loadSendJob());
         const proceed = await this.confirm.Confirm({
             title: `Send ${this.Record.OrderNumber} to ${this.ProviderName}?`,
             message: `The customer receives an invoice for ${FormatMoney(Number(this.Record.TotalGross ?? 0))}.`,
-            detail: failed
+            detail: reissue
                 ? 'This unit has been on the rail before. Check there first: re-issuing when an invoice already exists bills the customer twice.'
                 : SendNowDetail(job),
             type: 'warning',
@@ -278,18 +390,22 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         try {
             const result = await new OrdersIssueExternalInvoiceOperation().Execute({
                 OrderHeaderID: this.Record.ID,
-                // A previously failed or cancelled unit is only re-sent deliberately.
-                AllowReissue: !!failed,
+                // Only a unit the rail has held an invoice for is re-sent deliberately.
+                AllowReissue: reissue,
             });
             const out = result.Output;
             if (!result.Success || !out?.Success) {
                 this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be sent.' };
+                // The failed attempt is a new row; show it, with the rail's error under it.
+                await this.load();
                 return;
             }
             this.Notice = { Tone: 'success', Text: out.Message ?? `Sent as ${out.ExternalInvoiceRef}.` };
             await this.load();
         } finally {
             this.Busy = false;
+            // Send is clicked from the toolbar, so the outcome would otherwise land in a collapsed panel.
+            this.FormComponent?.SetSectionExpanded(SECTION_KEY, true);
             this.cdr.detectChanges();
         }
     }
@@ -424,11 +540,18 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         }
     }
 
+    /**
+     * Loads are not serialised: a save event, the toolbar's Refresh and an action's own reload can
+     * overlap and finish in either order. Each reads into locals and only the newest one writes, so
+     * an older load cannot put back stale rows or a stale Send state.
+     */
     private async load(): Promise<void> {
         if (!this.Record?.IsSaved) return;
+        const seq = ++this.loadSeq;
         const rv = new RunView();
         try {
             const rail = await this.loadRail();
+            if (seq !== this.loadSeq) return;
             this.Visible = rail.Present;
             if (rail.Name) this.ProviderName = rail.Name;
             if (!this.Visible) return;
@@ -439,21 +562,52 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
                 OrderBy: '__mj_CreatedAt DESC',
                 ResultType: 'simple',
             });
+            if (seq !== this.loadSeq) return;
             if (!result.Success) {
                 this.LoadError = result.ErrorMessage ?? 'The external invoices could not be read.';
                 return;
             }
+            const rows = result.Results ?? [];
+            const billedOnSchedule = BilledOnScheduleFromRows(rows) || (await this.hasPaymentSchedule());
+            if (seq !== this.loadSeq) return;
             this.LoadError = null;
-            this.Rows = result.Results ?? [];
-            if (this.Sendable) this.SendJob = await this.loadSendJob();
+            this.Rows = rows;
             if (this.Selected) this.Selected = this.Rows.find((r) => r.ID === this.Selected!.ID) ?? null;
+            this.BilledOnSchedule = billedOnSchedule;
+            const sendBlocked = this.Sendable ? await this.previewBlock() : null;
+            const sendJob = this.Sendable ? await this.loadSendJob() : null;
+            if (seq !== this.loadSeq) return;
+            this.SendBlocked = sendBlocked;
+            if (this.Sendable) this.SendJob = sendJob;
         } catch (err) {
+            if (seq !== this.loadSeq) return;
             this.LoadError = err instanceof Error ? err.message : String(err);
         }
         // Write the DOM where the assignment happens. The shell creates forms imperatively and the
         // app is zoneless, so an assignment across a check boundary aborts the update and freezes the
         // panel — showing an empty list, which reads as "nothing was sent" rather than as a fault.
         this.cdr.detectChanges();
+    }
+
+    /**
+     * What the operation's preview says would stop a send before the rail is called.
+     *
+     * Only the refusals a person fixes on the bill-to party are surfaced: those are the ones the rail
+     * would otherwise reject after the click, leaving a Failed row behind. Anything else the preview
+     * reports (or a preview that cannot run) leaves Send enabled, and the send itself says why.
+     */
+    private async previewBlock(): Promise<string | null> {
+        try {
+            const result = await new OrdersIssueExternalInvoiceOperation().Execute({
+                OrderHeaderID: this.Record.ID,
+                Preview: true,
+                AllowReissue: SendIsReissue(this.Rows),
+            });
+            const out = result.Output;
+            return result.Success && out?.ResultCode === 'NO_CUSTOMER_EMAIL' ? (out.Message ?? 'The bill-to party has no billing email.') : null;
+        } catch {
+            return null;
+        }
     }
 
     /**

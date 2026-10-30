@@ -21,6 +21,8 @@ export type ExternalInvoiceState = 'Sending' | 'Sent' | 'Canceled' | 'Failed';
 export interface ExternalInvoiceLike {
     Status: ExternalInvoiceState;
     ExternalStatus?: string | null;
+    /** The rail's id for the invoice; null when the rail never created one. */
+    ExternalInvoiceRef?: string | null;
     /** Set when this row bills one instalment rather than the order as a whole. */
     OrderHeaderPaymentScheduleID?: string | null;
 }
@@ -43,8 +45,9 @@ export type PaymentExceptionDisposition = 'Held' | 'Unmatched' | 'Refused' | 'Re
  *
  * `Sending` blocks exactly as `Sent` does. It means the last attempt was never confirmed, so the rail
  * may or may not already hold the invoice; resolving that is a person's job with the rail open, not a
- * button's. `Failed` and `Canceled` do not block, because re-issuing after those is the deliberate act
- * the operation already asks to be told about.
+ * button's. `Failed` and `Canceled` do not block: a send after one is either a first send (nothing
+ * reached the rail) or the deliberate re-issue the operation asks to be told about — see
+ * {@link SendIsReissue}.
  */
 export function CanSend(
     orderStatus: string | null | undefined,
@@ -52,7 +55,19 @@ export function CanSend(
     hasRail: boolean,
     billedOnSchedule = false,
 ): boolean {
-    if (!hasRail || orderStatus !== 'Confirmed') return false;
+    return orderStatus === 'Confirmed' && SendApplies(rows, hasRail, billedOnSchedule);
+}
+
+/**
+ * Whether the whole-order Send belongs on this order at all, whatever its status: everything
+ * {@link CanSend} asks except that the order is confirmed.
+ *
+ * The toolbar shows Send on every order this is true for and greys it out until the order is
+ * confirmed, so a person sees where the step is before they can take it. Where this is false the
+ * button is not shown, because no amount of waiting makes it usable from here.
+ */
+export function SendApplies(rows: readonly ExternalInvoiceLike[], hasRail: boolean, billedOnSchedule = false): boolean {
+    if (!hasRail) return false;
     // AN ORDER BILLED IN INSTALMENTS IS NEVER SENT FROM HERE. This button sends the WHOLE-ORDER unit,
     // and a scheduled order has none — the server refuses it with "name the instalment", correctly,
     // after the person has clicked. The case that made this visible: an order whose only rail invoice
@@ -60,6 +75,46 @@ export function CanSend(
     // button appeared, leading nowhere. Instalments are issued from the Billing worklist.
     if (billedOnSchedule) return false;
     return !rows.some((r) => r.Status === 'Sent' || r.Status === 'Sending');
+}
+
+/** What the toolbar's Send button is decided from, besides whether it applies at all. */
+export interface SendButtonState {
+    OrderStatus: string | null | undefined;
+    /** The form is in edit mode. */
+    EditMode: boolean;
+    /** The record has unsaved changes, in either mode. */
+    Dirty: boolean;
+    /** A rail call from this panel is running. */
+    Busy: boolean;
+    /** The send preview's refusal, when it has one. */
+    Blocked: string | null;
+}
+
+/**
+ * Why Send is greyed out, or `false` when it can be clicked. The string is the button's tooltip.
+ *
+ * Reasons come most fundamental first, so the tooltip names the step a person has to take before
+ * any other. Unsaved edits block because the send reads the SAVED order: sending from a form that
+ * shows something else invoices for figures the person is not looking at.
+ */
+export function SendDisabledReason(s: SendButtonState): string | false {
+    if (s.OrderStatus !== 'Confirmed') return 'Available once the order is confirmed';
+    if (s.EditMode || s.Dirty) return 'Save or discard your edits first';
+    if (s.Busy) return 'Working…';
+    return s.Blocked || false;
+}
+
+/**
+ * Whether sending this order now is a RE-ISSUE: the rail has held an invoice for the whole-order unit
+ * before, so a person must have checked the rail and the send carries `AllowReissue`.
+ *
+ * A `Failed` row with no rail reference does not count. The rail refused before creating anything —
+ * the customer had no email, Bill.com answered no — so there is nothing there to bill twice, and
+ * warning about it sends a person to look for an invoice that does not exist. The server decides
+ * the same way (`DecideInvoiceable`'s `UnitReachedRail`).
+ */
+export function SendIsReissue(rows: readonly ExternalInvoiceLike[]): boolean {
+    return rows.some((r) => !r.OrderHeaderPaymentScheduleID && !!r.ExternalInvoiceRef);
 }
 
 /**
@@ -100,13 +155,13 @@ export function StateLabel(row: ExternalInvoiceLike): string {
 export function StateChipClass(row: ExternalInvoiceLike): string {
     switch (row.Status) {
         case 'Sent':
-            return 'mj-chip--success';
+            return 'mjo-chip--success';
         case 'Sending':
-            return 'mj-chip--info';
+            return 'mjo-chip--info';
         case 'Failed':
-            return 'mj-chip--danger';
+            return 'mjo-chip--error';
         default:
-            return 'mj-chip--outline';
+            return 'mjo-chip--outline';
     }
 }
 
@@ -133,7 +188,7 @@ export function DispositionLabel(d: PaymentExceptionDisposition): string {
 
 /** Chip styling for an exception. A reversal is the one that means money moved the wrong way. */
 export function DispositionChipClass(d: PaymentExceptionDisposition): string {
-    if (d === 'ReversalNeeded') return 'mj-chip--danger';
-    if (d === 'Held') return 'mj-chip--info';
-    return 'mj-chip--outline';
+    if (d === 'ReversalNeeded') return 'mjo-chip--error';
+    if (d === 'Held') return 'mjo-chip--info';
+    return 'mjo-chip--outline';
 }

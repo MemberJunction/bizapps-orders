@@ -147,6 +147,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         setTimeout(async () => {
             await this.showPage(this.ActivePageId!);
             this.LoadedAt = new Date();
+            this.NotifyLoadComplete();
             // Mounting the page and stamping the timestamp both change what the
             // header and the rail render. Writing the DOM here keeps that inside
             // one pass — without it the nav's active index is read as -1 before
@@ -285,6 +286,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         on<{ ID?: string } | string>('OrderOpened', (row) => this.openEntity(MJO_ENTITIES.OrderHeader, row));
         on<{ ID?: string } | string>('PaymentOpened', (row) => this.openEntity(MJO_ENTITIES.PaymentHeader, row));
         on<{ ID?: string } | string>('ProductOpened', (row) => this.openEntity(MJO_ENTITIES.Product, row));
+        on<{ ID?: string } | string>('SubscriptionOpened', (row) => this.openEntity(MJO_ENTITIES.Subscription, row));
         // New record = an empty key, same as the section's own primary actions.
         on<void>('ProductCreateRequested', () => this.navigationService.OpenEntityRecord(MJO_ENTITIES.Product, new CompositeKey()));
 
@@ -627,7 +629,7 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }
@@ -741,7 +743,7 @@ export class OrdersSectionResource extends MJOSectionBaseComponent {
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }
@@ -827,7 +829,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }
@@ -913,7 +915,7 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
 
             <div meta>
                 @if (LoadedAtDisplay) {
-                    <span class="mj-chip mj-chip--outline" title="When this screen last read the database">
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
                         as of {{ LoadedAtDisplay }}
                     </span>
                 }

@@ -24,9 +24,10 @@ import {
     type DatabaseProviderBase,
     type IMetadataProvider,
     type IRunViewProvider,
+    type RunViewParams,
     type UserInfo,
 } from '@memberjunction/core';
-import { RegisterClass } from '@memberjunction/global';
+import { EscapeSQLString, RegisterClass } from '@memberjunction/global';
 import {
     OrdersCapturePaymentOperation as OrdersCapturePaymentOperationBase,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -55,6 +56,19 @@ const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const money = (n: number): number => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 const key = (id: string | null | undefined): string => (id ?? '').toLowerCase();
 const quote = (ids: string[]): string => [...new Set(ids.map((i) => `'${i}'`))].join(',');
+
+/**
+ * What a read returned: its rows, or why it could not answer (#967).
+ *
+ * A failed read and an empty one are different answers. "I could not read it" (a request timeout, a
+ * lock wait, a dropped connection) may work on the next attempt; "it is not there" will not. This
+ * operation used to read only `Results`, so a failed read looked like an empty one and became a
+ * terminal refusal.
+ */
+type ReadOutcome<T> = { Rows: T[]; Error?: undefined } | { Rows?: undefined; Error: string };
+
+type OrderRow = { ID: string; OrderNumber: string; CompanyID: string; Status: string };
+type TenderRow = { ID: string; Code: string; IsActive: boolean; IsReversal: boolean };
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CapturePayment')
 export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
@@ -209,10 +223,34 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         // Read from the lookup cache rather than queried per capture: payment types are eleven rows
         // of seeded metadata read on every payment, and `Code` is unique, so the `IsActive` filter
         // that used to live in the SQL is the same test applied here.
+        //
+        // A MISS IN THE CACHE IS CHECKED AGAINST THE TABLE BEFORE IT IS REFUSED (#967). The engine is
+        // process-global, and a load that failed transiently leaves its tender list empty until the
+        // next load succeeds; refusing every capture by name meanwhile would class a passing fault as
+        // "this tender does not exist". One read, on the miss path only. A read that fails is
+        // `TenderReadFailed`, which a caller may retry; a read that answers "no such active type" is
+        // `UnknownTender`, which it may not.
         const code = (input?.TenderCode ?? '').trim();
         await LoadOrdersEngine(provider, user);
         const cachedTender = OrdersEngine.Instance.PaymentTypeByCode(code);
-        const tenderRow = cachedTender?.IsActive ? cachedTender : undefined;
+        let tenderRow: TenderRow | undefined = cachedTender?.IsActive ? cachedTender : undefined;
+        if (!tenderRow) {
+            const read = await this.read<TenderRow>(
+                rv,
+                {
+                    EntityName: PAYMENT_TYPE_ENTITY,
+                    ExtraFilter: `Code = '${EscapeSQLString(code)}'`,
+                    Fields: ['ID', 'Code', 'IsActive', 'IsReversal'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                user,
+            );
+            if (read.Error !== undefined) {
+                return this.refuse([this.readFailed('TenderReadFailed', `the payment type '${code}'`, read.Error)]);
+            }
+            tenderRow = read.Rows.find((t) => t.IsActive);
+        }
         if (!tenderRow) {
             return this.refuse([
                 this.blocker(
@@ -232,12 +270,40 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         }
 
         // ── 4. THE ORDERS MUST EXIST AND BELONG TO THE RECEIVING COMPANY ──
+        //
+        // "COULD NOT READ" IS NOT "DOES NOT EXIST" (#967). A read that fails (a request timeout while
+        // another transaction holds the order's row, a dropped connection) is `OrderReadFailed`, which
+        // the checkout retries. Only a read that SUCCEEDED and did not return an order may say the
+        // order does not exist, and it re-reads the ids it missed once first: past the cache, and
+        // only those ids. Under read-committed snapshot an order another transaction wrote is
+        // invisible until that transaction commits, and one that committed between the two reads is
+        // then found. `OrderNotFound` is terminal for the checkout, so it is reported only once two
+        // successful reads agree.
         const orderIDs = [...new Set(allocations.map((a) => a.OrderHeaderID))];
-        const orders = await rv.RunView<{ ID: string; OrderNumber: string; CompanyID: string; Status: string }>(
-            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${quote(orderIDs)})`, ResultType: 'simple' },
-            user,
-        );
-        const orderByID = new Map((orders.Results ?? []).map((o) => [key(o.ID), o]));
+        const readOrders = (ids: string[], bypassCache: boolean) =>
+            this.read<OrderRow>(
+                rv,
+                {
+                    EntityName: ORDER_HEADER_ENTITY,
+                    ExtraFilter: `ID IN (${quote(ids)})`,
+                    ResultType: 'simple',
+                    ...(bypassCache ? { BypassCache: true } : {}),
+                },
+                user,
+            );
+        const orders = await readOrders(orderIDs, false);
+        if (orders.Error !== undefined) {
+            return this.refuse([this.readFailed('OrderReadFailed', `the order${orderIDs.length > 1 ? 's' : ''}`, orders.Error)]);
+        }
+        const orderByID = new Map(orders.Rows.map((o) => [key(o.ID), o]));
+        const missed = orderIDs.filter((id) => !orderByID.has(key(id)));
+        if (missed.length) {
+            const again = await readOrders(missed, true);
+            if (again.Error !== undefined) {
+                return this.refuse([this.readFailed('OrderReadFailed', `the order${missed.length > 1 ? 's' : ''}`, again.Error)]);
+            }
+            for (const o of again.Rows) orderByID.set(key(o.ID), o);
+        }
         for (const id of orderIDs) {
             const order = orderByID.get(key(id));
             if (!order) {
@@ -271,6 +337,13 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             );
             const out = await this.project(paymentID, provider, user, rv);
 
+            // A payment this capture cannot read back is reported as a failure, so it must not stay
+            // written (#967): a caller without an idempotency key that retried a committed payment
+            // reported as failed would take the money twice.
+            if (!out.Success) {
+                await dbProvider.RollbackTransaction();
+                return out;
+            }
             if (preview) {
                 await dbProvider.RollbackTransaction();
                 return { ...out, WasPreview: true, IdempotencyKey: idempotencyKey };
@@ -448,15 +521,20 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         user: UserInfo,
         rv: RunView,
     ): Promise<OrdersCapturePaymentOutput> {
-        const header = await rv.RunView<{
+        const header = await this.read<{
             ID: string;
             PaymentNumber: string;
             Status: string;
             Amount: number;
             ProcessingFeeAmount: number;
             NetAmount: number;
-        }>({ EntityName: PAYMENT_HEADER_ENTITY, ExtraFilter: `ID = '${paymentID}'`, ResultType: 'simple' }, user);
-        const row = header.Results?.[0];
+        }>(rv, { EntityName: PAYMENT_HEADER_ENTITY, ExtraFilter: `ID = '${paymentID}'`, ResultType: 'simple' }, user);
+        // A read that failed is `PaymentReadFailed` (retryable); only a read that answered with no row
+        // is `PaymentNotFound` (#967).
+        if (header.Error !== undefined) {
+            return this.refuse([this.readFailed('PaymentReadFailed', `payment ${paymentID}`, header.Error)]);
+        }
+        const row = header.Rows[0];
         if (!row) {
             return this.refuse([this.blocker('PaymentNotFound', `Payment ${paymentID} could not be read back.`)]);
         }
@@ -591,6 +669,31 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
             throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
         }
         return `PAY-${String(seq).padStart(6, '0')}`;
+    }
+
+    /** Run a read and say whether it ANSWERED, so a failure is never mistaken for "no rows" (#967). */
+    private async read<T>(rv: RunView, params: RunViewParams, user: UserInfo): Promise<ReadOutcome<T>> {
+        try {
+            const result = await rv.RunView<T>(params, user);
+            if (!result?.Success) {
+                return { Error: result?.ErrorMessage || 'the read failed and gave no reason' };
+            }
+            return { Rows: result.Results ?? [] };
+        } catch (e) {
+            return { Error: String((e as Error)?.message ?? e) };
+        }
+    }
+
+    /**
+     * A read this capture needed could not be completed. Deliberately not one of the checkout's
+     * terminal codes (`TERMINAL_CAPTURE_BLOCKER_CODES`): the same capture may work on the next try.
+     */
+    private readFailed(code: 'OrderReadFailed' | 'TenderReadFailed' | 'PaymentReadFailed', what: string, error: string): BlockerResult {
+        return this.blocker(
+            code,
+            `Could not read ${what} to capture this payment: ${error}`,
+            'Retry the capture. Nothing this attempt wrote was kept, so repeating it is safe.',
+        );
     }
 
     private blocker(code: string, message: string, hint?: string): BlockerResult {

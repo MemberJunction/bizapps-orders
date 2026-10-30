@@ -125,6 +125,7 @@ const ALL_BUNDLES = [
     'ach-settlement',
     'embedded-payment-detail',
     'payment-schedule',
+    'schedule-replace',
     'payment-deposit',
     'contract-reversal',
     'concessions',
@@ -135,6 +136,7 @@ const ALL_BUNDLES = [
     'progress-measurement',
     'outbound-events',
     'billcom-rail',
+    'service-period-lock',
     'volume',
 ];
 

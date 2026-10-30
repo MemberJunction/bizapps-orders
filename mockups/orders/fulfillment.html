@@ -23,8 +23,8 @@
 <template id="page">
 
   <div slot="meta">
-    <span class="mj-chip mj-chip--warning">3 pending</span>
-    <span class="mj-chip mj-chip--error">1 past requested date</span>
+    <span class="mjo-chip mjo-chip--warning">3 pending</span>
+    <span class="mjo-chip mjo-chip--error">1 past requested date</span>
   </div>
 
   <div slot="actions">
@@ -145,9 +145,9 @@ function render() {
         ${overdue ? `<div class="secondary" style="color:var(--mj-status-error-text)">${F.days(r.requested)}d past</div>` : ''}</td>
       <td class="secondary">${F.dateShort(r.posted)}</td>
       <td>${r.status === 'Fulfilled'
-        ? `<span class="mj-chip mj-chip--success">Fulfilled</span><div class="secondary">${F.dateShort(r.fulfilledOn)}</div>`
-        : overdue ? '<span class="mj-chip mj-chip--error">Late</span>'
-                  : '<span class="mj-chip mj-chip--warning">Pending</span>'}</td>
+        ? `<span class="mjo-chip mjo-chip--success">Fulfilled</span><div class="secondary">${F.dateShort(r.fulfilledOn)}</div>`
+        : overdue ? '<span class="mjo-chip mjo-chip--error">Late</span>'
+                  : '<span class="mjo-chip mjo-chip--warning">Pending</span>'}</td>
     </tr>`;
   }).join('');
 

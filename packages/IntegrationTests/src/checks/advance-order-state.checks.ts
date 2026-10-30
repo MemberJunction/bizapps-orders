@@ -4,7 +4,7 @@
  * WHAT IT IS FOR
  * Back-office entry of something that has ALREADY happened: a counter sale, a shipment that went out
  * before anyone opened the system, a migration. The order lands in its final state without a human
- * clicking through the ladder.
+ * fulfilling it line by line: a Confirmed order's `FulfillmentStatus` moves to Fulfilled.
  *
  * WHAT CHANGED, AND WHY THIS BUNDLE SHRANK IN SCOPE
  * This was `create-in-state`, covering an operation that took an `OrderDraft`, CREATED the order by
@@ -21,12 +21,13 @@
  * revenue simply never existed. ADV8 asserts the operation refuses to touch such an order at all.
  *
  * WHAT IT PROVES
- *   ADV1   Confirmed advances to Posted, and books exactly once
+ *   ADV1   Confirmed advances to Fulfilled, and books exactly once
  *   ADV2   the ledger survives the climb — entries exist, per line, and balance
  *   ADV3   Fulfilled marks the fulfillable LINES, not just the header
  *   ADV4   an order with nothing to ship reaches Fulfilled anyway (D15)
  *   ADV5   the transition trail records every step taken
- *   ADV6   Draft, Quoted and Confirmed are refused — those are reached by saving the order
+ *   ADV6   Draft, Quoted, Confirmed and the retired Posted are refused — the first three are reached
+ *          by saving the order
  *   ADV7   Voided is refused
  *   ADV8   an unbooked order is refused outright, and is not moved
  *   ADV9   a Reason is recorded on the order that skipped the usual path

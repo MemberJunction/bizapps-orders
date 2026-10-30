@@ -143,13 +143,23 @@ export function renderCheckoutHostErrorPage(options: CheckoutHostErrorOptions): 
 }
 
 const PAGE_CSS = `
-:root { color-scheme: light dark; }
+:root {
+  color-scheme: light dark;
+  --co-bg: #f8fafc;
+  --co-text: #0f172a;
+  --co-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --co-error: #b3261e;
+  --co-ok: #0f7b3b;
+  --co-border: #c9cdd4;
+  --co-surface: #fff;
+  --co-primary: #2563eb;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; min-height: 100%; }
 body {
-  background: var(--mj-bg, #f8fafc);
-  color: var(--mj-text, #0f172a);
-  font-family: var(--mj-font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: var(--co-bg);
+  color: var(--co-text);
+  font-family: var(--co-font);
   -webkit-text-size-adjust: 100%;
   min-height: 100vh;
 }
@@ -162,18 +172,18 @@ body {
   font-size: 1.0625rem;
   line-height: 1.5;
 }
-.mj-co__error { color: var(--mj-error, #b3261e); }
-.mj-co__ok { color: var(--mj-ok, #0f7b3b); }
+.mj-co__error { color: var(--co-error); }
+.mj-co__ok { color: var(--co-ok); }
 .mj-co h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .mj-co p { margin: 0 0 1rem; }
 .mj-co label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
 .mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {
   width: 100%;
   padding: 0.5rem 0.65rem;
-  border: 1px solid var(--mj-border, #c9cdd4);
+  border: 1px solid var(--co-border);
   border-radius: 6px;
   font: inherit;
-  background: var(--mj-surface, #fff);
+  background: var(--co-surface);
   color: inherit;
 }
 .mj-co button {
@@ -181,7 +191,7 @@ body {
   padding: 0.65rem 1.1rem;
   border: 0;
   border-radius: 6px;
-  background: var(--mj-primary, #2563eb);
+  background: var(--co-primary);
   color: #fff;
   font: inherit;
   font-weight: 600;
@@ -238,6 +248,14 @@ const BOOT_SCRIPT = `
     try { sessionStorage.setItem(storageKey, key); } catch (e) {}
     return key;
   }
+  // A reply that is not the edge's JSON: a gateway error page (a 504 when /complete outlasts the
+  // proxy in front of the server) or no reply at all. Its message is for the buyer, never a parser error.
+  function transportError(httpStatus) {
+    var e = new Error('Checkout could not reach the server. Please try again.');
+    e.transport = true;
+    e.httpStatus = httpStatus;
+    return e;
+  }
   function post(path, body) {
     return fetch(apiRoot + path, {
       method: 'POST',
@@ -246,10 +264,11 @@ const BOOT_SCRIPT = `
       body: JSON.stringify(body)
     }).then(function (res) {
       return res.json().then(function (json) {
+        if (!json || typeof json !== 'object') throw transportError(res.status);
         json._httpStatus = res.status;
         return json;
-      });
-    });
+      }, function () { throw transportError(res.status); });
+    }, function () { throw transportError(null); });
   }
   // Turnstile (#592): the edge's 403 names the site key, since the widget configuration only
   // arrives with /initialize. Render the challenge, retry once; a token works once, so every
@@ -317,6 +336,27 @@ const BOOT_SCRIPT = `
       turnstileSiteKey = siteKey;
       return turnstileToken(siteKey).then(function (token) { return post(path, withToken(body, token)); });
     });
+  }
+  // /complete once the buyer has paid. The server may still be booking the order when the reply is
+  // a gateway error, or when it answers that the session is Processing; it is replay-safe, so ask
+  // again every 3 s for up to 2 min. Resolves { _delayed: true } when the wait runs out.
+  function completeCheckout(body, onWaiting) {
+    var deadline = Date.now() + 120000;
+    var waiting = false;
+    function attempt() {
+      return postGated('/complete', body).then(function (reply) {
+        return reply && reply.Success !== true && reply.Status === 'Processing' ? null : reply;
+      }, function (err) {
+        if (err && err.transport) return null;
+        throw err;
+      }).then(function (reply) {
+        if (reply) return reply;
+        if (!waiting) { waiting = true; onWaiting(); }
+        if (Date.now() >= deadline) return { _delayed: true };
+        return new Promise(function (resolve) { setTimeout(resolve, 3000); }).then(attempt);
+      });
+    }
+    return attempt();
   }
   function fieldValue(el) {
     if (el.type === 'checkbox') return el.checked;
@@ -474,6 +514,7 @@ const BOOT_SCRIPT = `
       if (Object.keys(extensionFields).length) {
         line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
       }
+      var finishing = function () { status.textContent = 'Payment received. Finishing your order…'; };
       post('/draft', {
         sessionId: sessionId,
         clientSessionKey: sessionKey,
@@ -487,16 +528,17 @@ const BOOT_SCRIPT = `
         totalEl.textContent = 'Total: ' + total.toFixed(2);
         if (!draft.RequiresPayment) {
           status.textContent = 'Completing…';
-          return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+          return completeCheckout({ sessionId: sessionId, clientSessionKey: sessionKey }, finishing);
         }
         status.textContent = 'Opening payment…';
         return post('/payment-intent', { sessionId: sessionId, clientSessionKey: sessionKey }).then(function (intent) {
           if (!intent || !intent.Success || !intent.ClientSecret) {
             throw new Error((intent && intent.ErrorMessage) || 'Could not start payment.');
           }
+          // Resolved server-side by ResolveCheckoutPublishableKey: the provider's env key, else the widget's.
           var pk = config.stripePublishableKey;
           if (!pk) {
-            throw new Error('This checkout requires card payment. Configure stripePublishableKey on the widget, or embed the checkout widget on a site that already loads Stripe.');
+            throw new Error('This checkout requires card payment, but no Stripe publishable key is configured. Set <CredentialsRef>_PUBLISHABLE_KEY for the payment provider of the widget on the server, or stripePublishableKey on the widget.');
           }
           return loadStripe(pk).then(function (stripeInst) {
             stripe = stripeInst;
@@ -516,12 +558,22 @@ const BOOT_SCRIPT = `
             }).then(function (result) {
               if (result.error) throw new Error(result.error.message || 'Payment failed.');
               status.textContent = 'Completing…';
-              return postGated('/complete', { sessionId: sessionId, clientSessionKey: sessionKey });
+              return completeCheckout({ sessionId: sessionId, clientSessionKey: sessionKey }, finishing);
             });
           });
         });
       }).then(function (done) {
         if (!done || done._waitForCard) return;
+        if (done._delayed) {
+          // Paid, but not confirmed within the wait: the form goes, so the buyer cannot pay twice.
+          host.innerHTML = '';
+          var late = document.createElement('p');
+          late.className = 'mj-co__ok';
+          late.setAttribute('role', 'status');
+          late.textContent = 'Your payment went through, but confirming your order is taking longer than usual. Please do not pay again. Contact support if you need your order confirmation.';
+          host.appendChild(late);
+          return;
+        }
         if (!done.Success) {
           throw new Error(done.ErrorMessage || 'Could not complete checkout.');
         }

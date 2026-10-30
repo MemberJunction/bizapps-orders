@@ -14,12 +14,12 @@ export interface CheckoutAccountView {
     Outcome: CheckoutAccountOutcome;
     Message?: string;
     CanSetPassword: boolean;
-    /**
-     * The buyer must verify the e-mail before the account signs in. True for every `Created`
-     * account: the `CheckoutAccountStep` contract keeps a created account unable to sign in until
-     * the host has verified the e-mail (#395).
-     */
+    /** True for every `Created` account, which gets the verification note. */
     VerificationRequired?: boolean;
+    /** The host's verification note: absent for the default, `null` for none. */
+    VerificationNote?: string | null;
+    /** The host's wording once the password is set; absent for the default. */
+    PasswordSetMessage?: string;
 }
 
 /** Shown when the account step could not be reached or did not answer. */
@@ -35,21 +35,32 @@ export function ReadCheckoutAccount(raw: unknown): CheckoutAccountView | null {
         Message: typeof a['Message'] === 'string' && a['Message'] ? a['Message'] : undefined,
         CanSetPassword: a['CanSetPassword'] === true,
         VerificationRequired: a['Outcome'] === 'Created',
+        ...(a['Outcome'] === 'Created' ? readHostWording(a) : {}),
     };
 }
 
-const VERIFY_NOTE = 'We are sending a link to your e-mail. Use it to verify your account before you sign in.';
+function readHostWording(a: Record<string, unknown>): Pick<CheckoutAccountView, 'VerificationNote' | 'PasswordSetMessage'> {
+    const wording: Pick<CheckoutAccountView, 'VerificationNote' | 'PasswordSetMessage'> = {};
+    const note = a['VerificationNote'];
+    if (note === null || typeof note === 'string') wording.VerificationNote = note?.trim() ? note : null;
+    const passwordSet = a['PasswordSetMessage'];
+    if (typeof passwordSet === 'string' && passwordSet.trim()) wording.PasswordSetMessage = passwordSet;
+    return wording;
+}
 
-/** The note shown with the password form of a created account. */
+const VERIFY_NOTE = 'We are sending a link to your e-mail. Use it to verify your account before you sign in.';
+const PASSWORD_SET_MESSAGE =
+    'Your password is set. Check your e-mail for the link to verify your account, then sign in with the e-mail you used here.';
+
+/** The note shown with the password form of a created account: the host's, or the default. */
 export function VerificationNote(account: CheckoutAccountView | null): string | null {
-    return account?.VerificationRequired ? VERIFY_NOTE : null;
+    if (!account?.VerificationRequired) return null;
+    return account.VerificationNote === undefined ? VERIFY_NOTE : account.VerificationNote;
 }
 
 /** The line shown under the confirmation when no password form is showing. */
 export function AccountMessage(account: CheckoutAccountView, passwordSet: boolean): string | null {
-    if (passwordSet) {
-        return 'Your password is set. Check your e-mail for the link to verify your account, then sign in with the e-mail you used here.';
-    }
+    if (passwordSet) return account.PasswordSetMessage ?? PASSWORD_SET_MESSAGE;
     if (account.Message) return account.Message;
     if (account.Outcome === 'Exists') return 'You already have an account with this e-mail. Sign in, or reset your password if you have forgotten it.';
     if (account.Outcome === 'Failed') return 'We could not set up your account just now. Your order is confirmed. Please try again in a moment.';

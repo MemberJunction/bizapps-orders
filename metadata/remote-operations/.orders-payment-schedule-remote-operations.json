@@ -1,0 +1,33 @@
+[
+  {
+    "_comments": [
+      "REPLACE AN ORDER'S PAYMENT SCHEDULE FROM A SUPPLIED LIST (golive #290). Its own dot-json so it conflicts with",
+      "no other change to the remote operations. Called by Sales when a deal closes Won and whenever a won deal's schedule changes."
+    ],
+    "fields": {
+      "Name": "Replace Payment Schedule",
+      "OperationKey": "Orders.ReplacePaymentSchedule",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Receivables",
+      "Description": "Set an order's payment schedule to a supplied list of rows (due date, amount, description). Instalments already invoiced, paid or written off must appear in the list with the same due date and amount and are kept unchanged; a list that changes or drops one is refused. The remaining rows replace the order's Scheduled rows, numbered by due date, and must tie to the order's lines by the same check confirm and invoicing run. A confirmed order billed in full without a schedule cannot be given one, and a confirmed order billed by its schedule cannot have it removed. An instalment not yet invoiced that a payment names cannot be removed, re-dated or lowered below what is paid on it. The order's status is re-read under a lock inside the transaction, so a confirm that lands in between is honoured. All or none; the same list sent twice writes nothing. Preview reports the result without writing.",
+      "InputTypeName": "OrdersReplacePaymentScheduleInput",
+      "InputTypeDefinition": "@file:types/orders-replace-payment-schedule.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersReplacePaymentScheduleOutput",
+      "OutputTypeDefinition": "@file:types/orders-replace-payment-schedule.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "D5846A2A-1667-4887-910E-EC4BA6E7DE15"
+    },
+    "sync": {
+      "lastModified": "2026-10-17T00:29:22.443Z",
+      "checksum": "f3207c6fb4906a215e2ca0bf9caf3142b81c6662bdcac72c0b98cb18801d4153"
+    }
+  }
+]
