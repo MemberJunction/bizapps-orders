@@ -268,3 +268,32 @@ describe('the override reason', () => {
         expect(LineNeedsOverrideReason(lineOf(UNPRICED, false).line, engine)).toBe(false);
     });
 });
+
+describe('revenue band picked because the revenue is unknown', () => {
+    const BAND = 'a1b2c3d4-0000-4000-8000-000000000003';
+    const undecided: ApplicablePrice = { ...price(BAND, '$2M–$5M rev', 27000), IsRevenueBand: true, BandUndecided: true };
+
+    it('is the rules’ price, not an override: no flag and no reason needed', () => {
+        const { line, fields } = lineOf(UNPRICED, false);
+        expect(PinLineToNamedPrice(line, undecided, null)).toBe('pinned');
+        expect(fields.ProductPriceID.Value).toBe(BAND);
+        expect(fields.UnitPrice.Value).toBe(27000);
+        expect(fields.PriceOverridden.Value).toBe(false);
+        expect(IsLinePriceOverridden(line, null, [undecided])).toBe(false);
+        expect(LineNeedsOverrideReason(line, null, [undecided])).toBe(false);
+    });
+
+    it('becomes an override again once the band price is changed by hand', () => {
+        const { line, fields } = lineOf(UNPRICED, false);
+        PinLineToNamedPrice(line, undecided, null);
+        fields.UnitPrice.Value = 20000;
+        expect(IsLinePriceOverridden(line, null, [undecided])).toBe(true);
+    });
+
+    it('is an ordinary override when the engine did choose a band', () => {
+        const decided: ApplicablePrice = { ...undecided, BandUndecided: false };
+        const { line, fields } = lineOf(UNPRICED, false);
+        PinLineToNamedPrice(line, decided, engine);
+        expect(fields.PriceOverridden.Value).toBe(true);
+    });
+});

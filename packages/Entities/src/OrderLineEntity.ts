@@ -24,7 +24,7 @@ import {
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
 } from './pricing/priceOverride';
-import { ListApplicablePrices, PriceResolutionError, ResolvePrice } from './pricing/PriceResolver';
+import { ListApplicablePrices, PriceResolutionError, ResolvePrice, RevenueBandRequiredError } from './pricing/PriceResolver';
 
 @RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Order Lines')
 export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
@@ -133,6 +133,17 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 ),
             );
         } catch (err) {
+            if (err instanceof RevenueBandRequiredError) {
+                // The buyer's revenue is unknown, so the band is the rep's to choose; any band is
+                // allowed without a grant. Anything else still needs OverrideAny.
+                try {
+                    const ctx = await BuildLinePriceContext(this, provider, user);
+                    const applicable = ctx ? await ListApplicablePrices(ctx, provider, user) : [];
+                    if (isNamedListPick(this, applicable.filter((p) => p.BandUndecided))) return;
+                } catch {
+                    // Fall through to the refusal below.
+                }
+            }
             if (err instanceof PriceResolutionError) {
                 if (userPriceOverrideKind(user, provider) === 'any') return;
                 result.Success = false;
