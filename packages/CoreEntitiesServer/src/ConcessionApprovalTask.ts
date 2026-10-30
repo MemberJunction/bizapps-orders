@@ -122,10 +122,16 @@ export function ConcessionStatusForOutcome(code: string): ConcessionDecision | n
     }
 }
 
+/** The task statuses that close a task: nothing more is decided or done on it. */
+const CLOSED_TASK_STATUSES = ['Completed', 'Cancelled'] as const;
+
 /** A task that can still take a decision. */
 export function IsOpenApprovalTask(status: string): boolean {
-    return status !== 'Completed' && status !== 'Cancelled';
+    return !(CLOSED_TASK_STATUSES as readonly string[]).includes(status);
 }
+
+/** `IsOpenApprovalTask` as a filter on a Tasks view, for every reader that asks "still open?" in SQL. */
+export const OPEN_TASK_SQL = `Status NOT IN (${CLOSED_TASK_STATUSES.map((st) => `'${st}'`).join(', ')})`;
 
 /** What a concession looks like to its approver, for the task title: "25% discount, 3,000.00". */
 export interface ConcessionSummaryFacts {
@@ -413,7 +419,7 @@ export async function ReleaseOrderFromTasks(orderHeaderID: string, taskIDs: read
         EntityName: TASK_ENTITY,
         ExtraFilter:
             `ID IN (${RequireUUIDs(candidates, 'TaskID').map((id) => `'${id}'`).join(', ')}) ` +
-            `AND Status NOT IN ('Completed', 'Cancelled')`,
+            `AND ${OPEN_TASK_SQL}`,
         Fields: ['ID'],
         OrderBy: '__mj_CreatedAt DESC',
         MaxRows: 1,

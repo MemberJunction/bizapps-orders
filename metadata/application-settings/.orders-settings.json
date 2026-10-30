@@ -201,5 +201,16 @@
     "primaryKey": {
       "ID": "495299D2-D154-4F0B-9C9B-A4A3D7CDE526"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "AlertTaskRole",
+      "Value": "",
+      "Comments": "The NAME of the MJ role whose active holders are assigned every alert Task Orders raises (a checkout payment not booked, a settled payment with no order, a dead-lettered outbound delivery), so the tasks app notifies a person. Empty, alerts are raised unassigned. A name that is not a role, or a role with no active holder, leaves the alert unassigned and logs why."
+    },
+    "primaryKey": {
+      "ID": "9B5424D7-102D-4F00-A569-8D8B6E92C10E"
+    }
   }
 ]

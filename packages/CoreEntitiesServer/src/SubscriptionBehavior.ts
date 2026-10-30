@@ -89,6 +89,10 @@ export interface ExistingSubscription {
     /** End of the latest term, if any. */
     LatestTermEnd?: Date | null;
     LatestTermNumber?: number | null;
+    /** The gateway's id when a payment gateway bills it (E2b): another order must not change it unseen. */
+    ProviderSubscriptionID?: string | null;
+    /** Member-facing number, for messages. */
+    SubscriptionNumber?: string | null;
 }
 
 /** One term a purchase buys. */
@@ -950,6 +954,29 @@ export class SubscriptionBehavior {
             default:
                 return rules;
         }
+    }
+
+    /**
+     * Whether a cancellation ends access AT ONCE, rather than at the end of its access-through day.
+     *
+     * Only an `Immediate` cancel with no grace, and only when it is made for today or an earlier day, or
+     * before the term has started (`DecideCancellation` clamps such a request to the term's first day, which
+     * would otherwise keep that whole day). Every other cancellation keeps its access-through day in full (end
+     * of term, end of a billing period, any grace, and an `Immediate` one requested for a later day), which is
+     * also how `EvaluateGrantAccess` reads a cancelled subscription.
+     *
+     * Pure. `context` is the one `DecideCancellation` was given (its `Rules` after `RulesForTiming`); `today`
+     * is the business day.
+     *
+     * Example (Chicago, last day 31 Dec, cancelled at 7 pm Central): `EndOfTerm` is false, so access runs
+     * to 00:00 Central on 1 Jan; `Immediate` is true, so the grants are revoked on the spot. `Immediate`
+     * requested for two days from now is false: access runs through that day.
+     */
+    public EndsAccessOnCancel(context: CancellationContext, decision: CancellationDecision, today: Date): boolean {
+        if (context.Rules.CancellationMode !== 'Immediate' || (context.Rules.GracePeriodDays ?? 0) !== 0) return false;
+        const requested = utcDay(context.RequestDate).getTime();
+        const beforeTerm = requested < utcDay(context.Term.StartDate).getTime();
+        return beforeTerm || utcDay(decision.AccessThroughDate).getTime() <= utcDay(today).getTime();
     }
 
     /**
