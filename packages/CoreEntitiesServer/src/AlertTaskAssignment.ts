@@ -39,6 +39,9 @@ export const ORDERS_ALERT_TASK_PREFIX = {
     CheckoutCaptureNotBooked: 'Checkout capture not booked: ',
     CheckoutSettledNoOrder: 'Checkout payment settled with no order: ',
     OutboundDeliveryFailed: 'Outbound delivery failed: ',
+    // A gateway subscription Orders could not create, record or cancel (#972), and its urgent form.
+    GatewaySubscription: 'Gateway subscription needs attention: ',
+    GatewaySubscriptionUrgent: 'URGENT: Gateway subscription needs attention: ',
 } as const;
 
 /** Unassigned alerts assigned per sweep, at most: a backlog clears over a few passes, never in one long one. */

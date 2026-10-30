@@ -53,11 +53,16 @@ import {
     CHECKOUT_CAPTURE_TASK_TYPE_CODE,
     CHECKOUT_CAPTURE_TASK_TYPE_ENTITY,
     OUTBOUND_DEAD_LETTER_LOG_MARKER,
+    OpenProviderSubscriptionAlerts,
+    PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER,
+    ProviderSubscriptionAlertName,
     raiseCheckoutCaptureTerminalAlert,
     raiseCheckoutSettledNotBookedAlert,
     raiseOutboundDeadLetterAlert,
+    raiseProviderSubscriptionAlert,
 } from '../checkoutCaptureAlert.js';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from '../checkoutCaptureRetry.js';
+import { IsOpenApprovalTask, OPEN_TASK_SQL } from '../ConcessionApprovalTask.js';
 
 const user = { ID: 'user-1', Email: 'ops@example.com' } as unknown as UserInfo;
 const GENERAL_TYPE_ID = 'F7C1E8DE-8DAC-4BF8-943E-3D5A1210BE82';
@@ -253,5 +258,118 @@ describe('raiseOutboundDeadLetterAlert', () => {
         await raiseOutboundDeadLetterAlert(delivery, null, user);
         expect(mockTask.Name).toContain('an unreadable event');
         expect(mockTask.Name).toContain('(event deliv-1)');
+    });
+});
+
+describe('raiseProviderSubscriptionAlert (option E, E2)', () => {
+    const alert = { SubscriptionID: 'sub-id-110', SubscriptionNumber: 'SUB-000110', Code: 'NoProviderPrice', Reason: 'no price flagged UseForNewSubscriptions' };
+    const existingTasks = (rows: Array<{ ID: string }>) =>
+        mockRunView.mockImplementation(async (params: { EntityName: string }) =>
+            params.EntityName === CHECKOUT_CAPTURE_TASK_ENTITY
+                ? { Success: true, Results: rows }
+                : { Success: true, Results: [{ ID: GENERAL_TYPE_ID }] },
+        );
+
+    it('logs its marker and raises a typed Task naming the subscription, the problem and what to do', async () => {
+        existingTasks([]);
+        expect(await raiseProviderSubscriptionAlert(alert, user)).toBe(true);
+        expect(String(mockLogError.mock.calls[0][0])).toContain(PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER);
+        expect(mockTask.TypeID).toBe(GENERAL_TYPE_ID);
+        expect(mockTask.Name).toBe('Gateway subscription needs attention: SUB-000110 (NoProviderPrice)');
+        expect(mockTask.Description).toContain('no price flagged UseForNewSubscriptions');
+        expect(mockTask.Description).toContain('Create Provider Subscriptions');
+        // Unlinked: Orders still renews it, and the job that retries it must be on.
+        expect(mockTask.Description).toMatch(/still\s+treat it as theirs to renew/);
+        expect(mockTask.Description).toMatch(/must be enabled wherever an account has BillsSubscriptions on/);
+        expect(mockTask.Save).toHaveBeenCalledTimes(1);
+    });
+
+    it('raises one OPEN Task per subscription and problem: while one is open, nothing new and false', async () => {
+        existingTasks([{ ID: 'task-1' }]);
+        expect(await raiseProviderSubscriptionAlert(alert, user)).toBe(false);
+        const lookup = mockRunView.mock.calls[0][0] as { EntityName: string; ExtraFilter: string };
+        expect(lookup.ExtraFilter).toContain('SUB-000110 (NoProviderPrice)');
+        // Only an open Task stops a new one: after staff close it, a recurrence is raised again.
+        expect(lookup.ExtraFilter).toContain(`Status NOT IN ('Completed', 'Cancelled')`);
+        expect(mockTask.Save).not.toHaveBeenCalled();
+    });
+
+    it('a problem that comes back after its Task was closed raises a new Task', async () => {
+        // The open-Task lookup finds nothing (the earlier Task is Completed, so the filter excludes it).
+        existingTasks([]);
+        expect(await raiseProviderSubscriptionAlert(alert, user)).toBe(true);
+        expect(mockTask.Save).toHaveBeenCalledTimes(1);
+    });
+
+    it('a linked subscription\'s Task says the gateway bills it, not that Orders renews it', async () => {
+        existingTasks([]);
+        await raiseProviderSubscriptionAlert({ ...alert, Code: 'LinkedElsewhere', Linked: true }, user);
+        expect(mockTask.Description).toContain("Orders' renewal jobs skip it and the gateway bills it");
+        expect(mockTask.Description).not.toMatch(/theirs to renew/);
+    });
+
+    it('marks an urgent problem in the name, and writes through the caller\'s provider when one is given', async () => {
+        existingTasks([]);
+        const providerEntityByName = vi.fn().mockReturnValue({ Name: CHECKOUT_CAPTURE_TASK_ENTITY });
+        const providerGetEntityObject = vi.fn().mockResolvedValue(mockTask);
+        const provider = { EntityByName: providerEntityByName, GetEntityObject: providerGetEntityObject };
+        await raiseProviderSubscriptionAlert({ ...alert, Code: 'ChargedAtCreation', Urgent: true }, user, provider as never);
+        expect(mockTask.Name).toBe('URGENT: Gateway subscription needs attention: SUB-000110 (ChargedAtCreation)');
+        expect(providerGetEntityObject).toHaveBeenCalledTimes(1);
+        expect(mockGetEntityObject).not.toHaveBeenCalled();
+    });
+
+    it('the settled-not-booked alert keeps its any-status dedupe (a one-off session is resolved once)', async () => {
+        existingTasks([{ ID: 'task-closed' }]);
+        await raiseCheckoutSettledNotBookedAlert('sess-9', 'pi-9', 'total rose', user);
+        const lookup = mockRunView.mock.calls[0][0] as { ExtraFilter: string };
+        expect(lookup.ExtraFilter).not.toContain('Status');
+        expect(mockTask.Save).not.toHaveBeenCalled();
+    });
+});
+
+describe('OpenProviderSubscriptionAlerts (option E, E2)', () => {
+    it('reads the open provider-subscription Tasks and groups their problems by subscription', async () => {
+        mockRunView.mockResolvedValue({
+            Success: true,
+            Results: [
+                { ID: 't1', Name: 'Gateway subscription needs attention: SUB-000110 (EndedAtGateway)' },
+                { ID: 't2', Name: 'URGENT: Gateway subscription needs attention: SUB-000110 (ChargedAtCreation)' },
+                { ID: 't3', Name: 'Gateway subscription needs attention: SUB-000111 (GatewayRefused)' },
+                { ID: 't4', Name: 'Something else entirely' },
+            ],
+        });
+        const open = await OpenProviderSubscriptionAlerts(user);
+        expect([...(open.get('SUB-000110') ?? [])].sort()).toEqual(['ChargedAtCreation', 'EndedAtGateway']);
+        expect([...(open.get('SUB-000111') ?? [])]).toEqual(['GatewayRefused']);
+        const read = mockRunView.mock.calls[0][0] as { ExtraFilter: string };
+        expect(read.ExtraFilter).toContain(`Status NOT IN ('Completed', 'Cancelled')`);
+        expect(read.ExtraFilter).toContain(`Name LIKE 'Gateway subscription needs attention: %'`);
+    });
+
+    it('reads back every name ProviderSubscriptionAlertName writes, urgent or not, through the one open-Task rule', async () => {
+        mockRunView.mockResolvedValue({
+            Success: true,
+            Results: [
+                { ID: 't1', Name: ProviderSubscriptionAlertName('SUB-000120', 'FoundMismatch') },
+                { ID: 't2', Name: ProviderSubscriptionAlertName('SUB-000120', 'ChargedAtCreation', true) },
+                { ID: 't3', Name: ProviderSubscriptionAlertName('SUB-000121', 'FailedBeforeCreate') },
+            ],
+        });
+        const open = await OpenProviderSubscriptionAlerts(user);
+        expect([...(open.get('SUB-000120') ?? [])].sort()).toEqual(['ChargedAtCreation', 'FoundMismatch']);
+        expect([...(open.get('SUB-000121') ?? [])]).toEqual(['FailedBeforeCreate']);
+        expect((mockRunView.mock.calls[0][0] as { ExtraFilter: string }).ExtraFilter).toContain(OPEN_TASK_SQL);
+        // The SQL and the in-memory rule are the same rule.
+        expect(OPEN_TASK_SQL).toBe(`Status NOT IN ('Completed', 'Cancelled')`);
+        expect(['Open', 'In Progress', 'Completed', 'Cancelled'].filter(IsOpenApprovalTask)).toEqual(['Open', 'In Progress']);
+    });
+
+    it('is empty, not an error, when the tasks app is not installed or the read fails', async () => {
+        mockEntityByName.mockReturnValue(undefined);
+        expect((await OpenProviderSubscriptionAlerts(user)).size).toBe(0);
+        mockEntityByName.mockReturnValue({ Name: CHECKOUT_CAPTURE_TASK_ENTITY });
+        mockRunView.mockResolvedValue({ Success: false, ErrorMessage: 'timeout' });
+        expect((await OpenProviderSubscriptionAlerts(user)).size).toBe(0);
     });
 });

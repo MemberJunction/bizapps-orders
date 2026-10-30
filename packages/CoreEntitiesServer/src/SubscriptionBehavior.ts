@@ -89,6 +89,10 @@ export interface ExistingSubscription {
     /** End of the latest term, if any. */
     LatestTermEnd?: Date | null;
     LatestTermNumber?: number | null;
+    /** The gateway's id when a payment gateway bills it (E2b): another order must not change it unseen. */
+    ProviderSubscriptionID?: string | null;
+    /** Member-facing number, for messages. */
+    SubscriptionNumber?: string | null;
 }
 
 /** One term a purchase buys. */

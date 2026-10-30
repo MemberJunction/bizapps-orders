@@ -146,4 +146,83 @@ describe('Cancel subscription', () => {
         expect(c.Preview).toBeNull();
         expect(c.Open).toBe(true);
     });
+    describe('when a payment gateway bills the subscription (E2b)', () => {
+        const GATEWAY_REFUSAL =
+            'The payment gateway did not confirm the cancel of sub_x: card_declined. Nothing was changed in Orders. Try again.';
+
+        it('names the gateway subscription id, and none for a subscription the gateway does not bill', () => {
+            expect(componentFor({ ProviderSubscriptionID: 'sub_1Abc' } as Partial<mjBizAppsOrdersSubscriptionEntity>).GatewaySubscriptionID).toBe('sub_1Abc');
+            expect(componentFor({}).GatewaySubscriptionID).toBeNull();
+            expect(componentFor({ ProviderSubscriptionID: null } as unknown as Partial<mjBizAppsOrdersSubscriptionEntity>).GatewaySubscriptionID).toBeNull();
+        });
+
+        // What the server sends for a Chicago business on a term covered through 2026-12-31: the gateway's
+        // own bound is 00:00 the day AFTER coverage in Chicago (06:00Z on 1 Jan), and the decision's
+        // EffectiveDate is the coverage end itself.
+        const CHICAGO_BILLING_ENDS_AT = '2027-01-01T06:00:00.000Z';
+        const CHICAGO_COVERAGE_ENDS = '2026-12-31';
+
+        it('describes an immediate gateway cancel as stopping billing today, whatever dates it is given', () => {
+            const c = componentFor({});
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now' })).toBe('Stops billing today');
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'Now', BillingEndsAt: CHICAGO_BILLING_ENDS_AT }, CHICAGO_COVERAGE_ENDS))
+                .toBe('Stops billing today');
+        });
+
+        it('names the coverage end for an end-of-coverage gateway cancel, not the gateway\'s next-day bound', () => {
+            const c = componentFor({});
+            const line = c.GatewayLine(
+                { ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: CHICAGO_BILLING_ENDS_AT },
+                CHICAGO_COVERAGE_ENDS,
+            );
+            expect(line).toBe("Won't renew; nothing charged after coverage ends 2026-12-31");
+            // Before: the line read the gateway's bound and said 2027-01-01, a day later than "Coverage ends".
+            expect(line).not.toContain('2027-01-01');
+        });
+
+        it('falls back to words, never a dash, when there is no coverage end to name', () => {
+            const c = componentFor({});
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: CHICAGO_BILLING_ENDS_AT }))
+                .toBe("Won't renew; nothing charged after coverage ends");
+            expect(c.GatewayLine({ ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage' }, null))
+                .toBe("Won't renew; nothing charged after coverage ends");
+        });
+
+        it('shows a gateway refusal on confirm, does not emit, and stays open with nothing reset', async () => {
+            const c = componentFor({ ProviderSubscriptionID: 'sub_x' } as Partial<mjBizAppsOrdersSubscriptionEntity>);
+            mocks.output = { ...PREVIEW, Gateway: { ProviderSubscriptionID: 'sub_x', When: 'Now' } };
+            c.Start();
+            c.Timing = 'Immediate';
+            c.Reason = 'Moved';
+            await c.RunPreview();
+            mocks.output = { Success: false, Message: GATEWAY_REFUSAL };
+            await c.Confirm();
+
+            expect(mocks.calls).toHaveLength(2);
+            expect(mocks.calls[1].input).toMatchObject({ Preview: false, Timing: 'Immediate' });
+            expect(c.Error).toBe(GATEWAY_REFUSAL);
+            expect(c.Canceled.emit).not.toHaveBeenCalled();
+            expect(c.Open).toBe(true);
+            expect(c.Busy).toBe(false);
+            expect(c.Timing).toBe('Immediate');
+            expect(c.Reason).toBe('Moved');
+        });
+
+        it('still emits Canceled and closes when the gateway confirms', async () => {
+            const c = componentFor({ ProviderSubscriptionID: 'sub_x' } as Partial<mjBizAppsOrdersSubscriptionEntity>);
+            const preview = { ...PREVIEW, Gateway: { ProviderSubscriptionID: 'sub_x', When: 'EndOfCoverage', BillingEndsAt: '2026-12-31T00:00:00.000Z' } };
+            const done = { ...preview, Gateway: { ...preview.Gateway, Outcome: 'EndsAtPeriodEnd' } };
+            mocks.output = preview;
+            c.Start();
+            await c.RunPreview();
+            expect(c.Preview).toBe(preview);
+            mocks.output = done;
+            await c.Confirm();
+
+            expect(c.Canceled.emit).toHaveBeenCalledOnce();
+            expect(c.Canceled.emit).toHaveBeenCalledWith(done);
+            expect(c.Error).toBeNull();
+            expect(c.Open).toBe(false);
+        });
+    });
 });
