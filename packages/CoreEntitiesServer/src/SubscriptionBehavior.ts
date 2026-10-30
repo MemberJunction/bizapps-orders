@@ -232,6 +232,13 @@ export interface CancellationDecision {
     TermStatus: 'Canceled' | 'Completed';
     /** Which rules produced this, in a sentence. Surfaced to the user, so it names the policy. */
     Explanation: string;
+    /**
+     * The coverage half of `Explanation` alone (when coverage ends and the term's status), without the type's refund
+     * rule. A caller that replaces the money with a figure the type did not decide (a payment gateway's refund, D20)
+     * explains it from this, so the message never states the type's figure and the replacing one side by side.
+     * Absent (a host's own behavior): the caller keeps `Explanation`.
+     */
+    Coverage?: string;
 }
 
 /**
@@ -1041,6 +1048,7 @@ export class SubscriptionBehavior {
             // they paid for. Only a cut-short term is `Canceled`.
             TermStatus: effective.getTime() >= ctx.Term.EndDate.getTime() ? 'Completed' : 'Canceled',
             Explanation: explanation,
+            Coverage: `Coverage ends ${isoDay(effective)} (${ctx.Rules.CancellationMode}).`,
         };
     }
 
@@ -1071,6 +1079,7 @@ export class SubscriptionBehavior {
                 ReversalFraction: 0,
                 TermStatus: 'Canceled',
                 Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept.`,
+                Coverage: `${coverage}.`,
             };
         }
         return {
@@ -1085,6 +1094,7 @@ export class SubscriptionBehavior {
                 rawContext.Rules.CancellationRefundMode === 'NoRefund'
                     ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed and its instalments withdrawn.`
                     : `${coverage} and its full ${amount} reversed.`,
+            Coverage: `${coverage}.`,
         };
     }
 

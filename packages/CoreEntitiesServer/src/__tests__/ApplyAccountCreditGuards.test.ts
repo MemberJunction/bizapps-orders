@@ -13,6 +13,8 @@ const db = vi.hoisted(() => ({
     spentMeanwhile: 0,
     /** A status the source row reads as once locked (defence in depth: Confirmed cannot change, but decide under the lock). */
     sourceStatusOnLock: null as string | null,
+    /** The same for the target row (#989 review: the target half of the under-lock re-check). */
+    targetStatusOnLock: null as string | null,
     /** Applied to the target when its row lock is taken: another credit or payment settled it meanwhile. */
     paidMeanwhile: 0,
     log: [] as string[],
@@ -65,6 +67,7 @@ const provider = {
             } else {
                 const t = db.orders.get(TARGET)!;
                 t.Balance = Number(t.Balance) - db.paidMeanwhile;
+                if (db.targetStatusOnLock) t.Status = db.targetStatusOnLock;
             }
             return [];
         }
@@ -82,6 +85,7 @@ beforeEach(() => {
     db.orders.clear();
     db.spentMeanwhile = 0;
     db.sourceStatusOnLock = null;
+    db.targetStatusOnLock = null;
     db.paidMeanwhile = 0;
     db.log = [];
     vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined as never);
@@ -185,6 +189,23 @@ describe('Orders.ApplyAccountCredit', () => {
         expect(out.Success).toBe(false);
         expect(out.Message).toMatch(/Nothing was applied/);
         expect(db.log).toEqual(['BEGIN', 'LOCK source', 'LOCK target', 'ROLLBACK']);
+    });
+    it.each(['Voided', 'Draft'])('decided again under the lock: a TARGET that reads %s once locked is refused and rolled back, nothing saved', async (Status) => {
+        order(SOURCE, { Balance: -599, BillToPersonID: 'jane' });
+        order(TARGET, { Balance: 599, BillToPersonID: 'jane' });
+        db.targetStatusOnLock = Status;
+        const out = await run();
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(new RegExp(`ORD-RENEW is ${Status}: a credit settles only a confirmed order.*Nothing was applied`));
+        expect(db.log).toEqual(['BEGIN', 'LOCK source', 'LOCK target', 'ROLLBACK']);
+    });
+    it('control: a target still Confirmed under the lock is applied', async () => {
+        order(SOURCE, { Balance: -599, BillToPersonID: 'jane' });
+        order(TARGET, { Balance: 599, BillToPersonID: 'jane' });
+        db.targetStatusOnLock = 'Confirmed';
+        const out = await run();
+        expect(out.Success).toBe(true);
+        expect(db.log).toContain('COMMIT');
     });
     it('a Preview of a Draft credit is refused too (the review drove Preview: it returned success)', async () => {
         order(SOURCE, { Balance: -599, BillToPersonID: 'jane', Status: 'Draft' });

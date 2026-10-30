@@ -233,11 +233,49 @@ interface OrderLineRow {
 
 /** The decision as it crosses the transport: dates as ISO strings, the form JSON gives a `Date`. */
 function decisionResult(decision: CancellationDecision): CancellationDecisionResult {
+    // `Coverage` is the message's building block, not part of the decision the caller reads.
+    const { Coverage: _coverage, ...rest } = decision;
     return {
-        ...decision,
+        ...rest,
         EffectiveDate: decision.EffectiveDate.toISOString(),
         AccessThroughDate: decision.AccessThroughDate.toISOString(),
     };
+}
+
+/**
+ * The sentence for a term whose money a payment gateway's refund decided instead of the type's refund rule (D20). Built
+ * from the decision's coverage half (`Coverage`), so it never states the type's figure ("does not refund, so what was
+ * invoiced for it is kept") next to the gateway's ("599.00 is reversed"). Pure.
+ *
+ * Example (NoRefund type, term 2's $599 refunded in full at Stripe): "Term 2 starts 2027-01-01, after coverage ends
+ * 2026-12-31, so it is canceled. The payment gateway charged this renewal (ch_t2) and refunded 599.00 of it. That
+ * refund, not this subscription type's refund rule, is what is reversed: 599.00."
+ */
+export function GatewayRefundExplanation(
+    decision: Pick<CancellationDecision, 'Explanation' | 'Coverage'>,
+    credit: Pick<RenewalTermCredit, 'ChargeID' | 'Refunded' | 'Credited'>,
+    reversed: number,
+    held: number,
+): string {
+    const charged =
+        `The payment gateway charged this renewal (${credit.ChargeID}) and refunded ${credit.Refunded.toFixed(2)} of it` +
+        `${credit.Credited ? `, ${credit.Credited.toFixed(2)} of which Orders has already credited` : ''}.`;
+    let money: string;
+    if (held) {
+        money = `What it refunded is reversed, not this subscription type's refund rule, but ${held.toFixed(2)} is held: too small to split off what is left of the line, so nothing is reversed now.`;
+    } else if (!(credit.Refunded > 0)) {
+        money = `The gateway kept the charge, so nothing is reversed: this subscription type's refund rule does not apply to money the gateway kept.`;
+    } else {
+        money = `That refund, not this subscription type's refund rule, is what is reversed: ${reversed.toFixed(2)}.`;
+    }
+    return `${decision.Coverage ?? decision.Explanation} ${charged} ${money}`;
+}
+
+/** A gateway charge that could not be read while deciding a term's credit: the cancel refuses rather than guess. */
+class GatewayCreditReadError extends Error {
+    constructor(termNumber: number, cause: unknown) {
+        super(`Could not read what the payment gateway refunded of term ${termNumber}'s renewal (${cause instanceof Error ? cause.message : String(cause)}).`);
+    }
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CancelSubscription')
@@ -442,8 +480,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 ...decision,
                 Explanation:
                     `${decision.Explanation} The payment gateway refunded ${named} in full, so it is not coverage the customer paid for: ` +
-                    `the end of term is term ${term.TermNumber}'s, and the refunded term is cancelled, reversing what the gateway ` +
-                    `refunded and Orders has not already credited.`,
+                    `the end of term is term ${term.TermNumber}'s (its own refund follows this subscription type's rule), and the ` +
+                    `refunded term is cancelled, reversing what the gateway refunded and Orders has not already credited.`,
             };
         }
 
@@ -476,20 +514,25 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             }
             later.push({ Term: t, Decision: laterDecision });
         }
-        // A gateway-billed subscription the gateway has ENDED (a person finishing it, or the sync recording it): each
-        // term the gateway sold as a renewal reverses exactly what the gateway refunded of THAT term's own charge and
-        // Orders has not already credited (D20's one per-term computation, GatewayRenewalCredit). The gateway, not
-        // Orders, moved the money: anything else leaves the order owing or credits money nobody paid out.
+        // A REFUNDED GATEWAY RENEWAL REVERSES WHAT THE GATEWAY REFUNDED, ONCE (D20, one per-term rule). Each term the
+        // gateway sold as a renewal reverses exactly what the gateway refunded of THAT term's own charge and Orders has
+        // not already credited (`GatewayRenewalCreditFor`), never the type's refund rule: the gateway, not Orders, moved
+        // the money, so the type's rule would leave the order owing or credit a refund a second time. It governs:
+        //   · every renewal term, when the gateway has ENDED it (a person finishing it, or the sync recording it): a
+        //     charge the gateway kept reverses nothing;
+        //   · while the gateway still bills, a renewal whose charge the gateway HAS refunded (any of it): the one D19
+        //     skipped, and equally one an Immediate or a backdated cancel ends (#989 review, Robert's question). A
+        //     renewal the gateway has refunded nothing of follows the type's rule, as before.
+        // A term Orders billed (not a gateway renewal: `GatewayRenewalCreditFor` is null) always follows the type's rule.
         //
         // Read here for the preview and the message, then READ AGAIN inside the transaction once the subscription is
         // locked (`recredit`): the refund door decides under that same lock, so a refund credited on another worker
         // meanwhile is seen and never credited twice.
         let recredit: (() => Promise<void>) | null = null;
-        // Every term when the gateway has ended it; otherwise only a renewal D19 skipped because the gateway refunded it
-        // in full (its money went back: the type's refund rule would credit it a second time).
         const skippedIDs = new Set(refundedSkipped.map((r) => r.Term.ID));
-        const gatewayRules = (t: TermRow): boolean => !!recording || gatewayEnded || skippedIDs.has(t.ID);
-        if (gatewayBilled && (recording || gatewayEnded || skippedIDs.size > 0)) {
+        /** The gateway's figure governs this term whatever it refunded (it ended the subscription, or D19 skipped the term). */
+        const gatewayAlwaysRules = (t: TermRow): boolean => !!recording || gatewayEnded || skippedIDs.has(t.ID);
+        if (gatewayBilled && [term, ...later.map((l) => l.Term)].some((t) => !!t.OrderLineID)) {
             const built = await gatewayDriver(
                 { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
                 provider,
@@ -500,10 +543,16 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             const gatewayRead = new Map<string, { ChargeID: string; Refunded: number }>();
             for (const r of refundedSkipped) gatewayRead.set(r.Term.OrderLineID, { ChargeID: r.Credit.ChargeID, Refunded: r.Credit.Refunded });
             const exact = async (t: TermRow, d: CancellationDecision): Promise<CancellationDecision> => {
-                if (!t.OrderLineID || !gatewayRules(t)) return d;
-                const credit = await GatewayRenewalCreditFor(t.OrderLineID, built.Driver, provider, user, gatewayRead.get(t.OrderLineID));
+                if (!t.OrderLineID) return d;
+                let credit: RenewalTermCredit | null;
+                try {
+                    credit = await GatewayRenewalCreditFor(t.OrderLineID, built.Driver, provider, user, gatewayRead.get(t.OrderLineID));
+                } catch (err) {
+                    throw new GatewayCreditReadError(t.TermNumber, err);
+                }
                 if (!credit) return d;
                 gatewayRead.set(t.OrderLineID, { ChargeID: credit.ChargeID, Refunded: credit.Refunded });
+                if (!gatewayAlwaysRules(t) && !(credit.Refunded > 0)) return d;
                 const amount = Math.max(Number(t.Amount), 0);
                 let refund = Math.min(credit.Outstanding, amount);
                 // Too small to split off what is left of the line (and not the credit that finishes it): held, never a
@@ -520,12 +569,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                     ReversalFraction: amount > 0 ? refund / amount : 0,
                     ReversalAmount: refund,
                     ReversalBasis: basis,
-                    Explanation:
-                        `${d.Explanation} The payment gateway charged this renewal (${credit.ChargeID}) and refunded ` +
-                        `${credit.Refunded.toFixed(2)} of it${credit.Credited ? `, ${credit.Credited.toFixed(2)} already credited` : ''}, ` +
-                        `so ${refund.toFixed(2)} is reversed${
-                            held ? ` (${held.toFixed(2)} is held: too small to split off what is left of the line)` : refund === 0 ? ' (the gateway kept the charge)' : ''
-                        }.`,
+                    Explanation: GatewayRefundExplanation(d, credit, refund, held),
                 };
             };
             const baseDecision = decision;
@@ -534,7 +578,12 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                 decision = await exact(term, baseDecision);
                 for (const [i, l] of later.entries()) l.Decision = await exact(l.Term, baseLater[i]);
             };
-            await recredit();
+            try {
+                await recredit();
+            } catch (err) {
+                if (!(err instanceof GatewayCreditReadError)) throw err;
+                return { Success: false, Message: `${err.message} Nothing was changed; try again.` };
+            }
         }
         const summarize = () => {
             const laterTerms: CanceledLaterTerm[] = later.map((l) => ({

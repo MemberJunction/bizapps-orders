@@ -141,7 +141,7 @@ vi.mock('../EntitlementEngine.js', () => ({ RevokeGrantsForCanceledSubscription:
 vi.mock('../OrderLineEntityServer.js', () => ({ MarkAsOrdersOwnWrite: vi.fn() }));
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { CancelSubscriptionOperation, WithGatewayEndRecorded, type CancelSubscriptionOutput } from '../CancelSubscriptionOperation.js';
+import { CancelSubscriptionOperation, GatewayRefundExplanation, WithGatewayEndRecorded, type CancelSubscriptionOutput } from '../CancelSubscriptionOperation.js';
 
 const SUB = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const T1 = 'term-1';
@@ -686,6 +686,191 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
         });
     });
 
+    describe('#989 review round 2: a $0 renewal, the NoRefund message, and a refunded renewal OUTSIDE the D19 skip', () => {
+        const PRORATE_EOT = { CancellationMode: 'EndOfTerm', CancellationRefundMode: 'ProrateUnused' };
+        const M1 = '33333333-0000-4000-8000-000000000001';
+        const M2 = '33333333-0000-4000-8000-000000000002';
+        const M3 = '33333333-0000-4000-8000-000000000003';
+        const term = (n: number, line: string, year: number) => ({
+            ID: `term-${n}`,
+            SubscriptionID: SUB,
+            TermNumber: n,
+            OrderLineID: line,
+            StartDate: `${year}-01-01`,
+            EndDate: `${year}-12-31`,
+            Amount: 599,
+            Status: 'Active',
+        });
+        const booked = (three: boolean, rules: Record<string, unknown> = PRORATE_EOT) => {
+            seed(rules);
+            mocks.credit.clear();
+            mocks.applied.length = 0;
+            mocks.lockedCreditRows.length = 0;
+            mocks.rows.set('Subscription Terms', [term(1, M1, 2026), term(2, M2, 2027), ...(three ? [term(3, M3, 2028)] : [])]);
+            mocks.rows.set('Order Lines', [M1, M2, M3].map((ID, i) => ({ ID, OrderHeaderID: `oh-${i + 1}`, ProductID: 'p-1', Quantity: 1, UnitPrice: 599, DiscountPct: 0 })));
+            const renewed = three ? '2027-12-31T06:00:00Z' : '2026-12-31T06:00:00Z';
+            mocks.describe.mockResolvedValue({ Success: true, State: 'Renewing', Status: 'active', CurrentPeriodStart: new Date(renewed) });
+        };
+        /** Term 2's renewal at the gateway: what it took, refunded, and what Orders already credited of it. */
+        const t2 = (refunded: number, credited = 0, paid = 599) =>
+            mocks.credit.set(M2, { Outstanding: Math.max(0, refunded - credited), Paid: paid, Refunded: refunded, Credited: credited, ChargeID: 'ch_t2', OrderNumber: 'ORD-T2' } as never);
+        const later = (out: CancelSubscriptionOutput) => out.LaterTerms?.map((l) => [l.SubscriptionTermID, l.Decision.RefundAmount]);
+        afterEach(() => mocks.credit.clear());
+
+        describe('the $0 renewal (Paid 0): never "refunded in full"', () => {
+            it('a free term 2 (100%-off coupon: Paid 0, Refunded 0): EndOfTerm on 31 Dec ends with term 2, which is NOT cancelled', async () => {
+                booked(false, NO_REFUND_END_OF_TERM);
+                t2(0, 0, 0);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const { out, rec } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(out.SubscriptionTermID).toBe('term-2');
+                expect(out.LaterTerms ?? []).toEqual([]);
+                expect(rec.terms.get('term-2')?.Status).toBe('Completed');
+                expect(mocks.applied).toEqual([]);
+            });
+        });
+
+        describe('the NoRefund message when D19 skipped a refunded term (one sentence per term, no contradiction)', () => {
+            it("term 2's line says the GATEWAY's refund is what is reversed, and never the type's \"what was invoiced for it is kept\"", async () => {
+                booked(false, NO_REFUND_END_OF_TERM);
+                t2(599);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'EndOfTerm' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(later(out)).toEqual([['term-2', 599]]);
+                expect(out.LaterTerms?.[0].Decision.Explanation).toBe(
+                    'Term 2 starts 2027-01-01, after coverage ends 2026-12-31, so it is canceled. The payment gateway charged this ' +
+                        "renewal (ch_t2) and refunded 599.00 of it. That refund, not this subscription type's refund rule, is what is reversed: 599.00.",
+                );
+                expect(out.Message).not.toMatch(/what was invoiced for it is kept/);
+                // Term 1's own sentence keeps the type's rule, and says that it is term 1's.
+                expect(out.Message).toMatch(/the end of term is term 1's \(its own refund follows this subscription type's rule\)/);
+                // The coverage half is the message's building block, not part of the returned decision.
+                expect(Object.keys(out.LaterTerms![0].Decision)).not.toContain('Coverage');
+                expect(Object.keys(out.Decision!)).not.toContain('Coverage');
+            });
+        });
+
+        describe("Robert's question: a refunded renewal OUTSIDE the D19 skip reverses refunded − credited, never the type's rule on top", () => {
+            it('Immediate on 31 Dec, term 2 refunded in full and ALREADY credited by the refund door: term 2 reverses 0 (599 credited once, not 1,198)', async () => {
+                booked(false);
+                t2(599, 599);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'Immediate' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(out.SubscriptionTermID).toBe('term-1');
+                expect(later(out)).toEqual([['term-2', 0]]);
+                expect(out.TotalRefundAmount).toBe(0);
+                expect(mocks.applied).toEqual([]);
+                expect(out.Message).toMatch(/refunded 599\.00 of it, 599\.00 of which Orders has already credited\. That refund, not this subscription type's refund rule, is what is reversed: 0\.00\./);
+            });
+            it('Immediate on 31 Dec, term 2 refunded in full, NOT yet credited: 599 reversed once, and applied to the renewal it refunds', async () => {
+                booked(false);
+                t2(599);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'Immediate' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(later(out)).toEqual([['term-2', 599]]);
+                expect(out.TotalRefundAmount).toBe(599);
+                expect(mocks.applied.map((a) => a[0])).toEqual([M2]);
+            });
+            it('a backdated request (10 Mar 2026, recorded 5 Jan 2027), term 2 refunded in full and already credited: term 2 reverses 0', async () => {
+                booked(false);
+                t2(599, 599);
+                vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(out.SubscriptionTermID).toBe('term-1');
+                expect(later(out)).toEqual([['term-2', 0]]);
+                expect(out.TotalRefundAmount).toBe(0);
+            });
+            it('the same backdated request, not yet credited: 599 reversed once and applied to the renewal', async () => {
+                booked(false);
+                t2(599);
+                vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+                expect(later(out)).toEqual([['term-2', 599]]);
+                expect(mocks.applied.map((a) => a[0])).toEqual([M2]);
+            });
+            it('a PARTIAL refund (200 of 599), Immediate: term 2 reverses exactly the 200 the gateway refunded, not the type\'s 599', async () => {
+                booked(false);
+                t2(200);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-12-31', Timing: 'Immediate' });
+                expect(later(out)).toEqual([['term-2', 200]]);
+                expect(out.TotalRefundAmount).toBe(200);
+            });
+            it('the same partial refund on the backdated path: 200', async () => {
+                booked(false);
+                t2(200);
+                vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+                expect(later(out)).toEqual([['term-2', 200]]);
+            });
+            it('an Immediate cancel INSIDE term 2 (3 Jan 2027), refunded in full: the covering term reverses the 599 refunded, not the prorated 594.08', async () => {
+                booked(false);
+                t2(599);
+                vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+                const { out } = await cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(out.SubscriptionTermID).toBe('term-2');
+                expect(out.Decision?.RefundAmount).toBe(599);
+            });
+            it('control: NO refund at the gateway (Refunded 0): the type\'s rule applies as before (Immediate 31 Dec: term 2 599; backdated: 599), nothing applied', async () => {
+                booked(false);
+                t2(0);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const now = await cancel({ RequestDate: '2026-12-31', Timing: 'Immediate' });
+                expect(later(now.out)).toEqual([['term-2', 599]]);
+                vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+                const back = await cancel({ RequestDate: '2026-03-10', Timing: 'EndOfTerm' });
+                expect(later(back.out)).toEqual([['term-2', 599]]);
+                expect(mocks.applied).toEqual([]);
+                // Inside term 2, no refund: the prorated type figure, not 599.
+                vi.setSystemTime(new Date('2027-01-03T18:00:00Z'));
+                const inside = await cancel({ RequestDate: '2027-01-03', Timing: 'Immediate' });
+                expect(inside.out.Decision?.RefundAmount).toBeLessThan(599);
+                expect(inside.out.Decision?.RefundAmount).toBeGreaterThan(590);
+            });
+            it('control: a term Orders billed (term 1, not a gateway renewal) keeps the type\'s rule beside a refunded term 2', async () => {
+                booked(false);
+                vi.setSystemTime(new Date('2027-01-05T18:00:00Z'));
+                const before = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+                t2(599);
+                const after = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+                expect(after.out.SubscriptionTermID).toBe('term-1');
+                expect(after.out.Decision?.RefundAmount).toBe(before.out.Decision?.RefundAmount);
+                expect(after.out.Decision?.RefundAmount).toBeGreaterThan(0);
+                expect(later(after.out)).toEqual([['term-2', 599]]);
+            });
+            it('the refunded charge cannot be read: refused with nothing sent to Stripe or written', async () => {
+                booked(false);
+                mocks.credit.set(M2, 'throw' as never);
+                vi.setSystemTime(new Date('2026-12-31T21:00:00Z'));
+                const { out, rec } = await cancel({ RequestDate: '2026-12-31', Timing: 'Immediate' });
+                expect(out.Success).toBe(false);
+                expect(out.Message).toMatch(/Could not read what the payment gateway refunded of term 2's renewal.*Nothing was changed/);
+                expect(mocks.cancelAtDriver).not.toHaveBeenCalled();
+                expect(rec.tx).toEqual([]);
+            });
+        });
+
+        describe('KNOWN, documented (Robert\'s middle-term note): a refunded MIDDLE term D19 rides past', () => {
+            it('3 terms, term 2 refunded in full, term 3 paid, EndOfTerm on 31 Dec 2027: ends with term 3; term 2 is stamped Completed and the CANCEL reverses nothing for it (the refund door credits it when the refund lands)', async () => {
+                booked(true);
+                t2(599);
+                vi.setSystemTime(new Date('2027-12-31T21:00:00Z'));
+                const { out, rec } = await cancel({ RequestDate: '2027-12-31', Timing: 'EndOfTerm' });
+                expect(out.Success, out.Message).toBe(true);
+                expect(out.SubscriptionTermID).toBe('term-3');
+                expect(out.TotalRefundAmount ?? 0).toBe(0);
+                expect(rec.terms.get('term-2')?.Status).toBe('Completed');
+                expect(mocks.applied).toEqual([]);
+            });
+        });
+    });
+
     describe("the gateway ENDED it: every renewal term reverses exactly what the gateway refunded of ITS OWN charge (D20)", () => {
         const L2 = '22222222-0000-4000-8000-000000000002';
         const L3 = '22222222-0000-4000-8000-000000000003';
@@ -1102,5 +1287,34 @@ describe('cancelling a subscription the payment gateway bills (E2b)', () => {
         // What Stripe is asked: an instant, not null (which would end it now, a day of coverage early).
         expect((mocks.cancelAtDriver.mock.calls[0][0] as { BillingEndsAt: Date | null }).BillingEndsAt).toEqual(new Date('2027-01-01T06:00:00.000Z'));
         expect(out.Gateway).toMatchObject({ When: 'EndOfCoverage', BillingEndsAt: '2027-01-01T06:00:00.000Z' });
+    });
+});
+
+describe('GatewayRefundExplanation: the sentence when a gateway refund, not the type, decides a term (#989 review)', () => {
+    const NO_REFUND_LATER = {
+        Explanation: 'Term 2 starts 2027-01-01, after coverage ends 2026-12-31, so it is canceled. This subscription type does not refund, so what was invoiced for it is kept.',
+        Coverage: 'Term 2 starts 2027-01-01, after coverage ends 2026-12-31, so it is canceled.',
+    };
+    it("refunded: the coverage, then the gateway's refund as what is reversed; never the type's money sentence", () => {
+        const text = GatewayRefundExplanation(NO_REFUND_LATER, { ChargeID: 'ch_t2', Refunded: 599, Credited: 0 }, 599, 0);
+        expect(text).toBe(
+            'Term 2 starts 2027-01-01, after coverage ends 2026-12-31, so it is canceled. The payment gateway charged this renewal (ch_t2) ' +
+                "and refunded 599.00 of it. That refund, not this subscription type's refund rule, is what is reversed: 599.00.",
+        );
+        expect(text).not.toMatch(/does not refund|is kept/);
+    });
+    it('already credited in part: says how much, and reverses the rest', () => {
+        expect(GatewayRefundExplanation(NO_REFUND_LATER, { ChargeID: 'ch_t2', Refunded: 599, Credited: 200 }, 399, 0)).toMatch(
+            /refunded 599\.00 of it, 200\.00 of which Orders has already credited\. That refund, not this subscription type's refund rule, is what is reversed: 399\.00\.$/,
+        );
+    });
+    it('the gateway kept the charge: nothing reversed, and it says why', () => {
+        expect(GatewayRefundExplanation(NO_REFUND_LATER, { ChargeID: 'ch_t2', Refunded: 0, Credited: 0 }, 0, 0)).toMatch(/refunded 0\.00 of it\. The gateway kept the charge, so nothing is reversed/);
+    });
+    it('held: names the held amount', () => {
+        expect(GatewayRefundExplanation(NO_REFUND_LATER, { ChargeID: 'ch_t2', Refunded: 0.1, Credited: 0.05 }, 0, 0.05)).toMatch(/0\.05 is held: too small to split off what is left of the line/);
+    });
+    it("a host behavior that sets no Coverage: its own Explanation is kept (nothing is dropped)", () => {
+        expect(GatewayRefundExplanation({ Explanation: 'Custom rule.' }, { ChargeID: 'ch', Refunded: 10, Credited: 0 }, 10, 0)).toMatch(/^Custom rule\. The payment gateway charged/);
     });
 });

@@ -104,7 +104,7 @@ vi.mock('../ApplyAccountCreditOperation.js', () => ({
 
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { ApplyGatewayCredit, CreditGatewayRenewalRefund, SettleGatewayRenewalCredits, CreditReversalQuantity, GatewayRenewalCreditFor } from '../GatewayRenewalCredit.js';
+import { ApplyGatewayCredit, CreditGatewayRenewalRefund, SettleGatewayRenewalCredits, CreditReversalQuantity, GatewayRenewalCreditFor, IsGatewayChargeFullyRefunded } from '../GatewayRenewalCredit.js';
 import { IsMoneyOnlyReversal } from '../SubscriptionEntityServer.js';
 
 function entity(kind: string): Row {
@@ -206,6 +206,26 @@ describe('GatewayRenewalCreditFor: one per-term position', () => {
         state.origin = 'ProviderPayment';
         state.renews = false;
         expect(await GatewayRenewalCreditFor(LINE, driver, provider, user)).toBeNull();
+    });
+});
+
+describe('IsGatewayChargeFullyRefunded: the one rule D19 skips a refunded term by (#989 review)', () => {
+    it('a $0 renewal (the 100%-off coupon path: Paid 0, Refunded 0) is NOT fully refunded: it is free coverage, still valid', () => {
+        expect(IsGatewayChargeFullyRefunded({ Paid: 0, Refunded: 0 })).toBe(false);
+    });
+    it('nothing paid can never read as refunded, whatever the refund figure says (negative or rounding noise included)', () => {
+        expect(IsGatewayChargeFullyRefunded({ Paid: 0, Refunded: 5 })).toBe(false);
+        expect(IsGatewayChargeFullyRefunded({ Paid: -1, Refunded: 0 })).toBe(false);
+        expect(IsGatewayChargeFullyRefunded({ Paid: 0.004, Refunded: 0 })).toBe(false);
+    });
+    it('a paid renewal refunded to the cent is fully refunded; one cent short is not; an over-refund is', () => {
+        expect(IsGatewayChargeFullyRefunded({ Paid: 599, Refunded: 599 })).toBe(true);
+        expect(IsGatewayChargeFullyRefunded({ Paid: 599, Refunded: 598.99 })).toBe(false);
+        expect(IsGatewayChargeFullyRefunded({ Paid: 599, Refunded: 0 })).toBe(false);
+        expect(IsGatewayChargeFullyRefunded({ Paid: 599, Refunded: 600 })).toBe(true);
+        expect(IsGatewayChargeFullyRefunded({ Paid: 599, Refunded: 598.999 })).toBe(true);
+        // To the cent on BOTH sides: a sub-cent tail on what was paid is not a cent left unrefunded.
+        expect(IsGatewayChargeFullyRefunded({ Paid: 599.004, Refunded: 599 })).toBe(true);
     });
 });
 

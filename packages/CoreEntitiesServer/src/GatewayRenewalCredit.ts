@@ -208,7 +208,10 @@ export async function GatewayRenewalCreditFor(
  * an end-of-term cancel ends with (#989 review, Q2), on the same `Refunded` / `Paid` figures the credit doors use.
  */
 export function IsGatewayChargeFullyRefunded(credit: Pick<RenewalTermCredit, 'Paid' | 'Refunded'>): boolean {
-    return Number(credit.Paid) > 0 && money(Number(credit.Refunded)) >= money(Number(credit.Paid));
+    // A renewal that took nothing (a 100%-off coupon: Paid 0, Refunded 0, or a sub-cent figure that rounds to 0) is
+    // free coverage still valid, never "refunded in full": D19 must not skip it and cancel the term (#989 review).
+    const paid = money(Number(credit.Paid));
+    return paid > 0 && money(Number(credit.Refunded)) >= paid;
 }
 
 export interface GatewayRenewalCreditOutcome {
