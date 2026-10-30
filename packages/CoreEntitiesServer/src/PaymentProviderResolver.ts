@@ -139,6 +139,7 @@ export async function LoadPaymentProviderConfig(
         CredentialsRef: string | null;
         IsLiveMode: boolean;
         IsActive: boolean;
+        BillsSubscriptions: boolean;
         PaymentProviderTypeID: string;
         PaymentProviderType: string | null;
     }>(
@@ -172,10 +173,12 @@ export async function LoadPaymentProviderConfig(
         Name: row.Name,
         CredentialsRef: row.CredentialsRef,
         IsLiveMode: !!row.IsLiveMode,
+        BillsSubscriptions: !!row.BillsSubscriptions,
         Capabilities: {
             SupportsTokenization: typeCode.SupportsTokenization,
             SupportsRefund: typeCode.SupportsRefund,
             SupportsWebhooks: typeCode.SupportsWebhooks,
+            SupportsSubscriptionBilling: typeCode.SupportsSubscriptionBilling,
         },
     };
 }
@@ -235,6 +238,15 @@ export async function ResolvePaymentCredentials(credentialsRef: string | null | 
     return secrets.Resolve(credentialsRef);
 }
 
+/** A provider type's ClassFactory key and the capability flags Orders reads. */
+interface ProviderTypeFlags {
+    Code: string;
+    SupportsTokenization: boolean;
+    SupportsRefund: boolean;
+    SupportsWebhooks: boolean;
+    SupportsSubscriptionBilling: boolean;
+}
+
 /**
  * The type's `Code` and capability flags.
  *
@@ -247,7 +259,7 @@ async function resolveTypeCode(
     relatedName: string | null,
     provider: IMetadataProvider,
     user: UserInfo,
-): Promise<{ Code: string; SupportsTokenization: boolean; SupportsRefund: boolean; SupportsWebhooks: boolean }> {
+): Promise<ProviderTypeFlags> {
     // CACHE FIRST, THEN THE QUERY — and the fallback is not belt-and-braces.
     //
     // Provider types are seeded metadata and belong in {@link OrdersEngine} like every other lookup,
@@ -262,13 +274,14 @@ async function resolveTypeCode(
     await LoadOrdersEngine(provider, user);
     const cached = OrdersEngine.Instance.PaymentProviderTypeByID(typeID);
 
-    let type: { Code: string; SupportsTokenization: boolean; SupportsRefund: boolean; SupportsWebhooks: boolean } | undefined =
+    let type: ProviderTypeFlags | undefined =
         cached
             ? {
                   Code: cached.Code,
                   SupportsTokenization: cached.SupportsTokenization,
                   SupportsRefund: cached.SupportsRefund,
                   SupportsWebhooks: cached.SupportsWebhooks,
+                  SupportsSubscriptionBilling: cached.SupportsSubscriptionBilling,
               }
             : undefined;
 
@@ -280,6 +293,7 @@ async function resolveTypeCode(
             SupportsTokenization: boolean;
             SupportsRefund: boolean;
             SupportsWebhooks: boolean;
+            SupportsSubscriptionBilling: boolean;
             IsActive: boolean;
         }>(
             {
@@ -301,5 +315,6 @@ async function resolveTypeCode(
         SupportsTokenization: !!type.SupportsTokenization,
         SupportsRefund: !!type.SupportsRefund,
         SupportsWebhooks: !!type.SupportsWebhooks,
+        SupportsSubscriptionBilling: !!type.SupportsSubscriptionBilling,
     };
 }
