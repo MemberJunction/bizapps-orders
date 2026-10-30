@@ -59,6 +59,8 @@ import {
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { TermDayEnd } from './TermGrantWindow.js';
 import { RevenueRecognitionDriver } from './RevenueRecognition.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { SubscriptionBehavior, SubscriptionTypeRulesFrom } from './SubscriptionBehavior.js';
@@ -426,15 +428,20 @@ async function moveLineServicePeriodEnd(checked: CheckedTermExtension, ctx: Appr
     }
 }
 
-/** A grant that follows the term ran to its old end; it now runs to the new one. */
+/**
+ * A grant that follows the term ran to its old end; it now runs to the new one, covering the new last
+ * day in full in the business zone (`TermDayEnd`), as a grant made at booking does.
+ */
 async function extendTermGrants(checked: CheckedTermExtension, ctx: ApprovalTaskContext): Promise<void> {
+    await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
     const grants = await ReadRows<mjBizAppsOrdersEntitlementGrantEntity>(ctx, {
         EntityName: ENTITLEMENT_GRANT_ENTITY,
         ExtraFilter: `SubscriptionTermID = '${RequireUUID(checked.TermID, 'SubscriptionTermID')}' AND ValidityModeApplied = 'SubscriptionTerm'`,
         ResultType: 'entity_object',
     });
     for (const grant of grants) {
-        grant.ValidTo = checked.NewEndDate;
+        grant.ValidTo = TermDayEnd(checked.NewEndDate, zone);
         if (!(await grant.Save())) {
             throw new Error(`Access granted by term ${checked.TermNumber} could not be extended: ${grant.LatestResult?.CompleteMessage}`);
         }

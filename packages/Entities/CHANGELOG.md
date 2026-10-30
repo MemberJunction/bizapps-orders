@@ -1,5 +1,79 @@
 # @mj-biz-apps/orders-entities
 
+## 5.39.0
+
+### Minor Changes
+
+- 1e2a5c6: Product, Price List and Product Entitlement now match a name by any part of it rather than only from the start, so a catalog filter box finds a record from a word in the middle of its name.
+- 117cd8a: Once a payment gateway bills a subscription, no Orders door changes it unseen (option E, E2b). `Orders.CancelSubscription` now reads a gateway-billed subscription at the gateway first (new driver method `DescribeProviderSubscription`, refusing by default; Stripe reads `GET /v1/subscriptions/:id`): a cancel after the gateway started a billing period Orders has not booked (its renewal at 00:00 on the term's last day) is refused with nothing changed, so the renewal it charged is refunded at the gateway rather than kept, and a cancel the gateway already completed is recorded, after the term too. Otherwise it cancels at the gateway first, before its transaction, and locks the subscription row so two simultaneous cancels cannot book two credit memos: the gateway must charge nothing after coverage ends (now, at its period end, or at that instant), and if it does not confirm nothing is written. New driver method `CancelProviderSubscription` refuses by default; Stripe implements it (reads the subscription, then `DELETE` or `cancel_at_period_end` / `cancel_at` with `proration_behavior=none`, verifying the answer; its stub refuses). The cancel output gains `Gateway`, the cancel panel says the gateway bills the subscription and previews what it will do, and the `Canceled` event records what the gateway did. A cancel is refused while an E2 alert says a gateway subscription may be billing unrecorded, when those alerts cannot be read for a gateway-billed subscription, and when no open term covers the request day. The new shared `SubscriptionEntity` refuses any other change to a gateway-billed subscription's billing columns on every tier (`PROVIDER_BILLED_FIELDS`), and refuses a gateway id typed onto an existing subscription (creating one with its id stays open, for importers), sanctioned server-side for the writes that told the gateway. An order can no longer extend, renew or reactivate a gateway-billed subscription; a cancelled one bought again starts fresh with a new gateway subscription, found by the checkout through its new term and created under a new idempotency key. A return of its sale and a Duration, Shift, Seats or amount-change concession on its term are refused. The hand-over stops a gateway subscription made for one cancelled meanwhile, never records one the subscription already cancelled, and searches again after every create (two live raise an urgent `AmbiguousAtGateway`). The checkout's returning-buyer refusal includes Paused subscriptions, and the daily job's preview now searches the gateway read-only.
+- 29af2af: Second part of the 5.39 release seed: `V202610300700__v5.39.x__Metadata_Sync_AlertTaskRole.sql` and its PostgreSQL counterpart carry the `AlertTaskRole` Orders setting (#987) to hosts, which install by migration and never read `metadata/`. It is created empty, so alert Tasks stay unassigned until a host names a role. The create is guarded on ID or app and name, so a host that already pushed this metadata is unchanged.
+- 06897c1: Release seed for 5.39: `V202610300200__v5.39.x__Metadata_Sync.sql` and its PostgreSQL counterpart carry this release's metadata to hosts, which install by migration and never read `metadata/`: the Replace Payment Schedule remote operation, the Create Provider Subscriptions action with its nine params and its daily job (created Disabled), Cancel Subscription's new description, name search by any part of the name on Products, Price Lists and Product Entitlements, and the Referral Programs grid columns. Creates are guarded on ID or their unique key, so a host that already pushed this metadata is unchanged. Also adds the PostgreSQL counterpart of `V202610230200__v5.39.x__Provider_Billed_Subscriptions`.
+- adb8e61: Orders UI/UX fixes.
+
+  - Order lines: subscription lines show their Term end, read-only; the "Before this can be confirmed" list notes a line whose stated length differs from its type's term; held-product choices and the after-confirm notice name the end that is kept. Bundle lines whose bundle contains a subscription take a Term start.
+  - A rep can enter a manual discount above their Sales Authority cap: it is saved held and marked "Needs approval", and confirm waits for an approved concession. A line charged nothing once its concession is taken off is a Scope concession. A deferred line books its discount as revenue is earned: booking credits Deferred Revenue with the net, and each revenue release (or progress catch-up) debits its share to Sales Discounts and credits Sales with the gross, so nothing is left in Deferred. A fully discounted deferred line books nothing. A price typed as 0 suggests a 100% discount instead. A saved order adjustment's authority, approver, amount, line and promotion cannot be changed, and the row can only be deleted by the order's own save, so a held discount cannot be hidden from confirm.
+  - A refused booking says in plain words which line to change; accounting's codes go to the server log.
+  - Send to Bill.com shows on every order using the Bill.com rail and is enabled only on a saved, confirmed order; otherwise it is greyed out with the reason as its tooltip. The reason is recomputed after a save or refresh.
+  - A captured payment shows what it was applied to instead of the allocation workbench; By Journal Entry renders; overdue days count business days; the open-orders Date column shows the order date.
+  - The fulfilment queue, the external invoicing worklist and the invoice rail report a failed read as an error instead of an empty list; an invoice unit whose history cannot be read is not sent.
+  - The subscription Overview lists read newest first, and a stale reload no longer overwrites newer cards; Cancel subscription is disabled while the form is in edit mode.
+  - The Override Explanation box shows only on an overridden line price.
+  - The checkout element stops sending events, polling and redirecting once its host removes it; payment and completion calls already started still finish.
+  - Styles read only `--mj-*` tokens MemberJunction 6.1.5 defines, checked by a unit test. The kit's print rules, filter chip, select and timeline rules no longer restyle MemberJunction pages outside Orders; loaders and empty states use MemberJunction's components; app chips take the `mjo-` prefix.
+  - A migration puts the Event Order Line Attendance Status values in CodeGen's order on databases built from migrations. The Referral Programs list shows Company and Is Active by default.
+
+  The order form's notes on subscription lengths other than the type's term, which do not block confirm, show under their own "When this is confirmed" heading instead of "Before this can be confirmed".
+
+- d6a280d: Subscriptions a payment gateway bills itself (option E, E1). A subscription whose `ProviderSubscriptionID` is set (Stripe's `sub_...`) is billed by the gateway named in its `PaymentProviderID`, so Spawn Renewals no longer places a renewal order for it and Charge Renewals no longer charges or captures one. Both jobs share one rule, `NotProviderBilledSql`, keyed on that marker alone. Orders itself has never written a gateway id, so on a host that hasn't imported any nothing renews differently today; the migration header has a two-line pre-flight for hosts that have.
+
+  The migration adds the columns the next change reads to create gateway subscriptions: `PaymentProviderType.SupportsSubscriptionBilling` (the gateway can bill subscriptions; set for Stripe), `PaymentProvider.BillsSubscriptions` (this account does; off everywhere), and `PaymentProviderPrice.UseForNewSubscriptions` (the one price a new gateway subscription to a product uses). It also adds `UQ_Subscription_ProviderSubscriptionID` (one Orders subscription per provider and gateway id), `CK_Subscription_ProviderSubscriptionHasProvider` (an id needs its provider and may not be empty) and `UQ_PaymentProviderPrice_NewSubscriptionProduct` (one flagged active price per provider and product).
+
+- f129713: Self-serve checkout refuses another subscription purchase from a buyer who already holds a subscription their payment gateway bills (option E). When the draft sells a subscription product and the Person the e-mail resolves to holds an Active or Trialing subscription in the widget's company with `ProviderSubscriptionID` set, the draft and the payment-intent step refuse the purchase, whatever the plan, with the new refusal code `ProviderBilledSubscription`: Orders would extend or add a term the gateway knows nothing about while the gateway still charged at its own renewal. A purchase with no subscription product is not refused. The message is the new widget setting `providerBilledSubscriptionMessage` (a neutral default otherwise), with `{renewalDate}` replaced by the day the gateway next charges.
+- 756afe7: New remote operation `Orders.ReplacePaymentSchedule` sets an order's payment schedule from a supplied list of rows (due date, amount, description). Instalments already invoiced, paid or written off must appear in the list with the same due date and amount and are kept unchanged; a list that changes or drops one is refused, naming the instalment. The other rows replace the order's Scheduled rows in place, numbered by due date, and must tie to the order's lines by the same check confirm and invoicing use. An order confirmed without a schedule (billed in full) cannot be given one, and a confirmed order billed by its schedule cannot have it removed. An instalment not yet invoiced that a payment names cannot be removed, re-dated or lowered below what is paid on it (`PAID_ROW_CHANGED`). The order's status is re-read under a lock inside the transaction, so a confirm that lands between the read and the write is honoured. All or none, and the same list sent twice writes nothing. Sales calls it to put a deal's schedule on its order at Close Won and when a won deal's schedule changes.
+
+### Patch Changes
+
+- 4104f24: A hand-entered order with a line at a unit price of 0 can no longer be confirmed. The order form's "Before this can be confirmed" list names the line once and asks for the negotiated price, or the price with a 100% discount to give it away; the confirm save refuses with the same message before anything books. Checkout and payment-created orders, bundle components and return lines are exempt. So is a renewal line the renewal job priced at zero (a product now listed at zero) while its price is unchanged, so a $0 renewal books instead of failing the job on every run; the same line edited to zero by hand is refused. When accounting refuses an order's booking, the message now gives each distinct error once, naming the order lines it applies to, instead of once per draft.
+
+## 5.38.0
+
+### Minor Changes
+
+- 5fe872a: Release seed for 5.38: `V202610230130__v5.38.x__Metadata_Sync.sql` and its PostgreSQL counterpart carry `EntityIDFieldName` on the three polymorphic RecordID fields (#946) to hosts, which install by migration and never read `metadata/`.
+- 0baf0fd: Populate `EntityField.EntityIDFieldName` metadata on polymorphic foreign-key record-ID fields so MemberJunction forms, grids, cards, and detail panels resolve target record names and render smart clickable record links.
+- 68f8cc1: `metadata/entities/.polymorphic-fk-entity-fields.json` gives every `MJ: Entity Fields` entry a `primaryKey` lookup (`@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=<entity>&Name=<field>`). The entries had none, and `mj sync push` creates a new row for any record without a `primaryKey`, so on a fresh database it tried to insert a second field row with a NULL `EntityID` and the app's whole metadata push rolled back. With the lookup, push updates the field row CodeGen created and sets its `EntityIDFieldName`.
+
+## 5.37.0
+
+### Minor Changes
+
+- 336603c: The 5.37 Metadata_Sync ships the one setting metadata/ added since 5.36: `ConcessionSelfApprovalEscalation` (#913). A host that upgrades by migration gets the same row as one that ran `mj sync push`, created empty, so a holder of a ConcessionLimit rule's role still approves their own concession until the setting is filled in. It has a Postgres counterpart.
+
+### Patch Changes
+
+- 1cf9fa1: `FindExistingHolding` and `FindUnansweredHeldLines` count every subscription that has not ended (Active, Trialing, Paused) as held, so the extend-or-new question is asked for a paused subscription too. The status set is exported as `EXISTING_HOLDING_STATUSES`.
+
+  The order screen's "extend" choice now says what confirm will do: a next term for an active holding, or the subscription type's reactivation rule (reactivate, or a separate subscription) for a paused one. `ExtendOutcomeFor` and `ExtendChoiceTextFor` give the same wording to other screens.
+
+## 5.36.1
+
+## 5.36.0
+
+### Minor Changes
+
+- db3aef7: Order review by trigger (bc-aidp-next-golive#320 §5). A Direct order that hits a switched-on trigger (`NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`) cannot confirm until the reviewer role approves its `ORDERS_ORDER_REVIEW` task; an order a reviewer created goes to the escalation role. Routing is to the role holders' linked Persons, never the order's creator. Configured by the new `OrderReview*` settings, all off by default, so hosts that set nothing are unaffected. Adds the `RegisterOrderDealLink` seam for the sales app to say which deal created an order; the `ORDERS_ORDER_REVIEW` task type and the settings rows ship in metadata. An approval counts only when the user who wrote the decision (from `MJ: Record Changes`) holds the routed role and is not the creator, the task was linked to this order alone before it was decided, and nothing reviewed on the order was written since. `OrderHeader.Origin` can now be written only by the process that creates the order (checkout, provider payment); any other write of it is refused on save.
+- 4a7fbb0: Build and run on MemberJunction 6.1.6, the current 6.1 LTS release. Every `@memberjunction/*` peer, devDependency and the `@memberjunction/core` / `@memberjunction/global` overrides move from `^6.1.5` to `^6.1.6`, and `mj-app.json` requires a host at `>=6.1.6 <7.0.0`. `scripts/rebuild-db.sh` and the PostgreSQL parity workflow install MJ core `v6.1.6`. One copy of `@memberjunction/core` and `@memberjunction/global` resolves.
+- eeb9cd5: The 5.36 Metadata_Sync ships the eight settings and the task type that metadata/ added since 5.35: the order review settings (`OrderReviewTriggers`, `OrderReviewTotalThreshold`, `OrderReviewServiceStartMonths`, `OrderReviewLineTermMonths`, `OrderReviewerRole`, `OrderReviewEscalationRole`), the refund approval settings (`RefundApprovalThreshold`, `RefundApproverRole`) and the `ORDERS_ORDER_REVIEW` task type. A host that upgrades by migration gets the same rows as one that ran `mj sync push`, with the checks off until the settings are filled in. It has a Postgres counterpart.
+
+## 5.35.1
+
+## 5.35.0
+
+### Minor Changes
+
+- 8a9d2f9: `Orders.CancelSubscription` takes an optional `Timing` (#702). `Immediate` ends coverage and access on the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's grace period, so access ends on the day chosen. Without it the type's `CancellationMode` decides, as before. The refund mode always comes from the type. The policy is `SubscriptionBehavior.RulesForTiming` and can be overridden; an unknown timing is refused before anything is written, and the lifecycle event records the timing chosen.
+- 48ea049: The 5.35 Metadata_Sync ships the Cancel Subscription input contract that metadata/ changed since 5.34, so a host that upgrades by migration describes the operation's new cancellation-timing input the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+
 ## 5.34.1
 
 ## 5.34.0
@@ -691,8 +765,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

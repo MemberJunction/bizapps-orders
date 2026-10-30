@@ -9,6 +9,7 @@ import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
     AsDateValue,
     PaymentHeaderEntity,
+    Today,
     TodayAsDateValue,
     mjBizAppsOrdersPaymentHeaderEntity,
     mjBizAppsOrdersPaymentDetailEntity,
@@ -17,7 +18,7 @@ import {
     type mjBizAppsOrdersPaymentTypeEntity,
 } from '@mj-biz-apps/orders-entities';
 import { mjBizAppsOrdersPaymentHeaderFormComponent } from '../../generated/Entities/mjBizAppsOrdersPaymentHeader/mjbizappsorderspaymentheader.form.component';
-import { FormatMoney, FormatDate } from '../../panels/money-format';
+import { DaysSince, FormatMoney, FormatDate, FormatInstantDate } from '../../panels/money-format';
 import {
     BuildPaymentJournalFilter,
     GetPaymentJournalRollup,
@@ -33,6 +34,18 @@ import { DispatchFormNavigation } from '../form-navigation-helper';
 
 const ACCOUNTING_VIEW_SETTING = 'mj.orders.paymentHeader.accountingView';
 const PAYMENT_TAB_SETTING = 'mj.orders.paymentHeader.activeTab';
+
+/** One allocation of a captured payment, as the read-only "Applied to" table shows it. */
+export interface PaymentAppliedLine {
+    OrderHeaderID: string;
+    OrderNumber: string;
+    /** Set when the allocation targets one order line rather than the whole order. */
+    OrderLineID: string | null;
+    /** `Line 2 · Product` for a line-level allocation; null for an order-level one. */
+    OrderLineLabel: string | null;
+    Amount: number;
+    BookedAt: Date | null;
+}
 
 export const PAYMENT_FORM_TABS: TabConfig[] = [
     { key: 'payment', label: 'Payment & Allocation', icon: 'fa-solid fa-money-bill-transfer' },
@@ -99,6 +112,11 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     public OrderAllocations: Record<string, number> = {};
     public LineAllocations: Record<string, number> = {};
     public ExpandedOrderIDs = new Set<string>();
+
+    // ── Applied Lines for Captured Payments (golive #342) ────────────────────
+    public AppliedLines: PaymentAppliedLine[] = [];
+    public LoadingAppliedLines = false;
+    public AppliedLinesError: string | null = null;
     public LoadingOpenOrders = false;
     public AllocationError: string | null = null;
     public SearchQuery = '';
@@ -164,6 +182,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         await this.loadSellingCompanies();
 
         if (this.IsCaptured) {
+            await this.loadAppliedLines();
             void this.loadPaymentJournalRollup();
         } else {
             if (this.record?.IsSaved && !this.record.Lines.IsLoaded) {
@@ -221,6 +240,8 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     }
 
     public ngDoCheck(): void {
+        // A captured payment's allocations are booked; the open-orders workbench is not shown.
+        if (this.IsCaptured) return;
         const currentKey = `${this.record?.BillToOrganizationID || ''}|${this.record?.BillToPersonID || ''}`;
         if (currentKey !== this.lastLoadedCustomerKey) {
             this.lastLoadedCustomerKey = currentKey;
@@ -978,12 +999,19 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         return FormatDate(order.DueDate);
     }
 
+    /**
+     * Whole business days past the due date (golive #341). Both sides are calendar days: the due
+     * date is a DATE column and `Today()` is the business day, so an evening in Chicago, when the
+     * UTC clock has rolled to tomorrow, does not count a day early.
+     */
     public GetOrderDaysOverdue(order: mjBizAppsOrdersOrderHeaderEntity): number {
         if (!order.DueDate) return 0;
-        const due = new Date(order.DueDate).getTime();
-        const now = Date.now();
-        if (now <= due) return 0;
-        return Math.floor((now - due) / (1000 * 60 * 60 * 24));
+        return Math.max(0, DaysSince(order.DueDate, Today()));
+    }
+
+    public FormatOrderDate(order: mjBizAppsOrdersOrderHeaderEntity): string {
+        if (!order.OrderDate) return '—';
+        return FormatDate(order.OrderDate);
     }
 
     public OpenOrderRecord(order: mjBizAppsOrdersOrderHeaderEntity, event: MouseEvent): void {
@@ -1119,12 +1147,85 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
             }
 
             this.ActiveTab = 'accounting';
+            await this.loadAppliedLines();
             await this.loadPaymentJournalRollup();
         } catch (err) {
             this.CaptureError = err instanceof Error ? err.message : String(err);
         } finally {
             this.Capturing = false;
             this.cdr?.detectChanges?.();
+        }
+    }
+
+    // ── Applied Lines (Captured Payments) ───────────────────────────────────
+
+    /**
+     * What a captured payment was applied to, read from its saved Payment Lines (golive #342).
+     *
+     * The allocation workbench reads open orders, and a captured payment's orders are usually paid
+     * now, so it showed no orders and a "remaining to allocate" message about money already booked.
+     */
+    public async loadAppliedLines(): Promise<void> {
+        if (!this.record?.IsSaved) {
+            this.AppliedLines = [];
+            return;
+        }
+        this.LoadingAppliedLines = true;
+        this.AppliedLinesError = null;
+        try {
+            if (!this.record.Lines.IsLoaded) {
+                await this.record.Lines.Load();
+            }
+            const items = this.record.Lines.Items;
+            const lineOrderIDs = items.filter((l) => l.OrderLineID && l.OrderHeaderID).map((l) => l.OrderHeaderID);
+            const orderLines = lineOrderIDs.length > 0
+                ? await GetOrderLinesForOrders(lineOrderIDs, this.ProviderToUse?.CurrentUser)
+                : new Map<string, mjBizAppsOrdersOrderLineEntity[]>();
+            const labels = new Map<string, string>();
+            for (const lines of orderLines.values()) {
+                for (const l of lines) {
+                    if (l.ID) labels.set(l.ID.toLowerCase(), [`Line ${l.LineNumber}`, l.Product].filter(Boolean).join(' · '));
+                }
+            }
+            this.AppliedLines = items.map((l) => ({
+                OrderHeaderID: l.OrderHeaderID,
+                OrderNumber: l.OrderHeader,
+                OrderLineID: l.OrderLineID,
+                OrderLineLabel: l.OrderLineID ? (labels.get(l.OrderLineID.toLowerCase()) ?? 'Order line') : null,
+                Amount: l.Amount ?? 0,
+                BookedAt: l.BookedAt,
+            }));
+        } catch (err) {
+            this.AppliedLines = [];
+            this.AppliedLinesError = err instanceof Error ? err.message : 'Could not load what this payment was applied to.';
+        } finally {
+            this.LoadingAppliedLines = false;
+            this.cdr?.detectChanges?.();
+        }
+    }
+
+    public get AppliedTotal(): number {
+        const total = this.AppliedLines.reduce((sum, l) => sum + l.Amount, 0);
+        return Math.round(total * 100) / 100;
+    }
+
+    /** Received minus applied: what the payment left as unapplied credit. */
+    public get UnappliedAmount(): number {
+        return Math.round(((this.record?.Amount ?? 0) - this.AppliedTotal) * 100) / 100;
+    }
+
+    public get AppliedCount(): number {
+        return this.AppliedLines.length;
+    }
+
+    public FormatAppliedBookedAt(line: PaymentAppliedLine): string {
+        return line.BookedAt ? FormatInstantDate(line.BookedAt) : '—';
+    }
+
+    public OpenAppliedOrder(line: PaymentAppliedLine, event: MouseEvent): void {
+        event.stopPropagation();
+        if (line.OrderHeaderID && this.navigationService) {
+            this.navigationService.OpenEntityRecord(MJO_ENTITIES.OrderHeader, CompositeKey.FromID(line.OrderHeaderID));
         }
     }
 

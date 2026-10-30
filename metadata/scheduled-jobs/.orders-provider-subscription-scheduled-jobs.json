@@ -1,0 +1,56 @@
+[
+  {
+    "_comments": [
+      "THE DAILY PROVIDER SUBSCRIPTION PASS (option E, E2).",
+      "",
+      "IT SHIPS DISABLED, SET TO PREVIEW, AND CAPPED AT 25, the same gate as Spawn Renewals and Charge Renewals:",
+      "  - Status Disabled keeps a lower environment from creating gateway subscriptions the moment this metadata lands.",
+      "  - Preview true means an enabled job searches the gateway read-only and reports what it would create or record; it writes nothing.",
+      "  - MaxCount 25 caps the gateway subscriptions one pass creates, so the first live pass (the backfill of buyers from",
+      "    before the switch) is staged rather than the whole book at once. The rest are created on the next passes.",
+      "Enable it, read the run's Outcomes, then set Preview to false.",
+      "",
+      "WHY NOT SHIP IT ACTIVE, though the account switch already gates it (with no account switched on a pass reads one",
+      "table and returns, like the outbound dispatch job). Its first live pass on an account is the backfill: it creates",
+      "gateway subscriptions for every eligible buyer who never went through the new checkout, and a buyer the gateway",
+      "already bills outside Orders (not marked) would get a second gateway subscription. That list must be read first.",
+      "",
+      "A HOST THAT TURNS BillsSubscriptions ON FOR AN ACCOUNT MUST SET THIS JOB ACTIVE, READ ONE PREVIEW, THEN SET PREVIEW TO FALSE.",
+      "Nothing in Orders checks that it did (whether a health alert should is an open question for the maintainers). It is",
+      "the only retry of a checkout's hand-over: a subscription the checkout failed to hand over has no gateway id, so Spawn",
+      "Renewals still renews it in Orders, and after a gateway fault (a timeout or 5xx while creating) the gateway may hold",
+      "a subscription Orders has not recorded, which this pass finds and records. Without it, that customer is billed twice.",
+      "The alert Task for such a subscription says the same.",
+      "",
+      "02:45 UTC: before the 03:00 Spawn Renewals pass, so a subscription linked tonight is skipped tonight. Daily because",
+      "first-charge days are days. ConcurrencyMode Skip: two passes on one subscription would both search the gateway",
+      "before either records the id. MissedRunPolicy RunOnce. RunImmediatelyIfNeverRun false: a first deployment must not",
+      "call a gateway before somebody has read the preview.",
+      "",
+      "THE RUN FAILS ONLY FOR A NEW PROBLEM. A subscription that needs a person has one open Task; later runs report it as",
+      "Waiting and succeed, so the failure notice means something new needs a person.",
+      "",
+      "OwnerUserID / NotifyUserID are unset: they name people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Create Provider Subscriptions (daily)",
+      "Description": "Creates the missing gateway subscriptions for active auto-renewing subscriptions on accounts whose gateway bills renewals (BillsSubscriptions on), and records each gateway id so Orders' renewal jobs skip it. Retries what the checkout could not do, creates terms that start later once their first charge fits, and backfills buyers from before the switch. Ships disabled, set to Preview and capped at 25 a pass: enable it, read the Outcomes on the run, then set Preview to false. REQUIRED wherever an account has BillsSubscriptions on: a host that turns the switch on must set this job Active, read one preview run, then set Preview to false. Nothing checks that it did. Until then a checkout that could not hand a subscription over (GatewayFault, NotRecorded) leaves Orders renewing it, while the gateway may bill it too.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 45 2 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 30,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\":\"2B4D8149-15CF-4B64-9F94-0F30AE30077F\",\"Params\":[{\"ActionParamID\":\"ECAC20AF-BA7B-4E59-81AB-6B8BDE5D7B19\",\"ValueType\":\"Static\",\"Value\":\"true\"},{\"ActionParamID\":\"533A7F82-1930-484F-A56B-090E01DA012D\",\"ValueType\":\"Static\",\"Value\":\"25\"}]}"
+    },
+    "primaryKey": {
+      "ID": "202DEE2F-2AD8-46F1-8D53-5F6EE09BC2E1"
+    }
+  }
+]

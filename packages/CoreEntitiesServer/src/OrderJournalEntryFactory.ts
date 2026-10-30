@@ -7,14 +7,19 @@
  * Plan D11 — the booking entry per line:
  *
  *     Dr  Accounts Receivable      net (+ tax when the tax build lands)
- *     Dr  Sales Discounts          discount            (contra; omitted when 0)
+ *     Dr  Sales Discounts          discount            (contra; up-front lines only, omitted when 0)
  *         Cr  Sales                gross               (recognized at booking)
- *         Cr  Deferred Revenue     gross               (deferred — released per the schedule)
+ *         Cr  Deferred Revenue     net                 (deferred — released per the schedule)
  *
  * where net is the LINE'S OWN stored LineTotalNet — the authority, not a recomputation —
  * discount = (rate-gross × DiscountPct) + DiscountAmount, and gross = net + discount.
  * Both discount fields are applied because the line applies both.
  * The entry balances by construction: net + discount = gross.
+ *
+ * A DEFERRED LINE BOOKS ITS DISCOUNT WHEN IT EARNS, not at booking — the rule the instalment
+ * invoice already follows. Deferred Revenue holds what the customer owes (net), and each release
+ * carries its share of the discount, so Deferred clears to zero and Sales and Sales Discounts each
+ * reach gross and discount over the term.
  *
  * Plan D92 — A COMPANY BILLED BY INSTALMENT RAISES NO BILLING ENTRY HERE. The order and its
  * schedule are the subledger; the ledger records what happened — billed, collected, earned. So
@@ -42,7 +47,8 @@
  * we emit one REAL FORWARD-DATED entry per schedule slice:
  *
  *     Dr  Deferred Revenue         slice
- *         Cr  Sales                slice        (EffectiveDate = the recognition date)
+ *     Dr  Sales Discounts          slice's share of the discount   (omitted with no account)
+ *         Cr  Sales                slice + its discount share       (EffectiveDate = the recognition date)
  *
  * No materializer, no wake-up job — the ledger holds the future. A 12-month subscription books one
  * AR/Deferred entry plus twelve dated release entries, all inside the same booking transaction.
@@ -412,9 +418,11 @@ export class OrderJournalEntryFactory {
         /**
          * Terms created for subscription lines during this confirm, keyed by OrderLineID (D46).
          * Recognition entries anchor to the TERM — the release is caused by time passing over that
-         * coverage period. The booking entry stays on the line: that is caused by the sale.
+         * coverage period. The booking entry stays on the line: that is caused by the sale. A line
+         * that states an end past its first term has several terms, each with its own schedule
+         * (golive #338).
          */
-        termsByLine?: Map<string, { ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
+        termsByLine?: Map<string, ReadonlyArray<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>>,
         /** Months per recognition slice, per line, from the subscription type's cadence (D45). */
         recognitionMonthsByLine?: Map<string, number>,
         /**
@@ -557,7 +565,7 @@ export class OrderJournalEntryFactory {
         asOf: Date,
         giftCardTypeIDs: Set<string>,
         scheduledCompanies: Set<string>,
-        term?: { ID: string; StartDate: Date; EndDate: Date; Amount: number },
+        terms?: ReadonlyArray<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>,
         recognitionMonths?: number,
         /** Present when this line reverses a line billed by instalment (D92 §6). */
         creditMemo?: CreditMemoForLine,
@@ -662,15 +670,24 @@ export class OrderJournalEntryFactory {
             creditLabel = 'Sales';
         }
 
-        let discountAccount: string | null = null;
+        let lineDiscountAccount: string | null = null;
         if (discount !== 0) {
             try {
-                discountAccount = await resolve(GL_ROLE.SalesDiscounts);
+                lineDiscountAccount = await resolve(GL_ROLE.SalesDiscounts);
             } catch (err) {
                 if (!IsRoleNotLinked(err)) throw err;
-                discountAccount = null; // plan D11 — net into the revenue credit instead
+                lineDiscountAccount = null; // plan D11 — net into the revenue credit instead
             }
         }
+        // A DEFERRED LINE'S DISCOUNT IS BOOKED AS IT IS EARNED, never at booking. Its releases are
+        // built from the net, so a discount split here would credit Deferred Revenue with the gross
+        // and leave the discount there with nothing to release it. Booking credits Deferred with the
+        // net instead, and each release (or progress catch-up) debits its own share of the discount.
+        // A FULLY DISCOUNTED deferred line therefore books nothing: its credit is zero and the
+        // zero-line filter below drops the entry, and with a zero net no release is staged either.
+        const discountAtRecognition = revRec.IsDeferred && !isGiftCard;
+        const discountAccount = discountAtRecognition ? null : lineDiscountAccount;
+        const releaseDiscountAccount = discountAtRecognition && net !== 0 ? lineDiscountAccount : null;
 
         // ── the value entry (D10/D11), raised here only when this company is NOT on instalments ──
         //
@@ -903,57 +920,88 @@ export class OrderJournalEntryFactory {
         if (revRec.IsDeferred && revRec.ScheduleBasis === 'AtBooking' && !isGiftCard) {
             // A subscription line's coverage window comes from its TERM (which applied anchoring,
             // deferral and proration); a non-subscription deferred line uses the line's own dates.
-            const schedule = this.driverFor(revRec).BuildSchedule({
-                Amount: term ? term.Amount : net,
-                BookingDate: new Date(effectiveDate),
-                ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
-                ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
-                ProductName: product.Name,
-                PeriodMonths: recognitionMonths,
-            });
+            // A line with several terms recognizes each over its own window, at its own amount, so
+            // the months of the whole coverage are recognized evenly (golive #338).
+            const windows: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number } | undefined> =
+                terms && terms.length ? [...terms] : [undefined];
+            // EACH RELEASE CARRIES ITS SHARE OF THE DISCOUNT, sliced from running totals across every
+            // term's releases so the shares sum to exactly the line's discount. Rounding each slice
+            // on its own would strand a cent in Deferred that nothing later releases.
+            let releasedNet = 0;
+            const discountThrough = (released: number) => (net === 0 ? 0 : money((discount * released) / net));
+            for (const term of windows) {
+                // A zero amount stages nothing: every slice would be a JE line for zero, which
+                // accounting refuses as MALFORMED_DRAFT, and a 100%-off line would then refuse the
+                // whole order (golive #328).
+                const releaseAmount = term ? term.Amount : net;
+                if (money(releaseAmount) === 0) continue;
+                const schedule = this.driverFor(revRec).BuildSchedule({
+                    Amount: releaseAmount,
+                    BookingDate: new Date(effectiveDate),
+                    ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
+                    ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
+                    ProductName: product.Name,
+                    PeriodMonths: recognitionMonths,
+                });
 
-            // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
-            // unearned part, so only the releases still to come are mirrored; mirroring the whole
-            // term would also un-recognise the months already delivered and strand them in Deferred.
-            const releases = scheduledOrigin
-                ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
-                : schedule.Entries;
-            for (const entry of releases) {
-                const releaseLines: JELineDraft[] = [
-                    {
-                        GLAccountID: bookingCreditAccount,
-                        DebitAmount: entry.Amount,
-                        Description: `Release deferred — ${product.Name}`,
-                        Dimensions: lineDims,
-                    },
-                    {
+                // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
+                // unearned part, so only the releases still to come are mirrored; mirroring the whole
+                // term would also un-recognise the months already delivered and strand them in Deferred.
+                const releases = scheduledOrigin
+                    ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
+                    : schedule.Entries;
+                const shares = new Map<(typeof schedule.Entries)[number], number>();
+                for (const entry of schedule.Entries) {
+                    const before = discountThrough(releasedNet);
+                    releasedNet = money(releasedNet + entry.Amount);
+                    shares.set(entry, money(discountThrough(releasedNet) - before));
+                }
+                for (const entry of releases) {
+                    const share = releaseDiscountAccount ? (shares.get(entry) ?? 0) : 0;
+                    const releaseLines: JELineDraft[] = [
+                        {
+                            GLAccountID: bookingCreditAccount,
+                            DebitAmount: entry.Amount,
+                            Description: `Release deferred — ${product.Name}`,
+                            Dimensions: lineDims,
+                        },
+                    ];
+                    if (releaseDiscountAccount && share !== 0) {
+                        releaseLines.push({
+                            GLAccountID: releaseDiscountAccount,
+                            DebitAmount: share,
+                            Description: `Discount — ${product.Name}`,
+                            Dimensions: lineDims,
+                        });
+                    }
+                    releaseLines.push({
                         GLAccountID: salesAccount,
-                        CreditAmount: entry.Amount,
+                        CreditAmount: money(entry.Amount + share),
                         Description: `Revenue — ${product.Name}`,
                         Dimensions: lineDims,
-                    },
-                ];
-                const releaseEntryLines = mirrorIf(isReversal, releaseLines);
-                this.assertBalanced(releaseEntryLines, order, line, 'recognition');
+                    });
+                    const releaseEntryLines = mirrorIf(isReversal, releaseLines);
+                    this.assertBalanced(releaseEntryLines, order, line, 'recognition');
 
-                out.push({
-                    OrderLineID: line.ID,
-                    IsBooking: false,
-                    SubscriptionTermID: term?.ID,
-                    RecognitionEntry: entry,
-                    Draft: {
-                        EffectiveDate: isoDate(entry.RecognitionDate),
-                        EntryType: 'RevenueRecognition',
-                        Description:
-                            `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
-                            `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
-                        // D46: anchor to the TERM when there is one; otherwise the line (event
-                        // products are deferred but have no subscription and therefore no term).
-                        LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
-                        LinkedRecordID: term ? term.ID : line.ID,
-                        Lines: releaseEntryLines,
-                    },
-                });
+                    out.push({
+                        OrderLineID: line.ID,
+                        IsBooking: false,
+                        SubscriptionTermID: term?.ID,
+                        RecognitionEntry: entry,
+                        Draft: {
+                            EffectiveDate: isoDate(entry.RecognitionDate),
+                            EntryType: 'RevenueRecognition',
+                            Description:
+                                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
+                            // D46: anchor to the TERM when there is one; otherwise the line (event
+                            // products are deferred but have no subscription and therefore no term).
+                            LinkedEntityID: term ? this._subscriptionTermEntityID : this._orderLineEntityID,
+                            LinkedRecordID: term ? term.ID : line.ID,
+                            Lines: releaseEntryLines,
+                        },
+                    });
+                }
             }
         }
 

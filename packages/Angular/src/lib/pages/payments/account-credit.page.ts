@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { PresetViewRef } from '../../data/preset-view';
 import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
@@ -76,7 +77,7 @@ import { GetOrders } from '../../data/orders-queries';
             <div class="mjo-cr__flow">
                 <div class="mj-card mjo-cr__side mjo-cr__side--from">
                     <div class="mj-card-pad">
-                        <span class="mj-chip mj-chip--success">From (credit)</span>
+                        <span class="mjo-chip mjo-chip--success">From (credit)</span>
                         <div class="mjo-cr__order">{{ Source.OrderNumber }}</div>
                         <mjo-stated-value Label="Available">
                             <b class="mj-money--credit">{{ Available | mjoMoney }}</b>
@@ -96,7 +97,7 @@ import { GetOrders } from '../../data/orders-queries';
 
                 <div class="mj-card mjo-cr__side mjo-cr__side--to">
                     <div class="mj-card-pad">
-                        <span class="mj-chip mj-chip--brand">To (open order)</span>
+                        <span class="mjo-chip mjo-chip--brand">To (open order)</span>
                         <label class="mj-field mjo-cr__field">
                             <label>Target order</label>
                             <mj-dropdown
@@ -221,15 +222,17 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
     public Targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
+    private readonly creditOrdersView = new PresetViewRef();
+
     public get CreditOrdersView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo) return null;
-        return {
-            EntityID: this.OrderEntityInfo.ID,
-            Entity: this.OrderEntityInfo.Name,
+        return this.creditOrdersView.For(this.OrderEntityInfo.ID, () => ({
+            EntityID: this.OrderEntityInfo!.ID,
+            Entity: this.OrderEntityInfo!.Name,
             WhereClause: `Balance < 0`,
             ID: 'preset-credit-orders',
             Name: 'Credits Held'
-        } as unknown as MJUserViewEntityExtended;
+        } as unknown as MJUserViewEntityExtended));
     }
 
     /**

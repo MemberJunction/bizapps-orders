@@ -14,9 +14,26 @@ export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './
 // invoicing act, the billing worklist, and the AR reclass seam AIDP-25 fills.
 export { GetBillingWorklistOperation, LoadGetBillingWorklistOperation } from './GetBillingWorklistOperation.js';
 export { IssueInstalmentInvoiceOperation, LoadIssueInstalmentInvoiceOperation } from './IssueInstalmentInvoiceOperation.js';
+export { ReplacePaymentScheduleOperation, LoadReplacePaymentScheduleOperation } from './ReplacePaymentScheduleOperation.js';
+export {
+    NormaliseReplacementRows,
+    PlanScheduleReplacement,
+    type ExistingScheduleRow,
+    type PlannedScheduleRow,
+    type ScheduleReplacementPlan,
+    type ScheduleReplacementRefusal,
+    type ScheduleReplacementRefusalCode,
+    type ScheduleReplacementRow,
+} from './PaymentScheduleReplacement.js';
 export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleEntityServer } from './OrderHeaderPaymentScheduleEntityServer.js';
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
+export { OrderAdjustmentEntityServer, LoadOrderAdjustmentEntityServer } from './OrderAdjustmentEntityServer.js';
 export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
+export {
+    SubscriptionEntityServer,
+    LoadSubscriptionEntityServer,
+    SanctionProviderBilledChange,
+} from './SubscriptionEntityServer.js';
 export { ApplyTermExtension, CheckTermExtension } from './TermExtension.js';
 export type { ApprovedDurationConcession, CheckedTermExtension, TermExtensionRequest } from './TermExtension.js';
 export { NetRelease, PlanTermExtension } from './TermExtensionPlan.js';
@@ -30,7 +47,9 @@ export {
     APPROVAL_TASK_TYPE_CODE,
     ApprovalTaskName,
     ApproverAssignees,
+    ChooseEscalationApprovers,
     CloseConcessionTasks,
+    COMPANY_CFO_ESCALATION,
     ConcessionStatusForOutcome,
     ConcessionSummary,
     IsOpenApprovalTask,
@@ -38,13 +57,16 @@ export {
     RaiseConcessionApprovalAgain,
     ReleaseOrderFromTasks,
     RouteConcessionToApproval,
+    SelfApprovalEscalation,
     UnlinkConcession,
     type ApprovalTaskContext,
     type ConcessionDecision,
     type ConcessionForApproval,
     type ConcessionSummaryFacts,
     type ConcessionTaskClosing,
+    type EscalationCandidate,
     type RoleHolder,
+    type SelfApprovalEscalationResult,
 } from './ConcessionApprovalTask.js';
 export {
     ApplyTaskDecisionToConcessions,
@@ -56,6 +78,7 @@ export {
     LoadConcessionTiers,
     FindUnapprovedConcessions,
     FindUncoveredLinePrices,
+    HeldManualDiscounts,
     LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
@@ -206,6 +229,45 @@ export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './Cancel
 export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
 export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
 
+// Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
+export { NotProviderBilledSql, ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';
+export type { ProviderBilledPurchaseVerdictResult } from './ProviderBilledSubscriptions.js';
+
+// Carrying an Orders cancel to the gateway that bills the subscription (E2b).
+export {
+    CANCEL_BLOCKING_ALERT_CODES,
+    CancelAtGateway,
+    CancelBlockingAlerts,
+    GatewayCancelIdempotencyKey,
+    GatewayCancelPreview,
+    PlanGatewayCancel,
+    GateGatewayCancel,
+    ReadGatewaySubscription,
+} from './ProviderSubscriptionCancel.js';
+export type { GatewayCancelGate, GatewayCancelPlan, GatewayCancelResult, GatewayCancelSummary } from './ProviderSubscriptionCancel.js';
+
+// Handing a new auto-renewing subscription to the gateway that will bill it (option E, E2).
+export {
+    EnsureProviderSubscriptions,
+    EnsureProviderSubscriptionsOnOwnProvider,
+    GatewayIntervalMonths,
+    ORDERS_SUBSCRIPTION_METADATA_KEY,
+    PlanProviderSubscriptionCharge,
+    PROVIDER_SUBSCRIPTION_ALERT_CODES,
+    PROVIDER_SUBSCRIPTION_PARKED_CODES,
+    ProviderBillsNewSubscriptions,
+    ProviderSubscriptionFirstChargeAt,
+    ProviderSubscriptionIdempotencyKey,
+    RetiredGatewayIDsFromEvents,
+} from './ProviderSubscriptions.js';
+export type {
+    EnsureProviderSubscriptionsInput,
+    EnsureProviderSubscriptionsResult,
+    ProviderSubscriptionChargePlan,
+    ProviderSubscriptionOutcome,
+    ProviderSubscriptionOutcomeCode,
+} from './ProviderSubscriptions.js';
+
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
@@ -349,7 +411,7 @@ export {
     RevokeGrantsForReturn,
     RevokeGrantsForCanceledSubscription,
 } from './EntitlementEngine.js';
-export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+export type { CancelAccessEnd, GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 // Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
 export {
     LoadApprovedAccessOverrides,
@@ -542,6 +604,18 @@ export type {
     RetrieveChargeResult,
     GatewayWebhookEndpoint,
     ListWebhookEndpointsResult,
+    CreateProviderSubscriptionRequest,
+    CreateProviderSubscriptionResult,
+    CancelProviderSubscriptionRequest,
+    CancelProviderSubscriptionResult,
+    DescribeProviderSubscriptionResult,
+    ProviderSubscriptionBillingState,
+    CancelProviderSubscriptionOutcome,
+    FindProviderSubscriptionsRequest,
+    FindProviderSubscriptionsResult,
+    GatewaySubscription,
+    DescribeProviderPriceResult,
+    GatewayPriceInterval,
 } from './BasePaymentProvider.js';
 
 export {
@@ -553,6 +627,13 @@ export {
     StripeChargeFromObject,
     StripeChargeRefusal,
     StubDigest,
+    OneIntervalLaterAsStripeCounts,
+    OneYearLaterAsStripeCounts,
+    StripePriceInterval,
+    StripeSubscriptionFromObject,
+    StripeCancelState,
+    PlanStripeCancel,
+    StripeSubscriptionBilling,
 } from './StripePaymentProvider.js';
 export {
     CheckPaymentWebhookEndpoints,
@@ -725,7 +806,19 @@ export {
     ResolvePaymentProvider,
     LoadPaymentProviderConfig,
     BuildPaymentProvider,
+    ResolvePaymentCredentials,
 } from './PaymentProviderResolver.js';
+export {
+    ResolveCheckoutPublishableKey,
+    ChooseCheckoutPublishableKey,
+    StripeKeyModeOf,
+} from './CheckoutPublishableKey.js';
+export type {
+    CheckoutPublishableKey,
+    CheckoutPublishableKeyInputs,
+    CheckoutPublishableKeySource,
+    StripeKeyMode,
+} from './CheckoutPublishableKey.js';
 
 // Document delivery (§4.4) — the pure decisions, the channel seam, and the one shipped channel.
 // Document-AGNOSTIC: nothing below knows what an invoice is, which is what makes it reusable for
@@ -817,7 +910,7 @@ export type {
 export { ChargeError, RunCharges, SplitChargesByLine, WriteCharges } from '@mj-biz-apps/orders-entities';
 export type { RequestedCharge } from '@mj-biz-apps/orders-entities';
 
-// Tax resolution (D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
+// Tax resolution (D73, exemptions D72): address -> jurisdictions -> rates, minus the buyer's exemptions. The
 // jurisdiction step is a SEAM — postal/city matching is enough for many deployments and is not
 // rooftop-accurate, which is where a commercial provider earns its money.
 export { BaseTaxJurisdictionResolver, DefaultTaxJurisdictionResolver, LoadTaxResolver, ResolveTax } from '@mj-biz-apps/orders-entities';
@@ -836,7 +929,19 @@ export type { ApplyAccountCreditInput, ApplyAccountCreditOutput } from './ApplyA
 export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
-export { EntitlementGrantEntityServer, LoadEntitlementGrantEntityServer } from './EntitlementGrantEntityServer.js';
+export { EntitlementGrantEntityServer, GrantChangedFields, LoadEntitlementGrantEntityServer, type GrantChangedField } from './EntitlementGrantEntityServer.js';
+// A term's days, each covered in full in the business zone: the instants a term grant and the evaluator read.
+export { TermDayEnd, TermDayStart, TermGrantWindow, type TermDay } from './TermGrantWindow.js';
+// Every Orders alert Task is assigned to the holders of the AlertTaskRole role.
+export {
+    ALERT_SWEEP_BATCH,
+    ALERT_SWEEP_EVERY_MINUTES,
+    AlertSweepDue,
+    AssignAlertTask,
+    AssignUnassignedAlertTasks,
+    ORDERS_ALERT_TASK_PREFIX,
+    type AlertTaskAssignmentOutcome,
+} from './AlertTaskAssignment.js';
 export {
     GetCheckoutAccessStatus,
     SummarizeAccessDeliveries,
@@ -985,7 +1090,17 @@ export {
     isTerminalCapturePrecheck,
     webhookEventExceedsRetryWindow,
 } from './checkoutCaptureRetry.js';
-export { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
+export {
+    OUTBOUND_DEAD_LETTER_LOG_MARKER,
+    OpenProviderSubscriptionAlerts,
+    ReadOpenProviderSubscriptionAlerts,
+    PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER,
+    ProviderSubscriptionAlertName,
+    raiseCheckoutCaptureTerminalAlert,
+    raiseCheckoutSettledNotBookedAlert,
+    raiseOutboundDeadLetterAlert,
+    raiseProviderSubscriptionAlert,
+} from './checkoutCaptureAlert.js';
 // The post-payment step record, its review queue and operator replay (#326).
 export { CheckoutStepLog, STALE_RUNNING_MINUTES } from './CheckoutStepLog.js';
 export type { CheckoutStepAttempt, CheckoutStepName, CheckoutStepSource, CheckoutStepStatus } from './CheckoutStepLog.js';
@@ -1024,3 +1139,5 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 // The calendar-day rule for records that carry a `date` column (#209). Exported for the same
 // reason as the guards above: the edge should reach for the audited helper, not re-derive it.
 export { CalendarDayOrToday } from './calendar-day.js';
+
+// The integration harness's test seam (#947) is NOT exported here: it lives on the `./testing` subpath.

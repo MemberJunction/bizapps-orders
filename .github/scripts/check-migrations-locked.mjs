@@ -6,16 +6,16 @@
  * deleted.
  *
  * ── WHY ─────────────────────────────────────────────────────────────────────────
- * The runner records every applied migration with its version, script name and a checksum. Change
- * the file and the databases that already ran it refuse to migrate until somebody repairs the
- * history table by hand; the databases that never ran it get different SQL. The two populations
- * diverge, and nothing reports it — the schema a colleague ends up with depends on when they last
+ * The runner records every applied migration with its version, script name and a checksum, and
+ * never runs a recorded version again. It does not compare the checksum later, so a changed file
+ * never reaches the databases that already ran it, while the databases that never ran it get the
+ * new SQL. The two populations diverge, and nothing reports it — the schema a colleague ends up with depends on when they last
  * pulled. Fixing forward in a NEW file is the only operation that converges both.
  *
  * A RENAME IS NOT A LESSER CHANGE. The runner keys on the twelve-digit version in the filename, so
  * a renamed migration is a version nobody has run: it executes again, and plain DDL then fails on
- * objects that already exist. Because a run is one transaction, that failure rolls back everything
- * pending with it. Deleting is worse still — the migration silently stops existing for anyone who
+ * objects that already exist; when its new version sorts below the newest one a database has
+ * applied, `mj migrate` refuses the run as out of order. Deleting is worse still — the migration silently stops existing for anyone who
  * has not run it.
  *
  * ── THE HOLE THIS CLOSES ────────────────────────────────────────────────────────
@@ -95,10 +95,10 @@ function report(found, baseLabel) {
         console.error(`    ${YELLOW}${f.Status}${OFF}: ${what}`);
     }
     console.error('');
-    console.error('A migration on the base branch is locked. Every database that ran it recorded its');
-    console.error('checksum, so changing the file makes those databases refuse to migrate while the ones');
-    console.error('that never ran it get different SQL. Renaming counts: the runner keys on the version in');
-    console.error('the filename, so a renamed migration runs again against objects that already exist.');
+    console.error('A migration on the base branch is locked. Every database that ran it recorded it as');
+    console.error('applied and never runs it again, so a change never reaches those databases while the');
+    console.error('ones that never ran it get different SQL. Renaming counts: the runner keys on the version');
+    console.error('in the filename, so a renamed migration runs again against objects that already exist.');
     console.error('');
     console.error('Fix it forward in a NEW migration file.');
     console.error('');

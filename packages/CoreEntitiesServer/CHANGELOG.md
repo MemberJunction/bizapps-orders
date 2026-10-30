@@ -1,5 +1,189 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.39.0
+
+### Minor Changes
+
+- fcc3ad9: A term-following entitlement grant now covers its term's days in full in the business time zone: from 00:00 business time on the first day to 00:00 business time on the day after the last (`TermGrantWindow`). It used to end at 00:00 UTC on the last day, which cut that day short by the zone's offset (6 pm the evening before in Chicago) and, with a gateway that charges the renewal at 00:00 business time on the last day, locked a renewing customer out for hours. Booking, term extensions and term shifts write the new window. `EvaluateGrantAccess` reads a term's end and a cancelled subscription's end the same way; its new `zone` parameter is REQUIRED. A term's start is read as the earlier of 00:00 business time and 00:00 UTC, so a grant written before this release opens when it always did. Existing grants keep their stored end until next written.
+
+  A cancel now decides access against that same instant. An end-of-term cancel made on the term's last day keeps the grants until 00:00 business time after it (it used to revoke them at once from 00:00 UTC on that day); an `Immediate` cancel with no grace, made for today or before the term starts, still revokes at once (`SubscriptionBehavior.EndsAccessOnCancel`). When access ends later, the cancel moves its standing term grants' `ValidTo` to that end instead of leaving the old one, and revokes a later term's grant that would start at or after it (a renewal already confirmed, which can never come into force); grants with their own window are left alone. **Breaking for direct callers:** `RevokeGrantsForCanceledSubscription`'s second parameter is now a `CancelAccessEnd` (`{ AccessThroughDate, EndsNow }`), not a date, and `ShouldRevokeGrantsOnCancel` compares an instant (the end of the access-through day), not the day.
+
+  `GrantStatusChanged` now also fires when a save changes a grant's `ValidFrom` or `ValidTo`, with `ChangedFields`, `FromValidFrom` and `FromValidTo` in the payload, so a downstream copy of access hears extensions, shifts and moved ends.
+
+  A dead-lettered outbound delivery raises an alert Task, written through the dispatch pass's provider. Every Orders alert Task is assigned to the active holders of the role named by the new `AlertTaskRole` setting (unset, alerts stay unassigned as before), and the scheduled dispatch pass assigns, every 15 minutes, up to 25 open alert Tasks that nobody holds yet (`AssignUnassignedAlertTasks`), so a first assignment that failed, or a role set later, is caught up; a re-raised alert that was already closed is left alone. A consumer's thrown error text is shown in that Task: it must not carry secrets (`docs/outbound-events.md`). The new `AlertTaskRole` setting row ships in `metadata/`, so it needs the release's Metadata_Sync.
+
+- 65ddeb2: Create the gateway subscription after checkout (option E, E2). On a payment account whose type supports subscription billing (`PaymentProviderType.SupportsSubscriptionBilling`) and whose switch is on (`PaymentProvider.BillsSubscriptions`), both now read into `PaymentProviderConfig`, a checkout hands each new auto-renewing subscription to the gateway once its payment is booked and its card kept: a gateway subscription on the price flagged `UseForNewSubscriptions`, charging nothing now and first charging at 00:00 business time on the term's last day, whose id is then recorded on the subscription so Orders' renewal jobs skip it. A subscription whose latest term is still unpaid (a renewal Charge Renewals has not collected) stays with Orders until it is paid. New driver methods `CreateProviderSubscription`, `FindProviderSubscriptions`, `DescribeProviderPrice` and `LatestFirstChargeAt` refuse by default; Stripe implements them (`POST /v1/subscriptions` with `billing_cycle_anchor` and `proration_behavior=none`, with a 15-second timeout; its stub refuses), and a price whose billing period is not the term's is refused visibly. The id is recorded on a provider of its own. It never fails the sale, and every problem raises one open alert Task. The new `Orders.CreateProviderSubscriptions` action and its daily job (shipped Disabled, set to Preview and capped at 25 creations a pass) retry failures, create subscriptions whose first charge was too far out and backfill earlier buyers, searching the gateway first so none is created twice; the run fails only for a new problem. A host that turns `BillsSubscriptions` on must set that job Active and, after reading a preview, turn Preview off: until then a subscription the checkout could not hand over stays renewing in Orders.
+- 117cd8a: Once a payment gateway bills a subscription, no Orders door changes it unseen (option E, E2b). `Orders.CancelSubscription` now reads a gateway-billed subscription at the gateway first (new driver method `DescribeProviderSubscription`, refusing by default; Stripe reads `GET /v1/subscriptions/:id`): a cancel after the gateway started a billing period Orders has not booked (its renewal at 00:00 on the term's last day) is refused with nothing changed, so the renewal it charged is refunded at the gateway rather than kept, and a cancel the gateway already completed is recorded, after the term too. Otherwise it cancels at the gateway first, before its transaction, and locks the subscription row so two simultaneous cancels cannot book two credit memos: the gateway must charge nothing after coverage ends (now, at its period end, or at that instant), and if it does not confirm nothing is written. New driver method `CancelProviderSubscription` refuses by default; Stripe implements it (reads the subscription, then `DELETE` or `cancel_at_period_end` / `cancel_at` with `proration_behavior=none`, verifying the answer; its stub refuses). The cancel output gains `Gateway`, the cancel panel says the gateway bills the subscription and previews what it will do, and the `Canceled` event records what the gateway did. A cancel is refused while an E2 alert says a gateway subscription may be billing unrecorded, when those alerts cannot be read for a gateway-billed subscription, and when no open term covers the request day. The new shared `SubscriptionEntity` refuses any other change to a gateway-billed subscription's billing columns on every tier (`PROVIDER_BILLED_FIELDS`), and refuses a gateway id typed onto an existing subscription (creating one with its id stays open, for importers), sanctioned server-side for the writes that told the gateway. An order can no longer extend, renew or reactivate a gateway-billed subscription; a cancelled one bought again starts fresh with a new gateway subscription, found by the checkout through its new term and created under a new idempotency key. A return of its sale and a Duration, Shift, Seats or amount-change concession on its term are refused. The hand-over stops a gateway subscription made for one cancelled meanwhile, never records one the subscription already cancelled, and searches again after every create (two live raise an urgent `AmbiguousAtGateway`). The checkout's returning-buyer refusal includes Paused subscriptions, and the daily job's preview now searches the gateway read-only.
+- adb8e61: Orders UI/UX fixes.
+
+  - Order lines: subscription lines show their Term end, read-only; the "Before this can be confirmed" list notes a line whose stated length differs from its type's term; held-product choices and the after-confirm notice name the end that is kept. Bundle lines whose bundle contains a subscription take a Term start.
+  - A rep can enter a manual discount above their Sales Authority cap: it is saved held and marked "Needs approval", and confirm waits for an approved concession. A line charged nothing once its concession is taken off is a Scope concession. A deferred line books its discount as revenue is earned: booking credits Deferred Revenue with the net, and each revenue release (or progress catch-up) debits its share to Sales Discounts and credits Sales with the gross, so nothing is left in Deferred. A fully discounted deferred line books nothing. A price typed as 0 suggests a 100% discount instead. A saved order adjustment's authority, approver, amount, line and promotion cannot be changed, and the row can only be deleted by the order's own save, so a held discount cannot be hidden from confirm.
+  - A refused booking says in plain words which line to change; accounting's codes go to the server log.
+  - Send to Bill.com shows on every order using the Bill.com rail and is enabled only on a saved, confirmed order; otherwise it is greyed out with the reason as its tooltip. The reason is recomputed after a save or refresh.
+  - A captured payment shows what it was applied to instead of the allocation workbench; By Journal Entry renders; overdue days count business days; the open-orders Date column shows the order date.
+  - The fulfilment queue, the external invoicing worklist and the invoice rail report a failed read as an error instead of an empty list; an invoice unit whose history cannot be read is not sent.
+  - The subscription Overview lists read newest first, and a stale reload no longer overwrites newer cards; Cancel subscription is disabled while the form is in edit mode.
+  - The Override Explanation box shows only on an overridden line price.
+  - The checkout element stops sending events, polling and redirecting once its host removes it; payment and completion calls already started still finish.
+  - Styles read only `--mj-*` tokens MemberJunction 6.1.5 defines, checked by a unit test. The kit's print rules, filter chip, select and timeline rules no longer restyle MemberJunction pages outside Orders; loaders and empty states use MemberJunction's components; app chips take the `mjo-` prefix.
+  - A migration puts the Event Order Line Attendance Status values in CodeGen's order on databases built from migrations. The Referral Programs list shows Company and Is Active by default.
+
+  The order form's notes on subscription lengths other than the type's term, which do not block confirm, show under their own "When this is confirmed" heading instead of "Before this can be confirmed".
+
+- d6a280d: Subscriptions a payment gateway bills itself (option E, E1). A subscription whose `ProviderSubscriptionID` is set (Stripe's `sub_...`) is billed by the gateway named in its `PaymentProviderID`, so Spawn Renewals no longer places a renewal order for it and Charge Renewals no longer charges or captures one. Both jobs share one rule, `NotProviderBilledSql`, keyed on that marker alone. Orders itself has never written a gateway id, so on a host that hasn't imported any nothing renews differently today; the migration header has a two-line pre-flight for hosts that have.
+
+  The migration adds the columns the next change reads to create gateway subscriptions: `PaymentProviderType.SupportsSubscriptionBilling` (the gateway can bill subscriptions; set for Stripe), `PaymentProvider.BillsSubscriptions` (this account does; off everywhere), and `PaymentProviderPrice.UseForNewSubscriptions` (the one price a new gateway subscription to a product uses). It also adds `UQ_Subscription_ProviderSubscriptionID` (one Orders subscription per provider and gateway id), `CK_Subscription_ProviderSubscriptionHasProvider` (an id needs its provider and may not be empty) and `UQ_PaymentProviderPrice_NewSubscriptionProduct` (one flagged active price per provider and product).
+
+- f129713: Self-serve checkout refuses another subscription purchase from a buyer who already holds a subscription their payment gateway bills (option E). When the draft sells a subscription product and the Person the e-mail resolves to holds an Active or Trialing subscription in the widget's company with `ProviderSubscriptionID` set, the draft and the payment-intent step refuse the purchase, whatever the plan, with the new refusal code `ProviderBilledSubscription`: Orders would extend or add a term the gateway knows nothing about while the gateway still charged at its own renewal. A purchase with no subscription product is not refused. The message is the new widget setting `providerBilledSubscriptionMessage` (a neutral default otherwise), with `{renewalDate}` replaced by the day the gateway next charges.
+- 756afe7: New remote operation `Orders.ReplacePaymentSchedule` sets an order's payment schedule from a supplied list of rows (due date, amount, description). Instalments already invoiced, paid or written off must appear in the list with the same due date and amount and are kept unchanged; a list that changes or drops one is refused, naming the instalment. The other rows replace the order's Scheduled rows in place, numbered by due date, and must tie to the order's lines by the same check confirm and invoicing use. An order confirmed without a schedule (billed in full) cannot be given one, and a confirmed order billed by its schedule cannot have it removed. An instalment not yet invoiced that a payment names cannot be removed, re-dated or lowered below what is paid on it (`PAID_ROW_CHANGED`). The order's status is re-read under a lock inside the transaction, so a confirm that lands between the read and the write is honoured. All or none, and the same list sent twice writes nothing. Sales calls it to put a deal's schedule on its order at Close Won and when a won deal's schedule changes.
+
+### Patch Changes
+
+- e99a31e: `Orders.CapturePayment` no longer reports a read it could not complete as a record that does not
+  exist (#967). It read the orders it allocates to without checking whether the read succeeded, so a
+  read that timed out waiting on another transaction's lock, or lost its connection, refused the
+  capture with `OrderNotFound` ("Order … does not exist."). The checkout classes `OrderNotFound` as
+  terminal, so the webhook stopped asking Stripe to retry and a charged buyer was left with no payment
+  booked.
+
+  - A failed read of the orders is now `OrderReadFailed`, carrying the read's error. Before refusing
+    with `OrderNotFound`, the capture re-reads the ids its first read did not return, once and past the
+    cache, so an order another transaction committed in between is found.
+  - A tender the orders engine does not hold is checked against the `Payment Types` table before
+    `UnknownTender`; a failed read there is `TenderReadFailed`.
+  - A failed read-back of the payment just written is `PaymentReadFailed`, and a capture that cannot
+    read its payment back now rolls it back rather than committing a payment it reports as failed.
+
+  None of the three new codes is in `TERMINAL_CAPTURE_BLOCKER_CODES`, so the checkout page, the
+  webhook (which returns 500 so Stripe retries) and operator replay treat them as transient. A read that
+  succeeds and finds nothing keeps its terminal code. A new check, `capture-payment.CP13-OT`, holds the
+  order under another connection's open transaction while a capture runs, and asserts the capture is
+  retryable and that the retry books once the transaction ends.
+
+- 5342f5b: The integration checks that complete a checkout (SR46, SR52 and SR53) pass again (#947). Since the
+  checkout capture moved onto its own provider (#928), it wrote on another connection, outside the
+  transaction each check holds and rolls back, and waited on that transaction's locks until the 60 s
+  request timeout. `JoinCallerTransactionForTests` is a new test seam: inside it, `WithIsolatedProvider` runs its
+  work on the caller's provider, and `InRolledBackTransaction` runs each check inside it. The seam is
+  scoped to one async call chain, and production never enters it, so outside it `WithIsolatedProvider`
+  behaves as before.
+
+  The seam is exported only from a new `./testing` subpath
+  (`@mj-biz-apps/orders-core-entities-server/testing`), not from the package root. The package now has
+  an `exports` map (`.`, `./testing`, `./package.json`): the root exports what it did before, minus the
+  seam, and a deep import into `dist/` is no longer resolvable.
+
+  A new check, `subscription-renewal.SR46-OT`, runs SR46's payment outside the harness transaction, so the
+  capture runs on its own provider as in production; a capture that waits on its own request's transaction
+  fails it. It deletes what it committed with `PurgeCheckoutRun`. The order-tree delete it shares with
+  `PurgeReviewRun` now also removes outbound deliveries and instalment billings, and lifts the Invoiced
+  instalment guard, which it needed for a paid renewal.
+
+- 4104f24: A hand-entered order with a line at a unit price of 0 can no longer be confirmed. The order form's "Before this can be confirmed" list names the line once and asks for the negotiated price, or the price with a 100% discount to give it away; the confirm save refuses with the same message before anything books. Checkout and payment-created orders, bundle components and return lines are exempt. So is a renewal line the renewal job priced at zero (a product now listed at zero) while its price is unchanged, so a $0 renewal books instead of failing the job on every run; the same line edited to zero by hand is refused. When accounting refuses an order's booking, the message now gives each distinct error once, naming the order lines it applies to, instead of once per draft.
+- Updated dependencies [1e2a5c6]
+- Updated dependencies [117cd8a]
+- Updated dependencies [29af2af]
+- Updated dependencies [06897c1]
+- Updated dependencies [adb8e61]
+- Updated dependencies [d6a280d]
+- Updated dependencies [f129713]
+- Updated dependencies [756afe7]
+- Updated dependencies [4104f24]
+  - @mj-biz-apps/orders-entities@5.39.0
+
+## 5.38.0
+
+### Patch Changes
+
+- a9f4bfa: The webhook's own records are much less likely to be lost when the page finishes the same purchase
+  (#939). When the `payment_intent.succeeded` webhook and the page's completion ran in the same second,
+  the page could put the webhook's `ProviderEventID` stamp on the intent back to null, and the
+  `PaymentWebhookDelivery` row could be rolled back with another request's work, so a redelivery of the
+  event would not have been recognised as a duplicate. The page now re-reads the intent after each
+  gateway call before it writes (and leaves it alone when the webhook already recorded the same status),
+  which narrows the window to milliseconds without closing it (#943). The delivery row is written on its
+  own provider (`WithIsolatedProvider`, #927), and a row that cannot be written now logs why, including
+  the retry's reason.
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+  - @mj-biz-apps/orders-entities@5.38.0
+
+## 5.37.0
+
+### Minor Changes
+
+- 065481c: Add the `ConcessionSelfApprovalEscalation` Orders setting (bc-aidp-next-golive#320): when set, a concession requested by a holder of its ConcessionLimit rule's role is no longer approved by that requester. It is Pending for the next approver up the setting names — `CompanyCFO` (the order company's `ApprovalCFOUserID`) or an MJ role name, tried in order — the approval task is assigned to them, and only they can decide it. The requester is never assigned, and when no target names anyone else the concession is refused. Empty (the default) keeps the previous behavior.
+- 3982e30: Confirm honors a subscription line's stated service period end (golive #338). It used to build one term of the type's default length whatever end the line stated, then overwrite the line's end to match, so a 13-, 18- or 24-month sale became 12 months and its revenue spread over 12. Now a shorter period is one short term; a longer one is one term per type term length with a final partial term (13 months on an annual type: 12 + 1; 24 months: 12 + 12), all on one subscription, each with its share of the line amount by months and its own recognition schedule, so every stated month recognizes the same amount. A stated period is not prorated. A line extending a held subscription keeps its stated length from the continuation date. Entitlement grants that follow the term are written per term. `SubscriptionBehavior.Decide` takes `RequestedEndDate` and returns every planned term in `Terms`, with `EndOverrideIgnored` when a stated end could not be used.
+
+  Recognition schedules count months in UTC. Service periods are calendar days stored as UTC midnight, and the EvenOverTime driver's local-time month arithmetic put them on the previous evening on a server west of Greenwich, so a July-to-December window produced seven monthly entries and a one-month term two.
+
+- dfc43ea: A subscription line whose stated period gives it a length other than its type's term is raised for finance review at confirm (golive #338), as finance exception `SUBSCRIPTION_TERM_LENGTH`: one per line, deduplicated on the line. The summary says whether the line carries the one-term list price ("priced at 11000.00, the list price for 12 months, so 1 month is not charged for") or a different price, and the amount is the difference between the length at the list rate and what the line charges. Nothing is refused or repriced, and nothing is raised until accounting has an active type with that code. `SubscriptionBehavior.Decide` reports the stated length and the type's term length in `StatedLength`.
+
+### Patch Changes
+
+- 3ec257f: Bill.com invoice lines carry the service period in their text, in the format the Orders invoice prints; an instalment line carries the span of the order's rows (#742).
+- d429e9e: Checkout captures the payment on an isolated provider (#927). The page's completion and the
+  `payment_intent.succeeded` webhook capture the same session within a second of each other; on the
+  shared `Metadata.Provider` their transactions nested, and a rollback on one side undid the other's
+  payment, so a charged buyer ended up with no payment booked and no access. New `WithIsolatedProvider`
+  helper (MJ `CreateIndependentInstance`, the same pattern as MJ #5059).
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+  - @mj-biz-apps/orders-entities@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- 0e3b9fd: A blank service period can be filled in on the order of a closed deal.
+
+  The deal lock refuses order-line edits while the deal is closed, and its message says what it protects: "before changing what was sold". It covered every field, including the service period — which is the coverage window, not the thing sold.
+
+  That blocked an ordinary close. `ConfirmEligibility` will not confirm a line whose product requires a service period until it has both a start and an end; Sales can state a term start on a deal line and nothing more, because `DealLine` carries no date columns. So the end could only be set on the order, the lock refused it, and the only route to a confirmable order ran through reopening the deal, setting the dates and closing it again.
+
+  An update now skips the lock only when it is FILLING those columns in: every field it changes is `ServicePeriodStart` or `ServicePeriodEnd`, and every one of them was empty beforehand. A date that is already set still meets the lock, so correcting one continues to go through reopening the deal — a date that was never set has nowhere else it could have come from, while one that is already there had a source, and moving it changes the window agreed at the close.
+
+  A save that also moves the quantity or the price still meets the lock, a create is untouched, and a line on a booked order still meets it: after confirm the stored period is the settled term that recognition is derived from.
+
+- 7756bb0: A checkout whose payment succeeded but whose browser never sent the final complete call (the tab closed, the page dropped) is now completed by the signed `payment_intent.succeeded` webhook, through the same path the browser uses. A refusal on that path, or a paid session that expires uncompleted, raises the "Checkout payment settled with no order" Task. A complete call that finds the webhook completing the session waits for it and returns the same order.
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Minor Changes
+
+- 4aa6783: Checkout: the Stripe publishable key the browser gets can come from the server environment. When a widget names a `paymentProviderId` and that provider's `CredentialsRef` resolves to a publishable key (the default secret resolver reads `<CredentialsRef>_PUBLISHABLE_KEY`, beside `<CredentialsRef>_API_KEY`), `/checkout/initialize` hands that key to the browser in place of the widget's `stripePublishableKey`, on both the ordinary and the renewal-payment session, so the host page and the Angular widget load Stripe.js with the same account's key as the server. Without the variable the widget's value is used as before. A key whose test/live mode disagrees with the account's (its API key's mode, else `IsLiveMode`) is logged as a warning by prefix only, and a provider that cannot be read is logged and falls back to the widget's key rather than failing the checkout. New exports: `ResolveCheckoutPublishableKey`, `ChooseCheckoutPublishableKey`, `StripeKeyModeOf`, `ResolvePaymentCredentials`; `PaymentCredentials` gains `PublishableKey`.
+- db3aef7: Order review by trigger (bc-aidp-next-golive#320 §5). A Direct order that hits a switched-on trigger (`NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`) cannot confirm until the reviewer role approves its `ORDERS_ORDER_REVIEW` task; an order a reviewer created goes to the escalation role. Routing is to the role holders' linked Persons, never the order's creator. Configured by the new `OrderReview*` settings, all off by default, so hosts that set nothing are unaffected. Adds the `RegisterOrderDealLink` seam for the sales app to say which deal created an order; the `ORDERS_ORDER_REVIEW` task type and the settings rows ship in metadata. An approval counts only when the user who wrote the decision (from `MJ: Record Changes`) holds the routed role and is not the creator, the task was linked to this order alone before it was decided, and nothing reviewed on the order was written since. `OrderHeader.Origin` can now be written only by the process that creates the order (checkout, provider payment); any other write of it is refused on save.
+- 5a490c4: Add an optional refund authority check to `Orders.RefundPayment` (bc-aidp-next-golive#320 §3). With the new `RefundApprovalThreshold` setting set, a refund that brings the payment's refunds to at most the threshold may be issued by a holder of the role named by the new `RefundApproverRole` setting, and anything above it only by the receiving company's `AccountingCompanyProfile.ApprovalCFOUserID`, who may always refund. A deactivated approver counts as none, so the refusal asks for a new one. The amount is counted per payment, not per order. The check runs before Preview and before any write, and refuses with a message. A gateway refund booked by the system user (a webhook) is exempt. Empty, the default, leaves refunds as before; an unreadable value is read as 0, and if the Orders application row cannot be found the refund fails loudly rather than running unchecked. This is an interim shape: the performer is the approver until a request-then-approve flow lands.
+
+### Patch Changes
+
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+  - @mj-biz-apps/orders-entities@5.35.1
+
+## 5.35.0
+
+### Minor Changes
+
+- 8a9d2f9: `Orders.CancelSubscription` takes an optional `Timing` (#702). `Immediate` ends coverage and access on the request day; `EndOfTerm` ends them on the term's last day. A chosen timing drops the type's grace period, so access ends on the day chosen. Without it the type's `CancellationMode` decides, as before. The refund mode always comes from the type. The policy is `SubscriptionBehavior.RulesForTiming` and can be overridden; an unknown timing is refused before anything is written, and the lifecycle event records the timing chosen.
+- 303849b: Checkout account step: a host can set or remove the verification wording. `CheckoutAccountResult` takes `VerificationNote` (text, or `null` for none) and `PasswordSetMessage` on a `Created` answer; the widget shows them in place of its default verification text, and keeps the default when a host gives none. The contract now lets a host allow sign-in before verification as its own choice, while still not linking the login to the matched Person until the e-mail is verified.
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-entities@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes
@@ -928,8 +1112,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

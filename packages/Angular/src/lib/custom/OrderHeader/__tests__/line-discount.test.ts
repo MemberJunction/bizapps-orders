@@ -119,9 +119,10 @@ describe('DiscountError', () => {
         expect(component(stub).DiscountError(line(stub))).toMatch(/more than/i);
     });
 
-    it('refuses a concession above the cap on the user authority', () => {
+    it('does not refuse a concession above the cap on the user authority — it needs approval (golive #328)', () => {
         const stub = typed({ cap: 0.1, draft: { Mode: 'percent', Value: 20 } });
-        expect(component(stub).DiscountError(line(stub))).toMatch(/above the 10%/i);
+        expect(component(stub).DiscountError(line(stub))).toBeNull();
+        expect(component(stub).DiscountApprovalNote(line(stub))).toMatch(/above the 10% .* needs approval/i);
     });
 
     it('allows one at the cap — the cap is a ceiling, not a limit to stay under', () => {
@@ -166,5 +167,45 @@ describe('who may discount', () => {
 
     it('says nothing is wrong when the control is available', () => {
         expect(component({}).DiscountUnavailableReason).toBeNull();
+    });
+});
+
+describe('DiscountApprovalNote (golive #328)', () => {
+    const typed = (extra: Stub): Stub => ({ quantity: 1, unitPrice: 1200, ...extra });
+
+    it('flags a 100% discount above a 25% cap as needing approval', () => {
+        const stub = typed({ cap: 0.25, draft: { Mode: 'percent', Value: 100, Reason: 'giveaway' } });
+        expect(component(stub).DiscountApprovalNote(line(stub))).toMatch(/^100% is above the 25% on your Sales Authority, so it needs approval/);
+        expect(component(stub).NeedsDiscountReason(line(stub))).toBe(false);
+    });
+
+    it('says nothing at or under the cap, or with no cap', () => {
+        const atCap = typed({ cap: 0.25, draft: { Mode: 'percent', Value: 25 } });
+        expect(component(atCap).DiscountApprovalNote(line(atCap))).toBeNull();
+        const noCap = typed({ cap: null, draft: { Mode: 'percent', Value: 100 } });
+        expect(component(noCap).DiscountApprovalNote(line(noCap))).toBeNull();
+    });
+
+    it('leaves an impossible amount to the error', () => {
+        const stub = typed({ cap: 0.1, draft: { Mode: 'amount', Value: 1500 } });
+        expect(component(stub).DiscountError(line(stub))).toMatch(/more than/i);
+        expect(component(stub).DiscountApprovalNote(line(stub))).toBeNull();
+    });
+});
+
+describe('GiveawayHint (golive #328)', () => {
+    const withLine = (extra: Record<string, unknown>) =>
+        ({ ...line({ quantity: 1 }), ...extra }) as unknown as mjBizAppsOrdersOrderLineEntity;
+
+    it('suggests a 100% discount when the price is typed as zero', () => {
+        expect(component({}).GiveawayHint(withLine({ UnitPrice: 0 }))).toBe(
+            'To give this away, keep the price and set a 100% discount.',
+        );
+    });
+
+    it('says nothing for a priced line, a line with no price yet, or a bundle component', () => {
+        expect(component({}).GiveawayHint(withLine({ UnitPrice: 250 }))).toBeNull();
+        expect(component({}).GiveawayHint(withLine({ UnitPrice: null }))).toBeNull();
+        expect(component({}).GiveawayHint(withLine({ UnitPrice: 0, ParentOrderLineID: 'P1' }))).toBeNull();
     });
 });

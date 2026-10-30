@@ -120,6 +120,12 @@
                             [PriceSource]="PricedLine(line)?.PriceSource ?? null"
                             [PricedUnit]="PricedLine(line)?.UnitPrice ?? null"
                             (PriceChanged)="OnLinePriceChanged()"></mjo-line-price-picker>
+                        @if (GiveawayHint(line); as hint) {
+                            <div class="mjo-ol-override__hint" role="note">
+                                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                                <span>{{ hint }}</span>
+                            </div>
+                        }
                     }
 
                     <!--
@@ -179,6 +185,12 @@
                                 @if (DiscountError(line); as problem) {
                                     <div class="mjo-ol-discount__err" role="alert">{{ problem }}</div>
                                 }
+                                @if (DiscountApprovalNote(line); as note) {
+                                    <div class="mjo-ol-discount__approval" role="status">
+                                        <span class="mjo-ol-discount__badge">Needs approval</span>
+                                        <span>{{ note }}</span>
+                                    </div>
+                                }
                                 @if (HasStagedDiscount(line)) {
                                     <div class="mjo-ol-discount__staged">
                                         <span>Applies when this order is saved.</span>
@@ -228,13 +240,14 @@
             }
 
             <!--
-                TERM START — subscription lines only (D-TERMSTART).
+                TERM START — subscription lines, and bundle lines whose bundle contains a subscription
+                (D-TERMSTART, u623.1).
                 The order date says when the sale was booked; this says when coverage begins, and an
                 agreement settles the two independently. Shown on the card rather than behind the
                 extension disclosure because it is a term fact, and not every subscription product
                 type has an extension form to hide it in.
             -->
-            @if (IsSubscriptionLine(line)) {
+            @if (ShowsTermStart(line)) {
                 <div class="mjo-ol-term">
                     <!-- `for` only when there IS an input to point at. A label targeting a missing
                          id is a dead control to a screen reader. -->
@@ -270,7 +283,9 @@
                         <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
                     }
                     <span class="mjo-ol-term__hint">
-                        @if (TermStartIsDictated(line)) {
+                        @if (IsSubscriptionBundleLine(line)) {
+                            Applies to the subscriptions in this bundle.
+                        } @else if (TermStartIsDictated(line)) {
                             Continuing existing coverage, so the term begins the day after the current
                             one ends — not something this line can set.
                         } @else if (TermStartFollowsOrderDate(line)) {
@@ -280,6 +295,35 @@
                             Stated on this line, so a later change to the order date leaves it alone.
                         }
                     </span>
+                </div>
+            }
+
+            <!--
+                TERM END — subscription lines only (golive #338), shown and not edited.
+                Confirm keeps an end already stated on the line: the coverage
+                runs to it, as one term or one term per type term length. Typing one here would change
+                the coverage without changing the price, and nothing reviews that yet, so the field
+                stays read-only until a stated length goes through approval.
+            -->
+            @if (IsSubscriptionLine(line)) {
+                <div class="mjo-ol-term">
+                    <span class="mjo-ol-term__label">Term end</span>
+                    <span class="mjo-ol-term__value">{{ TermEndValue(line) }}</span>
+                    @if (TermEndBeforeStart(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            The term end must be on or after the term start.
+                        </span>
+                    } @else if (!IsMoneyLocked) {
+                        <span class="mjo-ol-term__hint">
+                            @if (TermEndFollowsType(line)) {
+                                One term of the subscription type.
+                            } @else if (KeptTermEndValue(line); as kept) {
+                                Confirm keeps this length from the continuation date, so the term ends {{ kept }}.
+                            } @else {
+                                Stated on this line, and confirm keeps these dates.
+                            }
+                        </span>
+                    }
                 </div>
 
                 <!-- The customer already holds this product (golive #299): ask whether this line
@@ -299,8 +343,7 @@
                                     [class.is-selected]="line.SubscriptionAction === 'ExtendExisting'"
                                     [attr.aria-pressed]="line.SubscriptionAction === 'ExtendExisting'"
                                     (click)="SetSubscriptionAction(line, 'ExtendExisting')">
-                                    Add as next term
-                                    @if (HoldingContinuationStart(holding)) { (starts {{ HoldingContinuationStart(holding) }}) }
+                                    {{ HoldingExtendLineText(line, holding).Choice }}
                                 </button>
                                 <button
                                     type="button"
@@ -316,7 +359,7 @@
                             @if (line.SubscriptionAction === 'CreateNew') {
                                 Confirm starts a separate subscription on this line's service period.
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
-                                Confirm adds a term to {{ holding.SubscriptionNumber }}, starting the day after its coverage ends.
+                                {{ HoldingExtendLineText(line, holding).Hint }}
                             } @else {
                                 Not chosen. The subscription type's rule will decide at confirm, and it may move this
                                 line's dates.
@@ -444,11 +487,11 @@
             }
         </div>
     } @empty {
-        <div class="mjo-ol-empty">
-            <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
-            <div class="mjo-ol-empty__title">Nothing on this order yet</div>
-            <div>Search the catalog to add the first line.</div>
-        </div>
+        <mj-empty-state
+            Size="compact"
+            Icon="fa-solid fa-cart-plus"
+            Title="Nothing on this order yet"
+            Message="Search the catalog to add the first line." />
     }
 
     @if (EditMode) {
