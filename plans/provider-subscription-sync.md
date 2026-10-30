@@ -47,4 +47,4 @@ have reached 30 Oct 2027, been charged $599 by Stripe, and lost access in Orders
 
 Unit: `ProviderSubscriptionSyncPlan.test.ts`, `StripeProviderSync.test.ts`, `GatewayRenewal.test.ts`,
 `PaymentWebhookSubscriptionEvents.test.ts`, `ProviderRenewalBooking.test.ts`, `ProviderSubscriptionSync.test.ts`. Integration:
-`subscription-renewal` SR75–SR92-OT.
+`subscription-renewal` SR75–SR98-OT.
