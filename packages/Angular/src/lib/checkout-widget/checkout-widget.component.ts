@@ -229,6 +229,26 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     /** Why the last code could not be used, in the server's words. Set by the host. */
     @Input() public promotionError: string | null = null;
 
+    private _memberDiscount = signal<CheckoutAppliedPromotion | null>(null);
+    /**
+     * The verified member's discount the server priced this checkout with, or null (#919). Set by the
+     * host from a draft. While it holds, the widget shows it as a discount line and hides the
+     * promo-code box: the member code is the one the order carries, as it was on CDP's checkout.
+     */
+    @Input()
+    public set memberDiscount(val: CheckoutAppliedPromotion | null) {
+        this._memberDiscount.set(val);
+    }
+    public get memberDiscount(): CheckoutAppliedPromotion | null {
+        return this._memberDiscount();
+    }
+
+    /**
+     * True when the e-mail is the one a member token was signed for (#919). The field is read-only,
+     * since the discount is bound to that address and a changed one would price at full rate.
+     */
+    @Input() public lockEmail: boolean = false;
+
     private _serverPricedTotal = signal<CheckoutServerPricedTotal | null>(null);
     /**
      * The total the server last priced this checkout at, or null. Set by the host after a draft, so a
@@ -270,6 +290,12 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
     @Output() public cancelled = new EventEmitter<void>();
     /** Emitted when an input that changes the price (quantity, location) changes, so the host drops its quote. */
     @Output() public quoteInvalidated = new EventEmitter<void>();
+    /**
+     * The form as it stands, with no typed code, each time a price input changes while the e-mail
+     * and billing location are complete (#919). A host with a member token prices it in the
+     * background so the buyer sees the member discount before Pay; other hosts ignore it.
+     */
+    @Output() public quoteRequested = new EventEmitter<CheckoutSubmissionEvent>();
 
     // Internal error message for client-side validation failures
     public internalErrorMessage = signal<string | null>(null);
@@ -431,8 +457,19 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         return price * this.quantity();
     });
 
-    /** Whether this widget takes promotion codes — only for a paid checkout whose configuration invites them. */
-    public allowsPromotionCodes = computed(() => this._config()?.allowCoupons === true && !this.isFree());
+    /** The member discount, when it was priced for the current quantity; a stale one is ignored. */
+    public activeMemberDiscount = computed<CheckoutAppliedPromotion | null>(() => {
+        const discount = this._memberDiscount();
+        return discount && discount.quantity === this.quantity() ? discount : null;
+    });
+
+    /**
+     * Whether this widget takes promotion codes — only for a paid checkout whose configuration invites
+     * them, and not while a verified member's discount applies (#919).
+     */
+    public allowsPromotionCodes = computed(
+        () => this._config()?.allowCoupons === true && !this.isFree() && !this.activeMemberDiscount()
+    );
 
     /** The applied promotion, when it was priced for the current quantity; a stale one is ignored. */
     public activePromotion = computed<CheckoutAppliedPromotion | null>(() => {
@@ -591,6 +628,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         this.quantity.set(clamped);
         this.syncUnits();
         this.quoteInvalidated.emit();
+        this.requestQuote();
         this.executeLifecycleHook('onQuantityChange', { quantity: clamped });
     }
 
@@ -599,16 +637,34 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         // A region belongs to one country; keeping it across a change would submit a wrong pairing.
         this.billingRegion.set('');
         this.quoteInvalidated.emit();
+        this.requestQuote();
     }
 
     public onBillingRegionChange(region: string): void {
         this.billingRegion.set(region ?? '');
         this.quoteInvalidated.emit();
+        this.requestQuote();
     }
 
     public onBillingPostalCodeChange(postalCode: string): void {
         this.billingPostalCode.set(postalCode ?? '');
         this.quoteInvalidated.emit();
+        this.requestQuote();
+    }
+
+    /** The buyer's e-mail looks complete: the same check `isFormValid` makes. */
+    private hasValidEmail(): boolean {
+        const em = String(this.units()[0]?.['email'] || this.email()).trim();
+        return em.includes('@');
+    }
+
+    /**
+     * Ask the host for a background price once the e-mail and the billing location are complete
+     * (#919). Never blocks the form; the host decides whether to price at all.
+     */
+    private requestQuote(): void {
+        if (!this.hasValidEmail() || !this.isBillingLocationValid()) return;
+        this.quoteRequested.emit({ ...this.buildSubmission(), promotionCode: undefined });
     }
 
     public syncUnits(): void {
@@ -661,7 +717,17 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
                 if (fieldName === 'title') this.title.set(String(value ?? ''));
             }
             this.units.set(list);
+            if (index === 0 && fieldName === 'email') {
+                // A member discount is bound to the e-mail, so a changed one drops it and prices again (#919).
+                if (this._memberDiscount()) this.quoteInvalidated.emit();
+                this.requestQuote();
+            }
         }
+    }
+
+    /** True for the first unit's e-mail field while it is locked to a member token's address (#919). */
+    public isLockedEmail(index: number, fieldName: string): boolean {
+        return this.lockEmail && index === 0 && fieldName.toLowerCase() === 'email';
     }
 
     public updateAttendee(index: number, field: keyof CheckoutAttendee, value: string): void {
@@ -797,6 +863,8 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             stripePaymentMethodId: this.nothingDue() ? undefined : (this.stripePaymentMethodId ?? undefined),
             sessionKey: finalSessionKey,
             autoRenewConsent: this.autoRenewConsentText() ? this.autoRenewConsent() : undefined,
+            // allowsPromotionCodes is false while a member discount applies: the box is hidden, so a
+            // code typed before it appeared is not sent behind the buyer's back.
             promotionCode: this.allowsPromotionCodes() && typedCode ? typedCode : undefined
         };
     }

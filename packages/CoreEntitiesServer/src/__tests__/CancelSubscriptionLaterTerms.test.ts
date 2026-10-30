@@ -10,7 +10,7 @@
  * context, the grant revocation, the own-write mark) are replaced. The policy is the real
  * `SubscriptionBehavior`.
  */
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     /** Rows `RunView` answers with, keyed by a fragment of the entity name. */
@@ -49,7 +49,9 @@ vi.mock('../EntitlementEngine.js', () => ({ RevokeGrantsForCanceledSubscription:
 vi.mock('../OrderLineEntityServer.js', () => ({ MarkAsOrdersOwnWrite: vi.fn() }));
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import { CancelSubscriptionOperation, type CancelSubscriptionOutput } from '../CancelSubscriptionOperation.js';
+import { RevokeGrantsForCanceledSubscription } from '../EntitlementEngine.js';
 
 const SUB = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const T1 = 'term-1';
@@ -108,6 +110,10 @@ function fakeProvider(): { provider: IMetadataProvider; rec: Recorded } {
         BeginTransaction: async () => void rec.tx.push('begin'),
         CommitTransaction: async () => void rec.tx.push('commit'),
         RollbackTransaction: async () => void rec.tx.push('rollback'),
+        // The row lock taken first inside the transaction: answers the status the operation loaded.
+        ExecuteSQL: async () => [{ Status: mocks.rows.get('Subscriptions')?.[0]?.Status ?? null }],
+        // No tasks app here, so no gateway alert can be open (E2b reads them before cancelling).
+        EntityByName: () => undefined,
         GetEntityObject: async (entityName: string, keyOrUser: unknown) => {
             const keyed = (keyOrUser as { KeyValuePairs?: { Value: string }[] })?.KeyValuePairs?.[0]?.Value;
             const entity: Record<string, unknown> = { NewRecord: () => true, LatestResult: null };
@@ -305,5 +311,130 @@ describe('cancelling a subscription with a later term (#406)', () => {
         expect(out.LaterTerms).toEqual([]);
         expect(rec.orders[0].Lines).toHaveLength(1);
         expect([...rec.terms.keys()]).toEqual([T1]);
+    });
+});
+
+describe('a timing chosen at cancellation', () => {
+    /** An annual rolling type: ride the term out, no refund, 30 days' grace. */
+    const ROLLING = { CancellationMode: 'EndOfTerm', CancellationRefundMode: 'NoRefund', GracePeriodDays: 30 };
+
+    beforeEach(() => {
+        mocks.rows.clear();
+        mocks.schedules.clear();
+    });
+
+    it('Immediate ends the subscription on the request day, with no grace and nothing reversed', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-07-01');
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-07-01');
+        expect(rec.terms.get(T1)?.Status).toBe('Canceled');
+        expect(rec.orders).toEqual([]);
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBe('Immediate');
+    });
+
+    it('EndOfTerm ends access on the term\'s last day without the type\'s grace, and the event records the choice', async () => {
+        seed({ ...ROLLING, CancellationMode: 'Immediate' }, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-12-31');
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-12-31');
+        expect(rec.terms.get(T1)?.Status).toBe('Completed');
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBe('EndOfTerm');
+    });
+
+    it('Immediate with a renewal booked behind it cancels both and reverses the renewal in full', async () => {
+        seed(ROLLING);
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-07-01');
+        expect(rec.terms.get(T1)?.Status).toBe('Canceled');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toEqual([[L2, -1]]);
+    });
+
+    it('EndOfTerm with a renewal booked behind it completes the term and cancels the renewal', async () => {
+        seed(ROLLING);
+        mocks.schedules.set(L2, [{ Status: 'Scheduled', DocumentNumber: null }]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+
+        expect(out.Success, out.Message).toBe(true);
+        expect(out.Decision?.AccessThroughDate.slice(0, 10)).toBe('2026-12-31');
+        expect(rec.terms.get(T1)?.Status).toBe('Completed');
+        expect(rec.terms.get(T2)?.Status).toBe('Canceled');
+        expect(rec.orders[0].Lines.map((l) => [l.ReversesOrderLineID, l.Quantity])).toEqual([[L2, -1]]);
+    });
+
+    it('without a timing, the type decides and the event says so', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01' });
+
+        expect(out.Decision?.EffectiveDate.slice(0, 10)).toBe('2026-12-31');
+        expect(JSON.parse(String(rec.events[0].EventData)).Timing).toBeNull();
+    });
+
+    it('refuses a timing the contract does not name, before writing anything', async () => {
+        seed(ROLLING, [T1]);
+        const { out, rec } = await cancel({ RequestDate: '2026-07-01', Timing: 'Tomorrow' });
+
+        expect(out.Success).toBe(false);
+        expect(out.Message).toMatch(/Timing must be one of Immediate, EndOfTerm/);
+        expect(rec.tx).toEqual([]);
+    });
+});
+
+/**
+ * Whether the cancel ends access at once (#987). The operation alone knows the mode it applied, so it decides
+ * `EndsNow` and hands it to the grant revocation; "today" is the business day now, not the request day.
+ */
+describe('the operation tells the grant revocation whether access ends now (#987)', () => {
+    const NOW = new Date('2026-07-01T15:00:00Z');
+    beforeEach(() => {
+        mocks.rows.clear();
+        mocks.schedules.clear();
+        vi.useFakeTimers({ toFake: ['Date'] });
+        vi.setSystemTime(NOW);
+        vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined);
+        vi.spyOn(BusinessTimeZoneEngine.Instance, 'Zone', 'get').mockReturnValue('UTC');
+        vi.mocked(RevokeGrantsForCanceledSubscription).mockClear();
+    });
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+    const endOf = () => vi.mocked(RevokeGrantsForCanceledSubscription).mock.calls[0][1] as { AccessThroughDate: Date; EndsNow: boolean };
+
+    it('Immediate requested for today: ends now', async () => {
+        seed(PRORATE_NOW, [T1]);
+        const { out } = await cancel({ RequestDate: '2026-07-01', Timing: 'Immediate' });
+        expect(out.Success, out.Message).toBe(true);
+        expect(endOf().EndsNow).toBe(true);
+    });
+
+    it('Immediate requested for two days from now: NOT now; access runs through that day', async () => {
+        seed(PRORATE_NOW, [T1]);
+        const { out } = await cancel({ RequestDate: '2026-07-03', Timing: 'Immediate' });
+        expect(out.Success, out.Message).toBe(true);
+        expect(day(endOf().AccessThroughDate)).toBe('2026-07-03');
+        expect(endOf().EndsNow).toBe(false);
+    });
+
+    it('no RequestDate: today is the request day, and an Immediate cancel ends now', async () => {
+        seed(PRORATE_NOW, [T1]);
+        const { out } = await cancel({ Timing: 'Immediate' });
+        expect(out.Success, out.Message).toBe(true);
+        expect(endOf().EndsNow).toBe(true);
+    });
+
+    it('End of term requested for today: not now', async () => {
+        seed(PRORATE_NOW, [T1]);
+        const { out } = await cancel({ RequestDate: '2026-07-01', Timing: 'EndOfTerm' });
+        expect(out.Success, out.Message).toBe(true);
+        expect(endOf().EndsNow).toBe(false);
     });
 });

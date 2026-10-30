@@ -160,6 +160,23 @@ describe('OrderEntityServer.deleteRemovedLines', () => {
         expect(log).toEqual(['delete-dependent:concession:true', 'delete-line:1']);
     });
 
+    it('removes an adjustment with its draft line, which refuses a direct delete', async () => {
+        const log: string[] = [];
+        const adjustment = { ...dependentRow('adjustment', log), RemovedByOrderSave: false };
+        adjustment.Delete = vi.fn(async () => {
+            log.push(`delete-dependent:adjustment:${adjustment.RemovedByOrderSave}`);
+            return true;
+        });
+        mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
+            Success: true,
+            Results: params.EntityName === 'MJ_BizApps_Orders: Order Adjustments' ? [adjustment] : [],
+        }));
+
+        await orderWith([fakeLine(1, log)]).deleteRemovedLines();
+
+        expect(log).toEqual(['delete-dependent:adjustment:true', 'delete-line:1']);
+    });
+
     it('does no work and issues no queries when nothing was removed', async () => {
         // The hot path: every ordinary edit runs through here and must stay free.
         await orderWith([]).deleteRemovedLines();
@@ -216,6 +233,9 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     const instance = orderWith(removed, retained);
     Object.assign(instance, {
         passesStatusTransition: () => true,
+        // Order review and the Origin guard are their own subject (OrderReviewThroughEntity.test.ts).
+        passesOriginGuard: () => true,
+        passesOrderReviewOnChange: vi.fn().mockResolvedValue(true),
         ApplySavePartyDefaults: vi.fn().mockResolvedValue(undefined),
         willBookOnThisSave: () => false,
         deleteLineDependents: vi.fn().mockResolvedValue(undefined),

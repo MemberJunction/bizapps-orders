@@ -486,6 +486,11 @@
     color: var(--mj-status-error-text);
 }
 
+/* Notes that do not block confirm: same layout, informational colour. */
+.mjo-oh-todo--info {
+    color: var(--mj-status-info-text);
+}
+
 .mjo-oh-moved__list {
     flex-basis: 100%;
     margin: 0;

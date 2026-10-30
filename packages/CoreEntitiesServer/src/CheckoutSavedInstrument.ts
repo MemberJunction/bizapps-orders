@@ -64,14 +64,22 @@ export async function SnapshotSellsSubscription(metadataJSON: string | null | un
             priced = [];
         }
     }
-    const productIDs = [...new Set(priced.map((l) => l.ProductID).filter((id): id is string => !!id))];
-    if (productIDs.length === 0) return false;
+    return SellsSubscription(priced.map((l) => l.ProductID), user);
+}
+
+/**
+ * True when any of these products renews as a subscription (has a subscription type). The one test,
+ * shared by the card prompt above and the checkout's returning-buyer refusal (./CheckoutPrePurchaseCheck.ts).
+ */
+export async function SellsSubscription(productIDs: ReadonlyArray<string | null | undefined>, user: UserInfo | undefined): Promise<boolean> {
+    const ids = [...new Set(productIDs.filter((id): id is string => !!id))];
+    if (ids.length === 0) return false;
 
     const rv = new RunView();
     const products = await rv.RunView<{ ID: string }>(
         {
             EntityName: PRODUCT_ENTITY,
-            ExtraFilter: `ID IN (${RequireUUIDs(productIDs, 'ProductID').map((id) => `'${id}'`).join(',')}) AND SubscriptionTypeID IS NOT NULL`,
+            ExtraFilter: `ID IN (${RequireUUIDs(ids, 'ProductID').map((id) => `'${id}'`).join(',')}) AND SubscriptionTypeID IS NOT NULL`,
             Fields: ['ID'],
             MaxRows: 1,
             ResultType: 'simple',

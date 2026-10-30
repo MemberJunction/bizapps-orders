@@ -1,5 +1,5 @@
 import '@angular/compiler';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 import { SubscriptionHeaderPanel } from '../subscription-header.panel';
 import { MJO_ENTITIES } from '../../data/entity-names';
@@ -52,5 +52,34 @@ describe('Subscription header — Order chip', () => {
 
         panel.Record = { OrderLineID: null } as mjBizAppsOrdersSubscriptionEntity;
         expect(panel.RelatedLinks).toEqual([]);
+    });
+});
+
+describe('Subscription header — after a confirmed cancellation', () => {
+    function hosted(refreshRecord: boolean) {
+        const panel = panelFor({});
+        const record = { Refresh: vi.fn(async () => true) };
+        panel.Record = record as unknown as mjBizAppsOrdersSubscriptionEntity;
+        const form = { RefreshRecord: vi.fn(async () => refreshRecord), cdr: { detectChanges: vi.fn() } };
+        (panel as unknown as { FormComponent: typeof form }).FormComponent = form;
+        return { panel, record, form };
+    }
+
+    it('reloads through the form, so every panel hears OnRecordRefreshed', async () => {
+        const { panel, record, form } = hosted(true);
+        await panel.OnCanceled();
+
+        expect(form.RefreshRecord).toHaveBeenCalledOnce();
+        expect(record.Refresh).not.toHaveBeenCalled();
+        expect(form.cdr.detectChanges).toHaveBeenCalled();
+    });
+
+    it('never re-reads the record itself, which would update the header alone and drop unsaved edits (#749)', async () => {
+        // The form declines only in edit mode, where cancelling is not offered.
+        const { panel, record, form } = hosted(false);
+        await panel.OnCanceled();
+
+        expect(form.RefreshRecord).toHaveBeenCalledOnce();
+        expect(record.Refresh).not.toHaveBeenCalled();
     });
 });

@@ -543,4 +543,103 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(other.email()).toBe('typed@example.com');
         });
     });
+
+    describe('member discount before Pay (#919)', () => {
+        const ASAE10 = { code: 'ASAE10', discount: 59.9, total: 539.1, quantity: 1 };
+
+        it('asks for a quote only once the e-mail and the billing location are complete', () => {
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            const requested = vi.spyOn(component.quoteRequested, 'emit');
+
+            component.onBillingCountryChange('US');
+            component.onBillingRegionChange('IL');
+            component.onBillingPostalCodeChange('60601');
+            expect(requested).not.toHaveBeenCalled();
+
+            component.updateUnitField(0, 'email', 'jane@example.com');
+            expect(requested).toHaveBeenCalledTimes(1);
+            expect(requested.mock.calls[0][0]).toEqual(expect.objectContaining({
+                email: 'jane@example.com',
+                quantity: 1,
+                billingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' },
+                promotionCode: undefined
+            }));
+        });
+
+        it('asks again when the location or quantity changes, but not for an incomplete location', () => {
+            component.config = { unitPrice: 599, allowQuantity: true } as CheckoutWidgetConfig;
+            component.updateUnitField(0, 'email', 'jane@example.com');
+            const requested = vi.spyOn(component.quoteRequested, 'emit');
+
+            component.onBillingCountryChange('US');
+            expect(requested).not.toHaveBeenCalled();
+            component.onBillingRegionChange('IL');
+            component.onBillingPostalCodeChange('60601');
+            expect(requested).toHaveBeenCalledTimes(1);
+
+            component.onQuantityChange(2);
+            expect(requested).toHaveBeenCalledTimes(2);
+            expect(requested.mock.calls[1][0].quantity).toBe(2);
+        });
+
+        it('never sends a typed code with the background quote', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            component.updateUnitField(0, 'email', 'jane@example.com');
+            component.promotionCodeInput.set('SAVE10');
+            const requested = vi.spyOn(component.quoteRequested, 'emit');
+            fillLocation(component);
+            expect(requested.mock.calls.at(-1)?.[0].promotionCode).toBeUndefined();
+        });
+
+        it('shows the discount, hides the promo box and prices the total while a member discount applies', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            expect(component.allowsPromotionCodes()).toBe(true);
+
+            component.memberDiscount = ASAE10;
+            component.serverPricedTotal = { total: 539.1, quantity: 1 };
+            expect(component.activeMemberDiscount()).toEqual(ASAE10);
+            expect(component.allowsPromotionCodes()).toBe(false);
+            expect(component.totalGross()).toBe(539.1);
+        });
+
+        it('does not send a code typed before the promo box was hidden', () => {
+            component.config = { unitPrice: 599, allowCoupons: true } as CheckoutWidgetConfig;
+            component.isPaymentReady = true;
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            component.email.set('jane@example.com');
+            component.syncUnits();
+            fillLocation(component);
+            component.promotionCodeInput.set('SAVE10');
+            component.memberDiscount = ASAE10;
+            const submitted = vi.spyOn(component.submitted, 'emit');
+            component.handleSubmit();
+            expect(submitted.mock.calls[0][0].promotionCode).toBeUndefined();
+        });
+
+        it('ignores a member discount priced at another quantity', () => {
+            component.config = { unitPrice: 599, allowCoupons: true, allowQuantity: true } as CheckoutWidgetConfig;
+            component.memberDiscount = ASAE10;
+            component.onQuantityChange(2);
+            expect(component.activeMemberDiscount()).toBeNull();
+            expect(component.allowsPromotionCodes()).toBe(true);
+        });
+
+        it('drops the quote when the e-mail a member discount was priced for changes', () => {
+            component.config = { unitPrice: 599 } as CheckoutWidgetConfig;
+            component.memberDiscount = ASAE10;
+            const invalidated = vi.spyOn(component.quoteInvalidated, 'emit');
+            component.updateUnitField(0, 'email', 'other@example.com');
+            expect(invalidated).toHaveBeenCalledTimes(1);
+        });
+
+        it('locks only the first e-mail field, and only when asked to', () => {
+            expect(component.isLockedEmail(0, 'email')).toBe(false);
+            component.lockEmail = true;
+            expect(component.isLockedEmail(0, 'email')).toBe(true);
+            expect(component.isLockedEmail(0, 'Email')).toBe(true);
+            expect(component.isLockedEmail(0, 'firstName')).toBe(false);
+            expect(component.isLockedEmail(1, 'email')).toBe(false);
+        });
+    });
 });
