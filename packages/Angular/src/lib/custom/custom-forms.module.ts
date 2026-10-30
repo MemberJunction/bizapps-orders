@@ -18,7 +18,7 @@ import { MJButtonDirective, MJEmptyStateComponent, MJTabNavComponent } from '@me
 import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
-import { PartyFieldComponent, SellingCompanyFieldComponent } from '@mj-biz-apps/common-ng';
+import { PartyFieldComponent, RelatedChipsComponent, SellingCompanyFieldComponent } from '@mj-biz-apps/common-ng';
 
 // Custom Form Components
 import { BizAppsProductSaveGuardFormComponent, LoadProductSaveGuardFormComponent } from './Product/product-save-guard-form.component';
@@ -64,6 +64,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         DeferredRevenueWaterfallModule,
         SellingCompanyFieldComponent,
         PartyFieldComponent,
+        RelatedChipsComponent,
     ],
     exports: [
         BizAppsProductSaveGuardFormComponent,

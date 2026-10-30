@@ -1,5 +1,5 @@
 import { Component, inject, ChangeDetectorRef } from '@angular/core';
-import { CompositeKey, Metadata } from '@memberjunction/core';
+import { CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import type { RunViewParams } from '@memberjunction/core';
 import { UserInfoEngine } from '@memberjunction/core-entities';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
@@ -11,6 +11,7 @@ import {
     DescribeDisplacedTermStart,
     LoadOrdersEngine,
     OrderHeaderEntity,
+    RequireUUID,
     type DateCell,
     type mjBizAppsOrdersPaymentTypeEntity,
     type PartyOrganizationClear,
@@ -35,6 +36,8 @@ import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entitie
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import type { BizAppsRelatedLink } from '@mj-biz-apps/common-ng';
+import { OrderReversalLinks, OrderReversalLinksKey } from './order-reversal-links';
 import {
     ExpandedPartyFromPref,
     FormatPartyAddress,
@@ -182,6 +185,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
         await this.loadDisplacedStartNotices();
+        await this.loadReversedBy();
 
         this.RegisterToolbarItem({
             Key: 'confirm-order',
@@ -389,6 +393,31 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public get HeaderCollapsedMeta(): string {
         return [this.HeaderSubtitle, this.HeaderDateLabel].filter((bit) => bit.length > 0).join(' · ');
+    }
+
+    /**
+     * The orders that reverse this one, oldest first, for the "Reversed by" chips. Read once the form
+     * loads; empty for an order that is not booked, since only a booked order can be reversed.
+     */
+    private reversedByOrderIDs: string[] = [];
+    private reversalLinksFor: string | null = null;
+    private reversalLinks: BizAppsRelatedLink[] = [];
+
+    /**
+     * "Reverses" and "Reversed by" chips (MemberJunction/bizapps-orders#740). Memoised because the
+     * chip row re-reads on every new array reference and a template getter runs every pass.
+     */
+    public get ReversalLinks(): BizAppsRelatedLink[] {
+        const state = {
+            ReversesOrderHeaderID: this.record?.ReversesOrderHeaderID ?? null,
+            ReversedByOrderIDs: this.reversedByOrderIDs,
+        };
+        const key = OrderReversalLinksKey(this.record?.ID, state);
+        if (this.reversalLinksFor !== key) {
+            this.reversalLinksFor = key;
+            this.reversalLinks = OrderReversalLinks(state);
+        }
+        return this.reversalLinks;
     }
 
     public get ShowStatusChip(): boolean {
@@ -684,6 +713,24 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             this.DisplacedStartNotices = moved.map(DescribeDisplacedTermStart);
         } catch (error) {
             console.warn('Could not read changed service dates for this order', error);
+        }
+    }
+
+    /** A failed read shows no "Reversed by" chips rather than blocking the form. */
+    private async loadReversedBy(): Promise<void> {
+        this.reversedByOrderIDs = [];
+        if (!this.record?.IsBookedOrder || !this.record.ID) return;
+        try {
+            const result = await RunView.FromMetadataProvider(this.ProviderToUse ?? Metadata.Provider).RunView<{ ID: string }>({
+                EntityName: MJO_ENTITIES.OrderHeader,
+                Fields: ['ID'],
+                ExtraFilter: `ReversesOrderHeaderID = '${RequireUUID(String(this.record.ID), 'ID')}'`,
+                OrderBy: '__mj_CreatedAt ASC',
+                ResultType: 'simple',
+            });
+            this.reversedByOrderIDs = result?.Success ? (result.Results ?? []).map((row) => row.ID) : [];
+        } catch (error) {
+            console.warn('Could not read the orders that reverse this order', error);
         }
     }
 
