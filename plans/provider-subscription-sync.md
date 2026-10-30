@@ -27,6 +27,7 @@ have reached 30 Oct 2027, been charged $599 by Stripe, and lost access in Orders
 | Unknown `sub_…` on a price Orders sells | nothing | one `UnknownGatewaySubscription` Task; nothing booked until linked |
 | Unknown `sub_…` on another price (legacy $175) | nothing | nothing (`not_ours`) |
 | An imported subscriber's current year (payment with the charge, no intent) | — | never booked again; the next renewal is |
+| …in its first year (current invoice `subscription_create`, its charge on the importer's payment) | a "charged at creation" difference each (372 of 509 in the L3 rehearsal) | in line: nothing booked, nothing reported; a creation charge no payment records is still reported |
 | Renewal invoice with tax | — | not booked; urgent `RenewalNotBooked` (net booked + gross captured would leave credit) |
 | Account switch (`BillsSubscriptions`) off | — | still followed: the switch gates new hand-overs only |
 
@@ -35,7 +36,7 @@ have reached 30 Oct 2027, been charged $599 by Stripe, and lost access in Orders
 1. The gateway's records are the truth; events trigger a re-read (`SyncProviderSubscription`).
 2. Money first, then failures and the access they keep, then the end state (`PlanProviderSubscriptionSync`, pure).
 3. Book on the subscription's product, at what was charged (Q3); never refuse money taken, except a taxed renewal, which a person books.
-3a. A paid invoice is a renewal only when the period it bills starts on or after the latest term's last day (`StartsUnbookedPeriod`, shared with the cancel gate); a charge an Orders payment already records is booked.
+3a. A paid invoice is a renewal only when the period it bills starts on or after the latest term's last day (`StartsUnbookedPeriod`, shared with the cancel gate); a charge an Orders payment already records is booked, whatever the invoice's billing reason, so it is never a difference.
 4. No order until the gateway is paid; keep access through the retry window; end it when the gateway gives up (Q4, Q-N4).
 5. Only the gateway's renewal order may renew a gateway-billed subscription (`SanctionGatewayRenewal`); every other
    order is still refused (E2b).

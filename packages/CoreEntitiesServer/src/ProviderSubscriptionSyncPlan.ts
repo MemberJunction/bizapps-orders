@@ -166,15 +166,23 @@ export function PlanProviderSubscriptionSync(orders: SyncOrdersFacts, gateway: S
         if (invoice.Status !== 'paid') continue;
         const reason = invoice.BillingReason ?? '';
         if (reason === 'subscription_create') {
-            // The gateway billed at creation: E2 already raises ChargedAtCreation. Never a renewal (the
-            // term was paid at checkout), so nothing is booked; reported so the nightly pass shows it.
-            if (invoice.AmountPaid > 0) differences.push(`${invoice.ProviderInvoiceID}: charged ${money(invoice.AmountPaid)} at creation (E2's ChargedAtCreation alert covers it); not a renewal`);
+            // Never a renewal, so nothing is booked. Whether it is a difference depends on whether Orders records
+            // its charge, checked FIRST:
+            //  - recorded: an imported subscriber in its first year. Its current invoice is the gateway's creation
+            //    invoice, and the importer's term-1 payment records that charge. Orders has the money: in line.
+            //  - not recorded: the gateway charged at creation on top of the term paid at checkout (E2 raises
+            //    ChargedAtCreation). Reported, so the nightly pass shows it. The period is NOT a test here: an E2
+            //    creation invoice's period starts with the term, so "near the term start" would hide that charge.
+            if (invoice.AmountPaid > 0 && !chargeRecorded(invoice, orders)) {
+                differences.push(`${invoice.ProviderInvoiceID}: charged ${money(invoice.AmountPaid)} at creation (E2's ChargedAtCreation alert covers it); not a renewal`);
+            }
             continue;
         }
         if (reason !== RENEWAL_BILLING_REASON) {
             // A plan change's proration, or a one-off invoice someone raised at the gateway. Not a renewal,
-            // so never booked as one; finance decides.
-            if (invoice.AmountPaid > 0) {
+            // so never booked as one; finance decides, unless an Orders payment already records its charge
+            // (someone booked it): then "Orders booked nothing for it" would be false, and it is in line.
+            if (invoice.AmountPaid > 0 && !chargeRecorded(invoice, orders)) {
                 const code: SyncNoticeCode = reason === 'subscription_update' ? 'GatewayPlanChanged' : 'GatewayChargeNotBooked';
                 const why = `the gateway charged ${money(invoice.AmountPaid)} on invoice ${invoice.ProviderInvoiceID} (${reason || 'no reason given'}), which is not a renewal, so Orders booked nothing for it. Decide at the gateway whether to keep or refund it.`;
                 steps.push({ Kind: 'Notice', Code: code, Reason: why });
@@ -194,7 +202,7 @@ export function PlanProviderSubscriptionSync(orders: SyncOrdersFacts, gateway: S
         // after which the latest term moved on) is never a renewal to book: the same rule as the cancel gate.
         // A charge an Orders payment already records (any key: the importer's has a charge and no intent) is booked.
         const recorded =
-            (!!invoice.ProviderChargeID && orders.BookedChargeIDs.has(invoice.ProviderChargeID)) ||
+            chargeRecorded(invoice, orders) ||
             (!!invoice.ProviderIntentID && orders.CapturedIntentIDs.has(invoice.ProviderIntentID)) ||
             (invoice.AmountPaid === 0 && orders.BookedZeroInvoiceIDs.has(invoice.ProviderInvoiceID));
         if (recorded) continue;
@@ -346,6 +354,17 @@ export function PlanProviderSubscriptionSync(orders: SyncOrdersFacts, gateway: S
             break;
     }
     return { Steps: steps, Differences: differences };
+}
+
+/**
+ * Whether an Orders payment already records this invoice's gateway charge (`BookedChargeIDs`: any payment, any
+ * key). The one test for "Orders has this money", whatever the invoice's billing reason.
+ *
+ * Example: Sam, imported in his first year. Stripe's current invoice is `in_…` (subscription_create) paid by
+ * `ch_sam`; the importer's term-1 payment records `ch_sam` → true, so the sync reports nothing for it.
+ */
+function chargeRecorded(invoice: GatewaySubscriptionInvoice, orders: SyncOrdersFacts): boolean {
+    return !!invoice.ProviderChargeID && orders.BookedChargeIDs.has(invoice.ProviderChargeID);
 }
 
 /** Why a paid renewal cannot be booked without a person, or null when it can. */
