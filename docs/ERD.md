@@ -250,7 +250,6 @@ erDiagram
         uuid SuccessorProductID FK
         date AvailableFrom
         date AvailableTo
-        bit IsSellableNew "required"
         uuid RevenueRecognitionTypeID FK "required"
         decimal_19_4 StandaloneSellingPrice
         uuid SubscriptionTypeID FK
@@ -264,6 +263,7 @@ erDiagram
         decimal_18_4 MaxQuantityPerLine
         uuid SubscriptionFamilyID FK
         decimal_7_4 RenewalIncreasePercent
+        bit IsSellableNew "required"
     }
     ProductType {
         uuid ID PK "required"
