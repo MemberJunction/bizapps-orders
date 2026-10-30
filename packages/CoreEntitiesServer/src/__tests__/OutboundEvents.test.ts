@@ -8,11 +8,17 @@ import { MJGlobal } from '@memberjunction/global';
 const mocks = vi.hoisted(() => ({
     events: [] as Array<Record<string, unknown>>,
     deadLetterAlert: vi.fn(),
+    sweep: vi.fn(),
 }));
 
 // The dead-letter alert's content is checkoutCaptureAlert's (its own tests); here: when it is raised.
 vi.mock('../checkoutCaptureAlert.js', () => ({
     raiseOutboundDeadLetterAlert: (...args: unknown[]) => mocks.deadLetterAlert(...args),
+}));
+// The sweep's behaviour is AlertTaskAssignment's (its own tests); here: which passes run it.
+vi.mock('../AlertTaskAssignment.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../AlertTaskAssignment.js')>()),
+    AssignUnassignedAlertTasks: (...args: unknown[]) => mocks.sweep(...args),
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -315,6 +321,49 @@ describe('outbound events', () => {
             const [delivery, event] = mocks.deadLetterAlert.mock.calls[0] as [Record<string, unknown>, Record<string, unknown>];
             expect(delivery).toMatchObject({ ConsumerKey: 'crm', Attempts: 9, LastError: 'still down' });
             expect(event).toMatchObject({ ID: EVENT_ID, EventType: 'OrderConfirmed', OrderHeaderID: ORDER_ID });
+            // Written through this pass's provider, never the global one.
+            expect(mocks.deadLetterAlert.mock.calls[0][3]).toBe(provider);
+        });
+
+        it('the scheduled pass on a quarter hour assigns unassigned alerts through its provider; a checkout kick does not', async () => {
+            const jobUser = { ID: 'job-user' };
+            mocks.sweep.mockReset().mockResolvedValue({ Assigned: 0 });
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(new Date('2026-11-01T10:15:05Z'));
+            const scheduled = setUp('crm');
+            await DispatchOutboundDeliveries({}, scheduled.provider as never, jobUser as never);
+            expect(mocks.sweep).toHaveBeenCalledTimes(1);
+            expect(mocks.sweep.mock.calls[0][0]).toBe(scheduled.provider);
+            expect(mocks.sweep.mock.calls[0][1]).toBe(jobUser);
+
+            mocks.sweep.mockClear();
+            const kick = setUp('crm');
+            await DispatchOutboundDeliveries({ OrderHeaderID: ORDER_ID }, kick.provider as never, jobUser as never);
+            expect(mocks.sweep).not.toHaveBeenCalled();
+
+            // A pass with nothing due still sweeps: an unassigned alert does not wait for traffic.
+            const idle = fakeProvider([]);
+            await DispatchOutboundDeliveries({}, idle.provider as never, jobUser as never);
+            expect(mocks.sweep).toHaveBeenCalledTimes(1);
+
+            // A pass that STARTS on the quarter hour and overruns (a hanging consumer) still sweeps: due is taken
+            // at the start, and an overrun is exactly when dead-letter alerts are being raised.
+            mocks.sweep.mockClear();
+            vi.setSystemTime(new Date('2026-11-01T10:15:00Z'));
+            const slow = setUp('crm');
+            deliver.crm.mockImplementation(async () => {
+                vi.setSystemTime(new Date('2026-11-01T10:16:30Z'));
+            });
+            await DispatchOutboundDeliveries({}, slow.provider as never, jobUser as never);
+            expect(new Date().toISOString()).toBe('2026-11-01T10:16:30.000Z');
+            expect(mocks.sweep).toHaveBeenCalledTimes(1);
+
+            // Between quarter hours (14 of every 15 minute passes): no sweep, so no extra queries.
+            mocks.sweep.mockClear();
+            vi.setSystemTime(new Date('2026-11-01T10:16:05Z'));
+            await DispatchOutboundDeliveries({}, fakeProvider([]).provider as never, jobUser as never);
+            expect(mocks.sweep).not.toHaveBeenCalled();
+            vi.useRealTimers();
         });
 
         it('an alert that throws never fails the pass: the dead letter is still recorded and counted', async () => {

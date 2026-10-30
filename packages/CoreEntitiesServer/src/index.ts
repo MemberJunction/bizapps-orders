@@ -369,7 +369,7 @@ export {
     RevokeGrantsForReturn,
     RevokeGrantsForCanceledSubscription,
 } from './EntitlementEngine.js';
-export type { GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
+export type { CancelAccessEnd, GrantableLine, GrantableOrder, TermForLine, GrantOutcome } from './EntitlementEngine.js';
 // Payment-gated access (bc-aidp-next-golive#223) — grant status kept in step with the order's cash.
 export {
     LoadApprovedAccessOverrides,
@@ -872,7 +872,15 @@ export { EntitlementGrantEntityServer, GrantChangedFields, LoadEntitlementGrantE
 // A term's days, each covered in full in the business zone: the instants a term grant and the evaluator read.
 export { TermDayEnd, TermDayStart, TermGrantWindow, type TermDay } from './TermGrantWindow.js';
 // Every Orders alert Task is assigned to the holders of the AlertTaskRole role.
-export { AssignAlertTask, type AlertTaskAssignmentOutcome } from './AlertTaskAssignment.js';
+export {
+    ALERT_SWEEP_BATCH,
+    ALERT_SWEEP_EVERY_MINUTES,
+    AlertSweepDue,
+    AssignAlertTask,
+    AssignUnassignedAlertTasks,
+    ORDERS_ALERT_TASK_PREFIX,
+    type AlertTaskAssignmentOutcome,
+} from './AlertTaskAssignment.js';
 export {
     GetCheckoutAccessStatus,
     SummarizeAccessDeliveries,

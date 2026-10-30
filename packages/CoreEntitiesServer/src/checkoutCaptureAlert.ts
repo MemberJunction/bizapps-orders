@@ -10,12 +10,12 @@
  * Every alert Task is assigned to the holders of the `AlertTaskRole` role (`AssignAlertTask`), so the
  * tasks app tells a person; with no role configured it stays unassigned, as before.
  */
-import { LogError, Metadata, RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { LogError, Metadata, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type {
     mjBizAppsTasksTaskEntity,
     mjBizAppsTasksTaskTypeEntity,
 } from '@mj-biz-apps/tasks-entities';
-import { AssignAlertTask } from './AlertTaskAssignment.js';
+import { AssignAlertTask, ORDERS_ALERT_TASK_PREFIX } from './AlertTaskAssignment.js';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from './checkoutCaptureRetry.js';
 import { EscapeText } from './sql-guards.js';
 
@@ -35,7 +35,7 @@ export async function raiseCheckoutCaptureTerminalAlert(
             `${sessionID ? ` session=${sessionID}` : ''}: ${reason}`,
     );
     await raiseAlertTask(
-        `Checkout capture not booked: ${orderID}`,
+        `${ORDERS_ALERT_TASK_PREFIX.CheckoutCaptureNotBooked}${orderID}`,
         `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
         contextUser,
     );
@@ -59,7 +59,7 @@ export async function raiseCheckoutSettledNotBookedAlert(
         `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled payment for checkout session ${sessionID} was refused at completion; no order was booked: ${reason}`,
     );
     await raiseAlertTask(
-        `Checkout payment settled with no order: session ${sessionID}`,
+        `${ORDERS_ALERT_TASK_PREFIX.CheckoutSettledNoOrder}session ${sessionID}`,
         `A payment settled for a checkout session, but completing the checkout refused it, so no order was created. Refund the payment or book the order by hand.\n\nSession: ${sessionID}\nPayment intent: ${paymentIntentID ?? '(unknown)'}\nReason: ${reason}`,
         contextUser,
         { OncePerName: true },
@@ -85,6 +85,7 @@ export async function raiseOutboundDeadLetterAlert(
     delivery: { ID: string; ConsumerKey: string; Attempts: number | null; LastError: string | null },
     event: { ID: string; EventType: string; OrderHeaderID: string | null; EntitlementGrantID: string | null } | null,
     contextUser?: UserInfo,
+    provider?: IMetadataProvider,
 ): Promise<void> {
     const subject = event?.EntitlementGrantID ? `grant ${event.EntitlementGrantID}` : event?.OrderHeaderID ? `order ${event.OrderHeaderID}` : 'an unreadable event';
     LogError(
@@ -92,7 +93,7 @@ export async function raiseOutboundDeadLetterAlert(
             `was dead-lettered after ${delivery.Attempts ?? 0} attempts: ${delivery.LastError ?? 'no error recorded'}`,
     );
     await raiseAlertTask(
-        `Outbound delivery failed: ${delivery.ConsumerKey}, ${event?.EventType ?? 'unknown event'}, ${subject} (event ${event?.ID ?? delivery.ID})`,
+        `${ORDERS_ALERT_TASK_PREFIX.OutboundDeliveryFailed}${delivery.ConsumerKey}, ${event?.EventType ?? 'unknown event'}, ${subject} (event ${event?.ID ?? delivery.ID})`,
         `Orders could not tell '${delivery.ConsumerKey}' about a change after retrying until the delivery's deadline, so that ` +
             `system's copy is out of date (for the Learning Hub, the person's access).
 
@@ -108,42 +109,51 @@ Last error: ${delivery.LastError ?? '(none recorded)'}
             `Once '${delivery.ConsumerKey}' answers again, re-send this change to it.`,
         contextUser,
         { OncePerName: true },
+        provider,
     );
 }
 
 /**
  * Writes the human-visible Tasks row; the caller has already logged the marker. `OncePerName` skips
- * the write when a Task with this name already exists. A written Task is assigned to the alert role's
- * holders (`AssignAlertTask`), which never fails the alert.
+ * the write when a Task with this name already exists, and makes sure that one is assigned. A written
+ * Task is assigned to the alert role's holders (`AssignAlertTask`), which never fails the alert.
+ *
+ * `provider` is the caller's, so the Task joins the caller's transaction and nobody else's. Callers that
+ * have none (the checkout webhook paths) use the global provider, as before.
  */
 async function raiseAlertTask(
     name: string,
     description: string,
     contextUser?: UserInfo,
     options?: { OncePerName?: boolean },
+    provider?: IMetadataProvider,
 ): Promise<void> {
     if (!contextUser) {
         return;
     }
     try {
-        const md = new Metadata();
-        if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) {
+        const p = provider ?? (Metadata.Provider as unknown as IMetadataProvider);
+        if (!p.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) {
             return;
         }
 
-        const rv = new RunView();
+        const rv = new RunView(p as unknown as IRunViewProvider);
         if (options?.OncePerName) {
-            const existing = await rv.RunView<{ ID: string }>(
+            const existing = await rv.RunView<{ ID: string; Status: string }>(
                 {
                     EntityName: CHECKOUT_CAPTURE_TASK_ENTITY,
                     ExtraFilter: `Name = '${EscapeText(name)}'`,
-                    Fields: ['ID'],
+                    Fields: ['ID', 'Status'],
                     ResultType: 'simple',
                     MaxRows: 1,
                 },
                 contextUser,
             );
             if (existing.Success && existing.Results.length > 0) {
+                // Raised before. Still open: make sure it is assigned (its first assignment may have failed);
+                // idempotent. Closed (someone dealt with it): leave it, and notify nobody again.
+                const raised = existing.Results[0];
+                if (raised.Status === 'Open') await AssignAlertTask(raised.ID, p, contextUser);
                 return;
             }
         }
@@ -162,7 +172,7 @@ async function raiseAlertTask(
             return;
         }
 
-        const task = await md.GetEntityObject<mjBizAppsTasksTaskEntity>(
+        const task = await p.GetEntityObject<mjBizAppsTasksTaskEntity>(
             CHECKOUT_CAPTURE_TASK_ENTITY,
             contextUser,
         );
@@ -177,9 +187,9 @@ async function raiseAlertTask(
             );
             return;
         }
-        // Told to a person, not left in a list: the tasks app notifies an assignee. The provider is the one the
-        // `Metadata` facade above delegates to: the facade itself has no RunView, so passing it failed every read.
-        await AssignAlertTask(task.ID, Metadata.Provider as unknown as IMetadataProvider, contextUser);
+        // Told to a person, not left in a list: the tasks app notifies an assignee. Through the provider, never
+        // a `Metadata` facade: the facade has no RunView, so every read in the assignment failed (OB10).
+        await AssignAlertTask(task.ID, p, contextUser);
     } catch (err) {
         LogError(
             `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Could not raise a Task: ${err instanceof Error ? err.message : String(err)}`,

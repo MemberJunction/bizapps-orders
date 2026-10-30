@@ -8,7 +8,8 @@
  * event naming the fields and the old dates while a no-op save records none (OB9), and that a dead-lettered
  * delivery raises one Task per event, assigned to the `AlertTaskRole` role's active holders (OB10), and that a
  * Duration concession, the way Sess gives a free month, reaches the consumer as a ValidTo change ending at the
- * business-day end of the new last day (OB11).
+ * business-day end of the new last day (OB11). An alert raised while no role could take it is assigned by the
+ * next scheduled pass (OB12).
  *
  * A TEST CONSUMER, switched on only while this bundle runs. Its registration is global, so it
  * answers "no event types" unless this bundle's Setup has turned it on; every other bundle books
@@ -28,6 +29,7 @@ import {
 import { RegisterClass } from "@memberjunction/global";
 import { CompositeKey } from "@memberjunction/core";
 import {
+  AssignUnassignedAlertTasks,
   DispatchOutboundDeliveries,
   EnforcePaymentGatedAccess,
   ORDERS_SETTING,
@@ -577,6 +579,58 @@ export const OutboundEventsChecks: NamedCheck[] = [
           Assert(probe.received.some((e) => (e.Payload as { ChangedFields?: string[] }).ChangedFields?.includes("ValidTo")), "the consumer received the new end");
         } finally {
           OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+        }
+      }),
+  },
+  {
+    Id: "outbound-events.OB12",
+    Name: "OB12: an alert raised unassigned is assigned by the scheduled sweep once the role resolves; a checkout kick leaves it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const role = await TxOne<{ ID: string; Name: string }>(ctx,
+          `SELECT TOP 1 r.ID, r.Name FROM __mj.Role r
+            WHERE EXISTS (SELECT 1 FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1 WHERE ur.RoleID = r.ID)
+            ORDER BY r.Name`);
+        Assert(role?.ID != null, "precondition: a role with an active holder");
+        const holders = (await TxQuery<{ UserID: string }>(ctx,
+          `SELECT ur.UserID FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1 WHERE ur.RoleID = '${role.ID}'`))
+          .map((h) => h.UserID.toLowerCase()).sort();
+        const assigneesOf = async (taskID: string) =>
+          (await TxQuery<{ AssigneeRecordID: string }>(ctx,
+            `SELECT ta.AssigneeRecordID FROM __mj_BizAppsTasks.TaskAssignment ta WHERE ta.TaskID = '${taskID}'`))
+            .map((a) => a.AssigneeRecordID.toLowerCase()).sort();
+        try {
+          // The first assignment fails: the role named does not exist (a typo, or a role created later).
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, "No Such Role (OB12)");
+          const orderID = await buyWidget(ctx);
+          probe.failWith = "learning hub unreachable";
+          await TxQuery(ctx, `UPDATE d SET d.DeadlineAt = DATEADD(MINUTE, -1, SYSDATETIMEOFFSET()), d.NextAttemptAt = DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())
+                                FROM ${ORDERS_SCHEMA}.OutboundDelivery d JOIN ${ORDERS_SCHEMA}.OutboundEvent e ON e.ID = d.OutboundEventID
+                               WHERE e.OrderHeaderID = '${orderID}'`);
+          const events = await eventsFor(ctx, orderID);
+          await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+          const tasks = await TxQuery<{ ID: string; Name: string }>(ctx,
+            `SELECT ID, Name FROM __mj_BizAppsTasks.Task WHERE ${events.map((e) => `Name LIKE '%(event ${e.ID})'`).join(" OR ")}`);
+          AssertEqual(tasks.length, events.length, "precondition: one Task per dead-lettered event");
+          for (const t of tasks) AssertEqual((await assigneesOf(t.ID)).length, 0, `precondition: ${t.Name} was raised unassigned`);
+
+          // The role is fixed. A checkout's kick does not sweep. The sweep the scheduled pass runs on the quarter
+          // hours (AlertSweepDue; the pass's wiring and cadence are unit-tested, the clock is not ours here) does.
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, role.Name);
+          await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+          for (const t of tasks) AssertEqual((await assigneesOf(t.ID)).length, 0, `a kick leaves ${t.Name} for the scheduled pass`);
+          const swept = await AssignUnassignedAlertTasks(ctx.Provider, ctx.User);
+          Assert("Assigned" in swept && swept.Assigned >= tasks.length, `the sweep assigned them (${JSON.stringify(swept)})`);
+          for (const t of tasks) {
+            AssertEqual(JSON.stringify(await assigneesOf(t.ID)), JSON.stringify(holders), `the sweep assigns ${t.Name} to every holder of '${role.Name}'`);
+          }
+          // Idempotent: a further sweep adds nothing to them.
+          await AssignUnassignedAlertTasks(ctx.Provider, ctx.User);
+          for (const t of tasks) AssertEqual((await assigneesOf(t.ID)).length, holders.length, `no second assignment on ${t.Name}`);
+        } finally {
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, undefined);
         }
       }),
   },

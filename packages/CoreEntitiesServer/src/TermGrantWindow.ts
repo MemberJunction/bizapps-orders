@@ -16,6 +16,9 @@
  *
  * Example (Chicago): term 1 Jan → 31 Dec 2026 → { ValidFrom: 2026-01-01T06:00Z, ValidTo: 2027-01-01T06:00Z }.
  *
+ * A CANCEL's access-through day follows the same rule (`TermDayEnd`), except an `Immediate` cancel with no
+ * grace made for today: that one ends access at once (`SubscriptionBehavior.EndsAccessOnCancel`).
+ *
  * CONNECTS TO:
  *   WRITERS: EntitlementEngine (grants at booking), TermExtension, TermShift, the cancel's end
  *            (RevokeGrantsForCanceledSubscription)

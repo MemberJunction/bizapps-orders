@@ -38,7 +38,7 @@ vi.mock('../OrdersSettings.js', () => ({
     },
 }));
 
-import { AssignAlertTask } from '../AlertTaskAssignment.js';
+import { ALERT_SWEEP_BATCH, AlertSweepDue, AssignAlertTask, AssignUnassignedAlertTasks } from '../AlertTaskAssignment.js';
 
 const USER_ENTITY_ID = '11111111-1111-4111-8111-111111111111';
 const ROLE_ID = '22222222-2222-4222-8222-222222222222';
@@ -98,5 +98,72 @@ describe('AssignAlertTask', () => {
     it('never throws when the settings themselves cannot be read', async () => {
         mockLoad.mockRejectedValueOnce(new Error('settings engine down'));
         expect(await AssignAlertTask('task-1', provider, user)).toEqual({ Failed: 'settings engine down' });
+    });
+});
+
+describe('AssignUnassignedAlertTasks: a later pass assigns what a first failure left unassigned', () => {
+    const tasksView = (rows: Array<{ ID: string }>) =>
+        mockRunView.mockImplementation(async (params: { EntityName: string }) =>
+            params.EntityName === 'MJ: Roles' ? { Success: true, Results: [{ ID: ROLE_ID }] } : { Success: true, Results: rows },
+        );
+
+    it('assigns each open, unassigned Orders alert to every holder, idempotently, and reads only those', async () => {
+        tasksView([{ ID: 'task-a' }, { ID: 'task-b' }]);
+        expect(await AssignUnassignedAlertTasks(provider, user)).toEqual({ Assigned: 2 });
+        expect(mockEnsure.mock.calls.map((c) => [c[0], c[2]])).toEqual([
+            ['task-a', SESS],
+            ['task-a', ETHAN],
+            ['task-b', SESS],
+            ['task-b', ETHAN],
+        ]);
+        const read = mockRunView.mock.calls.find((c) => (c[0] as { EntityName: string }).EntityName === 'MJ_BizApps_Tasks: Tasks')![0] as {
+            ExtraFilter: string;
+            MaxRows: number;
+        };
+        expect(read.ExtraFilter).toContain("Status = 'Open'");
+        expect(read.ExtraFilter).toContain("Name LIKE 'Outbound delivery failed: %'");
+        expect(read.ExtraFilter).toContain("Name LIKE 'Checkout capture not booked: %'");
+        expect(read.ExtraFilter).toContain('ID NOT IN (SELECT ta.TaskID FROM __mj_BizAppsTasks.TaskAssignment ta');
+        expect(read.MaxRows).toBe(ALERT_SWEEP_BATCH);
+        // Newest first, so Tasks that can never be assigned collect at the old end instead of filling every batch.
+        expect((read as unknown as { OrderBy: string }).OrderBy).toBe('__mj_CreatedAt DESC');
+    });
+
+    it('no role configured: reads no Task at all (the minute job pays nothing)', async () => {
+        settings.AlertTaskRole = null;
+        expect(await AssignUnassignedAlertTasks(provider, user)).toEqual({ Skipped: 'NoRoleConfigured' });
+        expect(mockRunView).not.toHaveBeenCalled();
+    });
+
+    it('a role that is not a role: logged ONCE for the pass, not once per Task, and no Task read', async () => {
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
+        expect(await AssignUnassignedAlertTasks(provider, user)).toEqual({ Skipped: 'RoleNotFound' });
+        expect(mockLogError).toHaveBeenCalledTimes(1);
+        expect(mockEnsure).not.toHaveBeenCalled();
+    });
+
+    it('one Task that cannot be assigned does not hold up the others (it is read first every time)', async () => {
+        tasksView([{ ID: 'task-bad' }, { ID: 'task-b' }]);
+        mockEnsure.mockImplementation(async (taskID: string) => {
+            if (taskID === 'task-bad') throw new Error('assignment refused');
+        });
+        expect(await AssignUnassignedAlertTasks(provider, user)).toEqual({ Assigned: 1, Unassignable: 1 });
+        expect(mockEnsure.mock.calls.filter((c) => c[0] === 'task-b').map((c) => c[2])).toEqual([SESS, ETHAN]);
+        expect(String(mockLogError.mock.calls[0][0])).toContain('task-bad could not be assigned');
+    });
+
+    it('never throws: a failing read is reported and logged', async () => {
+        mockRunView.mockImplementation(async (params: { EntityName: string }) =>
+            params.EntityName === 'MJ: Roles' ? { Success: true, Results: [{ ID: ROLE_ID }] } : { Success: false, ErrorMessage: 'timeout' },
+        );
+        expect(await AssignUnassignedAlertTasks(provider, user)).toEqual({ Failed: 'timeout' });
+        expect(String(mockLogError.mock.calls[0][0])).toContain('Unassigned alert Tasks could not be assigned');
+    });
+});
+
+describe('AlertSweepDue: the sweep runs on the quarter hours, not on every minute pass', () => {
+    it('due at :00, :15, :30, :45 (UTC); not between', () => {
+        for (const m of ['00', '15', '30', '45']) expect(AlertSweepDue(new Date(`2026-11-01T10:${m}:20Z`))).toBe(true);
+        for (const m of ['01', '07', '14', '59']) expect(AlertSweepDue(new Date(`2026-11-01T10:${m}:20Z`))).toBe(false);
     });
 });

@@ -27,7 +27,10 @@ const { mockRunView, mockEntityByName, mockGetEntityObject, mockLogError, mockTa
 });
 
 // Who gets the alert is AlertTaskAssignment's job (its own tests); here: every raised Task is handed to it once.
-vi.mock('../AlertTaskAssignment.js', () => ({ AssignAlertTask: (...args: unknown[]) => mockAssign(...args) }));
+vi.mock('../AlertTaskAssignment.js', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('../AlertTaskAssignment.js')>()),
+    AssignAlertTask: (...args: unknown[]) => mockAssign(...args),
+}));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();
@@ -35,9 +38,8 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         ...actual,
         LogError: (...args: unknown[]) => mockLogError(...args),
         Metadata: class {
-            static Provider = { name: 'the global provider' };
-            EntityByName = mockEntityByName;
-            GetEntityObject = mockGetEntityObject;
+            // The global provider: what the checkout paths, which have none of their own, write through.
+            static Provider = { name: 'the global provider', EntityByName: mockEntityByName, GetEntityObject: mockGetEntityObject };
         },
         RunView: class {
             RunView = (...args: unknown[]) => mockRunView(...args);
@@ -134,7 +136,7 @@ describe('raiseCheckoutSettledNotBookedAlert', () => {
     });
 
     /** The Task Types lookup finds GENERAL; the Tasks lookup finds the given rows. */
-    const existingTasks = (rows: Array<{ ID: string }>) =>
+    const existingTasks = (rows: Array<{ ID: string; Status?: string }>) =>
         mockRunView.mockImplementation(async (params: { EntityName: string }) =>
             params.EntityName === CHECKOUT_CAPTURE_TASK_ENTITY
                 ? { Success: true, Results: rows }
@@ -194,7 +196,7 @@ describe('every alert Task is assigned (AlertTaskRole)', () => {
 describe('raiseOutboundDeadLetterAlert', () => {
     const delivery = { ID: 'deliv-1', ConsumerKey: 'sidecar-lxp', Attempts: 9, LastError: 'ECONNREFUSED' };
     const event = { ID: 'evt-1', EventType: 'GrantStatusChanged', OrderHeaderID: 'ord-1', EntitlementGrantID: 'grant-1' };
-    const existingTasks = (rows: Array<{ ID: string }>) =>
+    const existingTasks = (rows: Array<{ ID: string; Status?: string }>) =>
         mockRunView.mockImplementation(async (params: { EntityName: string }) =>
             params.EntityName === CHECKOUT_CAPTURE_TASK_ENTITY ? { Success: true, Results: rows } : { Success: true, Results: [{ ID: GENERAL_TYPE_ID }] },
         );
@@ -211,13 +213,37 @@ describe('raiseOutboundDeadLetterAlert', () => {
         expect(mockAssign).toHaveBeenCalledTimes(1);
     });
 
-    it('one Task per event: the same event reported again writes nothing', async () => {
-        existingTasks([{ ID: 'task-1' }]);
+    it('a re-raise of a Task someone already CLOSED writes nothing and assigns (notifies) nobody', async () => {
+        existingTasks([{ ID: 'task-1', Status: 'Completed' }]);
+        await raiseOutboundDeadLetterAlert(delivery, event, user);
+        expect(mockTask.Save).not.toHaveBeenCalled();
+        expect(mockAssign).not.toHaveBeenCalled();
+    });
+
+    it('one Task per event: the same event reported again writes no Task, and makes sure the one there is assigned', async () => {
+        existingTasks([{ ID: 'task-1', Status: 'Open' }]);
         await raiseOutboundDeadLetterAlert(delivery, event, user);
         const lookup = mockRunView.mock.calls[0][0] as { ExtraFilter: string };
         expect(lookup.ExtraFilter).toContain('event evt-1');
         expect(mockTask.Save).not.toHaveBeenCalled();
-        expect(mockAssign).not.toHaveBeenCalled();
+        // Its first assignment may have failed; assignment is idempotent, so asking again is safe.
+        expect(mockAssign).toHaveBeenCalledTimes(1);
+        expect(mockAssign.mock.calls[0][0]).toBe('task-1');
+    });
+
+    it("writes through the dispatch pass's provider, never the global one (#939's class)", async () => {
+        existingTasks([]);
+        const passTask = { ...mockTask, ID: 'task-pass', Save: vi.fn().mockResolvedValue(true), NewRecord: vi.fn() };
+        const passProvider = {
+            EntityByName: vi.fn().mockReturnValue({ Name: CHECKOUT_CAPTURE_TASK_ENTITY }),
+            GetEntityObject: vi.fn().mockResolvedValue(passTask),
+        };
+        await raiseOutboundDeadLetterAlert(delivery, event, user, passProvider as never);
+        expect(passProvider.GetEntityObject).toHaveBeenCalledWith(CHECKOUT_CAPTURE_TASK_ENTITY, user);
+        expect(mockGetEntityObject).not.toHaveBeenCalled();
+        expect(passTask.Save).toHaveBeenCalledTimes(1);
+        expect(mockAssign.mock.calls[0][0]).toBe('task-pass');
+        expect(mockAssign.mock.calls[0][1]).toBe(passProvider);
     });
 
     it('an order event (no grant) names the order; an unreadable event still raises one', async () => {

@@ -874,7 +874,11 @@ export function EvaluateGrantAccess(
     }
 
     if (term) {
-        if (asOf.getTime() < TermDayStart(term.StartDate, zone).getTime()) return denied('NotYetValid');
+        // The earlier of 00:00 business time and 00:00 UTC on the first day. A grant written by this release
+        // starts at the first (its own ValidFrom gates it, above); one written before starts at 00:00 UTC, and
+        // a later business-time bound would open it hours later than it did (no backfill, D14).
+        const opens = Math.min(TermDayStart(term.StartDate, zone).getTime(), TermDayStart(term.StartDate, 'UTC').getTime());
+        if (asOf.getTime() < opens) return denied('NotYetValid');
         if (asOf.getTime() > TermDayEnd(term.EndDate, zone).getTime()) return denied('SubscriptionInactive');
     }
 
@@ -938,9 +942,11 @@ export function CacheUntilFor(
 
 /**
  * After `Orders.CancelSubscription`, stored grant Status is a lie unless we revoke when
- * access has already ended. Grace (`AccessThroughDate` in the future) leaves the rows
- * standing — the evaluator honours `subscription.EndDate`.
+ * access has already ended. `accessEndsAt` is the INSTANT access ends (`TermDayEnd` of the access-through
+ * day), not the day: compared with the day read as 00:00 UTC, an end-of-term cancel made on the last day
+ * (from 6 pm Central the evening before) revoked at once a customer who was owed the rest of it. An
+ * `Immediate` cancel with no grace does not ask: it ends access at once (`CancelAccessEnd.EndsNow`).
  */
-export function ShouldRevokeGrantsOnCancel(accessThroughDate: Date, now: Date): boolean {
-    return now.getTime() > accessThroughDate.getTime();
+export function ShouldRevokeGrantsOnCancel(accessEndsAt: Date, now: Date): boolean {
+    return now.getTime() > accessEndsAt.getTime();
 }

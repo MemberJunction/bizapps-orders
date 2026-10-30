@@ -338,13 +338,13 @@ export class OrdersSettings {
         );
     }
 
-    /** The role that acknowledges amendments, or `null` when none is configured. */
     /** The role whose holders are assigned Orders' alert Tasks, or null when none is configured. */
     public static get AlertTaskRole(): string | null {
         const value = this.raw(ORDERS_SETTING.AlertTaskRole)?.trim();
         return value ? value : null;
     }
 
+    /** The role that acknowledges amendments, or `null` when none is configured. */
     public static get AmendmentAcknowledgmentRole(): string | null {
         const value = this.raw(ORDERS_SETTING.AmendmentAcknowledgmentRole)?.trim();
         return value ? value : null;

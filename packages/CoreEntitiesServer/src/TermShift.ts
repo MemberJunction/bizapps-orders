@@ -370,18 +370,31 @@ async function moveSubscriptionStart(checked: CheckedTermShift, ctx: ApprovalTas
 }
 
 /**
- * A grant that follows the term now runs over the new dates, each day covered in full in the business zone
- * (`TermDayStart` / `TermDayEnd`), as a grant made at booking does. It starts on the new start unless it
- * started later than that, as a grant given on payment can.
+ * Where a term grant starts after its term is shifted to start on `newStartDay`: the new start, at 00:00
+ * business time, unless the grant started later than that (a grant given on payment can), when it keeps
+ * its own start (`null`).
  *
  * "Started on the term's start" is read in the business zone, and also in UTC: a grant written before
  * grants covered business days held 00:00 UTC on the start day, which is the previous evening in the
- * Americas.
+ * Americas. Read in the business zone, a new grant east of UTC starts the UTC day BEFORE the term's
+ * start (Auckland: 00:00 NZDT on 1 Jan is 11:00Z on 31 Dec), so a UTC reading alone misses it.
+ *
+ * Example (Auckland): a term starting 1 Jan 2026 shifted 10 days earlier, to 22 Dec 2025. Its grant
+ * started 2025-12-31T11:00Z (00:00 NZDT on 1 Jan) and now starts 2025-12-21T11:00Z.
+ */
+export function ShiftedGrantStart(from: Date | null, currentStartDay: string, newStartDay: Date | string, zone: string): Date | null {
+    const newStart = TermDayStart(newStartDay, zone);
+    const startedOnTermStart = !!from && (CalendarDayIn(from, zone) === currentStartDay || IsoDay(AsDay(from)) === currentStartDay);
+    return !from || startedOnTermStart || from.getTime() < newStart.getTime() ? newStart : null;
+}
+
+/**
+ * A grant that follows the term now runs over the new dates, each day covered in full in the business zone
+ * (`TermDayStart` / `TermDayEnd`), as a grant made at booking does. Its start moves per `ShiftedGrantStart`.
  */
 async function moveTermGrants(checked: CheckedTermShift, ctx: ApprovalTaskContext): Promise<void> {
     await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
     const zone = BusinessTimeZoneEngine.Instance.Zone;
-    const newStart = TermDayStart(checked.NewStartDate, zone);
     const currentStartDay = IsoDay(checked.CurrentStartDate);
     const grants = await ReadRows<mjBizAppsOrdersEntitlementGrantEntity>(ctx, {
         EntityName: ENTITLEMENT_GRANT_ENTITY,
@@ -389,12 +402,8 @@ async function moveTermGrants(checked: CheckedTermShift, ctx: ApprovalTaskContex
         ResultType: 'entity_object',
     });
     for (const grant of grants) {
-        const from = grant.ValidFrom ? new Date(grant.ValidFrom) : null;
-        const startedOnTermStart =
-            !!from && (CalendarDayIn(from, zone) === currentStartDay || IsoDay(AsDay(from)) === currentStartDay);
-        if (!from || startedOnTermStart || from.getTime() < newStart.getTime()) {
-            grant.ValidFrom = newStart;
-        }
+        const start = ShiftedGrantStart(grant.ValidFrom ? new Date(grant.ValidFrom) : null, currentStartDay, checked.NewStartDate, zone);
+        if (start) grant.ValidFrom = start;
         grant.ValidTo = TermDayEnd(checked.NewEndDate, zone);
         if (!(await grant.Save())) {
             throw new Error(`Access granted by term ${checked.TermNumber} could not be moved: ${grant.LatestResult?.CompleteMessage}`);

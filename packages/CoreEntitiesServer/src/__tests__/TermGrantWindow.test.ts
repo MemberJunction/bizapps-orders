@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { TermDayEnd, TermDayStart, TermGrantWindow } from '../TermGrantWindow.js';
 import { EvaluateGrantAccess, ResolveValidityWindow, type GrantAccessFacts } from '../EntitlementBehavior.js';
+import { ShiftedGrantStart } from '../TermShift.js';
 
 const CHICAGO = 'America/Chicago';
 const iso = (d: Date) => d.toISOString();
@@ -33,6 +34,18 @@ describe('TermGrantWindow: a term covers each of its days in full, in the busine
     it('Chicago across fall-back: 00:00 on 7 Nov 2027 (the change day) is CDT, the next day CST', () => {
         expect(iso(TermDayEnd('2027-11-06', CHICAGO))).toBe('2027-11-07T05:00:00.000Z');
         expect(iso(TermDayEnd('2027-11-07', CHICAGO))).toBe('2027-11-08T06:00:00.000Z');
+    });
+
+    it('Chicago on go-live weekend (DST ends 1 Nov 2026): a last day of 31 Oct ends in CDT, of 1 Nov in CST', () => {
+        expect(iso(TermDayEnd('2026-10-31', CHICAGO))).toBe('2026-11-01T05:00:00.000Z');
+        expect(iso(TermDayEnd('2026-11-01', CHICAGO))).toBe('2026-11-02T06:00:00.000Z');
+        // And the evaluator agrees to the minute on each side of each end.
+        const ctx = { Status: 'Active', StartDate: new Date('2025-11-01T00:00:00Z'), EndDate: new Date('2026-10-31T00:00:00Z') };
+        const w = ResolveValidityWindow('SubscriptionTerm', { GrantedOn: ctx.StartDate, TermStartDate: ctx.StartDate, TermEndDate: ctx.EndDate, BusinessZone: CHICAGO });
+        const g: GrantAccessFacts = { Status: 'Active', ValidFrom: w.ValidFrom, ValidTo: w.ValidTo, LinkedToSubscription: true, LinkedToTerm: true };
+        const active = { Status: 'Active', EndDate: null };
+        expect(EvaluateGrantAccess(g, new Date('2026-11-01T04:59:00Z'), active, ctx, CHICAGO).HasAccess).toBe(true);
+        expect(EvaluateGrantAccess(g, new Date('2026-11-01T05:01:00Z'), active, ctx, CHICAGO).HasAccess).toBe(false);
     });
 
     it('London: winter GMT, summer BST', () => {
@@ -97,6 +110,20 @@ describe('the grant written at booking and the evaluator agree, to the minute (C
         expect(EvaluateGrantAccess(old, new Date('2026-12-31T00:30:00Z'), sub, term, CHICAGO).HasAccess).toBe(false);
     });
 
+    it('a renewal grant written before this release (starts 00:00 UTC on 1 Jan) opens at 00:00 UTC, as it did: no 6-hour gap', () => {
+        // Robert's case: an old grant's own ValidFrom is 00:00 UTC; the term bound must not hold it until 06:00Z.
+        const old: GrantAccessFacts = { ...grant, ValidFrom: new Date('2026-01-01T00:00:00Z') };
+        expect(EvaluateGrantAccess(old, new Date('2026-01-01T00:01:00Z'), sub, term, CHICAGO).HasAccess).toBe(true);
+        expect(EvaluateGrantAccess(old, new Date('2025-12-31T23:59:00Z'), sub, term, CHICAGO).Decision).toBe('NotYetValid');
+    });
+
+    it('east of UTC (Auckland) the term opens at 00:00 NZDT, before 00:00 UTC: the earlier of the two bounds', () => {
+        const nz = { ...term };
+        const nzGrant: GrantAccessFacts = { ...grant, ValidFrom: new Date('2025-12-31T11:00:00Z'), ValidTo: new Date('2026-12-31T11:00:00Z') };
+        expect(EvaluateGrantAccess(nzGrant, new Date('2025-12-31T11:01:00Z'), sub, nz, 'Pacific/Auckland').HasAccess).toBe(true);
+        expect(EvaluateGrantAccess(nzGrant, new Date('2025-12-31T10:59:00Z'), sub, nz, 'Pacific/Auckland').Decision).toBe('NotYetValid');
+    });
+
     it('23:59 Central on the term\'s first day before it started? No: 23:59 Central on 31 Dec 2025 is before the term', () => {
         const r = EvaluateGrantAccess(grant, new Date('2026-01-01T05:59:00Z'), sub, term, CHICAGO);
         expect(r.HasAccess).toBe(false);
@@ -118,5 +145,29 @@ describe('a cancelled subscription: its access-through day is covered in full (C
         const r = EvaluateGrantAccess(grant, new Date('2026-07-16T05:01:00Z'), canceled, undefined, CHICAGO);
         expect(r.HasAccess).toBe(false);
         expect(r.Decision).toBe('SubscriptionInactive');
+    });
+});
+
+describe('ShiftedGrantStart: a shifted term grant starts on the new start, read in the business zone', () => {
+    it('east of UTC (Auckland), shifted 10 days earlier: a grant that started with the term moves with it', () => {
+        // 00:00 NZDT on 1 Jan 2026 is 2025-12-31T11:00Z: on the term's start day in Auckland, the day before in UTC.
+        const from = new Date('2025-12-31T11:00:00Z');
+        expect(ShiftedGrantStart(from, '2026-01-01', '2025-12-22', 'Pacific/Auckland')!.toISOString()).toBe('2025-12-21T11:00:00.000Z');
+    });
+
+    it('a grant written before this release (00:00 UTC on the start day) is still read as starting with the term', () => {
+        expect(ShiftedGrantStart(new Date('2026-01-01T00:00:00Z'), '2026-01-01', '2025-12-22', CHICAGO)!.toISOString()).toBe('2025-12-22T06:00:00.000Z');
+    });
+
+    it('a grant given on payment, after the term started, keeps its own start when the term moves earlier', () => {
+        expect(ShiftedGrantStart(new Date('2026-01-05T15:00:00Z'), '2026-01-01', '2025-12-22', CHICAGO)).toBeNull();
+    });
+
+    it('moved later than a grant\'s own start: the grant starts on the new start', () => {
+        expect(ShiftedGrantStart(new Date('2026-01-05T15:00:00Z'), '2026-01-01', '2026-01-20', CHICAGO)!.toISOString()).toBe('2026-01-20T06:00:00.000Z');
+    });
+
+    it('a grant with no start takes the new one', () => {
+        expect(ShiftedGrantStart(null, '2026-01-01', '2026-01-20', CHICAGO)!.toISOString()).toBe('2026-01-20T06:00:00.000Z');
     });
 });
