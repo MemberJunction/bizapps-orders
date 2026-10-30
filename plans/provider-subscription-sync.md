@@ -26,13 +26,16 @@ have reached 30 Oct 2027, been charged $599 by Stripe, and lost access in Orders
 | Renewed after Orders cancelled it (Q5) | refused | the same subscription reactivated, booked, Task for support |
 | Unknown `sub_…` on a price Orders sells | nothing | one `UnknownGatewaySubscription` Task; nothing booked until linked |
 | Unknown `sub_…` on another price (legacy $175) | nothing | nothing (`not_ours`) |
-| Account switch (`BillsSubscriptions`) off | — | nothing changes; the first sync after it is on catches up |
+| An imported subscriber's current year (payment with the charge, no intent) | — | never booked again; the next renewal is |
+| Renewal invoice with tax | — | not booked; urgent `RenewalNotBooked` (net booked + gross captured would leave credit) |
+| Account switch (`BillsSubscriptions`) off | — | still followed: the switch gates new hand-overs only |
 
 ## Rules (each pinned by a test)
 
 1. The gateway's records are the truth; events trigger a re-read (`SyncProviderSubscription`).
 2. Money first, then failures and the access they keep, then the end state (`PlanProviderSubscriptionSync`, pure).
-3. Book on the subscription's product, at what was charged net of tax (Q3); never refuse money taken.
+3. Book on the subscription's product, at what was charged (Q3); never refuse money taken, except a taxed renewal, which a person books.
+3a. A paid invoice is a renewal only when the period it bills starts on or after the latest term's last day (`StartsUnbookedPeriod`, shared with the cancel gate); a charge an Orders payment already records is booked.
 4. No order until the gateway is paid; keep access through the retry window; end it when the gateway gives up (Q4, Q-N4).
 5. Only the gateway's renewal order may renew a gateway-billed subscription (`SanctionGatewayRenewal`); every other
    order is still refused (E2b).
@@ -42,5 +45,6 @@ have reached 30 Oct 2027, been charged $599 by Stripe, and lost access in Orders
 
 ## Tests
 
-Unit: `ProviderSubscriptionSyncPlan.test.ts` (56), `StripeProviderSync.test.ts` (23), `GatewayRenewal.test.ts` (12),
-`PaymentWebhookSubscriptionEvents.test.ts` (12). Integration: `subscription-renewal` SR75–SR88.
+Unit: `ProviderSubscriptionSyncPlan.test.ts`, `StripeProviderSync.test.ts`, `GatewayRenewal.test.ts`,
+`PaymentWebhookSubscriptionEvents.test.ts`, `ProviderRenewalBooking.test.ts`, `ProviderSubscriptionSync.test.ts`. Integration:
+`subscription-renewal` SR75–SR92-OT.
