@@ -1216,7 +1216,7 @@ export const BillComRailChecks: NamedCheck[] = [
 
         const preview = await issue(ctx, order.ID, true);
         AssertEqual(preview.ResultCode, "RAIL_REFUSED", `a preview reports the missing customer: ${preview.Message}`);
-        Assert(/No IT Bill\.com customer on file for /.test(preview.Message ?? ""), `naming the provider and the party: ${preview.Message}`);
+        Assert(/No customer on file in IT Bill\.com for /.test(preview.Message ?? ""), `naming the provider and the party: ${preview.Message}`);
 
         const refused = await issue(ctx, order.ID);
         AssertEqual(refused.ResultCode, "RAIL_REFUSED", `the send is refused: ${refused.Message}`);
