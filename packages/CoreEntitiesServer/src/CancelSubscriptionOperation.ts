@@ -438,9 +438,9 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                     : undefined;
 
             for (const c of all) {
-                await this.stampTerm(provider, user, c.Term.ID, c.Decision);
+                await StampTerm(provider, user, c.Term.ID, c.Decision);
             }
-            await this.stampSubscription(provider, user, subscription.ID, decision, !!gateway);
+            await StampSubscriptionCanceled(provider, user, subscription.ID, decision, !!gateway);
             await this.syncGrantsOnCancel(provider, user, subscription.ID, decision, input.Reason);
             await this.logEvent(provider, user, subscription.ID, decision, later, totalRefund, input, reversal?.ID, gateway);
 
@@ -776,53 +776,6 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         return result?.Results?.[0] ?? null;
     }
 
-    private async stampTerm(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        termID: string,
-        decision: CancellationDecision,
-    ): Promise<void> {
-        const term = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
-            SUBSCRIPTION_TERM_ENTITY,
-            CompositeKey.FromID(termID),
-            user,
-        );
-        term.Status = decision.TermStatus;
-        term.CanceledAt = new Date();
-        term.CancellationEffectiveDate = decision.EffectiveDate;
-        if (!(await term.Save())) {
-            throw new Error(`Failed to stamp the term: ${term.LatestResult?.CompleteMessage ?? 'unknown error'}`);
-        }
-    }
-
-    private async stampSubscription(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        subscriptionID: string,
-        decision: CancellationDecision,
-        gatewayConfirmed: boolean,
-    ): Promise<void> {
-        const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
-            SUBSCRIPTION_ENTITY,
-            CompositeKey.FromID(subscriptionID),
-            user,
-        );
-        // The one write the shared entity lets through on a gateway-billed subscription: the gateway
-        // has confirmed it charges nothing after coverage ends.
-        if (gatewayConfirmed) SanctionProviderBilledChange(sub);
-        sub.Status = 'Canceled';
-        sub.CanceledAt = new Date();
-        // EndDate is the ACCESS date, not the revenue date — grace is exactly the window where the
-        // customer still gets in but nothing more is earned.
-        sub.EndDate = decision.AccessThroughDate;
-        sub.AutoRenew = false;
-        if (!(await sub.Save())) {
-            throw new Error(
-                `Failed to stamp the subscription: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-            );
-        }
-    }
-
     private async logEvent(
         provider: IMetadataProvider,
         user: UserInfo,
@@ -902,6 +855,58 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             );
         }
         return driver;
+    }
+}
+
+/**
+ * Stamp one term with how it ended. Shared with a full return, which cancels the term it sold
+ * without raising a second reversal (golive #379).
+ */
+export async function StampTerm(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    termID: string,
+    decision: Pick<CancellationDecision, 'TermStatus' | 'EffectiveDate'>,
+): Promise<void> {
+    const term = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionTermEntity>(
+        SUBSCRIPTION_TERM_ENTITY,
+        CompositeKey.FromID(termID),
+        user,
+    );
+    term.Status = decision.TermStatus;
+    term.CanceledAt = new Date();
+    term.CancellationEffectiveDate = decision.EffectiveDate;
+    if (!(await term.Save())) {
+        throw new Error(`Failed to stamp the term: ${term.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+    }
+}
+
+/** Stamp the subscription Canceled; shared with a full return, like {@link StampTerm}. */
+export async function StampSubscriptionCanceled(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    subscriptionID: string,
+    decision: Pick<CancellationDecision, 'AccessThroughDate'>,
+    gatewayConfirmed = false,
+): Promise<void> {
+    const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
+        SUBSCRIPTION_ENTITY,
+        CompositeKey.FromID(subscriptionID),
+        user,
+    );
+    // The one write the shared entity lets through on a gateway-billed subscription: the gateway
+    // has confirmed it charges nothing after coverage ends.
+    if (gatewayConfirmed) SanctionProviderBilledChange(sub);
+    sub.Status = 'Canceled';
+    sub.CanceledAt = new Date();
+    // EndDate is the ACCESS date, not the revenue date — grace is exactly the window where the
+    // customer still gets in but nothing more is earned.
+    sub.EndDate = decision.AccessThroughDate;
+    sub.AutoRenew = false;
+    if (!(await sub.Save())) {
+        throw new Error(
+            `Failed to stamp the subscription: ${sub.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+        );
     }
 }
 

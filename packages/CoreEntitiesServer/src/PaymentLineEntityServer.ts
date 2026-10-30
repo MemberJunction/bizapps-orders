@@ -420,11 +420,15 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // recorded for what actually arrived. Consistency between a payment and its own allocations is
         // enforced instead, on the payment side (PaymentHeaderEntityServer, D68).
 
-        if (proposed < -TOLERANCE) {
+        // THE FLOOR IS ZERO, OR THE ORDER'S OWN TOTAL WHEN THAT IS NEGATIVE (golive #379). A return's
+        // total is negative, and spending its credit applies that negative amount to it; a floor of
+        // zero refused exactly that, so a return of an unpaid order could never settle its origin.
+        const floor = Math.min(0, Number(order.TotalGross ?? 0));
+        if (proposed < floor - TOLERANCE) {
             return (
                 `Applying ${this.Amount} would take the total applied against order ${order.OrderNumber} ` +
-                `to ${proposed}. Only ${existing} has ever been applied, so there is nothing more to ` +
-                `un-apply.`
+                `to ${proposed}. The least that can be applied to an order is zero, or its total when ` +
+                `that is negative: ${floor} here.`
             );
         }
 

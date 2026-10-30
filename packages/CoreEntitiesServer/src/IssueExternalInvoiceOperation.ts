@@ -151,14 +151,25 @@ export async function PaidOnBillingUnit(
     orderHeaderPaymentScheduleID: string | null,
     provider: IMetadataProvider,
     user: UserInfo,
+    /** Leave out credit applied from this order's own returns (golive #379); cancel asks this way. */
+    leaveOutOwnReturnCredit = false,
 ): Promise<number> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const filters = [`OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`];
+    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
+    const filters = [`OrderHeaderID = '${orderID}'`];
     if (orderHeaderPaymentScheduleID) {
         filters.push(`OrderHeaderPaymentScheduleID = '${RequireUUID(orderHeaderPaymentScheduleID, 'OrderHeaderPaymentScheduleID')}'`);
     }
     // Only money that is actually captured counts; a Pending or Failed header is not cash.
     filters.push(`PaymentHeaderID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentHeader] WHERE Status IN ('Captured','Refunded','Disputed'))`);
+    if (leaveOutOwnReturnCredit) {
+        filters.push(
+            `PaymentHeaderID NOT IN (SELECT ph.ID FROM [__mj_BizAppsOrders].[PaymentHeader] ph ` +
+                `JOIN [__mj_BizAppsOrders].[PaymentDetail] pd ON pd.ID = ph.PaymentDetailID ` +
+                `JOIN [__mj_BizAppsOrders].[OrderHeader] r ON r.ID = pd.SourceOrderHeaderID ` +
+                `WHERE r.ReversesOrderHeaderID = '${orderID}')`,
+        );
+    }
     const r = await rv.RunView<{ Amount: number }>({ EntityName: PAYMENT_LINE_ENTITY, ExtraFilter: filters.join(' AND '), Fields: ['Amount'], ResultType: 'simple' }, user);
     return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
 }

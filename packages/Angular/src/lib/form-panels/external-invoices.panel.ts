@@ -314,11 +314,20 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      * A voided order is never invoiced, so it gets no button rather than one that waits forever.
      */
     public get SendShown(): boolean {
-        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.Record?.Status !== 'Voided' && this.hasBalanceDue && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
     }
 
     public get Sendable(): boolean {
-        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.hasBalanceDue && CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+    }
+
+    /**
+     * Nothing to invoice without a balance due (golive #379), the same test the scheduled send's
+     * worklist makes. A return holds credit, and an original its return settled owes nothing; sending
+     * the settled original was refused as part-paid and left a permanent Failed row.
+     */
+    private get hasBalanceDue(): boolean {
+        return Number(this.Record?.Balance ?? 0) > 0;
     }
 
     /** What the panel says when nothing has gone to the rail yet. */
