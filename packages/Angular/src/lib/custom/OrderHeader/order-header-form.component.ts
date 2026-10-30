@@ -229,16 +229,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                 const ord = record as OrderHeaderEntity;
                 return !ord?.IsBookedOrder && ord?.Status !== 'Voided' && !!ord?.IsSaved;
             },
-            Disabled: (record) => {
-                if (this.Confirming) return 'Booking order…';
-                const ord = record as OrderHeaderEntity;
-                if (this.NeedsPaymentReference) return 'Need a check / ACH reference before confirming.';
-                const verdict = ord?.ConfirmEligibility?.();
-                if (verdict && !verdict.Allowed) return verdict.Reason ?? 'Cannot confirm this order.';
-                const concessions = this.ConcessionBlockers;
-                if (concessions.length > 0) return concessions.join(' ');
-                return false;
-            },
+            Disabled: (record) => this.ConfirmDisabledReason(record as OrderHeaderEntity),
             IsLoading: () => this.Confirming,
             OnClick: async () => this.RunConfirm(),
         });
@@ -394,13 +385,31 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         this.cdr?.detectChanges();
     }
 
-    /** Re-ask after every save (lines save with the header) and every reload of the record. */
+    /** Why the toolbar's Confirm is off, or false when it is on. Concession problems come last. */
+    public ConfirmDisabledReason(ord: OrderHeaderEntity | null | undefined): string | false {
+        if (this.Confirming) return 'Booking order…';
+        if (this.NeedsPaymentReference) return 'Need a check / ACH reference before confirming.';
+        const verdict = ord?.ConfirmEligibility?.();
+        if (verdict && !verdict.Allowed) return verdict.Reason ?? 'Cannot confirm this order.';
+        const concessions = this.ConcessionBlockers;
+        if (concessions.length > 0) return concessions.join(' ');
+        return false;
+    }
+
+    /**
+     * Re-ask after every save (lines save with the header) and every reload of the record. A save
+     * also re-reads the schedule: a first save is the moment an order can have one, and without the
+     * read the Payment tab stays on its loading line until Refresh or Confirm.
+     */
     private watchRecordForReadiness(): void {
         this.recordEvents?.unsubscribe();
         this.recordEvents =
             this.record?.RegisterEventHandler((event) => {
                 if (event.type === 'save' || event.type === 'load_complete') {
                     void this.RefreshConfirmReadiness();
+                }
+                if (event.type === 'save') {
+                    void this.loadInstalments().then(() => this.cdr?.detectChanges());
                 }
             }) ?? null;
     }

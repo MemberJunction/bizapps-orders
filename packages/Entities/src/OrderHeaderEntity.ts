@@ -873,7 +873,9 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             {
                 EntityName: PAYMENT_SCHEDULE_ENTITY,
                 ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'OrderHeaderID')}'`,
-                OrderBy: 'InstallmentNumber',
+                // CompanyID breaks a tie: an order part-invoiced before the per-company rows were collapsed
+                // can still hold one instalment number twice.
+                OrderBy: 'InstallmentNumber, CompanyID',
                 ResultType: 'entity_object',
             },
             this.ContextCurrentUser,
