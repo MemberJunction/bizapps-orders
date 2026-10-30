@@ -63,6 +63,7 @@ import {
     SnapshotSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
 } from './CheckoutSavedInstrument.js';
+import { EnsureProviderSubscriptionsOnOwnProvider } from './ProviderSubscriptions.js';
 import {
     CheckoutMemberDiscountNotConfiguredError,
     DEFAULT_TYPED_CODE_PRECEDENCE,
@@ -1701,6 +1702,7 @@ export class CheckoutSessionService {
             PersonID: session.PersonID ?? null,
             CompanyID: widget.CompanyID,
             Lines: lines.map((l) => ({ ProductID: l.ProductID, Quantity: l.Quantity })),
+            ProviderBilledSubscriptionMessage: CheckoutSessionService.providerBilledSubscriptionMessage(widgetConfig),
             ContextUser: contextUser,
         });
         if (refused) {
@@ -1967,7 +1969,8 @@ export class CheckoutSessionService {
 
         // Again here, not only at the draft: this is the last step before money moves, and a
         // host's own records can change between the two calls.
-        const refused = await this.recheckDraftedPurchase(session, widget.CompanyID, contextUser);
+        const widgetConfig = this.readWidgetConfiguration(widget);
+        const refused = await this.recheckDraftedPurchase(session, widget.CompanyID, widgetConfig, contextUser);
         if (refused) {
             return { ...failed(refused.Message), Refusal: refused.Refusal };
         }
@@ -1980,24 +1983,14 @@ export class CheckoutSessionService {
             return failed(missingAttendees);
         }
 
-        let paymentProviderId: string | undefined;
-        let currencyCode: string | undefined;
-        let autoRenewConsentText: string | undefined;
-        let sendReceipt = false;
-        if (widget.Configuration) {
-            try {
-                const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
-                paymentProviderId = typeof configObj.paymentProviderId === 'string' ? configObj.paymentProviderId : undefined;
-                currencyCode = typeof configObj.currency === 'string' ? configObj.currency : undefined;
-                autoRenewConsentText =
-                    typeof configObj.autoRenewConsentText === 'string' && configObj.autoRenewConsentText.trim()
-                        ? configObj.autoRenewConsentText.trim()
-                        : undefined;
-                sendReceipt = configObj.sendReceipt === true;
-            } catch {
-                // Malformed configuration already fails InitializeSession; treat as unset here.
-            }
-        }
+        // Malformed configuration already fails InitializeSession; it reads as unset here.
+        const paymentProviderId = typeof widgetConfig.paymentProviderId === 'string' ? widgetConfig.paymentProviderId : undefined;
+        const currencyCode = typeof widgetConfig.currency === 'string' ? widgetConfig.currency : undefined;
+        const autoRenewConsentText =
+            typeof widgetConfig.autoRenewConsentText === 'string' && widgetConfig.autoRenewConsentText.trim()
+                ? widgetConfig.autoRenewConsentText.trim()
+                : undefined;
+        const sendReceipt = widgetConfig.sendReceipt === true;
         if (!paymentProviderId) {
             return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
         }
@@ -2239,6 +2232,7 @@ export class CheckoutSessionService {
     private static async recheckDraftedPurchase(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         companyID: string,
+        widgetConfig: CheckoutWidgetConfiguration,
         contextUser: UserInfo,
     ): Promise<PrePurchaseRefusal | null> {
         const lines = this.readDraftedLines(session);
@@ -2247,8 +2241,25 @@ export class CheckoutSessionService {
             PersonID: session.PersonID ?? null,
             CompanyID: companyID,
             Lines: lines.map((l) => ({ ProductID: l.ProductID, Quantity: l.Quantity })),
+            ProviderBilledSubscriptionMessage: this.providerBilledSubscriptionMessage(widgetConfig),
             ContextUser: contextUser,
         });
+    }
+
+    /** The widget's configuration as an object; empty when it is unset or malformed. */
+    private static readWidgetConfiguration(widget: mjBizAppsOrdersCheckoutWidgetEntity): CheckoutWidgetConfiguration {
+        try {
+            const parsed: unknown = widget.Configuration ? JSON.parse(widget.Configuration) : {};
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as CheckoutWidgetConfiguration) : {};
+        } catch {
+            return {};
+        }
+    }
+
+    /** The widget's wording for a buyer who already holds a gateway-billed subscription, or null for the default. */
+    private static providerBilledSubscriptionMessage(config: CheckoutWidgetConfiguration | null | undefined): string | null {
+        const text = config?.providerBilledSubscriptionMessage;
+        return typeof text === 'string' && text.trim() ? text.trim() : null;
     }
 
     /**
@@ -3406,6 +3417,27 @@ export class CheckoutSessionService {
                     mdProvider,
                     contextUser
                 );
+                // On an account whose gateway bills renewals itself, hand the order's new subscriptions
+                // to it now that their card is kept (option E, E2). Never on an update-card renewal:
+                // that order creates no subscription. Never throws, and a problem raises an alert
+                // Task; this is the only call a checkout makes, since a replay of a booked payment
+                // returns before here, so the daily Create Provider Subscriptions action retries it.
+                // On its own provider, like the capture above: the write that records the gateway id
+                // must not be rolled back with another request's transaction (#927). On an account
+                // that does not bill subscriptions it costs one read of the account, on this shared
+                // provider, and returns before making a provider of its own.
+                if (!renewal) {
+                    try {
+                        await EnsureProviderSubscriptionsOnOwnProvider(
+                            { OrderHeaderID: order.ID, CheckoutPaymentProviderID: intent.PaymentProviderID },
+                            mdProvider,
+                            contextUser,
+                        );
+                    } catch (err) {
+                        // Contractually unreachable; kept so a defect there can never report a booked capture as failed.
+                        LogError(`[CheckoutSessionService] Order ${order.ID}: handing subscriptions to the gateway threw: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                }
             }
             return { Attempted: true, Booked: true };
         } catch (err) {

@@ -38,6 +38,7 @@ import type {
 import {
   ACCT_SCHEMA,
   AcknowledgeAmendmentsWith,
+  AssertTermGrantWindow,
   CreateOrdersFixture,
   createViaEntity,
   Fx,
@@ -104,7 +105,7 @@ export async function ruleDecidedBy(ctx: IntegrationCheckContext, roleID: string
   };
 }
 
-async function bookTerm(ctx: IntegrationCheckContext, price = 1200) {
+export async function bookTerm(ctx: IntegrationCheckContext, price = 1200) {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
@@ -119,7 +120,7 @@ async function bookTerm(ctx: IntegrationCheckContext, price = 1200) {
   return { OrderID: result.Order.ID as string, Term: term };
 }
 
-async function recordExtension(ctx: IntegrationCheckContext, termID: string, days: number) {
+export async function recordExtension(ctx: IntegrationCheckContext, termID: string, days: number) {
   const entity = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
   entity.NewRecord();
   entity.DeliveryForm = "Duration";
@@ -173,6 +174,7 @@ async function assertApplied(ctx: IntegrationCheckContext, term: { ID: string; O
   AssertEqual(iso(row.EndDate), newEnd, "the term ends later");
   const line = await TxOne<{ ServicePeriodEnd: Date }>(ctx, `SELECT ServicePeriodEnd FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${term.OrderLineID}'`);
   AssertEqual(iso(line.ServicePeriodEnd), newEnd, "and the line that bought it agrees");
+  await AssertTermGrantWindow(ctx, term.ID, null, newEnd, "access runs to the end of the new last day");
 
   const entries = await recognitionOf(ctx, term.ID);
   const total = Math.round(entries.reduce((s, e) => s + Number(e.Net), 0) * 100) / 100;
