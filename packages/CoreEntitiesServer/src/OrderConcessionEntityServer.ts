@@ -7,7 +7,10 @@
  * the order's concessions now come to, the requester, and its status. Within the
  * requester's `SalesAuthority` it is Approved on save; outside it, it is Pending, stamped with the
  * active ConcessionLimit rule whose role decides it. A requester who holds that role approves their
- * own, and the record shows that it went through the rule rather than through their authority.
+ * own, and the record shows that it went through the rule rather than through their authority — unless
+ * the Orders setting `ConcessionSelfApprovalEscalation` is set (bc-aidp-next-golive#320). Then it is Pending
+ * for the next approver up that the setting names (the order company's CFO approver, or a role's holders),
+ * only they decide it, and when no one other than the requester is there it is refused.
  *
  * TIERS (#308). Several active ConcessionLimit rules are approval tiers: the concession goes to the
  * highest-ranked one whose thresholds it meets (value, share of the order, term-date change), and only
@@ -122,11 +125,14 @@ import {
     CloseConcessionTasks,
     ConcessionSummary,
     RouteConcessionToApproval,
+    SelfApprovalEscalation,
     UnlinkConcession,
     type ApprovalTaskContext,
+    type SelfApprovalEscalationResult,
 } from './ConcessionApprovalTask.js';
 import {
     FindConcessionTier,
+    HeldManualDiscounts,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
     OrderConcessionTotal,
@@ -145,6 +151,7 @@ import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftCo
 import { ApplySeatAddition, CheckSeatAddition } from './SeatAddition.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
@@ -206,6 +213,11 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         const recording = !this.IsSaved;
         if (this.escalation) return this.saveEscalation(options);
+        const gatewayProblem = await this.refuseOnGatewayBilledTerm(recording);
+        if (gatewayProblem) {
+            this.RegisterResultHistoryEntry(this.buildRejection(gatewayProblem));
+            return false;
+        }
         const problem = recording ? await this.prepareNew() : await this.applyDecision();
         if (problem) {
             this.RegisterResultHistoryEntry(this.buildRejection(problem));
@@ -217,7 +229,12 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             const summary = this.approvalSummary;
             return this.withApprovalTask('create', () => super.Save(options), async (ctx) => {
                 await RouteConcessionToApproval(
-                    { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+                    {
+                        ID: this.ID,
+                        OrderHeaderID: this.OrderHeaderID,
+                        RequestedByUserID: this.RequestedByUserID,
+                        SalesRuleID: this.SalesRuleID,
+                    },
                     roleID,
                     summary,
                     ctx,
@@ -553,11 +570,34 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         }
         this.SalesRuleID = rule.ID;
         if (await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID)) {
-            this.decide('Approved', user);
+            // A holder's own concession: approved by them, unless the setting sends it to the next approver up.
+            const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
+            if (!escalation) {
+                this.decide('Approved', user);
+            } else if ('Refusal' in escalation) {
+                return escalation.Refusal;
+            } else {
+                this.pend(rule.ID, rule.ApprovalRequiredRoleID);
+            }
         } else {
             this.pend(rule.ID, rule.ApprovalRequiredRoleID);
         }
         return null;
+    }
+
+    /**
+     * Who decides a concession its requester would otherwise decide as a holder of `roleID`
+     * (bc-aidp-next-golive#320): null when `ConcessionSelfApprovalEscalation` is unset or the requester does not
+     * hold the role, else the escalation's approvers or why there are none.
+     */
+    private async selfApprovalEscalation(roleID: string, user: UserInfo): Promise<SelfApprovalEscalationResult | null> {
+        await OrdersSettings.Load(this.provider(), user);
+        if (OrdersSettings.ConcessionSelfApprovalEscalation.length === 0) return null;
+        return SelfApprovalEscalation(
+            roleID,
+            { OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+            { Provider: this.provider(), User: user },
+        );
     }
 
     /** Pending under a tier: stamped with its rule, routed to its role, and summarised for the approval task. */
@@ -595,12 +635,19 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     }
 
     /**
-     * Pending under `rule`, for a holder of its role other than the requester. Refused up front, with
-     * `why` leading the message, when the requester is the only active holder.
+     * Pending under `rule`, for a holder of its role other than the requester, or for the next approver up
+     * when the requester holds the role and `ConcessionSelfApprovalEscalation` is set. Refused up front, with
+     * `why` leading the message, when no one other than the requester could decide it.
      */
     private async pendForAnotherHolder(rule: ConcessionTierRule, user: UserInfo, why: string): Promise<string | null> {
         if (!rule.ApprovalRequiredRoleID) {
             return `${why}, and ConcessionLimit rule '${rule.Name}' names no approving role, so no one could decide it.`;
+        }
+        const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
+        if (escalation) {
+            if ('Refusal' in escalation) return `${why}. ${escalation.Refusal}`;
+            this.pend(rule.ID, rule.ApprovalRequiredRoleID);
+            return null;
         }
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
@@ -690,7 +737,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return this.withApprovalTask('update', () => super.Save(options), async (ctx) => {
             await CloseConcessionTasks(this.ID, this.OrderHeaderID, 'Escalated', ctx, true, Note);
             await RouteConcessionToApproval(
-                { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID },
+                { ID: this.ID, OrderHeaderID: this.OrderHeaderID, RequestedByUserID: this.RequestedByUserID, SalesRuleID: Rule.ID },
                 Rule.ApprovalRequiredRoleID!,
                 ConcessionSummary({ DeliveryForm: 'Shift', ComputedValue: 0, AddedDays: this.shiftDays() }),
                 ctx,
@@ -820,7 +867,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
-        const concession = await LinePriceConcessionFor(line, this.provider(), user);
+        // A manual discount held for approval is part of what the line gives away (golive #328).
+        const held = await HeldManualDiscounts(line.OrderHeaderID, this.provider(), user);
+        const concession = await LinePriceConcessionFor(
+            { ...line, HeldDiscount: held.get(line.ID.toLowerCase()) ?? 0 },
+            this.provider(),
+            user,
+        );
         this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
         if (!concession && this.saleApprovalRequired) {
             // Nothing given away against an engine price, often because the product has none: the approval is
@@ -971,11 +1024,29 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (!rule?.ApprovalRequiredRoleID) {
             return 'This concession names no ConcessionLimit rule with an approving role, so no one can decide it.';
         }
-        if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
-            return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
-        }
-        if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
-            return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+        // A holder's own concession, under ConcessionSelfApprovalEscalation: only the escalation decides it.
+        const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
+        if (escalation) {
+            if (UUIDsEqual(user.ID, this.RequestedByUserID)) {
+                return (
+                    'This concession was requested by a holder of the role that approves it, so it goes to the next ' +
+                    'approver up (Orders setting ConcessionSelfApprovalEscalation), and its requester cannot decide it.'
+                );
+            }
+            if ('Refusal' in escalation) return escalation.Refusal;
+            if (!escalation.UserIDs.some((id) => UUIDsEqual(id, user.ID))) {
+                return (
+                    `This concession was requested by a holder of the role that approves it, so only '${escalation.Target}' ` +
+                    `can decide it (Orders setting ConcessionSelfApprovalEscalation).`
+                );
+            }
+        } else {
+            if (!(await UserHoldsRole(rule.ApprovalRequiredRoleID, this.provider(), user, user.ID))) {
+                return 'Only a holder of the role named by the ConcessionLimit rule can decide this concession.';
+            }
+            if (rule.RequiresDecisionWithinAuthority && UUIDsEqual(user.ID, this.RequestedByUserID)) {
+                return `ConcessionLimit rule '${rule.Name}' requires a decision by someone other than the person who asked for it.`;
+            }
         }
         // Measured again at the decision: the draft may have changed while this sat Pending, and the
         // record should show the share the decision was made at.
@@ -1029,6 +1100,53 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     }
 
     // ─── Reads ────────────────────────────────────────────────────────────────
+
+    /**
+     * A concession that would change a term a payment gateway bills (E2b): more days, a moved term,
+     * more seats or a lower amount. The gateway charges on its own date, seats and price, so the term
+     * and the gateway would disagree and the customer be charged for what Orders no longer says. Refused
+     * when recorded and again when approved (a Pending one may predate the gateway subscription).
+     * A Price or Scope concession on a draft line prices the sale itself and is not refused.
+     */
+    private async refuseOnGatewayBilledTerm(recording: boolean): Promise<string | null> {
+        const changesTerm =
+            this.DeliveryForm === 'Duration' || this.DeliveryForm === 'Shift' || this.DeliveryForm === 'Seats' || this.IsAmountChange;
+        const approving = !recording && this.GetFieldByName('Status')?.Dirty === true && this.Status === 'Approved';
+        if (!changesTerm || !(recording || approving)) return null;
+        const user = this.ContextCurrentUser as UserInfo;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const termFilter = this.SubscriptionTermID
+            ? `ID = '${RequireUUID(this.SubscriptionTermID, 'SubscriptionTermID')}'`
+            : this.OrderLineID
+              ? `OrderLineID = '${RequireUUID(this.OrderLineID, 'OrderLineID')}'`
+              : null;
+        if (!termFilter) return null;
+        const terms = await rv.RunView<{ ID: string; SubscriptionID: string }>(
+            { EntityName: SUBSCRIPTION_TERM_ENTITY, ExtraFilter: termFilter, Fields: ['ID', 'SubscriptionID'], ResultType: 'simple', BypassCache: true },
+            user,
+        );
+        if (!terms.Success) return `Could not read the term this concession changes: ${terms.ErrorMessage}`;
+        const subscriptionIDs = [...new Set((terms.Results ?? []).map((t) => t.SubscriptionID).filter(Boolean))];
+        if (!subscriptionIDs.length) return null;
+        const subs = await rv.RunView<{ ID: string; SubscriptionNumber: string; ProviderSubscriptionID: string | null }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID IN (${subscriptionIDs.map((id) => `'${RequireUUID(id, 'SubscriptionID')}'`).join(', ')}) AND ProviderSubscriptionID IS NOT NULL`,
+                Fields: ['ID', 'SubscriptionNumber', 'ProviderSubscriptionID'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        if (!subs.Success) return `Could not read the subscription this concession changes: ${subs.ErrorMessage}`;
+        const billed = subs.Results?.[0];
+        if (!billed) return null;
+        return (
+            `Subscription ${billed.SubscriptionNumber} is billed by the payment gateway (${billed.ProviderSubscriptionID}), which ` +
+            `charges on its own date, seats and price. A ${this.IsAmountChange ? 'lower amount' : this.DeliveryForm} concession here ` +
+            `would change the term without the gateway, and the customer would still be charged as before. Make the change at the gateway.`
+        );
+    }
 
     private provider(): IMetadataProvider {
         return this.ProviderToUse as unknown as IMetadataProvider;

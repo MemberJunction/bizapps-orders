@@ -15,7 +15,6 @@ export class mjBizAppsOrdersPaymentProviderPriceFormComponent extends BaseFormCo
     override async ngOnInit() {
         await super.ngOnInit();
         this.initSections([
-            { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
             { sectionKey: 'gatewayConfiguration', sectionName: 'Gateway Configuration', isExpanded: true },
             { sectionKey: 'mappingDetails', sectionName: 'Mapping Details', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false }

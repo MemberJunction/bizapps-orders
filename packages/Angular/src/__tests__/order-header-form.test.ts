@@ -106,10 +106,35 @@ describe('order header link wiring', () => {
             join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
             'utf8',
         );
-        const fields = [...html.matchAll(/<mj-form-field\b[^>]*>/g)].map((m) => m[0]);
+        const fields = [...html.matchAll(/<(mj-form-field|bizapps-party-field)\b[^>]*>/g)].map((m) => m[0]);
         expect(fields.length).toBeGreaterThan(0);
         const missing = fields.filter((tag) => !tag.includes('(Navigate)="OnFormNavigate($event)"'));
         expect(missing).toEqual([]);
+    });
+
+    it('renders the four party lookups as the fast party picker, keeping their mode and handlers (bc-aidp-next-golive#372)', () => {
+        const html = readFileSync(
+            join(here, '../lib/custom/OrderHeader/order-header-form.component.html'),
+            'utf8',
+        );
+        const tagFor = (field: string) =>
+            [...html.matchAll(/<(mj-form-field|bizapps-party-field)\b[^>]*>/g)]
+                .map((m) => m[0])
+                .find((tag) => tag.includes(`FieldName="${field}"`));
+        const expected: Array<[string, string, string, string | null]> = [
+            ['ShipToOrganizationID', 'Organization', '[EditMode]="EditMode"', null],
+            ['ShipToPersonID', 'Person', '[EditMode]="EditMode"', `(ValueChange)="OnPartyPersonChange('ShipTo', $event)"`],
+            ['BillToOrganizationID', 'Organization', '[EditMode]="ComposeMode"', null],
+            ['BillToPersonID', 'Person', '[EditMode]="ComposeMode"', `(ValueChange)="OnPartyPersonChange('BillTo', $event)"`],
+        ];
+        for (const [field, kind, mode, valueChange] of expected) {
+            const tag = tagFor(field);
+            expect(tag, field).toMatch(/^<bizapps-party-field\b/);
+            expect(tag).toContain(`Kind="${kind}"`);
+            expect(tag).toContain(mode);
+            expect(tag).toContain('[FormContext]="formContext"');
+            if (valueChange) expect(tag).toContain(valueChange);
+        }
     });
 
     it('does not use hash hrefs for party or product names', () => {
@@ -265,6 +290,10 @@ describe('order header link wiring', () => {
         expect(lines).toContain('<mjo-line-price-picker');
         expect(lines).toContain('Use Default Price');
         expect(picker).toContain('Override Explanation');
+        // The explanation box exists only on an overridden line, never as a disabled box (#723).
+        expect(picker).toMatch(/@if \(CanExplainOverride\(Line\)\) \{\s*<label class="mjo-lpp__reason"/);
+        expect(picker).not.toContain('is-off');
+        expect(picker).not.toContain('[disabled]="!CanExplainOverride(Line)"');
         expect(picker).toContain('(input)="SetOverrideReason(Line, $event)"');
         expect(rules).toContain("stamp(line, 'PriceOverridden', true)");
         expect(rules).toContain("stamp(line, 'PriceOverrideReason', trimmed === '' ? null : trimmed)");

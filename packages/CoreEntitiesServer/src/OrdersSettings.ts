@@ -24,6 +24,7 @@
 import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
 import { GetGlobalObjectStore } from '@memberjunction/global';
+import { ParseOrderReviewTriggers, type OrderReviewConfig, type ParsedOrderReviewTriggers } from '@mj-biz-apps/orders-entities';
 
 /** The `MJ: Applications` row this app's settings hang off. */
 const ORDERS_APPLICATION_NAME = '__mj_BizAppsOrders';
@@ -62,6 +63,13 @@ export const ORDERS_SETTING = {
      */
     AccessOverrideFallbackApproverRole: 'AccessOverrideFallbackApproverRole',
     /**
+     * The NAME of the MJ role whose active holders are assigned every alert Task Orders raises: a checkout
+     * payment that could not be booked, a provider subscription that needs a person, an outbound delivery
+     * that was dead-lettered. Assignment is what makes the tasks app notify someone; an unassigned alert is
+     * a row nobody is told about. Unset or empty leaves alerts unassigned, as before this setting existed.
+     */
+    AlertTaskRole: 'AlertTaskRole',
+    /**
      * Days a booked term's start and end may move together before the shift goes to finance review
      * (bizapps-orders#507). A shift is a term change, not a sales concession, so this is one figure for
      * the app rather than a rep's SalesAuthority limit. At or above it is reviewed. Unset or unreadable
@@ -80,6 +88,52 @@ export const ORDERS_SETTING = {
      * link is sent: a link to the wrong host is worse than none.
      */
     RenewalPaymentLinkBaseUrl: 'RenewalPaymentLinkBaseUrl',
+    /**
+     * Who decides a concession requested by a holder of its ConcessionLimit rule's role (bc-aidp-next-golive#320).
+     * Comma-separated targets, tried in order: `CompanyCFO` (the order company's `ApprovalCFOUserID`) or an MJ
+     * role NAME (its active holders). The first that names an active user other than the requester decides it.
+     * Unset or empty keeps the requester approving their own.
+     */
+    ConcessionSelfApprovalEscalation: 'ConcessionSelfApprovalEscalation',
+    /**
+     * Comma-separated order review triggers that are switched on (bc-aidp-next-golive#320 §5): any of
+     * `NoDeal`, `PriceVariance`, `ChangedAfterDealOrReview`, `OverThreshold`, `ServicePeriod`. Empty or
+     * unset switches review off, so an order confirms as it always has. An entry that names no trigger
+     * refuses every reviewed confirm until it is corrected.
+     */
+    OrderReviewTriggers: 'OrderReviewTriggers',
+    /** The net order total above which `OverThreshold` sends an order to review (#320 §5). */
+    OrderReviewTotalThreshold: 'OrderReviewTotalThreshold',
+    /** `ServicePeriod` reviews a line whose service starts more than this many months out (default 13). */
+    OrderReviewServiceStartMonths: 'OrderReviewServiceStartMonths',
+    /** `ServicePeriod` reviews a line whose service covers more than this many months (default 12). */
+    OrderReviewLineTermMonths: 'OrderReviewLineTermMonths',
+    /**
+     * The NAME of the MJ role whose active holders review an order that hit a trigger (#320 §5). Each is
+     * assigned the review task through the Person linked to their user. Required once a trigger is on.
+     */
+    OrderReviewerRole: 'OrderReviewerRole',
+    /**
+     * The NAME of the MJ role whose active holders review an order that a holder of `OrderReviewerRole`
+     * created, since nobody reviews their own order (#320 §5). Unset refuses such an order's confirm.
+     */
+    OrderReviewEscalationRole: 'OrderReviewEscalationRole',
+    /**
+     * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
+     * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
+     * issue it. Counted per payment, not per order: what this refund brings the payment's refunds to,
+     * so an order settled by several payments can be refunded a payment at a time by a role holder for
+     * more than the threshold in all. Empty switches the check off, so anyone who may call the
+     * operation may refund, as before. A value that is not a number of 0 or more is read as 0, so
+     * every refund needs the company approver.
+     */
+    RefundApprovalThreshold: 'RefundApprovalThreshold',
+    /**
+     * The NAME of the MJ role whose holders may issue a refund at or below `RefundApprovalThreshold`
+     * (bc-aidp-next-golive#320 §3). Unset, only the company approver may issue refunds while the
+     * threshold is set.
+     */
+    RefundApproverRole: 'RefundApproverRole',
 } as const;
 
 /**
@@ -94,6 +148,8 @@ const DEFAULTS = {
     OrganizationAffiliationRelationshipTypes: ['Employee'],
     RenewalAccessCutoffDaysPastDue: 14,
     RenewalChargeRetryDays: [3, 7, 11],
+    OrderReviewServiceStartMonths: 13,
+    OrderReviewLineTermMonths: 12,
 } as const;
 
 /** Anything other than an explicit falsey string is true — an unparseable value should not disable a feature silently. */
@@ -114,6 +170,29 @@ function asDaysOrOff(raw: string | undefined, fallback: number): number | null {
     const v = raw.trim().toLowerCase();
     if (['off', 'none', 'disabled'].includes(v)) return null;
     if (!/^\d+$/.test(v)) return fallback;
+    return Number(v);
+}
+
+/** A whole number of 1 or more, or the fallback when the value is absent or unreadable. */
+function asPositiveWholeNumber(raw: string | undefined, fallback: number): number {
+    const v = raw?.trim();
+    return v && /^\d+$/.test(v) && Number(v) >= 1 ? Number(v) : fallback;
+}
+
+/** A non-negative amount ("25000", "25,000.00"), or `null` when the value is absent, empty or unreadable. */
+function asAmountOrNull(raw: string | undefined): number | null {
+    const v = raw?.trim().replace(/,/g, '');
+    return v && /^\d+(\.\d+)?$/.test(v) ? Number(v) : null;
+}
+
+/**
+ * A money amount of 0 or more, `null` when absent or empty (the check is off), and 0 when unreadable:
+ * a mistyped threshold must tighten the rule, not switch it off.
+ */
+function asAmountOrOff(raw: string | undefined): number | null {
+    const v = raw?.trim();
+    if (!v) return null;
+    if (!/^\d+(\.\d{1,2})?$/.test(v)) return 0;
     return Number(v);
 }
 
@@ -221,6 +300,28 @@ export class OrdersSettings {
         return ApplicationSettingEngine.Instance.GetSetting(key, appID);
     }
 
+    /**
+     * Like {@link raw}, but throws when the Orders application row cannot be found. Without its ID
+     * the engine consults only GLOBAL rows, so an app-scoped value would read as unset. For a
+     * control whose unset value switches it OFF, that must be loud, not silent.
+     */
+    private static rawAppScoped(key: string): string | undefined {
+        if (this._localOverrides.has(key)) {
+            return this._localOverrides.get(key);
+        }
+        const map = getOverridesMap();
+        if (map.has(key)) {
+            return map.get(key);
+        }
+        const appID = this.applicationID();
+        if (!appID) {
+            throw new Error(
+                `The Orders application (${ORDERS_APPLICATION_NAME}) is not in metadata, so the Orders setting ${key} cannot be read.`,
+            );
+        }
+        return ApplicationSettingEngine.Instance.GetSetting(key, appID);
+    }
+
     /** Stamp the organization from the person's affiliation when it was left blank (D64). */
     public static get AutoPopulateOrganizationFromPerson(): boolean {
         return asBoolean(
@@ -235,6 +336,12 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.OrganizationAffiliationRelationshipTypes),
             DEFAULTS.OrganizationAffiliationRelationshipTypes,
         );
+    }
+
+    /** The role whose holders are assigned Orders' alert Tasks, or null when none is configured. */
+    public static get AlertTaskRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.AlertTaskRole)?.trim();
+        return value ? value : null;
     }
 
     /** The role that acknowledges amendments, or `null` when none is configured. */
@@ -266,6 +373,49 @@ export class OrdersSettings {
             this.raw(ORDERS_SETTING.RenewalAccessCutoffDaysPastDue),
             DEFAULTS.RenewalAccessCutoffDaysPastDue,
         );
+    }
+
+    /** The escalation targets for a self-requested concession, in order; empty keeps self-approval. */
+    public static get ConcessionSelfApprovalEscalation(): string[] {
+        return asList(this.raw(ORDERS_SETTING.ConcessionSelfApprovalEscalation), []);
+    }
+
+    /** The order review triggers switched on, and any entry that names no trigger (#320 §5). */
+    public static get OrderReviewTriggers(): ParsedOrderReviewTriggers {
+        return ParseOrderReviewTriggers(this.raw(ORDERS_SETTING.OrderReviewTriggers));
+    }
+
+    /** The order review configuration as one value (#320 §5). */
+    public static get OrderReview(): OrderReviewConfig {
+        return {
+            Triggers: this.OrderReviewTriggers.Enabled,
+            TotalThreshold: asAmountOrNull(this.raw(ORDERS_SETTING.OrderReviewTotalThreshold)),
+            MaxMonthsToServiceStart: asPositiveWholeNumber(
+                this.raw(ORDERS_SETTING.OrderReviewServiceStartMonths),
+                DEFAULTS.OrderReviewServiceStartMonths,
+            ),
+            MaxLineServiceMonths: asPositiveWholeNumber(
+                this.raw(ORDERS_SETTING.OrderReviewLineTermMonths),
+                DEFAULTS.OrderReviewLineTermMonths,
+            ),
+            ReviewerRole: this.raw(ORDERS_SETTING.OrderReviewerRole)?.trim() || null,
+            EscalationRole: this.raw(ORDERS_SETTING.OrderReviewEscalationRole)?.trim() || null,
+        };
+    }
+
+    /**
+     * The refund amount at or below which `RefundApproverRole` may refund, or `null` when the check is off.
+     *
+     * @throws when the Orders application row is missing, rather than reading the check as off.
+     */
+    public static get RefundApprovalThreshold(): number | null {
+        return asAmountOrOff(this.rawAppScoped(ORDERS_SETTING.RefundApprovalThreshold));
+    }
+
+    /** The role that may refund at or below the threshold, or `null` when none is configured. */
+    public static get RefundApproverRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.RefundApproverRole)?.trim();
+        return value ? value : null;
     }
 
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */

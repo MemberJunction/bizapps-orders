@@ -1,5 +1,140 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.39.0
+
+### Patch Changes
+
+- e99a31e: `Orders.CapturePayment` no longer reports a read it could not complete as a record that does not
+  exist (#967). It read the orders it allocates to without checking whether the read succeeded, so a
+  read that timed out waiting on another transaction's lock, or lost its connection, refused the
+  capture with `OrderNotFound` ("Order … does not exist."). The checkout classes `OrderNotFound` as
+  terminal, so the webhook stopped asking Stripe to retry and a charged buyer was left with no payment
+  booked.
+
+  - A failed read of the orders is now `OrderReadFailed`, carrying the read's error. Before refusing
+    with `OrderNotFound`, the capture re-reads the ids its first read did not return, once and past the
+    cache, so an order another transaction committed in between is found.
+  - A tender the orders engine does not hold is checked against the `Payment Types` table before
+    `UnknownTender`; a failed read there is `TenderReadFailed`.
+  - A failed read-back of the payment just written is `PaymentReadFailed`, and a capture that cannot
+    read its payment back now rolls it back rather than committing a payment it reports as failed.
+
+  None of the three new codes is in `TERMINAL_CAPTURE_BLOCKER_CODES`, so the checkout page, the
+  webhook (which returns 500 so Stripe retries) and operator replay treat them as transient. A read that
+  succeeds and finds nothing keeps its terminal code. A new check, `capture-payment.CP13-OT`, holds the
+  order under another connection's open transaction while a capture runs, and asserts the capture is
+  retryable and that the retry books once the transaction ends.
+
+- 5342f5b: The integration checks that complete a checkout (SR46, SR52 and SR53) pass again (#947). Since the
+  checkout capture moved onto its own provider (#928), it wrote on another connection, outside the
+  transaction each check holds and rolls back, and waited on that transaction's locks until the 60 s
+  request timeout. `JoinCallerTransactionForTests` is a new test seam: inside it, `WithIsolatedProvider` runs its
+  work on the caller's provider, and `InRolledBackTransaction` runs each check inside it. The seam is
+  scoped to one async call chain, and production never enters it, so outside it `WithIsolatedProvider`
+  behaves as before.
+
+  The seam is exported only from a new `./testing` subpath
+  (`@mj-biz-apps/orders-core-entities-server/testing`), not from the package root. The package now has
+  an `exports` map (`.`, `./testing`, `./package.json`): the root exports what it did before, minus the
+  seam, and a deep import into `dist/` is no longer resolvable.
+
+  A new check, `subscription-renewal.SR46-OT`, runs SR46's payment outside the harness transaction, so the
+  capture runs on its own provider as in production; a capture that waits on its own request's transaction
+  fails it. It deletes what it committed with `PurgeCheckoutRun`. The order-tree delete it shares with
+  `PurgeReviewRun` now also removes outbound deliveries and instalment billings, and lifts the Invoiced
+  instalment guard, which it needed for a paid renewal.
+
+- 72af687: Two renewal checks for lead times other than 90 days: a lead time changed on the subscription type is the one the renewal job uses, with a subscription's own lead days still overriding it, and a subscription moved to another type renews on that type's lead time.
+- 4104f24: A hand-entered order with a line at a unit price of 0 can no longer be confirmed. The order form's "Before this can be confirmed" list names the line once and asks for the negotiated price, or the price with a 100% discount to give it away; the confirm save refuses with the same message before anything books. Checkout and payment-created orders, bundle components and return lines are exempt. So is a renewal line the renewal job priced at zero (a product now listed at zero) while its price is unchanged, so a $0 renewal books instead of failing the job on every run; the same line edited to zero by hand is refused. When accounting refuses an order's booking, the message now gives each distinct error once, naming the order lines it applies to, instead of once per draft.
+- Updated dependencies [fcc3ad9]
+- Updated dependencies [e99a31e]
+- Updated dependencies [1e2a5c6]
+- Updated dependencies [65ddeb2]
+- Updated dependencies [117cd8a]
+- Updated dependencies [5342f5b]
+- Updated dependencies [29af2af]
+- Updated dependencies [06897c1]
+- Updated dependencies [adb8e61]
+- Updated dependencies [d6a280d]
+- Updated dependencies [f129713]
+- Updated dependencies [756afe7]
+- Updated dependencies [4104f24]
+  - @mj-biz-apps/orders-core-entities-server@5.39.0
+  - @mj-biz-apps/orders-entities@5.39.0
+  - @mj-biz-apps/orders-server@5.39.0
+
+## 5.38.0
+
+### Patch Changes
+
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+- Updated dependencies [a9f4bfa]
+  - @mj-biz-apps/orders-entities@5.38.0
+  - @mj-biz-apps/orders-core-entities-server@5.38.0
+  - @mj-biz-apps/orders-server@5.38.0
+
+## 5.37.0
+
+### Patch Changes
+
+- Updated dependencies [3ec257f]
+- Updated dependencies [d429e9e]
+- Updated dependencies [065481c]
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+- Updated dependencies [3982e30]
+- Updated dependencies [dfc43ea]
+  - @mj-biz-apps/orders-core-entities-server@5.37.0
+  - @mj-biz-apps/orders-entities@5.37.0
+  - @mj-biz-apps/orders-server@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- Updated dependencies [0c499b2]
+- Updated dependencies [0e3b9fd]
+- Updated dependencies [7756bb0]
+  - @mj-biz-apps/orders-server@5.36.1
+  - @mj-biz-apps/orders-core-entities-server@5.36.1
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- Updated dependencies [4aa6783]
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+- Updated dependencies [5a490c4]
+  - @mj-biz-apps/orders-core-entities-server@5.36.0
+  - @mj-biz-apps/orders-server@5.36.0
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+- Updated dependencies [82fa9ea]
+  - @mj-biz-apps/orders-core-entities-server@5.35.1
+  - @mj-biz-apps/orders-entities@5.35.1
+  - @mj-biz-apps/orders-server@5.35.1
+
+## 5.35.0
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [303849b]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-core-entities-server@5.35.0
+  - @mj-biz-apps/orders-entities@5.35.0
+  - @mj-biz-apps/orders-server@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes

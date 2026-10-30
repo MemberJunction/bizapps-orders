@@ -307,6 +307,14 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return verdict.Allowed ? null : (verdict.Reason ?? 'Cannot confirm this order.');
     }
 
+    /**
+     * Subscription lines whose stated end gives them a length other than their type's term, one
+     * sentence each. Confirm keeps their stated length; they do not block it (golive #338).
+     */
+    public get TermLengthNotes(): string[] {
+        return this.record?.StatedTermLengthNotes() ?? [];
+    }
+
     /** Void or reopen. A refusal leaves the previous status in place and shows the reason. */
     public async RunStatusChange(status: OrderHeaderEntity['Status'], fallbackMessage: string): Promise<void> {
         if (!this.record) return;

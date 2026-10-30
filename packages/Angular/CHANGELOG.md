@@ -1,5 +1,134 @@
 # @mj-biz-apps/orders-ng
 
+## 5.39.0
+
+### Minor Changes
+
+- 117cd8a: Once a payment gateway bills a subscription, no Orders door changes it unseen (option E, E2b). `Orders.CancelSubscription` now reads a gateway-billed subscription at the gateway first (new driver method `DescribeProviderSubscription`, refusing by default; Stripe reads `GET /v1/subscriptions/:id`): a cancel after the gateway started a billing period Orders has not booked (its renewal at 00:00 on the term's last day) is refused with nothing changed, so the renewal it charged is refunded at the gateway rather than kept, and a cancel the gateway already completed is recorded, after the term too. Otherwise it cancels at the gateway first, before its transaction, and locks the subscription row so two simultaneous cancels cannot book two credit memos: the gateway must charge nothing after coverage ends (now, at its period end, or at that instant), and if it does not confirm nothing is written. New driver method `CancelProviderSubscription` refuses by default; Stripe implements it (reads the subscription, then `DELETE` or `cancel_at_period_end` / `cancel_at` with `proration_behavior=none`, verifying the answer; its stub refuses). The cancel output gains `Gateway`, the cancel panel says the gateway bills the subscription and previews what it will do, and the `Canceled` event records what the gateway did. A cancel is refused while an E2 alert says a gateway subscription may be billing unrecorded, when those alerts cannot be read for a gateway-billed subscription, and when no open term covers the request day. The new shared `SubscriptionEntity` refuses any other change to a gateway-billed subscription's billing columns on every tier (`PROVIDER_BILLED_FIELDS`), and refuses a gateway id typed onto an existing subscription (creating one with its id stays open, for importers), sanctioned server-side for the writes that told the gateway. An order can no longer extend, renew or reactivate a gateway-billed subscription; a cancelled one bought again starts fresh with a new gateway subscription, found by the checkout through its new term and created under a new idempotency key. A return of its sale and a Duration, Shift, Seats or amount-change concession on its term are refused. The hand-over stops a gateway subscription made for one cancelled meanwhile, never records one the subscription already cancelled, and searches again after every create (two live raise an urgent `AmbiguousAtGateway`). The checkout's returning-buyer refusal includes Paused subscriptions, and the daily job's preview now searches the gateway read-only.
+- adb8e61: Orders UI/UX fixes.
+
+  - Order lines: subscription lines show their Term end, read-only; the "Before this can be confirmed" list notes a line whose stated length differs from its type's term; held-product choices and the after-confirm notice name the end that is kept. Bundle lines whose bundle contains a subscription take a Term start.
+  - A rep can enter a manual discount above their Sales Authority cap: it is saved held and marked "Needs approval", and confirm waits for an approved concession. A line charged nothing once its concession is taken off is a Scope concession. A deferred line books its discount as revenue is earned: booking credits Deferred Revenue with the net, and each revenue release (or progress catch-up) debits its share to Sales Discounts and credits Sales with the gross, so nothing is left in Deferred. A fully discounted deferred line books nothing. A price typed as 0 suggests a 100% discount instead. A saved order adjustment's authority, approver, amount, line and promotion cannot be changed, and the row can only be deleted by the order's own save, so a held discount cannot be hidden from confirm.
+  - A refused booking says in plain words which line to change; accounting's codes go to the server log.
+  - Send to Bill.com shows on every order using the Bill.com rail and is enabled only on a saved, confirmed order; otherwise it is greyed out with the reason as its tooltip. The reason is recomputed after a save or refresh.
+  - A captured payment shows what it was applied to instead of the allocation workbench; By Journal Entry renders; overdue days count business days; the open-orders Date column shows the order date.
+  - The fulfilment queue, the external invoicing worklist and the invoice rail report a failed read as an error instead of an empty list; an invoice unit whose history cannot be read is not sent.
+  - The subscription Overview lists read newest first, and a stale reload no longer overwrites newer cards; Cancel subscription is disabled while the form is in edit mode.
+  - The Override Explanation box shows only on an overridden line price.
+  - The checkout element stops sending events, polling and redirecting once its host removes it; payment and completion calls already started still finish.
+  - Styles read only `--mj-*` tokens MemberJunction 6.1.5 defines, checked by a unit test. The kit's print rules, filter chip, select and timeline rules no longer restyle MemberJunction pages outside Orders; loaders and empty states use MemberJunction's components; app chips take the `mjo-` prefix.
+  - A migration puts the Event Order Line Attendance Status values in CodeGen's order on databases built from migrations. The Referral Programs list shows Company and Is Active by default.
+
+  The order form's notes on subscription lengths other than the type's term, which do not block confirm, show under their own "When this is confirmed" heading instead of "Before this can be confirmed".
+
+- d6a280d: Subscriptions a payment gateway bills itself (option E, E1). A subscription whose `ProviderSubscriptionID` is set (Stripe's `sub_...`) is billed by the gateway named in its `PaymentProviderID`, so Spawn Renewals no longer places a renewal order for it and Charge Renewals no longer charges or captures one. Both jobs share one rule, `NotProviderBilledSql`, keyed on that marker alone. Orders itself has never written a gateway id, so on a host that hasn't imported any nothing renews differently today; the migration header has a two-line pre-flight for hosts that have.
+
+  The migration adds the columns the next change reads to create gateway subscriptions: `PaymentProviderType.SupportsSubscriptionBilling` (the gateway can bill subscriptions; set for Stripe), `PaymentProvider.BillsSubscriptions` (this account does; off everywhere), and `PaymentProviderPrice.UseForNewSubscriptions` (the one price a new gateway subscription to a product uses). It also adds `UQ_Subscription_ProviderSubscriptionID` (one Orders subscription per provider and gateway id), `CK_Subscription_ProviderSubscriptionHasProvider` (an id needs its provider and may not be empty) and `UQ_PaymentProviderPrice_NewSubscriptionProduct` (one flagged active price per provider and product).
+
+### Patch Changes
+
+- de88adf: Move the order's "Send to Bill.com" button from the collapsed External invoicing panel at the foot of the form into the form toolbar, in the slot Confirm order holds before the order is booked. The External invoicing panel keeps the invoice rows, the warning that blocks a send, and the actions on a selected invoice, and opens after a send so the result is in view.
+
+  Overlapping loads of the External invoicing panel (a save, the toolbar's Refresh, an action's own reload) no longer let an older load overwrite a newer one's invoice rows and Send state.
+
+- 262caff: Grids built on a preset view finish loading.
+
+  Customer A/R's Open items and Payments' Account credits sat on "Loading MJ_BizApps_Orders: Order Headers..." with 0 records, under headers that had already counted the money correctly. The data was never the problem: a reproduction showed around 2,800 API calls, every one returning the right rows, while the grid rendered nothing.
+
+  Each page handed `mj-entity-viewer` a view it built in a getter that returned a fresh object literal. Angular compares an `@Input()` by reference, so the viewer's `ViewEntity` setter ran on every change-detection pass, and its last branch reloads whenever the records are not in yet, which is exactly the state an unfinished load is in. Each pass restarted the load, and the response triggered the next pass.
+
+  The four pages that build their own view - Customer A/R, Account credits, Overdue worklist and Fulfillment queue - now hold the object and hand back the same reference until its inputs change. The two that were not reported shared the pattern and so shared the defect, waiting on timing rather than on being noticed.
+
+- Updated dependencies [1e2a5c6]
+- Updated dependencies [117cd8a]
+- Updated dependencies [29af2af]
+- Updated dependencies [06897c1]
+- Updated dependencies [adb8e61]
+- Updated dependencies [d6a280d]
+- Updated dependencies [f129713]
+- Updated dependencies [756afe7]
+- Updated dependencies [4104f24]
+  - @mj-biz-apps/orders-entities@5.39.0
+
+## 5.38.0
+
+### Minor Changes
+
+- d0ecc66: The order header's Ship to and Bill to organization and person lookups use the shared fast party picker (`bizapps-party-field` from `@mj-biz-apps/common-ng` 5.56.0): nothing is listed until two characters are typed, then one prefix search finds people by last name, display name, email or email domain and organizations by name, legal name or website domain. Requires `@mj-biz-apps/common-ng` >= 5.56.0.
+
+### Patch Changes
+
+- f5d774f: The Orders dashboard and Customer A/R age open balances by the same rule.
+
+  The dashboard's first aging tile read "Current (0-30 days)" and swept in everything up to thirty days past due, so overdue money was reported as "Due or recently invoiced" while Receivables showed the same balances as 1-30 days late. The totals agreed and only the labels disagreed, which is the hardest kind to notice, because each page looks right on its own. The two also broke the top end differently: 61-90 and 90+ on the dashboard, 61+ on Receivables.
+
+  `AgingBucketOf` now states the rule once, beside the bucket type both screens already shared. Current means NOT YET DUE, then 1-30, 31-60 and 61+ days past due. An order with no due date has no age and counts as current.
+
+  The dashboard's tiles follow the four buckets the shared aging bar draws, which is also what its colour ramp was validated for.
+
+- 0e30741: Receivables → Subscriptions opens a subscription's form (#932). Double-clicking a row, or pressing the new
+  **Open** button in the side panel, now opens the Subscription form, where **Cancel subscription** is.
+  Before, double-click only filled the side panel, the page had no output for the section to route, and the
+  form (and so Cancel) could not be reached from the app. New `SubscriptionOpened` output, wired in the
+  section shell beside `OrderOpened` / `PaymentOpened` / `ProductOpened`.
+- Updated dependencies [5fe872a]
+- Updated dependencies [0baf0fd]
+- Updated dependencies [68f8cc1]
+  - @mj-biz-apps/orders-entities@5.38.0
+
+## 5.37.0
+
+### Minor Changes
+
+- 0983af2: Checkout: a verified member sees their discount before pressing Pay (#919). With a `member-token` on `<mj-orders-checkout>`, once the e-mail is valid and the billing location is complete, the element drafts the form in the background (debounced 400 ms, again when the e-mail, location or quantity changes, stale answers dropped) with the token and no typed code. When the draft reports `MemberDiscountApplied`, the widget shows "<code> member discount: −<amount>", the total and the Pay button show the server's total, and the promo-code box is hidden, so one press of Pay charges it. A token that earns nothing keeps the full price and the notice at Pay, as before; without a token nothing is sent early. When the host also sets `email`, the e-mail field is read-only while the token is attached. The widget gains the `memberDiscount` and `lockEmail` inputs and the `quoteRequested` output.
+
+### Patch Changes
+
+- 1cf9fa1: `FindExistingHolding` and `FindUnansweredHeldLines` count every subscription that has not ended (Active, Trialing, Paused) as held, so the extend-or-new question is asked for a paused subscription too. The status set is exported as `EXISTING_HOLDING_STATUSES`.
+
+  The order screen's "extend" choice now says what confirm will do: a next term for an active holding, or the subscription type's reactivation rule (reactivate, or a separate subscription) for a paused one. `ExtendOutcomeFor` and `ExtendChoiceTextFor` give the same wording to other screens.
+
+- Updated dependencies [1cf9fa1]
+- Updated dependencies [336603c]
+  - @mj-biz-apps/orders-entities@5.37.0
+
+## 5.36.1
+
+### Patch Changes
+
+- 0c499b2: A paid checkout no longer shows a parser error when `/complete` outlasts the CDN or proxy in front of the server. The checkout element and the fallback host page read only JSON replies; a gateway error page or no reply becomes "Checkout could not reach the server". After payment, a reply like that, or a session still `Processing`, means the server may still be booking the order, so the checkout shows "Payment received. Finishing your order…" and sends `/complete` again every 3 s for up to 2 minutes. `/complete` is replay-safe, so the retry returns the confirmed order. If the wait runs out, the buyer is told the payment went through and not to pay again.
+  - @mj-biz-apps/orders-entities@5.36.1
+
+## 5.36.0
+
+### Patch Changes
+
+- 7af3d40: The subscription form has a Cancel subscription control (#702). The person cancelling keeps the subscription type's own rule (the default, which sends no timing) or overrides it with end of term or immediately, adds a reason, previews what `Orders.CancelSubscription` would do (coverage end, access end, refund, later terms), and then confirms; changing the choice discards the preview. It is offered to a viewer who may update subscriptions, on an Active, Trialing or Paused subscription.
+- 5a511c5: Call NotifyLoadComplete() when the initial Orders section page finishes mounting, and replace capped 500-row entity_object GetOrders({ Preset: 'all' }) reads on the Orders dashboard, order document, and Customer AR pages with targeted/uncapped queries.
+- Updated dependencies [db3aef7]
+- Updated dependencies [4a7fbb0]
+- Updated dependencies [eeb9cd5]
+  - @mj-biz-apps/orders-entities@5.36.0
+
+## 5.35.1
+
+### Patch Changes
+
+- 82fa9ea: A send Bill.com refused before creating an invoice is resent as an ordinary send (#739). A `Failed` external invoice with no rail reference (for example, the customer had no email) no longer needs `AllowReissue`, keeps the order's document number, and the order form no longer warns about billing the customer twice. The rail gets `CheckCustomer`, which a preview now runs: `Orders.IssueExternalInvoice` with `Preview` answers `NO_CUSTOMER_EMAIL` for a bill-to party Bill.com cannot take, and the order form disables Send and names the missing email.
+  - @mj-biz-apps/orders-entities@5.35.1
+
+## 5.35.0
+
+### Minor Changes
+
+- 303849b: Checkout account step: a host can set or remove the verification wording. `CheckoutAccountResult` takes `VerificationNote` (text, or `null` for none) and `PasswordSetMessage` on a `Created` answer; the widget shows them in place of its default verification text, and keeps the default when a host gives none. The contract now lets a host allow sign-in before verification as its own choice, while still not linking the login to the matched Person until the e-mail is verified.
+
+### Patch Changes
+
+- Updated dependencies [8a9d2f9]
+- Updated dependencies [48ea049]
+  - @mj-biz-apps/orders-entities@5.35.0
+
 ## 5.34.1
 
 ### Patch Changes
@@ -787,8 +916,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                "FK_EntityFieldValue_EntityField"
+                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
