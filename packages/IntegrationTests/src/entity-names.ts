@@ -40,6 +40,7 @@ export const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
 export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 export const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+export const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 export const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 export const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 export const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -135,6 +136,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     ORDER_HEADER_ENTITY,
     ORDER_LINE_ENTITY,
     SUBSCRIPTION_ENTITY,
+    SUBSCRIPTION_TYPE_ENTITY,
     SUBSCRIPTION_TERM_ENTITY,
     ENTITLEMENT_GRANT_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,

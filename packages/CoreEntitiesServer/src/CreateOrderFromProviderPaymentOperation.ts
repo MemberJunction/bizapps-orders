@@ -410,8 +410,11 @@ async function loadOrder(
     return r.Results?.[0] ?? null;
 }
 
-/** The receiving company's booking currency, with the same USD fallback the capture path uses. */
-async function functionalCurrency(companyID: string, provider: IMetadataProvider, user: UserInfo): Promise<string> {
+/**
+ * The receiving company's booking currency, with the same USD fallback the capture path uses. Also read by
+ * the gateway-renewal sync (E4), which books only in this currency.
+ */
+export async function functionalCurrency(companyID: string, provider: IMetadataProvider, user: UserInfo): Promise<string> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const r = await rv.RunView<{ FunctionalCurrencyCode: string | null }>(
         { EntityName: ACCOUNTING_PROFILE_ENTITY, ExtraFilter: `ID = '${RequireUUID(companyID, 'CompanyID')}'`, ResultType: 'simple' },
