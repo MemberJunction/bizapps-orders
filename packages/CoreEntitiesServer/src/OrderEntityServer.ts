@@ -4243,7 +4243,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             {
                 EntityName: RELATIONSHIP_ENTITY,
                 ExtraFilter:
-                    `FromPersonID='${personID}' AND ToOrganizationID IS NOT NULL ` +
+                    `FromPersonID='${RequireUUID(personID, 'personID')}' AND ToOrganizationID IS NOT NULL ` +
                     `AND Status='Active' ` +
                     `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
                     `AND (EndDate IS NULL OR EndDate >= '${date}') ` +
