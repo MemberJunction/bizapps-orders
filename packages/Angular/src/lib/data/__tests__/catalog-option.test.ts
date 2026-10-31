@@ -92,6 +92,48 @@ describe('CatalogOptionFrom', () => {
         expect(option.SubscriptionTypeID).toBe('subtype-annual');
     });
 
+    it("inherits the product type's default subscription type when the product names none (golive #339)", () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-7',
+                Name: 'Chapter Membership',
+                SKU: 'MEM-CHAPTER',
+                ProductType: 'Membership',
+                ProductTypeID: 'type-membership',
+                CompanyID: 'co-1',
+                Company: 'Meridian',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: null,
+            },
+            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-annual' },
+            0,
+        );
+
+        expect(option.SubscriptionTypeID).toBe('subtype-annual');
+    });
+
+    it("prefers the product's own subscription type over its type's default", () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-8',
+                Name: 'Monthly Membership',
+                SKU: 'MEM-MONTHLY',
+                ProductType: 'Membership',
+                ProductTypeID: 'type-membership',
+                CompanyID: 'co-1',
+                Company: 'Meridian',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: 'subtype-monthly',
+            },
+            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-annual' },
+            0,
+        );
+
+        expect(option.SubscriptionTypeID).toBe('subtype-monthly');
+    });
+
     it('shows no list price when the product has no base price row', () => {
         const option = CatalogOptionFrom(
             {
