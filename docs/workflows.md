@@ -12,8 +12,10 @@ Developers: the record-change trigger mechanics are in MemberJunction's
 
 ## Moments worth automating
 
-Each row is a record change an automation can listen for. The condition column is what an
-administrator enters as the trigger's filter.
+**These are ideas to build from, not features.** Orders ships no workflows, and only one record-change
+automation, which ships switched off ([below](#the-automation-orders-ships-send-the-invoice-on-confirmation)).
+Each row is a record change an automation *could* listen for. An administrator builds the ones an
+installation wants, and the condition column is what they would enter as the trigger's filter.
 
 | Moment | Record and event | Condition | Example automation |
 |---|---|---|---|
@@ -44,7 +46,7 @@ Notes on the table:
 ## Moments that need a schedule instead
 
 Some things become true without anyone saving a record, so no record-change trigger can catch them.
-Run a workflow on a schedule that finds them:
+These are ideas too: a workflow you build, run on a schedule, can find them.
 
 - **An invoice becomes overdue.** Overdue is worked out when an order is read, from its due date and
   balance; nothing is saved on the day it happens ([overdue-and-layered-base-views.md](overdue-and-layered-base-views.md)).
