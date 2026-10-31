@@ -7,6 +7,11 @@ import {
     OrdersAdoptExternalInvoiceOperation,
     OrdersCancelExternalInvoiceOperation,
     OrdersIssueExternalInvoiceOperation,
+    ClassifySendJobsFor,
+    LoadSendJobs,
+    SendNowDetail,
+    SendQueuedNote,
+    type SendJobState,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
@@ -56,7 +61,7 @@ const SECTION_KEY = 'externalInvoices';
  * `mjo-external-invoices-panel` — the rail's side of one order, on the order.
  *
  * WHY THIS EXISTS. Everything the rail does runs on a schedule: a confirmed order joins a queue and a
- * job sends it within the half hour. That is the right default and it is invisible, so when somebody
+ * job sends it on its next run, once that job is enabled and out of Preview. That is the right default and it is invisible, so when somebody
  * asks "did this customer get their invoice?" there was nowhere to look. This panel is that place, and
  * it carries the two acts a person is allowed to take.
  *
@@ -225,6 +230,8 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     public ProviderName = 'the invoicing rail';
     /** True when the order bills in instalments; the whole-order Send does not apply to it. */
     public BilledOnSchedule = false;
+    /** Whether the scheduled send would pick this order up; null when it could not be read. */
+    public SendJob: SendJobState | null = null;
     /**
      * Why Send would be refused before anything reached the rail — today, a bill-to party the rail
      * cannot take as a customer (no billing email). Read from the operation's own preview on load, so
@@ -321,10 +328,16 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
     }
 
+    /** What the scheduled send will do with an order nothing has sent yet; empty when the job could not be read. */
+    public get QueuedNote(): string {
+        return SendQueuedNote(this.SendJob);
+    }
+
     /** What the panel says when nothing has gone to the rail yet. */
     public get EmptyMessage(): string {
         const sent = `Nothing has been sent to ${this.ProviderName} for this order yet.`;
-        return this.Sendable ? `${sent} It is queued, and the scheduled send picks it up.` : sent;
+        const note = this.Sendable ? this.QueuedNote : '';
+        return note ? `${sent} ${note}` : sent;
     }
 
     /** Only a live invoice can be withdrawn, and only the selected one. */
@@ -358,12 +371,13 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         // A Failed row the rail never created an invoice for is not "on the rail before": warning about
         // billing twice there sends a person to look for an invoice that does not exist.
         const reissue = SendIsReissue(this.Rows);
+        const job = reissue ? null : (this.SendJob = await this.loadSendJob());
         const proceed = await this.confirm.Confirm({
             title: `Send ${this.Record.OrderNumber} to ${this.ProviderName}?`,
             message: `The customer receives an invoice for ${FormatMoney(Number(this.Record.TotalGross ?? 0))}.`,
             detail: reissue
                 ? 'This unit has been on the rail before. Check there first: re-issuing when an invoice already exists bills the customer twice.'
-                : 'The scheduled send would do this within the half hour anyway; this sends it now.',
+                : SendNowDetail(job),
             type: 'warning',
             confirmText: 'Send it',
             cancelText: 'Not yet',
@@ -515,6 +529,18 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     /**
+     * Whether the scheduled send would pick this order up, read when the dialog opens so it reflects
+     * the job as it is now. Null when it cannot be read: the dialog then promises nothing.
+     */
+    private async loadSendJob(): Promise<SendJobState | null> {
+        try {
+            return ClassifySendJobsFor(await LoadSendJobs(), this.Record.CompanyID);
+        } catch {
+            return null;
+        }
+    }
+
+    /**
      * Loads are not serialised: a save event, the toolbar's Refresh and an action's own reload can
      * overlap and finish in either order. Each reads into locals and only the newest one writes, so
      * an older load cannot put back stale rows or a stale Send state.
@@ -549,8 +575,10 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
             if (this.Selected) this.Selected = this.Rows.find((r) => r.ID === this.Selected!.ID) ?? null;
             this.BilledOnSchedule = billedOnSchedule;
             const sendBlocked = this.Sendable ? await this.previewBlock() : null;
+            const sendJob = this.Sendable ? await this.loadSendJob() : null;
             if (seq !== this.loadSeq) return;
             this.SendBlocked = sendBlocked;
+            if (this.Sendable) this.SendJob = sendJob;
         } catch (err) {
             if (seq !== this.loadSeq) return;
             this.LoadError = err instanceof Error ? err.message : String(err);
