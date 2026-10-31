@@ -2715,7 +2715,7 @@ export class OrdersCancelSubscriptionOperation extends BaseRemotableOperation<Ca
 export class OrdersCapturePaymentOperation extends BaseRemotableOperation<OrdersCapturePaymentInput, OrdersCapturePaymentOutput> {
     public readonly OperationKey = "Orders.CapturePayment";
     public readonly ExecutionMode = 'Sync' as const;
-    public readonly RequiredScope = "orders:write";
+    public readonly RequiredScope = "orders:payments:write";
     public readonly RequiresSystemUser = false;
 }
 
