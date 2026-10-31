@@ -263,6 +263,7 @@ erDiagram
         decimal_18_4 MaxQuantityPerLine
         uuid SubscriptionFamilyID FK
         decimal_7_4 RenewalIncreasePercent
+        bit IsSellableNew "required"
     }
     ProductType {
         uuid ID PK "required"

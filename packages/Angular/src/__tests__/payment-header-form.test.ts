@@ -1,5 +1,7 @@
 import '@angular/compiler';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import '../public-api';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
@@ -742,5 +744,30 @@ describe('BizAppsPaymentHeaderFormComponent captured payment (golive #342)', () 
         instance.record.Status = 'Pending';
         instance.ngDoCheck();
         expect(load).toHaveBeenCalledOnce();
+    });
+});
+
+describe('BizAppsPaymentHeaderFormComponent payer pickers (bc-aidp-next-golive#372)', () => {
+    // The stock FK field lists rows on focus and scans the whole party file; the payer fields use
+    // the fast party picker and keep their mode, context and Navigate handler.
+    const html = readFileSync(
+        join(import.meta.dirname, '../lib/custom/PaymentHeader/payment-header-form.component.html'),
+        'utf8',
+    );
+    const tagFor = (field: string) =>
+        [...html.matchAll(/<(mj-form-field|bizapps-party-field)\b[^>]*>/g)]
+            .map((m) => m[0])
+            .find((tag) => tag.includes(`FieldName="${field}"`));
+
+    it.each([
+        ['BillToOrganizationID', 'Organization'],
+        ['BillToPersonID', 'Person'],
+    ])('%s is a bizapps-party-field of Kind %s', (field, kind) => {
+        const tag = tagFor(field);
+        expect(tag, field).toMatch(/^<bizapps-party-field\b/);
+        expect(tag).toContain(`Kind="${kind}"`);
+        expect(tag).toContain('[EditMode]="ComposeMode"');
+        expect(tag).toContain('[FormContext]="formContext"');
+        expect(tag).toContain('(Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()"');
     });
 });

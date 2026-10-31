@@ -206,6 +206,17 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
                     [FormContext]="FormContext"
                     (Navigate)="FormComponent.OnFormNavigate($event)">
                 </mj-form-field>
+                <!-- Off for products kept for existing orders, imports and renewals: the add-product
+                     pickers stop offering them, and pricing still accepts them (golive#360). -->
+                <mj-form-field
+                    [Record]="Record"
+                    [ShowLabel]="true"
+                    FieldName="IsSellableNew"
+                    Type="checkbox"
+                    [EditMode]="EditMode"
+                    [FormContext]="FormContext"
+                    (Navigate)="FormComponent.OnFormNavigate($event)">
+                </mj-form-field>
                 <mj-form-field
                     [Record]="Record"
                     [ShowLabel]="true"
