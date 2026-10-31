@@ -27,12 +27,20 @@
  *   7. log a `SubscriptionEvent` — the lifecycle record that made the table worth having
  *
  * A GATEWAY-BILLED SUBSCRIPTION (E2b). When a payment gateway bills it (`IsProviderBilled`), the gateway
- * is asked FIRST, before the transaction, to charge nothing after coverage ends
- * (./ProviderSubscriptionCancel.ts). If it does not confirm, nothing is written: a subscription
- * cancelled here while the gateway still bills is exactly what this prevents. It is also refused while
- * an open alert says another gateway subscription may be billing, and when no open term covers the
- * request (the gateway's renewal is not booked here yet, so the term found would be one already paid
- * and over). The stamp on the subscription is the one write `SubscriptionEntity` lets through for it,
+ * is READ first (`ReadGatewaySubscription`; a read that fails, or an answer with no status, refuses with
+ * nothing written), and its billing state decides (`GateGatewayCancel`, ./ProviderSubscriptionCancel.ts):
+ *   · a period the gateway started at or after 00:00 business time on the latest open term's last day is one
+ *     Orders has not booked (the gateway renews then): REFUSED on that last day, with nothing asked of the
+ *     gateway — cancel and refund at the gateway, then here;
+ *   · a subscription the gateway already ended (or set to end with nothing unbooked) is FINISHED: Orders records
+ *     the cancel, after the coverage too (effective the latest term's last day, nothing refunded), which is the
+ *     one exception to "no open term covers the request";
+ *   · otherwise the gateway is asked, before the transaction, to charge nothing after coverage ends; if it does
+ *     not confirm, nothing is written.
+ * It is also refused while an open alert says another gateway subscription may be billing (unless the gateway
+ * has ENDED it, which bills nothing more), and when no open term covers the request. Inside the transaction the
+ * subscription row is locked (`UPDLOCK, ROWLOCK`) and its status read again, so two cancels at once book one
+ * credit memo. The stamp on the subscription is the one write `SubscriptionEntity` lets through for it,
  * sanctioned after the gateway confirmed (./SubscriptionEntityServer.ts).
  *
  * ATOMICITY: everything above shares one transaction opened here. The reversal order's own
@@ -49,6 +57,7 @@
  *   BOOKING: OrderEntityServer.Save (./OrderEntityServer.ts) — the reversal order goes through it
  *   TABLES: __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionEvent,OrderHeader,OrderLine}
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
     BaseEntity,
     BaseRemotableOperation,
@@ -88,6 +97,17 @@ import { LoadReversalContext } from './ReversalResolver.js';
 import { BusinessTimeZoneEngine, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
 import { IsProviderBilled } from './ProviderBilledSubscriptions.js';
 import { SanctionCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
+import {
+    ApplyGatewayCredit,
+    CreditReversalQuantity,
+    GatewayCreditQuantity,
+    GatewayRenewalCreditFor,
+    IsGatewayChargeFullyRefunded,
+    LockGatewayCreditRows,
+    LockSubscriptionForCredit,
+    ReversedQuantityOf,
+    type RenewalTermCredit,
+} from './GatewayRenewalCredit.js';
 import { raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
 import {
     BusinessToday,
@@ -95,6 +115,7 @@ import {
     CancelBlockingAlerts,
     GateGatewayCancel,
     GatewayCancelPreview,
+    gatewayDriver,
     PlanGatewayCancel,
     ReadGatewaySubscription,
     type GatewayCancelSummary,
@@ -106,6 +127,21 @@ const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+
+/**
+ * SERVER-ONLY: this cancel RECORDS an end the payment gateway already made (the gateway-renewal sync, E3/E4),
+ * so it is never extended to a later booked term (D19 is for a person's end-of-term cancel). Its renewal terms
+ * reverse what the gateway refunded (below). Never an input a client can send.
+ */
+/** Cancel-blocking alerts about this subscription's OWN money, which stop mattering once the gateway ended it. */
+const OWN_SUBSCRIPTION_ALERT_CODES: readonly string[] = ['RenewalNotBooked'];
+
+const gatewayEndRecorded = new AsyncLocalStorage<{ Recording: true }>();
+
+/** Run a cancel that records the gateway's end. Server-only. */
+export function WithGatewayEndRecorded<T>(fn: () => Promise<T>): Promise<T> {
+    return gatewayEndRecorded.run({ Recording: true }, fn);
+}
 
 export interface CancelSubscriptionInput {
     SubscriptionID: string;
@@ -197,11 +233,49 @@ interface OrderLineRow {
 
 /** The decision as it crosses the transport: dates as ISO strings, the form JSON gives a `Date`. */
 function decisionResult(decision: CancellationDecision): CancellationDecisionResult {
+    // `Coverage` is the message's building block, not part of the decision the caller reads.
+    const { Coverage: _coverage, ...rest } = decision;
     return {
-        ...decision,
+        ...rest,
         EffectiveDate: decision.EffectiveDate.toISOString(),
         AccessThroughDate: decision.AccessThroughDate.toISOString(),
     };
+}
+
+/**
+ * The sentence for a term whose money a payment gateway's refund decided instead of the type's refund rule (D20). Built
+ * from the decision's coverage half (`Coverage`), so it never states the type's figure ("does not refund, so what was
+ * invoiced for it is kept") next to the gateway's ("599.00 is reversed"). Pure.
+ *
+ * Example (NoRefund type, term 2's $599 refunded in full at Stripe): "Term 2 starts 2027-01-01, after coverage ends
+ * 2026-12-31, so it is canceled. The payment gateway charged this renewal (ch_t2) and refunded 599.00 of it. That
+ * refund, not this subscription type's refund rule, is what is reversed: 599.00."
+ */
+export function GatewayRefundExplanation(
+    decision: Pick<CancellationDecision, 'Explanation' | 'Coverage'>,
+    credit: Pick<RenewalTermCredit, 'ChargeID' | 'Refunded' | 'Credited'>,
+    reversed: number,
+    held: number,
+): string {
+    const charged =
+        `The payment gateway charged this renewal (${credit.ChargeID}) and refunded ${credit.Refunded.toFixed(2)} of it` +
+        `${credit.Credited ? `, ${credit.Credited.toFixed(2)} of which Orders has already credited` : ''}.`;
+    let money: string;
+    if (held) {
+        money = `What it refunded is reversed, not this subscription type's refund rule, but ${held.toFixed(2)} is held: too small to split off what is left of the line, so nothing is reversed now.`;
+    } else if (!(credit.Refunded > 0)) {
+        money = `The gateway kept the charge, so nothing is reversed: this subscription type's refund rule does not apply to money the gateway kept.`;
+    } else {
+        money = `That refund, not this subscription type's refund rule, is what is reversed: ${reversed.toFixed(2)}.`;
+    }
+    return `${decision.Coverage ?? decision.Explanation} ${charged} ${money}`;
+}
+
+/** A gateway charge that could not be read while deciding a term's credit: the cancel refuses rather than guess. */
+class GatewayCreditReadError extends Error {
+    constructor(termNumber: number, cause: unknown) {
+        super(`Could not read what the payment gateway refunded of term ${termNumber}'s renewal (${cause instanceof Error ? cause.message : String(cause)}).`);
+    }
 }
 
 @RegisterClass(BaseRemotableOperation, 'Orders.CancelSubscription')
@@ -263,6 +337,22 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // cancel that stops only the one it knows. For a gateway-billed one, alerts that cannot be read
         // refuse too: "none" would be a guess about money still moving.
         const blocking = await CancelBlockingAlerts(subscription.SubscriptionNumber, user, provider);
+        // Most blocking alerts are about ANOTHER gateway subscription that may be billing (NotRecorded, GatewayFault,
+        // LinkedElsewhere, AmbiguousAtGateway, ChargedAtCreation): this subscription ending at the gateway proves
+        // nothing about that one, so they always block, and so does an alert list that cannot be read. Only an
+        // alert about THIS subscription's own money (RenewalNotBooked: a renewal it charged that Orders has not
+        // booked) stops mattering once the gateway has ENDED it: recording that end (a duplicate "deleted" event,
+        // the nightly sync finishing a cancel the gateway made) must not be blocked by it.
+        const ownOnly = blocking.Codes.length > 0 && blocking.Codes.every((c) => OWN_SUBSCRIPTION_ALERT_CODES.includes(c));
+        let earlyBilling: Awaited<ReturnType<typeof ReadGatewaySubscription>> | null = null;
+        if (gatewayBilled && ownOnly && !blocking.ReadFailure) {
+            earlyBilling = await ReadGatewaySubscription(
+                { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+                provider,
+                user,
+            );
+        }
+        const endedAtGateway = !!earlyBilling?.Success && earlyBilling.State === 'Ended';
         if (blocking.ReadFailure && gatewayBilled) {
             return {
                 Success: false,
@@ -271,7 +361,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                     `could not be checked (${blocking.ReadFailure}). Nothing was changed. Cancelling needs read access to Tasks; try again.`,
             };
         }
-        if (blocking.Codes.length) {
+        if (blocking.Codes.length && !(ownOnly && endedAtGateway)) {
             return {
                 Success: false,
                 Message:
@@ -299,13 +389,17 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // The gateway first: it, not Orders, knows whether it already charged a period Orders has not booked
         // (it renews at 00:00 on a term's last day), or has already stopped.
         let zone: string | null = null;
+        let gatewayStillBills = false;
+        let gatewayEnded = false;
         if (gatewayBilled) {
             zone = await this.businessZone(provider, user);
-            const billing = await ReadGatewaySubscription(
-                { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
-                provider,
-                user,
-            );
+            const billing =
+                earlyBilling ??
+                (await ReadGatewaySubscription(
+                    { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+                    provider,
+                    user,
+                ));
             if (!billing.Success) {
                 return {
                     Success: false,
@@ -325,6 +419,10 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                         `it was paid; then cancel here, and Orders records it.`,
                 };
             }
+            // Still billing: renewing (Proceed), or set to end at period end with nothing unbooked (Ending reads as
+            // Finished for the gate, but the paid later term is still coverage the customer bought: D19 applies).
+            gatewayStillBills = gate.Kind === 'Proceed' || (gate.Kind === 'Finished' && billing.State === 'Ending');
+            gatewayEnded = billing.State === 'Ended';
             if (gate.Kind === 'Finished' && !this.coversOrPrecedes(openTerms, requestDate) && latestLastDay) {
                 // Finishing a cancel the gateway already completed, after Orders' coverage ended: Orders
                 // records it as ending with the coverage it sold, refunding nothing. Moving the request
@@ -348,8 +446,44 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
 
         const behavior = this.behaviorFor(typeRules);
         const rules = behavior.RulesForTiming(typeRules, input.Timing);
+        // END OF TERM, ON A SUBSCRIPTION THE GATEWAY STILL BILLS, IS THE END OF THE LATEST BOOKED TERM (Ethan,
+        // 30 Oct, D19). Orders books a gateway term only once the gateway was paid for it (E4), so a later booked term
+        // is coverage the customer has paid for, and the gateway's own "cancel at period end" ends with it. The
+        // term covering the request day would instead end coverage a year early and cancel a paid term. Not for
+        // a subscription Orders bills (a renewal it booked ahead may be unpaid, and cancelling out of it is the
+        // point, #406/#560), and not when the gateway has already ended it (Orders then records the gateway's end).
+        // Two limits (#989 review): only a term the gateway had CHARGED BY THE REQUEST DAY (a backdated request made
+        // before the renewal keeps the term covering it and the type's refund rule), and never a term whose charge the
+        // gateway has refunded IN FULL (that is not coverage the customer paid for; see `endOfTermOnGateway`).
+        // The context below is the one access is ended from too (#987's EndsNow), so it carries the term actually
+        // cancelled: end of term keeps access, a recorded gateway end on a past day ends it at once.
+        const recording = gatewayEndRecorded.getStore();
+        const covering = term;
+        let refundedSkipped: { Term: TermRow; Credit: RenewalTermCredit }[] = [];
+        if (gatewayStillBills && !recording && rules.CancellationMode === 'EndOfTerm') {
+            const pick = await this.endOfTermOnGateway(subscription, term, openTerms, requestDate, provider, user);
+            if ('Refusal' in pick) return { Success: false, Message: pick.Refusal };
+            term = pick.Term;
+            refundedSkipped = pick.Refunded;
+        }
+        // The open terms D19 rode past (before the one it ends with): they are served in full, so they are stamped
+        // Completed at their own end, as the old rule stamped the term it ended with. Without this they kept Active
+        // under a Canceled subscription (#989 review).
+        const servedBefore = term.ID === covering.ID ? [] : openTerms.filter((t) => t.ID !== term.ID && new Date(t.StartDate).getTime() < new Date(term.StartDate).getTime());
         const cancellation = { Rules: rules, RequestDate: requestDate, Term: this.cancellableTerm(term) };
-        const decision = behavior.DecideCancellation(cancellation);
+        let decision = behavior.DecideCancellation(cancellation);
+        if (refundedSkipped.length) {
+            const named = refundedSkipped
+                .map((r) => `term ${r.Term.TermNumber} (renewal ${r.Credit.OrderNumber}, charge ${r.Credit.ChargeID})`)
+                .join(' and ');
+            decision = {
+                ...decision,
+                Explanation:
+                    `${decision.Explanation} The payment gateway refunded ${named} in full, so it is not coverage the customer paid for: ` +
+                    `the end of term is term ${term.TermNumber}'s (its own refund follows this subscription type's rule), and the ` +
+                    `refunded term is cancelled, reversing what the gateway refunded and Orders has not already credited.`,
+            };
+        }
 
         // A later term would otherwise stay booked and billed after the subscription it belongs to
         // has ended (#406). One that starts on or before the effective date overlaps the cancelled
@@ -380,15 +514,89 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             }
             later.push({ Term: t, Decision: laterDecision });
         }
-        const laterTerms: CanceledLaterTerm[] = later.map((l) => ({
-            SubscriptionTermID: l.Term.ID,
-            TermNumber: l.Term.TermNumber,
-            Decision: decisionResult(l.Decision),
-        }));
-        const totalRefund =
-            Math.round((decision.RefundAmount + later.reduce((sum, l) => sum + l.Decision.RefundAmount, 0)) * 100) / 100;
-        const message = [decision.Explanation, ...later.map((l) => l.Decision.Explanation)].join(' ');
-        const summary = { SubscriptionTermID: term.ID, LaterTerms: laterTerms, TotalRefundAmount: totalRefund };
+        // A REFUNDED GATEWAY RENEWAL REVERSES WHAT THE GATEWAY REFUNDED, ONCE (D20, one per-term rule). Each term the
+        // gateway sold as a renewal reverses exactly what the gateway refunded of THAT term's own charge and Orders has
+        // not already credited (`GatewayRenewalCreditFor`), never the type's refund rule: the gateway, not Orders, moved
+        // the money, so the type's rule would leave the order owing or credit a refund a second time. It governs:
+        //   · every renewal term, when the gateway has ENDED it (a person finishing it, or the sync recording it): a
+        //     charge the gateway kept reverses nothing;
+        //   · while the gateway still bills, a renewal whose charge the gateway HAS refunded (any of it): the one D19
+        //     skipped, and equally one an Immediate or a backdated cancel ends (#989 review, Robert's question). A
+        //     renewal the gateway has refunded nothing of follows the type's rule, as before.
+        // A term Orders billed (not a gateway renewal: `GatewayRenewalCreditFor` is null) always follows the type's rule.
+        //
+        // Read here for the preview and the message, then READ AGAIN inside the transaction once the subscription is
+        // locked (`recredit`): the refund door decides under that same lock, so a refund credited on another worker
+        // meanwhile is seen and never credited twice.
+        let recredit: (() => Promise<void>) | null = null;
+        const skippedIDs = new Set(refundedSkipped.map((r) => r.Term.ID));
+        /** The gateway's figure governs this term whatever it refunded (it ended the subscription, or D19 skipped the term). */
+        const gatewayAlwaysRules = (t: TermRow): boolean => !!recording || gatewayEnded || skippedIDs.has(t.ID);
+        if (gatewayBilled && [term, ...later.map((l) => l.Term)].some((t) => !!t.OrderLineID)) {
+            const built = await gatewayDriver(
+                { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+                provider,
+                user,
+            );
+            if ('Reason' in built) return { Success: false, Message: `${built.Reason} Nothing was changed.` };
+            // The gateway's refund per line, read once before the lock; the re-read under it reads only Orders' side.
+            const gatewayRead = new Map<string, { ChargeID: string; Refunded: number }>();
+            for (const r of refundedSkipped) gatewayRead.set(r.Term.OrderLineID, { ChargeID: r.Credit.ChargeID, Refunded: r.Credit.Refunded });
+            const exact = async (t: TermRow, d: CancellationDecision): Promise<CancellationDecision> => {
+                if (!t.OrderLineID) return d;
+                let credit: RenewalTermCredit | null;
+                try {
+                    credit = await GatewayRenewalCreditFor(t.OrderLineID, built.Driver, provider, user, gatewayRead.get(t.OrderLineID));
+                } catch (err) {
+                    throw new GatewayCreditReadError(t.TermNumber, err);
+                }
+                if (!credit) return d;
+                gatewayRead.set(t.OrderLineID, { ChargeID: credit.ChargeID, Refunded: credit.Refunded });
+                if (!gatewayAlwaysRules(t) && !(credit.Refunded > 0)) return d;
+                const amount = Math.max(Number(t.Amount), 0);
+                let refund = Math.min(credit.Outstanding, amount);
+                // Too small to split off what is left of the line (and not the credit that finishes it): held, never a
+                // throw that would leave the gateway's end unrecorded. The refund that finishes the line credits it.
+                const held = refund > 0 && (await GatewayCreditQuantity(credit, refund, provider, user)) === 0 ? refund : 0;
+                if (held) refund = 0;
+                const basis = { Paid: credit.Paid, Credited: credit.Credited };
+                if (refund === d.RefundAmount && (refund > 0 || d.ReversalFraction === 0)) {
+                    return { ...d, ReversalAmount: refund > 0 ? refund : undefined, ReversalBasis: basis };
+                }
+                return {
+                    ...d,
+                    RefundAmount: refund,
+                    ReversalFraction: amount > 0 ? refund / amount : 0,
+                    ReversalAmount: refund,
+                    ReversalBasis: basis,
+                    Explanation: GatewayRefundExplanation(d, credit, refund, held),
+                };
+            };
+            const baseDecision = decision;
+            const baseLater = later.map((l) => l.Decision);
+            recredit = async () => {
+                decision = await exact(term, baseDecision);
+                for (const [i, l] of later.entries()) l.Decision = await exact(l.Term, baseLater[i]);
+            };
+            try {
+                await recredit();
+            } catch (err) {
+                if (!(err instanceof GatewayCreditReadError)) throw err;
+                return { Success: false, Message: `${err.message} Nothing was changed; try again.` };
+            }
+        }
+        const summarize = () => {
+            const laterTerms: CanceledLaterTerm[] = later.map((l) => ({
+                SubscriptionTermID: l.Term.ID,
+                TermNumber: l.Term.TermNumber,
+                Decision: decisionResult(l.Decision),
+            }));
+            const totalRefund =
+                Math.round((decision.RefundAmount + later.reduce((sum, l) => sum + l.Decision.RefundAmount, 0)) * 100) / 100;
+            const message = [decision.Explanation, ...later.map((l) => l.Decision.Explanation)].join(' ');
+            return { message, totalRefund, summary: { SubscriptionTermID: term.ID, LaterTerms: laterTerms, TotalRefundAmount: totalRefund } };
+        };
+        let { message, totalRefund, summary } = summarize();
 
         const gatewayPlan = zone ? PlanGatewayCancel(decision.EffectiveDate, BusinessToday(zone), zone) : null;
 
@@ -412,7 +620,6 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             gateway = atGateway.Summary;
         }
 
-        const all: TermCancellation[] = [{ Term: term, Decision: decision }, ...later];
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
@@ -431,14 +638,39 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
                     Gateway: gateway,
                 };
             }
+            // The credit decided again under the lock (see `recredit`): what is booked is this, not the pre-lock read.
+            if (recredit) {
+                await recredit();
+                ({ message, totalRefund, summary } = summarize());
+            }
+            const all: TermCancellation[] = [{ Term: term, Decision: decision }, ...later];
             const toReverse = all.filter((c) => c.Decision.ReversalFraction > 0);
             const reversal =
                 toReverse.length > 0
                     ? await this.emitReversalOrder(provider, user, subscription, toReverse, decision.EffectiveDate, input.Reason)
                     : undefined;
+            // A gateway refund's credit lands ON the renewal it refunds (D20, the credit-note model): the renewal then owes
+            // nothing once the refund's cash is un-applied. The same step the refund door runs, under the same lock.
+            if (recredit) {
+                const credited = toReverse.filter((c) => c.Term.OrderLineID && c.Decision.ReversalAmount).map((c) => c.Term.OrderLineID!);
+                // Every row first, in the one lock order, then the applications (each takes the payment-number lock).
+                await LockGatewayCreditRows(credited, provider, user);
+                for (const lineID of credited) await ApplyGatewayCredit(lineID, provider, user);
+            }
 
             for (const c of all) {
                 await this.stampTerm(provider, user, c.Term.ID, c.Decision);
+            }
+            for (const t of servedBefore) {
+                const end = new Date(t.EndDate);
+                await this.stampTerm(provider, user, t.ID, {
+                    EffectiveDate: end,
+                    AccessThroughDate: end,
+                    RefundAmount: 0,
+                    ReversalFraction: 0,
+                    TermStatus: 'Completed',
+                    Explanation: '',
+                });
             }
             await this.stampSubscription(provider, user, subscription.ID, decision, !!gateway);
             await this.syncGrantsOnCancel(
@@ -570,11 +802,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
      * ends (the `GiftCardEngine` pattern), so concurrent cancels of one subscription run one at a time.
      */
     private async lockSubscriptionStatus(provider: IMetadataProvider, subscriptionID: string): Promise<string | null> {
-        const sql = provider as unknown as { ExecuteSQL: (sql: string) => Promise<unknown> };
-        const rows = (await sql.ExecuteSQL(
-            `SELECT Status FROM __mj_BizAppsOrders.Subscription WITH (UPDLOCK, ROWLOCK) WHERE ID = '${RequireUUID(subscriptionID, 'SubscriptionID')}'`,
-        )) as Array<{ Status?: string }> | { Results?: Array<{ Status?: string }> } | undefined;
-        return (Array.isArray(rows) ? rows : (rows?.Results ?? []))[0]?.Status ?? null;
+        // The same lock the refund door takes (D20): one subscription's credits are decided one at a time.
+        return LockSubscriptionForCredit(provider, subscriptionID);
     }
 
     /** The last covered day of the latest open term, or null when there is none. */
@@ -601,6 +830,66 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
      * none is left booked (#406); a late one, after everything lapsed, acts on the latest term.
      * Cancelling always has to act on SOMETHING for the reversal to point at.
      */
+    /**
+     * D19's pick: the term an end-of-term cancel ends with on a subscription the gateway still bills.
+     *
+     * The latest booked term AFTER the one covering the request day that (1) the gateway had charged by the request
+     * day — it charges a renewal at 00:00 on the preceding term's last day, so a term starting the day after the
+     * request at the latest — and (2) whose charge the gateway has not refunded in full (`IsGatewayChargeFullyRefunded`,
+     * the figure the credit doors use). None qualifying: the term covering the request day, exactly as before D19.
+     *
+     * Examples (term 1 = 2026, term 2 = 2027, Stripe renewed at 00:00 Central on 31 Dec 2026):
+     *   · cancel on 31 Dec 2026 → term 2 (paid; D19).
+     *   · support records a request made on 10 Mar 2026 → term 1, term 2 cancelled under the type's refund rule.
+     *   · term 2's $599 refunded in full at Stripe, cancel on 31 Dec 2026 → term 1; term 2 cancelled, reversing what
+     *     the gateway refunded and Orders has not credited.
+     * Only terms later than the covering one are read at the gateway (in practice one: a renewal is charged on the
+     * covering term's last day). A gateway that cannot be read refuses the cancel: a guess here decides coverage.
+     */
+    private async endOfTermOnGateway(
+        subscription: SubscriptionRow,
+        covering: TermRow,
+        openTerms: TermRow[],
+        requestDate: Date,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<{ Term: TermRow; Refunded: { Term: TermRow; Credit: RenewalTermCredit }[] } | { Refusal: string }> {
+        const DAY = 86_400_000;
+        const start = (t: TermRow): number => new Date(t.StartDate).getTime();
+        const chargedBy = requestDate.getTime() + DAY; // charged on the day before it starts, on or before the request day
+        const candidates = openTerms
+            .filter((t) => t.ID !== covering.ID && start(t) > start(covering) && start(t) <= chargedBy)
+            .sort((a, b) => start(b) - start(a) || b.TermNumber - a.TermNumber);
+        if (candidates.length === 0) return { Term: covering, Refunded: [] };
+        const built = await gatewayDriver(
+            { PaymentProviderID: subscription.PaymentProviderID, ProviderSubscriptionID: subscription.ProviderSubscriptionID! },
+            provider,
+            user,
+        );
+        if ('Reason' in built) return { Refusal: `${built.Reason} Nothing was changed.` };
+        const refunded: { Term: TermRow; Credit: RenewalTermCredit }[] = [];
+        for (const t of candidates) {
+            let credit: RenewalTermCredit | null = null;
+            if (t.OrderLineID) {
+                try {
+                    credit = await GatewayRenewalCreditFor(t.OrderLineID, built.Driver, provider, user);
+                } catch (err) {
+                    return {
+                        Refusal:
+                            `Could not read what the payment gateway refunded of term ${t.TermNumber}'s renewal ` +
+                            `(${err instanceof Error ? err.message : String(err)}). Nothing was changed; try again.`,
+                    };
+                }
+            }
+            if (credit && IsGatewayChargeFullyRefunded(credit)) {
+                refunded.push({ Term: t, Credit: credit });
+                continue;
+            }
+            return { Term: t, Refunded: refunded };
+        }
+        return { Term: covering, Refunded: refunded };
+    }
+
     private resolveTerm(terms: TermRow[], requestDate: Date): TermRow | null {
         if (terms.length === 0) return null;
 
@@ -744,9 +1033,19 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // than was ever sold. Rounded to the column's 4dp scale for the same reason the purchase
         // path rounds: an unrounded quantity is truncated on insert and the recomputed total then
         // disagrees with the stored one.
+        // A gateway refund's exact figure (D20): the shared rule, so slices never sum past the line and a sub-cent
+        // credit is still a line (its stated unit price below makes it exact).
         const reversalQuantity =
-            Math.round(Number(original.Quantity) * decision.ReversalFraction * 1e4) / 1e4;
-        if (reversalQuantity === 0) {
+            decision.ReversalAmount != null && decision.ReversalAmount > 0
+                ? CreditReversalQuantity({
+                      Quantity: Math.max(Number(original.Quantity), 0),
+                      AlreadyReversed: await ReversedQuantityOf(original.ID, provider, user),
+                      Credit: decision.ReversalAmount,
+                      Paid: decision.ReversalBasis?.Paid ?? Math.max(Number(term.Amount), 0),
+                      Credited: decision.ReversalBasis?.Credited ?? 0,
+                  })
+                : Math.round(Number(original.Quantity) * decision.ReversalFraction * 1e4) / 1e4;
+        if (!(reversalQuantity > 0)) {
             throw new Error(
                 `The computed reversal (${decision.ReversalFraction} of quantity ${original.Quantity}) ` +
                     `rounds to zero, which is not a valid order line. Nothing can be reversed at this size.`,
@@ -758,6 +1057,11 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         // amount a Flat price booked (#651). Copying the unit price here left the exact amount
         // behind, and the cancellation credited quantity × unit price.
         line.ReversesOrderLineID = original.ID;
+        // To the cent when the reversal must equal a gateway refund: the fraction above is rounded to 4dp, so the
+        // unit price is STATED (a stated price is kept by the order save) such that quantity × price is the refund.
+        if (decision.ReversalAmount != null && reversalQuantity !== 0) {
+            line.UnitPrice = Math.round((decision.ReversalAmount / reversalQuantity) * 1e4) / 1e4;
+        }
         line.ServicePeriodStart = decision.EffectiveDate;
         line.ServicePeriodEnd = new Date(term.EndDate);
         return { Line: line, OriginOrderHeaderID: original.OrderHeaderID };

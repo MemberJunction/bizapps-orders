@@ -393,6 +393,13 @@ export interface WebhookEvent {
      * be applied and retries follow Retryable only.
      */
     OccurredAt?: Date;
+    /**
+     * The gateway subscription an event is about, for the kinds a driver lists in
+     * `HandledSubscriptionEventKinds` (E3). Only the id is read from such an event: what the subscription
+     * is now is read from the gateway itself (`DescribeProviderSubscription`), so the event's own shape,
+     * order and repeats do not matter.
+     */
+    ProviderSubscriptionID?: string;
 }
 
 /**
@@ -534,6 +541,64 @@ export interface DescribeProviderSubscriptionResult {
     EndsAt?: Date | null;
     /** The gateway's own status word. */
     Status?: string;
+    /** When it ended, for `Ended`. */
+    EndedAt?: Date | null;
+    /** The gateway price it bills now, and how many units. */
+    ProviderPriceID?: string | null;
+    Quantity?: number | null;
+    /** The gateway customer it bills, and that customer's e-mail when the gateway has one. */
+    ProviderCustomerRef?: string | null;
+    CustomerEmail?: string | null;
+    /** The value of each metadata key it carries (E2 writes `OrdersSubscriptionID`). */
+    Metadata?: Record<string, string>;
+}
+
+/**
+ * One invoice of a gateway subscription, as E3/E4 read it (`ListProviderSubscriptionInvoices`). Amounts
+ * are major units in `CurrencyCode`.
+ *
+ * Example: Jane's renewal on 30 Oct 2027 is `{ BillingReason: 'subscription_cycle', Status: 'paid',
+ * AmountPaid: 599, ProviderIntentID: 'pi_…', ProviderChargeID: 'ch_…', PaidAt: 2027-10-30T05:00Z }`.
+ */
+export interface GatewaySubscriptionInvoice {
+    ProviderInvoiceID: string;
+    /** `draft`, `open`, `paid`, `void`, `uncollectible`. */
+    Status: string;
+    /** Why the gateway raised it: `subscription_cycle` (a renewal), `subscription_create`, `subscription_update`, `manual`. */
+    BillingReason: string | null;
+    AmountPaid: number;
+    AmountDue: number;
+    /** Tax the gateway added, if any. */
+    Tax: number;
+    CurrencyCode: string;
+    ProviderIntentID: string | null;
+    ProviderChargeID: string | null;
+    CreatedAt: Date | null;
+    /** When it was paid; null while unpaid. */
+    PaidAt: Date | null;
+    /** Marked paid without the gateway collecting (a payment made elsewhere). */
+    PaidOutOfBand: boolean;
+    /** True when any discount reduced it (a coupon). */
+    Discounted: boolean;
+    /** Collection attempts so far, and when the gateway tries next (null when it will not). */
+    AttemptCount: number;
+    NextAttemptAt: Date | null;
+    /** The price and quantity of its subscription line. */
+    ProviderPriceID: string | null;
+    Quantity: number | null;
+    /**
+     * The billing period the subscription's own line covers (not a proration line). A renewal invoice bills
+     * the period that starts at the renewal; the invoice that paid the period Orders already covers (an
+     * imported subscriber's current year) starts before the latest term's last day.
+     */
+    PeriodStart: Date | null;
+    PeriodEnd: Date | null;
+}
+
+export interface ListProviderSubscriptionInvoicesResult {
+    Success: boolean;
+    Reason?: string;
+    Invoices?: GatewaySubscriptionInvoice[];
 }
 
 /** How often a gateway price bills. */
@@ -589,6 +654,15 @@ export class BasePaymentProvider {
 
     /** Gateway event names this driver acts on. Everything else is ignored rather than rejected. */
     public get HandledEventKinds(): readonly string[] {
+        return [];
+    }
+
+    /**
+     * The webhook kinds that say something happened to a gateway subscription or its invoices (E3). For
+     * each, the handler reads the subscription id the parser filled in and brings Orders in line with
+     * what the gateway says now. Empty by default: a driver whose gateway bills no subscriptions has none.
+     */
+    public get HandledSubscriptionEventKinds(): readonly string[] {
         return [];
     }
 
@@ -747,6 +821,18 @@ export class BasePaymentProvider {
      */
     public async DescribeProviderSubscription(_providerSubscriptionID: string): Promise<DescribeProviderSubscriptionResult> {
         return { Success: false, Reason: this.notImplemented('reading a gateway-billed subscription') };
+    }
+
+    /**
+     * A gateway subscription's invoices created on or after `CreatedSince` (every status), oldest first.
+     * Read-only. E3/E4 read them to book each renewal the gateway was paid for and to record each failed
+     * attempt, so a renewal is never booked from a webhook's payload. Refuses by default.
+     */
+    public async ListProviderSubscriptionInvoices(_request: {
+        ProviderSubscriptionID: string;
+        CreatedSince?: Date | null;
+    }): Promise<ListProviderSubscriptionInvoicesResult> {
+        return { Success: false, Reason: this.notImplemented('listing a gateway subscription\'s invoices') };
     }
 
     /**

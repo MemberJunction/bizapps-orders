@@ -1059,6 +1059,8 @@ export function NewReviewMarker(now: Date = new Date()): string {
 /** The order guards a purge of committed orders has to lift; both purges disable and re-enable them. */
 const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+    // A confirmed reversal's ReversesOrderHeaderID is cleared before the delete (a committed credit order, D20).
+    `${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
     `${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
     `${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
     `${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
@@ -1164,7 +1166,7 @@ DELETE FROM ${O}.SubscriptionEvent
 DELETE FROM ${O}.ExternalPayment WHERE PaymentHeaderID IN (${ids('@payments')});
 DELETE FROM ${O}.PaymentLine WHERE OrderHeaderID IN (${ids('@orders')}) OR PaymentHeaderID IN (${ids('@payments')});
 UPDATE ${O}.OrderHeader SET InitialPaymentDetailID = NULL WHERE ID IN (${ids('@orders')});
-UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL WHERE ID IN (${ids('@payments')});
+UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL, ReversalSource = NULL WHERE ID IN (${ids('@payments')});
 DELETE FROM ${O}.PaymentHeader WHERE ID IN (${ids('@payments')});
 DELETE FROM ${O}.CustomerPaymentMethod WHERE PaymentDetailID IN (${ids('@details')});
 DELETE FROM ${O}.PaymentDetail WHERE ID IN (${ids('@details')});
