@@ -188,6 +188,98 @@ describe('S22 / S12 paid invoices that are not renewals', () => {
     });
 });
 
+describe("L3 finding 5: an imported first-year subscriber's creation invoice, whose charge Orders records, is in line", () => {
+    // Sam, imported in his first year: Stripe's current invoice is its creation invoice (subscription_create), paid
+    // by ch_sam_2026 at 14:23 UTC on 15 Mar 2026; the importer's term 1 runs 16 Mar 2026 to 15 Mar 2027 and its
+    // payment records ch_sam_2026 (with no intent). Before the fix, the sync reported a "difference" for it.
+    const samCreate = invoice({
+        ProviderInvoiceID: 'in_sam_2026',
+        BillingReason: 'subscription_create',
+        AmountPaid: 399,
+        AmountDue: 399,
+        ProviderIntentID: 'pi_sam_2026',
+        ProviderChargeID: 'ch_sam_2026',
+        PeriodStart: new Date('2026-03-15T14:23:00.000Z'),
+        PeriodEnd: new Date('2027-03-15T14:23:00.000Z'),
+        PaidAt: new Date('2026-03-15T14:23:05.000Z'),
+    });
+    const sam = (over: Partial<SyncOrdersFacts> = {}) =>
+        orders({ LatestTermEnd: '2027-03-15', LatestTermStart: '2026-03-16', LastUnitPrice: 399, GrantsValidTo: new Date('2027-03-16T05:00:00.000Z'), ...over });
+    const samGateway = (invoices: GatewaySubscriptionInvoice[]) =>
+        gateway({ CurrentPeriodStart: samCreate.PeriodStart, CurrentPeriodEnd: samCreate.PeriodEnd }, invoices);
+
+    it('the importer recorded its charge: no step and no difference (in line)', () => {
+        const p = plan(sam({ BookedChargeIDs: new Set(['ch_sam_2026']) }), samGateway([samCreate]));
+        expect(p).toEqual({ Steps: [], Differences: [] });
+    });
+    it('control: nothing in Orders records that charge (an E2 subscription the gateway charged at creation): still reported, nothing booked', () => {
+        const p = plan(sam(), samGateway([samCreate]));
+        expect(p.Steps).toEqual([]);
+        expect(p.Differences).toEqual([`in_sam_2026: charged $399.00 at creation (E2's ChargedAtCreation alert covers it); not a renewal`]);
+    });
+    it('control: another charge recorded (a checkout payment) does not cover this one', () => {
+        const p = plan(sam({ BookedChargeIDs: new Set(['ch_checkout']) }), samGateway([samCreate]));
+        expect(p.Differences).toHaveLength(1);
+    });
+    it('control: the period is not the test (a creation invoice starting with the term, its charge unrecorded, is still reported)', () => {
+        const atTermStart = { ...samCreate, PeriodStart: new Date('2026-03-16T05:00:00.000Z') };
+        expect(plan(sam(), samGateway([atTermStart])).Differences).toHaveLength(1);
+    });
+    it('control: an invoice that names no charge cannot be matched: still reported', () => {
+        const p = plan(sam({ BookedChargeIDs: new Set(['ch_sam_2026']) }), samGateway([{ ...samCreate, ProviderChargeID: null }]));
+        expect(p.Differences).toHaveLength(1);
+    });
+    it('his second year is unaffected: the next renewal (subscription_cycle) is still booked once', () => {
+        const next = invoice({
+            ProviderInvoiceID: 'in_sam_2027',
+            AmountPaid: 399,
+            AmountDue: 399,
+            ProviderIntentID: 'pi_sam_2027',
+            ProviderChargeID: 'ch_sam_2027',
+            PeriodStart: new Date('2027-03-15T14:23:00.000Z'),
+            PeriodEnd: new Date('2028-03-15T14:23:00.000Z'),
+        });
+        const p = plan(sam({ BookedChargeIDs: new Set(['ch_sam_2026']) }), samGateway([samCreate, next]));
+        expect(kinds(p.Steps)).toEqual(['BookRenewal']);
+        expect(p.Differences).toEqual([`in_sam_2027: the gateway was paid $399.00 for a renewal Orders has not booked`]);
+    });
+    it('the L3 rehearsal shape: 372 first-year (creation, charge recorded) and 137 second-year subscribers in line → 0 differences; unrecorded creation charges are each still counted', () => {
+        const year1 = Array.from({ length: 372 }, (_, i) => ({ ...samCreate, ProviderInvoiceID: `in_y1_${i}`, ProviderChargeID: `ch_y1_${i}` }));
+        const year2 = Array.from({ length: 137 }, (_, i) =>
+            invoice({ ProviderInvoiceID: `in_y2_${i}`, ProviderChargeID: `ch_y2_${i}`, PeriodStart: samCreate.PeriodStart, PeriodEnd: samCreate.PeriodEnd }),
+        );
+        const recorded = new Set([...year1, ...year2].map((i) => i.ProviderChargeID!));
+        const count = (o: SyncOrdersFacts) =>
+            [...year1, ...year2].reduce((n, inv) => n + plan(o, samGateway([inv])).Differences.length, 0);
+        expect(count(sam({ BookedChargeIDs: recorded }))).toBe(0);
+        // Before the fix every first-year subscriber counted, recorded or not: 372. Now only the unrecorded do.
+        const fiveUnrecorded = new Set([...recorded].filter((c) => !['ch_y1_0', 'ch_y1_1', 'ch_y1_2', 'ch_y1_3', 'ch_y1_4'].includes(c)));
+        expect(count(sam({ BookedChargeIDs: fiveUnrecorded }))).toBe(5);
+    });
+    it('a one-off (manual) invoice whose charge this subscription records (booked by hand) is in line; unrecorded it is GatewayChargeNotBooked', () => {
+        const charged = invoice({ BillingReason: 'manual', AmountPaid: 50, ProviderChargeID: 'ch_hand' });
+        expect(plan(orders({ BookedChargeIDs: new Set(['ch_hand']) }), gateway({}, [charged]))).toEqual({ Steps: [], Differences: [] });
+        const unbooked = plan(orders(), gateway({}, [charged]));
+        expect(kinds(unbooked.Steps)).toEqual(['Notice:GatewayChargeNotBooked']);
+        expect(unbooked.Differences[0]).toMatch(/Orders booked nothing for it/);
+    });
+    it('a proration (subscription_update) whose charge is booked KEEPS GatewayPlanChanged, saying the charge is booked but the plan changed (old → new)', () => {
+        const proration = invoice({ BillingReason: 'subscription_update', AmountPaid: 120, ProviderChargeID: 'ch_prorate', ProviderPriceID: 'price_exec' });
+        const p = plan(orders({ BookedChargeIDs: new Set(['ch_prorate']), LastGatewayPriceID: 'price_pro' }), gateway({}, [proration]));
+        expect(kinds(p.Steps)).toEqual(['Notice:GatewayPlanChanged']);
+        const reason = (p.Steps[0] as Extract<SyncStep, { Kind: 'Notice' }>).Reason;
+        expect(reason).toMatch(/the charge is booked, but the plan changed: price_pro → price_exec/);
+        expect(reason).not.toMatch(/booked nothing/);
+        expect(p.Differences).toEqual([reason]);
+    });
+    it('control: the same proration unbooked is GatewayPlanChanged saying Orders booked nothing for it', () => {
+        const proration = invoice({ BillingReason: 'subscription_update', AmountPaid: 120, ProviderChargeID: 'ch_prorate' });
+        const p = plan(orders(), gateway({}, [proration]));
+        expect(kinds(p.Steps)).toEqual(['Notice:GatewayPlanChanged']);
+        expect((p.Steps[0] as Extract<SyncStep, { Kind: 'Notice' }>).Reason).toMatch(/Orders booked nothing for it/);
+    });
+});
+
 describe('Q3 notices on a booked renewal: booked as charged, a person told when unusual', () => {
     it('below the last term with no coupon → RenewalAmountUnusual (and still booked)', () => {
         const p = plan(orders({ LastUnitPrice: 599 }), gateway({}, [invoice({ AmountPaid: 399 })]));
