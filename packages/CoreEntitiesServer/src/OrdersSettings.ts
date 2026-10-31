@@ -23,7 +23,6 @@
  */
 import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 import { IMetadataProvider, Metadata, UserInfo } from '@memberjunction/core';
-import { GetGlobalObjectStore } from '@memberjunction/global';
 import { ParseOrderReviewTriggers, type OrderReviewConfig, type ParsedOrderReviewTriggers } from '@mj-biz-apps/orders-entities';
 
 /** The `MJ: Applications` row this app's settings hang off. */
@@ -282,10 +281,13 @@ export class OrdersSettings {
         getOverridesMap().clear();
     }
 
-    /** The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. */
+    /**
+     * The `__mj_BizAppsOrders` Application ID, or undefined when the app row is absent. That name only:
+     * a host also carries `Orders`, the MJ Explorer navigation app, which holds no settings. Matching it
+     * read every app-scoped setting as unset, and kept {@link rawAppScoped} from noticing a missing row.
+     */
     private static applicationID(): string | undefined {
-        const apps = new Metadata().Applications;
-        return apps?.find((a) => a.Name === ORDERS_APPLICATION_NAME || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders')?.ID;
+        return new Metadata().Applications?.find((a) => a.Name === ORDERS_APPLICATION_NAME)?.ID;
     }
 
     private static raw(key: string): string | undefined {
@@ -377,12 +379,12 @@ export class OrdersSettings {
 
     /** The escalation targets for a self-requested concession, in order; empty keeps self-approval. */
     public static get ConcessionSelfApprovalEscalation(): string[] {
-        return asList(this.raw(ORDERS_SETTING.ConcessionSelfApprovalEscalation), []);
+        return asList(this.rawAppScoped(ORDERS_SETTING.ConcessionSelfApprovalEscalation), []);
     }
 
     /** The order review triggers switched on, and any entry that names no trigger (#320 §5). */
     public static get OrderReviewTriggers(): ParsedOrderReviewTriggers {
-        return ParseOrderReviewTriggers(this.raw(ORDERS_SETTING.OrderReviewTriggers));
+        return ParseOrderReviewTriggers(this.rawAppScoped(ORDERS_SETTING.OrderReviewTriggers));
     }
 
     /** The order review configuration as one value (#320 §5). */
