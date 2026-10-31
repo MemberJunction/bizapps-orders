@@ -435,6 +435,11 @@ export class CheckoutSessionService {
         if (!clientSessionKey) {
             return { Success: false, ErrorMessage: 'ClientSessionKey is required' };
         }
+        // The ClientSessionKey is the bearer credential for the session — anyone presenting it
+        // resumes the session — so a key short enough to guess is refused outright.
+        if (clientSessionKey.trim().length < 20) {
+            return { Success: false, ErrorMessage: 'ClientSessionKey must be at least 20 characters' };
+        }
 
         const rv = new RunView();
         const escapedSlug = EscapeText(slug.trim());

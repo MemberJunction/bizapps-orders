@@ -61,7 +61,7 @@ const mocks = vi.hoisted(() => {
         ID = 'sess-123';
         CheckoutWidgetID = 'widget-1';
         DistributionID = 'dist-1';
-        ClientSessionKey = 'client-xyz';
+        ClientSessionKey = 'client-xyz-0123456789';
         Email: string | null = null;
         PersonID: string | null = null;
         DraftOrderID: string | null = null;
@@ -576,7 +576,7 @@ import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { ToISODate } from '@mj-biz-apps/orders-entities';
 
-const KEY = 'client-xyz';
+const KEY = 'client-xyz-0123456789';
 const BILLING = { Country: 'US', StateProvince: 'IL', PostalCode: '60601' };
 const testUser = { ID: 'test-user-1', Email: 'service@example.com' } as unknown as UserInfo;
 
@@ -900,6 +900,12 @@ describe('CheckoutSessionService', () => {
 
             const res2 = await CheckoutSessionService.InitializeSession('summit-2026', '');
             expect(res2.Success).toBe(false);
+        });
+
+        it('refuses a clientSessionKey short enough to guess — it is the session\'s bearer credential', async () => {
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', 'too-short');
+            expect(res.Success).toBe(false);
+            expect(res.ErrorMessage).toContain('at least 20 characters');
         });
 
         it('initializes a session and extracts customUI configuration', async () => {

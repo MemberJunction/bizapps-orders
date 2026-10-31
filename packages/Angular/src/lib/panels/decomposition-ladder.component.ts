@@ -91,7 +91,7 @@ export interface MJOLadderRow {
                 </div>
 
                 @if (row.Why && expanded.has($index)) {
-                    <div class="mj-why-body" [innerHTML]="row.Why"></div>
+                    <div class="mj-why-body">{{ row.Why }}</div>
                 }
             }
 
