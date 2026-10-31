@@ -32,6 +32,7 @@ import {
     LineNeedsOverrideReason,
     LinePriceOverrideReason,
     ListApplicablePrices,
+    ProductHasRevenueBands,
     LoadOrdersEngine,
     OrdersEngine,
     RestoreLineDefault,
@@ -861,7 +862,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public ApplicableFor(line: mjBizAppsOrdersOrderLineEntity): ApplicablePrice[] {
-        return this.applicableByLine.get(line.ID) ?? [];
+        return this.applicableByLine?.get(line.ID) ?? [];
+    }
+
+    /**
+     * The line's product is priced by revenue band and the buyer's revenue is unknown, so the rep
+     * picks the band. Open to every user who can edit the order: it is choosing the rules' price,
+     * not overriding it.
+     */
+    public CanPickBand(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.EditMode && this.ApplicableFor(line).some((p) => p.BandUndecided);
     }
 
     public DisplayUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
@@ -875,7 +885,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * editor another way does not get around it.
      */
     public NeedsOverrideReason(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return LineNeedsOverrideReason(line, this.EngineDefault(line));
+        return LineNeedsOverrideReason(line, this.EngineDefault(line), this.ApplicableFor(line));
     }
 
     /**
@@ -910,7 +920,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public ToggleOverrideEditor(line: mjBizAppsOrdersOrderLineEntity): void {
         // Either authority opens the panel. Gating it on price-override rights alone is what kept
         // the discount control out of reach of a user who may discount but may not re-price.
-        if (!this.CanOverride && !this.CanDiscount) return;
+        if (!this.CanOverride && !this.CanDiscount && !this.CanPickBand(line)) return;
         if (this.overrideEditorLineIds.has(line.ID)) {
             this.overrideEditorLineIds.delete(line.ID);
             return;
@@ -951,7 +961,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     /** Whether the line's price is a deviation from the rules — see `IsLinePriceOverridden`. */
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return IsLinePriceOverridden(line, this.EngineDefault(line));
+        return IsLinePriceOverridden(line, this.EngineDefault(line), this.ApplicableFor(line));
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {
@@ -1655,17 +1665,19 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private async refreshAllApplicable(): Promise<void> {
-        if (!this.CanOverride) return;
+        if (!this.EditMode) return;
         await Promise.all(this.Lines.map((line) => this.refreshApplicable(line)));
         this.cdr.detectChanges();
     }
 
     private async refreshApplicable(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
-        if (!this.CanOverride || !this._order || !line.ProductID) return;
+        if (!this._order || !line.ProductID) return;
         const user = this.metadata.CurrentUser as UserInfo | null;
         if (!user) return;
         try {
             await LoadOrdersEngine(this.metadata, user);
+            // Without an override grant the only reason to list prices is a revenue band to pick.
+            if (!this.CanOverride && !(this.EditMode && ProductHasRevenueBands(line.ProductID))) return;
             const product = OrdersEngine.Instance.ProductByID(line.ProductID);
             const companyID = product?.CompanyID ?? this._order.CompanyID;
             if (!companyID) return;

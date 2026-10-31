@@ -5,12 +5,15 @@
  * (`PROVIDER_BILLED_FIELDS`), on every tier. The server writes that keep Orders and the gateway in step are
  * the exceptions, each sanctioned where the subscription is loaded for it:
  *   · CancelSubscriptionOperation, after the gateway confirmed the cancel;
- *   · the order save that reactivates a cancelled one as a fresh start, retiring its old gateway id.
+ *   · the order save that reactivates a cancelled one as a fresh start, retiring its old gateway id;
+ *   · the order save of a renewal the gateway already charged (E4), which reactivates a cancelled one
+ *     keeping its gateway id (`SanctionGatewayRenewal`).
  * The sanction is a module-private set rather than a property, so nothing outside this server can grant
  * it: a client that set a flag on its own object would still be refused.
  *
  * CONNECTS TO:
- *   CALLERS: ./CancelSubscriptionOperation.ts · ./OrderEntityServer.ts (touchExistingSubscription)
+ *   CALLERS: ./ProviderSubscriptions.ts (the hand-over records the gateway id) · ./CancelSubscriptionOperation.ts ·
+ *            ./OrderEntityServer.ts (touchExistingSubscription) · ./ProviderSubscriptionSync.ts · ./LinkProviderSubscription.ts
  *   BASE:    @mj-biz-apps/orders-entities SubscriptionEntity
  */
 import { BaseEntity } from '@memberjunction/core';
@@ -55,6 +58,38 @@ export function SanctionCancellationReversal(order: object): void {
 /** True for the reversal order a gateway-confirmed cancel books. Only this server can mark one. */
 export function IsCancellationReversal(order: object): boolean {
     return CANCELLATION_REVERSALS.has(order);
+}
+
+const MONEY_ONLY_REVERSALS = new WeakSet<object>();
+
+/**
+ * Mark a reversal order that credits MONEY only (D20: the gateway refunded a renewal it charged): its lines reverse
+ * part of the sale's amount, but no grant is reduced and no term changes, because a refund is not a cancel.
+ */
+export function SanctionMoneyOnlyReversal(order: object): void {
+    MONEY_ONLY_REVERSALS.add(order);
+}
+
+/** True for a money-only reversal order (no access is taken away). Only this server can mark one. */
+export function IsMoneyOnlyReversal(order: object): boolean {
+    return MONEY_ONLY_REVERSALS.has(order);
+}
+
+const GATEWAY_RENEWALS = new WeakSet<object>();
+
+/**
+ * Mark the order E4 books for a renewal the payment gateway already charged (`BookProviderRenewal`). Its
+ * renewal line may extend, or reactivate, the subscription the gateway bills, keeping the gateway id; any
+ * other order that would renew it is refused (`ProviderBilledPurchaseVerdict`). Only this server can mark
+ * one: a client building its own order object cannot.
+ */
+export function SanctionGatewayRenewal(order: object): void {
+    GATEWAY_RENEWALS.add(order);
+}
+
+/** True for an order `SanctionGatewayRenewal` marked. */
+export function IsGatewayRenewal(order: object): boolean {
+    return GATEWAY_RENEWALS.has(order);
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
