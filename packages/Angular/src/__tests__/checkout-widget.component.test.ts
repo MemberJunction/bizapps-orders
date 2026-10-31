@@ -212,6 +212,38 @@ describe('MJCheckoutWidgetComponent', () => {
             expect(component.isFormValid()).toBe(true);
         });
 
+        it('asks for no card once a code brings a paid total to zero, and asks again when the code stops applying', () => {
+            component.config = {
+                unitPrice: 399,
+                allowCoupons: true,
+                allowQuantity: true,
+                autoRenewConsentText: 'Renews every year until cancelled.'
+            } as CheckoutWidgetConfig;
+            component.email.set('jane@example.com');
+            component.firstName.set('Jane');
+            component.lastName.set('Doe');
+            fillLocation(component);
+            component.isPaymentReady = false;
+            component.appliedPromotion = { code: 'FULL100', discount: 399, total: 0, quantity: 1 };
+
+            expect(component.isFree()).toBe(false);
+            expect(component.allowsPromotionCodes()).toBe(true);
+            expect(component.nothingDue()).toBe(true);
+            // Nothing due saves no card, so nothing renews on its own and there is nothing to agree to.
+            expect(component.autoRenewConsentText()).toBeNull();
+            expect(component.isFormValid()).toBe(true);
+
+            const emitSpy = vi.spyOn(component.submitted, 'emit');
+            component.stripePaymentMethodId = 'pm_typed_anyway';
+            component.handleSubmit();
+            expect(emitSpy.mock.calls[0][0].stripePaymentMethodId).toBeUndefined();
+            expect(emitSpy.mock.calls[0][0].autoRenewConsent).toBeUndefined();
+
+            component.quantity.set(2);
+            expect(component.nothingDue()).toBe(false);
+            expect(component.isFormValid()).toBe(false);
+        });
+
         it('holds Pay until the buyer ticks the automatic-renewal agreement, and reports the tick', () => {
             component.config = { unitPrice: 599, autoRenewConsentText: 'Renews every year until cancelled.' } as CheckoutWidgetConfig;
             component.email.set('jane@example.com');

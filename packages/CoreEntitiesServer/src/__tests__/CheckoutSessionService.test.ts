@@ -377,6 +377,7 @@ const renewalMocks = vi.hoisted(() => ({
     sellsSubscription: vi.fn().mockResolvedValue(false),
     findCustomer: vi.fn().mockResolvedValue(null),
     saveInstrument: vi.fn().mockResolvedValue({ Saved: false }),
+    stopAutoRenew: vi.fn().mockResolvedValue([]),
     ensureCustomer: vi.fn().mockResolvedValue({ Success: true, ProviderCustomerRef: 'cus_new', WasExisting: false }),
     resolveProvider: null as null | ((...args: unknown[]) => unknown),
 }));
@@ -395,6 +396,7 @@ vi.mock('../CheckoutSavedInstrument.js', () => ({
     SellsSubscription: async () => true,
     FindReusableProviderCustomerRef: (...args: unknown[]) => renewalMocks.findCustomer(...args),
     SaveCheckoutInstrumentForRenewals: (...args: unknown[]) => renewalMocks.saveInstrument(...args),
+    StopAutoRenewWithoutRenewalCard: (...args: unknown[]) => renewalMocks.stopAutoRenew(...args),
 }));
 
 vi.mock('../PaymentProviderResolver.js', async (importOriginal) => {
@@ -570,7 +572,13 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     };
 });
 
-import { CheckoutSessionService, NormalizeCheckoutPromotionCodes, PlanCheckoutPromotionCodes } from '../CheckoutSessionService.js';
+import {
+    CHECKOUT_FAILED_AFTER_PAYMENT_MESSAGE,
+    CHECKOUT_FAILED_MESSAGE,
+    CheckoutSessionService,
+    NormalizeCheckoutPromotionCodes,
+    PlanCheckoutPromotionCodes,
+} from '../CheckoutSessionService.js';
 import { CheckoutMemberDiscountNotConfiguredError } from '../CheckoutMemberDiscountResolver.js';
 import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
@@ -2809,7 +2817,9 @@ describe('CheckoutSessionService', () => {
             const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY);
             expect(res.Success).toBe(false);
             expect(res.Status).toBe('Open');
-            expect(res.ErrorMessage).toContain('Downstream GL mapping service timeout');
+            // The buyer is told plainly that nothing was charged; the cause stays in the server log.
+            expect(res.ErrorMessage).toBe(CHECKOUT_FAILED_MESSAGE);
+            expect(res.ErrorMessage).not.toContain('Downstream GL mapping service timeout');
         });
 
         it('reports success and never reverts to Open when a failure happens AFTER the order committed', async () => {
@@ -3394,7 +3404,7 @@ describe('CheckoutSessionService', () => {
 
             expect(res.Success).toBe(false);
             expect(res.Status).toBe('Open');
-            expect(res.ErrorMessage).toMatch(/Could not record the billing address/);
+            expect(res.ErrorMessage).toBe(CHECKOUT_FAILED_MESSAGE);
             expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
         });
 
@@ -3885,6 +3895,33 @@ describe('CheckoutSessionService', () => {
             expect(stepMocks.Begin).not.toHaveBeenCalled();
         });
 
+        it('turns auto-renew off when a code brought a paid order to zero, since no card was entered', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            mocks.mockPricingPrice.mockImplementationOnce((ctx: { Lines: Array<{ UnitPrice: number; DiscountAmount: number; LineTotalGross: number }> }) => {
+                for (const line of ctx.Lines) {
+                    line.UnitPrice = 399;
+                    line.DiscountAmount = 399;
+                    line.LineTotalGross = 0;
+                }
+                return Promise.resolve({});
+            });
+            renewalMocks.stopAutoRenew.mockClear();
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(stepMocks.Begin).not.toHaveBeenCalled();
+            expect(renewalMocks.stopAutoRenew).toHaveBeenCalledWith(mocks.mockOrderInstance.ID, testUser);
+        });
+
+        it('leaves auto-renew alone on a product that is free at list price', async () => {
+            mocks.mockSessionInstance.Email = 'guest@example.com';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ BillingAddress: { Country: 'US', StateProvince: 'IL', PostalCode: '60601' }, Lines: [{ ProductID: 'prod-1', Quantity: 1 }] });
+            renewalMocks.stopAutoRenew.mockClear();
+            const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+            expect(res.Success).toBe(true);
+            expect(renewalMocks.stopAutoRenew).not.toHaveBeenCalled();
+        });
+
         it('records Confirm as failed when the booking rolls back after payment checked out', async () => {
             paidCheckout();
             mocks.mockOrderInstance.Confirm.mockRejectedValueOnce(new Error('booking failed'));
@@ -3895,6 +3932,8 @@ describe('CheckoutSessionService', () => {
             const [attempt, message] = stepMocks.Fail.mock.calls[0] as [{ Step: { StepName: string } }, string];
             expect(attempt.Step.StepName).toBe('Confirm');
             expect(message).toContain('booking failed');
+            // Payment had checked out, so the buyer is not told they were not charged.
+            expect(res.ErrorMessage).toBe(CHECKOUT_FAILED_AFTER_PAYMENT_MESSAGE);
         });
 
         it('records Capture as failed, with the reason and whether it is retryable, while the order still confirms', async () => {
