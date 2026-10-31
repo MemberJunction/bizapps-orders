@@ -34,6 +34,8 @@ const state = vi.hoisted(() => ({
     cap: null as number | null,
     /** Gateway charge ids an Orders payment records (the importer's: a charge and no intent), and every filter read. */
     paymentCharges: [] as string[],
+    /** Payments with their subscription and status (the scope `BookedChargeFilter` asks for); `paymentCharges` are SUB's, Captured. */
+    paymentRows: [] as Array<{ charge: string; sub: string; status: string }>,
     paymentFilters: [] as string[],
     /** What the sync asked the gateway for (`CreatedSince`), and how many renewals it booked. */
     listedSince: [] as unknown[],
@@ -75,7 +77,15 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     const f = (params as { ExtraFilter?: string }).ExtraFilter ?? '';
                     state.paymentFilters.push(f);
                     const asked = /ProviderChargeID IN \(([^)]*)\)/.exec(f)?.[1]?.split(',').map((c) => c.trim().replace(/^'|'$/g, '')) ?? [];
-                    return { Success: true, Results: state.paymentCharges.filter((c) => asked.includes(c)).map((c, i) => ({ ID: `pay-${i}`, ProviderChargeID: c })) };
+                    // Honours the scope too, as SQL would: Failed rows only when not excluded; only payments on the orders
+                    // of the subscription(s) the filter names, by BOTH routes (a term's line, or a line renewing it).
+                    const notFailed = /Status <> 'Failed'/.test(f);
+                    const renews = /RenewsSubscriptionID = '([^']+)'/.exec(f)?.[1];
+                    const terms = /t\.SubscriptionID = '([^']+)'/.exec(f)?.[1];
+                    const rows = [...state.paymentCharges.map((c) => ({ charge: c, sub: SUB, status: 'Captured' })), ...state.paymentRows].filter(
+                        (r) => asked.includes(r.charge) && (!notFailed || r.status !== 'Failed') && r.sub === renews && r.sub === terms,
+                    );
+                    return { Success: true, Results: rows.map((r, i) => ({ ID: `pay-${i}`, ProviderChargeID: r.charge })) };
                 }
                 if (e.endsWith('Subscription Terms')) {
                     return { Success: true, Results: [{ ID: '22222222-2222-4222-8222-0000000000f1', TermNumber: 1, StartDate: '2026-10-31', EndDate: '2027-10-30', OrderLineID: null, Quantity: 1 }] };
@@ -133,7 +143,7 @@ vi.mock('../checkoutCaptureAlert.js', () => ({
 
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { SyncProviderSubscription, SyncProviderSubscriptions } from '../ProviderSubscriptionSync.js';
+import { BookedChargeFilter, SyncProviderSubscription, SyncProviderSubscriptions } from '../ProviderSubscriptionSync.js';
 
 const provider = { GetEntityObject: async () => ({}) } as unknown as IMetadataProvider;
 const user = {} as UserInfo;
@@ -177,6 +187,7 @@ beforeEach(() => {
     state.settleCalls = 0;
     state.paymentCharges = [];
     state.paymentFilters = [];
+    state.paymentRows = [];
     state.listedSince = [];
     state.booked = 0;
     vi.spyOn(BusinessTimeZoneEngine.Instance, 'Config').mockResolvedValue(undefined as never);
@@ -326,7 +337,7 @@ describe("BookedChargeIDs: the fact behind the imported-subscriber rule (#989 re
         expect(state.booked).toBe(0);
         expect(r.Outcome).toBe('InLine');
         // Read by the charge, across every key and account.
-        expect(state.paymentFilters[0]).toBe(`ProviderChargeID IN ('ch_renew')`);
+        expect(state.paymentFilters[0]).toBe(BookedChargeFilter(SUB, ['ch_renew']));
     });
     it('control: no payment records that charge: the renewal is booked once', async () => {
         const r = await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
@@ -338,11 +349,38 @@ describe("BookedChargeIDs: the fact behind the imported-subscriber rule (#989 re
         await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
         expect(state.booked).toBe(1);
     });
+    it("L3 review: the same charge on ANOTHER subscription's payment is not this one's money: the renewal is booked", async () => {
+        state.paymentRows = [{ charge: 'ch_renew', sub: '99999999-9999-4999-8999-999999999999', status: 'Captured' }];
+        const r = await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
+        expect(state.booked).toBe(1);
+        expect(r.Differences.length).toBeGreaterThan(0);
+    });
+    it('L3 review: a FAILED payment recording the charge is not money: the renewal is booked', async () => {
+        state.paymentRows = [{ charge: 'ch_renew', sub: SUB, status: 'Failed' }];
+        expect((await SyncProviderSubscription(SUB, { Now: NOW }, provider, user)).Outcome).toBe('Changed');
+        expect(state.booked).toBe(1);
+    });
+    it("control: this subscription's payment, Refunded or Pending as well as Captured, counts: in line", async () => {
+        for (const status of ['Captured', 'Refunded', 'Pending']) {
+            state.paymentRows = [{ charge: 'ch_renew', sub: SUB, status }];
+            state.booked = 0;
+            const r = await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
+            expect(`${status}:${r.Outcome}:${state.booked}`).toBe(`${status}:InLine:0`);
+        }
+    });
+    it('BookedChargeFilter: the charges, not Failed, and only payments on this subscription\'s orders (a term\'s line or a line renewing it)', () => {
+        expect(BookedChargeFilter(SUB, ['ch_a', "ch_o'b"])).toBe(
+            `ProviderChargeID IN ('ch_a','ch_o''b') AND Status <> 'Failed' AND ID IN (SELECT pl.PaymentHeaderID FROM __mj_BizAppsOrders.PaymentLine pl ` +
+                `WHERE pl.OrderHeaderID IN (SELECT ol.OrderHeaderID FROM __mj_BizAppsOrders.OrderLine ol WHERE ol.RenewsSubscriptionID = '${SUB}' ` +
+                `OR ol.ID IN (SELECT t.OrderLineID FROM __mj_BizAppsOrders.SubscriptionTerm t WHERE t.SubscriptionID = '${SUB}')))`,
+        );
+        expect(() => BookedChargeFilter("x' OR 1=1 --", ['ch_a'])).toThrow();
+    });
     it('every invoice charge is asked for, de-duplicated; an invoice with no charge asks nothing', async () => {
         state.invoices = [paidRenewal(), { ...paidRenewal(), ProviderInvoiceID: 'in_dup' }, { ...paidRenewal(), ProviderInvoiceID: 'in_2', ProviderIntentID: 'pi_2', ProviderChargeID: 'ch_2' }];
         state.paymentCharges = ['ch_renew', 'ch_2'];
         await SyncProviderSubscription(SUB, { Now: NOW }, provider, user);
-        expect(state.paymentFilters[0]).toBe(`ProviderChargeID IN ('ch_renew','ch_2')`);
+        expect(state.paymentFilters[0]).toMatch(/^ProviderChargeID IN \('ch_renew','ch_2'\) AND /);
         expect(state.booked).toBe(0);
         state.paymentFilters = [];
         state.invoices = [{ ...paidRenewal(), ProviderChargeID: null }];

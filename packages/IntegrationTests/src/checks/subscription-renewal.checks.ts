@@ -177,6 +177,9 @@
  *   SR88  the nightly sync Action and its schedule ship Disabled and in Preview; the link Action is registered
  *   SR89  an imported subscriber (Chicago): the year it already paid is never booked again, whether its payment
  *         records the charge (no intent) or nothing records it, through the link or the sanction; its next renewal is
+ *   SR99  an imported FIRST-YEAR subscriber (current invoice subscription_create, its charge on the importer's
+ *         payment) is in line: preview reports 0 differences for it; a creation charge nothing records, or recorded
+ *         only on another subscription's payment or a Failed one, is still reported
  *   SR90  recording a cancel the gateway made is never blocked: an open RenewalNotBooked does not stop it; a
  *         refused attempt raises the non-blocking GatewayCancelNotRecorded; the next sync records it
  *   SR91  a renewal invoice with tax is not booked: urgent RenewalNotBooked, nothing written
@@ -3444,40 +3447,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     const account = await gatewayBillingAccount(ctx);
                     await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
                     const currency = await booksIn(ctx);
-                    // The importer's shape: term 1 = the day after Stripe's period start → the business day of its end;
-                    // a captured payment recording the current charge, under the importer's own key, with no intent.
-                    const imported = async (tag: string, organizationID: string, reason: 'subscription_create' | 'subscription_cycle') => {
-                        const sub = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, organizationID);
-                        await payInFull(ctx, sub.OrderID, organizationID);
-                        const lastDay = isoDate(sub.Term.EndDate);
-                        await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
-                        await TxQuery(
-                            ctx,
-                            `UPDATE ph SET ProviderChargeID = 'ch_it_${tag}_now', IdempotencyKey = 'csv-sub-pay:it:${tag}', PaymentIntentID = NULL
-                               FROM ${ORDERS_SCHEMA}.PaymentHeader ph JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID WHERE pl.OrderHeaderID = '${sub.OrderID}'`,
-                        );
-                        await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
-                        // Stripe's current period: 14:23 UTC on the day before term 1 began, to 14:23 UTC on term 1's last day.
-                        const periodStart = new Date(`${AddDays(isoDate(sub.Term.EndDate), -365)}T14:23:00Z`);
-                        const nextStart = new Date(`${lastDay}T14:23:00Z`);
-                        const current: GatewaySubscriptionInvoice = {
-                            ...renewalInvoice({ anchor: periodStart, currency }, `${tag}_now`),
-                            BillingReason: reason,
-                            PeriodStart: periodStart,
-                            PeriodEnd: nextStart,
-                        };
-                        const held = {
-                            ProviderSubscriptionID: `sub_it_${tag}`,
-                            Status: 'active',
-                            IsLive: true,
-                            Customer: `cus_${tag}`,
-                            Metadata: {} as Record<string, string>,
-                            PeriodStart: periodStart,
-                            Invoices: [current] as GatewaySubscriptionInvoice[],
-                        };
-                        fakeGateway.held.push(held);
-                        return { sub, lastDay, held, nextStart };
-                    };
+                    const imported = (tag: string, organizationID: string, reason: 'subscription_create' | 'subscription_cycle') =>
+                        importedSubscriber(ctx, currency, tag, organizationID, reason);
                     const termCount = async (id: string) => (await termsOf(ctx, id)).length;
                     const intents = async (pi: string) => Number((await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.PaymentIntent WHERE ProviderIntentID = '${pi}'`)).N);
 
@@ -3518,6 +3489,74 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     await markProviderBilled(ctx, bare.sub.SubscriptionID, account, 'sub_it_y2bare');
                     const s1 = await syncNow(ctx, bare.sub.SubscriptionID, new Date(`${AddDays(bare.lastDay, -200)}T12:00:00Z`));
                     AssertEqual(`${s1.Outcome}|${await termCount(bare.sub.SubscriptionID)}|${await intents('pi_it_y2bare_now')}`, 'InLine|1|0', `nothing booked again: ${JSON.stringify(s1)}`);
+                }),
+            ),
+    },
+    {
+        Id: 'subscription-renewal.SR99',
+        Name: "SR99: an imported FIRST-YEAR subscriber (its current invoice is Stripe's subscription_create, its charge on the importer's payment) is in line: the nightly preview reports 0 differences for it; a creation charge nothing records, one recorded only on ANOTHER subscription's payment, or only on a Failed payment, is still reported",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () =>
+                withChicago(async () => {
+                    // L3 finding 5: 372 of 509 rehearsal subscribers each reported "charged … at creation" although the
+                    // importer's payment records that charge, so switch day's "0 differences" could not pass.
+                    fakeGateway.reset();
+                    const f = Fx();
+                    const account = await gatewayBillingAccount(ctx);
+                    await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
+                    const currency = await booksIn(ctx);
+                    const first = await importedSubscriber(ctx, currency, 'y1', f.Customers.OrganizationID, 'subscription_create');
+                    await markProviderBilled(ctx, first.sub.SubscriptionID, account, 'sub_it_y1');
+                    // Control: the same shape with NO payment recording the creation charge (an E2 subscription the
+                    // gateway charged at creation on top of checkout): genuinely unbooked, so still a difference.
+                    const unbooked = await importedSubscriber(ctx, currency, 'y1bare', f.Customers.SecondOrganizationID, 'subscription_create');
+                    await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.PaymentHeader SET ProviderChargeID = NULL WHERE ProviderChargeID = 'ch_it_y1bare_now'`);
+                    await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    await markProviderBilled(ctx, unbooked.sub.SubscriptionID, account, 'sub_it_y1bare');
+                    const now = new Date(`${AddDays(first.lastDay, -200)}T12:00:00Z`);
+                    const ids = [first.sub.SubscriptionID, unbooked.sub.SubscriptionID];
+                    const preview = await SyncProviderSubscriptions({ SubscriptionIDs: ids, Preview: true, Now: now }, ctx.Provider, ctx.User);
+                    const of = (id: string) => preview.Results.find((r) => SameID(r.SubscriptionID, id))!;
+                    AssertEqual(
+                        `${preview.Read}|${preview.Changed}|${preview.NeedsPerson}|${preview.Failed}|${preview.Differences}`,
+                        '2|0|0|0|1',
+                        `one difference, from the unbooked control only: ${preview.Message}`,
+                    );
+                    AssertEqual(`${of(first.sub.SubscriptionID).Outcome}|${of(first.sub.SubscriptionID).Differences.length}`, 'InLine|0', `the imported first-year subscriber is in line: ${JSON.stringify(of(first.sub.SubscriptionID))}`);
+                    const control = of(unbooked.sub.SubscriptionID);
+                    Assert(
+                        control.Differences.length === 1 && /in_it_y1bare_now: charged .* at creation/.test(control.Differences[0]),
+                        `control: the creation charge nothing records is still reported: ${JSON.stringify(control)}`,
+                    );
+                    AssertEqual(`${control.Actions.length}|${control.Notices.length}`, '0|0', 'and nothing is booked or raised for it');
+
+                    // Control: the control's creation invoice now names y1's charge, which IS recorded, but on ANOTHER
+                    // subscription's payment (y1's): not this subscription's money, so still a difference.
+                    unbooked.held.Invoices[0] = { ...unbooked.held.Invoices[0], ProviderChargeID: 'ch_it_y1_now' };
+                    const elsewhere = await SyncProviderSubscription(unbooked.sub.SubscriptionID, { Preview: true, Now: now }, ctx.Provider, ctx.User);
+                    Assert(
+                        elsewhere.Outcome !== 'Failed' && elsewhere.Differences.length === 1 && /in_it_y1bare_now: charged .* at creation/.test(elsewhere.Differences[0]),
+                        `control: a charge recorded only on another subscription's payment is still reported: ${JSON.stringify(elsewhere)}`,
+                    );
+                    // Live, the imported one is still in line and nothing is booked.
+                    const live = await syncNow(ctx, first.sub.SubscriptionID, now);
+                    AssertEqual(`${live.Outcome}|${live.Differences.length}|${(await termsOf(ctx, first.sub.SubscriptionID)).length}`, 'InLine|0|1', `live: ${JSON.stringify(live)}`);
+                    // Its second year is unaffected: the next renewal (subscription_cycle) is booked once.
+                    first.held.Invoices.push({ ...renewalInvoice({ anchor: first.nextStart, currency }, 'y1_next') });
+                    const renewed = await syncNow(ctx, first.sub.SubscriptionID, new Date(first.nextStart.getTime() + 3_600_000));
+                    AssertEqual(`${renewed.Outcome}|${(await termsOf(ctx, first.sub.SubscriptionID)).length}`, 'Changed|2', `the next renewal is booked: ${JSON.stringify(renewed)}`);
+
+                    // Control: the same payment, Failed, is not money: the creation invoice is a difference again.
+                    await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.PaymentHeader SET Status = 'Failed' WHERE ProviderChargeID = 'ch_it_y1_now'`);
+                    await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+                    const failedRun = await SyncProviderSubscription(first.sub.SubscriptionID, { Preview: true, Now: new Date(first.nextStart.getTime() + 7_200_000) }, ctx.Provider, ctx.User);
+                    Assert(
+                        failedRun.Outcome !== 'Failed' && failedRun.Differences.some((d) => /in_it_y1_now: charged .* at creation/.test(d)),
+                        `control: a Failed payment recording the charge does not make it booked: ${JSON.stringify(failedRun)}`,
+                    );
                 }),
             ),
     },
@@ -4749,6 +4788,51 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('subscription-renewal', {
 // ─── E3 + E4 fixtures ───────────────────────────────────────────────────────────────────────────
 
 type HeldGatewaySubscription = (typeof fakeGateway.held)[number];
+
+/**
+ * A subscriber in the importer's shape (SR89, SR99): term 1 = the day after Stripe's period start → the business
+ * day of its end; a captured payment recording the current charge (`ch_it_<tag>_now`) under the importer's own
+ * key, with no intent. The fake gateway holds `sub_it_<tag>`, whose current invoice has `reason`: a first-year
+ * subscriber's is `subscription_create`, a second-year one's `subscription_cycle`. Not yet linked.
+ */
+async function importedSubscriber(
+    ctx: IntegrationCheckContext,
+    currency: string,
+    tag: string,
+    organizationID: string,
+    reason: 'subscription_create' | 'subscription_cycle',
+) {
+    const sub = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, organizationID);
+    await payInFull(ctx, sub.OrderID, organizationID);
+    const lastDay = isoDate(sub.Term.EndDate);
+    await TxQuery(ctx, `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+    await TxQuery(
+        ctx,
+        `UPDATE ph SET ProviderChargeID = 'ch_it_${tag}_now', IdempotencyKey = 'csv-sub-pay:it:${tag}', PaymentIntentID = NULL
+           FROM ${ORDERS_SCHEMA}.PaymentHeader ph JOIN ${ORDERS_SCHEMA}.PaymentLine pl ON pl.PaymentHeaderID = ph.ID WHERE pl.OrderHeaderID = '${sub.OrderID}'`,
+    );
+    await TxQuery(ctx, `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`);
+    // Stripe's current period: 14:23 UTC on the day before term 1 began, to 14:23 UTC on term 1's last day.
+    const periodStart = new Date(`${AddDays(isoDate(sub.Term.EndDate), -365)}T14:23:00Z`);
+    const nextStart = new Date(`${lastDay}T14:23:00Z`);
+    const current: GatewaySubscriptionInvoice = {
+        ...renewalInvoice({ anchor: periodStart, currency }, `${tag}_now`),
+        BillingReason: reason,
+        PeriodStart: periodStart,
+        PeriodEnd: nextStart,
+    };
+    const held = {
+        ProviderSubscriptionID: `sub_it_${tag}`,
+        Status: 'active',
+        IsLive: true,
+        Customer: `cus_${tag}`,
+        Metadata: {} as Record<string, string>,
+        PeriodStart: periodStart,
+        Invoices: [current] as GatewaySubscriptionInvoice[],
+    };
+    fakeGateway.held.push(held);
+    return { sub, lastDay, held, nextStart };
+}
 
 /**
  * An annual subscription the fake gateway bills (handed over by E2's own pass), with its anchor: 00:00

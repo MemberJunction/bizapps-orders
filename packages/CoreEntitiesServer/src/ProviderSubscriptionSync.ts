@@ -443,6 +443,28 @@ async function loadTerms(subscriptionID: string, rv: RunView, user: UserInfo): P
     return r.Results ?? [];
 }
 
+/**
+ * The payments that make a gateway charge "booked" for THIS subscription (`SyncOrdersFacts.BookedChargeIDs`):
+ * a payment recording the charge (`ProviderChargeID`, whatever its key: the importer writes an imported
+ * subscriber's current-year payment with the charge and no intent), that did not fail, and that is applied to
+ * one of this subscription's orders: an order with a line that bought one of its terms
+ * (`SubscriptionTerm.OrderLineID`, the importer's term-1 order among them) or a line renewing it
+ * (`OrderLine.RenewsSubscriptionID`, how a gateway renewal is booked). A charge on another subscription's
+ * payment, or on a Failed payment, is not this subscription's money, so the planner still reports it.
+ *
+ * Example: Sam's SUB-000300 was imported with term 1 bought by ORD-000910, paid by PAY-000700 recording
+ * `ch_sam`. `ch_sam` is booked for SUB-000300; the same charge id on a payment of SUB-000301's order is not.
+ */
+export function BookedChargeFilter(subscriptionID: string, charges: readonly string[]): string {
+    const sub = RequireUUID(subscriptionID, 'SubscriptionID');
+    return (
+        `ProviderChargeID IN (${charges.map((c) => `'${EscapeText(c)}'`).join(',')}) AND Status <> 'Failed' AND ID IN (` +
+        `SELECT pl.PaymentHeaderID FROM __mj_BizAppsOrders.PaymentLine pl WHERE pl.OrderHeaderID IN (` +
+        `SELECT ol.OrderHeaderID FROM __mj_BizAppsOrders.OrderLine ol WHERE ol.RenewsSubscriptionID = '${sub}' ` +
+        `OR ol.ID IN (SELECT t.OrderLineID FROM __mj_BizAppsOrders.SubscriptionTerm t WHERE t.SubscriptionID = '${sub}')))`
+    );
+}
+
 async function loadOrdersFacts(
     sub: SubscriptionRow,
     latest: TermRow | null,
@@ -456,12 +478,10 @@ async function loadOrdersFacts(
     const charges = [...new Set(invoices.map((i) => i.ProviderChargeID).filter((v): v is string => !!v))];
     const bookedCharges = new Set<string>();
     if (charges.length) {
-        // Any payment that records the charge, whatever its key or account (a gateway charge id is unique at the
-        // gateway): the importer writes an imported subscriber's current-year payment with the charge and no intent.
         const rows = await rv.RunView<{ ProviderChargeID: string }>(
             {
                 EntityName: PAYMENT_HEADER_ENTITY,
-                ExtraFilter: `ProviderChargeID IN (${charges.map((c) => `'${EscapeText(c)}'`).join(',')})`,
+                ExtraFilter: BookedChargeFilter(sub.ID, charges),
                 Fields: ['ID', 'ProviderChargeID'],
                 ResultType: 'simple',
                 BypassCache: true,
