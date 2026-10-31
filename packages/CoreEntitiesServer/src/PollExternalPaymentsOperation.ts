@@ -10,7 +10,8 @@
  *   1. read every receivable payment changed since (watermark − 1 day) — the overlap is free because
  *      dedupe is by payment id;
  *   2. upsert an `ExternalPayment` row per payment (the audit trail and the exceptions worklist);
- *   3. decide (`DecideExternalPayment`): Capture / Hold / Ignore / ReversalNeeded;
+ *   3. decide (`DecideExternalPayment`): Capture / Hold / Ignore / ReversalNeeded / Reverse — a Bill.com
+ *      payment captured and then voided or cancelled is reversed here as a bank return (golive #386);
  *   4. for Capture, match `invoicePayments[]` to `ExternalInvoice` rows by the rail's invoice id — ALL
  *      of them, or the payment is Unmatched and nothing is captured;
  *   5. call `Orders.CapturePayment` with `IdempotencyKey = 'billcom:<0rp id>'`, so the unique index on
@@ -21,14 +22,15 @@
  * `PaymentHeaderEntityServer` books the cash leg — the same path a keyed check takes (A-US2).
  *
  * WHAT NEEDS A PERSON. `Unmatched` (an invoice we did not issue — pre-cutover AR, or created directly
- * in Bill.com) and `ReversalNeeded` (captured, then voided on the rail) are reported as `ATTENTION`
+ * in Bill.com) and `ReversalNeeded` (captured, then refunded or disputed on the rail, or a reversal
+ * that failed) are reported as `ATTENTION`
  * with Success false so a job that notifies on failure tells somebody; the rows stay in
  * `ExternalPayment` until dealt with. A payment the rail itself records Unmatched (HubSpot, which
  * cannot name a payment's deal yet) is counted but does not fail the run on its own.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
-import { BaseEntity, BaseRemotableOperation, CompositeKey, LogError, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { BaseEntity, BaseRemotableOperation, CompositeKey, LogError, RunView, type DatabaseProviderBase, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
     AllocateInvoicePayments,
@@ -52,11 +54,13 @@ import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
 import {
     EXTERNAL_PAYMENT_ENTITY,
     ORDER_HEADER_ENTITY,
+    PAYMENT_HEADER_ENTITY,
     PAYMENT_LINE_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
 } from './entity-names.js';
 import { ListPaymentSourceProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { LoadExternalInvoicesByRef, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
+import { BuildUnapplyLines, CreateReversingPayment, LoadAppliedAllocations, type ReversiblePayment } from './PaymentReversalFactory.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const RAIL_OBJECT = 'receivable-payments';
@@ -76,7 +80,7 @@ async function functionalCurrencyFor(companyID: string, provider: IMetadataProvi
 const OVERLAP_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX = 100;
 
-interface ExternalPaymentRow extends Record<string, unknown> {
+export interface ExternalPaymentRow extends Record<string, unknown> {
     ID: string;
     ExternalPaymentRef: string;
     Disposition: ExternalPaymentDisposition;
@@ -280,6 +284,26 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             }
         }
 
+        // OPEN REVERSALS THE WATERMARK NO LONGER REACHES (golive #386). A payment cancelled on the rail
+        // before a newer payment moved the watermark more than a day past it is never fetched again, so
+        // a row flagged `ReversalNeeded` by the old report-only poll, or left there by a failed
+        // reversal, would never be reversed. Each is re-decided from the payload stored from the rail's
+        // latest read. A failure is logged and left for the next pass; these rows do not hold the
+        // watermark back. #909 does the same for `Reapplied` rows; once both land they fold into one.
+        if (PaymentStatusVocabularyFor(rail.Config.TypeCode).ReversesAutomatically) {
+            for (const { Row, Record } of ReversalNeededRowsToRecheck(
+                await loadOpenReversalNeeded(paymentProviderID, provider, user),
+                all.map((p) => p.ExternalPaymentRef),
+                rail,
+            )) {
+                try {
+                    outcomes.push(await this.handlePayment(rail, Record, Row, opts.preview, bookingCurrency, provider, user));
+                } catch (err) {
+                    LogError(`Orders.PollExternalPayments: re-checking payment ${Row.ExternalPaymentRef} flagged for reversal failed: ${err instanceof Error ? err.message : String(err)}`);
+                }
+            }
+        }
+
         // THE WATERMARK: on a clean, uncapped pass, the newest instant the rail returned. On a capped
         // pass, the newest instant among the payments actually processed — everything older is done
         // (the list is sorted), and the one-day overlap re-reads the boundary next time. A fault keeps
@@ -367,6 +391,11 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const reason = decision.KeepPriorReason && prior?.DispositionReason ? prior.DispositionReason : decision.Reason;
             await record('Reapplied', reason);
             return { ...base, Disposition: 'Reapplied', Reason: reason, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
+        }
+        if (decision.Action === 'Reverse') {
+            const r = await reverseCancelledPayment(p, prior?.PaymentHeaderID ?? null, decision.Reason, vocabulary.RailName, preview, provider, user);
+            await record(r.Disposition, r.Reason);
+            return { ...base, Disposition: r.Disposition, Reason: r.Reason, PaymentNumber: r.PaymentNumber ?? null, PaymentHeaderID: prior?.PaymentHeaderID ?? null };
         }
         if (decision.Action === 'ReversalNeeded') {
             await record('ReversalNeeded', decision.Reason);
@@ -506,6 +535,53 @@ async function loadSeen(paymentProviderID: string, refs: readonly string[], prov
     return map;
 }
 
+/** `ReversalNeeded` rows for this provider, with the payload the poller stored from the rail. */
+async function loadOpenReversalNeeded(paymentProviderID: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalPaymentRow[]> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<ExternalPaymentRow>(
+        {
+            EntityName: EXTERNAL_PAYMENT_ENTITY,
+            ExtraFilter: `PaymentProviderID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}' AND Disposition = 'ReversalNeeded'`,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!r?.Success) {
+        LogError(`Orders.PollExternalPayments: could not read payments flagged for reversal for ${paymentProviderID}: ${r?.ErrorMessage ?? 'no result'}`);
+        return [];
+    }
+    return r.Results ?? [];
+}
+
+/**
+ * The open `ReversalNeeded` rows to re-decide this pass, each with the rail record rebuilt from its
+ * stored payload. A row the rail returned this pass is left out (the fetch already handled it, or the
+ * cap deferred it), as is one with no payment header or a payload the rail cannot rebuild.
+ */
+export function ReversalNeededRowsToRecheck(
+    rows: readonly ExternalPaymentRow[],
+    fetchedRefs: readonly string[],
+    rail: Pick<BaseInvoiceRail, 'RestorePaymentRecord'>,
+): Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> {
+    const fetched = new Set(fetchedRefs);
+    const out: Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> = [];
+    for (const row of rows) {
+        if (row.Disposition !== 'ReversalNeeded' || !row.PaymentHeaderID || fetched.has(row.ExternalPaymentRef)) continue;
+        let payload: unknown;
+        try {
+            payload = typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload;
+        } catch (err) {
+            LogError(`Orders.PollExternalPayments: the stored payload of ${row.ExternalPaymentRef} is not JSON, so it is not re-checked: ${err}`);
+            continue;
+        }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+        const record = rail.RestorePaymentRecord(row.ExternalPaymentRef, payload as Record<string, unknown>);
+        if (record) out.push({ Row: row, Record: record });
+    }
+    return out;
+}
+
 async function upsertExternalPayment(
     provider: IMetadataProvider,
     user: UserInfo,
@@ -552,6 +628,98 @@ async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvid
     );
     for (const o of r.Results ?? []) map.set(String(o.ID).toLowerCase(), { BillToOrganizationID: o.BillToOrganizationID, BillToPersonID: o.BillToPersonID });
     return map;
+}
+
+interface PaymentToReverse extends ReversiblePayment {
+    Amount: number;
+    ReversesPaymentHeaderID: string | null;
+    ReversalSource: string | null;
+    Status: string;
+}
+
+/**
+ * A captured payment the rail now reports void or cancelled, reversed as a bank return (golive #386).
+ *
+ * The answer is what the `ExternalPayment` row should read: `Ignored`, naming the reversal, once the
+ * cash is off the books; `ReversalNeeded` when a person still has to act (a preview, a failure).
+ *
+ * IDEMPOTENT ON THE LEDGER, not on the row. A bank-return reversal already pointing at the payment is
+ * the answer, so a crash between the reversal's commit and the row's update cannot reverse twice.
+ * What earlier refunds already gave back is not reversed again; only the remainder is.
+ *
+ * Dated today, the business day the poll saw it: Bill.com's payment carries no cancellation date,
+ * and its `updatedTime` moves for other edits too.
+ */
+async function reverseCancelledPayment(
+    p: RailPaymentRecord,
+    paymentHeaderID: string | null,
+    why: string,
+    railName: string,
+    preview: boolean,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<{ Disposition: ExternalPaymentDisposition; Reason: string; PaymentNumber?: string }> {
+    if (!paymentHeaderID) return { Disposition: 'ReversalNeeded', Reason: `${why} No payment is linked to this row, so it has to be reversed by hand.` };
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const id = RequireUUID(paymentHeaderID, 'PaymentHeaderID');
+    const r = await rv.RunView<PaymentToReverse>(
+        {
+            EntityName: PAYMENT_HEADER_ENTITY,
+            ExtraFilter: `ID = '${id}' OR (ReversesPaymentHeaderID = '${id}' AND Status = 'Refunded')`,
+            Fields: ['ID', 'PaymentNumber', 'ReceivingCompanyID', 'BillToOrganizationID', 'BillToPersonID', 'PaymentTypeID', 'PaymentDetailID', 'Amount', 'ReversesPaymentHeaderID', 'ReversalSource', 'Status'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (r?.Success === false) throw new Error(`Payment ${paymentHeaderID} could not be read: ${r.ErrorMessage}`);
+    const rows = r?.Results ?? [];
+    const original = rows.find((x) => String(x.ID).toLowerCase() === id.toLowerCase());
+    if (!original) return { Disposition: 'ReversalNeeded', Reason: `${why} Payment ${paymentHeaderID} was not found, so it has to be reversed by hand.` };
+    const reversals = rows.filter((x) => x !== original);
+    const onRail = `${railName} reports ${p.ExternalPaymentRef} '${p.Status}'.`;
+
+    const done = reversals.find((x) => x.ReversalSource === 'BankReturn');
+    if (done) return { Disposition: 'Ignored', Reason: `Reversed as ${done.PaymentNumber}: ${onRail}`, PaymentNumber: done.PaymentNumber };
+    const remaining = money(Number(original.Amount) - reversals.reduce((n, x) => n + Number(x.Amount), 0));
+    if (remaining <= 0) return { Disposition: 'Ignored', Reason: `${original.PaymentNumber} was already refunded in full; nothing is left to reverse. ${onRail}` };
+    if (preview) return { Disposition: 'ReversalNeeded', Reason: `Would reverse ${remaining.toFixed(2)} of ${original.PaymentNumber} as a bank return. ${onRail}` };
+
+    try {
+        const number = await writeBankReturn(original, remaining, `${onRail} The cash never arrived.`, provider, user);
+        return { Disposition: 'Ignored', Reason: `Reversed as ${number} on ${Today()}: ${onRail}`, PaymentNumber: number };
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        LogError(`Orders.PollExternalPayments: reversing ${original.PaymentNumber} for ${p.ExternalPaymentRef} failed: ${message}`);
+        return { Disposition: 'ReversalNeeded', Reason: `${why} The automatic reversal failed: ${message}` };
+    }
+}
+
+/** The reversal and its un-apply lines in one transaction, as `PaymentSettlement.reverse()` writes a bank return. */
+async function writeBankReturn(original: PaymentToReverse, amount: number, reason: string, provider: IMetadataProvider, user: UserInfo): Promise<string> {
+    const applications = await LoadAppliedAllocations(provider, user, original.ID);
+    if (!applications.length) throw new Error(`${original.PaymentNumber} is not applied to any order, so there is nothing to un-apply.`);
+    const db = provider as unknown as DatabaseProviderBase;
+    await db.BeginTransaction();
+    try {
+        const lines = await BuildUnapplyLines(provider, user, applications, amount);
+        const reversal = await CreateReversingPayment(
+            provider,
+            user,
+            original,
+            { Source: 'BankReturn', Amount: amount, Reason: reason, Description: `Return of ${original.PaymentNumber}` },
+            lines,
+        );
+        await db.CommitTransaction();
+        return reversal.Number;
+    } catch (err) {
+        try {
+            await db.RollbackTransaction();
+        } catch (rollbackErr) {
+            LogError(`Rollback failed after a cancelled-payment reversal error: ${rollbackErr}`);
+        }
+        throw err;
+    }
 }
 
 /**
