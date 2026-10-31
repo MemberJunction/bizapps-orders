@@ -411,7 +411,7 @@ async function priorSyncFailures(paymentProviderID: string, gatewayID: string, r
             EntityName: 'MJ_BizApps_Orders: Payment Webhook Deliveries',
             ExtraFilter:
                 `PaymentProviderID = '${EscapeSQLString(paymentProviderID)}' AND ReasonCode = 'sync_failed' ` +
-                `AND Reason LIKE '${EscapeSQLString(gatewayID)}:%' ` +
+                `AND Reason LIKE '${EscapeSQLString(gatewayID).replace(/[[%_]/g, '[$&]')}:%' ` +
                 // Failures that have stopped (a week without a redelivery) are history, not a run of them.
                 `AND LastReceivedAt >= DATEADD(day, -${SYNC_FAILURE_WINDOW_DAYS}, SYSDATETIMEOFFSET())`,
             Fields: ['ID', 'DeliveryCount'],

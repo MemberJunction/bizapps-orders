@@ -199,11 +199,23 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
         // the other's row), while this lookup makes the common case — a user double-clicking a
         // second later — cheap and legible rather than a caught exception.
         const idempotencyKey = (input?.IdempotencyKey ?? '').trim() || null;
+        // The column is NVARCHAR(200). Refused rather than truncated, BEFORE any query or write:
+        // a silently truncated key could collide with a different caller's key and hand back
+        // their payment as "the original".
+        if (idempotencyKey && idempotencyKey.length > 200) {
+            return this.refuse([
+                this.blocker(
+                    'IdempotencyKeyTooLong',
+                    `IdempotencyKey is ${idempotencyKey.length} characters; the maximum is 200.`,
+                    'Send a shorter key — a UUID is plenty.',
+                ),
+            ]);
+        }
         if (idempotencyKey && !input?.Preview) {
             const existing = await rv.RunView<{ ID: string }>(
                 {
                     EntityName: PAYMENT_HEADER_ENTITY,
-                    ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                    ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                     ResultType: 'simple',
                 },
                 user,
@@ -359,7 +371,7 @@ export class CapturePaymentOperation extends OrdersCapturePaymentOperationBase {
                 const again = await rv.RunView<{ ID: string }>(
                     {
                         EntityName: PAYMENT_HEADER_ENTITY,
-                        ExtraFilter: `IdempotencyKey = '${idempotencyKey.replace(/'/g, "''")}'`,
+                        ExtraFilter: `IdempotencyKey = '${EscapeSQLString(idempotencyKey)}'`,
                         ResultType: 'simple',
                     },
                     user,

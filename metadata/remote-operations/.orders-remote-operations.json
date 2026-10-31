@@ -228,7 +228,7 @@
       "OutputTypeDefinition": "@file:types/orders-capture-payment.output.ts",
       "OutputTypeIsArray": false,
       "ExecutionMode": "Sync",
-      "RequiredScope": "orders:write",
+      "RequiredScope": "orders:payments:write",
       "RequiresSystemUser": false,
       "GenerationType": "Manual",
       "CodeApprovalStatus": "Approved",
