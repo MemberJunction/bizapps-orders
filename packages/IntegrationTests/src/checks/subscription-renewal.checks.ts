@@ -199,6 +199,10 @@
  *            door and the cancel door each reading the gateway before the other commits, in both orders: credited
  *            once, applied on the renewal (owes 0)
  *
+ *   A line that bought several terms (golive #338):
+ *   SR100  a 24-month line typed at 20,000 on a 12-month type renews for one 12-month term at 10,000, and the
+ *         preview reports that term's dates, which the live renewal then books
+ *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
@@ -340,6 +344,8 @@ interface RenewalOutput {
         IncreaseSource?: string;
         UnitPrice?: number;
         DiscountPct?: number;
+        RenewalTermStart?: string;
+        RenewalTermEnd?: string;
         RenewalPromotionCodes?: string[];
         UnusableRenewalPromotionCodes?: Array<{ Code: string; Reason: string }>;
     }>;
@@ -4168,6 +4174,82 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
         },
     },
 
+    {
+        Id: 'subscription-renewal.SR100',
+        Name: 'SR100: a 24-month line at a typed price renews for one 12-month term at half its price, and the preview shows the term dates (golive #338)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // Two years paid up front on one line, at a price typed for the whole period: two
+                // 12-month terms of 10,000 each. Only a typed price is cut to one term at renewal; the
+                // engine prices one term whatever period the line states.
+                const result = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: new Date('2026-11-01T00:00:00Z'),
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubRolling,
+                            Quantity: 1,
+                            UnitPrice: 20000,
+                            ServicePeriodStart: '2026-11-01',
+                            ServicePeriodEnd: '2028-10-31',
+                        },
+                    ],
+                });
+                result.Lines[0].PriceOverridden = true;
+                result.Lines[0].PriceOverrideReason = 'two years paid up front';
+                result.Order.Status = 'Confirmed';
+                Assert(await result.Order.Save(), `confirm failed: ${result.Order.LatestResult?.CompleteMessage}`);
+                const subscription = await TxOne<{ SubscriptionID: string }>(
+                    ctx,
+                    `SELECT DISTINCT st.SubscriptionID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+                     JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID
+                     WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+                );
+                const SubscriptionID = subscription.SubscriptionID;
+                const bought = await termsOf(ctx, SubscriptionID);
+                AssertEqual(
+                    JSON.stringify(bought.map((t) => `${isoDate(t.StartDate)}..${isoDate(t.EndDate)}:${Number(t.Amount)}`)),
+                    JSON.stringify(['2026-11-01..2027-10-31:10000', '2027-11-01..2028-10-31:10000']),
+                    'precondition: two 12-month terms of 10,000',
+                );
+
+                // The paid second year is not billed.
+                const early = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: '2027-08-15', Preview: true });
+                AssertEqual(early.Candidates.length, 0, 'nothing is due inside the paid coverage');
+
+                const asOf = daysBefore('2028-10-31', 10);
+                const preview = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf, Preview: true });
+                AssertEqual(preview.Candidates.length, 1, `the subscription is due: ${preview.Message}`);
+                const c = preview.Candidates[0];
+                AssertEqual(c.BasePriceSource, 'PriorPrice', "the base is the line's own price");
+                AssertEqual(Number(c.BasePrice), 10000, 'one 12-month term of the 24-month price');
+                AssertEqual(Number(c.UnitPrice), 10000, 'no increase is set');
+                AssertEqual(c.RenewalTermStart, '2028-11-01', 'the preview shows the renewal term start');
+                AssertEqual(c.RenewalTermEnd, '2029-10-31', 'and its end, one 12-month term');
+
+                const live = await spawnRenewals(ctx, { SubscriptionID, AsOfDate: asOf });
+                AssertEqual(live.Placed, 1, `expected one renewal: ${live.Candidates[0]?.SkippedReason ?? live.Message}`);
+                AssertEqual(Number((await renewalLine(ctx, live.Candidates[0].OrderID!)).UnitPrice), 10000, 'the renewal line at 10,000');
+                const renewed = (await termsOf(ctx, SubscriptionID))[2];
+                Assert(renewed != null, 'the renewal booked a third term');
+                AssertEqual(
+                    `${isoDate(renewed.StartDate)}..${isoDate(renewed.EndDate)}:${Number(renewed.Amount)}`,
+                    '2028-11-01..2029-10-31:10000',
+                    'the booked term matches the preview',
+                );
+                const notes = await TxOne<{ Notes: string }>(
+                    ctx,
+                    `SELECT Notes FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${live.Candidates[0].OrderID}'`,
+                );
+                Assert(
+                    notes.Notes.includes('one term of a 24-month line'),
+                    `the notes say the base is one term of the line: ${notes.Notes}`,
+                );
+            }),
+    },
 ];
 
 /** A 20%-off promotion and its code, with `AppliesToRenewals` as given; returns the code. */
