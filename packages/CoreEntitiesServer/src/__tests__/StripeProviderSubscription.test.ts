@@ -857,10 +857,24 @@ describe('StripePaymentProvider.DescribeProviderSubscription (E2b)', () => {
         }
     });
 
-    it('one GET /v1/subscriptions/sub_x with the 15 s subscription timeout, Stripe-Version 2024-06-20, no body; maps the state', async () => {
+    it('one GET /v1/subscriptions/sub_x?expand[]=customer with the 15 s subscription timeout, Stripe-Version 2024-06-20, no body; maps the state and the details', async () => {
         const timeout = vi.spyOn(AbortSignal, 'timeout');
         const { driver, sent, restore } = live([
-            { body: { id: 'sub_x', object: 'subscription', status: 'active', current_period_start: 1798696800, current_period_end: 1830232800, cancel_at_period_end: false, cancel_at: null } },
+            {
+                body: {
+                    id: 'sub_x',
+                    object: 'subscription',
+                    status: 'active',
+                    current_period_start: 1798696800,
+                    current_period_end: 1830232800,
+                    cancel_at_period_end: false,
+                    cancel_at: null,
+                    // E3: the customer (expanded, for its e-mail), the price and quantity it bills, its metadata.
+                    customer: { id: 'cus_jane', email: 'jane@example.com' },
+                    items: { data: [{ price: { id: 'price_pro' }, quantity: 1 }] },
+                    metadata: { OrdersSubscriptionID: 'sub-guid' },
+                },
+            },
         ]);
         try {
             expect(await driver.DescribeProviderSubscription('sub_x')).toEqual({
@@ -870,10 +884,16 @@ describe('StripePaymentProvider.DescribeProviderSubscription (E2b)', () => {
                 CurrentPeriodEnd: new Date('2027-12-31T06:00:00.000Z'),
                 EndsAt: null,
                 Status: 'active',
+                EndedAt: null,
+                ProviderPriceID: 'price_pro',
+                Quantity: 1,
+                ProviderCustomerRef: 'cus_jane',
+                CustomerEmail: 'jane@example.com',
+                Metadata: { OrdersSubscriptionID: 'sub-guid' },
             });
             expect(sent).toHaveLength(1);
             expect(sent[0].method).toBe('GET');
-            expect(sent[0].url).toBe(URL_X);
+            expect(sent[0].url).toBe(`${URL_X}?expand[]=customer`);
             expect(sent[0].headers['Stripe-Version']).toBe('2024-06-20');
             expect(sent[0].headers['Idempotency-Key']).toBeUndefined();
             expect([...sent[0].body.keys()]).toEqual([]);
@@ -900,7 +920,43 @@ describe('StripePaymentProvider.DescribeProviderSubscription (E2b)', () => {
         const { driver, sent, restore } = live([{ body: { id: 'sub/x', status: 'canceled' } }]);
         try {
             expect((await driver.DescribeProviderSubscription('sub/x')).State).toBe('Ended');
-            expect(sent[0].url).toBe('https://api.stripe.com/v1/subscriptions/sub%2Fx');
+            expect(sent[0].url).toBe('https://api.stripe.com/v1/subscriptions/sub%2Fx?expand[]=customer');
+        } finally {
+            restore();
+        }
+    });
+
+    it.each([
+        ['an unreadable body (parsed as {})', {}],
+        ['no status', { id: 'sub_x', current_period_start: 1798696800 }],
+        ['an empty status', { id: 'sub_x', status: '  ' }],
+        ['another subscription', { id: 'sub_other', status: 'active', current_period_start: 1767160800 }],
+        ['an active one naming no period', { id: 'sub_x', status: 'active' }],
+        ['an unknown status', { id: 'sub_x', status: 'weird', current_period_start: 1767160800 }],
+        ['a period that is not a number', { id: 'sub_x', status: 'active', current_period_start: 'abc' }],
+    ])('fails closed on a 2xx that is not this subscription: %s → Success false, no State (a cancel then refuses, nothing sent)', async (_, body) => {
+        const { driver, restore } = live([{ body: body as Record<string, unknown> }]);
+        try {
+            const result = await driver.DescribeProviderSubscription('sub_x');
+            expect(result.Success).toBe(false);
+            expect(result.State).toBeUndefined();
+            expect(result.Reason).toMatch(/treated as a failed read/);
+        } finally {
+            restore();
+        }
+    });
+
+    it('a 2025-03-31.basil shape (the period on the item, not the subscription) is read from the item', async () => {
+        const { driver, restore } = live([
+            { body: { id: 'sub_x', status: 'active', items: { data: [{ price: { id: 'price_pro' }, quantity: 1, current_period_start: 1798696800, current_period_end: 1830232800 }] } } },
+        ]);
+        try {
+            expect(await driver.DescribeProviderSubscription('sub_x')).toMatchObject({
+                Success: true,
+                State: 'Renewing',
+                CurrentPeriodStart: new Date('2026-12-31T06:00:00.000Z'),
+                CurrentPeriodEnd: new Date('2027-12-31T06:00:00.000Z'),
+            });
         } finally {
             restore();
         }

@@ -16,9 +16,12 @@
  * LINKING (an existing subscription gaining its first gateway id) is sanctioned too. It is the write that
  * makes the gateway bill a subscription and Orders stop renewing it, and once made it cannot be undone
  * here. Typed by hand it is a guess: a typo renews the subscription free forever, and another customer's
- * id makes this subscription's Cancel cancel THEIR gateway subscription. Only the checkout hand-over
- * links, and it takes the sanction. CREATING a subscription with its id stays open: that is how an
- * importer brings over subscriptions a gateway already bills.
+ * id makes this subscription's Cancel cancel THEIR gateway subscription. CREATING a subscription that
+ * already carries a gateway id is the same write and the same guess, so it is linking too. Only server
+ * doors link, and each takes the sanction: the checkout hand-over (E2, which created the gateway
+ * subscription itself), `LinkProviderSubscription` (which checks the gateway subscription first), and the
+ * importer (which lets Orders create the subscription at confirm, then links it under the exported
+ * sanction).
  *
  * @module @mj-biz-apps/orders-entities
  */
@@ -54,11 +57,15 @@ export class SubscriptionEntity extends mjBizAppsOrdersSubscriptionEntity {
         return false;
     }
 
-    /** True when this save gives a saved subscription its first gateway id. */
+    /**
+     * True when this save gives a subscription its first gateway id: a saved one gaining it, or a NEW one
+     * created carrying it (any role that can create subscriptions could otherwise type one in).
+     */
     public get Linking(): boolean {
-        if (!this.IsSaved) return false;
         const field = this.GetFieldByName('ProviderSubscriptionID');
-        return field != null && field.OldValue == null && field.Dirty && field.Value != null;
+        if (field == null || field.Value == null || String(field.Value).trim() === '') return false;
+        if (!this.IsSaved) return true;
+        return field.OldValue == null && field.Dirty;
     }
 
     private refuseUnsanctionedLink(result: ValidationResult): void {
