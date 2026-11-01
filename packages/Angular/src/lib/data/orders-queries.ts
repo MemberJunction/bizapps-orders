@@ -2095,6 +2095,12 @@ export interface MJOProductOption {
      * the line editor offers the field on the bundle line too.
      */
     ContainsSubscription: boolean;
+    /**
+     * The product's `IsSellableNew` is off. Only set when the caller asked `GetCatalogOptions` to keep
+     * such products: the line editor needs them to describe lines already on an order, and leaves them
+     * out of the add-product picker itself.
+     */
+    NotSellableNew?: boolean;
 }
 
 /** Flatten a product + its type into the picker row. */
@@ -2163,6 +2169,17 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
 }
 
 /**
+ * The fields {@link RankCatalogMatches} reads. Any product row carrying them can be ranked, so another
+ * app's picker (the deal line editor in sales) ranks its own rows without building a full
+ * {@link MJOProductOption}. Nullable because a SKU is optional and lookup rows carry it as null.
+ */
+export interface RankableProduct {
+    Name: string | null;
+    SKU?: string | null;
+    CompanyID?: string | null;
+}
+
+/**
  * Catalog rows matching `query`, most useful first.
  *
  * A plain `includes()` over the catalog is what an order taker experiences as a broken picker: type
@@ -2175,6 +2192,10 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
  *   2. either merely contains it
  *   ...then the order's own selling company before other companies, then alphabetically by name.
  *
+ * The name comparison reads numbers by value (`CompareProductNames`), so revenue bands list as
+ * "$1M-$2M", "$2M-$5M", "$10M-$15M". Character order puts "$10M" before "$1M-", which reads as a
+ * broken ladder.
+ *
  * RELEVANCE OUTRANKS COMPANY, deliberately. Cross-company selling is intended — BCC sells SoundPost
  * products — so a company is a disambiguator between similar names, not a filter: burying an exact
  * name match under every own-company partial match would hide the row the user typed out in full.
@@ -2185,13 +2206,13 @@ function readMaxQuantityPerLine(product: { MaxQuantityPerLine?: number | null })
  *
  * Pure and exported so the ordering can be tested without Angular; the component only slices it.
  */
-export function RankCatalogMatches(
-    options: readonly MJOProductOption[],
+export function RankCatalogMatches<T extends RankableProduct>(
+    options: readonly T[],
     query: string,
     ownCompanyID?: string | null,
-): MJOProductOption[] {
+): T[] {
     const q = query.trim().toLowerCase();
-    const ranked: { option: MJOProductOption; tier: number; own: number }[] = [];
+    const ranked: { option: T; tier: number; own: number }[] = [];
     for (const option of options) {
         const name = (option.Name ?? '').toLowerCase();
         const sku = (option.SKU ?? '').toLowerCase();
@@ -2208,13 +2229,55 @@ export function RankCatalogMatches(
             (a, b) =>
                 a.tier - b.tier ||
                 a.own - b.own ||
-                (a.option.Name ?? '').localeCompare(b.option.Name ?? ''),
+                CompareProductNames(a.option.Name ?? '', b.option.Name ?? ''),
         )
         .map((r) => r.option);
 }
 
+/** A number in a product name: digits, with an optional decimal part ("10", "1.25"). */
+const NAME_NUMBER = /(\d+(?:\.\d+)?)/;
+
 /**
- * Products the picker can add, with an indicative list price.
+ * Order two product names with each number in them read by value, decimals included, so "$1.25M"
+ * sorts before "$1.5M" and "$2M" before "$10M". `Intl.Collator`'s numeric mode reads "1.25" as the
+ * two numbers 1 and 25, which puts "$1.5M" first.
+ *
+ * Numbers compare digit by digit rather than through `Number`, so a run longer than
+ * `MAX_SAFE_INTEGER` still orders exactly. Text between numbers compares ignoring case and accents
+ * first; a full comparison breaks the remaining ties, so the order is total.
+ */
+export function CompareProductNames(a: string, b: string): number {
+    const pa = a.split(NAME_NUMBER);
+    const pb = b.split(NAME_NUMBER);
+    // split with a capture group alternates text and number: odd indexes are numbers.
+    for (let i = 0; i < Math.min(pa.length, pb.length); i++) {
+        const c =
+            i % 2 === 1
+                ? compareDecimalText(pa[i], pb[i])
+                : pa[i].localeCompare(pb[i], undefined, { sensitivity: 'base' });
+        if (c !== 0) return c;
+    }
+    return pa.length - pb.length || a.localeCompare(b, undefined, { numeric: true });
+}
+
+/** Compare two non-negative decimals written as digits ("007", "1.25") by value. */
+function compareDecimalText(a: string, b: string): number {
+    const [aInt, aFrac = ''] = a.split('.');
+    const [bInt, bFrac = ''] = b.split('.');
+    const ai = aInt.replace(/^0+(?=\d)/, '');
+    const bi = bInt.replace(/^0+(?=\d)/, '');
+    if (ai.length !== bi.length) return ai.length - bi.length;
+    if (ai !== bi) return ai < bi ? -1 : 1;
+    const width = Math.max(aFrac.length, bFrac.length);
+    const af = aFrac.padEnd(width, '0');
+    const bf = bFrac.padEnd(width, '0');
+    return af === bf ? 0 : af < bf ? -1 : 1;
+}
+
+/**
+ * Products the picker can add, with an indicative list price. A product whose `IsSellableNew` is off
+ * is left out, unless `includeNotSellableNew` is set: then it is kept and marked `NotSellableNew`, for
+ * a caller that also describes existing lines from the same list.
  *
  * The figure comes from the PRICE RULES, not `StandaloneSellingPrice`: the line
  * prices only from rules, so showing SSP advertises a price the line will not
@@ -2222,18 +2285,25 @@ export function RankCatalogMatches(
  * order taker the item is free. The engine still resolves the real price on
  * the line. Catalog rows come from OrdersEngine — live, not a session snapshot.
  */
-export async function GetCatalogOptions(user?: UserInfo): Promise<MJOProductOption[]> {
-    const products = await GetProducts({ User: user });
+export async function GetCatalogOptions(user?: UserInfo, includeNotSellableNew = false): Promise<MJOProductOption[]> {
+    // Not offered for a new sale (bc-aidp-next-golive#360): catch-all products imported invoice lines book
+    // to, and products kept for converted subscriptions. Only the picker skips them; pricing does not
+    // read the flag, so orders and renewals that already hold them keep saving.
+    const products = (await GetProducts({ User: user })).filter(
+        (p) => includeNotSellableNew || p.IsSellableNew !== false,
+    );
     const engine = OrdersEngine.Instance;
     const withSubscription = await getBundlesWithSubscription(user);
     return products.map((product) => {
         const list = engine.BaseProductPrices(product.ID)[0];
-        return CatalogOptionFrom(
+        const option = CatalogOptionFrom(
             product,
             engine.ProductTypeByID(product.ProductTypeID),
             list ? Number(list.Amount) : null,
             withSubscription.has(product.ID.toLowerCase()),
         );
+        if (product.IsSellableNew === false) option.NotSellableNew = true;
+        return option;
     });
 }
 
