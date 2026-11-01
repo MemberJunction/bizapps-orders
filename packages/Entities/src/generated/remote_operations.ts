@@ -2111,7 +2111,10 @@ export interface AccessOverrideDecisionOutput {
 export interface OrdersRecordProgressInput {
     /** The order line being attested. Its product's revenue recognition type must be OnMeasurement. */
     OrderLineID: string;
-    /** The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date. */
+    /**
+     * The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date.
+     * Refused when on or before the line's company's books-closed-through date (a month finance has closed).
+     */
     MeasurementDate: string;
     /** Cumulative fraction complete, 0..1 (0.7 = 70%). */
     PercentComplete: number;
@@ -2127,9 +2130,8 @@ export interface OrdersRecordProgressInput {
     /**
      * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
      * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
-     * Nothing is edited: the replaced observation's recognition is reversed — on its own date while that
-     * month has no Posted batch for the line's company, else on day 1 of the first later month without
-     * one (`ReversalDate` on the output) — and this
+     * Nothing is edited: the replaced observation's recognition is reversed — on its own date, or on the
+     * first open day when finance has closed that month (`ReversalDate` on the output) — and this
      * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
      * must then be after the observation before the replaced one — not after the replaced one — which
      * is what makes a mistyped future date recoverable.
@@ -2186,16 +2188,15 @@ export interface OrdersRecordProgressOutput {
     ReversalAmount?: number;
     /**
      * On a supersede that reverses anything: the date the reversal is booked on. The replaced
-     * observation's own date while that month has no Posted batch for the line's company; otherwise
-     * day 1 of the first later month with none, so a correction never books into a closed period.
-     * Null otherwise.
+     * observation's own date, or the first open day when that date is on or before the line's
+     * company's books-closed-through date, so a correction never books into a month finance has
+     * closed. Null otherwise.
      */
     ReversalDate?: string | null;
     /**
-     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
-     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
-     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
-     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     * The date this observation's catch-up entry is booked on: always `MeasurementDate`, which is
+     * refused when it is on or before the line's company's books-closed-through date. Null when there
+     * is no catch-up.
      */
     CatchUpDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */

@@ -37,15 +37,17 @@
  * `SupersedesMeasurementID`, a user holding `MJ.BizApps.Orders.Progress.Supersede` replaces the
  * line's latest observation instead. Nothing is edited. In one transaction the operation posts a
  * reversal of the replaced observation's recognition, then this observation's catch-up computed from
- * the restored total. The reversal is dated on the replaced observation's own date while that month
- * is open, and on day 1 of the first later open month when it is not (finance's ruling; see
- * {@link ReversalDate}). "Closed" is a month with a Posted batch for the line's company, until
- * finance's books-closed-through date replaces that test; a read that fails REFUSES the supersede.
- * When the reversal moves, this observation's catch-up books no earlier than the reversal's date, so nothing new posts
- * into the closed month; the observation keeps its chosen date (see {@link CatchUpDate}). The replaced
- * row stays Posted and immutable; it stops counting because a row points at it. A replacement may carry the replaced
- * observation's date, so a wrong percent is corrected on the day it was attested. See
- * `./ProgressSupersede.ts`.
+ * the restored total. The reversal is dated on the replaced observation's own date, or on the first
+ * open day when finance has closed that month (finance's ruling; see {@link ReversalDate}). The
+ * catch-up posts on the date entered. The replaced row stays Posted and immutable; it stops counting
+ * because a row points at it. A replacement may carry the replaced observation's date, so a wrong
+ * percent is corrected on the day it was attested. See `./ProgressSupersede.ts`.
+ *
+ * A DATE IN A MONTH FINANCE HAS CLOSED IS REFUSED (golive #316), on preview and post, supersede
+ * included. "Closed" is a day on or before the line's company's books-closed-through date
+ * (accounting's `AccountingCompanyProfile.BooksClosedThroughDate`), read once per call. A read that
+ * fails REFUSES: the date decides a block and a posting date, and guessing "open" books into a period
+ * finance has closed. A line with no company, no profile row or no date has nothing closed.
  *
  * WHAT NETS TO ZERO IS REVENUE — on the replaced date when the reversal lands there, across the two
  * periods when it moves forward. The reversal is shaped by `BuildProgressDraft`
@@ -57,7 +59,7 @@
  * A DATE AFTER TODAY, OR TWO OR MORE MONTHS BEFORE THE CURRENT MONTH, WARNS; it does not block. The
  * prior month and earlier this month are ordinary. A posted batch in the month does NOT warn: with
  * batches built daily, every past month has one, so it said nothing about whether finance had closed
- * the month (golive #316).
+ * the month. The books-closed-through date above is that test (golive #316).
  *
  * ATOMICITY: the journal entry and the observation row share one transaction opened here. The entry
  * goes through `Accounting.CreateJournalEntries`, which joins the caller's transaction — no new
@@ -65,8 +67,9 @@
  * cannot write by construction. The finance exception an observation may raise for review (golive
  * #279) is written inside the same transaction, so a failure to raise fails the attestation.
  *
- * FAILURE MODEL: logical failures (not a POC line, not booked, dated before the last observation) come
- * back INSIDE the output as `Success: false` with a message. Only genuine faults throw.
+ * FAILURE MODEL: logical failures (not a POC line, not booked, dated before the last observation or in
+ * a closed month) come back INSIDE the output as `Success: false` with a message. Only genuine faults
+ * throw.
  *
  * CONNECTS TO:
  *   ARITHMETIC: ComputeCatchUp, ProgressRecognitionDriver (./RevenueRecognition.ts)
@@ -100,15 +103,15 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
-import { BackDatedWarning, CatchUpDate, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
+import { BackDatedWarning, ClosedBooksRefusal, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
 import { RaiseProgressJudgmentCall } from './ProgressJudgmentCall.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
-/** Accounting's batch header. Orders reads it; it never writes one (D7/D8). */
-const JOURNAL_ENTRY_BATCH_ENTITY = 'MJ_BizApps_Accounting: Journal Entry Batches';
+/** Accounting's per-company profile; its ID is the company's. Orders reads it; it never writes one. */
+const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
 const CHARGE_TYPE_ENTITY = 'MJ_BizApps_Orders: Charge Types';
 /** Held by the Engagement Lead role — never alongside the price override grants (#227). */
 export const PROGRESS_ATTEST_AUTH = 'MJ.BizApps.Orders.Progress.Attest';
@@ -208,6 +211,13 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             replaced = latest;
         }
 
+        // FINANCE'S CLOSE IS A REFUSAL, on the date entered — supersede included, so the catch-up never
+        // has to move. Read once: the same date places a supersede's reversal below.
+        const books = await this.booksClosedThrough(line.CompanyID, provider, ledger);
+        if ('Refusal' in books) return this.refuse(preview, books.Refusal, echo);
+        const closedRefusal = ClosedBooksRefusal(measurementDate, books.Date);
+        if (closedRefusal) return this.refuse(preview, closedRefusal, echo);
+
         // The ordering guard compares against the latest observation that will STILL COUNT — on a
         // supersede, the one before the replaced observation. That is the whole recovery: a date typed
         // a year ahead no longer holds every later observation hostage.
@@ -241,19 +251,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const plan = replaced ? PlanSupersede(lineAmount, percent, recognizedToDate, replaced.RecognitionAmount) : null;
         const catchUp = plan ? plan.CatchUp : ComputeCatchUp(lineAmount, percent, recognizedToDate);
         const reversal = plan?.Reversal ?? 0;
-        // NEITHER ENTRY OF A SUPERSEDE LANDS IN A CLOSED MONTH. When the replaced observation's month
-        // is closed, the reversal moves to the first open day and the catch-up follows it, so the read
-        // has to have worked. A warning can fail open; a posting date cannot, because guessing "open"
-        // books into a period finance has closed. The read is made on every supersede, since the
-        // catch-up's date depends on it even when nothing is reversed.
-        let reversalDate: string | null = null;
-        let catchUpDate = measurementDate;
-        if (replaced) {
-            const resolved = await this.reversalDate(line, replaced.MeasurementDate, provider, ledger);
-            if ('Refusal' in resolved) return this.refuse(preview, resolved.Refusal, echo);
-            if (reversal !== 0) reversalDate = resolved.Date;
-            catchUpDate = CatchUpDate(measurementDate, replaced.MeasurementDate, resolved.Date);
-        }
+        // NEITHER ENTRY OF A SUPERSEDE LANDS IN A CLOSED MONTH. The catch-up is on the date entered,
+        // which the refusal above keeps open; the reversal moves to the first open day when finance
+        // has closed the replaced observation's month.
+        const reversalDate = replaced && reversal !== 0 ? ReversalDate(replaced.MeasurementDate, books.Date) : null;
         // Echoed on BOTH paths: the preview is where they are meant to be seen, and the live output
         // carries them so the screen can show them after a post that was made anyway. Tested on the
         // date the attester entered, supersede included.
@@ -269,7 +270,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             SupersededMeasurementID: replaced?.ID ?? null,
             ReversalAmount: reversal,
             ReversalDate: reversalDate,
-            CatchUpDate: catchUp.Delta === 0 ? null : catchUpDate,
+            CatchUpDate: catchUp.Delta === 0 ? null : measurementDate,
         };
         const signer = user.Name || user.Email;
         const note = `to ${(percent * 100).toFixed(2).replace(/\.?0+$/, '')}% (attested by ${signer}, ${measurementDate})`;
@@ -281,10 +282,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
                 ? await this.buildDraft(order, line, reversal, reversalDate, `reversing the ${replaced.MeasurementDate} observation (superseded by ${signer}, ${measurementDate})`, provider, ledger)
                 : null;
         if (reversal !== 0) this.applyRecognized(line, reversal);
-        const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, catchUpDate, note, provider, ledger);
+        const draft = catchUp.Delta === 0 ? null : await this.buildDraft(order, line, catchUp.Delta, measurementDate, note, provider, ledger);
 
         if (preview) {
-            return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, ReversalJournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true, replaced, reversal, reversalDate, measurementDate, catchUpDate) };
+            return { Success: true, Preview: true, ...numbers, OrderLineProgressMeasurementID: null, JournalEntryID: null, ReversalJournalEntryID: null, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, true, replaced, reversal, reversalDate, books.Date) };
         }
 
         const dbProvider = provider as unknown as DatabaseProviderBase;
@@ -316,7 +317,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
                 ledger,
             );
             await dbProvider.CommitTransaction();
-            return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, ReversalJournalEntryID: reversalJournalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false, replaced, reversal, reversalDate, measurementDate, catchUpDate) };
+            return { Success: true, Preview: false, ...numbers, OrderLineProgressMeasurementID: measurementID, JournalEntryID: journalEntryID, ReversalJournalEntryID: reversalJournalEntryID, Message: this.explain(catchUp.Delta, numbers.OrderNumber, line.LineNumber, false, replaced, reversal, reversalDate, books.Date) };
         } catch (err) {
             LogError(`Orders.RecordProgress failed for line ${lineID}: ${err}`);
             try {
@@ -395,67 +396,39 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
     }
 
     /**
-     * The date a supersede's reversal is booked on — {@link ReversalDate} over the months, from the
-     * replaced observation's onward, that have a Posted batch for the line's company. The catch-up's
-     * date is derived from it too ({@link CatchUpDate}).
+     * The line's company's books-closed-through date (accounting's
+     * `AccountingCompanyProfile.BooksClosedThroughDate`, golive #316), as `YYYY-MM-DD`.
      *
-     * FAILS CLOSED: this is a posting date, and guessing "open" books into a period finance has
-     * closed. A read that fails returns a refusal, not the replaced date. A line with no company has no
-     * batch to test against, so its reversal stays on the replaced date.
+     * FAILS CLOSED: the date decides a refusal and a posting date, and guessing "open" books into a
+     * period finance has closed. A read that fails returns a refusal. A line with no company, a
+     * company with no profile row, and a NULL date all mean nothing is closed.
      */
-    private async reversalDate(
-        line: mjBizAppsOrdersOrderLineEntity,
-        replacedDate: string,
+    private async booksClosedThrough(
+        companyID: string | null,
         provider: IMetadataProvider,
         user: UserInfo,
-    ): Promise<{ Date: string } | { Refusal: string }> {
-        if (!line.CompanyID) return { Date: replacedDate };
+    ): Promise<{ Date: string | null } | { Refusal: string }> {
+        if (!companyID) return { Date: null };
         try {
-            const batches = await this.postedBatches(line.CompanyID, replacedDate.slice(0, 7), null, provider, user);
-            return { Date: ReversalDate(replacedDate, batches.map((b) => b.PostingMonth)) };
+            const result = await RunView.FromMetadataProvider(provider).RunView<{ BooksClosedThroughDate: unknown }>(
+                {
+                    EntityName: ACCOUNTING_COMPANY_PROFILE_ENTITY,
+                    ExtraFilter: `ID = '${RequireUUID(companyID, 'CompanyID')}'`,
+                    Fields: ['BooksClosedThroughDate'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                user,
+            );
+            if (!result.Success) throw new Error(result.ErrorMessage || 'the accounting company profile read failed');
+            return { Date: ToISODate(result.Results?.[0]?.BooksClosedThroughDate) ?? null };
         } catch (err) {
             return {
                 Refusal:
-                    `Could not check whether ${replacedDate.slice(0, 7)} is in a posted batch, which decides where the supersede's entries are dated, ` +
-                    `so nothing was superseded: ${err instanceof Error ? err.message : String(err)}`,
+                    `Could not read the date finance has closed the books through, which decides whether this date can be recorded, ` +
+                    `so nothing was recorded: ${err instanceof Error ? err.message : String(err)}`,
             };
         }
-    }
-
-    /**
-     * Posted batches for `companyID` from `fromMonth` through `toMonth` (or with no upper bound),
-     * oldest first. THROWS when the read fails; each caller decides what a failure means.
-     *
-     * CLOSED MEANS A POSTED BATCH, until finance's books-closed-through date replaces the test:
-     * `JournalEntryBatch` runs Pending → Approved → Sent → Posted, and the month of a Posted batch's
-     * `PostingDate`, for the line's company, is the period.
-     */
-    private async postedBatches(
-        companyID: string,
-        fromMonth: string,
-        toMonth: string | null,
-        provider: IMetadataProvider,
-        user: UserInfo,
-    ): Promise<Array<{ JournalEntryBatchNumber: string; PostingMonth: string }>> {
-        const upper = toMonth ? ` AND PostingDate < DATEADD(month, 1, '${RequireDate(`${toMonth}-01`, 'toMonth')}')` : '';
-        const result = await RunView.FromMetadataProvider(provider).RunView<{ JournalEntryBatchNumber: string; PostingDate: unknown }>(
-            {
-                EntityName: JOURNAL_ENTRY_BATCH_ENTITY,
-                ExtraFilter:
-                    `CompanyID = '${RequireUUID(companyID, 'CompanyID')}' AND Status = 'Posted' ` +
-                    `AND PostingDate >= '${RequireDate(`${fromMonth}-01`, 'fromMonth')}'${upper}`,
-                Fields: ['JournalEntryBatchNumber', 'PostingDate'],
-                OrderBy: 'PostingDate',
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        if (!result.Success) throw new Error(result.ErrorMessage || 'the journal entry batch read failed');
-        return (result.Results ?? []).map((b) => ({
-            JournalEntryBatchNumber: b.JournalEntryBatchNumber,
-            PostingMonth: (ToISODate(b.PostingDate) ?? '').slice(0, 7),
-        }));
     }
 
     private async buildDraft(
@@ -594,8 +567,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         replaced: LineObservation | null = null,
         reversal = 0,
         reversalDate: string | null = null,
-        measurementDate: string | null = null,
-        catchUpDate: string | null = null,
+        closedThrough: string | null = null,
     ): string {
         const verb = preview ? 'would' : 'did';
         const head = `Order ${orderNumber} line ${lineNumber}: `;
@@ -604,12 +576,13 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
             : reversal === 0
               ? `supersedes the ${replaced.MeasurementDate} observation, which moved nothing; `
               : `supersedes the ${replaced.MeasurementDate} observation — ${money(Math.abs(reversal)).toFixed(2)} ${verb} ${reversal < 0 ? 'come back out of' : 'return to'} revenue on ${reversalDate ?? replaced.MeasurementDate}` +
-                (reversalDate && reversalDate !== replaced.MeasurementDate ? ` (${replaced.MeasurementDate.slice(0, 7)} is in a posted batch)` : '') +
+                (reversalDate && reversalDate !== replaced.MeasurementDate
+                    ? ` (moved from ${replaced.MeasurementDate}: finance has closed the books through ${closedThrough}, so it books on the first open day)`
+                    : '') +
                 `; then `;
-        const moved = replaced && catchUpDate && measurementDate && catchUpDate !== measurementDate ? ` on ${catchUpDate} (${replaced.MeasurementDate.slice(0, 7)} is in a posted batch)` : '';
         if (delta === 0) return `${head}${undo}${replaced ? 'nothing further to recognise.' : 'progress unchanged — nothing to recognise.'}`;
-        if (delta < 0) return `${head}${undo}${replaced ? '' : 'progress slid back; '}${money(-delta).toFixed(2)} ${verb} come out of revenue${moved}.`;
-        return `${head}${undo}${money(delta).toFixed(2)} ${verb} move from deferred revenue to revenue${moved}.`;
+        if (delta < 0) return `${head}${undo}${replaced ? '' : 'progress slid back; '}${money(-delta).toFixed(2)} ${verb} come out of revenue.`;
+        return `${head}${undo}${money(delta).toFixed(2)} ${verb} move from deferred revenue to revenue.`;
     }
 
     private refuse(preview: boolean, message: string, echo: Partial<OrdersRecordProgressOutput> = {}): OrdersRecordProgressOutput {
