@@ -8,9 +8,13 @@ import {
     OrdersPollExternalPaymentsOperation,
     OrdersSendExternalInvoicesOperation,
     ClassifyPollJobGroups,
+    ClassifySendJobsFor,
     LoadPollJobs,
+    LoadSendJobs,
+    SendNowDetail,
     type ExternalInvoicingWorklistRow,
     type PollJobState,
+    type SendJobState,
 } from '@mj-biz-apps/orders-entities';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
@@ -339,12 +343,13 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         const row = this.SelectedInvoice;
         if (!row || this.Busy) return;
         const risky = row.State !== 'Unsent';
+        const job = risky ? null : await this.loadSendJob(row.CompanyID);
         const proceed = await this.confirm.Confirm({
             title: `Send ${row.DocumentNumber}?`,
             message: `${row.CustomerName} · ${FormatMoney(row.Amount)} · billed by ${row.CompanyName}.`,
             detail: risky
                 ? 'This unit has been attempted before. Check the rail first: if an invoice already exists there, sending again bills the customer twice.'
-                : 'The scheduled send would pick this up on its own; this sends it now.',
+                : SendNowDetail(job),
             type: 'warning',
             confirmText: 'Send it',
             cancelText: 'Not yet',
@@ -484,6 +489,15 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         });
         this.Exceptions = result.Success ? (result.Results ?? []) : [];
         this.cdr.detectChanges();
+    }
+
+    /** Whether the scheduled send would pick this company's unit up; null when the job cannot be read. */
+    private async loadSendJob(companyID: string): Promise<SendJobState | null> {
+        try {
+            return ClassifySendJobsFor(await LoadSendJobs(), companyID);
+        } catch {
+            return null;
+        }
     }
 
     private async loadPollJob(): Promise<void> {
