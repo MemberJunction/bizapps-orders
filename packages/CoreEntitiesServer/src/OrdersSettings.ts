@@ -119,6 +119,12 @@ export const ORDERS_SETTING = {
      */
     OrderReviewEscalationRole: 'OrderReviewEscalationRole',
     /**
+     * Comma-separated NAMES of the MJ roles whose holders may confirm an order no deal created
+     * (bc-aidp-next-golive#390). Checkout, provider-payment, reversal and renewal-only orders are exempt.
+     * Empty or unset switches the check off, so anyone who may confirm an order may confirm it.
+     */
+    NoDealConfirmRoles: 'NoDealConfirmRoles',
+    /**
      * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
      * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
      * issue it. Counted per payment, not per order: what this refund brings the payment's refunds to,
@@ -401,6 +407,14 @@ export class OrdersSettings {
             ReviewerRole: this.raw(ORDERS_SETTING.OrderReviewerRole)?.trim() || null,
             EscalationRole: this.raw(ORDERS_SETTING.OrderReviewEscalationRole)?.trim() || null,
         };
+    }
+
+    /**
+     * The roles whose holders may confirm an order with no deal; empty switches the check off (#390).
+     * @throws when the Orders application row is missing, rather than reading the check as off.
+     */
+    public static get NoDealConfirmRoles(): string[] {
+        return asList(this.rawAppScoped(ORDERS_SETTING.NoDealConfirmRoles), []);
     }
 
     /**

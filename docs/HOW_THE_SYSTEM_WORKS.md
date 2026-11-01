@@ -123,6 +123,10 @@ The review is an `ORDERS_ORDER_REVIEW` task linked to the order and assigned, by
 
 **Which orders.** Every order is reviewed except a checkout order (`Origin` = `Widget`), a provider-payment order (`ProviderPayment`), a reversal, and an order of renewals only (reviewed only once its carried-forward price is edited). `Origin` is free text, so the exemption is an exact allow-list (`SYSTEM_ORDER_ORIGINS`) and any other value is reviewed; and `OrderEntityServer.Save` refuses any write of `Origin` (a new order claiming anything but `Direct`, or a change to a saved order's) that the creating process did not make through `SetSystemOrderOrigin`. That guard applies whether or not review is on. Code: `packages/Entities/src/order-review.ts` (rules), `packages/CoreEntitiesServer/src/OrderReview.ts` (reads, the task, and the two hooks in `OrderEntityServer.Save`), `packages/CoreEntitiesServer/src/SystemOrderOrigin.ts` (the Origin guard).
 
+### 4.3 Who may confirm an order with no deal (golive #390)
+
+When the `NoDealConfirmRoles` setting names roles (comma-separated role names, for example `Finance,Senior Finance (AR),CFO`), an order no deal created confirms only for a user holding at least one of them; anyone else's confirm is refused with a message naming the roles. Creating and saving a draft is unchanged. The deal is read through the same `RegisterOrderDealLink` seam as `NoDeal` review, and the same orders are exempt (checkout, provider payment, reversal, renewal-only). It is an allow-list on purpose: some finance staff also hold Account Director (golive #310). Empty switches it off. With no deal link registered it is also off, and logs one warning naming the setting, since every order would read as having no deal. A save with no context user is not checked. It runs before the review gate, so a confirm the user may not make raises no review. Code: `CheckNoDealConfirm` in `packages/CoreEntitiesServer/src/OrderReview.ts`.
+
 ### What is still a remote operation
 
 An operation is an **act** the entity cannot express: decide over a set, talk to a third party, or stay atomic with a write that is not "save this graph."

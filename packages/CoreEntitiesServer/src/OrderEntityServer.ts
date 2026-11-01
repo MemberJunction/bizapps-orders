@@ -93,7 +93,7 @@ import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
-import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
 import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
 import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
@@ -673,12 +673,20 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const booking = this.willBookOnThisSave();
 
+        // A form that saved the draft and then confirmed reloads the HEADER only. Booking needs the
+        // collection before the gates below, which read the lines (a renewal-only order is exempt from
+        // review and the no-deal check), and before it decides subscriptions.
+        if (booking && this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
 
         // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
         // reviewer sees the order as it will book. Off until a host switches a trigger on.
+        // ONLY THE ROLES THE NoDealConfirmRoles SETTING NAMES CONFIRM AN ORDER NO DEAL CREATED (golive
+        // #390), ahead of the review so a confirm the user may not make raises no review. Off by default.
+        if (booking && !(await this.passesNoDealConfirmGate())) return false;
         if (booking && !(await this.passesOrderReviewGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
@@ -821,12 +829,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // lines, subscription decisions settle the quantities, and each line is priced. None of
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
-            // A form that saved the draft and then confirmed reloads the HEADER only.
-            // Booking is the only caller that MUST have the collection before it decides subscriptions.
-            if (booking && this.IsSaved && !this.Lines.IsLoaded) {
-                await this.Lines.Load();
-            }
-
             await this.expandBundles();
             // EVERY LINE'S PRODUCT IN THE CATALOG CACHE, reloaded once if any is missing (golive #301).
             // Subscription decisions, the company stamp, dimension tags and booking all read the
@@ -1301,6 +1303,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const user = this.ContextCurrentUser;
         if (!user) return true;
         const refusal = await CheckOrderReviewAtConfirm(this.reviewOrderInput(), {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /** Refuse a confirm of an order with no deal by a user outside the NoDealConfirmRoles setting (golive #390). */
+    private async passesNoDealConfirmGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const refusal = await CheckNoDealConfirm(this.reviewOrderInput(), {
             Provider: this.ProviderToUse as unknown as IMetadataProvider,
             User: user,
         });
