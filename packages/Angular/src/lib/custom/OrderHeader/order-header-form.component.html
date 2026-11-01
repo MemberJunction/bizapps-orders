@@ -340,17 +340,24 @@
                             }
                         </p>
                     </div>
-                    <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
-                        <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
-                        <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
-                            By line
-                            @if (RollupJournalCount) {
-                                <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
-                            }
-                        </button>
-                        <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
-                            <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
-                        </button>
+                    <div class="mjo-oh-acct__actions">
+                        @if (AccountingView !== 'waterfall') {
+                            <button type="button" mjButton variant="outline" size="sm" [disabled]="!CanExportAccounting" (click)="OpenAccountingExport()">
+                                <i class="fa-solid fa-file-export"></i> Export
+                            </button>
+                        }
+                        <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
+                            <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
+                            <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
+                                By line
+                                @if (RollupJournalCount) {
+                                    <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
+                                }
+                            </button>
+                            <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
+                                <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -526,6 +533,12 @@
                 }
             </div>
         }
+
+        <mj-export-dialog
+            [visible]="AccountingExportVisible"
+            [config]="AccountingExportConfig"
+            (closed)="CloseAccountingExport()">
+        </mj-export-dialog>
 
         @if (ActiveTab === 'subs' && record.IsSaved) {
             <div class="mjo-oh-tabpane">
