@@ -39,13 +39,13 @@
                         <!-- The pencil opens the PRICE editor, the DISCOUNT editor, or both — a user
                              may hold one authority without the other, and an order that can be
                              discounted but not re-priced still needs a way in. -->
-                        @if (CanOverride || CanDiscount) {
+                        @if (CanOverride || CanDiscount || CanPickBand(line)) {
                             <button
                                 type="button"
                                 class="mjo-ol-iconbtn mjo-ol-price__pencil"
                                 (click)="ToggleOverrideEditor(line)"
                                 [attr.aria-expanded]="IsOverrideEditorOpen(line)"
-                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : 'Discount line'">
+                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : (CanPickBand(line) ? 'Pick revenue band' : 'Discount line')">
                                 <i class="fa-solid fa-pencil" aria-hidden="true"></i>
                             </button>
                         }
@@ -94,7 +94,7 @@
 
             @if (IsOverrideEditorOpen(line)) {
                 <div class="mjo-ol-override" role="region" [attr.aria-label]="'Price and discount for ' + (ProductFor(line)?.Name ?? 'line')">
-                    @if (CanOverride) {
+                    @if (CanOverride || CanPickBand(line)) {
                         <mjo-line-price-picker
                             [Line]="line"
                             [OverrideKind]="OverrideKind"

@@ -55,6 +55,12 @@ import { RequireUUID, RequireUUIDs } from '../sql-guards.js';
 import { collapseInheritedPrices } from './inheritPrices.js';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { ResolvePricingDriver } from '../PricingDriverResolver.js';
+import {
+    FormatRevenue,
+    IsRevenueBandApplicability,
+    ORGANIZATION_REVENUE_SOURCE,
+    type OrganizationRevenue,
+} from './organizationRevenue.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -71,6 +77,25 @@ export class PriceResolutionError extends Error {
     ) {
         super(message);
         this.name = 'PriceResolutionError';
+    }
+}
+
+/**
+ * The product is priced by revenue band and the buyer's revenue is unknown, so the band cannot be
+ * chosen automatically. Not a catalog fault: the rep picks one of `BandNames`, and that pick needs
+ * no override grant (`ListApplicablePrices` offers the bands; the override gate accepts them).
+ */
+export class RevenueBandRequiredError extends PriceResolutionError {
+    constructor(
+        ProductID: string,
+        public readonly BandNames: string[],
+    ) {
+        super(
+            ProductID,
+            `This product is priced by the buyer's annual revenue, and the bill-to organization has no revenue on ` +
+                `record, so its band cannot be chosen automatically. Pick the band on the line: ${BandNames.join(', ')}.`,
+        );
+        this.name = 'RevenueBandRequiredError';
     }
 }
 
@@ -179,6 +204,13 @@ interface TierRow {
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
+/** The buyer's revenue from the applicability bag, or null when the host has no figure. */
+function revenueOf(ctx: PriceResolutionContext): OrganizationRevenue | null {
+    const rec = ctx.ApplicabilityContext?.[ORGANIZATION_REVENUE_SOURCE];
+    if (!rec || rec['AnnualRevenue'] == null) return null;
+    return rec as unknown as OrganizationRevenue;
+}
+
 function priceLabel(row: Pick<ProductPriceRow, 'Name' | 'Description' | 'ID' | 'PricingModel' | 'PriceListID'>): string {
     const named = row.Name?.trim();
     if (named) return named;
@@ -206,8 +238,12 @@ export class DefaultPriceResolver extends BasePriceResolver {
 
         const chain = await categoryChain(ctx.ProductCategoryID, provider, user);
         const loaded = await this.loadRules(ctx, priceListIDs, chain, provider, user);
-        const rows = this.filterApplicable(collapseInheritedPrices(loaded, ctx.ProductID, chain), ctx);
-        if (!rows.length) return null;
+        const candidates = collapseInheritedPrices(loaded, ctx.ProductID, chain);
+        const rows = this.filterApplicable(candidates, ctx);
+        if (!rows.length) {
+            this.refuseUndecidedBand(candidates, ctx);
+            return null;
+        }
 
         const tiers = await this.loadTiers(rows.map((r) => r.ID), provider, user);
         const rules: PriceRule[] = rows.map((r) => ({
@@ -268,7 +304,11 @@ export class DefaultPriceResolver extends BasePriceResolver {
         const extended = ComputeAmount(winner, ctx.Quantity);
         const unit = ctx.Quantity > 0 ? Money(extended / ctx.Quantity) : Money(extended);
 
-        const label = priceLabel(row);
+        const revenue = revenueOf(ctx);
+        const label =
+            revenue && IsRevenueBandApplicability(row.Applicability)
+                ? `${priceLabel(row)} · revenue ${FormatRevenue(revenue.AnnualRevenue)} (${revenue.Source})`
+                : priceLabel(row);
 
         return {
             UnitPrice: unit,
@@ -362,6 +402,24 @@ export class DefaultPriceResolver extends BasePriceResolver {
         return rows;
     }
 
+    /**
+     * Nothing applied: when that is because the product is priced by revenue band, say which part
+     * is missing. Revenue unknown → the rep picks a band. Revenue known but outside every band →
+     * the catalog has a gap, named with the figure so it can be fixed.
+     */
+    private refuseUndecidedBand(candidates: ProductPriceRow[], ctx: PriceResolutionContext): void {
+        const bands = candidates.filter((r) => IsRevenueBandApplicability(r.Applicability));
+        if (!bands.length) return;
+        const revenue = revenueOf(ctx);
+        if (!revenue) throw new RevenueBandRequiredError(ctx.ProductID, bands.map(priceLabel));
+        throw new PriceResolutionError(
+            ctx.ProductID,
+            `The bill-to organization's revenue, ${FormatRevenue(revenue.AnnualRevenue)} (${revenue.Source}), ` +
+                `falls in none of this product's revenue bands: ${bands.map(priceLabel).join(', ')}. ` +
+                `Add a band covering it, or pick a price on the line.`,
+        );
+    }
+
     private filterApplicable(rows: ProductPriceRow[], ctx: PriceResolutionContext): ProductPriceRow[] {
         const bag = ctx.ApplicabilityContext ?? {};
         const kept: ProductPriceRow[] = [];
@@ -410,7 +468,12 @@ export class DefaultPriceResolver extends BasePriceResolver {
         return out;
     }
 
-    /** Active, inherited, When-matching rows — the OverrideList set, before a winner is picked. */
+    /**
+     * Active, inherited, When-matching rows — the OverrideList set, before a winner is picked.
+     *
+     * When the buyer's revenue is unknown, every revenue-band row is included too: none of them can
+     * be ruled out, and choosing among them is the rep's job (`RevenueBandRequiredError`).
+     */
     public async CollectApplicable(
         ctx: PriceResolutionContext,
         provider: IMetadataProvider,
@@ -421,7 +484,14 @@ export class DefaultPriceResolver extends BasePriceResolver {
             : await ResolvePriceListsForCustomer(ctx, provider, user);
         const chain = await categoryChain(ctx.ProductCategoryID, provider, user);
         const loaded = await this.loadRules(ctx, priceListIDs, chain, provider, user);
-        return this.filterApplicable(collapseInheritedPrices(loaded, ctx.ProductID, chain), ctx);
+        const candidates = collapseInheritedPrices(loaded, ctx.ProductID, chain);
+        const applicable = this.filterApplicable(candidates, ctx);
+        if (revenueOf(ctx)) return applicable;
+        const kept = new Set(applicable.map((r) => uuidKey(r.ID)));
+        const undecided = candidates.filter(
+            (r) => !kept.has(uuidKey(r.ID)) && IsRevenueBandApplicability(r.Applicability),
+        );
+        return [...applicable, ...undecided];
     }
 }
 
@@ -705,6 +775,20 @@ function productPriceRowFrom(p: {
     };
 }
 
+/**
+ * Whether the product (or a category it inherits from) is priced by revenue band. Reads the loaded
+ * `OrdersEngine`, so a screen can ask cheaply before loading a line's applicable prices; false when
+ * the engine is not loaded.
+ */
+export function ProductHasRevenueBands(productID: string | null | undefined): boolean {
+    if (!productID || !OrdersEngine.Instance.Loaded) return false;
+    const product = OrdersEngine.Instance.ProductByID(productID);
+    const chain = OrdersEngine.Instance.CategoryChain(product?.ProductCategoryID ?? null);
+    return OrdersEngine.Instance.ProductPricesFor(productID, chain).some(
+        (p) => (p.Status ?? 'Active') === 'Active' && IsRevenueBandApplicability(p.Applicability),
+    );
+}
+
 /** Named prices that apply to this context, before PickPriceRule chooses a winner. OverrideList uses this set. */
 export interface ApplicablePrice {
     ID: string;
@@ -714,6 +798,13 @@ export interface ApplicablePrice {
     PriceListID: string | null;
     InheritedFrom: 'product' | 'category';
     InheritedFromCategoryID: string | null;
+    /** The price is a revenue band (its Applicability tests the buyer's revenue). */
+    IsRevenueBand?: boolean;
+    /**
+     * A revenue band offered because the buyer's revenue is unknown, so the rules could not choose
+     * it. Picking one is the rep's call and needs no override grant.
+     */
+    BandUndecided?: boolean;
 }
 
 export async function ListApplicablePrices(
@@ -724,7 +815,9 @@ export async function ListApplicablePrices(
     const resolver = new DefaultPriceResolver();
     const rows = await resolver.CollectApplicable(ctx, provider, user);
     const tiers = await resolver.loadTiers(rows.map((r) => r.ID), provider, user);
+    const revenueUnknown = revenueOf(ctx) == null;
     return rows.map((r) => {
+        const isBand = IsRevenueBandApplicability(r.Applicability);
         const rule: PriceRule = {
             ID: r.ID,
             PricingModel: r.PricingModel as PricingModel,
@@ -754,6 +847,8 @@ export async function ListApplicablePrices(
             PriceListID: r.PriceListID,
             InheritedFrom: r.ProductID ? 'product' as const : 'category' as const,
             InheritedFromCategoryID: r.ProductID ? null : r.ProductCategoryID,
+            IsRevenueBand: isBand,
+            BandUndecided: isBand && revenueUnknown,
         };
     });
 }

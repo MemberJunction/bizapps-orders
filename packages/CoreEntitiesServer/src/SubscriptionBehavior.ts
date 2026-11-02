@@ -216,12 +216,29 @@ export interface CancellationDecision {
      */
     ReversalFraction: number;
     /**
+     * The exact amount the reversal credits, when it must be a figure and not a rounded fraction of the line
+     * (a refund the payment gateway made: the reversal must equal it to the cent). Absent: quantity × price.
+     */
+    ReversalAmount?: number;
+    /**
+     * With `ReversalAmount`, for a gateway renewal's refund: what its charge took and what is already credited back, so
+     * the reversal's quantity is sized by the shared rule (`CreditReversalQuantity`) from the money still owed back.
+     */
+    ReversalBasis?: { Paid: number; Credited: number };
+    /**
      * `Canceled` when coverage is cut short, `Completed` when the customer simply declines renewal
      * and rides the term out — the difference matters for "why did this lapse" reporting.
      */
     TermStatus: 'Canceled' | 'Completed';
     /** Which rules produced this, in a sentence. Surfaced to the user, so it names the policy. */
     Explanation: string;
+    /**
+     * The coverage half of `Explanation` alone (when coverage ends and the term's status), without the type's refund
+     * rule. A caller that replaces the money with a figure the type did not decide (a payment gateway's refund, D20)
+     * explains it from this, so the message never states the type's figure and the replacing one side by side.
+     * Absent (a host's own behavior): the caller keeps `Explanation`.
+     */
+    Coverage?: string;
 }
 
 /**
@@ -375,6 +392,13 @@ export interface SubscriptionPurchaseContext {
      * subscription it names.
      */
     RequestedAction?: 'ExtendExisting' | 'CreateNew' | null;
+    /**
+     * A renewal the payment gateway already charged for (E4, `SanctionGatewayRenewal`). It always
+     * continues the subscription it names: an active one is extended, a lapsed or cancelled one is
+     * reactivated (never a second subscription, Andrew's rule), and either way the new term starts the
+     * day after the last one ended, because that is the period the gateway was paid for.
+     */
+    GatewayRenewal?: boolean;
 }
 
 function money(v: number): number {
@@ -511,7 +535,10 @@ export class SubscriptionBehavior {
         // An extension starts where the existing coverage ends — never overlapping it. That rule
         // outranks a stated start: honoring one here would either overlap the term still running
         // or leave a gap in coverage the customer has already been sold.
-        const extending = action === 'ExtendExisting';
+        // A gateway renewal of a cancelled subscription continues its coverage too: the gateway charged
+        // for the period right after the last term, not one starting on the day the charge was booked.
+        const extending =
+            action === 'ExtendExisting' || (!!ctx.GatewayRenewal && action === 'Reactivate' && !!ctx.Existing?.LatestTermEnd);
         const existingCoverageEnd = extending ? (ctx.Existing?.LatestTermEnd ?? null) : null;
         const start = existingCoverageEnd
             ? addDays(existingCoverageEnd, 1)
@@ -762,6 +789,9 @@ export class SubscriptionBehavior {
         // Reactivation still applies below when the subscription has lapsed — a renewal arriving
         // after a lapse should revive it rather than silently extend a dead one.
         const isActive = existing.Status === 'Active' || existing.Status === 'Trialing';
+        // The gateway was paid for the next period: continue THIS subscription, whatever the type's
+        // reactivation window says.
+        if (ctx.GatewayRenewal) return isActive ? 'ExtendExisting' : 'Reactivate';
         if (ctx.IsRenewal && isActive) return 'ExtendExisting';
         // The line's own answer, when it gives one (golive #299). Before this the type's rule was
         // the only answer, so every same-product purchase under `ExtendExisting` became the next
@@ -1018,6 +1048,7 @@ export class SubscriptionBehavior {
             // they paid for. Only a cut-short term is `Canceled`.
             TermStatus: effective.getTime() >= ctx.Term.EndDate.getTime() ? 'Completed' : 'Canceled',
             Explanation: explanation,
+            Coverage: `Coverage ends ${isoDay(effective)} (${ctx.Rules.CancellationMode}).`,
         };
     }
 
@@ -1048,6 +1079,7 @@ export class SubscriptionBehavior {
                 ReversalFraction: 0,
                 TermStatus: 'Canceled',
                 Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept.`,
+                Coverage: `${coverage}.`,
             };
         }
         return {
@@ -1062,6 +1094,7 @@ export class SubscriptionBehavior {
                 rawContext.Rules.CancellationRefundMode === 'NoRefund'
                     ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed and its instalments withdrawn.`
                     : `${coverage} and its full ${amount} reversed.`,
+            Coverage: `${coverage}.`,
         };
     }
 
@@ -1259,21 +1292,10 @@ export function SubscriptionTypeRulesFrom(row: SubscriptionTypeRules): Subscript
 }
 
 /**
- * Which subscription type a product actually uses at confirm.
- *
- * `Product.SubscriptionTypeID` wins when set. Otherwise the product type's
- * `DefaultSubscriptionTypeID` (Membership → Annual Rolling, etc.). Null means
- * the line is not a subscription — no term, no service period from this path.
+ * Which subscription type a product actually uses at confirm. Lives in orders-entities so the
+ * screens that decide whether a line is a subscription apply the same rule (golive #339).
  */
-export function ResolveSubscriptionTypeID(
-    productSubscriptionTypeID: string | null | undefined,
-    typeDefaultSubscriptionTypeID: string | null | undefined,
-): string | null {
-    const explicit = productSubscriptionTypeID?.trim();
-    if (explicit) return explicit;
-    const inherited = typeDefaultSubscriptionTypeID?.trim();
-    return inherited || null;
-}
+export { ResolveSubscriptionTypeID } from '@mj-biz-apps/orders-entities';
 
 /**
  * Which revenue-recognition type a product actually uses at booking.

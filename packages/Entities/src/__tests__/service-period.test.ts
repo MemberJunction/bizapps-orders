@@ -33,6 +33,7 @@ const CATALOG = {
         { ID: 't-service', Code: 'Service', ProductExtensionEntity: null },
         { ID: 't-event', Code: 'Event', ProductExtensionEntity: 'MJ_BizApps_Orders: Event Products' },
         { ID: 't-gift', Code: 'GiftCard', ProductExtensionEntity: null },
+        { ID: 't-subscription', Code: 'Subscription', ProductExtensionEntity: null, DefaultSubscriptionTypeID: 'st-1' },
     ],
     products: [
         { ID: 'p-deliverable', ProductTypeID: 't-service', RevenueRecognitionTypeID: 'rr-backend' },
@@ -41,6 +42,7 @@ const CATALOG = {
         { ID: 'p-event-unloaded', ProductTypeID: 't-event', RevenueRecognitionTypeID: 'rr-backend' },
         { ID: 'p-sub', ProductTypeID: 't-service', RevenueRecognitionTypeID: 'rr-backend', SubscriptionTypeID: 'st-1' },
         { ID: 'p-gift', ProductTypeID: 't-gift', RevenueRecognitionTypeID: 'rr-backend' },
+        { ID: 'p-sub-inherited', ProductTypeID: 't-subscription', RevenueRecognitionTypeID: 'rr-backend', SubscriptionTypeID: null },
     ],
     events: [{ ID: 'p-event', EventStartsAt: '2026-10-14T13:00:00Z', EventEndsAt: '2026-10-16T21:00:00Z' }],
 };
@@ -59,6 +61,11 @@ describe('OrdersEngine.ServicePeriodSource', () => {
         expect(e.ServicePeriodSource('p-sub')).toBe('Subscription');
         expect(e.ServicePeriodSource('p-upfront')).toBe('NotRequired');
         expect(e.ServicePeriodSource('p-gift')).toBe('NotRequired');
+    });
+
+    it('takes the window from the term for a product that inherits its subscription type', () => {
+        // Confirm builds a term from the product type's default (golive #339), so the term supplies it.
+        expect(OrdersEngine.Instance.ServicePeriodSource('p-sub-inherited')).toBe('Subscription');
     });
 
     it('asks for the window on an event-type product that has no event record', () => {

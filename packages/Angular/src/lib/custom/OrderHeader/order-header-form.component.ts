@@ -7,11 +7,14 @@ import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
+    CanOfferConfirm,
     DescribeClearedEmployers,
     DescribeDisplacedTermStart,
     LoadOrdersEngine,
     OrderHeaderEntity,
+    OrdersConfirmReadinessOperation,
     type DateCell,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     type mjBizAppsOrdersPaymentTypeEntity,
     type PartyOrganizationClear,
 } from '@mj-biz-apps/orders-entities';
@@ -35,6 +38,7 @@ import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entitie
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { DispatchFormNavigation } from '../form-navigation-helper';
+import { InstalmentARLabel, NoScheduleARNote } from './order-payment-schedule';
 import {
     ExpandedPartyFromPref,
     FormatPartyAddress,
@@ -53,6 +57,15 @@ export type OrderFormSavedTab = 'charges' | 'accounting' | 'subs';
 export type OrderFormContextTab = OrderFormNewTab | OrderFormSavedTab;
 
 export type { OrderFormParty };
+
+/**
+ * Everything that holds Confirm, in the order the banner lists it: the browser's own verdict
+ * (bill-to, a line, service periods, a payment reference), then each concession problem the
+ * server's confirm gate reported (golive #340). Empty when Confirm can go ahead.
+ */
+export function ConfirmBlockerList(browserReason: string | null, concessionProblems: readonly string[]): string[] {
+    return [...(browserReason ? [browserReason] : []), ...concessionProblems];
+}
 
 /** Accounting tab shows one view at a time — a mode switch, not a second tab strip. */
 export type OrderAccountingView = 'summary' | 'detail' | 'waterfall';
@@ -135,6 +148,25 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public DisplacedStartNotices: string[] = [];
     public PaymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
 
+    /**
+     * The order's payment schedule, on the Payment tab: one row per instalment with the date its AR
+     * is raised. Null until loaded; a failed read shows its message instead of the table.
+     */
+    public Instalments: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity[] | null = null;
+    public InstalmentsError: string | null = null;
+
+    /**
+     * What the server's confirm gate would refuse this saved, unbooked order for, one sentence each
+     * (`Orders.ConfirmReadiness`, golive #340): concessions awaiting approval, and lines priced or
+     * discounted below catalog with no approved concession. Read from the saved order, so it is
+     * refreshed on load, after every save (lines save with the header) and after a refresh.
+     */
+    public ConcessionProblems: string[] = [];
+    /** Set when the readiness check itself failed. Confirm stays offered: the server still checks. */
+    public ConcessionCheckError: string | null = null;
+    private readinessSeq = 0;
+    private recordEvents: { unsubscribe(): void } | null = null;
+
     public get ContextTabs(): TabConfig[] {
         return OrderFormTabs(!!this.record?.IsSaved);
     }
@@ -182,6 +214,9 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         await this.loadPaymentTypes();
         await this.refreshAccountingIfNeeded();
         await this.loadDisplacedStartNotices();
+        await this.loadInstalments();
+        this.watchRecordForReadiness();
+        void this.RefreshConfirmReadiness();
 
         this.RegisterToolbarItem({
             Key: 'confirm-order',
@@ -200,6 +235,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
                 if (this.NeedsPaymentReference) return 'Need a check / ACH reference before confirming.';
                 const verdict = ord?.ConfirmEligibility?.();
                 if (verdict && !verdict.Allowed) return verdict.Reason ?? 'Cannot confirm this order.';
+                const concessions = this.ConcessionBlockers;
+                if (concessions.length > 0) return concessions.join(' ');
                 return false;
             },
             IsLoading: () => this.Confirming,
@@ -289,7 +326,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     public get ShowConfirm(): boolean {
-        return !!this.record && this.record.ConfirmEligibility().Allowed && !this.NeedsPaymentReference;
+        return (
+            !!this.record &&
+            this.record.ConfirmEligibility().Allowed &&
+            !this.NeedsPaymentReference &&
+            this.ConcessionBlockers.length === 0
+        );
     }
 
     public get NeedsPaymentReference(): boolean {
@@ -309,6 +351,64 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
      */
     public get TermLengthNotes(): string[] {
         return this.record?.StatedTermLengthNotes() ?? [];
+    }
+
+    /** The concession problems that hold Confirm, or none once the order is booked or voided. */
+    public get ConcessionBlockers(): string[] {
+        if (!this.record?.IsSaved || !CanOfferConfirm(this.record.Status).Allowed) return [];
+        return this.ConcessionProblems;
+    }
+
+    /** Whether the "Before this can be confirmed" banner shows: anything in {@link ConfirmBlockerList}. */
+    public get ConfirmBlocked(): boolean {
+        return ConfirmBlockerList(this.ConfirmBlockedReason, this.ConcessionBlockers).length > 0;
+    }
+
+    /**
+     * Ask the server what its confirm gate would refuse this order for. Only a saved order that can
+     * still be confirmed is asked; a later answer replaces an earlier one, and an answer for an
+     * order that has since been swapped out is dropped.
+     */
+    public async RefreshConfirmReadiness(): Promise<void> {
+        const order = this.record;
+        const seq = ++this.readinessSeq;
+        if (!order?.IsSaved || !CanOfferConfirm(order.Status).Allowed) {
+            this.ConcessionProblems = [];
+            this.ConcessionCheckError = null;
+            return;
+        }
+        let problems: string[] = [];
+        let error: string | null = null;
+        try {
+            const result = await new OrdersConfirmReadinessOperation().Execute({ OrderHeaderID: order.ID });
+            if (result.Success && result.Output) problems = result.Output.ConcessionProblems ?? [];
+            else error = result.ErrorMessage?.trim() || null;
+        } catch (e) {
+            error = e instanceof Error ? e.message : String(e);
+        }
+        if (seq !== this.readinessSeq || this.record !== order) return;
+        this.ConcessionProblems = problems;
+        this.ConcessionCheckError = error
+            ? `Whether concessions still need approval could not be checked (${error}). Confirm still checks.`
+            : null;
+        this.cdr?.detectChanges();
+    }
+
+    /** Re-ask after every save (lines save with the header) and every reload of the record. */
+    private watchRecordForReadiness(): void {
+        this.recordEvents?.unsubscribe();
+        this.recordEvents =
+            this.record?.RegisterEventHandler((event) => {
+                if (event.type === 'save' || event.type === 'load_complete') {
+                    void this.RefreshConfirmReadiness();
+                }
+            }) ?? null;
+    }
+
+    override ngOnDestroy(): void {
+        this.recordEvents?.unsubscribe();
+        this.recordEvents = null;
+        super.ngOnDestroy();
     }
 
     /** Void or reopen. A refusal leaves the previous status in place and shows the reason. */
@@ -339,6 +439,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
             }
             const outcome = await this.record.Confirm();
             this.DisplacedStartNotices = outcome.DisplacedTermStarts.map(DescribeDisplacedTermStart);
+            // Confirm invoices any instalment already due, so the AR column changes with it.
+            await this.loadInstalments();
             this.updateLineBadge();
             if (this.EditMode) {
                 this.EditMode = false;
@@ -675,6 +777,56 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     /** The one fetched snapshot every accounting view is derived from. Null until the tab is opened. */
     private journalData: OrderJournalData | null = null;
+
+    /**
+     * The schedule is read once at open, so the form's Refresh reads it again too: rows added or
+     * changed elsewhere (another screen, Data Explorer, Sales) appear without reopening the order.
+     */
+    override async RefreshRecord(): Promise<boolean> {
+        const refreshed = await super.RefreshRecord();
+        if (refreshed) {
+            await this.loadInstalments();
+            this.cdr.detectChanges();
+        }
+        return refreshed;
+    }
+
+    private async loadInstalments(): Promise<void> {
+        if (!this.record?.IsSaved) return;
+        try {
+            this.Instalments = await this.record.LoadPaymentSchedule();
+            this.InstalmentsError = null;
+        } catch (error) {
+            this.Instalments = null;
+            this.InstalmentsError = error instanceof Error ? error.message : 'Could not read this order’s payment schedule.';
+        }
+    }
+
+    public get NoScheduleNote(): string {
+        return NoScheduleARNote(!!this.record?.IsBookedOrder);
+    }
+
+    public InstalmentAR(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return InstalmentARLabel(row);
+    }
+
+    public InstalmentDue(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return FormatDate(row.DueDate);
+    }
+
+    public InstalmentAmount(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return FormatMoney(row.Amount);
+    }
+
+    public OpenInstalment(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): void {
+        this.openRecord(MJO_ENTITIES.OrderHeaderPaymentSchedule, String(row.ID));
+    }
+
+    /** The AR link: opens the journal entry the instalment's invoice posted, not the row. */
+    public OpenInstalmentEntry(event: Event, row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): void {
+        event.stopPropagation();
+        if (row.JournalEntryID) this.OnJournalRowSelected(row.JournalEntryID);
+    }
 
     /** Booked orders only. A failed read shows no notice rather than blocking the form. */
     private async loadDisplacedStartNotices(): Promise<void> {

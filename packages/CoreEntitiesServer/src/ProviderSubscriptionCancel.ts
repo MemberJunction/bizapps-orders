@@ -44,7 +44,8 @@ import { ReadOpenProviderSubscriptionAlerts } from './checkoutCaptureAlert.js';
 /**
  * Open E2 alerts after which a cancel could leave a gateway subscription billing: one created but not
  * recorded (`NotRecorded`), a create of unknown result (`GatewayFault`), a second one beside the
- * recorded one (`LinkedElsewhere`, `AmbiguousAtGateway`), or one that charged at creation.
+ * recorded one (`LinkedElsewhere`, `AmbiguousAtGateway`), one that charged at creation, or a renewal the
+ * gateway was paid for that Orders has not booked (`RenewalNotBooked`, E4).
  */
 export const CANCEL_BLOCKING_ALERT_CODES: readonly string[] = [
     'NotRecorded',
@@ -52,6 +53,9 @@ export const CANCEL_BLOCKING_ALERT_CODES: readonly string[] = [
     'LinkedElsewhere',
     'AmbiguousAtGateway',
     'ChargedAtCreation',
+    // E4: the gateway was paid for a renewal Orders could not book. Cancelling now would end coverage the
+    // customer paid for without anyone settling that payment first.
+    'RenewalNotBooked',
 ];
 
 /** When the gateway must stop billing: now, or after an instant. */
@@ -143,20 +147,30 @@ export type GatewayCancelGate =
  * starts 2026-12-31T06:00Z, which is the term's last day: UnbookedPeriod. On 30 Dec its period still
  * started at creation: Proceed.
  */
+/**
+ * True when a gateway billing period that starts at `periodStart` is one Orders has NOT booked: it starts at
+ * or after 00:00 business time on the latest term's last day (E2's anchor: the gateway renews then). The one
+ * rule for "is this a new period?", shared by the cancel gate and the renewal sync (E4), which books a paid
+ * renewal invoice only when its period is a new one; the invoice that paid the period Orders already covers
+ * (an imported subscriber's current year) is never booked again.
+ */
+export function StartsUnbookedPeriod(periodStart: Date | null | undefined, latestTermLastDay: CalendarDay, zone: string): boolean {
+    return !!periodStart && periodStart.getTime() >= DayStartUtc(latestTermLastDay, zone).getTime();
+}
+
 export function GateGatewayCancel(
     billing: Pick<DescribeProviderSubscriptionResult, 'State' | 'CurrentPeriodStart'>,
     latestTermLastDay: CalendarDay,
     zone: string,
 ): GatewayCancelGate {
     if (billing.State === 'Ended') return { Kind: 'Finished' };
-    const unbookedFrom = DayStartUtc(latestTermLastDay, zone);
     const start = billing.CurrentPeriodStart ?? null;
-    if (start && start.getTime() >= unbookedFrom.getTime()) return { Kind: 'UnbookedPeriod', PeriodStart: start };
+    if (start && StartsUnbookedPeriod(start, latestTermLastDay, zone)) return { Kind: 'UnbookedPeriod', PeriodStart: start };
     return billing.State === 'Ending' ? { Kind: 'Finished' } : { Kind: 'Proceed' };
 }
 
-/** The driver for the account that bills the subscription, or why it cannot be used. */
-async function gatewayDriver(
+/** The driver for the account that bills the subscription, or why it cannot be used (also the cancel's refund read, D20). */
+export async function gatewayDriver(
     subscription: { PaymentProviderID: string | null; ProviderSubscriptionID: string },
     provider: IMetadataProvider,
     user: UserInfo,
