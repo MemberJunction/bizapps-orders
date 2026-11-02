@@ -1,5 +1,5 @@
 -- =============================================================================
--- PostgreSQL counterpart of V202610301610__v5.39.x__InstalmentLineBilling_Immutable.sql
+-- PostgreSQL counterpart of V202611021610__v5.39.x__InstalmentLineBilling_Immutable.sql
 -- =============================================================================
 -- Refuses any UPDATE or DELETE of an InstalmentLineBilling row (#713). Written
 -- by hand in the style of V202610091200's Postgres guards: `mj sql-convert`

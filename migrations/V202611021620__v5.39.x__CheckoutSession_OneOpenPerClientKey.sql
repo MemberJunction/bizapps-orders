@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610301620 — One open checkout session per widget and client key (#782)
+-- V202611021620 — One open checkout session per widget and client key (#782)
 -- =============================================================================
 -- Session resume is a read-then-insert. Two InitializeSession calls for the
 -- same widget and client key that overlap (a double-loaded page, a retried

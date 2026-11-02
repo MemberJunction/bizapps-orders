@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610301630 — The confirmed-line freeze (51003) covers DiscountAmount and
+-- V202611021630 — The confirmed-line freeze (51003) covers DiscountAmount and
 --                 ChargeAmount (MemberJunction/bizapps-orders#827)
 -- =============================================================================
 -- The application refuses a change to either column on a booked line
