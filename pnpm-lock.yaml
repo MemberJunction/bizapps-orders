@@ -273,6 +273,9 @@ importers:
       '@memberjunction/ng-entity-viewer':
         specifier: ^6.1.6
         version: 6.1.6(51087b73c6fad70be31769f1a1780fa9)
+      '@memberjunction/ng-export-service':
+        specifier: ^6.1.6
+        version: 6.1.6(1547bb526b698502e0c2f8159218a1fd)
       '@memberjunction/ng-filter-builder':
         specifier: ^6.1.6
         version: 6.1.6(6bc9e72e8710aac99bb241af46a559c6)
