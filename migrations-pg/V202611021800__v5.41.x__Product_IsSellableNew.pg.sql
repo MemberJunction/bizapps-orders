@@ -360,26 +360,26 @@ $do$;
 
 -- SKIPPED: trigger (auto-conversion not supported)
 -- CREATE TRIGGER [__mj_BizAppsOrders].trgUpdateEventProduct
-ON "__mj_BizAppsOrders"."EventProduct"
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    UPDATE
-        "__mj_BizAppsOrders"."EventProduct"
-    SE
+-- ON "__mj_BizAppsOrders"."EventProduct"
+-- AFTER UPDATE
+-- AS
+-- BEGIN
+--     SET NOCOUNT ON;
+--     UPDATE
+--         "__mj_BizAppsOrders"."EventProduct"
+--     SE
 
 -- SKIPPED: trigger (auto-conversion not supported)
 -- CREATE TRIGGER [__mj_BizAppsOrders].trgUpdateProduct
-ON "__mj_BizAppsOrders"."Product"
-AFTER UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    UPDATE
-        "__mj_BizAppsOrders"."Product"
-    SET
-        __mj_
+-- ON "__mj_BizAppsOrders"."Product"
+-- AFTER UPDATE
+-- AS
+-- BEGIN
+--     SET NOCOUNT ON;
+--     UPDATE
+--         "__mj_BizAppsOrders"."Product"
+--     SET
+--         __mj_
 
 
 -- ===================== Data (INSERT/UPDATE/DELETE) =====================
