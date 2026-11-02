@@ -43,7 +43,8 @@ describe('ReviewPurgeSQL', () => {
         expect(sql.indexOf('SET XACT_ABORT ON')).toBeLessThan(sql.indexOf('BEGIN TRANSACTION'));
         const disables = sql.match(/DISABLE TRIGGER/g) ?? [];
         const enables = sql.match(/ENABLE TRIGGER/g) ?? [];
-        expect(disables.length).toBe(5);
+        // Six: the confirmed-order freeze too, so a committed credit order (a reversal, D20) can be purged.
+        expect(disables.length).toBe(6);
         expect(enables.length).toBe(disables.length);
         expect(sql.lastIndexOf('ENABLE TRIGGER')).toBeGreaterThan(sql.indexOf('DELETE FROM'));
         expect(sql.trimEnd().endsWith('COMMIT TRANSACTION;')).toBe(true);
