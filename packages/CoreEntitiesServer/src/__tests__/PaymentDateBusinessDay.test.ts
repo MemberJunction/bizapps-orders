@@ -356,8 +356,8 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
         } {
             // The source order carries a credit (negative balance); the target owes money.
             mocks.runViewRows.set('Order Headers', [
-                { ID: SOURCE_ID, OrderNumber: 'ORD-1', Status: 'Confirmed', Balance: -40, TotalGross: 100, CompanyID: COMPANY_ID },
-                { ID: TARGET_ID, OrderNumber: 'ORD-2', Status: 'Confirmed', Balance: 40, TotalGross: 40, CompanyID: COMPANY_ID },
+                { ID: SOURCE_ID, OrderNumber: 'ORD-1', Status: 'Confirmed', Balance: -40, TotalGross: 100, CompanyID: COMPANY_ID, BillToOrganizationID: 'org-1', BillToPersonID: null },
+                { ID: TARGET_ID, OrderNumber: 'ORD-2', Status: 'Confirmed', Balance: 40, TotalGross: 40, CompanyID: COMPANY_ID, BillToOrganizationID: 'org-1', BillToPersonID: null },
             ]);
             mocks.runViewRows.set('Payment Types', [{ ID: TYPE_ID }]);
 

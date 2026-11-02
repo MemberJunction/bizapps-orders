@@ -37,6 +37,7 @@ import {
     LogError,
     LogStatus,
     RunView,
+    type DatabaseProviderBase,
     type IMetadataProvider,
     type IRunViewProvider,
     type UserInfo,
@@ -50,7 +51,9 @@ import {
 import type { BasePaymentProvider, GatewayRefund, WebhookEvent } from './BasePaymentProvider.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { RefundPaymentOperation, type RefundPaymentOutput } from './RefundPaymentOperation.js';
-import { EscapeSQLString } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID } from './sql-guards.js';
+import { CreditGatewayRenewalRefund } from './GatewayRenewalCredit.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 
 export const PROVIDER_REFUND_NOT_BOOKED_TYPE_CODE = 'PROVIDER_REFUND_NOT_BOOKED';
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -176,6 +179,72 @@ export interface ProviderRefundOutcome {
  *         the gateway redelivers, and the difference-based plan makes the retry safe.
  */
 export async function BookProviderRefunds(
+    event: WebhookEvent,
+    paymentIntentID: string,
+    driver: BasePaymentProvider,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ProviderRefundOutcome> {
+    // ON A PROVIDER OF ITS OWN (#927, PAY-000058), the refund's booking AND the renewal's credit together. The webhook
+    // runs on the process's SHARED provider, where a BeginTransaction is a savepoint inside whatever another request has
+    // open: the refund booking would then be uncommitted (and lost if that request rolls back) while the credit,
+    // committed on its own instance, could not see the renewal owing; and two refunds on one worker would both "take" the
+    // subscription lock without waiting. One isolated instance for both: the booking commits first, the credit reads it.
+    return WithIsolatedProvider(async (own) => {
+        // Two deliveries of one refund at once (a redelivery, or charge.refunded and charge.refund.updated) both found
+        // no refund held and both booked it: the payment showed twice the refund. The intent's row, locked for the
+        // booking, puts them in line; the second finds the first's refund held and books nothing.
+        const db = own as unknown as DatabaseProviderBase;
+        await db.BeginTransaction();
+        let outcome: ProviderRefundOutcome;
+        try {
+            await (own as unknown as { ExecuteSQL: (q: string) => Promise<unknown> }).ExecuteSQL(
+                `SELECT ID FROM __mj_BizAppsOrders.PaymentIntent WITH (UPDLOCK, ROWLOCK) WHERE ID = '${RequireUUID(paymentIntentID, 'PaymentIntentID')}'`,
+            );
+            outcome = await bookRefundPayments(event, paymentIntentID, driver, own, user);
+            await db.CommitTransaction();
+        } catch (err) {
+            await db.RollbackTransaction().catch(() => undefined);
+            throw err;
+        }
+        // D20: a refund on a renewal the gateway charged also credits that renewal order (money only, access
+        // unchanged), so it is not left owing; idempotent, so a replay or an earlier credit adds nothing.
+        try {
+            await creditRenewalRefunds(paymentIntentID, driver, own, user);
+        } catch (err) {
+            const reason = `the gateway refunded a renewal it charged, but crediting the renewal order failed: ${err instanceof Error ? err.message : String(err)}`;
+            LogError(`[ProviderRefundBooking] ${reason}`);
+            outcome.ReviewReason = outcome.ReviewReason ? `${outcome.ReviewReason}; ${reason}` : reason;
+            await raiseReview(event, paymentIntentID, null, driver, 0, reason, own, user);
+        }
+        return outcome;
+    }, provider);
+}
+
+/** The renewal lines of the order the intent paid, each credited by what the gateway refunded and is not yet credited. */
+async function creditRenewalRefunds(paymentIntentID: string, driver: BasePaymentProvider, provider: IMetadataProvider, user: UserInfo): Promise<void> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const intent = (
+        await rv.RunView<{ OrderHeaderID: string | null }>(
+            { EntityName: PAYMENT_INTENT_ENTITY, ExtraFilter: `ID = '${RequireUUID(paymentIntentID, 'PaymentIntentID')}'`, Fields: ['ID', 'OrderHeaderID'], ResultType: 'simple', BypassCache: true },
+            user,
+        )
+    ).Results?.[0];
+    if (!intent?.OrderHeaderID) return;
+    const lines = await rv.RunView<{ ID: string }>(
+        {
+            EntityName: 'MJ_BizApps_Orders: Order Lines',
+            ExtraFilter: `OrderHeaderID = '${RequireUUID(intent.OrderHeaderID, 'OrderHeaderID')}' AND RenewsSubscriptionID IS NOT NULL`,
+            Fields: ['ID'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    for (const line of lines.Results ?? []) await CreditGatewayRenewalRefund(line.ID, driver, provider, user);
+}
+
+async function bookRefundPayments(
     event: WebhookEvent,
     paymentIntentID: string,
     driver: BasePaymentProvider,

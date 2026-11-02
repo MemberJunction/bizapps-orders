@@ -85,6 +85,7 @@ import type {
 } from '@mj-biz-apps/accounting-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
 import { FormatDate } from '../panels/money-format';
+import { CREDITS_HELD_WHERE } from './credit-statuses';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -326,8 +327,9 @@ export interface MJOGetOrdersOptions {
  * - `returnable` — `booked`, minus return orders themselves. A return made on the Returns page is
  *   typed `Return` and reverses line by line, so its header `ReversesOrderHeaderID` can be empty;
  *   either marks it. A return cannot be returned, so the Returns picker offers only these (#835).
- * - `credits` — a NEGATIVE balance, which IS the customer's credit. There is no separate instrument
- *   to look up.
+ * - `credits` — a NEGATIVE balance on a confirmed order, which IS the customer's credit. There is no
+ *   separate instrument to look up. A Draft, Quoted or Voided order's negative balance is no credit
+ *   (`credit-statuses.ts`; Orders.ApplyAccountCredit refuses it).
  */
 export async function GetOrders(
     options: MJOGetOrdersOptions = {},
@@ -357,7 +359,8 @@ export async function GetOrders(
             filters.push(`Status IN ('Draft','Quoted')`);
             break;
         case 'credits':
-            filters.push(`Balance < 0`);
+            // Only a confirmed order's negative balance is a credit (credit-statuses.ts; the server refuses the rest).
+            filters.push(CREDITS_HELD_WHERE);
             break;
         default:
             filters.push(`Status <> 'Voided'`);

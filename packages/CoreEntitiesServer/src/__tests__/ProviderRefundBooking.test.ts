@@ -15,6 +15,13 @@ const state = vi.hoisted(() => ({
     refundRefuses: false,
     raised: [] as Array<Record<string, unknown>>,
     typeActive: true,
+    /** The order the intent paid, and its renewal lines (D20's door). */
+    intentOrder: null as string | null,
+    renewalLines: [] as string[],
+    credits: [] as string[],
+    creditThrows: null as string | null,
+    creditProviders: [] as unknown[],
+    refundProviders: [] as unknown[],
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -24,18 +31,31 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
         LogStatus: () => undefined,
         LogError: () => undefined,
         RunView: class {
-            async RunView(params: { ExtraFilter?: string }) {
+            async RunView(params: { EntityName?: string; ExtraFilter?: string }) {
                 if (params.ExtraFilter?.includes('ReversesPaymentHeaderID =')) return { Success: true, Results: state.held };
+                if (params.EntityName?.endsWith('Payment Intents')) return { Success: true, Results: [{ ID: 'intent', OrderHeaderID: state.intentOrder }] };
+                if (params.EntityName?.endsWith('Order Lines')) {
+                    return { Success: true, Results: params.ExtraFilter?.includes('RenewsSubscriptionID IS NOT NULL') ? state.renewalLines.map((ID) => ({ ID })) : [] };
+                }
                 return { Success: true, Results: state.payments };
             }
         },
     };
 });
 
+vi.mock('../GatewayRenewalCredit.js', () => ({
+    CreditGatewayRenewalRefund: async (lineID: string, _d: unknown, onProvider: unknown) => {
+        state.creditProviders.push(onProvider);
+        if (state.creditThrows) throw new Error(state.creditThrows);
+        state.credits.push(`${lineID} after ${state.refundCalls.length} refund booking(s)`);
+        return { Credited: 1 };
+    },
+}));
 vi.mock('../RefundPaymentOperation.js', () => ({
     RefundPaymentOperation: class {
-        async ExecuteServer(input: Record<string, unknown>) {
+        async ExecuteServer(input: Record<string, unknown>, ctx?: { provider?: unknown }) {
             state.refundCalls.push(input);
+            state.refundProviders.push(ctx?.provider);
             if (state.refundRefuses) return { Success: true, Output: { Success: false, Message: 'only 10 remains refundable' } };
             return { Success: true, Output: { Success: true, RefundPaymentNumber: `PAY-R${state.refundCalls.length}` } };
         }
@@ -165,7 +185,14 @@ describe('StripePaymentProvider.ListRefunds', () => {
 
 describe('BookProviderRefunds', () => {
     const user = {} as UserInfo;
-    const provider = {} as IMetadataProvider;
+    const txLog: string[] = [];
+    const txProvider = () => ({
+        BeginTransaction: async () => void txLog.push('BEGIN'),
+        CommitTransaction: async () => void txLog.push('COMMIT'),
+        RollbackTransaction: async () => void txLog.push('ROLLBACK'),
+        ExecuteSQL: async (q: string) => void txLog.push(/UPDLOCK/.test(q) ? `LOCK ${/FROM __mj_BizAppsOrders\.(\w+)/.exec(q)?.[1]}` : 'sql'),
+    });
+    const provider = txProvider() as unknown as IMetadataProvider;
     let listed: GatewayRefund[] = [];
     const driver = {
         Config: { CompanyID: 'company-of-provider' },
@@ -187,7 +214,63 @@ describe('BookProviderRefunds', () => {
         state.refundRefuses = false;
         state.raised = [];
         state.typeActive = true;
+        state.intentOrder = null;
+        state.renewalLines = [];
+        state.credits = [];
+        state.creditThrows = null;
+        state.creditProviders = [];
+        state.refundProviders = [];
         listed = [refund('re_test_1', 30)];
+    });
+
+    it('D20: once the refund is booked, every renewal line of the order the intent paid is credited (and nothing else)', async () => {
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
+        state.renewalLines = ['line-a', 'line-b'];
+        const out = await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
+        expect(out.Booked).toHaveLength(1);
+        expect(state.credits).toEqual(['line-a after 1 refund booking(s)', 'line-b after 1 refund booking(s)']);
+    });
+    it('R5-1/R6-1: the refund booking AND the credit run on ONE provider of their own (never the shared one), booking first, then released', async () => {
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
+        state.renewalLines = ['line-a'];
+        const events: string[] = [];
+        const own = { ...txProvider(), ReleaseIndependentInstance: async () => void events.push('released') };
+        const shared = { CreateIndependentInstance: async () => (events.push('created'), own) } as unknown as IMetadataProvider;
+        await BookProviderRefunds(event(30), INTENT_ID, driver, shared, user);
+        expect(state.refundProviders).toEqual([own]);
+        expect(state.creditProviders).toEqual([own]);
+        expect(state.credits).toEqual(['line-a after 1 refund booking(s)']);
+        expect(events).toEqual(['created', 'released']);
+    });
+    it('two deliveries of one refund at once: the cash booking runs under the intent row lock, in a transaction, before the credit', async () => {
+        txLog.length = 0;
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
+        state.renewalLines = ['line-a'];
+        await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
+        expect(txLog).toEqual(['BEGIN', 'LOCK PaymentIntent', 'COMMIT']);
+    });
+    it('the cash booking fails: rolled back, and nothing is credited', async () => {
+        txLog.length = 0;
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
+        state.renewalLines = ['line-a'];
+        listed = [];
+        state.payments = [];
+        const failing = { ...txProvider(), ExecuteSQL: async () => { throw new Error('lock timeout'); } } as unknown as IMetadataProvider;
+        await expect(BookProviderRefunds(event(30), INTENT_ID, driver, failing, user)).rejects.toThrow(/lock timeout/);
+        expect(state.credits).toEqual([]);
+    });
+    it('D20 control: an intent with no order (a checkout not yet booked) credits nothing', async () => {
+        state.renewalLines = ['line-a'];
+        await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
+        expect(state.credits).toEqual([]);
+    });
+    it('D20: crediting fails (gateway unreadable): the refund stays booked, and the review says so', async () => {
+        state.intentOrder = '55555555-0000-4000-8000-0000000000a1';
+        state.renewalLines = ['line-a'];
+        state.creditThrows = 'could not read charge ch_x';
+        const out = await BookProviderRefunds(event(30), INTENT_ID, driver, provider, user);
+        expect(out.Booked).toHaveLength(1);
+        expect(out.ReviewReason).toMatch(/crediting the renewal order failed: could not read charge ch_x/);
     });
 
     it('books a test-mode refund made at the gateway with no manual step, through Orders.RefundPayment', async () => {
