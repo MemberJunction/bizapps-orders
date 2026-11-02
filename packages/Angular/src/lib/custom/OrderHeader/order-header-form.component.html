@@ -340,19 +340,38 @@
                             }
                         </p>
                     </div>
-                    <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
-                        <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
-                        <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
-                            By line
-                            @if (RollupJournalCount) {
-                                <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
-                            }
-                        </button>
-                        <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
-                            <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
-                        </button>
+                    <div class="mjo-oh-acct__actions">
+                        <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
+                            <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
+                            <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
+                                By line
+                                @if (RollupJournalCount) {
+                                    <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
+                                }
+                            </button>
+                            <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
+                                <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
+                            </button>
+                        </div>
+                        <!-- Not on the waterfall: that view is a chart, not a table of rows (#371). -->
+                        @if (AccountingView !== 'waterfall') {
+                            <button
+                                type="button"
+                                class="mjo-oh-acct__export"
+                                [disabled]="ExportingAccounting || RollupLoading"
+                                (click)="ExportAccounting()"
+                                [title]="AccountingView === 'detail'
+                                    ? 'Download every journal line, with accounts and dimensions'
+                                    : 'Download the rolled-up order journal'">
+                                <i class="fa-solid fa-download"></i>
+                                <span>{{ ExportingAccounting ? 'Exporting…' : 'Export' }}</span>
+                            </button>
+                        }
                     </div>
                 </div>
+                @if (ExportError) {
+                    <p class="mjo-oh-acct__excluded" role="alert">{{ ExportError }}</p>
+                }
 
                 <!-- One set of controls for both views, so they can never disagree about what is in. -->
                 @if (AccountingView !== 'waterfall') {
