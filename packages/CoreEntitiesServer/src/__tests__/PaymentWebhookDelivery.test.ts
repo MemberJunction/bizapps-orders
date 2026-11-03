@@ -272,6 +272,30 @@ describe('the delivery row survives the page finishing the same purchase (#939)'
         expect(state.saved[0]).toMatchObject({ ProviderEventID: 'evt_test_1', PaymentIntentID: INTENT_ID });
     });
 
+    it('stamps the intent on an isolated provider even when a foreign transaction is open on the shared provider before the webhook starts (#944)', async () => {
+        const shared = sharedProviderWithForeignTransaction();
+        const sharedIntentGet = vi.fn();
+        const origGet = shared.GetEntityObject;
+        shared.GetEntityObject = async (name: string) => {
+            if (name.endsWith('Payment Intents')) sharedIntentGet();
+            return origGet(name);
+        };
+        shared.BeginForeign();
+        state.intent = { ID: INTENT_ID, Status: 'Processing', ProviderEventID: null, LastEventAt: null };
+        state.event = event();
+
+        const res = await HandlePaymentWebhook(
+            { RawBody: '{}', Headers: {}, PaymentProviderID: PROVIDER_ID },
+            shared as unknown as IMetadataProvider,
+            user,
+        );
+        shared.RollbackForeign();
+
+        expect(res.Status).toBe(200);
+        expect(sharedIntentGet).not.toHaveBeenCalled();
+        expect(state.intent).toMatchObject({ Status: 'Succeeded', ProviderEventID: 'evt_test_1' });
+    });
+
     it('a raced insert is retried as an update on the same isolated instance, which is then released', async () => {
         const release = vi.fn(async () => undefined);
         const sharedGetEntityObject = vi.fn();

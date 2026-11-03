@@ -24,6 +24,7 @@
     "actions",
     "scheduled-jobs",
     "task-types",
+    "action-filters",
     "entity-actions",
     "query-categories",
     "queries",

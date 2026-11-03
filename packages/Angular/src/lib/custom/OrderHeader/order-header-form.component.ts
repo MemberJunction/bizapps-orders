@@ -13,6 +13,7 @@ import {
     LoadOrdersEngine,
     OrderHeaderEntity,
     OrdersConfirmReadinessOperation,
+    OrdersPollExternalPaymentsOperation,
     type DateCell,
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     type mjBizAppsOrdersPaymentTypeEntity,
@@ -140,6 +141,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public AccountingBasis: OrderJournalDateBasis = 'effective';
 
     public Confirming = false;
+    public CheckingExternalPayments = false;
+    public ExternalPaymentNotice: string | null = null;
     public StatusError: string | null = null;
     /**
      * One sentence per subscription line whose stated start the confirm replaced (golive #299).
@@ -409,6 +412,58 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         this.recordEvents?.unsubscribe();
         this.recordEvents = null;
         super.ngOnDestroy();
+    }
+
+    /**
+     * Surface entity validation and server save refusals in the form's StatusError banner (#393).
+     * BaseFormComponent shows a generic toast on Save failure; reading `record.LatestResult.CompleteMessage`
+     * puts the specific validation or server refusal sentence on the order form itself.
+     */
+    override async SaveRecord(StopEditModeAfterSave: boolean): Promise<boolean> {
+        this.StatusError = null;
+        const saved = await super.SaveRecord(StopEditModeAfterSave);
+        if (!saved) {
+            this.StatusError =
+                this.record?.LatestResult?.CompleteMessage?.trim() || 'The order could not be saved.';
+            this.cdr?.detectChanges();
+        }
+        return saved;
+    }
+
+    /** True when this booked order has an external invoice document number and an open balance waiting on payment. */
+    public get ShowCheckExternalPayments(): boolean {
+        return (
+            !!this.record?.IsSaved &&
+            !!this.record?.IsBookedOrder &&
+            Number(this.record?.Balance ?? 0) > 0 &&
+            !!this.record?.ExternalDocumentNumber?.trim()
+        );
+    }
+
+    /** Run the external payment poll from the order's Payment tab and refresh the order if money arrived. */
+    public async CheckExternalPaymentsNow(): Promise<void> {
+        if (!this.record?.IsSaved || this.CheckingExternalPayments) return;
+        this.CheckingExternalPayments = true;
+        this.ExternalPaymentNotice = null;
+        this.StatusError = null;
+        this.cdr?.detectChanges();
+        try {
+            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: false });
+            const out = result.Output;
+            if (!result.Success || !out) {
+                this.StatusError = result.ErrorMessage?.trim() || 'The payment check could not run.';
+                return;
+            }
+            this.ExternalPaymentNotice = out.Message ?? `${out.Captured} payment(s) recorded.`;
+            if (out.Captured > 0) {
+                await this.RefreshRecord();
+            }
+        } catch (error) {
+            this.StatusError = error instanceof Error ? error.message : String(error);
+        } finally {
+            this.CheckingExternalPayments = false;
+            this.cdr?.detectChanges();
+        }
     }
 
     /** Void or reopen. A refusal leaves the previous status in place and shows the reason. */

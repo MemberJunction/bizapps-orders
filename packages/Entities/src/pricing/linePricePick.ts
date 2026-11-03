@@ -93,9 +93,37 @@ export function IsLineOnUndecidedBand(
  *
  * Null is not zero. Zero would pin the line as deliberately free.
  */
+const statedPriceLines = new WeakSet<object>();
+
+/**
+ * Mark a line's current `UnitPrice` as deliberately stated even when it is `0` (such as a
+ * complimentary renewal priced by `Orders.SpawnRenewals`), so pricing keeps it across both the
+ * draft save and the confirm save.
+ */
+export function MarkLinePriceStated(line: mjBizAppsOrdersOrderLineEntity): void {
+    statedPriceLines.add(line);
+    const field = line.GetFieldByName?.('UnitPrice');
+    if (field && !field.Dirty && typeof field.RestoreOldValue === 'function') {
+        field.RestoreOldValue(null);
+    }
+}
+
+export function IsMarkedPriceStated(line: mjBizAppsOrdersOrderLineEntity): boolean {
+    return statedPriceLines.has(line);
+}
+
+/**
+ * True when a saved line's product was replaced in this edit without a hand-typed price change,
+ * so the old product's stored unit price must not be carried onto the new product.
+ */
+export function IsProductReplacedWithoutPriceEdit(line: mjBizAppsOrdersOrderLineEntity): boolean {
+    return line.IsSaved === true && anyFieldIsDirty(line, ['ProductID']) && !anyFieldIsDirty(line, ['UnitPrice']);
+}
+
 export function StatedLineUnitPrice(line: mjBizAppsOrdersOrderLineEntity): number | null {
+    if (IsProductReplacedWithoutPriceEdit(line)) return null;
     const unit = Number(line.UnitPrice ?? 0);
-    if (!anyFieldIsDirty(line, ['UnitPrice']) && !(unit > 0)) return null;
+    if (!anyFieldIsDirty(line, ['UnitPrice']) && !(unit > 0) && !IsMarkedPriceStated(line)) return null;
     return unit;
 }
 

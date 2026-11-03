@@ -26,9 +26,116 @@
  */
 import { BaseEntity, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { LoadOrdersEngine, OrdersEngine, ProductPriceEntity } from '@mj-biz-apps/orders-entities';
+import {
+    IsCompositeFilter,
+    LoadOrdersEngine,
+    ORGANIZATION_REVENUE_SOURCE,
+    OrdersEngine,
+    ParseFilterField,
+    ProductPriceEntity,
+    type CompositeFilterDescriptor,
+    type FilterDescriptor,
+} from '@mj-biz-apps/orders-entities';
 
 const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
+const REVENUE_FIELD = 'AnnualRevenue';
+
+interface RevenueInterval {
+    min: number;
+    minInclusive: boolean;
+    max: number;
+    maxInclusive: boolean;
+}
+
+/**
+ * Extract the `[min, max]` interval on `BillToOrganizationRevenue.AnnualRevenue` when a price row's
+ * Applicability is an `and`-conjunction of revenue bounds, or null when the row does not constrain
+ * revenue to a single interval.
+ */
+function parseRevenueInterval(applicabilityJson: string | null | undefined): RevenueInterval | null {
+    if (applicabilityJson == null || String(applicabilityJson).trim() === '') return null;
+    let parsed: CompositeFilterDescriptor | FilterDescriptor;
+    try {
+        parsed = JSON.parse(applicabilityJson) as CompositeFilterDescriptor | FilterDescriptor;
+    } catch {
+        return null;
+    }
+    const rules: FilterDescriptor[] = [];
+    const collect = (node: CompositeFilterDescriptor | FilterDescriptor | null | undefined): boolean => {
+        if (!node) return true;
+        if (IsCompositeFilter(node)) {
+            if (node.logic === 'or') return false;
+            return (node.filters ?? []).every((child) => collect(child));
+        }
+        const { source, name } = ParseFilterField(node.field);
+        if (source === ORGANIZATION_REVENUE_SOURCE && name === REVENUE_FIELD) {
+            rules.push(node);
+        }
+        return true;
+    };
+    if (!collect(parsed) || rules.length === 0) return null;
+
+    let min = -Infinity;
+    let minInclusive = false;
+    let max = Infinity;
+    let maxInclusive = false;
+    for (const rule of rules) {
+        const val = typeof rule.value === 'number' ? rule.value : Number(rule.value);
+        if (!Number.isFinite(val)) return null;
+        switch (rule.operator) {
+            case 'gte':
+                if (val > min) {
+                    min = val;
+                    minInclusive = true;
+                }
+                break;
+            case 'gt':
+                if (val > min || (val === min && minInclusive)) {
+                    min = val;
+                    minInclusive = false;
+                }
+                break;
+            case 'lte':
+                if (val < max) {
+                    max = val;
+                    maxInclusive = true;
+                }
+                break;
+            case 'lt':
+                if (val < max || (val === max && maxInclusive)) {
+                    max = val;
+                    maxInclusive = false;
+                }
+                break;
+            case 'eq':
+                if (val > min) {
+                    min = val;
+                    minInclusive = true;
+                }
+                if (val < max) {
+                    max = val;
+                    maxInclusive = true;
+                }
+                break;
+            default:
+                return null;
+        }
+    }
+    if (min > max || (min === max && (!minInclusive || !maxInclusive))) {
+        return null;
+    }
+    return { min, minInclusive, max, maxInclusive };
+}
+
+/** Whether two rows' revenue-band intervals can match the same organization revenue. */
+function revenueBandsOverlap(aJson: string | null | undefined, bJson: string | null | undefined): boolean {
+    const a = parseRevenueInterval(aJson);
+    const b = parseRevenueInterval(bJson);
+    if (!a || !b) return true;
+    if (a.min > b.max || (a.min === b.max && (!a.minInclusive || !b.maxInclusive))) return false;
+    if (b.min > a.max || (b.min === a.max && (!b.minInclusive || !a.maxInclusive))) return false;
+    return true;
+}
 
 interface SiblingRow {
     ID: string;
@@ -95,7 +202,8 @@ export class ProductPriceEntityServer extends ProductPriceEntity {
         const clash = siblings.find(
             (o) =>
                 bandsOverlap(this.MinQuantity, this.MaxQuantity, o.MinQuantity, o.MaxQuantity) &&
-                windowsOverlap(this.EffectiveFrom, this.EffectiveTo, o.EffectiveFrom, o.EffectiveTo),
+                windowsOverlap(this.EffectiveFrom, this.EffectiveTo, o.EffectiveFrom, o.EffectiveTo) &&
+                revenueBandsOverlap(this.Applicability, o.Applicability),
         );
 
         if (clash) {

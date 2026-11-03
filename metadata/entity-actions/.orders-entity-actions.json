@@ -15,25 +15,17 @@
       "down must never roll back a booked order, and a booked order must never be un-booked because a",
       "PDF failed to render.",
       "",
-      "⛔ NO TRANSITION FILTER IS POSSIBLE ON THIS MJ VERSION, AND THAT IS WHY THIS CANNOT BE ENABLED.",
+      "TRANSITION FILTER ATTACHED (`MJ_BizApps_Orders: Order Status Changed To Confirmed`).",
       "",
       "An order is saved many times AFTER it is confirmed — posting stamps JournalEntryID, fulfilment",
-      "moves FulfillmentStatus, payments move Balance. An unfiltered AfterUpdate binding therefore",
-      "fires on every one of those and mails the customer their invoice again each time.",
+      "moves FulfillmentStatus, payments move Balance. The attached EntityActionFilter runs",
+      "`DidFieldChangeToValue(change, 'Status', 'Confirmed')` so the AfterUpdate binding fires only on",
+      "the transition into Confirmed and never on subsequent updates.",
       "",
-      "MJ#3408's plan text describes two seeded reusable ActionFilters ('field changed', 'field changed",
-      "to value'). They do not exist in @memberjunction/core-entities@6.1.0-edge.1: `MJ: Action Filters`",
-      "has no Name column to look one up by (ID, UserDescription, UserComments, Code, CodeExplanation),",
-      "no rows are seeded, and the runtime the real mechanism needs — ActionFilterContext, and the",
-      "DidFieldChangeToValue helper — ships in neither actions-base nor core at this version.",
-      "",
-      "So the honest state is: the binding is wired, correct, and INERT. Do not enable it by deleting",
-      "this note. Enabling it without a transition filter is not a smaller version of the feature, it",
-      "is a mail loop aimed at a customer.",
-      "",
-      "TO ENABLE, once MJ ships the filter runtime: add an EntityActionFilter whose Code tests",
-      "'Status changed to Confirmed', point ScopeEntityID/ScopeRecordID at the Company that wants it,",
-      "then set Status=Active.",
+      "SHIPPED PENDING BY DEFAULT. Whether a company mails invoices automatically on confirmation is an",
+      "operator decision (companies using an external AR rail such as Bill.com send through the rail",
+      "instead). To enable for a deployment, scope as needed and set Status=Active on the binding and",
+      "its AfterUpdate invocation.",
       "",
       "RE-ENTRANCY IS ALREADY HANDLED. 'Send Document' writes delivery rows, and after-hooks are guarded",
       "against an action's own write-back re-triggering it (EntitySaveOptions.OriginatingEntityActionIDs)."
@@ -59,6 +51,19 @@
           "sync": {
             "lastModified": "2026-09-02T03:26:28.564Z",
             "checksum": "e676e705b9df95c04050287cd669d6495d22eda2ffd75d990f7480e5ffc75a3c"
+          }
+        }
+      ],
+      "MJ: Entity Action Filters": [
+        {
+          "fields": {
+            "EntityActionID": "@parent:ID",
+            "ActionFilterID": "@lookup:MJ: Action Filters.Name=MJ_BizApps_Orders: Order Status Changed To Confirmed",
+            "Sequence": 1,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "7B4E2D18-5F39-4A81-8C62-9D1E4F7A2B30"
           }
         }
       ],

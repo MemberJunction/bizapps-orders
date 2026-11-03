@@ -29,6 +29,17 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 /** The reason a return opens with, and the one it returns to when the origin changes. */
 const DEFAULT_RETURN_REASON = 'Damaged in transit';
 
+/** How an order reads in the origin picker: order number and bill-to customer name (#836). */
+export function ReturnOrderPickerLabel(order: {
+    OrderNumber?: string | null;
+    BillToOrganization?: string | null;
+    BillToPerson?: string | null;
+}): string {
+    const number = String(order.OrderNumber ?? '').trim();
+    const customer = String(order.BillToOrganization ?? order.BillToPerson ?? '').trim();
+    return customer ? `${number} · ${customer}` : number;
+}
+
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
     LineID: string;
@@ -97,6 +108,19 @@ interface MJOReturnLine {
             </mj-alert>
         }
 
+        @if (BookedReturn) {
+            <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="mjo-rt__note"
+                      data-testid="return-booked">
+                <strong>Return {{ BookedReturn.OrderNumber }} booked.</strong>
+                @if (BookedReturn.ID) {
+                    <button type="button" mjButton variant="flat" size="sm" (click)="OpenBookedReturn()">
+                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                        Open {{ BookedReturn.OrderNumber }}
+                    </button>
+                }
+            </mj-alert>
+        }
+
         @if (Origin) {
             <div class="mj-card mjo-rt__origin">
                 <div class="mj-card-pad mjo-rt__origin-row">
@@ -118,7 +142,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="OrderNumber"
+                            TextField="PickerLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -266,7 +290,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="OrderNumber"
+                            TextField="PickerLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -418,8 +442,13 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
     /** Emitted AFTER the return is booked, carrying the new order's id. */
     @Output() ReturnCreated = new EventEmitter<string | null>();
 
+    /** Emitted when the user clicks to open the newly booked return order (#834). */
+    @Output() OrderOpened = new EventEmitter<{ ID: string }>();
+
     public Busy = false;
     public Error: string | null = null;
+    /** Confirmation banner for the most recently booked return order (#834). */
+    public BookedReturn: { ID: string | null; OrderNumber: string } | null = null;
 
     public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
@@ -461,7 +490,17 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        const orders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        for (const o of orders) {
+            if (o && typeof o === 'object' && !('PickerLabel' in o)) {
+                Object.defineProperty(o, 'PickerLabel', {
+                    get: () => ReturnOrderPickerLabel(o),
+                    enumerable: false,
+                    configurable: true,
+                });
+            }
+        }
+        this.PickerOrders = orders;
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -502,6 +541,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         this.Notice = discarding
             ? 'Quantities from the previous order were cleared — they belong to its lines, not this one.'
             : null;
+        this.BookedReturn = null;
         this.Error = null;
         this.selectedOriginID = orderID;
         this.PickerOpen = false;
@@ -679,12 +719,22 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             // live after a success — and the second attempt exceeds the server's already-returned
             // cap and is refused, which before this PR went into an `Error` nobody rendered.
             this.Lines = this.Lines.map((l) => ({ ...l, AlreadyReturned: l.AlreadyReturned + l.Returning, Returning: 0 }));
+            this.BookedReturn = {
+                ID: draft.ID ?? null,
+                OrderNumber: draft.OrderNumber?.trim() || 'new return order',
+            };
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
         } finally {
             this.Busy = false;
             this.cdr.detectChanges();
+        }
+    }
+
+    public OpenBookedReturn(): void {
+        if (this.BookedReturn?.ID) {
+            this.OrderOpened.emit({ ID: this.BookedReturn.ID });
         }
     }
 

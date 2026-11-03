@@ -37,6 +37,8 @@ export interface RailCustomerFacts {
     PartyKind: 'Organization' | 'Person';
     /** Our party id — sent as the rail's account number so the link is recoverable from the rail side. */
     PartyID: string;
+    /** Optional explicit account number on the party record; checked alongside PartyID when matching on the rail. */
+    AccountNumber?: string | null;
     Name: string;
     Email: string | null;
     AddressLines: string[];

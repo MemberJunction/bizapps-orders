@@ -84,6 +84,7 @@ import {
     AsDateValue,
     BuildLinePriceContext,
     LoadOrdersEngine,
+    MarkLinePriceStated,
     OrderPricingService,
     OrdersEngine,
     PriceRenewal,
@@ -286,12 +287,13 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         // early. Validated at the boundary like the id above, because a renewal pass silently run
         // for today when the caller named another day places real orders. That covers an invalid
         // `Date` as much as a malformed string (#272).
+        let asOfDay: Date | string | null;
         try {
-            RequireOptionalDay(input.AsOfDate, 'AsOfDate');
+            asOfDay = RequireOptionalDay(input.AsOfDate, 'AsOfDate');
         } catch (e) {
             return { Success: false, Message: String((e as Error).message), Candidates: [], Placed: 0, Skipped: 0 };
         }
-        const asOf = await CalendarDayOrToday(input.AsOfDate, provider, user);
+        const asOf = await CalendarDayOrToday(asOfDay, provider, user);
         const candidates = await this.findDue(provider, user, asOf, input.SubscriptionID);
 
         const out: SpawnRenewalsOutput = { Success: true, Candidates: [], Placed: 0, Skipped: 0 };
@@ -512,6 +514,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // and the ledger shows the sale in the period it belongs to — not on the day the job
             // happened to run.
             order.OrderDate = this.dayAfter(due.TermEndDate);
+            order.SetRenewalAsOfDay(invoiceDay);
             order.CompanyID = due.CompanyID;
             order.BillToOrganizationID = due.HolderOrganizationID;
             order.BillToPersonID = due.BeneficiaryPersonID;
@@ -541,6 +544,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             line.Quantity = priced.Quantity;
             line.UnitPrice = priced.Price.UnitPrice;
             line.DiscountPct = priced.Price.DiscountPct;
+            MarkLinePriceStated(line);
             order.MarkRenewalPriced(line);
 
             // Promotions that carry into renewals (#289), through the ordinary promotion path: the
@@ -863,6 +867,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         line.Quantity = priced.Quantity;
         line.UnitPrice = priced.Price.UnitPrice;
         line.DiscountPct = priced.Price.DiscountPct;
+        MarkLinePriceStated(line);
 
         const codes = priced.PromotionCodes.map((c) => c.Code);
         const result = await new OrderPricingService({ Provider: provider, User: user }).Price({

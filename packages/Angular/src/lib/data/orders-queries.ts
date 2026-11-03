@@ -377,10 +377,11 @@ export async function GetOrders(
         if (options.BillToOrganizationID) filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
     }
     if (options.Search?.trim()) {
-        const escaped = likeText(options.Search);
+        const escaped = likeText(options.Search.trim());
         filters.push(
             `(OrderNumber LIKE '%${escaped}%' OR Description LIKE '%${escaped}%' ` +
-                `OR ExternalDocumentNumber LIKE '%${escaped}%')`,
+                `OR ExternalDocumentNumber LIKE '%${escaped}%' ` +
+                `OR BillToOrganization LIKE '%${escaped}%' OR BillToPerson LIKE '%${escaped}%')`,
         );
     }
 

@@ -348,8 +348,8 @@ export async function ChargeRenewals(
     hooks: ChargeRenewalsHooks = {},
 ): Promise<ChargeRenewalsOutput> {
     RequireOptionalUUID(input.SubscriptionID, 'SubscriptionID');
-    RequireOptionalDay(input.AsOfDate, 'AsOfDate');
-    const asOf = ToISODate(await CalendarDayOrToday(input.AsOfDate, provider, user)) as string;
+    const asOfDay = RequireOptionalDay(input.AsOfDate, 'AsOfDate');
+    const asOf = ToISODate(await CalendarDayOrToday(asOfDay, provider, user)) as string;
     await OrdersSettings.Load(provider, user);
     const retryDays = OrdersSettings.RenewalChargeRetryDays;
     const cutoff = OrdersSettings.RenewalAccessCutoffDaysPastDue;

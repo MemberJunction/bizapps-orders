@@ -1081,6 +1081,62 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 }),
             ),
     },
+    {
+        Id: 'payment-schedule.PS14',
+        Name: "PS14: a company's last Scheduled row cannot be deleted once its order is Confirmed",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { orderID, ids, saved, message } = await scheduledOrder(ctx, [
+                    { InstallmentNumber: 1, DueDate: '2027-07-01', Amount: 300 },
+                ]);
+                Assert(saved, `confirm: ${message}`);
+
+                let refused = false;
+                try {
+                    await TxQuery(ctx, `DELETE FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE ID='${ids[0]}'`);
+                } catch (e) {
+                    refused = /last payment schedule row|cannot be deleted/i.test(String(e));
+                }
+                Assert(refused, "deleting a company's last Scheduled row after confirm must be refused by the DB");
+                const rows = await schedule(ctx, orderID);
+                AssertEqual(rows.length, 1, 'the sole Scheduled row remains in place');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-J',
+        Name: 'PS-J: issuing an instalment against earned revenue with no Unbilled Receivable link rolls back the stamp and number',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            reloadingAccountingAfter(ctx, () =>
+                InRolledBackTransaction(ctx, async () => {
+                    const f = Fx();
+                    const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE);
+                    Assert(saved, `confirm: ${message}`);
+
+                    await TxQuery(
+                        ctx,
+                        `UPDATE ${ACCT_SCHEMA}.GLAccountLink
+                            SET Status = 'Inactive'
+                          WHERE RecordID = '${f.CoA.ID}'
+                            AND GLAccountRoleID IN (SELECT ID FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name = 'Unbilled Receivable')`,
+                    );
+                    await AccountingEngineBase.Instance.Config(true, ctx.User, ctx.Provider);
+
+                    const issued = await issue(ctx, ids[1]);
+                    Assert(!issued.Success, 'issuing without an Unbilled Receivable link must refuse');
+                    Assert(
+                        /Unbilled Receivable/i.test(issued.Message ?? ''),
+                        `refusal must name Unbilled Receivable: ${issued.Message ?? ''}`,
+                    );
+
+                    const rows = await schedule(ctx, orderID);
+                    AssertEqual(rows[1].Status, 'Scheduled', 'the refused instalment rolled back to Scheduled');
+                    AssertEqual(rows[1].DocumentNumber, null, 'and kept no document number');
+                    AssertEqual((await instalmentEntryLines(ctx, ids[1])).length, 0, 'and posted no journal entry');
+                }),
+            ),
+    },
 ];
 
 for (const check of PaymentScheduleChecks) {

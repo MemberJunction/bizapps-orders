@@ -29,11 +29,22 @@ import {
     type OrdersIssueExternalInvoiceInput,
     type OrdersIssueExternalInvoiceOutput,
     type OrdersIssueExternalInvoiceResultCode,
+    ParseAddressSnapshot,
     Today,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailCustomerFacts } from './BaseInvoiceRail.js';
 import {
+    ActiveRoleHolderIDs,
+    CreateTaskAssignment,
+    CreateTaskLink,
+    PERSON_ENTITY as TASK_PERSON_ENTITY,
+    requireSubclass,
+    TASK_ENTITY,
+    TASK_TYPE_ENTITY,
+} from './ConcessionApprovalTask.js';
+import {
+    ADDRESS_ENTITY,
     EXTERNAL_CUSTOMER_ENTITY,
     EXTERNAL_INVOICE_ENTITY,
     ORDER_HEADER_ENTITY,
@@ -42,6 +53,9 @@ import {
     PAYMENT_LINE_ENTITY,
     PERSON_ENTITY,
 } from './entity-names.js';
+import { OrdersSettings } from './OrdersSettings.js';
+import { ResolvePersonIDsForUsers } from './person-user-link.js';
+import type { mjBizAppsTasksTaskEntity, mjBizAppsTasksTaskTypeEntity } from '@mj-biz-apps/tasks-entities';
 import {
     BuildExternalInvoicePayload,
     DecideInvoiceable,
@@ -67,6 +81,8 @@ interface OrderRow extends Record<string, unknown> {
     BillToPersonID: string | null;
     BillToOrganization: string | null;
     BillToPerson: string | null;
+    BillToAddressID?: string | null;
+    BillToAddressSnapshot?: string | null;
     ConfirmedAt: string | Date | null;
     DueDate: string | Date | null;
     ExternalDocumentNumber: string | null;
@@ -483,6 +499,22 @@ export async function IssueOneUnit(
     // 9. Denormalise onto the instalment row (the #239/#242 contract) and, best effort, the header.
     if (row) await stampScheduleRow(provider, user, String(row.ID), { ExternalSystem: rail.Config.TypeCode, ExternalInvoiceRef: ref, SentAt: sentAt });
     await stampHeaderDocumentNumber(provider, user, order, rail.Config.PaymentProviderID, payload.Payload.DocumentNumber);
+    await notifyInvoiceReadyOnRail(
+        provider,
+        user,
+        {
+            OrderHeaderID: order.ID,
+            OrderNumber: order.OrderNumber,
+            CustomerName: String(order.BillToOrganization ?? order.BillToPerson ?? ''),
+            ExternalInvoiceID: externalInvoiceID,
+            ExternalInvoiceRef: ref,
+            DocumentNumber: payload.Payload.DocumentNumber,
+            Amount: payload.Payload.Amount,
+            DueDate: payload.Payload.DueDate,
+            RailName: rail.Config.Name,
+            SentAt: sentAt.toISOString(),
+        },
+    );
 
     return {
         Success: true,
@@ -777,7 +809,7 @@ async function checkCustomerForRail(rail: BaseInvoiceRail, order: OrderRow, prov
     const known = existing.Results?.[0]?.ExternalCustomerRef;
     if (known) return { OK: true, Known: known, Facts: null, OrgID: orgID, PersonID: personID };
 
-    const facts = await loadPartyFacts(orgID, personID, provider, user);
+    const facts = await loadPartyFacts(orgID, personID, order, provider, user);
     if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to party on order ${order.OrderNumber} could not be read.` };
     // Refused here rather than by the rail: the rail would refuse the same name, days after entry,
     // with an error that does not say which field or limit (bc-aidp-next-golive#280).
@@ -828,36 +860,186 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
     return { OK: true, ExternalCustomerRef: created.Value.ExternalCustomerRef };
 }
 
-async function loadPartyFacts(orgID: string | null, personID: string | null, provider: IMetadataProvider, user: UserInfo): Promise<RailCustomerFacts | null> {
+async function loadPartyFacts(
+    orgID: string | null,
+    personID: string | null,
+    order: OrderRow,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<RailCustomerFacts | null> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
+    let partyRecord: Record<string, unknown> | undefined;
+    let partyKind: 'Organization' | 'Person';
+    let partyID: string;
+    let partyName: string;
     if (orgID) {
         const r = await rv.RunView<Record<string, unknown>>({ EntityName: ORGANIZATION_ENTITY, ExtraFilter: `ID = '${orgID}'`, ResultType: 'simple' }, user);
         const o = r.Results?.[0];
         if (!o) return null;
-        return {
-            PartyKind: 'Organization',
-            PartyID: orgID,
-            Name: OrganizationCustomerName(o),
-            Email: (o.Email as string | null) ?? (o.PrimaryEmail as string | null) ?? null,
-            AddressLines: [o.PrimaryAddressLine1, o.PrimaryAddressLine2].filter(Boolean).map(String),
-            City: (o.PrimaryAddressCity as string | null) ?? null,
-            State: (o.PrimaryAddressState as string | null) ?? null,
-            PostalCode: (o.PrimaryAddressPostalCode as string | null) ?? null,
-            Country: (o.PrimaryAddressCountry as string | null) ?? null,
-        };
+        partyRecord = o;
+        partyKind = 'Organization';
+        partyID = orgID;
+        partyName = OrganizationCustomerName(o);
+    } else {
+        const r = await rv.RunView<Record<string, unknown>>({ EntityName: PERSON_ENTITY, ExtraFilter: `ID = '${personID}'`, ResultType: 'simple' }, user);
+        const p = r.Results?.[0];
+        if (!p) return null;
+        partyRecord = p;
+        partyKind = 'Person';
+        partyID = personID!;
+        partyName = PersonCustomerName(p);
     }
-    const r = await rv.RunView<Record<string, unknown>>({ EntityName: PERSON_ENTITY, ExtraFilter: `ID = '${personID}'`, ResultType: 'simple' }, user);
-    const p = r.Results?.[0];
-    if (!p) return null;
+
+    let addressLines = [partyRecord.PrimaryAddressLine1, partyRecord.PrimaryAddressLine2].filter(Boolean).map(String);
+    let city = (partyRecord.PrimaryAddressCity as string | null) ?? null;
+    let state = (partyRecord.PrimaryAddressState as string | null) ?? null;
+    let postalCode = (partyRecord.PrimaryAddressPostalCode as string | null) ?? null;
+    let country = (partyRecord.PrimaryAddressCountry as string | null) ?? null;
+
+    if (!addressLines.length && !city && !postalCode) {
+        const snap = ParseAddressSnapshot(typeof order.BillToAddressSnapshot === 'string' ? order.BillToAddressSnapshot : null);
+        if (snap) {
+            addressLines = [snap.Line1, snap.Line2].filter((x): x is string => !!x?.trim());
+            city = snap.City ?? null;
+            state = snap.StateProvince ?? null;
+            postalCode = snap.PostalCode ?? null;
+            country = snap.Country ?? null;
+        } else if (order.BillToAddressID) {
+            const addrID = RequireUUID(String(order.BillToAddressID), 'BillToAddressID');
+            const addrRes = await rv.RunView<Record<string, unknown>>(
+                { EntityName: ADDRESS_ENTITY, ExtraFilter: `ID = '${addrID}'`, ResultType: 'simple' },
+                user,
+            );
+            const addr = addrRes.Results?.[0];
+            if (addr) {
+                addressLines = [addr.Line1, addr.Line2].filter((x) => x != null && String(x).trim() !== '').map(String);
+                city = (addr.City as string | null) ?? null;
+                state = ((addr.StateProvince ?? addr.State) as string | null) ?? null;
+                postalCode = (addr.PostalCode as string | null) ?? null;
+                country = (addr.Country as string | null) ?? null;
+            }
+        }
+    }
+
+    const rawAccountNumber = partyRecord.AccountNumber ?? partyRecord.Code ?? null;
+    const accountNumber = rawAccountNumber != null && String(rawAccountNumber).trim() ? String(rawAccountNumber).trim() : null;
+
     return {
-        PartyKind: 'Person',
-        PartyID: personID!,
-        Name: PersonCustomerName(p),
-        Email: (p.Email as string | null) ?? (p.PrimaryEmail as string | null) ?? null,
-        AddressLines: [p.PrimaryAddressLine1, p.PrimaryAddressLine2].filter(Boolean).map(String),
-        City: (p.PrimaryAddressCity as string | null) ?? null,
-        State: (p.PrimaryAddressState as string | null) ?? null,
-        PostalCode: (p.PrimaryAddressPostalCode as string | null) ?? null,
-        Country: (p.PrimaryAddressCountry as string | null) ?? null,
+        PartyKind: partyKind,
+        PartyID: partyID,
+        ...(accountNumber ? { AccountNumber: accountNumber } : {}),
+        Name: partyName,
+        Email: (partyRecord.Email as string | null) ?? (partyRecord.PrimaryEmail as string | null) ?? null,
+        AddressLines: addressLines,
+        City: city,
+        State: state,
+        PostalCode: postalCode,
+        Country: country,
     };
+}
+
+interface InvoiceReadyNoticeFacts {
+    OrderHeaderID: string;
+    OrderNumber: string;
+    CustomerName: string;
+    ExternalInvoiceID: string;
+    ExternalInvoiceRef: string;
+    DocumentNumber: string;
+    Amount: number;
+    DueDate: string | null;
+    RailName: string;
+    SentAt: string;
+}
+
+/**
+ * Notify finance when an invoice has been created on the external rail so they know it is ready to
+ * review/send in Bill.com. Best effort: a notification failure is logged and never rolls back a sent invoice.
+ */
+async function notifyInvoiceReadyOnRail(
+    provider: IMetadataProvider,
+    user: UserInfo,
+    facts: InvoiceReadyNoticeFacts,
+): Promise<void> {
+    const roleName = OrdersSettings.BillComInvoiceReadyNotifyRole;
+    if (roleName) {
+        try {
+            const rv = new RunView(provider as unknown as IRunViewProvider);
+            const [typeRes, roleRes] = await Promise.all([
+                rv.RunView<mjBizAppsTasksTaskTypeEntity>(
+                    { EntityName: TASK_TYPE_ENTITY, ExtraFilter: `Code = 'ACTION_ITEM'`, ResultType: 'entity_object' },
+                    user,
+                ),
+                rv.RunView<{ ID: string }>(
+                    { EntityName: 'MJ: Roles', ExtraFilter: `Name = '${EscapeText(roleName)}'`, Fields: ['ID'], ResultType: 'simple' },
+                    user,
+                ),
+            ]);
+            const taskTypeID = typeRes.Results?.[0]?.ID;
+            const roleID = roleRes.Results?.[0]?.ID;
+            if (taskTypeID && roleID) {
+                const ctx = { Provider: provider, User: user };
+                const holderUserIDs = await ActiveRoleHolderIDs(roleID, ctx);
+                const personByUser = await ResolvePersonIDsForUsers(holderUserIDs, provider, user, { ActiveOnly: true });
+                const personIDs = [...new Set(personByUser.values())];
+                const task = await provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASK_ENTITY, user);
+                requireSubclass(task, TASK_ENTITY);
+                task.NewRecord();
+                task.Name = `${facts.DocumentNumber}: created in ${facts.RailName} (${facts.Amount.toFixed(2)}) — review and send`;
+                task.Description =
+                    `Invoice ${facts.DocumentNumber} for order ${facts.OrderNumber}` +
+                    (facts.CustomerName ? ` (${facts.CustomerName})` : '') +
+                    ` was created in ${facts.RailName} as ${facts.ExternalInvoiceRef} for ${facts.Amount.toFixed(2)}. ` +
+                    `Review and send the invoice to the customer in ${facts.RailName}.`;
+                task.TypeID = taskTypeID;
+                task.Priority = 'Medium';
+                task.Status = 'Open';
+                if (await task.Save()) {
+                    const orderEntityID = provider.EntityByName(ORDER_HEADER_ENTITY)?.ID;
+                    const invoiceEntityID = provider.EntityByName(EXTERNAL_INVOICE_ENTITY)?.ID;
+                    const personEntityID = provider.EntityByName(TASK_PERSON_ENTITY)?.ID;
+                    if (orderEntityID) {
+                        await CreateTaskLink(task.ID, orderEntityID, facts.OrderHeaderID, `Order ${facts.OrderNumber}`, ctx);
+                    }
+                    if (invoiceEntityID) {
+                        await CreateTaskLink(task.ID, invoiceEntityID, facts.ExternalInvoiceID, `Invoice ${facts.DocumentNumber}`, ctx);
+                    }
+                    if (personEntityID) {
+                        for (const personID of personIDs) {
+                            await CreateTaskAssignment(task.ID, personEntityID, personID, ctx);
+                        }
+                    }
+                }
+            }
+        } catch (err) {
+            LogError(`Order ${facts.OrderNumber}: BillComInvoiceReadyNotifyRole task could not be created: ${err}`);
+        }
+    }
+
+    const webhookUrl = OrdersSettings.BillComInvoiceReadyWebhookURL;
+    if (webhookUrl && typeof fetch === 'function') {
+        try {
+            const resp = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'content-type': 'application/json' },
+                body: JSON.stringify({
+                    Event: 'ExternalInvoiceReady',
+                    OrderHeaderID: facts.OrderHeaderID,
+                    OrderNumber: facts.OrderNumber,
+                    CustomerName: facts.CustomerName,
+                    ExternalInvoiceID: facts.ExternalInvoiceID,
+                    ExternalInvoiceRef: facts.ExternalInvoiceRef,
+                    DocumentNumber: facts.DocumentNumber,
+                    Amount: facts.Amount,
+                    DueDate: facts.DueDate,
+                    Rail: facts.RailName,
+                    SentAt: facts.SentAt,
+                }),
+            });
+            if (!resp.ok) {
+                LogError(`Order ${facts.OrderNumber}: BillComInvoiceReadyWebhookURL returned HTTP ${resp.status}.`);
+            }
+        } catch (err) {
+            LogError(`Order ${facts.OrderNumber}: BillComInvoiceReadyWebhookURL notification failed: ${err}`);
+        }
+    }
 }

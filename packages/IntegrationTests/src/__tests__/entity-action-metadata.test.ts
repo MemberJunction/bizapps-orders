@@ -51,9 +51,13 @@ function readJSON<T>(relativePath: string): T {
 
 const bindings = readJSON<MetadataRecord[]>('metadata/entity-actions/.orders-entity-actions.json');
 const actions = readJSON<MetadataRecord[]>('metadata/actions/.orders-actions.json');
+const actionFilters = readJSON<MetadataRecord[]>('metadata/action-filters/.orders-action-filters.json');
 
 /** The action names this app defines, which is what an `@lookup:MJ: Actions.Name=` can resolve to. */
 const actionNames = new Set(actions.map((a) => String(a.fields.Name)));
+
+/** The action filter names this app defines, which is what an `@lookup:MJ: Action Filters.Name=` resolves to. */
+const actionFilterNames = new Set(actionFilters.map((f) => String(f.fields.Name)));
 
 /** Every param name each action declares, so a binding cannot pass one the action never accepts. */
 const paramsByAction = new Map<string, Set<string>>(
@@ -173,13 +177,21 @@ describe('entity-action metadata', () => {
         }
     });
 
-    it('does not reference an ActionFilter by a column that does not exist', () => {
-        // `MJ: Action Filters` is keyed by ID and described by UserDescription; it has no Name. A
-        // `@lookup:...Name=` against it resolves to nothing, and the binding then runs unfiltered —
-        // which for an AfterUpdate send is the mail loop above.
+    it('attaches a transition ActionFilter defined in metadata/action-filters to every AfterUpdate binding', () => {
         for (const b of bindings) {
-            for (const f of b.relatedEntities?.['MJ: Entity Action Filters'] ?? []) {
-                expect(String(f.fields.ActionFilterID)).not.toMatch(/^@lookup:MJ: Action Filters\.Name=/);
+            const fires = (b.relatedEntities?.['MJ: Entity Action Invocations'] ?? []).map((i) =>
+                lookupValue(i.fields.InvocationTypeID),
+            );
+            if (!fires.includes('AfterUpdate')) continue;
+
+            const filters = b.relatedEntities?.['MJ: Entity Action Filters'] ?? [];
+            expect(filters.length, 'an AfterUpdate binding must carry a transition filter').toBeGreaterThan(0);
+            for (const f of filters) {
+                const filterName = lookupValue(f.fields.ActionFilterID);
+                expect(filterName, 'ActionFilterID must be a resolvable @lookup').not.toBeNull();
+                expect(actionFilterNames, `no such ActionFilter in metadata/action-filters: ${filterName}`).toContain(
+                    filterName as string,
+                );
             }
         }
     });

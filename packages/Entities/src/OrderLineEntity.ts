@@ -160,13 +160,29 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
         }
     }
 
+    /** Set by OrderEntityServer when saving lines as part of an order graph save/booking. */
+    public BypassBookedCheck = false;
+
+    /** Set by Orders' own writers so an external freeze or booked-line guard does not block internal bookkeeping. */
+    public BypassExternalEditVeto = false;
+
+    public override Revert(): boolean {
+        const ok = super.Revert();
+        this.Extension.Entity?.Revert();
+        if (this.ISAChild && this.ISAChild !== this.Extension.Entity) {
+            this.ISAChild.Revert();
+        }
+        return ok;
+    }
+
     /**
-     * A line that already carries its booking journal cannot change quantity or
-     * price. New lines on a booked order are refused on the header (graph save)
+     * A line that already carries its booking journal cannot change quantity,
+     * price, or service period unless Orders itself is writing a sanctioned change.
+     * New lines on a booked order are refused on the header (graph save)
      * and again in the server subclass (standalone save).
      */
     private refuseBookedMoneyEdits(result: ValidationResult): void {
-        if (!this.JournalEntryID) return;
+        if (!this.JournalEntryID || this.BypassExternalEditVeto) return;
         const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.FieldIsDirty(name));
         if (dirty.length === 0) return;
         result.Success = false;

@@ -76,10 +76,18 @@ import {
     type AccessOverrideType,
     type GrantTiming,
 } from './EntitlementBehavior.js';
-import { ActiveRoleHolderIDs, PERSON_ENTITY } from './ConcessionApprovalTask.js';
+import {
+    ActiveRoleHolderIDs,
+    CreateTaskAssignment,
+    CreateTaskLink,
+    PERSON_ENTITY,
+    RecordTaskActivity,
+    requireSubclass,
+} from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { ACCESS_OVERRIDE_ENTITY, BusinessDay, ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
+import { ResolvePersonIDsForUsers } from './person-user-link.js';
 import { EscapeText, RequireDate, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 export { ACCESS_OVERRIDE_AUTH };
@@ -352,6 +360,9 @@ export async function ApplyAccessOverrideDecision(
         if (!(await override.Save())) {
             throw new Error(`Failed to record the decision on access override ${override.ID}: ${override.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
+        if (refusal && override.DecisionNotes) {
+            await notifyRequesterOfWithdrawnOverride(override, taskID, override.DecisionNotes, provider, user);
+        }
         const changes = status === 'Approved' ? await ReconcilePaymentGatedGrants([override.OrderHeaderID], provider, user) : [];
         await db.CommitTransaction();
         if (refusal) return { Success: false, Status: override.Status, Message: override.DecisionNotes ?? refusal };
@@ -452,15 +463,11 @@ async function resolveApprovers(
     });
     if ('Refusal' in decided) return decided;
 
-    const persons = await read<{ ID: string; LinkedUserID: string }>(
-        PERSON_ENTITY,
-        `Status = 'Active' AND LinkedUserID IN (${RequireUUIDs(decided.UserIDs, 'UserID').map((id) => `'${id}'`).join(',')})`,
-        ['ID', 'LinkedUserID'],
-    );
+    const persons = await ResolvePersonIDsForUsers(RequireUUIDs(decided.UserIDs, 'UserID'), provider, user, { ActiveOnly: true });
     const personIDs: string[] = [];
     for (const userID of decided.UserIDs) {
-        const person = persons.find((p) => UUIDsEqual(p.LinkedUserID, userID));
-        if (person) personIDs.push(person.ID);
+        const personID = persons.get(userID.toLowerCase());
+        if (personID) personIDs.push(personID);
         else LogError(`Access override approver ${userID} has no active person record linked to their user and was not assigned.`);
     }
     if (personIDs.length === 0) {
@@ -496,6 +503,64 @@ async function findOpenOverride(
     );
     if (!res.Success) throw new Error(`Could not read access overrides: ${res.ErrorMessage}`);
     return res.Results?.[0] ?? null;
+}
+
+async function notifyRequesterOfWithdrawnOverride(
+    override: mjBizAppsOrdersEntitlementAccessOverrideEntity,
+    approvalTaskID: string,
+    note: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<void> {
+    const ctx = { Provider: provider, User: user };
+    await RecordTaskActivity(approvalTaskID, note, ctx);
+
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const typeRes = await rv.RunView<{ ID: string }>(
+        { EntityName: TASK_TYPES_ENTITY, ExtraFilter: `Code = 'ACTION_ITEM'`, Fields: ['ID'], MaxRows: 1, ResultType: 'simple', BypassCache: true },
+        user,
+    );
+    const typeID = typeRes.Results?.[0]?.ID;
+    if (!typeID) return;
+
+    const orderRes = await rv.RunView<{ OrderNumber: string }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(override.OrderHeaderID, 'OrderHeaderID')}'`,
+            Fields: ['OrderNumber'],
+            MaxRows: 1,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    const orderNumber = orderRes.Results?.[0]?.OrderNumber ?? override.OrderHeaderID;
+
+    const task = await provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASKS_ENTITY, user);
+    requireSubclass(task, TASKS_ENTITY);
+    task.NewRecord();
+    task.TypeID = typeID;
+    task.Name = `Access override on order ${orderNumber} closed without taking effect`;
+    task.Description = `${note} Request a new access override if the exception is still needed.`;
+    task.Priority = 'High';
+    task.Status = 'Open';
+    if (!(await task.Save())) {
+        throw new Error(`Failed to create follow-up task for withdrawn access override ${override.ID}: ${task.LatestResult?.CompleteMessage}`);
+    }
+
+    const orderEntityID = provider.EntityByName(ORDER_HEADER_ENTITY)?.ID;
+    const overrideEntityID = provider.EntityByName(ACCESS_OVERRIDE_ENTITY)?.ID;
+    if (orderEntityID) await CreateTaskLink(task.ID, orderEntityID, override.OrderHeaderID, `Order ${orderNumber}`, ctx);
+    if (overrideEntityID) await CreateTaskLink(task.ID, overrideEntityID, override.ID, `${override.OverrideType} access override`, ctx);
+
+    const personEntityID = provider.EntityByName(PERSON_ENTITY)?.ID;
+    if (personEntityID && override.RequestedByUserID) {
+        const persons = await ResolvePersonIDsForUsers([override.RequestedByUserID], provider, user, { ActiveOnly: true });
+        const requesterPersonID = persons.get(override.RequestedByUserID.toLowerCase());
+        if (requesterPersonID) {
+            await CreateTaskAssignment(task.ID, personEntityID, requesterPersonID, ctx);
+        }
+    }
 }
 
 async function resolveTaskTypeID(provider: IMetadataProvider, user: UserInfo): Promise<string> {

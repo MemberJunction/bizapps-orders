@@ -63,13 +63,15 @@ function errorNumbers(err) {
 }
 
 async function cleanup() {
-    // trg_OrderLine_ImmutableAfterConfirm refuses deleting a confirmed order's lines (51002).
+    // Immutability triggers refuse deleting a confirmed order (51019) or its lines (51002).
     await run(`DISABLE TRIGGER ${O}.trg_OrderLine_ImmutableAfterConfirm ON ${O}.OrderLine`);
+    await run(`DISABLE TRIGGER ${O}.trg_OrderHeader_ImmutableAfterConfirm ON ${O}.OrderHeader`);
     try {
         await run(`DELETE FROM ${O}.OrderLine WHERE OrderHeaderID IN (${ORDERS})`);
         await run(`DELETE FROM ${O}.OrderHeader WHERE ID IN (${ORDERS})`);
         await run(`DELETE FROM ${C}.Address WHERE ID IN ('${A1}','${A2}','${A3}')`);
     } finally {
+        await run(`ENABLE TRIGGER ${O}.trg_OrderHeader_ImmutableAfterConfirm ON ${O}.OrderHeader`);
         await run(`ENABLE TRIGGER ${O}.trg_OrderLine_ImmutableAfterConfirm ON ${O}.OrderLine`);
     }
 }

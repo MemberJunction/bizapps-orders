@@ -38,7 +38,7 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
 
     /** The extension entity name in metadata, if configured. */
     public get EntityName(): string | null {
-        return this._entity?.EntityInfo?.Name ?? this._entityName;
+        return this.Entity?.EntityInfo?.Name ?? this._entityName;
     }
 
     /** The live extension entity instance, if provisioned. */
@@ -153,16 +153,17 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
             return null;
         }
 
+        const entity = this.Entity;
         // In request mode, skip clean saved extensions to save bandwidth
-        if (mode !== 'result' && this._entity && this._entity.IsSaved && !this._entity.Dirty) {
+        if (mode !== 'result' && entity && entity.IsSaved && !entity.Dirty) {
             return null;
         }
 
-        if (this._entity) {
+        if (entity) {
             return {
-                EntityName: this._entity.EntityInfo?.Name ?? this._entityName ?? '',
-                Fields: this._entity.GetAll(),
-                IsNew: !this._entity.IsSaved,
+                EntityName: entity.EntityInfo?.Name ?? this._entityName ?? '',
+                Fields: entity.GetAll(),
+                IsNew: !entity.IsSaved,
             };
         }
 
@@ -199,12 +200,13 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
 
     /** @inheritdoc */
     public override Validate(result: ValidationResult): void {
-        if (this._entity) {
-            const extResult = this._entity.Validate();
+        const entity = this.Entity;
+        if (entity) {
+            const extResult = entity.Validate();
             if (!extResult.Success && extResult.Errors.length > 0) {
                 // If extension is an IS-A child, only include its own field errors, not parent chain duplicates
-                const ownErrors = this._entity.ISAParent
-                    ? extResult.Errors.filter(err => !this._entity!.EntityInfo.ParentEntityFieldNames?.has(err.Source))
+                const ownErrors = entity.ISAParent
+                    ? extResult.Errors.filter(err => !entity.EntityInfo.ParentEntityFieldNames?.has(err.Source))
                     : extResult.Errors;
                 if (ownErrors.length > 0) {
                     result.Success = false;
