@@ -1109,6 +1109,24 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         );
     }
 
+    /**
+     * Why an editable line has no price pencil (#1013), or null when it has one.
+     *
+     * The pencil shows only for a user who may override prices, holds an active Sales Authority, or
+     * must pick a revenue band. Without any of the three it is hidden, and the explanation inside the
+     * editor it opens can never be read, so a user takes the missing pencil for a missing feature.
+     * This names what they need instead. Null while the user's grants are still loading, so the note
+     * does not flash before the pencil appears.
+     */
+    public PriceLockedReason(line: mjBizAppsOrdersOrderLineEntity): string | null {
+        if (!this.EditMode || this.CanOverride || this.CanDiscount || this.CanPickBand(line)) return null;
+        if (!this.DiscountAuthorityLoaded) return null;
+        return (
+            'Changing this price needs a price-override permission or an active Sales Authority. ' +
+            'Ask an administrator for either.'
+        );
+    }
+
     /** The cap this user discounts under, for the label above the control. */
     public get DiscountCapLabel(): string {
         const cap = this.DiscountAuthority?.MaxDiscountPct;
