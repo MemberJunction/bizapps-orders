@@ -14,6 +14,7 @@ export {
     IntersectCompanyScope,
     RECEIVABLES_ALL_COMPANIES_ROLES,
     UserHoldsAllCompaniesRole,
+    type ReceivablesScopeOptions,
 } from './CompanyScopeService.js';
 
 // Payment schedules (AIDP-24, plan D85–D88): instalments on the order, the tie invariant, the

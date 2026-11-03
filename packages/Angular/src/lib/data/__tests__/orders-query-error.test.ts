@@ -33,6 +33,7 @@ import {
     RunOrdersPageLoad,
 } from '../orders-queries';
 import {
+    CompanyScopeService,
     ResolveEffectiveCompanyIDs,
     UserHoldsFinanceRole,
 } from '../../services/company-scope.service';
@@ -81,4 +82,16 @@ describe('CompanyScopeService helpers', () => {
         expect(ResolveEffectiveCompanyIDs([], [co1, co2])).toEqual([co1, co2]);
         expect(ResolveEffectiveCompanyIDs([co2], [co1, co2])).toEqual([co2]);
     });
+
+    it("excludes MJ's default UI role, and an empty scope explains itself (#813)", () => {
+        expect(UserHoldsFinanceRole({ UserRoles: [{ Role: 'UI' }] } as unknown as UserInfo)).toBe(false);
+        const scope = new CompanyScopeService();
+        scope.Reset({ AllowedCompanyIDs: [], IsFinanceUser: false });
+        expect(scope.EffectiveCompanyIDs).toEqual([]);
+        expect(scope.FilterFor()).toBe('1 = 0');
+        expect(scope.ScopeNote).toMatch(/employee record/);
+        scope.Reset({ AllowedCompanyIDs: null, IsFinanceUser: true });
+        expect(scope.ScopeNote).toBeNull();
+    });
 });
+
