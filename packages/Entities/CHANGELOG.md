@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-entities
 
+## 5.41.0
+
+### Minor Changes
+
+- 0caaeb0: The 5.41 Metadata_Sync ships the Spawn Renewals remote operation's updated output type, so a host that upgrades by migration describes the operation's output the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+- 0045f58: Spawn Renewals prices the renewal of a line that bought several terms at a typed price (`PriceOverridden`) at one term's share of that price, so a 24-month line typed at 20,000 on a 12-month type renews at 10,000 rather than 20,000. An engine-priced line already carries one term's price whatever period it states, and renews at it unchanged. A line no longer than the type's term renews at its own price as before. Each renewal candidate, preview included, now reports the renewal term's start and end (`RenewalTermStart`, `RenewalTermEnd`).
+
 ## 5.40.0
 
 ### Minor Changes
@@ -828,8 +835,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                "FK_EntityFieldValue_EntityField"
+                                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

@@ -15,6 +15,7 @@ import {
     SubscriptionTypeRulesFrom,
     OverlappingCoverage,
     MonthsCovered,
+    MultiTermLineMonths,
     WholeMonthsBetween,
     type CoverageOverlap,
     type LaterTermBilling,
@@ -419,6 +420,20 @@ describe('a stated term end (golive #338)', () => {
             const d = (s: string) => new Date(`${s}T00:00:00Z`);
             expect(MonthsCovered(d('2026-11-01'), d('2027-11-30'))).toBe(13);
             expect(MonthsCovered(d('2026-11-01'), d('2026-11-15'))).toBeCloseTo(0.5, 6);
+        });
+
+        it('MultiTermLineMonths: the months a line covers when it bought earlier terms too (golive #338)', () => {
+            const d = (s: string) => new Date(`${s}T00:00:00Z`);
+            // 24 months as two 12-month terms; the second is the one expiring.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2028-10-31'), d('2027-11-01'))).toBe(24);
+            // 13 months as a 12-month and a 1-month term.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2027-11-30'), d('2027-11-01'))).toBe(13);
+            // 6 months is one term, starting on the line's own start: one term's price.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2027-04-30'), d('2026-11-01'))).toBeNull();
+            // A line with no stated period.
+            expect(MultiTermLineMonths(null, null, d('2026-11-01'))).toBeNull();
+            // A stated start with no end: the line's length is unknown, so no share is taken.
+            expect(MultiTermLineMonths(d('2026-11-01'), null, d('2027-11-01'))).toBeNull();
         });
     });
 });
