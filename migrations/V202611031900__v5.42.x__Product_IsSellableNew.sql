@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202611021800 — Product.IsSellableNew: products kept for history, not for a
+-- V202611031900 — Product.IsSellableNew: products kept for history, not for a
 --                 new sale
 -- =============================================================================
 -- Some Active products exist only so that past or recurring business has
