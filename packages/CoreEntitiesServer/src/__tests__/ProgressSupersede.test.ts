@@ -11,12 +11,14 @@ import {
     BackDatedWarning,
     CatchUpDate,
     EffectiveObservations,
+    EngagementLeadAttestRefusal,
     FutureDateWarning,
     MonthEnd,
     PlanSupersede,
     PROGRESS_SUPERSEDE_AUTH,
     ReversalDate,
     SupersedeRefusal,
+    WorklistVisibleToUser,
 } from '../ProgressSupersede.js';
 import { ComputeCatchUp } from '../RevenueRecognition.js';
 
@@ -165,6 +167,14 @@ describe('CatchUpDate', () => {
     });
 });
 
+function grantedSupersedeAuth(roleID: string): AuthorizationInfo {
+    const auth = new AuthorizationInfo({ ID: 'A1', Name: PROGRESS_SUPERSEDE_AUTH, IsActive: true });
+    Object.defineProperty(auth, 'UserCanExecute', {
+        value: (u: UserInfo) => u.UserRoles?.some((r) => r.RoleID === roleID) ?? false,
+    });
+    return auth;
+}
+
 describe('SupersedeRefusal', () => {
     const user = new UserInfo(null, { ID: 'U1', Name: 'Attester', UserRoles: [] });
 
@@ -175,5 +185,58 @@ describe('SupersedeRefusal', () => {
     it('refuses a user whose roles do not hold the grant', () => {
         const auth = new AuthorizationInfo({ ID: 'A1', Name: PROGRESS_SUPERSEDE_AUTH, IsActive: true });
         expect(SupersedeRefusal(user, [auth])).toMatch(/Orders Revenue Supervisor/);
+    });
+
+    it('refuses a supersede when the user is the order\u2019s own Engagement Lead, even with the supervisor grant (golive #397)', () => {
+        const supervisorAndLead = new UserInfo(null, {
+            ID: '11111111-1111-4111-8111-111111111111',
+            Name: 'LeadAndSupervisor',
+            UserRoles: [{ RoleID: 'R-SUP' }],
+        });
+        const auth = grantedSupersedeAuth('R-SUP');
+        const otherSupervisor = new UserInfo(null, {
+            ID: '22222222-2222-4222-8222-222222222222',
+            Name: 'OtherSupervisor',
+            UserRoles: [{ RoleID: 'R-SUP' }],
+        });
+
+        expect(
+            SupersedeRefusal(supervisorAndLead, [auth], '11111111-1111-4111-8111-111111111111'),
+        ).toMatch(/Engagement Lead assigned to this order cannot supersede/i);
+        expect(
+            SupersedeRefusal(otherSupervisor, [auth], '11111111-1111-4111-8111-111111111111'),
+        ).toBeNull();
+        expect(SupersedeRefusal(supervisorAndLead, [auth], null)).toBeNull();
+    });
+});
+
+describe('EngagementLeadAttestRefusal and WorklistVisibleToUser (#807)', () => {
+    const LEAD_A = '11111111-1111-4111-8111-111111111111';
+    const LEAD_B = '22222222-2222-4222-8222-222222222222';
+    const SUP_ID = '33333333-3333-4333-8333-333333333333';
+
+    const leadA = new UserInfo(null, { ID: LEAD_A, Name: 'Lead A', UserRoles: [] });
+    const leadB = new UserInfo(null, { ID: LEAD_B, Name: 'Lead B', UserRoles: [] });
+    const supervisor = new UserInfo(null, { ID: SUP_ID, Name: 'Supervisor', UserRoles: [{ RoleID: 'R-SUP' }] });
+    const supersedeAuth = grantedSupersedeAuth('R-SUP');
+
+    it('allows any Engagement Lead to attest when EngagementLeadUserID is null', () => {
+        expect(EngagementLeadAttestRefusal(leadA, null, [supersedeAuth], 'ORD-0001')).toBeNull();
+        expect(EngagementLeadAttestRefusal(leadB, undefined, [supersedeAuth], 'ORD-0001')).toBeNull();
+    });
+
+    it('allows only the assigned Engagement Lead or a Revenue Supervisor when EngagementLeadUserID is set', () => {
+        expect(EngagementLeadAttestRefusal(leadA, LEAD_A, [supersedeAuth], 'ORD-0001')).toBeNull();
+        expect(EngagementLeadAttestRefusal(supervisor, LEAD_A, [supersedeAuth], 'ORD-0001')).toBeNull();
+        expect(EngagementLeadAttestRefusal(leadB, LEAD_A, [supersedeAuth], 'ORD-0001')).toMatch(
+            /Order ORD-0001 is assigned to a different Engagement Lead/,
+        );
+    });
+
+    it('filters worklist visibility to the assigned Engagement Lead unless null or supervisor', () => {
+        expect(WorklistVisibleToUser(null, LEAD_B, false)).toBe(true);
+        expect(WorklistVisibleToUser(LEAD_A, LEAD_A, false)).toBe(true);
+        expect(WorklistVisibleToUser(LEAD_A, LEAD_B, false)).toBe(false);
+        expect(WorklistVisibleToUser(LEAD_A, SUP_ID, true)).toBe(true);
     });
 });

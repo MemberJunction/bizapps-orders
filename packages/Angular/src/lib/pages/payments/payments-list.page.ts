@@ -6,7 +6,7 @@ import { type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-ent
 import { MJO_ENTITIES } from '../../data/entity-names';
 
 /**
- * `mjo-payments-list-page` — All Payments view powered by MemberJunction's native `<mj-entity-viewer>`.
+ * `mjo-payments-list-page` — All Payments view powered by MemberJunction's native `<mj-view-workspace>`.
  */
 @Component({
     selector: 'mjo-payments-list-page',
@@ -16,10 +16,11 @@ import { MJO_ENTITIES } from '../../data/entity-names';
         <div class="mjo-list-page-container">
             <div class="mjo-viewer-wrapper">
                 @if (PaymentEntityInfo) {
-                    <mj-entity-viewer
+                    <mj-view-workspace
                         [Entity]="PaymentEntityInfo"
-                        (RecordOpened)="OnRecordOpened($event)">
-                    </mj-entity-viewer>
+                        [AutoSaveView]="true"
+                        (OpenRecordRequested)="OnRecordOpened($event)">
+                    </mj-view-workspace>
                 } @else {
                     <div class="small muted" style="padding: 24px;">Loading payment metadata...</div>
                 }
@@ -56,7 +57,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -82,8 +83,8 @@ export class MJOPaymentsListPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
+        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersPaymentHeaderEntity;
             this.PaymentOpened.emit(surrogate);

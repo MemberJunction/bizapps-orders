@@ -8,9 +8,10 @@ import { PresetViewRef } from '../../data/preset-view';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
-import { GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
+import { GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer, RunOrdersPageLoad } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
+import { CompanyScopeService } from '../../services/company-scope.service';
 import { Today, type DateCell, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
@@ -49,6 +50,11 @@ interface MJOCustomerSummary {
     standalone: true,
     imports: [CommonModule, EntityViewerModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJAlertComponent, MJEmptyStateComponent],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">
+                {{ LoadError }}
+            </mj-alert>
+        }
         <div class="mjo-ar__split">
             <!-- ── Customers ── -->
             <aside class="mjo-ar__left">
@@ -147,12 +153,12 @@ interface MJOCustomerSummary {
                         </div>
                         <div class="mjo-ar__viewer-host">
                             @if (OrderEntityInfo) {
-                                <mj-entity-viewer
+                                <mj-view-workspace
                                     [Entity]="OrderEntityInfo"
-                                    [ViewEntity]="CustomerOpenOrdersView"
-                                    [GridState]="OrderGridState"
-                                    (RecordOpened)="OnRecordOpened($event)">
-                                </mj-entity-viewer>
+                                    [SelectedView]="CustomerOpenOrdersView"
+                                    [AutoSaveView]="true"
+                                    (OpenRecordRequested)="OnRecordOpened($event)">
+                                </mj-view-workspace>
                             } @else {
                                 <div class="small muted" style="padding: 24px;">Loading open items...</div>
                             }
@@ -324,7 +330,7 @@ interface MJOCustomerSummary {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -368,9 +374,11 @@ interface MJOCustomerSummary {
 })
 export class MJOCustomerARPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
+    private readonly companyScope = inject(CompanyScopeService);
 
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 
+    public LoadError: string | null = null;
     public OrderEntityInfo: EntityInfo | null = null;
     public readonly OrderGridState = MJO_ORDER_HEADER_GRID_STATE;
     public Customers: MJOCustomerSummary[] = [];
@@ -381,13 +389,17 @@ export class MJOCustomerARPageComponent implements OnInit {
     public get CustomerOpenOrdersView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo || !this.Selected) return null;
         const col = this.Selected.IsOrganization ? 'BillToOrganizationID' : 'BillToPersonID';
+        const scopeFilter = this.companyScope?.FilterFor('CompanyID') ?? null;
+        const baseClause = `${col} = '${this.Selected.Key}' AND Balance > 0`;
+        const whereClause = this.companyScope ? this.companyScope.ComposeFilter(baseClause, 'CompanyID') : baseClause;
         // Keyed on every input the view reads: a new object each pass deadlocks the grid (#362).
         return this.openOrdersView.For(
-            `${this.OrderEntityInfo.ID}|${this.Selected.Key}|${col}|${this.Selected.Name}`,
+            `${this.OrderEntityInfo.ID}|${this.Selected.Key}|${col}|${this.Selected.Name}|${scopeFilter ?? ''}`,
             () => ({
                 EntityID: this.OrderEntityInfo!.ID,
                 Entity: this.OrderEntityInfo!.Name,
-                WhereClause: `${col} = '${this.Selected!.Key}' AND Balance > 0`,
+                WhereClause: whereClause,
+                GridState: JSON.stringify(MJO_ORDER_HEADER_GRID_STATE),
                 ID: `preset-customer-orders-${this.Selected!.Key}`,
                 Name: `${this.Selected!.Name} Open Items`
             } as unknown as MJUserViewEntityExtended),
@@ -401,8 +413,8 @@ export class MJOCustomerARPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
+        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersOrderHeaderEntity;
             this.OrderOpened.emit(surrogate);
@@ -439,13 +451,18 @@ export class MJOCustomerARPageComponent implements OnInit {
         const identity = {
             OrganizationID: selected.IsOrganization ? selected.Key : null,
             PersonID: selected.IsOrganization ? null : selected.Key,
+            CompanyIDs: this.companyScope.EffectiveCompanyIDs,
         };
-        const [payments, subscriptions] = await Promise.all([
-            GetPaymentsForCustomer(identity),
-            GetSubscriptionsForCustomer(identity),
-        ]);
-        this.Payments = payments;
-        this.Subscriptions = subscriptions;
+        let payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
+        let subscriptions: mjBizAppsOrdersSubscriptionEntity[] = [];
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            [payments, subscriptions] = await Promise.all([
+                GetPaymentsForCustomer(identity),
+                GetSubscriptionsForCustomer(identity),
+            ]);
+        });
+        this.Payments = this.LoadError ? [] : payments;
+        this.Subscriptions = this.LoadError ? [] : subscriptions;
         this.cdr.detectChanges();
     }
 
@@ -554,7 +571,16 @@ export class MJOCustomerARPageComponent implements OnInit {
      * order billed to their employer is the employer's receivable.
      */
     private async load(): Promise<void> {
-        const orders = await GetOpenBalanceOrders();
+        await this.companyScope.Load();
+        let orders: mjBizAppsOrdersOrderHeaderEntity[] = [];
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            orders = await GetOpenBalanceOrders(undefined, this.companyScope.EffectiveCompanyIDs);
+        });
+        if (this.LoadError) {
+            this.Customers = [];
+            this.cdr.detectChanges();
+            return;
+        }
         const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && (o.Balance ?? 0) !== 0);
 
         const byCustomer = new Map<string, MJOCustomerSummary>();

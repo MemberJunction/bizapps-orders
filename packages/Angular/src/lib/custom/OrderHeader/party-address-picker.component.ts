@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, Input, OnChanges, SimpleChanges, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Metadata, RunView } from '@memberjunction/core';
@@ -8,7 +8,11 @@ import {
     mjBizAppsCommonAddressEntity,
     mjBizAppsCommonAddressLinkEntity,
 } from '@mj-biz-apps/common-entities';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import {
+    OrderHeaderEntity,
+    ParseAddressSnapshot,
+    type mjBizAppsOrdersOrderLineEntity,
+} from '@mj-biz-apps/orders-entities';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { FormatPartyAddress, FormatSoldAddress } from './order-header-prefs';
 
@@ -23,10 +27,10 @@ interface PartyAddressOption {
 const CUSTOM = '__custom__';
 
 /**
- * Binds OrderHeader.ShipToAddressID / BillToAddressID to an existing party
- * address (by ID, not a copy). Custom addresses use the same Address entity
- * the common address editor writes; optional checkboxes create AddressLinks
- * onto the person and/or organization.
+ * Binds OrderHeader.ShipToAddressID / BillToAddressID (or OrderLine.ShipToAddressID)
+ * to an existing party address (by ID, not a copy). Custom addresses on the header use
+ * the same Address entity the common address editor writes; optional checkboxes create
+ * AddressLinks onto the person and/or organization.
  */
 @Component({
     standalone: true,
@@ -38,11 +42,13 @@ const CUSTOM = '__custom__';
 export class MJOPartyAddressPickerComponent implements OnChanges {
     private readonly cdr = inject(ChangeDetectorRef);
 
-    @Input({ required: true }) public Order!: OrderHeaderEntity;
-    @Input({ required: true }) public Side!: PartyAddressSide;
+    @Input() public Order: OrderHeaderEntity | null = null;
+    @Input() public Line: mjBizAppsOrdersOrderLineEntity | null = null;
+    @Input() public Side: PartyAddressSide = 'ship';
     @Input() public EditMode = true;
     @Input() public PersonName: string | null = null;
     @Input() public OrganizationName: string | null = null;
+    @Output() public AddressChanged = new EventEmitter<string | null>();
 
     public Options: PartyAddressOption[] = [];
     public Selection = '';
@@ -57,12 +63,17 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
         return !!(this.PersonID || this.OrganizationID);
     }
 
+    /** Inline custom-address companion exists on the order header, not on order lines. */
+    public get CanCustomAddress(): boolean {
+        return !!this.Order && !this.Line;
+    }
+
     /** Dropdown + custom editor: compose mode with a party to pick from. */
     public get ShowPicker(): boolean {
         return this.EditMode && this.HasParty;
     }
 
-    /** An address ID is bound on the order. */
+    /** An address ID is bound on the order or line. */
     public get ShowSelected(): boolean {
         return !!this.AddressID;
     }
@@ -73,13 +84,21 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
     }
 
     /**
-     * Selected address as loaded with the order: embedded Address bits, then the
-     * header virtual `ShipToAddress` / `BillToAddress` (the related-entity join
-     * on the order view — not a second Address RunView).
+     * Selected address as loaded with the order or line: embedded Address bits, then the
+     * virtual `ShipToAddress` / `BillToAddress` (the related-entity join on the view — not
+     * a second Address RunView).
      */
     public get SelectedAddressText(): string {
+        if (this.Line) {
+            const soldLine = FormatSoldAddress(() => ParseAddressSnapshot(this.Line?.ShipToAddressSnapshot));
+            if (soldLine) return soldLine;
+            const opt = this.Options.find((o) => o.ID.toLowerCase() === (this.AddressID ?? '').toLowerCase());
+            if (opt?.Label) return opt.Label;
+            return this.Line.ShipToAddress ?? '';
+        }
+        if (!this.Order) return '';
         // A confirmed order shows the address it was sold to, which the Address row may no longer say.
-        const sold = FormatSoldAddress(() => (this.Side === 'ship' ? this.Order.ShipToAddressAsSold : this.Order.BillToAddressAsSold));
+        const sold = FormatSoldAddress(() => (this.Side === 'ship' ? this.Order!.ShipToAddressAsSold : this.Order!.BillToAddressAsSold));
         if (sold) return sold;
         const embedded = this.CustomAddress;
         if (embedded) {
@@ -93,24 +112,31 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
     }
 
     public ngOnChanges(changes: SimpleChanges): void {
-        if (changes['Order'] || changes['Side'] || changes['PersonName'] || changes['OrganizationName']) {
+        if (changes['Order'] || changes['Line'] || changes['Side'] || changes['PersonName'] || changes['OrganizationName']) {
             void this.reload();
         }
     }
 
     public get PersonID(): string | null {
+        if (this.Line) return this.Line.ShipToPersonID;
+        if (!this.Order) return null;
         return this.Side === 'ship' ? this.Order.ShipToPersonID : this.Order.BillToPersonID;
     }
 
     public get OrganizationID(): string | null {
+        if (this.Line) return this.Line.ShipToOrganizationID;
+        if (!this.Order) return null;
         return this.Side === 'ship' ? this.Order.ShipToOrganizationID : this.Order.BillToOrganizationID;
     }
 
     public get AddressID(): string | null {
+        if (this.Line) return this.Line.ShipToAddressID;
+        if (!this.Order) return null;
         return this.Side === 'ship' ? this.Order.ShipToAddressID : this.Order.BillToAddressID;
     }
 
     public get CustomAddress(): mjBizAppsCommonAddressEntity | null {
+        if (this.Line || !this.Order) return null;
         return this.Side === 'ship' ? this.Order.ShipToAddressID_Object : this.Order.BillToAddressID_Object;
     }
 
@@ -127,15 +153,18 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
         this.Custom = value === CUSTOM;
         if (!value) {
             this.clear();
+            this.AddressChanged.emit(null);
             return;
         }
         if (value === CUSTOM) {
             this.clear();
             this.ensureCustom();
+            this.AddressChanged.emit(this.AddressID);
             return;
         }
         this.clear();
         this.setAddressID(value);
+        this.AddressChanged.emit(value);
         this.cdr.detectChanges();
     }
 
@@ -171,9 +200,12 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
             if (current && this.Options.some((o) => o.ID.toLowerCase() === current.toLowerCase())) {
                 this.Selection = current;
                 this.Custom = false;
-            } else if (current) {
+            } else if (current && this.CanCustomAddress) {
                 this.Selection = CUSTOM;
                 this.Custom = true;
+            } else if (current) {
+                this.Selection = current;
+                this.Custom = false;
             } else {
                 this.Selection = '';
                 this.Custom = false;
@@ -224,19 +256,29 @@ export class MJOPartyAddressPickerComponent implements OnChanges {
     }
 
     private setAddressID(id: string | null): void {
+        if (this.Line) {
+            this.Line.ShipToAddressID = id;
+            return;
+        }
+        if (!this.Order) return;
         if (this.Side === 'ship') this.Order.ShipToAddressID = id;
         else this.Order.BillToAddressID = id;
     }
 
     private clear(): void {
-        if (this.Side === 'ship') this.Order.ClearShipToAddress();
-        else this.Order.ClearBillToAddress();
+        if (this.Line) {
+            this.Line.ShipToAddressID = null;
+        } else if (this.Order) {
+            if (this.Side === 'ship') this.Order.ClearShipToAddress();
+            else this.Order.ClearBillToAddress();
+        }
         this.Custom = false;
         this.SaveToPerson = false;
         this.SaveToOrg = false;
     }
 
     private ensureCustom(): void {
+        if (!this.Order || this.Line) return;
         if (this.Side === 'ship') this.Order.ShipToAddressID_EnsureObject();
         else this.Order.BillToAddressID_EnsureObject();
         this.Custom = true;

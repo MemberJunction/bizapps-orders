@@ -106,6 +106,8 @@ export const ORGANIZATION_TYPE_ENTITY = 'MJ_BizApps_Common: Organization Types';
 export const RELATIONSHIP_ENTITY = 'MJ_BizApps_Common: Relationships';
 export const RELATIONSHIP_TYPE_ENTITY = 'MJ_BizApps_Common: Relationship Types';
 export const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+export const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
+export const ADDRESS_TYPE_ENTITY = 'MJ_BizApps_Common: Address Types';
 
 export const COMPANY_ENTITY = 'MJ: Companies';
 
@@ -187,6 +189,8 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     RELATIONSHIP_ENTITY,
     RELATIONSHIP_TYPE_ENTITY,
     ADDRESS_ENTITY,
+    ADDRESS_LINK_ENTITY,
+    ADDRESS_TYPE_ENTITY,
     COMPANY_ENTITY,
     INTEGRATION_ENTITY,
     INTEGRATION_OBJECT_ENTITY,

@@ -162,8 +162,8 @@ export async function IssueInstalment(
         // The schedule must tie to the lines — the same check the confirm ran, because a Scheduled
         // row may have been edited since.
         const [lines, siblings] = await Promise.all([
-            rv.RunView<{ CompanyID: string; LineTotalGross: number }>(
-                { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${order.ID}'`, Fields: ['CompanyID', 'LineTotalGross'], ResultType: 'simple' },
+            rv.RunView<{ ID: string; CompanyID: string; LineTotalGross: number }>(
+                { EntityName: ORDER_LINE_ENTITY, ExtraFilter: `OrderHeaderID = '${order.ID}'`, Fields: ['ID', 'CompanyID', 'LineTotalGross'], ResultType: 'simple' },
                 user,
             ),
             rv.RunView<ScheduleRow>(
@@ -180,7 +180,7 @@ export async function IssueInstalment(
         const reductions = await AppliedScheduleReductions(order.ID, { Provider: provider, User: user });
         const billedLines = [
             ...(lines.Results ?? []),
-            ...reductions.map((c) => ({ CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
+            ...reductions.map((c) => ({ ID: c.OrderLineID, CompanyID: c.CompanyID, LineTotalGross: -c.Gross })),
         ];
         const shortfalls = ScheduleShortfalls(siblings.Results ?? [], billedLines, order.CompanyID);
         if (shortfalls.length) {
@@ -261,10 +261,6 @@ export async function IssueInstalment(
         // order, so every instalment's pieces of a line sum to that line's full amount. A cancelled
         // instalment bills nothing and takes no share of any line.
         const liveRows = (siblings.Results ?? []).filter((s) => s.Status !== 'Canceled');
-        const slices = CompanySlices(liveRows, billedLines, order.CompanyID);
-        const pieces = slices
-            .filter((s) => String(s.ID).toLowerCase() === String(row.ID).toLowerCase() && Number(s.Amount) !== 0)
-            .sort((a, b) => companyOrder(a.CompanyID, orderCompany) - companyOrder(b.CompanyID, orderCompany) || a.CompanyID.localeCompare(b.CompanyID));
         const billings: Array<{
             CompanyID: string;
             Amount: number;
@@ -273,8 +269,14 @@ export async function IssueInstalment(
             BilledSoFar: number[];
         }> = [];
         try {
-            // What the invoiced rows already billed (#681): this instalment slices what each line has left.
+            // What the invoiced rows already billed (#681, #695): read before CompanySlices so already-invoiced
+            // instalments keep the company split they actually billed instead of replaying against post-reduction
+            // company totals.
             const recorded = await ReadInstalmentLineBillings(order.ID, provider, user);
+            const slices = CompanySlices(liveRows, billedLines, order.CompanyID, recorded);
+            const pieces = slices
+                .filter((s) => String(s.ID).toLowerCase() === String(row.ID).toLowerCase() && Number(s.Amount) !== 0)
+                .sort((a, b) => companyOrder(a.CompanyID, orderCompany) - companyOrder(b.CompanyID, orderCompany) || a.CompanyID.localeCompare(b.CompanyID));
             for (const piece of pieces) {
                 const company = String(piece.CompanyID);
                 const booked = await factory.BuildInstalmentLineFacts(lineEntities.Results ?? [], company, invoiceDay);

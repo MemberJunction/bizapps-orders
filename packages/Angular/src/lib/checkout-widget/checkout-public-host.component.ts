@@ -336,11 +336,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.cancelBackgroundQuote();
         this.turnstile.Destroy();
         (this.hostEl?.nativeElement as HTMLElement | undefined)?.removeEventListener?.(CHECKOUT_RESET_REQUEST_EVENT, this.onResetRequested);
-        try {
-            this.card?.unmount?.();
-        } catch {
-            /* already gone */
-        }
+        this.releaseCard();
     }
 
     /** The buyer pressed Apply: price the form with the code and show what it does. */
@@ -458,15 +454,23 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
         this.serverPricedTotal = null;
         this.memberDiscount = null;
         this.cancelBackgroundQuote();
+        this.releaseCard();
+        this.cardMounted = false;
+        this.isPaymentReady = !this.config?.stripePublishableKey;
+        this.formGeneration++;
+    }
+
+    private releaseCard(): void {
         try {
-            this.card?.destroy?.();
+            if (this.card?.destroy) {
+                this.card.destroy();
+            } else {
+                this.card?.unmount?.();
+            }
         } catch {
             /* already gone */
         }
         this.card = null;
-        this.cardMounted = false;
-        this.isPaymentReady = !this.config?.stripePublishableKey;
-        this.formGeneration++;
     }
 
     /** A price input changed: every total the server priced for the old inputs is stale, tax included. */
@@ -723,6 +727,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
                 CHECKOUT_COMPLETE_EVENT,
                 BuildCheckoutCompleteDetail({
                     sessionId: this.sessionId,
+                    orderNumber: this.orderNumber,
                     productName: this.renewal.Description,
                     productId: undefined,
                     totalGross: this.renewal.Amount,
@@ -790,6 +795,7 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
             CHECKOUT_COMPLETE_EVENT,
             BuildCheckoutCompleteDetail({
                 sessionId: this.sessionId,
+                orderNumber: this.orderNumber,
                 productName: this.config?.productName ?? this.config?.title,
                 productId: this.config?.productId,
                 totalGross: done.TotalGross,

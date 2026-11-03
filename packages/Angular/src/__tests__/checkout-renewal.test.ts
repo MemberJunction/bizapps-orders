@@ -120,7 +120,7 @@ describe('CheckoutPublicHostComponent — pay-renewal mode', () => {
         expect(c.successMessage).toBe(RenewalPaidMessage(RENEWAL));
         expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
         expect(seen[1]).toEqual({ type: 'checkout-state-change', detail: { state: 'SUCCESS' } });
-        expect(seen[2].detail).toEqual({ sessionId: 'sess-r', productName: 'Annual Plan', productId: null, amount: 1200, currency: 'USD', coupon: null });
+        expect(seen[2].detail).toEqual({ sessionId: 'sess-r', orderNumber: 'ORD-000123', productName: 'Annual Plan', productId: null, amount: 1200, currency: 'USD', coupon: null });
     });
 
     it('confirms the new card with Stripe when the intent still needs it', async () => {

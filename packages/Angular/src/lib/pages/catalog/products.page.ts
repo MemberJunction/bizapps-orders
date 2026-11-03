@@ -5,7 +5,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates } from '../../data/orders-queries';
+import { GetChargeTypes, GetProductCategories, GetProducts, GetProductTypes, GetTaxExemptions, GetTaxJurisdictions, GetTaxNexus, GetTaxRates, RunOrdersPageLoad } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import {
     IsBefore,
@@ -49,6 +49,11 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
     standalone: true,
     imports: [CommonModule, MJAlertComponent, EntityViewerModule],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-cat__note" role="alert">
+                {{ LoadError }}
+            </mj-alert>
+        }
         <mj-alert Variant="info" Icon="fa-solid fa-sitemap" class="mjo-cat__note">
                 Product type determines revenue recognition, taxability, fulfillment and recurrence for
                 every order line.
@@ -199,6 +204,7 @@ export class MJOProductsPageComponent implements OnInit {
     /** The grid's New button — the host routes it, this page never imports Router. */
     @Output() ProductCreateRequested = new EventEmitter<void>();
 
+    public LoadError: string | null = null;
     public ProductEntityInfo: EntityInfo | null = null;
     public Categories: Array<Record<string, unknown>> = [];
     public Types: Array<Record<string, unknown>> = [];
@@ -207,9 +213,15 @@ export class MJOProductsPageComponent implements OnInit {
         const md = new Metadata();
         this.ProductEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Product) || null;
         this.cdr.detectChanges();
-        const [types, categories] = await Promise.all([GetProductTypes(), GetProductCategories()]);
-        this.Types = types.map((t) => t.GetAll());
-        this.Categories = categories.map((c) => c.GetAll());
+        let types: Array<Record<string, unknown>> = [];
+        let categories: Array<Record<string, unknown>> = [];
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            const [loadedTypes, loadedCategories] = await Promise.all([GetProductTypes(), GetProductCategories()]);
+            types = loadedTypes.map((t) => t.GetAll());
+            categories = loadedCategories.map((c) => c.GetAll());
+        });
+        this.Types = this.LoadError ? [] : types;
+        this.Categories = this.LoadError ? [] : categories;
         this.cdr.detectChanges();
     }
 
@@ -255,6 +267,11 @@ export class MJOProductsPageComponent implements OnInit {
     standalone: true,
     imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-cat__note" role="alert">
+                {{ LoadError }}
+            </mj-alert>
+        }
         <mj-alert Variant="info" Icon="fa-solid fa-layer-group" class="mjo-cat__note">
                 <strong>Tax is a charge.</strong>
                 State plus county plus city is three rows rather than a special case — so ordering,
@@ -471,6 +488,7 @@ export class MJOProductsPageComponent implements OnInit {
 export class MJOChargesTaxPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public LoadError: string | null = null;
     public ChargeTypeEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersChargeTypeEntity[] = [];
 
@@ -482,18 +500,25 @@ export class MJOChargesTaxPageComponent implements OnInit {
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.ChargeTypeEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.ChargeType) || null;
-        const [rows, jurisdictions, rates, nexus, exemptions] = await Promise.all([
-            GetChargeTypes(),
-            GetTaxJurisdictions(),
-            GetTaxRates(),
-            GetTaxNexus(),
-            GetTaxExemptions(),
-        ]);
-        this.Rows = rows;
-        this.Jurisdictions = jurisdictions;
-        this.Rates = rates;
-        this.Nexus = nexus;
-        this.Exemptions = exemptions;
+        let rows: mjBizAppsOrdersChargeTypeEntity[] = [];
+        let jurisdictions: Array<Record<string, unknown>> = [];
+        let rates: Array<Record<string, unknown>> = [];
+        let nexus: Array<Record<string, unknown>> = [];
+        let exemptions: mjBizAppsOrdersCustomerTaxExemptionEntity[] = [];
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            [rows, jurisdictions, rates, nexus, exemptions] = await Promise.all([
+                GetChargeTypes(),
+                GetTaxJurisdictions(),
+                GetTaxRates(),
+                GetTaxNexus(),
+                GetTaxExemptions(),
+            ]);
+        });
+        this.Rows = this.LoadError ? [] : rows;
+        this.Jurisdictions = this.LoadError ? [] : jurisdictions;
+        this.Rates = this.LoadError ? [] : rates;
+        this.Nexus = this.LoadError ? [] : nexus;
+        this.Exemptions = this.LoadError ? [] : exemptions;
         this.cdr.detectChanges();
     }
 

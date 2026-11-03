@@ -464,6 +464,10 @@ const BOOT_SCRIPT = `
     }
 
     addField('email', 'Email', 'text', true, 'you@example.com');
+    var countryInput = addField('country', 'Country', 'text', true, 'US');
+    countryInput.value = 'US';
+    var stateInput = addField('stateProvince', 'State / Province', 'text', false, 'NY');
+    var postalInput = addField('postalCode', 'Postal / ZIP code', 'text', false, '10001');
     var qtyInput = null;
     if (config.allowQuantity !== false) {
       qtyInput = addField('quantity', 'Quantity', 'number', true, '1');
@@ -474,7 +478,7 @@ const BOOT_SCRIPT = `
 
     var extFields = Array.isArray(config.extensionFields) ? config.extensionFields : [];
     extFields.forEach(function (f) {
-      if (!f || !f.name || f.name === 'email') return;
+      if (!f || !f.name || f.name === 'email' || f.name === 'country' || f.name === 'stateProvince' || f.name === 'postalCode') return;
       addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options);
     });
 
@@ -503,6 +507,11 @@ const BOOT_SCRIPT = `
       status.textContent = 'Pricing…';
       var emailEl = form.elements.namedItem('email');
       var email = emailEl && 'value' in emailEl ? String(emailEl.value || '').trim() : '';
+      var billingAddress = {
+        Country: countryInput ? String(countryInput.value || '').trim().toUpperCase() : '',
+        StateProvince: stateInput ? String(stateInput.value || '').trim().toUpperCase() : '',
+        PostalCode: postalInput ? String(postalInput.value || '').trim() : ''
+      };
       var qty = qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
       var extensionFields = {};
       extFields.forEach(function (f) {
@@ -519,7 +528,8 @@ const BOOT_SCRIPT = `
         sessionId: sessionId,
         clientSessionKey: sessionKey,
         email: email,
-        lines: [line]
+        lines: [line],
+        billingAddress: billingAddress
       }).then(function (draft) {
         if (!draft || !draft.Success) {
           throw new Error((draft && draft.ErrorMessage) || 'Could not price this checkout.');
@@ -554,7 +564,17 @@ const BOOT_SCRIPT = `
             }
             status.textContent = 'Confirming payment…';
             return stripe.confirmCardPayment(intent.ClientSecret, {
-              payment_method: { card: cardElement, billing_details: { email: email } }
+              payment_method: {
+                card: cardElement,
+                billing_details: {
+                  email: email,
+                  address: {
+                    country: billingAddress.Country,
+                    state: billingAddress.StateProvince,
+                    postal_code: billingAddress.PostalCode
+                  }
+                }
+              }
             }).then(function (result) {
               if (result.error) throw new Error(result.error.message || 'Payment failed.');
               status.textContent = 'Completing…';

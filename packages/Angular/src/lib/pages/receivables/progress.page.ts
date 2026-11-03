@@ -105,6 +105,9 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
                 {{ row.OrderNumber }} line {{ row.LineNumber }} · {{ row.ProductName }} · {{ money(row.LineAmount) }} ·
                 last attested {{ row.LastMeasurementDate ? FormatDate(row.LastMeasurementDate, { Short: true }) + ' at ' + percent(row.LastPercentComplete) : 'never' }}
                 · recognised {{ money(row.RecognizedToDate) }}
+                @if (engagementLeadName(row); as leadName) {
+                    · lead {{ leadName }}
+                }
                 @if (Draft) {
                     <strong> → {{ Draft.Message }}</strong>
                 }
@@ -194,7 +197,7 @@ export class MJOProgressPageComponent implements OnInit {
 
     public readonly Columns: MJOColumn<ProgressWorklistRow>[] = [
         { Key: 'OrderNumber', Label: 'Order', Kind: 'mono', Width: '120px', Secondary: (r) => `line ${r.LineNumber}` },
-        { Key: 'ProductName', Label: 'Project' },
+        { Key: 'ProductName', Label: 'Project', Secondary: (r) => { const lead = this.engagementLeadName(r); return lead ? `lead ${lead}` : null; } },
         { Key: 'CustomerName', Label: 'Customer', HideBelow: 760 },
         { Key: 'CompanyName', Label: 'Sold by', HideBelow: 1000 },
         { Key: 'LineAmount', Label: 'Contract', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.LineAmount) },
@@ -202,6 +205,11 @@ export class MJOProgressPageComponent implements OnInit {
         { Key: 'LastPercentComplete', Label: 'Complete', Kind: 'chip', Width: '100px', Format: (r) => this.percent(r.LastPercentComplete), ChipClass: (r) => (r.LastPercentComplete > 0 ? 'mjo-chip--success' : 'mjo-chip--outline') },
         { Key: 'RecognizedToDate', Label: 'Recognised', Kind: 'money', Width: '120px', HideBelow: 560, Format: (r) => FormatMoney(r.RecognizedToDate) },
     ];
+
+    public engagementLeadName(row: ProgressWorklistRow): string | null {
+        const name = (row as ProgressWorklistRow & { EngagementLeadName?: string | null }).EngagementLeadName;
+        return name?.trim() || null;
+    }
 
     public async ngOnInit(): Promise<void> {
         await this.load();

@@ -2801,18 +2801,18 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: BillToAddressSnapshot
         * * Display Name: Bill To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
-        * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+        * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
     ShipToAddressSnapshot: z.string().nullable().describe(`
         * * Field Name: ShipToAddressSnapshot
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
-        * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
+        * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.`),
     ConfirmedByUserID: z.string().nullable().describe(`
         * * Field Name: ConfirmedByUserID
         * * Display Name: Confirmed By User ID
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
-        * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).`),
+        * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ImmutableAfterConfirm, 51017).`),
     IPCountry: z.string().nullable().describe(`
         * * Field Name: IPCountry
         * * Display Name: IP Country
@@ -2823,6 +2823,12 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Card Issuing Country
         * * SQL Data Type: char(2)
         * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
+    EngagementLeadUserID: z.string().nullable().describe(`
+        * * Field Name: EngagementLeadUserID
+        * * Display Name: Engagement Lead
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user responsible for delivering the order's work (the engagement lead), distinct from SalesRepUserID (who sold it). Optional. Pre-fills AttestedByUserID when progress is recorded and lets the progress worklist filter by delivery owner.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -2842,11 +2848,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
     BillToAddress: z.string().nullable().describe(`
         * * Field Name: BillToAddress
         * * Display Name: Billing Address Details
-        * * SQL Data Type: nvarchar(255)`),
+        * * SQL Data Type: nvarchar(400)`),
     ShipToAddress: z.string().nullable().describe(`
         * * Field Name: ShipToAddress
         * * Display Name: Shipping Address Details
-        * * SQL Data Type: nvarchar(255)`),
+        * * SQL Data Type: nvarchar(400)`),
     ShipToOrganization: z.string().nullable().describe(`
         * * Field Name: ShipToOrganization
         * * Display Name: Ship To Organization Name
@@ -2907,6 +2913,10 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: IsOverdue
         * * Display Name: Is Overdue
         * * SQL Data Type: int`),
+    EngagementLeadUser: z.string().nullable().describe(`
+        * * Field Name: EngagementLeadUser
+        * * Display Name: Engagement Lead Name
+        * * SQL Data Type: nvarchar(100)`),
 });
 
 export type mjBizAppsOrdersOrderHeaderEntityType = z.infer<typeof mjBizAppsOrdersOrderHeaderSchema>;
@@ -3418,7 +3428,7 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Field Name: ShipToAddressSnapshot
         * * Display Name: Ship To Address Snapshot
         * * SQL Data Type: nvarchar(MAX)
-        * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).`),
+        * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_ImmutableAfterConfirm, 51016).`),
     SubscriptionAction: z.union([z.literal('CreateNew'), z.literal('ExtendExisting')]).nullable().describe(`
         * * Field Name: SubscriptionAction
         * * Display Name: Subscription Action
@@ -3518,6 +3528,10 @@ export const mjBizAppsOrdersOrderLineSchema = z.object({
         * * Field Name: ParentOrderLineIDChildCount
         * * Display Name: Parent Order Line ID Child Count
         * * SQL Data Type: int`),
+    ShipToAddress: z.string().nullable().describe(`
+        * * Field Name: ShipToAddress
+        * * Display Name: Ship To Address Name
+        * * SQL Data Type: nvarchar(400)`),
 });
 
 export type mjBizAppsOrdersOrderLineEntityType = z.infer<typeof mjBizAppsOrdersOrderLineSchema>;
@@ -3662,7 +3676,7 @@ export const mjBizAppsOrdersOutboundEventSchema = z.object({
         * * Display Name: Order Header ID
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
-        * * Description: The order the event is about. Set on both event types, so deliveries can be read by order.`),
+        * * Description: The order the event is about. Set on every OrderConfirmed event, and on a GrantStatusChanged event when the grant has an order line, so deliveries can be read by order.`),
     EntitlementGrantID: z.string().nullable().describe(`
         * * Field Name: EntitlementGrantID
         * * Display Name: Entitlement Grant ID
@@ -6217,7 +6231,7 @@ export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
         * * Field Name: MaxTermExtensionDays
         * * Display Name: Max Term Extension Days
         * * SQL Data Type: int
-        * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.`),
+        * * Description: Days a term's start or end may move (extension, shortening or shift) before a concession needs approval; smaller moves this rep may grant unaided. NULL means no authority to move term dates, so every term-date concession goes to approval.`),
     MaxConcessionPctOfContract: z.number().nullable().describe(`
         * * Field Name: MaxConcessionPctOfContract
         * * Display Name: Max Concession Pct Of Contract
@@ -7104,7 +7118,7 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Display Name: Carry Discount On Renewal
         * * SQL Data Type: bit
         * * Default Value: 0
-        * * Description: Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession.`),
+        * * Description: Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession. When the renewal moves to a successor product, the carried discount applies to the successor's list price.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -15598,7 +15612,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     * * Field Name: BillToAddressSnapshot
     * * Display Name: Bill To Address Snapshot
     * * SQL Data Type: nvarchar(MAX)
-    * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    * * Description: The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
     */
     get BillToAddressSnapshot(): string | null {
         return this.Get('BillToAddressSnapshot');
@@ -15611,7 +15625,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     * * Field Name: ShipToAddressSnapshot
     * * Display Name: Ship To Address Snapshot
     * * SQL Data Type: nvarchar(MAX)
-    * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_AddressFrozenAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
+    * * Description: The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.
     */
     get ShipToAddressSnapshot(): string | null {
         return this.Get('ShipToAddressSnapshot');
@@ -15625,7 +15639,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     * * Display Name: Confirmed By User ID
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
-    * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ConfirmedByFrozenAfterBooking, 51017).
+    * * Description: The user whose save first confirmed (booked) this order, stamped from that save's context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ImmutableAfterConfirm, 51017).
     */
     get ConfirmedByUserID(): string | null {
         return this.Get('ConfirmedByUserID');
@@ -15658,6 +15672,20 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set CardIssuingCountry(value: string | null) {
         this.Set('CardIssuingCountry', value);
+    }
+
+    /**
+    * * Field Name: EngagementLeadUserID
+    * * Display Name: Engagement Lead
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user responsible for delivering the order's work (the engagement lead), distinct from SalesRepUserID (who sold it). Optional. Pre-fills AttestedByUserID when progress is recorded and lets the progress worklist filter by delivery owner.
+    */
+    get EngagementLeadUserID(): string | null {
+        return this.Get('EngagementLeadUserID');
+    }
+    set EngagementLeadUserID(value: string | null) {
+        this.Set('EngagementLeadUserID', value);
     }
 
     /**
@@ -15699,7 +15727,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     /**
     * * Field Name: BillToAddress
     * * Display Name: Billing Address Details
-    * * SQL Data Type: nvarchar(255)
+    * * SQL Data Type: nvarchar(400)
     */
     get BillToAddress(): string | null {
         return this.Get('BillToAddress');
@@ -15708,7 +15736,7 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     /**
     * * Field Name: ShipToAddress
     * * Display Name: Shipping Address Details
-    * * SQL Data Type: nvarchar(255)
+    * * SQL Data Type: nvarchar(400)
     */
     get ShipToAddress(): string | null {
         return this.Get('ShipToAddress');
@@ -15847,6 +15875,15 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get IsOverdue(): number {
         return this.Get('IsOverdue');
+    }
+
+    /**
+    * * Field Name: EngagementLeadUser
+    * * Display Name: Engagement Lead Name
+    * * SQL Data Type: nvarchar(100)
+    */
+    get EngagementLeadUser(): string | null {
+        return this.Get('EngagementLeadUser');
     }
 }
 
@@ -17448,7 +17485,7 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     * * Field Name: ShipToAddressSnapshot
     * * Display Name: Ship To Address Snapshot
     * * SQL Data Type: nvarchar(MAX)
-    * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_AddressFrozenAfterConfirm, 51016).
+    * * Description: The line's own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_ImmutableAfterConfirm, 51016).
     */
     get ShipToAddressSnapshot(): string | null {
         return this.Get('ShipToAddressSnapshot');
@@ -17682,6 +17719,15 @@ export class mjBizAppsOrdersOrderLineEntity extends BaseEntity<mjBizAppsOrdersOr
     */
     get ParentOrderLineIDChildCount(): number | null {
         return this.Get('ParentOrderLineIDChildCount');
+    }
+
+    /**
+    * * Field Name: ShipToAddress
+    * * Display Name: Ship To Address Name
+    * * SQL Data Type: nvarchar(400)
+    */
+    get ShipToAddress(): string | null {
+        return this.Get('ShipToAddress');
     }
 }
 
@@ -18192,7 +18238,7 @@ export class mjBizAppsOrdersOutboundEventEntity extends BaseEntity<mjBizAppsOrde
     * * Display Name: Order Header ID
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Order Headers (vwOrderHeaders.ID)
-    * * Description: The order the event is about. Set on both event types, so deliveries can be read by order.
+    * * Description: The order the event is about. Set on every OrderConfirmed event, and on a GrantStatusChanged event when the grant has an order line, so deliveries can be read by order.
     */
     get OrderHeaderID(): string | null {
         return this.Get('OrderHeaderID');
@@ -25651,7 +25697,7 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     * * Field Name: MaxTermExtensionDays
     * * Display Name: Max Term Extension Days
     * * SQL Data Type: int
-    * * Description: Term extension, in days, at or above which a no-charge extension needs approval; shorter ones this rep may grant unaided. NULL means no authority to extend, so every extension goes to approval.
+    * * Description: Days a term's start or end may move (extension, shortening or shift) before a concession needs approval; smaller moves this rep may grant unaided. NULL means no authority to move term dates, so every term-date concession goes to approval.
     */
     get MaxTermExtensionDays(): number | null {
         return this.Get('MaxTermExtensionDays');
@@ -28410,7 +28456,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * Display Name: Carry Discount On Renewal
     * * SQL Data Type: bit
     * * Default Value: 0
-    * * Description: Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession.
+    * * Description: Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession. When the renewal moves to a successor product, the carried discount applies to the successor's list price.
     */
     get CarryDiscountOnRenewal(): boolean {
         return this.Get('CarryDiscountOnRenewal');

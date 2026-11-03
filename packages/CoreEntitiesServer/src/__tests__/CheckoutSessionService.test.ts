@@ -55,6 +55,9 @@ const mocks = vi.hoisted(() => {
         CustomJS: string | null = null;
         Load = mockWidgetLoad;
         Save = mockWidgetSave;
+        Validate() {
+            return { Success: true, Errors: [] as unknown[] };
+        }
     }
 
     class MockCheckoutSession {
@@ -315,6 +318,7 @@ const mocks = vi.hoisted(() => {
         /** Answers the read for subscriptions a gateway bills (option E): its filter names ProviderSubscriptionID. */
         providerBilledRunViewResults: [] as Array<{ ID: string; ProductID: string }>,
         termRunViewResults: [] as Array<{ ID: string; SubscriptionID: string; EndDate: Date }>,
+        bundleItemRunViewResults: [] as Array<{ BundleProductID: string; ComponentProductID: string; Quantity: number }>,
         mockLoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
         mockMemberResolve: vi.fn(),
         mockLookupMemberResolver: vi.fn(),
@@ -525,6 +529,9 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 if (params.EntityName.includes('Subscription Terms')) {
                     return Promise.resolve({ Success: true, Results: mocks.termRunViewResults });
                 }
+                if (params.EntityName.includes('Product Bundle Items')) {
+                    return Promise.resolve({ Success: true, Results: mocks.bundleItemRunViewResults });
+                }
                 if (params.EntityName.includes('Event Products')) {
                     return Promise.resolve({
                         Success: true,
@@ -571,6 +578,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
 });
 
 import { CheckoutSessionService, NormalizeCheckoutPromotionCodes, PlanCheckoutPromotionCodes } from '../CheckoutSessionService.js';
+import { CheckoutWidgetEntityServer } from '../CheckoutWidgetEntityServer.js';
 import { CheckoutMemberDiscountNotConfiguredError } from '../CheckoutMemberDiscountResolver.js';
 import { Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
@@ -627,6 +635,7 @@ describe('CheckoutSessionService', () => {
         mocks.subscriptionRunViewParams = [];
         mocks.providerBilledRunViewResults = [];
         mocks.termRunViewResults = [];
+        mocks.bundleItemRunViewResults = [];
         mocks.mockPaymentIntentInstance.Status = 'Succeeded';
         mocks.mockPaymentIntentInstance.Amount = 100;
         mocks.mockPaymentIntentInstance.PaymentProviderID = 'pp-1';
@@ -900,6 +909,28 @@ describe('CheckoutSessionService', () => {
 
             const res2 = await CheckoutSessionService.InitializeSession('summit-2026', '');
             expect(res2.Success).toBe(false);
+        });
+
+        it('refuses a widget configured with a non-USD currency at widget load and on widget save (#818)', async () => {
+            mocks.sessionRunViewResults = [];
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: 'prod-1', currency: 'CAD' });
+            const res = await CheckoutSessionService.InitializeSession('summit-2026', KEY);
+            expect(res).toEqual({
+                Success: false,
+                ErrorMessage: "Payments can only be taken in USD — 'CAD' is not supported, because orders do not yet record a currency.",
+            });
+            expect(mocks.mockSessionSave).not.toHaveBeenCalled();
+
+            const widget = new CheckoutWidgetEntityServer();
+            widget.Configuration = JSON.stringify({ productId: 'prod-1', currency: 'EUR' });
+            const validation = widget.Validate();
+            expect(validation.Success).toBe(false);
+            expect(validation.Errors[0]?.Message).toBe(
+                "Payments can only be taken in USD — 'EUR' is not supported, because orders do not yet record a currency."
+            );
+
+            widget.Configuration = JSON.stringify({ productId: 'prod-1', currency: 'usd' });
+            expect(widget.Validate().Success).toBe(true);
         });
 
         it('initializes a session and extracts customUI configuration', async () => {
@@ -1579,6 +1610,29 @@ describe('CheckoutSessionService', () => {
             expect(res.Success).toBe(false);
             expect(res.Refusal?.Code).toBe('AlreadySubscribed');
             expect(mocks.mockOpenPaymentIntent).not.toHaveBeenCalled();
+        });
+
+        it('refuses a bundle draft and intent when the resolved Person already holds a component subscription (#982)', async () => {
+            const BUNDLE = 'prod-bundle-1';
+            const COMP = 'prod-comp-1';
+            mocks.peopleByEmail = { 'member@example.com': 'a0000000-0000-4000-8000-000000000001' };
+            mocks.bundleItemRunViewResults = [{ BundleProductID: BUNDLE, ComponentProductID: COMP, Quantity: 1 }];
+            mocks.subscriptionRunViewResults = [{ ProductID: COMP, Product: 'Journal Subscription' }];
+            mocks.mockWidgetInstance.Configuration = JSON.stringify({ productId: BUNDLE, paymentProviderId: 'pp-1', currency: 'USD' });
+
+            const draftRes = await CheckoutSessionService.UpdateDraft('sess-123', KEY, 'member@example.com', [{ ProductID: BUNDLE, Quantity: 1 }], BILLING);
+            expect(draftRes.Success).toBe(false);
+            expect(draftRes.ErrorMessage).toContain('Journal Subscription');
+            expect(draftRes.Refusal).toEqual({ Code: 'AlreadySubscribed', Source: 'built-in', ProductIDs: [COMP] });
+            const filter = mocks.subscriptionRunViewParams.find((p) => !(p.ExtraFilter ?? '').includes('ProviderSubscriptionID'))?.ExtraFilter ?? '';
+            expect(filter).toContain(`'${COMP}'`);
+
+            mocks.mockSessionInstance.Email = 'member@example.com';
+            mocks.mockSessionInstance.PersonID = 'a0000000-0000-4000-8000-000000000001';
+            mocks.mockSessionInstance.MetadataJSON = JSON.stringify({ TotalGross: 100, BillingAddress: BILLING, Lines: [{ ProductID: BUNDLE, Quantity: 1 }] });
+            const intentRes = await CheckoutSessionService.OpenPaymentIntentForSession('sess-123', KEY, testUser);
+            expect(intentRes.Success).toBe(false);
+            expect(intentRes.Refusal).toEqual({ Code: 'AlreadySubscribed', Source: 'built-in', ProductIDs: [COMP] });
         });
     });
 

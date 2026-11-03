@@ -215,7 +215,7 @@
                                         </div>
                                         <div class="mjo-field">
                                             <label class="mjo-label">Check Date</label>
-                                            <input type="date" class="mj-input" [(ngModel)]="InstrumentDateInput" [disabled]="!ComposeMode" />
+                                            <mj-datepicker [ngModel]="InstrumentDateValue" (ValueChange)="InstrumentDateValue = $event" [Disabled]="!ComposeMode" Placeholder="Select date" />
                                         </div>
                                         <div class="mjo-field col-span-full">
                                             <label class="mjo-label">Bank Name</label>

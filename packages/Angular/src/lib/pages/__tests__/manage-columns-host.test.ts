@@ -46,15 +46,7 @@ const sources = new Map(pageFiles().map((p) => [p, readFileSync(join(PAGES, p), 
  * a menu item a user can press that has no effect, and a new entry means the pattern spread. The
  * catalog pages came off it when they moved to `mj-view-workspace`; the rest follow the same way.
  */
-const MANAGE_COLUMNS_DEAD = [
-    'orders/fulfillment.page.ts',
-    'payments/account-credit.page.ts',
-    'payments/payments-dashboard.page.ts',
-    'payments/payments-list.page.ts',
-    'receivables/customer-ar.page.ts',
-    'receivables/overdue.page.ts',
-    'receivables/subscriptions.page.ts',
-];
+const MANAGE_COLUMNS_DEAD: string[] = [];
 
 /** A page whose grids cannot reach a column-config UI: raw viewer, no `ConfigureRequested` binding. */
 function leavesManageColumnsDead(source: string): boolean {

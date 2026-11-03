@@ -30,9 +30,9 @@
 import { IMetadataProvider, LogError, LogErrorEx, Metadata, UserInfo } from '@memberjunction/core';
 import type { CheckoutWidgetConfiguration } from '@mj-biz-apps/orders-entities';
 import { LoadPaymentProviderConfig, ResolvePaymentCredentials } from './PaymentProviderResolver.js';
+import { StripeKeyModeOf, type StripeKeyMode } from './PaymentProviderBehavior.js';
 
-/** A Stripe key's mode, read from its prefix. */
-export type StripeKeyMode = 'test' | 'live';
+export { StripeKeyModeOf, type StripeKeyMode };
 
 /** Where the browser's key came from. */
 export type CheckoutPublishableKeySource = 'environment' | 'widget' | 'none';
@@ -55,14 +55,6 @@ export interface CheckoutPublishableKeyInputs {
     IsLiveMode?: boolean;
     ProviderName?: string;
     CredentialsRef?: string | null;
-}
-
-/** `test` / `live` for a Stripe `pk_`, `sk_` or `rk_` key; null for anything else or nothing. */
-export function StripeKeyModeOf(key: string | null | undefined): StripeKeyMode | null {
-    if (!key) return null;
-    const match = /^(?:pk|sk|rk)_(test|live)_/.exec(key.trim());
-    if (!match) return null;
-    return match[1] === 'live' ? 'live' : 'test';
 }
 
 /**

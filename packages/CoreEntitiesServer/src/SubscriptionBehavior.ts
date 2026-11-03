@@ -788,16 +788,18 @@ export class SubscriptionBehavior {
     }
 
     /**
-     * What a stored subscription must carry to count as the same one as `DedupeIdentity` (#317).
+     * What a stored subscription must carry to count as the same one as `DedupeIdentity` (#317, #845).
      *
      * A subscription stores the subscriber as resolved, so an org-held one also carries whatever
-     * person the order named — a ship-to or bill-to contact. Where the identity drops the person,
+     * person the order named — a ship-to or bill-to contact. Where `BenefitModel` is `Organization`,
      * that stored person is not part of who holds it, and the lookup must not require it to be
      * empty: doing so missed every org-held subscription bought with a contact, and a re-order
      * booked a second subscription for the same dates without `ConcurrencyMode` ever running.
      *
      * A seat under `Individual`, and a `Holder` purchase that resolved a person, keep the person, so
-     * subscriptions for different people stay distinct. A personal subscription keeps
+     * subscriptions for different people stay distinct. A `Holder` purchase for an organization with
+     * no person matches only that organization's no-person subscription (`BeneficiaryPersonID IS NULL`),
+     * never a named person's seat at that organization (#845). A personal subscription keeps
      * `HolderOrganizationID IS NULL`, so it never matches an org's.
      *
      * A `Holder` purchase whose organization was stated on the order also matches that
@@ -810,7 +812,10 @@ export class SubscriptionBehavior {
         const organizationID = identity.OrganizationID ?? null;
         const personID = identity.PersonID ?? null;
         if (!organizationID || !personID) {
-            return { OrganizationID: organizationID, PersonID: organizationID ? 'Any' : personID };
+            return {
+                OrganizationID: organizationID,
+                PersonID: organizationID && rules.BenefitModel === 'Organization' ? 'Any' : personID,
+            };
         }
         const orNoPerson = rules.BenefitModel === 'Holder' && !subscriber.OrganizationInferred;
         return { OrganizationID: organizationID, PersonID: personID, ...(orNoPerson ? { OrNoPerson: true } : {}) };

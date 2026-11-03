@@ -604,8 +604,10 @@ describe('benefit model (D62)', () => {
                 .toEqual({ OrganizationID: ORG, PersonID: 'Any' });
         });
 
-        it('Holder held by an org with no person resolved matches the org whatever person is stored', () => {
-            expect(behavior.DedupeMatch(rules(), { OrganizationID: ORG })).toEqual({ OrganizationID: ORG, PersonID: 'Any' });
+        it('Holder held by an org with no person resolved matches only the org with no person stored (#845)', () => {
+            // Matching any person at the org found a named person's seat and extended it instead of
+            // creating the organization's own subscription.
+            expect(behavior.DedupeMatch(rules(), { OrganizationID: ORG })).toEqual({ OrganizationID: ORG, PersonID: null });
         });
 
         it('Holder with a stated org and a person matches that person, or the org with no person stored', () => {

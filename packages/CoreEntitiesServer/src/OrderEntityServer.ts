@@ -385,6 +385,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * promotion rows. Empty unless `prepareLines` handed the walk their standing discounts.
      */
     private _promotionsReDecidedFor: string[] = [];
+    /** Saved draft lines whose manual discount was cleared to zero on this save. */
+    private _manualDiscountsClearedFor: string[] = [];
 
     /** Codes that resolved to nothing usable, so the caller can tell the customer WHY. */
     private _unusableCodes: Array<{ Code: string; Reason: string }> = [];
@@ -1584,6 +1586,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // request arrays before pricing runs. See `drainStagedPricingRequests` for why the rows are
         // consumed rather than saved as they arrive.
         await this.drainStagedPricingRequests();
+        this._manualDiscountsClearedFor = !this.MoneyLocked
+            ? this.Lines.Items.filter(
+                  (line) =>
+                      line.IsSaved &&
+                      !line.JournalEntryID &&
+                      line.GetFieldByName('DiscountAmount')?.Dirty === true &&
+                      Number(line.DiscountAmount ?? 0) === 0,
+              ).map((line) => line.ID)
+            : [];
         const standingDiscounts = await this.standingDiscountsForRePricing();
         const restatedTax = await this.statedTaxForRePricing();
 
@@ -1640,9 +1651,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
             this.ProviderToUse as unknown as IMetadataProvider,
             this.ContextCurrentUser as UserInfo,
         );
+        const clearedSet = new Set(this._manualDiscountsClearedFor.map((id) => id.toLowerCase()));
         const out = new Map<mjBizAppsOrdersOrderLineEntity, number>();
         for (const line of saved) {
-            const kept = byID.get(String(line.ID).toLowerCase());
+            const key = String(line.ID).toLowerCase();
+            const kept = clearedSet.has(key) ? 0 : byID.get(key);
             if (kept === undefined) continue;
             out.set(line, kept);
             this._promotionsReDecidedFor.push(line.ID);
@@ -1880,6 +1893,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // below: the draft's own save wrote them, and this walk's would sit beside them. Only the
         // lines `standingDiscountsForRePricing` named, whose discount the walk restated without the
         // old promotion; manual discount rows stay.
+        await this.deleteClearedManualDiscountRecords();
         await this.deletePromotionRecords();
         if (pending) await this.writePromotionRecords(pending, persisted);
         // EXCEPT TAX, which this walk re-resolved for every line. A saved draft already holds the tax
@@ -1895,6 +1909,57 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
 
 
+
+    /** Remove manual adjustment rows on saved draft lines whose discount was cleared to zero. */
+    private async deleteClearedManualDiscountRecords(): Promise<void> {
+        const lineIDs = this._manualDiscountsClearedFor ?? [];
+        this._manualDiscountsClearedFor = [];
+        if (!lineIDs.length || this.MoneyLocked) return;
+
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const quotedLines = RequireUUIDs(lineIDs, 'OrderLineID')
+            .map((id) => `'${id}'`)
+            .join(',');
+        const adjResult = await rv.RunView<BaseEntity & { ID: string; RemovedByOrderSave?: boolean }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Adjustments',
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'OrderHeaderID')}' AND OrderLineID IN (${quotedLines}) AND PromotionID IS NULL AND PromotionCodeID IS NULL`,
+                ResultType: 'entity_object',
+                MaxRows: DEPENDENT_ROW_CAP,
+            },
+            this.ContextCurrentUser,
+        );
+        const adjustments = adjResult?.Results ?? [];
+        if (!adjustments.length) return;
+
+        const quotedAdj = RequireUUIDs(
+            adjustments.map((a) => a.ID),
+            'OrderAdjustmentID',
+        )
+            .map((id) => `'${id}'`)
+            .join(',');
+        const allocResult = await rv.RunView<BaseEntity & { RemovedByOrderSave?: boolean }>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Adjustment Allocations',
+                ExtraFilter: `OrderAdjustmentID IN (${quotedAdj})`,
+                ResultType: 'entity_object',
+                MaxRows: DEPENDENT_ROW_CAP,
+            },
+            this.ContextCurrentUser,
+        );
+        for (const alloc of allocResult?.Results ?? []) {
+            if ('RemovedByOrderSave' in alloc) alloc.RemovedByOrderSave = true;
+            if (!(await alloc.Delete())) {
+                throw new Error(`Failed to delete cleared discount allocation: ${ExtractEntityErrorMessage(alloc)}`);
+            }
+        }
+        for (const adj of adjustments) {
+            if ('RemovedByOrderSave' in adj) adj.RemovedByOrderSave = true;
+            if (!(await adj.Delete())) {
+                throw new Error(`Failed to delete cleared discount adjustment: ${ExtractEntityErrorMessage(adj)}`);
+            }
+        }
+    }
 
     /** Remove the promotion rows an earlier save wrote for the re-decided lines — see `DeletePromotionAdjustments`. */
     private async deletePromotionRecords(): Promise<void> {

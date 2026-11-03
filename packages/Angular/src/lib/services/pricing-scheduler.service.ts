@@ -229,6 +229,18 @@ export class MJOPricingScheduler {
             // `Orders.PriceOrder` runs the same OrderPricingService the booking walk runs, so what
             // the screen shows and what the ledger books come from one implementation.
             const op = new OrdersPriceOrderOperation();
+            const linesPayload = order.Lines.Items.map((l) => ({
+                ProductID: l.ProductID,
+                Quantity: Number(l.Quantity ?? 0),
+                // A STATED price — being edited, or saved as an override — PINS the line. An
+                // absent one tells the engine to resolve; 0 would read as a deliberate free line.
+                UnitPrice: StatedLineUnitPrice(l),
+                DiscountPct: Number(l.DiscountPct ?? 0),
+                ServicePeriodStart: l.ServicePeriodStart ? new Date(l.ServicePeriodStart).toISOString() : null,
+                ServicePeriodEnd: l.ServicePeriodEnd ? new Date(l.ServicePeriodEnd).toISOString() : null,
+                RenewsSubscriptionID: l.RenewsSubscriptionID ?? null,
+                ShipToAddressID: l.ShipToAddressID ?? null,
+            }));
             const result = await op.Execute({
                 OrderHeaderID: order.ID ?? null,
                 CompanyID: order.CompanyID,
@@ -236,14 +248,7 @@ export class MJOPricingScheduler {
                 BillToOrganizationID: order.BillToOrganizationID ?? null,
                 OrderDate: order.OrderDate ? new Date(order.OrderDate).toISOString() : null,
                 ShipToAddressID: order.ShipToAddressID ?? null,
-                Lines: order.Lines.Items.map((l) => ({
-                    ProductID: l.ProductID,
-                    Quantity: Number(l.Quantity ?? 0),
-                    // A STATED price — being edited, or saved as an override — PINS the line. An
-                    // absent one tells the engine to resolve; 0 would read as a deliberate free line.
-                    UnitPrice: StatedLineUnitPrice(l),
-                    DiscountPct: Number(l.DiscountPct ?? 0),
-                })),
+                Lines: linesPayload,
                 PromotionCodes: order.PromotionCodes.Codes,
                 ManualDiscounts: StagedManualDiscounts(order),
                 // KNOWN ASYMMETRY: this operation's input has no field for a discount the line
@@ -325,6 +330,10 @@ export class MJOPricingScheduler {
             // reopened on screen priced as though its concessions had never been granted, and a new
             // one staged on the same line would then read as the only discount there is.
             line.DiscountAmount = Number(source.DiscountAmount ?? 0);
+            if (source.ServicePeriodStart) line.ServicePeriodStart = new Date(source.ServicePeriodStart);
+            if (source.ServicePeriodEnd) line.ServicePeriodEnd = new Date(source.ServicePeriodEnd);
+            if (source.RenewsSubscriptionID) line.RenewsSubscriptionID = source.RenewsSubscriptionID;
+            if (source.ShipToAddressID) line.ShipToAddressID = source.ShipToAddressID;
             lines.push(line);
         }
 

@@ -461,7 +461,12 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        try {
+            this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        } catch (e) {
+            this.Error = `Orders could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.PickerOrders = [];
+        }
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -558,7 +563,15 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             return;
         }
 
-        const lines = await GetOrderLines(this.Origin.ID);
+        let lines: Awaited<ReturnType<typeof GetOrderLines>>;
+        try {
+            lines = await GetOrderLines(this.Origin.ID);
+        } catch (e) {
+            if (!current()) return;
+            this.Error = `Order lines could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.cdr.detectChanges();
+            return;
+        }
         if (!current()) return;
         // WHAT HAS ALREADY GONE BACK, from the server. The cap counts reversals across every order
         // and ignores Draft and Voided ones — the rule `ReversalResolver` refuses with at confirm

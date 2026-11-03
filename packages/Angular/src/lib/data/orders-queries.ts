@@ -134,6 +134,36 @@ export function WasTruncated(entityName: string): boolean {
 }
 
 /**
+ * Thrown by {@link run} and {@link runRows} when a `RunView` read fails, so pages can distinguish a
+ * failed query from an empty result set and render an error banner instead of a reassuring empty state.
+ */
+export class MJOQueryError extends Error {
+    public readonly EntityName: string;
+    public readonly ExtraFilter: string;
+
+    constructor(entityName: string, extraFilter: string, reason?: string | null) {
+        const detail = reason?.trim() || 'no error message supplied';
+        super(`Could not load ${entityName}: ${detail}`);
+        this.name = 'MJOQueryError';
+        this.EntityName = entityName;
+        this.ExtraFilter = extraFilter;
+    }
+}
+
+/**
+ * Runs an async page load that calls `orders-queries` functions and captures any {@link MJOQueryError}
+ * (or other thrown error) into a banner message string, returning `null` when the load succeeds.
+ */
+export async function RunOrdersPageLoad(work: () => Promise<void>): Promise<string | null> {
+    try {
+        await work();
+        return null;
+    } catch (err) {
+        return err instanceof Error ? err.message : String(err);
+    }
+}
+
+/**
  * One `RunView`, with the provider resolved the standard way.
  *
  * `MaxRows` defaults to 500 rather than being unbounded: these are worklists, and the tail of a
@@ -148,10 +178,11 @@ async function run<T>(
     user?: UserInfo,
 ): Promise<T[]> {
     const rv = new RunView();
+    const extraFilter = filters.filter(Boolean).join(' AND ');
     const result = await rv.RunView<T>(
         {
             EntityName: entityName,
-            ExtraFilter: filters.filter(Boolean).join(' AND '),
+            ExtraFilter: extraFilter,
             OrderBy: orderBy,
             MaxRows: maxRows ?? 500,
             ResultType: 'entity_object',
@@ -167,12 +198,12 @@ async function run<T>(
         // This is not theoretical: two entity names were wrong for the entire build, and the only
         // symptom was dashboards reporting zero against a database with 73 orders.
         console.error(
-            `[orders-queries] Query failed for "${entityName}" — the screen will render an empty ` +
-                `state that does NOT mean "no data".\n` +
-                `  Filter: ${filters.filter(Boolean).join(' AND ') || '(none)'}\n` +
+            `[orders-queries] Query failed for "${entityName}" — throwing MJOQueryError so the ` +
+                `screen renders an error banner instead of an empty state.\n` +
+                `  Filter: ${extraFilter || '(none)'}\n` +
                 `  Reason: ${result.ErrorMessage ?? 'no error message supplied'}`,
         );
-        return [];
+        throw new MJOQueryError(entityName, extraFilter, result.ErrorMessage);
     }
 
     // A TRUNCATED read is not an error, so nothing above catches it — and a truncated read that
@@ -243,10 +274,11 @@ async function runRows<T>(
     fields: string[],
 ): Promise<T[]> {
     const rv = new RunView();
+    const extraFilter = filters.filter(Boolean).join(' AND ');
     const result = await rv.RunView<T>(
         {
             EntityName: entityName,
-            ExtraFilter: filters.filter(Boolean).join(' AND '),
+            ExtraFilter: extraFilter,
             OrderBy: orderBy,
             ...(maxRows > 0 ? { MaxRows: maxRows } : { IgnoreMaxRows: true }),
             Fields: fields,
@@ -256,11 +288,10 @@ async function runRows<T>(
     );
     if (!result.Success) {
         console.error(
-            `[orders-queries] Aggregate read failed for "${entityName}" — the figures above the list ` +
-                `will read as zero, which does NOT mean "nothing owing".\n` +
+            `[orders-queries] Aggregate read failed for "${entityName}" — throwing MJOQueryError.\n` +
                 `  Reason: ${result.ErrorMessage ?? 'no error message supplied'}`,
         );
-        return [];
+        throw new MJOQueryError(entityName, extraFilter, result.ErrorMessage);
     }
     return result.Results ?? [];
 }
@@ -497,10 +528,19 @@ export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardO
  * Settled/confirmed orders with a non-zero balance (open receivables or customer credit balances)
  * for the Customer AR screen. Filters server-side instead of fetching every historical paid order.
  */
-export async function GetOpenBalanceOrders(user?: UserInfo): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
+export async function GetOpenBalanceOrders(
+    user?: UserInfo,
+    companyIDs?: string[] | null,
+): Promise<mjBizAppsOrdersOrderHeaderEntity[]> {
+    const filters = [`Status NOT IN ('Draft','Quoted','Voided')`, `Balance <> 0`];
+    if (companyIDs != null) {
+        const list = uuidList(companyIDs);
+        if (!list) return [];
+        filters.push(`CompanyID IN (${list})`);
+    }
     return run<mjBizAppsOrdersOrderHeaderEntity>(
         MJO_ENTITIES.OrderHeader,
-        [`Status NOT IN ('Draft','Quoted','Voided')`, `Balance <> 0`],
+        filters,
         'OrderDate DESC',
         5000,
         user,
@@ -956,6 +996,7 @@ export function FilterOrderJournals(
 export interface GrossGroup {
     companyId: string;
     glAccountId: string;
+    accountCode?: string;
     dims: NettableLine['dims'];
     dimKey: string;
     debit: number;
@@ -972,7 +1013,10 @@ export interface GrossGroup {
  * received money and then released it reads as if it was never involved. Here the same account keeps
  * both figures, so the reader watches 895 arrive in Deferred Revenue and leave again.
  */
-export function GrossLines(lines: NettableLine[]): GrossGroup[] {
+export function GrossLines(
+    lines: NettableLine[],
+    accounts?: Readonly<Record<string, { Code: string; Name: string }>>,
+): GrossGroup[] {
     const map = new Map<string, GrossGroup>();
     for (const line of lines) {
         const dims = [...line.dims].sort((a, b) => a.DimensionID.localeCompare(b.DimensionID));
@@ -980,9 +1024,11 @@ export function GrossLines(lines: NettableLine[]): GrossGroup[] {
         const key = `${line.companyId}#${line.glAccountId}#${dimKey}`;
         let group = map.get(key);
         if (!group) {
+            const accountCode = accounts?.[line.glAccountId.toLowerCase()]?.Code;
             group = {
                 companyId: line.companyId,
                 glAccountId: line.glAccountId,
+                ...(accountCode ? { accountCode } : {}),
                 dims,
                 dimKey,
                 debit: 0,
@@ -1006,6 +1052,13 @@ function sortAsJournal(groups: GrossGroup[]): GrossGroup[] {
         const sideA = a.debit >= a.credit ? 0 : 1;
         const sideB = b.debit >= b.credit ? 0 : 1;
         if (sideA !== sideB) return sideA - sideB;
+        const codeA = a.accountCode ?? '';
+        const codeB = b.accountCode ?? '';
+        if (codeA !== codeB) {
+            if (!codeA) return 1;
+            if (!codeB) return -1;
+            return codeA.localeCompare(codeB);
+        }
         return a.glAccountId.localeCompare(b.glAccountId);
     });
 }
@@ -1082,7 +1135,10 @@ export function BuildOrderJournalRollup(
     const kept = new Set(filtered.Journals.map((journal) => journal.ID.toLowerCase()));
     const lines = data.Lines.filter((line) => kept.has(line.JournalEntryID.toLowerCase()));
     const labels = rollupLabels(filtered.Journals, lines, data.Dims, data.Accounts);
-    const rows = PresentOrderJournalRollup(GrossLines(toNettableLines(filtered.Journals, lines, data.Dims)), labels);
+    const rows = PresentOrderJournalRollup(
+        GrossLines(toNettableLines(filtered.Journals, lines, data.Dims), labels.Account),
+        labels,
+    );
     const cards = GroupOrderJournalByCompany(rows);
     return {
         Cards: cards,
@@ -1632,7 +1688,7 @@ export async function GetPayments(
  * answer attached to it.
  */
 export async function GetPaymentsForCustomer(
-    customer: { OrganizationID?: string | null; PersonID?: string | null },
+    customer: { OrganizationID?: string | null; PersonID?: string | null; CompanyIDs?: string[] | null },
     user?: UserInfo,
 ): Promise<mjBizAppsOrdersPaymentHeaderEntity[]> {
     const filters: string[] = [];
@@ -1642,6 +1698,11 @@ export async function GetPaymentsForCustomer(
         filters.push(`BillToPersonID = '${customer.PersonID}'`);
     } else {
         return [];
+    }
+    if (customer.CompanyIDs != null) {
+        const list = uuidList(customer.CompanyIDs);
+        if (!list) return [];
+        filters.push(`ReceivingCompanyID IN (${list})`);
     }
     return run<mjBizAppsOrdersPaymentHeaderEntity>(
         MJO_ENTITIES.PaymentHeader,
@@ -1738,7 +1799,7 @@ export async function GetPaymentTypes(user?: UserInfo): Promise<mjBizAppsOrdersP
  * an employee BENEFITS from, and the A/R screen wants either to count as "theirs".
  */
 export async function GetSubscriptionsForCustomer(
-    customer: { OrganizationID?: string | null; PersonID?: string | null },
+    customer: { OrganizationID?: string | null; PersonID?: string | null; CompanyIDs?: string[] | null },
     user?: UserInfo,
 ): Promise<mjBizAppsOrdersSubscriptionEntity[]> {
     const clauses: string[] = [];
@@ -1749,9 +1810,15 @@ export async function GetSubscriptionsForCustomer(
         clauses.push(`BeneficiaryPersonID = '${customer.PersonID}'`);
     }
     if (!clauses.length) return [];
+    const filters = [`(${clauses.join(' OR ')})`];
+    if (customer.CompanyIDs != null) {
+        const list = uuidList(customer.CompanyIDs);
+        if (!list) return [];
+        filters.push(`CompanyID IN (${list})`);
+    }
     return run<mjBizAppsOrdersSubscriptionEntity>(
         MJO_ENTITIES.Subscription,
-        [`(${clauses.join(' OR ')})`],
+        filters,
         'EndDate DESC',
         50,
         user,

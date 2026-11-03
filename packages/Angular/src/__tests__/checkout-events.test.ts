@@ -13,19 +13,21 @@ describe('BuildCheckoutCompleteDetail', () => {
         expect(
             BuildCheckoutCompleteDetail({
                 sessionId: 's-1',
+                orderNumber: ' SO-100 ',
                 productName: ' Annual Plan ',
                 productId: 'p-1',
                 totalGross: 599,
                 currency: 'usd',
                 coupon: 'SPRING10',
             })
-        ).toEqual({ sessionId: 's-1', productName: 'Annual Plan', productId: 'p-1', amount: 599, currency: 'USD', coupon: 'SPRING10' });
+        ).toEqual({ sessionId: 's-1', orderNumber: 'SO-100', productName: 'Annual Plan', productId: 'p-1', amount: 599, currency: 'USD', coupon: 'SPRING10' });
     });
 
     it('rounds to cents and reports what it does not know as null', () => {
         expect(BuildCheckoutCompleteDetail({ sessionId: 's-1', totalGross: 539.1000000001 }).amount).toBe(539.1);
-        expect(BuildCheckoutCompleteDetail({ sessionId: 's-1', totalGross: 'x', currency: '', coupon: '  ' })).toEqual({
+        expect(BuildCheckoutCompleteDetail({ sessionId: 's-1', orderNumber: '  ', totalGross: 'x', currency: '', coupon: '  ' })).toEqual({
             sessionId: 's-1',
+            orderNumber: null,
             productName: null,
             productId: null,
             amount: null,
@@ -131,7 +133,7 @@ describe('CheckoutPublicHostComponent events', () => {
             { type: 'checkout-state-change', detail: { state: 'SUCCESS' } },
             {
                 type: 'checkout-complete',
-                detail: { sessionId: 'sess-1', productName: 'Annual Plan', productId: 'prod-1', amount: 0, currency: 'USD', coupon: null },
+                detail: { sessionId: 'sess-1', orderNumber: 'SO-1', productName: 'Annual Plan', productId: 'prod-1', amount: 0, currency: 'USD', coupon: null },
             },
         ]);
         expect(JSON.stringify(seen)).not.toContain('jane');
@@ -227,7 +229,7 @@ describe('CheckoutPublicHostComponent events', () => {
             { type: 'checkout-state-change', detail: { state: 'SUCCESS' } },
             {
                 type: 'checkout-complete',
-                detail: { sessionId: 'sess-1', productName: 'Annual Plan', productId: 'prod-1', amount: 0, currency: 'USD', coupon: null },
+                detail: { sessionId: 'sess-1', orderNumber: 'SO-1', productName: 'Annual Plan', productId: 'prod-1', amount: 0, currency: 'USD', coupon: null },
             },
         ];
 
@@ -331,6 +333,24 @@ describe('CheckoutPublicHostComponent events', () => {
             seen = [];
             await c.onSubmitted(submission());
             expect(seen.map((e) => e.type)).toEqual(['checkout-state-change', 'checkout-state-change', 'checkout-complete']);
+        });
+
+        it('destroys the mounted Stripe card element on cancel and ngOnDestroy, falling back to unmount', async () => {
+            const c = create();
+            await c.ngOnInit();
+            const destroy = vi.fn();
+            const unmount = vi.fn();
+            Object.assign(c as unknown as Record<string, unknown>, { card: { mount: () => undefined, on: () => undefined, destroy, unmount } });
+            c.onCancelled();
+            expect(destroy).toHaveBeenCalledTimes(1);
+            expect(unmount).not.toHaveBeenCalled();
+            expect((c as unknown as { card: unknown }).card).toBeNull();
+
+            const unmountOnly = vi.fn();
+            Object.assign(c as unknown as Record<string, unknown>, { card: { mount: () => undefined, on: () => undefined, unmount: unmountOnly } });
+            c.ngOnDestroy();
+            expect(unmountOnly).toHaveBeenCalledTimes(1);
+            expect((c as unknown as { card: unknown }).card).toBeNull();
         });
     });
 

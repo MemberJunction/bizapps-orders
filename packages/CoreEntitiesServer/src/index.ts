@@ -9,6 +9,12 @@ export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccoun
 export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
 
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
+export {
+    CompanyScopeService,
+    IntersectCompanyScope,
+    RECEIVABLES_ALL_COMPANIES_ROLES,
+    UserHoldsAllCompaniesRole,
+} from './CompanyScopeService.js';
 
 // Payment schedules (AIDP-24, plan D85–D88): instalments on the order, the tie invariant, the
 // invoicing act, the billing worklist, and the AR reclass seam AIDP-25 fills.
@@ -29,6 +35,7 @@ export { OrderHeaderPaymentScheduleEntityServer, LoadOrderHeaderPaymentScheduleE
 export { OrderConcessionEntityServer, LoadOrderConcessionEntityServer } from './OrderConcessionEntityServer.js';
 export { OrderAdjustmentEntityServer, LoadOrderAdjustmentEntityServer } from './OrderAdjustmentEntityServer.js';
 export { SubscriptionTermEntityServer, LoadSubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
+export { SubscriptionTypeEntityServer, LoadSubscriptionTypeEntityServer } from './SubscriptionTypeEntityServer.js';
 export {
     SubscriptionEntityServer,
     LoadSubscriptionEntityServer,
@@ -99,6 +106,7 @@ export {
 export { EmitInstalmentInvoiceEntry } from './InstalmentInvoiceEntry.js';
 export type { InstalmentInvoiceContext, InstalmentLineFacts, InstalmentSibling } from './InstalmentInvoiceEntry.js';
 export { BeginInstalmentIssue, EndInstalmentIssue, IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
+export { CreateOperationWriteSignal, type OperationWriteSignal } from './OperationWriteSignal.js';
 // Percentage-of-completion (AIDP-26, plan D90): the attestation, the catch-up entry, the worklist.
 export { RecordProgressOperation, LoadRecordProgressOperation } from './RecordProgressOperation.js';
 export {
@@ -130,11 +138,13 @@ export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalSched
 export {
     BackDatedWarning,
     EffectiveObservations,
+    EngagementLeadAttestRefusal,
     FutureDateWarning,
     MonthEnd,
     PlanSupersede,
     PROGRESS_SUPERSEDE_AUTH,
     SupersedeRefusal,
+    WorklistVisibleToUser,
     type ObservationLink,
     type SupersedePlan,
 } from './ProgressSupersede.js';
@@ -150,6 +160,7 @@ export {
     ScheduledCompanyIDs,
 } from './PaymentScheduleBehavior.js';
 export type {
+    RecordedInstalmentCompanyPart,
     ScheduleCadence,
     ScheduleLineFacts,
     ScheduleRowDraft,
@@ -487,6 +498,7 @@ export {
     RenewalCaptureIdempotencyKey,
     RenewalChargeDays,
     RenewalChargeIdempotencyKey,
+    ResolveCaptureInstrument,
 } from './RenewalCharging.js';
 export type {
     ChargeRenewalsHooks,
@@ -495,6 +507,7 @@ export type {
     RenewalChargeAttempt,
     RenewalChargeDecision,
     RenewalChargeFacts,
+    RenewalChargeInstrument,
     RenewalChargeOutcome,
     RenewalChargeResultKind,
 } from './RenewalCharging.js';
@@ -1079,6 +1092,12 @@ export { resolvePersonID } from './claimDriverHelpers.js';
 export { ResolvePersonByEmail, ChoosePersonForEmail, NormalizePersonEmail, MAX_PERSON_EMAIL_LENGTH, type PersonCandidate, type ResolvePersonByEmailResult } from './PersonByEmail.js';
 export { CheckoutSessionService } from './CheckoutSessionService.js';
 export {
+    CheckoutWidgetEntityServer,
+    LoadCheckoutWidgetEntityServer,
+    UnsupportedWidgetCurrencyRefusal,
+    CheckCheckoutWidgetConfigurationCurrency,
+} from './CheckoutWidgetEntityServer.js';
+export {
     CheckoutAccountStep,
     EnsureCheckoutAccount,
     SetCheckoutAccountPassword,
@@ -1148,7 +1167,7 @@ export type {
 export { ToIsoCountryCode } from './VatLocationEvidence.js';
 export type { CheckoutLocationEvidence } from './VatLocationEvidence.js';
 // The host seam for refusing a checkout (#323): subclass and register `CheckoutPrePurchaseCheck`.
-export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
+export { ALREADY_SUBSCRIBED_REASON, CheckoutPrePurchaseCheck, ExpandPrePurchaseBundleLines, RunPrePurchaseChecks } from './CheckoutPrePurchaseCheck.js';
 export type {
     CheckoutRefusal,
     PrePurchaseContext,

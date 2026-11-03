@@ -100,7 +100,16 @@ import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
-import { BackDatedWarning, CatchUpDate, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
+import {
+    BackDatedWarning,
+    CatchUpDate,
+    EffectiveObservations,
+    EngagementLeadAttestRefusal,
+    FutureDateWarning,
+    PlanSupersede,
+    ReversalDate,
+    SupersedeRefusal,
+} from './ProgressSupersede.js';
 import { RaiseProgressJudgmentCall } from './ProgressJudgmentCall.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
@@ -190,7 +199,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const effective = EffectiveObservations(observations.filter((o) => o.Status === 'Posted'));
         let replaced: LineObservation | null = null;
         if (supersedesID) {
-            const refusal = SupersedeRefusal(user, provider.Authorizations ?? []);
+            const refusal = SupersedeRefusal(user, provider.Authorizations ?? [], order.EngagementLeadUserID);
             if (refusal) return this.refuse(preview, refusal, echo);
             const latest = effective.at(-1);
             if (!latest || latest.ID.toLowerCase() !== supersedesID.toLowerCase()) {
@@ -206,6 +215,14 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
                 );
             }
             replaced = latest;
+        } else {
+            const leadRefusal = EngagementLeadAttestRefusal(
+                user,
+                order.EngagementLeadUserID,
+                provider.Authorizations ?? [],
+                order.OrderNumber,
+            );
+            if (leadRefusal) return this.refuse(preview, leadRefusal, echo);
         }
 
         // The ordering guard compares against the latest observation that will STILL COUNT — on a

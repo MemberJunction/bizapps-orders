@@ -24,15 +24,27 @@
  * found nothing, printed "no subscriptions" and passed an order whose
  * subscriptions were real and filed under the wrong company.
  */
+import dotenv from 'dotenv';
 import sql from 'mssql';
-import { readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 
 const want = process.argv[2];
-const env = Object.fromEntries(readFileSync(new URL('../../../MJAPI/.env', import.meta.url), 'utf8')
-    .split('\n').filter((l) => l.includes('=') && !l.startsWith('#'))
-    .map((l) => { const i = l.indexOf('='); return [l.slice(0, i).trim(), l.slice(i + 1).trim().replace(/^["']|["']$/g, '')]; }));
-const pool = await sql.connect({ server: 'localhost', port: +env.DB_PORT, database: env.DB_DATABASE,
-    user: env.DB_USERNAME, password: env.DB_PASSWORD, options: { encrypt: false, trustServerCertificate: true } });
+const repoEnvUrl = new URL('../.env', import.meta.url);
+if (existsSync(repoEnvUrl)) {
+    dotenv.config({ path: repoEnvUrl });
+}
+const fallbackEnvUrl = new URL('../../../MJAPI/.env', import.meta.url);
+if (existsSync(fallbackEnvUrl)) {
+    dotenv.config({ path: fallbackEnvUrl });
+}
+const pool = await sql.connect({
+    server: process.env.DB_HOST || 'localhost',
+    port: +(process.env.DB_PORT || 1433),
+    database: process.env.DB_DATABASE,
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    options: { encrypt: false, trustServerCertificate: true },
+});
 const q = async (t) => (await pool.request().query(t)).recordset ?? [];
 
 const o = (await q(want

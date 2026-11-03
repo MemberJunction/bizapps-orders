@@ -229,6 +229,40 @@ export function RenewalCaptureDay(capturedAt: Date | string | null | undefined, 
     return LocalDay(instant) || fallbackDay;
 }
 
+/**
+ * The card and payer an off-session charge used, kept on its event so a later `CaptureOnly` pass
+ * books the card that paid even if the subscription's renewal card was replaced after the charge (#695).
+ */
+export interface RenewalChargeInstrument {
+    CustomerPaymentMethodID: string | null;
+    OwnerPersonID: string | null;
+    OwnerOrganizationID: string | null;
+    PaymentProviderID: string;
+    ProviderInstrumentRef: string;
+    TenderCode: string;
+}
+
+/**
+ * Pick the card and payer a `Capture` pass books against: the instrument recorded when the charge
+ * succeeded when present, otherwise the subscription's current renewal card (#695).
+ */
+export function ResolveCaptureInstrument(
+    current: RenewalChargeInstrument,
+    recorded?: Partial<RenewalChargeInstrument> | null,
+): RenewalChargeInstrument {
+    if (!recorded) return current;
+    const hasRecordedOwner = recorded.OwnerPersonID !== undefined || recorded.OwnerOrganizationID !== undefined;
+    return {
+        CustomerPaymentMethodID:
+            recorded.CustomerPaymentMethodID !== undefined ? recorded.CustomerPaymentMethodID : current.CustomerPaymentMethodID,
+        OwnerPersonID: hasRecordedOwner ? (recorded.OwnerPersonID ?? null) : current.OwnerPersonID,
+        OwnerOrganizationID: hasRecordedOwner ? (recorded.OwnerOrganizationID ?? null) : current.OwnerOrganizationID,
+        PaymentProviderID: recorded.PaymentProviderID || current.PaymentProviderID,
+        ProviderInstrumentRef: recorded.ProviderInstrumentRef || current.ProviderInstrumentRef,
+        TenderCode: recorded.TenderCode || current.TenderCode,
+    };
+}
+
 // ─── The pass ───────────────────────────────────────────────────────────────────────────────────
 
 export interface ChargeRenewalsInput {
@@ -324,7 +358,13 @@ interface OrderIntentState {
     /** True when an earlier attempt on the order already failed, so its link has gone out. */
     HadFailure: boolean;
     InFlight: boolean;
-    SettledUncaptured: { ID: string; Amount: number; LastEventAt: Date | null; EventID: string | null } | null;
+    SettledUncaptured: {
+        ID: string;
+        Amount: number;
+        LastEventAt: Date | null;
+        EventID: string | null;
+        Instrument?: Partial<RenewalChargeInstrument>;
+    } | null;
     HoldReason: string | null;
     CheckoutOpen: boolean;
 }
@@ -436,7 +476,16 @@ export async function ChargeRenewals(
                 attempt.PaymentIntentID = settled.ID;
                 attempt.Amount = settled.Amount;
                 const fallback = await businessToday(provider, user);
-                await capture(candidate, attempt, settled.ID, settled.Amount, RenewalCaptureDay(settled.LastEventAt, fallback), settled.EventID, provider, user);
+                await capture(
+                    { ...candidate, ...ResolveCaptureInstrument(candidate, settled.Instrument) },
+                    attempt,
+                    settled.ID,
+                    settled.Amount,
+                    RenewalCaptureDay(settled.LastEventAt, fallback),
+                    settled.EventID,
+                    provider,
+                    user,
+                );
                 attempt.Outcome = 'Captured';
                 out.Charged++;
                 continue;
@@ -571,8 +620,9 @@ async function chargeOnce(
     }
     if (kind === 'Succeeded') {
         const day = RenewalCaptureDay(opened.CapturedAt, await businessToday(provider, user));
-        // Logged before the capture: it records that the gateway took the money, and it is what lets
-        // a later pass recognise this intent as its own if the capture below fails.
+        // Logged before the capture: it records that the gateway took the money and the card that paid
+        // (#695), and it is what lets a later pass recognise this intent as its own if the capture below
+        // fails or the subscription's renewal card is replaced before the next pass.
         const eventID = await logEvent(
             candidate,
             'PaymentSucceeded',
@@ -583,6 +633,12 @@ async function chargeOnce(
                 PaymentIntentID: opened.PaymentIntentID,
                 Amount: Number(candidate.Balance),
                 PaymentDate: day,
+                CustomerPaymentMethodID: candidate.CustomerPaymentMethodID,
+                PaymentProviderID: candidate.PaymentProviderID,
+                ProviderInstrumentRef: candidate.ProviderInstrumentRef,
+                TenderCode: candidate.TenderCode,
+                OwnerPersonID: candidate.OwnerPersonID,
+                OwnerOrganizationID: candidate.OwnerOrganizationID,
             },
             null,
             provider,
@@ -841,8 +897,8 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
         user,
     );
     if (!events.Success) throw new Error(`Could not read renewal charge events: ${events.ErrorMessage}`);
-    /** Intent id → the success event that names it, for this pass's own successful charges. */
-    const ownSuccesses = new Map<string, string>();
+    /** Intent id → the success event that names it and the instrument that paid (#695). */
+    const ownSuccesses = new Map<string, { EventID: string; Instrument: Partial<RenewalChargeInstrument> }>();
     for (const e of events.Results ?? []) {
         const data = parseEventData(e.EventData);
         if (data?.Source !== RENEWAL_CHARGE_SOURCE) continue;
@@ -854,15 +910,38 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
         }
         if (e.EventType === 'PaymentFailed' && data.OutcomeUnknown !== true) state(e.RelatedOrderHeaderID).HadFailure = true;
         if (e.EventType === 'PaymentSucceeded' && typeof data.PaymentIntentID === 'string') {
-            ownSuccesses.set(data.PaymentIntentID.toLowerCase(), e.ID);
+            ownSuccesses.set(data.PaymentIntentID.toLowerCase(), {
+                EventID: e.ID,
+                Instrument: {
+                    CustomerPaymentMethodID: typeof data.CustomerPaymentMethodID === 'string' ? data.CustomerPaymentMethodID : undefined,
+                    PaymentProviderID: typeof data.PaymentProviderID === 'string' ? data.PaymentProviderID : undefined,
+                    ProviderInstrumentRef: typeof data.ProviderInstrumentRef === 'string' ? data.ProviderInstrumentRef : undefined,
+                    TenderCode: typeof data.TenderCode === 'string' ? data.TenderCode : undefined,
+                    OwnerPersonID:
+                        data.OwnerPersonID === null || typeof data.OwnerPersonID === 'string' ? (data.OwnerPersonID as string | null) : undefined,
+                    OwnerOrganizationID:
+                        data.OwnerOrganizationID === null || typeof data.OwnerOrganizationID === 'string'
+                            ? (data.OwnerOrganizationID as string | null)
+                            : undefined,
+                },
+            });
         }
     }
 
-    const intents = await rv.RunView<{ ID: string; OrderHeaderID: string; Status: string; Amount: number; LastEventAt: Date | null }>(
+    const intents = await rv.RunView<{
+        ID: string;
+        OrderHeaderID: string;
+        Status: string;
+        Amount: number;
+        LastEventAt: Date | null;
+        PaymentProviderID: string;
+        BillToPersonID: string | null;
+        BillToOrganizationID: string | null;
+    }>(
         {
             EntityName: PAYMENT_INTENT_ENTITY,
             ExtraFilter: `OrderHeaderID IN (${ids}) AND Status IN ('Processing','Succeeded')`,
-            Fields: ['ID', 'OrderHeaderID', 'Status', 'Amount', 'LastEventAt'],
+            Fields: ['ID', 'OrderHeaderID', 'Status', 'Amount', 'LastEventAt', 'PaymentProviderID', 'BillToPersonID', 'BillToOrganizationID'],
             OrderBy: '__mj_CreatedAt',
             ResultType: 'simple',
             BypassCache: true,
@@ -922,7 +1001,30 @@ async function loadIntentStates(orderIDs: string[], provider: IMetadataProvider,
             } else if (!s.SettledUncaptured) {
                 // This pass's own (a capture that failed, or a charge that came back Processing and has
                 // since succeeded), or one a person opened: either way the money is the order's.
-                s.SettledUncaptured = { ID: intent.ID, Amount: Number(intent.Amount), LastEventAt: intent.LastEventAt, EventID: ownSuccesses.get(key) ?? null };
+                const own = ownSuccesses.get(key);
+                const hasIntentOwner = intent.BillToPersonID != null || intent.BillToOrganizationID != null;
+                s.SettledUncaptured = {
+                    ID: intent.ID,
+                    Amount: Number(intent.Amount),
+                    LastEventAt: intent.LastEventAt,
+                    EventID: own?.EventID ?? null,
+                    Instrument: {
+                        ...own?.Instrument,
+                        PaymentProviderID: own?.Instrument.PaymentProviderID ?? intent.PaymentProviderID,
+                        OwnerPersonID:
+                            own?.Instrument.OwnerPersonID !== undefined
+                                ? own.Instrument.OwnerPersonID
+                                : hasIntentOwner
+                                  ? (intent.BillToPersonID ?? null)
+                                  : undefined,
+                        OwnerOrganizationID:
+                            own?.Instrument.OwnerOrganizationID !== undefined
+                                ? own.Instrument.OwnerOrganizationID
+                                : hasIntentOwner
+                                  ? (intent.BillToOrganizationID ?? null)
+                                  : undefined,
+                    },
+                };
             }
         }
     }

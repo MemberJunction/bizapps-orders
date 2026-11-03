@@ -1880,6 +1880,10 @@ export interface PriceOrderInput {
         DiscountPct?: number | null;
         ServicePeriodStart?: string | null;
         ServicePeriodEnd?: string | null;
+        /** Subscription being renewed by this line, so renewal pricing rules (carry-discount, annual increase) apply during preview. */
+        RenewsSubscriptionID?: string | null;
+        /** Line-level shipping address override; falls back to the header's `ShipToAddressID` when omitted. */
+        ShipToAddressID?: string | null;
     }>;
 
     /** Promotion codes the customer presented. */

@@ -15,6 +15,7 @@
 import { describe, it, expect } from 'vitest';
 import { BasePaymentProvider, type PaymentProviderConfig } from '../BasePaymentProvider.js';
 import { StripePaymentProvider, StripeChargeRefusal, StripeInstrumentFromIntent, StubDigest, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
+import { StripeACHPaymentProvider } from '../StripeACHPaymentProvider.js';
 import { ManualPaymentProvider } from '../ManualPaymentProvider.js';
 import { StoredValuePaymentProvider } from '../StoredValuePaymentProvider.js';
 import { MoveGiftCardBalance } from '../GiftCardEngine.js';
@@ -158,7 +159,7 @@ describe('StripePaymentProvider — the stub', () => {
     });
 
     it('sends receipt_email when the request names one, and nothing otherwise (#295)', async () => {
-        const driver = stripe({ IsLiveMode: true });
+        const driver = stripe({ IsLiveMode: false, CredentialsRef: 'STRIPE_TEST' });
         driver.Credentials = { ApiKey: 'sk_test_x' };
         const bodies: URLSearchParams[] = [];
         const orig = globalThis.fetch;
@@ -239,7 +240,7 @@ describe('Payment intent descriptions (#327)', () => {
     async function withStripe(
         run: (driver: StripePaymentProvider, calls: Array<{ Method: string; Path: string; Body: URLSearchParams }>) => Promise<void>,
     ): Promise<void> {
-        const driver = stripe({ IsLiveMode: true });
+        const driver = stripe({ IsLiveMode: false, CredentialsRef: 'STRIPE_TEST' });
         driver.Credentials = { ApiKey: 'sk_test_x' };
         const calls: Array<{ Method: string; Path: string; Body: URLSearchParams }> = [];
         const orig = globalThis.fetch;
@@ -548,7 +549,7 @@ describe('StripePaymentProvider — keeping a card for later charges', () => {
 
     /** A live driver whose requests are recorded; every call answers with `reply`. */
     function recordingLive(reply: Record<string, unknown>) {
-        const driver = stripe({ IsLiveMode: true });
+        const driver = stripe({ IsLiveMode: false, CredentialsRef: 'STRIPE_TEST' });
         driver.Credentials = { ApiKey: 'sk_test_x' };
         const calls: Call[] = [];
         const orig = globalThis.fetch;
@@ -697,7 +698,7 @@ describe('StripePaymentProvider — keeping a card for later charges', () => {
 describe('StripePaymentProvider — charging a saved card off-session (#289)', () => {
     /** A live driver whose every call answers `status` with `reply`. */
     function live(status: number, reply: Record<string, unknown>) {
-        const driver = stripe({ IsLiveMode: true });
+        const driver = stripe({ IsLiveMode: false, CredentialsRef: 'STRIPE_TEST' });
         driver.Credentials = { ApiKey: 'sk_test_x' };
         const orig = globalThis.fetch;
         globalThis.fetch = (async () =>
@@ -930,5 +931,55 @@ describe('MoveGiftCardBalance — the capture/refund write behind a gift-card pa
         const { provider } = fakeCard(50);
         await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', 10, PAY, null)).rejects.toThrow(/wrong sign/);
         await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Refund', -10, PAY, null)).rejects.toThrow(/wrong sign/);
+    });
+});
+
+describe('StripePaymentProvider & StripeACHPaymentProvider — real test-mode gateway vs stub and key-mode guard (#386)', () => {
+    it('calls the real Stripe API when IsLiveMode is false and CredentialsRef is set, using a test secret key', async () => {
+        const card = stripe({ IsLiveMode: false, CredentialsRef: 'STRIPE_TEST' });
+        card.Credentials = { ApiKey: 'sk_test_123' };
+        const achDriver = new StripeACHPaymentProvider();
+        achDriver.Config = config({ TypeCode: 'StripeACH', IsLiveMode: false, CredentialsRef: 'STRIPE_ACH_TEST' });
+        achDriver.Credentials = { ApiKey: 'sk_test_ach_123' };
+
+        const urls: string[] = [];
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async (input: RequestInfo | URL) => {
+            urls.push(String(input));
+            return new Response(JSON.stringify({ id: 'pi_real_test', status: 'requires_payment_method', client_secret: 'cs_real' }), {
+                status: 200,
+                headers: { 'Content-Type': 'application/json' },
+            });
+        }) as typeof fetch;
+
+        try {
+            const cardRes = await card.CreateIntent({ Amount: 50, CurrencyCode: 'USD' });
+            expect(cardRes.Success).toBe(true);
+            expect(cardRes.ProviderIntentID).toBe('pi_real_test');
+
+            const achRes = await achDriver.CreateIntent({ Amount: 50, CurrencyCode: 'USD' });
+            expect(achRes.Success).toBe(true);
+            expect(achRes.ProviderIntentID).toBe('pi_real_test');
+            expect(urls).toHaveLength(2);
+        } finally {
+            globalThis.fetch = orig;
+        }
+    });
+
+    it('refuses to create an intent when IsLiveMode is true but the secret key is a test key (sk_test_)', async () => {
+        const card = stripe({ IsLiveMode: true, CredentialsRef: 'STRIPE_LIVE', Name: 'Prod Stripe' });
+        card.Credentials = { ApiKey: 'sk_test_wrong' };
+        const res = await card.CreateIntent({ Amount: 50, CurrencyCode: 'USD' });
+        expect(res.Success).toBe(false);
+        expect(res.Reason).toMatch(/IsLiveMode on \(live mode\).*sk_test_/);
+    });
+
+    it('refuses to create an intent when IsLiveMode is false (with CredentialsRef) but the secret key is a live key (sk_live_)', async () => {
+        const achDriver = new StripeACHPaymentProvider();
+        achDriver.Config = config({ TypeCode: 'StripeACH', IsLiveMode: false, CredentialsRef: 'STRIPE_TEST', Name: 'Sandbox ACH' });
+        achDriver.Credentials = { ApiKey: 'sk_live_wrong' };
+        const res = await achDriver.CreateIntent({ Amount: 50, CurrencyCode: 'USD' });
+        expect(res.Success).toBe(false);
+        expect(res.Reason).toMatch(/IsLiveMode off \(test mode\).*sk_live_/);
     });
 });

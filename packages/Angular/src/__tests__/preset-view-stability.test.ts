@@ -185,7 +185,13 @@ describe('every [ViewEntity] in the package is covered, not just the four named 
     const BINDINGS = SourceFiles(PAGES_DIR)
         .map((file) => {
             const text = readFileSync(file, 'utf8');
-            return { file, text, names: [...text.matchAll(/\[ViewEntity\]="([A-Za-z0-9_]+)"/g)].map((m) => m[1]) };
+            return {
+                file,
+                text,
+                names: [...text.matchAll(/\[(?:ViewEntity|SelectedView)\]="([A-Za-z0-9_]+)"/g)]
+                    .map((m) => m[1])
+                    .filter((name) => text.includes(`get ${name}(`)),
+            };
         })
         .filter((b) => b.names.length > 0);
 

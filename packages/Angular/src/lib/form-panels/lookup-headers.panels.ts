@@ -287,20 +287,27 @@ export class StoredValueHeaderPanel extends BaseFormPanel<mjBizAppsOrdersStoredV
     },
 })
 export class PaymentProviderHeaderPanel extends BaseFormPanel<mjBizAppsOrdersPaymentProviderEntity> {
+    private get modeLabel(): string {
+        if (this.Record.IsLiveMode) return 'Live';
+        const hasRealGateway = Boolean(
+            this.Record.CredentialsRef?.trim() || this.Record.CompanyIntegrationID?.trim(),
+        );
+        return hasRealGateway ? 'Test (real API)' : 'Test';
+    }
     public get Title(): string {
         return this.Record.Name || 'New payment provider';
     }
     public get Chips(): MJODocHeroChip[] {
         return [
             { Text: this.Record.PaymentProviderType || 'Provider', Kind: '' },
-            { Text: this.Record.IsLiveMode ? 'Live' : 'Test', Kind: this.Record.IsLiveMode ? 'ok' : 'info' },
+            { Text: this.modeLabel, Kind: this.Record.IsLiveMode ? 'ok' : 'info' },
             { Text: ActiveChipLabel(this.Record.IsActive), Kind: this.Record.IsActive ? 'ok' : 'muted' },
         ];
     }
     public get Stats(): MJODocHeroStat[] {
         return [
             { Label: 'Type', Value: this.Record.PaymentProviderType || '—' },
-            { Label: 'Mode', Value: this.Record.IsLiveMode ? 'Live' : 'Test' },
+            { Label: 'Mode', Value: this.modeLabel },
             { Label: 'Company', Value: this.Record.Company || '—' },
         ];
     }

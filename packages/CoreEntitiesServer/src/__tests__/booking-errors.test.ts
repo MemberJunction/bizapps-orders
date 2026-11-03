@@ -8,6 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { BookingErrorLogText, DescribeBookingErrors } from '../booking-errors.js';
+import { CreateOperationWriteSignal } from '../OperationWriteSignal.js';
 
 const ZERO = 'Line amounts must be greater than zero; this line has 0.';
 const membership = () => ({ LineNumber: 2, Product: 'Annual Membership' });
@@ -83,5 +84,18 @@ describe('DescribeBookingErrors', () => {
     it('accepts a bare line number, and says nothing for no errors', () => {
         expect(DescribeBookingErrors([{ Code: 'ACCOUNT_UNKNOWN', Message: 'x', DraftIndex: 0 }], () => 5)).toMatch(/^Order line 5 books/);
         expect(DescribeBookingErrors(undefined)).toBe('');
+    });
+});
+
+describe('CreateOperationWriteSignal (#808)', () => {
+    it('tracks per-row operation write tokens in the global object store across case differences', () => {
+        const signal = CreateOperationWriteSignal('__MJ_BizAppsOrders_TestWriteSignal__');
+        const id = 'AAAAAAAA-BBBB-4CCC-8DDD-EEEEEEEEEEEE';
+        expect(signal.Has(id)).toBe(false);
+        expect(signal.Has(null)).toBe(false);
+        signal.Begin(id);
+        expect(signal.Has(id.toLowerCase())).toBe(true);
+        signal.End(id.toLowerCase());
+        expect(signal.Has(id)).toBe(false);
     });
 });

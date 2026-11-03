@@ -146,7 +146,12 @@ export class DetectUnattestedProgressOperation extends OrdersDetectUnattestedPro
                 return this.fail(asOf, `${PROGRESS_UNATTESTED} has no usable MaxDaysWithoutAttestation in its Configuration; set a whole number of days.`);
             }
 
-            const worklist = await new GetProgressWorklistOperation().Build({ MaxCount: Number.MAX_SAFE_INTEGER }, provider, user);
+            const worklist = await new GetProgressWorklistOperation().Build(
+                { MaxCount: Number.MAX_SAFE_INTEGER },
+                provider,
+                user,
+                { IncludeAllEngagementLeads: true },
+            );
             if (!worklist.Success) return this.fail(asOf, worklist.Message ?? 'The progress worklist could not be read.', maxDays);
 
             // The zone engine is loaded by `BusinessDay`; when the caller named the day it may not be yet.

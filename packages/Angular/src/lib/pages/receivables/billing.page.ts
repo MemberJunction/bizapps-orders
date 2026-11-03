@@ -10,6 +10,7 @@ import {
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
+import { CompanyScopeService } from '../../services/company-scope.service';
 
 /** How far ahead the worklist looks. Finance's renewal lead is 90 days; a month is the working view. */
 const WINDOW_DAYS = 30;
@@ -133,6 +134,7 @@ export class MJOBillingPageComponent implements OnInit {
     /** Same NG0100 reasoning as every other imperatively-created page here: write the DOM after a load. */
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly confirm = inject(MJConfirmService);
+    private readonly companyScope = inject(CompanyScopeService);
 
     @Output() OrderOpened = new EventEmitter<{ ID: string }>();
 
@@ -254,7 +256,11 @@ export class MJOBillingPageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
-        const result = await new OrdersGetBillingWorklistOperation().Execute({ WindowDays: WINDOW_DAYS });
+        await this.companyScope.Load();
+        const result = await new OrdersGetBillingWorklistOperation().Execute({
+            WindowDays: WINDOW_DAYS,
+            CompanyIDs: this.companyScope.EffectiveCompanyIDs,
+        });
         const output = result.Output;
         if (!result.Success || !output?.Success) {
             // SAY SO. An empty worklist and a failed one look identical, and "nothing to bill" is

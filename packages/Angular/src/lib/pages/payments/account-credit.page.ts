@@ -15,7 +15,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
 
 import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
-import { GetOrders } from '../../data/orders-queries';
+import { GetOrders, RunOrdersPageLoad } from '../../data/orders-queries';
 
 /**
  * `mjo-account-credit-page` — spend a credit a customer is holding.
@@ -61,13 +61,13 @@ import { GetOrders } from '../../data/orders-queries';
             </div>
             <div class="mjo-cr__viewer-host">
                 @if (OrderEntityInfo) {
-                    <mj-entity-viewer
+                    <mj-view-workspace
                         [Entity]="OrderEntityInfo"
-                        [ViewEntity]="CreditOrdersView"
-                        [GridState]="OrderGridState"
+                        [SelectedView]="CreditOrdersView"
+                        [AutoSaveView]="true"
                         (RecordSelected)="OnRecordSelected($event)"
-                        (RecordOpened)="OnRecordOpened($event)">
-                    </mj-entity-viewer>
+                        (OpenRecordRequested)="OnRecordOpened($event)">
+                    </mj-view-workspace>
                 } @else {
                     <div class="small muted" style="padding: 24px;">Loading credits...</div>
                 }
@@ -169,7 +169,7 @@ import { GetOrders } from '../../data/orders-queries';
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -231,6 +231,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
             EntityID: this.OrderEntityInfo!.ID,
             Entity: this.OrderEntityInfo!.Name,
             WhereClause: CREDITS_HELD_WHERE,
+            GridState: JSON.stringify(MJO_ORDER_HEADER_GRID_STATE),
             ID: 'preset-credit-orders',
             Name: 'Credits Held'
         } as unknown as MJUserViewEntityExtended));
@@ -267,8 +268,8 @@ export class MJOAccountCreditPageComponent implements OnInit {
         }
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
+        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
         if (id) {
             const row = this.Credits.find((c) => c.ID === id) || ({ ID: id } as mjBizAppsOrdersOrderHeaderEntity);
             void this.SelectSource(row);
@@ -322,7 +323,16 @@ export class MJOAccountCreditPageComponent implements OnInit {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
         // whoever earned it (the server refuses any other: SameCustomerRefusal).
-        this.Targets = OwnCreditTargets(row, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(row) }));
+        let targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
+        const err = await RunOrdersPageLoad(async () => {
+            targets = OwnCreditTargets(row, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(row) }));
+        });
+        if (err) {
+            this.Error = err;
+            this.Targets = [];
+        } else {
+            this.Targets = targets;
+        }
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
@@ -380,12 +390,23 @@ export class MJOAccountCreditPageComponent implements OnInit {
      * Nothing is written to the component until every await has settled.
      */
     private async load(): Promise<void> {
-        const credits = await GetOrders({ Preset: 'credits' });
-        const first = !this.SourceID ? credits[0] : undefined;
-
-        const targets = first
-            ? OwnCreditTargets(first, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(first) }))
-            : [];
+        let credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
+        let targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
+        let first: mjBizAppsOrdersOrderHeaderEntity | undefined;
+        const err = await RunOrdersPageLoad(async () => {
+            credits = await GetOrders({ Preset: 'credits' });
+            first = !this.SourceID ? credits[0] : undefined;
+            targets = first
+                ? OwnCreditTargets(first, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(first) }))
+                : [];
+        });
+        if (err) {
+            this.Error = err;
+            this.Credits = [];
+            this.Targets = [];
+            this.cdr.detectChanges();
+            return;
+        }
 
         this.Credits = credits;
         if (first) {

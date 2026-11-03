@@ -58,21 +58,9 @@ import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/c
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
 import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
-import { CompositeKey, Metadata } from '@memberjunction/core';
+import { CompositeKey } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { GetCatalogOptions, GetPaymentTypes, type MJOProductOption } from '../data/orders-queries';
-
-/**
- * An order and its lines, loaded together.
- *
- * A free function rather than a service method: it constructs an entity and asks it to load itself,
- * which is `docs/ui-architecture.md`'s definition of work that does not belong behind an injectable.
- */
-async function loadOrder(orderHeaderID: string): Promise<OrderHeaderEntity | null> {
-    const md = new Metadata();
-    const order = await md.GetEntityObject<OrderHeaderEntity>(MJO_ENTITIES.OrderHeader);
-    return (await order.LoadWithLines(orderHeaderID)) ? order : null;
-}
 
 import {
     BuildLeftNavSections,
@@ -186,21 +174,6 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         const cached = this.mounted.get(pageId);
         if (cached) {
             host.insert(cached.hostView);
-
-            // A CACHED PAGE STILL HAS TO BE TOLD WHICH RECORD TO OPEN. Clicking a row in All
-            // orders sets PendingRecordID and navigates here; the fresh-mount path below hands
-            // that to the page, but this path returned without doing so — so opening an order
-            // worked exactly once, before the editor had ever been visited, and silently did
-            // nothing every time after. From the user's side the row simply stopped responding.
-            if (this.PendingRecordID) {
-                const instance = cached.instance as Record<string, unknown>;
-                if ('OrderID' in instance) cached.setInput('OrderID', this.PendingRecordID);
-                else if ('RecordID' in instance) cached.setInput('RecordID', this.PendingRecordID);
-                this.PendingRecordID = null;
-                // The page is detached-and-reinserted rather than constructed, so nothing has
-                // scheduled a check for it — without this the input lands and nothing repaints.
-                cached.changeDetectorRef.detectChanges();
-            }
             return;
         }
 
@@ -219,17 +192,6 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
             // created imperatively runs `ngOnInit` on its first change detection,
             // so an input that arrives afterwards is an input that arrives too late.
             const inputs = await this.sharedInputs();
-
-            // A page opened FOR A RECORD needs that record, not a blank one.
-            // Opening an order used to set PendingRecordID and navigate, and the
-            // editor — which only accepts a Draft — was handed an empty one, so
-            // the screen came up blank and the click looked broken.
-            if (this.PendingRecordID && (pageId === 'editor' || pageId === 'document')) {
-                const draft = await loadOrder(this.PendingRecordID);
-                if (draft) inputs['Draft'] = draft;
-                inputs['OrderID'] = this.PendingRecordID;
-                this.PendingRecordID = null;
-            }
 
             const ref = host.createComponent(type);
             const instance = ref.instance as Record<string, unknown>;
@@ -361,21 +323,12 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
         return this.tenderCache;
     }
 
-    /** Remember which record a destination page should open, then go there. */
-    protected openRecord(pageId: string, row: { ID?: string } | string): void {
-        this.PendingRecordID = typeof row === 'string' ? row : (row?.ID ?? null);
-        this.OnPageSelected(pageId);
-    }
-
     /** Open an entity record in Explorer — same path as the generated form host. */
     protected openEntity(entityName: string, row: { ID?: string } | string): void {
         const id = typeof row === 'string' ? row : row?.ID;
         if (!id) return;
         this.navigationService.OpenEntityRecord(entityName, CompositeKey.FromID(id));
     }
-
-    /** Set when a page was opened for a specific record. */
-    public PendingRecordID: string | null = null;
 
     /* ── Header ─────────────────────────────────────────────────────────── */
 

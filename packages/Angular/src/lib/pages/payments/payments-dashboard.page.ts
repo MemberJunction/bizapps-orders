@@ -8,7 +8,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
-import { GetPayments } from '../../data/orders-queries';
+import { GetPayments, RunOrdersPageLoad } from '../../data/orders-queries';
 import { ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
@@ -38,6 +38,9 @@ import { MJO_ENTITIES } from '../../data/entity-names';
         EntityViewerModule
     ],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ LoadError }}</mj-alert>
+        }
         <div class="mj-stat-grid">
             <mjo-stat-tile
                 Label="Cash received"
@@ -109,10 +112,11 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 </div>
                 <div class="mjo-pd__viewer-host">
                     @if (PaymentEntityInfo) {
-                        <mj-entity-viewer
+                        <mj-view-workspace
                             [Entity]="PaymentEntityInfo"
-                            (RecordOpened)="OnRecordOpened($event)">
-                        </mj-entity-viewer>
+                            [AutoSaveView]="true"
+                            (OpenRecordRequested)="OnRecordOpened($event)">
+                        </mj-view-workspace>
                     } @else {
                         <div class="small muted" style="padding: 24px;">Loading payments...</div>
                     }
@@ -170,7 +174,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -215,6 +219,7 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
 
     @Output() PaymentOpened = new EventEmitter<mjBizAppsOrdersPaymentHeaderEntity>();
 
+    public LoadError: string | null = null;
     public PaymentEntityInfo: EntityInfo | null = null;
     private payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
 
@@ -222,12 +227,17 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
         const md = new Metadata();
         this.PaymentEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.PaymentHeader) || null;
         this.cdr.detectChanges();
-        this.payments = await GetPayments({ Preset: 'all' });
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            this.payments = await GetPayments({ Preset: 'all' });
+        });
+        if (this.LoadError) {
+            this.payments = [];
+        }
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
+        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersPaymentHeaderEntity;
             this.PaymentOpened.emit(surrogate);

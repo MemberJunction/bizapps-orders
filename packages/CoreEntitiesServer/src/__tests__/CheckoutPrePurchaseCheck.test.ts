@@ -19,6 +19,10 @@ const mocks = vi.hoisted(() => ({
     termResults: [] as Array<{ ID: string; SubscriptionID: string; EndDate: Date }>,
     /** Products with a subscription type (the read that names `SubscriptionTypeID IS NOT NULL`). */
     subscriptionProductResults: [] as Array<{ ID: string }>,
+    /** Optional per-ID filter for `MJ_BizApps_Orders: Products` reads (#982). */
+    subscriptionProductIDs: null as string[] | null,
+    /** Bundle component definitions from `MJ_BizApps_Orders: Product Bundle Items` (#982). */
+    bundleItemResults: [] as Array<{ BundleProductID: string; ComponentProductID: string; Quantity: number }>,
     filters: [] as string[],
 }));
 
@@ -33,12 +37,17 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 const results =
                     params.EntityName === 'MJ_BizApps_Orders: Subscription Terms'
                         ? mocks.termResults
+                        : params.EntityName === 'MJ_BizApps_Orders: Product Bundle Items'
+                          ? mocks.bundleItemResults
                         : params.EntityName === 'MJ_BizApps_Orders: Products'
-                          ? mocks.subscriptionProductResults
+                          ? mocks.subscriptionProductIDs
+                              ? mocks.subscriptionProductIDs.filter((id) => params.ExtraFilter.includes(id)).map((ID) => ({ ID }))
+                              : mocks.subscriptionProductResults
                         : params.ExtraFilter.includes('ProviderSubscriptionID IS NOT NULL')
                           ? mocks.providerBilledResults
                           : mocks.subscriptionResults;
                 const providerBilledRead = params.EntityName !== 'MJ_BizApps_Orders: Subscription Terms' &&
+                    params.EntityName !== 'MJ_BizApps_Orders: Product Bundle Items' &&
                     params.EntityName !== 'MJ_BizApps_Orders: Products' &&
                     params.ExtraFilter.includes('ProviderSubscriptionID IS NOT NULL');
                 if (providerBilledRead && mocks.failProviderBilledRead) {
@@ -100,6 +109,7 @@ describe('RunPrePurchaseChecks', () => {
         mocks.providerBilledResults = [];
         mocks.failProviderBilledRead = false;
         mocks.termResults = [];
+        mocks.bundleItemResults = [];
         mocks.filters = [];
         hostCheck = null;
         createInstance = vi.spyOn(MJGlobal.Instance.ClassFactory, 'CreateInstance');
@@ -191,6 +201,8 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
         mocks.termResults = [];
         // The draft sells a subscription product unless a test says otherwise.
         mocks.subscriptionProductResults = [{ ID: PRODUCT }];
+        mocks.subscriptionProductIDs = null;
+        mocks.bundleItemResults = [];
         mocks.filters = [];
         hostCheck = null;
         createInstance = vi.spyOn(MJGlobal.Instance.ClassFactory, 'CreateInstance');
@@ -314,5 +326,40 @@ describe('RunPrePurchaseChecks: a buyer whose gateway already bills a subscripti
     it('formats a stored day without shifting it by a zone', () => {
         expect(FormatRenewalDay('2029-02-28')).toBe('February 28, 2029');
         expect(FormatRenewalDay('2027-01-01')).toBe('January 1, 2027');
+    });
+
+    it('expands bundle components from ProductBundleItem so buying a subscription inside a bundle is refused identically (#982)', async () => {
+        const BUNDLE = '33333333-0000-4000-8000-0000000000b1';
+        const COMPONENT = '33333333-0000-4000-8000-0000000000c1';
+        mocks.bundleItemResults = [{ BundleProductID: BUNDLE, ComponentProductID: COMPONENT, Quantity: 1 }];
+
+        // 1. Same-product rule (AlreadySubscribed): buyer holds COMPONENT, buys BUNDLE -> names the held component.
+        mocks.providerBilledResults = [];
+        mocks.subscriptionResults = [{ ProductID: COMPONENT, Product: 'Journal Subscription' }];
+        const heldRefusal = await RunPrePurchaseChecks(context({ Lines: [{ ProductID: BUNDLE, Quantity: 1 }] }));
+        expect(heldRefusal).toEqual({
+            Message: 'You already have an active subscription to Journal Subscription, so it cannot be bought again.',
+            Refusal: {
+                Code: 'AlreadySubscribed',
+                Source: 'built-in',
+                ProductIDs: [COMPONENT],
+            },
+        });
+
+        // 2. Gateway-billed rule (ProviderBilledSubscription): BUNDLE itself has no SubscriptionTypeID,
+        //    but COMPONENT does -> SellsSubscription is satisfied through the expanded bundle component.
+        mocks.subscriptionResults = [];
+        mocks.providerBilledResults = [{ ID: JANE_SUB, ProductID: PROFESSIONAL }];
+        mocks.termResults = [{ ID: 't1', SubscriptionID: JANE_SUB, EndDate: new Date('2027-10-30T00:00:00Z') }];
+        mocks.subscriptionProductIDs = [COMPONENT];
+
+        const gwRefusal = await RunPrePurchaseChecks(
+            context({ Lines: [{ ProductID: BUNDLE, Quantity: 1 }], ProviderBilledSubscriptionMessage: HOST_WORDING }),
+        );
+        expect(gwRefusal?.Refusal).toEqual({
+            Code: 'ProviderBilledSubscription',
+            Source: 'built-in',
+            ProductIDs: [PROFESSIONAL],
+        });
     });
 });

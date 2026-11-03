@@ -56,10 +56,12 @@ import { RunPrePurchaseChecks, type CheckoutRefusal, type PrePurchaseRefusal } f
 import { ExplainMissingCheckoutAttendees, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
+import { UnsupportedWidgetCurrencyRefusal } from './CheckoutWidgetEntityServer.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ResolveCheckoutPublishableKey } from './CheckoutPublishableKey.js';
 import {
     FindReusableProviderCustomerRef,
+    FindReusableProviderCustomerRefForOrganization,
     SnapshotSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
 } from './CheckoutSavedInstrument.js';
@@ -456,6 +458,26 @@ export class CheckoutSessionService {
             return { Success: false, ErrorMessage: 'The requested checkout widget is currently unavailable' };
         }
 
+        let configObj: CheckoutWidgetConfiguration = {};
+        if (widget.Configuration) {
+            try {
+                const parsed = JSON.parse(widget.Configuration);
+                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+                    throw new Error('Widget Configuration must be a JSON object');
+                }
+                configObj = parsed as CheckoutWidgetConfiguration;
+            } catch (err) {
+                return {
+                    Success: false,
+                    ErrorMessage: `Invalid widget configuration: ${err instanceof Error ? err.message : String(err)}`
+                };
+            }
+        }
+        const currencyRefusal = UnsupportedWidgetCurrencyRefusal(configObj.currency);
+        if (currencyRefusal) {
+            return { Success: false, ErrorMessage: currencyRefusal };
+        }
+
         // Check for existing unexpired session for this client. An ISO-8601 literal compares
         // correctly on both SQL Server and PostgreSQL — GETUTCDATE() is T-SQL-only.
         const escapedKey = EscapeText(clientSessionKey.trim());
@@ -484,22 +506,6 @@ export class CheckoutSessionService {
             const saved = await session.Save();
             if (!saved) {
                 return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
-            }
-        }
-
-        let configObj: CheckoutWidgetConfiguration = {};
-        if (widget.Configuration) {
-            try {
-                const parsed = JSON.parse(widget.Configuration);
-                if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-                    throw new Error('Widget Configuration must be a JSON object');
-                }
-                configObj = parsed as CheckoutWidgetConfiguration;
-            } catch (err) {
-                return {
-                    Success: false,
-                    ErrorMessage: `Invalid widget configuration: ${err instanceof Error ? err.message : String(err)}`
-                };
             }
         }
 
@@ -572,6 +578,18 @@ export class CheckoutSessionService {
             return { Success: false, ErrorMessage: 'The checkout for this renewal is currently unavailable' };
         }
 
+        let configObj: CheckoutWidgetConfiguration = {};
+        try {
+            const parsed: unknown = widget.Configuration ? JSON.parse(widget.Configuration) : {};
+            configObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as CheckoutWidgetConfiguration) : {};
+        } catch {
+            configObj = {};
+        }
+        const currencyRefusal = UnsupportedWidgetCurrencyRefusal(configObj.currency);
+        if (currencyRefusal) {
+            return { Success: false, ErrorMessage: currencyRefusal };
+        }
+
         const rv = new RunView();
         const escapedKey = EscapeText(clientSessionKey.trim());
         const nowUtc = new Date().toISOString();
@@ -610,13 +628,6 @@ export class CheckoutSessionService {
             }
         }
 
-        let configObj: CheckoutWidgetConfiguration = {};
-        try {
-            const parsed: unknown = widget.Configuration ? JSON.parse(widget.Configuration) : {};
-            configObj = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as CheckoutWidgetConfiguration) : {};
-        } catch {
-            configObj = {};
-        }
         if (!configObj.customUI) configObj.customUI = {};
         if (widget.CustomCSS && !configObj.customUI.css) configObj.customUI.css = widget.CustomCSS;
 
@@ -2212,7 +2223,9 @@ export class CheckoutSessionService {
             const customer = await driver.EnsureCustomer({
                 ExistingProviderCustomerRef: order.PayerPersonID
                     ? await FindReusableProviderCustomerRef(order.PayerPersonID, paymentProviderId, contextUser)
-                    : null,
+                    : order.PayerOrganizationID
+                      ? await FindReusableProviderCustomerRefForOrganization(order.PayerOrganizationID, paymentProviderId, contextUser)
+                      : null,
                 Email: session.Email?.trim().toLowerCase() || null,
                 BillToPersonID: order.PayerPersonID,
                 BillToOrganizationID: order.PayerOrganizationID,

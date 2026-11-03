@@ -16,11 +16,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
  *
  * ── WHY NOT FIX IT IN THE SHELL ────────────────────────────────────────────────────────────────
  *
- * Because that half is dead. `orders-sections.component.ts` hands a page its pending record by name
- * — `setInput('OrderID', …)` else `setInput('RecordID', …)` — and the issue's own lead suggested
- * adding a case for `OriginOrderID` there. But `PendingRecordID`'s ONLY writer is `openRecord()`,
- * which has zero callers: orders now open as Explorer record tabs through `openEntity`. A case added
- * there would never execute, and would read as a fix in review.
+ * Because orders open as Explorer record tabs through `openEntity`, not through section-level
+ * pending-record handoff (the dead `openRecord` / `PendingRecordID` path in
+ * `orders-sections.component.ts` has been removed). The returns page owns its origin selection
+ * directly.
  *
  * ── THESE CHECKS WERE MUTATION-TESTED AND FOUR OF THEM HELD NOTHING ────────────────────────────
  *

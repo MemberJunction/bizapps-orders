@@ -187,13 +187,15 @@ export async function OrderStillToBill(orderHeaderID: string, ctx: ApprovalTaskC
     });
     const reductions = await AppliedScheduleReductions(orderID, ctx);
     const billedLines = [
-        ...(lines.Results ?? []).map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
-        ...reductions.map((r) => ({ CompanyID: r.CompanyID, LineTotalGross: -r.Gross })),
+        ...(lines.Results ?? []).map((l) => ({ ID: String(l.ID), CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+        ...reductions.map((r) => ({ ID: r.OrderLineID, CompanyID: r.CompanyID, LineTotalGross: -r.Gross })),
     ];
+    const recorded = await ReadInstalmentLineBillings(orderID, ctx.Provider, ctx.User);
     const slices = CompanySlices(
         rows.filter((r) => r.Status !== 'Canceled'),
         billedLines,
         order.CompanyID,
+        recorded,
     );
     const factory = new OrderJournalEntryFactory(
         await BuildGLAccountResolver(ctx.Provider, ctx.User),
@@ -204,7 +206,6 @@ export async function OrderStillToBill(orderHeaderID: string, ctx: ApprovalTaskC
         ctx.User,
     );
     const today = await CalendarDayOrToday(null, ctx.Provider, ctx.User);
-    const recorded = await ReadInstalmentLineBillings(orderID, ctx.Provider, ctx.User);
     const out = new Map<string, LineStillToBill>();
     for (const company of new Set((lines.Results ?? []).map((l) => String(l.CompanyID)))) {
         const booked = await factory.BuildInstalmentLineFacts(lines.Results ?? [], company, today);
