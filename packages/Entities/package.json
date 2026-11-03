@@ -14,7 +14,7 @@
   "scripts": {
     "start": "ts-node-dev src/index.ts",
     "build": "tsc && tsc-alias -f",
-    "test": "echo \"No tests configured yet\""
+    "test": "vitest run --root ../.. packages/Entities/"
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",

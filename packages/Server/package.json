@@ -13,8 +13,8 @@
   ],
   "scripts": {
     "build": "tsc && tsc-alias -f",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. packages/Server/",
+    "test:watch": "vitest --root ../.. packages/Server/"
   },
   "memberjunction": {
     "serverExtensions": [

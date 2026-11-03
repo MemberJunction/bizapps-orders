@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc && tsc-alias -f && node -e \"const fs=require('fs');const p=require('path');const s='src/world/data';const d='dist/world/data';fs.mkdirSync(d,{recursive:true});for (const f of fs.readdirSync(s)) fs.copyFileSync(p.join(s,f),p.join(d,f));\"",
-    "test": "vitest run"
+    "test": "vitest run --root ../.. packages/IntegrationTests/"
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",

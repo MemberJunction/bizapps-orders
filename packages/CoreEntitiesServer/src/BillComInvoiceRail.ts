@@ -250,6 +250,11 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
             return this.fail(e instanceof Error ? e.message : String(e));
         }
     }
+
+    /** The stored `receivable-payments` payload is BILL's own record, so it normalizes as on fetch (#814). */
+    public override RestorePaymentRecord(externalPaymentRef: string, payload: Record<string, unknown>): RailPaymentRecord | null {
+        return NormalizeReceivablePayment(externalPaymentRef, payload);
+    }
 }
 
 /** One `receivable-payments` record as BILL returns it → the rail-neutral shape. Exported for tests. */

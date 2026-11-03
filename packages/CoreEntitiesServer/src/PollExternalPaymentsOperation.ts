@@ -76,7 +76,7 @@ async function functionalCurrencyFor(companyID: string, provider: IMetadataProvi
 const OVERLAP_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_MAX = 100;
 
-interface ExternalPaymentRow extends Record<string, unknown> {
+export interface ExternalPaymentRow extends Record<string, unknown> {
     ID: string;
     ExternalPaymentRef: string;
     Disposition: ExternalPaymentDisposition;
@@ -277,6 +277,24 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 fault = `${p.ExternalPaymentRef}: ${err instanceof Error ? err.message : String(err)}`;
                 LogError(`Orders.PollExternalPayments: ${fault}`);
                 outcomes.push({ PaymentProviderID: paymentProviderID, ExternalPaymentRef: p.ExternalPaymentRef, Amount: p.Amount, ExternalStatus: p.Status, Disposition: 'Held', Reason: `Fault while processing: ${fault}`, });
+            }
+        }
+
+        // OPEN RE-APPLIED EXCEPTIONS THE WATERMARK NO LONGER REACHES (#814). A `Reapplied` row clears
+        // when the comparison matches again, but the comparison only ran when the rail returned the
+        // payment, so a correction made here more than a day after the change on the rail never
+        // cleared it. Each such row is re-compared against the payload stored from the rail's latest
+        // read. A failure is logged and left for the next pass: these payments are not part of what
+        // the watermark covers, so they do not hold it back.
+        for (const { Row, Record } of ReappliedRowsToRecheck(
+            await loadOpenReapplied(paymentProviderID, provider, user),
+            all.map((p) => p.ExternalPaymentRef),
+            rail,
+        )) {
+            try {
+                outcomes.push(await this.handlePayment(rail, Record, Row, opts.preview, bookingCurrency, provider, user));
+            } catch (err) {
+                LogError(`Orders.PollExternalPayments: re-checking re-applied payment ${Row.ExternalPaymentRef} failed: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
 
@@ -504,6 +522,52 @@ async function loadSeen(paymentProviderID: string, refs: readonly string[], prov
     );
     for (const row of r.Results ?? []) map.set(row.ExternalPaymentRef, row);
     return map;
+}
+
+/** `Reapplied` rows for this provider, with the payload the poller stored from the rail. */
+async function loadOpenReapplied(paymentProviderID: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalPaymentRow[]> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<ExternalPaymentRow>(
+        {
+            EntityName: EXTERNAL_PAYMENT_ENTITY,
+            ExtraFilter: `PaymentProviderID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}' AND Disposition = 'Reapplied'`,
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!r?.Success) {
+        LogError(`Orders.PollExternalPayments: could not read open re-applied payments for ${paymentProviderID}: ${r?.ErrorMessage ?? 'no result'}`);
+        return [];
+    }
+    return r.Results ?? [];
+}
+
+/**
+ * The open `Reapplied` rows to re-compare this pass, each with the rail record rebuilt from its stored
+ * payload (#814). A row the rail returned this pass is left out (the fetch already handled it, or the
+ * cap deferred it), as is one with a payment header missing or a payload the rail cannot rebuild.
+ */
+export function ReappliedRowsToRecheck(
+    rows: readonly ExternalPaymentRow[],
+    fetchedRefs: readonly string[],
+    rail: Pick<BaseInvoiceRail, 'RestorePaymentRecord'>,
+): Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> {
+    const fetched = new Set(fetchedRefs);
+    const out: Array<{ Row: ExternalPaymentRow; Record: RailPaymentRecord }> = [];
+    for (const row of rows) {
+        if (row.Disposition !== 'Reapplied' || !row.PaymentHeaderID || fetched.has(row.ExternalPaymentRef)) continue;
+        let payload: unknown;
+        try {
+            payload = typeof row.Payload === 'string' ? JSON.parse(row.Payload) : row.Payload;
+        } catch {
+            continue;
+        }
+        if (!payload || typeof payload !== 'object' || Array.isArray(payload)) continue;
+        const record = rail.RestorePaymentRecord(row.ExternalPaymentRef, payload as Record<string, unknown>);
+        if (record) out.push({ Row: row, Record: record });
+    }
+    return out;
 }
 
 async function upsertExternalPayment(

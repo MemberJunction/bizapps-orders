@@ -273,10 +273,10 @@ export interface CreateJournalEntriesOutcome {
  * SIDE EFFECT, DELIBERATELY NAMED: this writes journal entries. It joins the CALLER'S transaction
  * rather than opening one, so it commits or rolls back with whatever act produced the drafts.
  *
- * Resolved through MJ's class factory by key, so this package does not hard-depend on the
- * accounting server package at build time — the same indirection `OrderEntityServer` and
- * `PaymentLineEntityServer` each open-code today. Those two are older and phrase their failures in
- * their own domain's words; this exists for callers that have no reason to copy that a fourth time.
+ * Resolved through MJ's class factory by key ({@link ResolveAccountingOperation}), so this package
+ * does not hard-depend on the accounting server package at build time. Every journal-entry caller
+ * resolves the operation through that one function, so an unloaded accounting package reports
+ * itself by name rather than as a routing failure (#865).
  *
  * @param what names the act in the error message, e.g. 'the instalment reclass'
  * @throws when the operation is unregistered, the call fails, or accounting refuses the drafts
@@ -287,15 +287,10 @@ export async function SubmitJournalEntryDrafts(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<CreateJournalEntriesOutcome> {
-    const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-        BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesOutcome>
-    >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-    if (!op) {
-        throw new Error(
-            `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting ` +
-                `server package must be loaded before orders can book ${what}.`,
-        );
-    }
+    const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesOutcome>(
+        'Accounting.CreateJournalEntries',
+        `book ${what}`,
+    );
 
     // The envelope reports transport/authorization failure; the payload reports the
     // accounting-domain outcome. Both must be checked — a successful call can still carry a

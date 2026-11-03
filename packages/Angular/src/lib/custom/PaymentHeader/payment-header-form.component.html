@@ -203,7 +203,7 @@
                             </div>
 
                             <!-- TENDER-SPECIFIC INSTRUMENT CAPTURE (PaymentDetail) -->
-                            @if (PaymentTypeCode === 'check') {
+                            @if (InstrumentPanel === 'check') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-money-check"></i> Check details
@@ -223,7 +223,7 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (PaymentTypeCode === 'ach') {
+                            } @else if (InstrumentPanel === 'ach') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-building-columns"></i> Bank transfer / ACH details
@@ -255,7 +255,19 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (PaymentTypeCode === 'card' || RequiresInstrument) {
+                            } @else if (InstrumentPanel === 'giftcard') {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-gift"></i> Gift card details
+                                    </div>
+                                    <div class="mjo-instrument-box__grid">
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Card Number (last 4)</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="CardLast4" [disabled]="!ComposeMode" placeholder="1234" />
+                                        </div>
+                                    </div>
+                                </div>
+                            } @else if (InstrumentPanel === 'card') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-credit-card"></i> Card instrument details
@@ -293,7 +305,7 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (RequiresReference) {
+                            } @else if (InstrumentPanel === 'reference') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-receipt"></i> Reference details

@@ -82,7 +82,12 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        const personID = await resolvePersonID(User, provider);
+        let personID: string | null;
+        try {
+            personID = await resolvePersonID(User, provider);
+        } catch (e) {
+            return { Success: false, ErrorMessage: e instanceof Error ? e.message : String(e) };
+        }
         if (!personID) {
             return {
                 Success: false,

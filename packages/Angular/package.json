@@ -15,7 +15,7 @@
   "scripts": {
     "build": "ngc && tsc-alias -f && npm run build:styles && npm run build:checkout-element",
     "build:checkout-element": "node scripts/build-checkout-element.mjs",
-    "test": "echo \"No tests configured yet\"",
+    "test": "vitest run --root ../.. packages/Angular/",
     "build:styles": "node -e \"require('node:fs').mkdirSync('dist/lib/styles',{recursive:true});require('node:fs').copyFileSync('src/lib/styles/orders-kit.css','dist/lib/styles/orders-kit.css')\""
   },
   "author": "MemberJunction.com",
