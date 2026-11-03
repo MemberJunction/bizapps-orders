@@ -25,6 +25,7 @@ import { RequireUUID } from './sql-guards.js';
 import { raiseOutboundDeadLetterAlert } from './checkoutCaptureAlert.js';
 import { AlertSweepDue, AssignUnassignedAlertTasks } from './AlertTaskAssignment.js';
 import { RecordLapsedGrantEvents } from './GrantLapseEvents.js';
+import { ResyncConcessionApprovalAssignees } from './ConcessionApprovalResync.js';
 
 export const OUTBOUND_EVENT_ENTITY = 'MJ_BizApps_Orders: Outbound Events';
 export const OUTBOUND_DELIVERY_ENTITY = 'MJ_BizApps_Orders: Outbound Deliveries';
@@ -195,7 +196,9 @@ interface ClaimedRow {
  * alert Task nobody holds yet (`AssignUnassignedAlertTasks`): a dead-letter alert whose first assignment
  * failed, or one raised before the alert role was set. A checkout's kick skips it, so a buyer never waits on it.
  * Before claiming, that same quarter-hour pass records a `GrantStatusChanged` for each grant whose
- * `ValidTo` passed with nothing else said about it (`RecordLapsedGrantEvents`, #857).
+ * `ValidTo` passed with nothing else said about it (`RecordLapsedGrantEvents`, #857), and after the
+ * alert sweep it re-assigns open concession approval tasks to the approving role's current holders
+ * (`ResyncConcessionApprovalAssignees`, #844).
  */
 export async function DispatchOutboundDeliveries(
     input: DispatchOutboundInput,
@@ -214,7 +217,15 @@ export async function DispatchOutboundDeliveries(
         }
     }
     const out = await dispatchDue(input, provider, user);
-    if (sweepDue && user) await AssignUnassignedAlertTasks(provider, user);
+    if (sweepDue && user) {
+        await AssignUnassignedAlertTasks(provider, user);
+        // Open concession approval tasks follow the approving role's membership (#844).
+        try {
+            await ResyncConcessionApprovalAssignees(provider, user);
+        } catch (err) {
+            LogError(`[BizAppsOrders] The approval task re-assignment sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
     return out;
 }
 

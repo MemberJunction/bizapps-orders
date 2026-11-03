@@ -10,6 +10,12 @@ const mocks = vi.hoisted(() => ({
     deadLetterAlert: vi.fn(),
     sweep: vi.fn(),
     lapse: vi.fn(),
+    resync: vi.fn(),
+}));
+
+// The approval re-assignment's behaviour is ConcessionApprovalResync's (its own tests); here: which passes run it.
+vi.mock('../ConcessionApprovalResync.js', () => ({
+    ResyncConcessionApprovalAssignees: (...args: unknown[]) => mocks.resync(...args),
 }));
 
 // The lapse sweep's behaviour is GrantLapseEvents' (its own tests); here: which passes run it, and in what order.
@@ -335,6 +341,7 @@ describe('outbound events', () => {
             const jobUser = { ID: 'job-user' };
             mocks.sweep.mockReset().mockResolvedValue({ Assigned: 0 });
             mocks.lapse.mockReset().mockResolvedValue(0);
+            mocks.resync.mockReset().mockResolvedValue({ Checked: 0, Changed: 0, Failed: 0 });
             vi.useFakeTimers({ toFake: ['Date'] });
             vi.setSystemTime(new Date('2026-11-01T10:15:05Z'));
             const scheduled = setUp('crm');
@@ -345,13 +352,17 @@ describe('outbound events', () => {
             // The lapse sweep runs on the same passes, through the same provider (#857).
             expect(mocks.lapse).toHaveBeenCalledTimes(1);
             expect(mocks.lapse.mock.calls[0][0]).toBe(scheduled.provider);
+            // So does the approval task re-assignment (#844).
+            expect(mocks.resync).toHaveBeenCalledTimes(1);
 
             mocks.sweep.mockClear();
             mocks.lapse.mockClear();
+            mocks.resync.mockClear();
             const kick = setUp('crm');
             await DispatchOutboundDeliveries({ OrderHeaderID: ORDER_ID }, kick.provider as never, jobUser as never);
             expect(mocks.sweep).not.toHaveBeenCalled();
             expect(mocks.lapse).not.toHaveBeenCalled();
+            expect(mocks.resync).not.toHaveBeenCalled();
 
             // A pass with nothing due still sweeps: an unassigned alert does not wait for traffic.
             const idle = fakeProvider([]);

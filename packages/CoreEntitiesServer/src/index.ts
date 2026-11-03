@@ -65,6 +65,8 @@ export {
     RaiseConcessionApprovalAgain,
     ReleaseOrderFromTasks,
     RouteConcessionToApproval,
+    SyncApprovalTaskAssignees,
+    type ApprovalAssigneeSync,
     SelfApprovalEscalation,
     UnlinkConcession,
     type ApprovalTaskContext,
@@ -970,6 +972,7 @@ export { OrdersSettings, ORDERS_SETTING } from './OrdersSettings.js';
 
 export { OrderEntityServer, LoadOrderEntityServer } from './OrderEntityServer.js';
 export { EntitlementGrantEntityServer, GrantChangedFields, LoadEntitlementGrantEntityServer, type GrantChangedField } from './EntitlementGrantEntityServer.js';
+export { APPROVAL_RESYNC_MAX_TASKS, ResyncConcessionApprovalAssignees, type ApprovalResyncResult } from './ConcessionApprovalResync.js';
 export { LAPSE_LOOKBACK_DAYS, LAPSE_MAX_PER_PASS, LapsedGrantsSQL, RecordLapsedGrantEvents } from './GrantLapseEvents.js';
 // A term's days, each covered in full in the business zone: the instants a term grant and the evaluator read.
 export { TermDayEnd, TermDayStart, TermGrantWindow, type TermDay } from './TermGrantWindow.js';
