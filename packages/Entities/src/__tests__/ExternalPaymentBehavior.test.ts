@@ -43,10 +43,12 @@ describe('DecideExternalPayment', () => {
     });
     it('a reversed payment never captured is ignored', () => expect(DecideExternalPayment(seen('VOID')).Action).toBe('Ignore'));
     it('already captured and still cleared ignores', () => expect(DecideExternalPayment(seen('PAID', 'Captured')).Action).toBe('Ignore'));
-    it('already captured and now reversed needs a reversal', () => expect(DecideExternalPayment(seen('VOID', 'Captured')).Action).toBe('ReversalNeeded'));
+    it('already captured and now voided is reversed by the poll (#386)', () => expect(DecideExternalPayment(seen('VOID', 'Captured')).Action).toBe('Reverse'));
+    it('already captured and now cancelled is reversed by the poll (#386)', () => expect(DecideExternalPayment(seen('CANCELED', 'Captured')).Action).toBe('Reverse'));
     it('held then cleared captures on the later pass', () => expect(DecideExternalPayment(seen('PAID', 'Held')).Action).toBe('Capture'));
     it('unmatched then cleared tries again — the invoice may have been mapped since', () => expect(DecideExternalPayment(seen('PAID', 'Unmatched')).Action).toBe('Capture'));
-    it('a reversal already flagged stays flagged', () => expect(DecideExternalPayment(seen('VOID', 'ReversalNeeded')).Action).toBe('Ignore'));
+    it('a void flagged by an earlier pass is reversed now (#386 transition)', () => expect(DecideExternalPayment(seen('VOID', 'ReversalNeeded')).Action).toBe('Reverse'));
+    it('a flagged row whose rail status no longer reads reversed stays flagged', () => expect(DecideExternalPayment(seen('PAID', 'ReversalNeeded')).Action).toBe('Ignore'));
     it('a row a person set aside stays Ignored even when the rail says cleared', () => expect(DecideExternalPayment(seen('PAID', 'Ignored')).Action).toBe('Ignore'));
     it('a refused capture is tried again next pass — the configuration may have been fixed', () => expect(DecideExternalPayment(seen('PAID', 'Refused')).Action).toBe('Capture'));
 });
@@ -80,7 +82,7 @@ describe('a captured payment that the rail has re-applied', () => {
     });
 
     it('still prefers a reversal when the rail voided it, re-applied or not', () => {
-        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
+        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('Reverse');
     });
 
     it('does not fire for a payment that was never captured', () => {
@@ -165,9 +167,9 @@ describe('Bill.com payment status vocabulary', () => {
         expect(ClassifyPaymentStatus(' PAID ')).toBe('Cleared');
     });
 
-    it('an escheated payment already captured needs a person, not a silent pass', () => {
+    it('an escheated payment already captured is reversed, not passed over silently', () => {
         const d = DecideExternalPayment({ ExternalPaymentRef: '0rp1', Status: 'ESCHEATED', PriorDisposition: 'Captured' });
-        expect(d.Action).toBe('ReversalNeeded');
+        expect(d.Action).toBe('Reverse');
     });
 });
 
@@ -250,7 +252,7 @@ describe('a Reapplied payment on a LATER pass', () => {
     });
 
     it('still reports a reversal ahead of the allocation, which is the worse fact', () => {
-        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('ReversalNeeded');
+        expect(DecideExternalPayment(seen({ Status: 'VOID', ApplicationsChanged: true })).Action).toBe('Reverse');
     });
 });
 
@@ -296,6 +298,10 @@ describe('HubSpot payment statuses', () => {
     });
     it('an open dispute on a captured payment is reported', () => expect(DecideExternalPayment(seen('disputed_action_required', 'Captured')).Action).toBe('ReversalNeeded'));
     it('a full refund on a captured payment needs a reversal', () => expect(DecideExternalPayment(seen('refunded', 'Captured')).Action).toBe('ReversalNeeded'));
+    it('a HubSpot refund is never reversed by the poll — it is a refund, not a bank return (#386)', () => {
+        expect(DecideExternalPayment(seen('refunded', 'ReversalNeeded')).Action).toBe('Ignore');
+        expect(DecideExternalPayment(seen('disputed_lost', 'Captured')).Action).toBe('ReversalNeeded');
+    });
     it('a won dispute is not in the table, so it holds rather than captures', () => {
         const d = DecideExternalPayment(seen('disputed_won'));
         expect(d.Action).toBe('Hold');

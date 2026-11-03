@@ -126,7 +126,12 @@ needs `orders:read`, the others `orders:write`.
 `ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
-payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
+payment voided, cancelled or escheated on BILL after capture is reversed by the poll (golive #386): a
+bank-return reversal (`ReversalSource = 'BankReturn'`) through `PaymentReversalFactory`, dated the day
+of the poll, after which the row reads `Ignored`, "Reversed as PAY-…". A bank-return reversal already
+pointing at the payment stops a second one; a preview reverses nothing; a reversal that fails leaves
+the row `ReversalNeeded` with the error. Open `ReversalNeeded` rows are re-decided every pass from the
+payload stored on the row, so one the watermark has moved past is still reversed. A payment re-applied (`Reapplied`) on BILL is flagged, not
 corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows fails with `ATTENTION`, so the
 job notifies.
 
@@ -218,6 +223,6 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
 - Does creating an invoice in BILL email the customer? Spike S5 saw no sent marker but could not check
   the probe mailbox; it was to be confirmed with a real mailbox before go-live.
 - BILL's `SCHEDULED` and `VOID` statuses were never seen live, and no live webhook delivery is recorded.
-- Should `ReversalNeeded` and `Reapplied` payments be corrected automatically (design §12 Q8)?
+- Should `Reapplied` payments be corrected automatically (design §12 Q8)? Voided and cancelled ones are, since golive #386.
 - File U2 upstream, or keep the full scan (design §12 Q9)?
 - Do the Stripe and HubSpot cash receipts need the same review of wires and bank fees (design §13.10)?

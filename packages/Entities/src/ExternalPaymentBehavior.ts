@@ -90,6 +90,13 @@ export interface PaymentStatusVocabulary {
      * that reports none would read every captured payment as moved.
      */
     ReportsInvoiceApplications: boolean;
+    /**
+     * True when a captured payment this rail reports `Reversed` is reversed by the poll itself, as a
+     * bank return (golive #386). Only Bill.com: its `Reversed` statuses (void, cancelled, escheated)
+     * all mean the cash never arrived. HubSpot's include `REFUNDED`, which is a seller refund and must
+     * not take access away as a bank return would, so its reversals stay with a person.
+     */
+    ReversesAutomatically?: boolean;
 }
 
 export const BILLCOM_STATUS_VOCABULARY: PaymentStatusVocabulary = Object.freeze({
@@ -97,6 +104,7 @@ export const BILLCOM_STATUS_VOCABULARY: PaymentStatusVocabulary = Object.freeze(
     TableName: 'BILLCOM_PAYMENT_STATUS',
     Table: BILLCOM_PAYMENT_STATUS,
     ReportsInvoiceApplications: true,
+    ReversesAutomatically: true,
 });
 
 export const HUBSPOT_STATUS_VOCABULARY: PaymentStatusVocabulary = Object.freeze({
@@ -142,7 +150,7 @@ export interface PaymentSeen {
     Vocabulary?: PaymentStatusVocabulary;
 }
 
-export type ExternalPaymentAction = 'Capture' | 'Hold' | 'Ignore' | 'Reapplied' | 'ReversalNeeded';
+export type ExternalPaymentAction = 'Capture' | 'Hold' | 'Ignore' | 'Reapplied' | 'ReversalNeeded' | 'Reverse';
 
 export interface ExternalPaymentDecision {
     Action: ExternalPaymentAction;
@@ -178,6 +186,9 @@ export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
     // `Captured` back over the row, and the exception a person was supposed to act on vanished an
     // hour after it was raised — leaving the wrong allocation in place with nothing flagging it.
     if (p.PriorDisposition === 'Captured' || p.PriorDisposition === 'Reapplied') {
+        if (cls === 'Reversed' && vocab.ReversesAutomatically) {
+            return { Action: 'Reverse', Reason: `${ref} was captured and ${rail} now reports it '${p.Status}'; the cash never arrived, so it is reversed as a bank return.` };
+        }
         if (cls === 'Reversed') {
             return { Action: 'ReversalNeeded', Reason: `${ref} was captured and ${rail} now reports it '${p.Status}'. The cash has to be reversed (bank-return path, O-US13); nothing is changed automatically.` };
         }
@@ -230,6 +241,11 @@ export function DecideExternalPayment(p: PaymentSeen): ExternalPaymentDecision {
         return { Action: 'Ignore', Reason: `${ref} is already captured.` };
     }
     if (p.PriorDisposition === 'ReversalNeeded') {
+        // Flagged by a pass from before the poll reversed these itself: reversed now. A refund or a
+        // dispute stays with the person it was flagged for.
+        if (cls === 'Reversed' && vocab.ReversesAutomatically) {
+            return { Action: 'Reverse', Reason: `${ref} was flagged for reversal and ${rail} still reports it '${p.Status}'; it is reversed as a bank return.` };
+        }
         return { Action: 'Ignore', Reason: `${ref} is already flagged for reversal.` };
     }
     if (p.PriorDisposition === 'Ignored') {
