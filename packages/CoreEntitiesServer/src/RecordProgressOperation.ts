@@ -96,7 +96,7 @@ import {
     type OrdersRecordProgressOutput,
     UserHasAuthorization,
 } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
 import { RegisterOperationPost, ReleaseOperationPost } from './OrderLineProgressMeasurementEntityServer.js';
 import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFactory.js';
@@ -235,6 +235,13 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         // by construction; once every recognition path advances `RecognizedToDate` they can differ,
         // and the running total is the one the contra-account rule reads. The observation rows keep
         // `RecognizedToDateBefore/After` as the audit trail of what each attestation saw.
+        //
+        // THE ROW IS MAGNITUDES BY DESIGN (#803). On a reversal (negative-quantity) line the line's
+        // `RecognizedToDate` is stored negative so it nets against the origin, but the observation's
+        // Before/After/RecognitionAmount stay positive-sized: the catch-up is computed on magnitudes,
+        // and a supersede reverses the replaced row's `RecognitionAmount` exactly as stored. The line's
+        // sign is applied once, to the entry (mirrored) and to `RecognizedToDate`. A report joining
+        // the row to its line multiplies by the line's sign.
         const recognizedToDate = money(Math.abs(Number(line.RecognizedToDate ?? 0)));
         // On a supersede the catch-up runs against the total the replaced observation found, so this
         // row's RecognitionAmount is its own delta and a later supersede of it reverses exactly that.
@@ -482,13 +489,10 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
 
     /** Same op, same envelope-then-payload check as OrderEntityServer.submitDrafts. */
     private async createJournalEntry(draft: JEDraft, provider: IMetadataProvider, user: UserInfo): Promise<string> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>>(
-            BaseRemotableOperation,
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
             'Accounting.CreateJournalEntries',
+            'recognize progress',
         );
-        if (!op) {
-            throw new Error(`The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting server package must be loaded before progress can be recognised.`);
-        }
         const result = await op.Execute({ Drafts: [draft] }, { provider, user });
         if (!result.Success) throw new Error(`Accounting.CreateJournalEntries did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`);
         const payload = result.Output;
