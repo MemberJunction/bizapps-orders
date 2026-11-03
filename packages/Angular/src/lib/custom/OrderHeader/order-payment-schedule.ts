@@ -11,7 +11,7 @@
  * @module @mj-biz-apps/orders-ng
  */
 
-import type { mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
+import type { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate } from '../../panels/money-format';
 
 /** The schedule row fields the AR column reads. */
@@ -38,4 +38,21 @@ export function InstalmentARLabel(row: InstalmentARFacts): string {
     if (row.JournalEntryID) return row.InvoicedAt ? `Raised ${FormatInstantDate(row.InvoicedAt)}` : 'Raised';
     if (row.Status === 'Scheduled') return 'When invoiced';
     return 'Not raised';
+}
+
+/**
+ * The field values a new instalment opens with (#801): this order, the next instalment number, the
+ * order's company, and Scheduled. Everything else is the user's to enter.
+ */
+export function NewInstalmentDefaults(
+    order: Pick<mjBizAppsOrdersOrderHeaderEntity, 'ID' | 'CompanyID'>,
+    existing: ReadonlyArray<Pick<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, 'InstallmentNumber'>>,
+): Record<string, unknown> {
+    const last = existing.reduce((max, row) => Math.max(max, Number(row.InstallmentNumber ?? 0)), 0);
+    return {
+        OrderHeaderID: order.ID,
+        InstallmentNumber: last + 1,
+        CompanyID: order.CompanyID,
+        Status: 'Scheduled',
+    };
 }

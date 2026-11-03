@@ -38,7 +38,7 @@ import { mjBizAppsOrdersOrderHeaderFormComponent } from '../../generated/Entitie
 import type { MJOPricingState } from '../../services/pricing-scheduler.service';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import { DispatchFormNavigation } from '../form-navigation-helper';
-import { InstalmentARLabel, NoScheduleARNote } from './order-payment-schedule';
+import { InstalmentARLabel, NewInstalmentDefaults, NoScheduleARNote } from './order-payment-schedule';
 import {
     ExpandedPartyFromPref,
     FormatPartyAddress,
@@ -816,6 +816,27 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public InstalmentAmount(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
         return FormatMoney(row.Amount);
+    }
+
+    public InstalmentPaid(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return FormatMoney(row.AmountPaid);
+    }
+
+    public InstalmentBalance(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): string {
+        return FormatMoney(row.Balance);
+    }
+
+    /**
+     * Open a new instalment for this order (#801), numbered after the last one and Scheduled, in the
+     * order's company. The schedule's own validation and trigger decide what may be saved.
+     */
+    public AddInstalment(): void {
+        if (!this.record?.IsSaved) return;
+        this.Navigate.emit({
+            Kind: 'new-record',
+            EntityName: MJO_ENTITIES.OrderHeaderPaymentSchedule,
+            DefaultValues: NewInstalmentDefaults(this.record, this.Instalments ?? []),
+        });
     }
 
     public OpenInstalment(row: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity): void {
