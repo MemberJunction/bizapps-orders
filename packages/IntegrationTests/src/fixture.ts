@@ -1061,11 +1061,13 @@ const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
     // A confirmed reversal's ReversesOrderHeaderID is cleared before the delete (a committed credit order, D20).
     `${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
+    `${ORDERS_SCHEMA}.TR_OrderHeader_DenyBookedDelete ON ${ORDERS_SCHEMA}.OrderHeader`,
     `${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
     `${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
     `${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
     // An Invoiced instalment refuses deletion; a renewal paid through the link has one (#950).
     `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
+    `${ORDERS_SCHEMA}.TR_OrderHeaderPaymentSchedule_DenyBookedDelete ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
 ];
 
 /**

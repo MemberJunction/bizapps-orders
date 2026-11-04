@@ -161,7 +161,7 @@ async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, cu
         const id = await Upsert(
             ctx,
             COMPANY_PROFILE_ENTITY,
-            `Name = '${Quote(row.Name)}'`,
+            `CompanyCode = '${Quote(row.Code)}' OR Name = '${Quote(row.Name)}'`,
             {
                 Name: row.Name,
                 Description: WORLD_TAG,

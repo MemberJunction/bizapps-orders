@@ -504,7 +504,13 @@ export class OrderLineEntityServer extends OrderLineEntity {
             return false;
         }
 
-        await this.persistExtension(options);
+        // When called as the parent leg of an IS-A leaf save (e.g. EventOrderLine._InnerSave
+        // saving its parent OrderLine first), the leaf is already in the middle of saving itself.
+        // Re-entering persistExtension here with IsParentEntitySave=true would call ext.Save()
+        // with IsParentEntitySave=true, bypassing BaseEntity's debounce and recursing infinitely.
+        if (!options?.IsParentEntitySave) {
+            await this.persistExtension(options);
+        }
         return true;
     }
 
@@ -522,10 +528,10 @@ export class OrderLineEntityServer extends OrderLineEntity {
             ext.Set('ID', this.ID);
         }
 
-        // If the extension is an IS-A child of this line, sync the saved parent state
-        // so the extension's inner save knows the parent row is already persisted in the database.
+        // If the extension is an IS-A child with its own separate parent instance, sync the
+        // saved parent state so the extension's inner save knows the parent row is already persisted.
         const parent = ext.ISAParent;
-        if (parent) {
+        if (parent && parent !== this) {
             await parent.LoadFromData(this.GetAll(), true);
         }
 

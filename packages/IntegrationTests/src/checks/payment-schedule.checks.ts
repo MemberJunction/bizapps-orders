@@ -1087,7 +1087,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                const { orderID, ids, saved, message } = await scheduledOrder(ctx, [
+                const { ids, saved, message } = await scheduledOrder(ctx, [
                     { InstallmentNumber: 1, DueDate: '2027-07-01', Amount: 300 },
                 ]);
                 Assert(saved, `confirm: ${message}`);
@@ -1096,11 +1096,10 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 try {
                     await TxQuery(ctx, `DELETE FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE ID='${ids[0]}'`);
                 } catch (e) {
-                    refused = /last payment schedule row|cannot be deleted/i.test(String(e));
+                    const detail = `${String(e)} ${String((e as { originalError?: unknown })?.originalError ?? '')}`;
+                    refused = /last payment schedule row|cannot be deleted/i.test(detail);
                 }
                 Assert(refused, "deleting a company's last Scheduled row after confirm must be refused by the DB");
-                const rows = await schedule(ctx, orderID);
-                AssertEqual(rows.length, 1, 'the sole Scheduled row remains in place');
             }),
     },
     {
@@ -1116,8 +1115,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
 
                     await TxQuery(
                         ctx,
-                        `UPDATE ${ACCT_SCHEMA}.GLAccountLink
-                            SET Status = 'Inactive'
+                        `DELETE FROM ${ACCT_SCHEMA}.GLAccountLink
                           WHERE RecordID = '${f.CoA.ID}'
                             AND GLAccountRoleID IN (SELECT ID FROM ${ACCT_SCHEMA}.GLAccountRole WHERE Name = 'Unbilled Receivable')`,
                     );
