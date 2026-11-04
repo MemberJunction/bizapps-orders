@@ -196,10 +196,10 @@ const checks: NamedCheck[] = [
                     const roles = await FindRows<{ ID: string; Name: string }>(
                         ctx,
                         GL_ACCOUNT_ROLE_ENTITY,
-                        `Name = 'Sales Revenue'`,
+                        `Name = 'Sales'`,
                         ['ID', 'Name'],
                     );
-                    Assert(roles.length === 1, 'Sales Revenue GL role missing');
+                    Assert(roles.length === 1, 'Sales GL role missing');
 
                     await createViaEntity(ctx, GL_ACCOUNT_LINK_ENTITY, {
                         EntityID: productEntity.ID,
