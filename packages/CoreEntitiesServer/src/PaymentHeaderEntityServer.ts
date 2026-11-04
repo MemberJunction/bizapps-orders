@@ -64,7 +64,11 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
+import {
+    PaymentHeaderEntity,
+    mjBizAppsOrdersPaymentLineEntity,
+    registerOrdersDocumentNumberingPolicies,
+} from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
@@ -974,7 +978,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 }
 
+registerOrdersDocumentNumberingPolicies();
+
 /** Tree-shaking anchor — booking lives in Save, which is only reachable via the registration. */
 export function LoadPaymentHeaderEntityServer(): void {
-    // intentionally empty
+    registerOrdersDocumentNumberingPolicies();
 }

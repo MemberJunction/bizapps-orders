@@ -24,6 +24,11 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
+import {
+    EntityLifecyclePolicyEngine,
+    type IEntityLifecyclePolicy,
+    type IStateTransitionRule,
+} from '@memberjunction/core';
 import type { mjBizAppsOrdersOrderHeaderEntity } from './generated/entity_subclasses';
 
 /** The four values `CK_OrderHeader_Status` permits. */
@@ -70,6 +75,40 @@ const TRANSITIONS: Record<OrderStatus, readonly OrderStatus[]> = {
     Confirmed: [],
     Voided: ['Draft', 'Quoted'],
 };
+
+export const ORDER_STATUS_TRANSITION_RULES: ReadonlyArray<IStateTransitionRule> = ORDER_STATUSES.flatMap((from) =>
+    TRANSITIONS[from].map((to) => ({
+        from,
+        to,
+    })),
+);
+
+export const ORDER_TERMINAL_STATUSES: ReadonlyArray<OrderStatus> = ORDER_STATUSES.filter(
+    (status) => TRANSITIONS[status].length === 0,
+);
+
+/**
+ * Declarative lifecycle policy registered on {@link EntityLifecyclePolicyEngine} for Orders.
+ */
+export const ORDER_LIFECYCLE_POLICY: IEntityLifecyclePolicy = {
+    stateMachine: {
+        statusField: 'Status',
+        initialStates: [...ORDER_STATUSES],
+        transitions: [...ORDER_STATUS_TRANSITION_RULES],
+        terminalStates: [...ORDER_TERMINAL_STATUSES],
+        freezeAllFieldsInTerminalStates: false,
+    },
+};
+
+/**
+ * Registers the Order commercial status state machine on {@link EntityLifecyclePolicyEngine}.
+ */
+export function registerOrderLifecyclePolicy(): void {
+    EntityLifecyclePolicyEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Order Headers', ORDER_LIFECYCLE_POLICY);
+    EntityLifecyclePolicyEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Orders', ORDER_LIFECYCLE_POLICY);
+}
+
+registerOrderLifecyclePolicy();
 
 export interface TransitionVerdict {
     Allowed: boolean;

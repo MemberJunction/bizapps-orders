@@ -71,6 +71,8 @@ import {
     HostOrderLineEditVeto,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
+    registerOrderLifecyclePolicy,
+    registerOrdersDocumentNumberingPolicies,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -5566,9 +5568,13 @@ function ExtractEntityErrorMessage(entity: BaseEntity | null | undefined): strin
     return messages.length > 0 ? messages.join('; ') : (entity.LatestResult?.CompleteMessage ?? 'unknown error');
 }
 
+registerOrderLifecyclePolicy();
+registerOrdersDocumentNumberingPolicies();
+
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
 export function LoadOrderEntityServer(): void {
-    // intentionally empty
+    registerOrderLifecyclePolicy();
+    registerOrdersDocumentNumberingPolicies();
 }
 
 
