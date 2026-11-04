@@ -71,10 +71,14 @@ const FALLBACK_SAVE_POPULATED_HEADER_FIELDS = new Set<string>([
  * on {@link DocumentNumberingEngine} so `BaseEntity.Validate()` natively recognizes them as auto-populated on create.
  */
 export function registerOrdersDocumentNumberingPolicies(): void {
-    DocumentNumberingEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Order Headers', ORDER_NUMBER_POLICY);
-    DocumentNumberingEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Orders', ORDER_NUMBER_POLICY);
-    DocumentNumberingEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Subscriptions', SUBSCRIPTION_NUMBER_POLICY);
-    DocumentNumberingEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Payment Headers', PAYMENT_NUMBER_POLICY);
+    const engine = DocumentNumberingEngine?.Instance;
+    if (!engine) {
+        return;
+    }
+    engine.RegisterPolicy('MJ_BizApps_Orders: Order Headers', ORDER_NUMBER_POLICY);
+    engine.RegisterPolicy('MJ_BizApps_Orders: Orders', ORDER_NUMBER_POLICY);
+    engine.RegisterPolicy('MJ_BizApps_Orders: Subscriptions', SUBSCRIPTION_NUMBER_POLICY);
+    engine.RegisterPolicy('MJ_BizApps_Orders: Payment Headers', PAYMENT_NUMBER_POLICY);
 }
 
 registerOrdersDocumentNumberingPolicies();
@@ -82,16 +86,19 @@ registerOrdersDocumentNumberingPolicies();
 const LINE_POPULATED = /^(Lines)\[(\d+)\]\.(UnitPrice|CompanyID|LineNumber)$/;
 
 function isDocumentNumberedHeaderField(source: string, headerEntityInfo?: EntityInfo | null): boolean {
-    if (headerEntityInfo) {
-        if (DocumentNumberingEngine.Instance.WillAutoPopulateOnCreate(headerEntityInfo, source)) {
+    const engine = DocumentNumberingEngine?.Instance;
+    if (engine && headerEntityInfo) {
+        if (engine.WillAutoPopulateOnCreate(headerEntityInfo, source)) {
             return true;
         }
     }
     const normalized = source.trim().toLowerCase();
-    for (const entityName of REGISTERED_NUMBERING_ENTITIES) {
-        const policies = DocumentNumberingEngine.Instance.ResolvePolicies(new EntityInfo({ Name: entityName }));
-        if (policies.some((p) => p.targetField.trim().toLowerCase() === normalized)) {
-            return true;
+    if (engine) {
+        for (const entityName of REGISTERED_NUMBERING_ENTITIES) {
+            const policies = engine.ResolvePolicies(new EntityInfo({ Name: entityName }));
+            if (policies.some((p) => p.targetField.trim().toLowerCase() === normalized)) {
+                return true;
+            }
         }
     }
     return FALLBACK_SAVE_POPULATED_HEADER_FIELDS.has(source);

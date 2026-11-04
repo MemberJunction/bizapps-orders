@@ -301,6 +301,23 @@ describe('MJ Core PR #6203 Platform Primitives Adoption (Orders)', () => {
                 expect(res.Errors[0]?.Message).toContain('the order is booked');
             }
             expect(runViewSpy).toHaveBeenCalledTimes(1);
+
+            // Mutating the parent OrderHeader invalidates the transaction scope cache
+            const mutatedOrder = createFakeEntity('MJ_BizApps_Orders: Order Headers', true, {
+                ID: { value: orderId, oldValue: orderId, dirty: false },
+                Status: { value: 'Confirmed', oldValue: 'Draft', dirty: true },
+            });
+            Object.defineProperty(mutatedOrder, 'TransactionGroup', { get: () => txGroup2, configurable: true });
+            CrossEntityPolicyEngine.Instance.NotifyEntityMutated(mockProvider, mutatedOrder, 'Update', txGroup2);
+
+            const resAfterMutate = new ValidationResult();
+            resAfterMutate.Success = true;
+            const firstCallable = lines[0] as OrderLineWithRefuseGuard;
+            if (firstCallable.refuseNewLineOnBookedOrder) {
+                await firstCallable.refuseNewLineOnBookedOrder(resAfterMutate);
+            }
+            expect(resAfterMutate.Success).toBe(false);
+            expect(runViewSpy).toHaveBeenCalledTimes(2);
         });
     });
 

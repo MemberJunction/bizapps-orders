@@ -104,8 +104,12 @@ export const ORDER_LIFECYCLE_POLICY: IEntityLifecyclePolicy = {
  * Registers the Order commercial status state machine on {@link EntityLifecyclePolicyEngine}.
  */
 export function registerOrderLifecyclePolicy(): void {
-    EntityLifecyclePolicyEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Order Headers', ORDER_LIFECYCLE_POLICY);
-    EntityLifecyclePolicyEngine.Instance.RegisterPolicy('MJ_BizApps_Orders: Orders', ORDER_LIFECYCLE_POLICY);
+    const engine = EntityLifecyclePolicyEngine?.Instance;
+    if (!engine) {
+        return;
+    }
+    engine.RegisterPolicy('MJ_BizApps_Orders: Order Headers', ORDER_LIFECYCLE_POLICY);
+    engine.RegisterPolicy('MJ_BizApps_Orders: Orders', ORDER_LIFECYCLE_POLICY);
 }
 
 registerOrderLifecyclePolicy();

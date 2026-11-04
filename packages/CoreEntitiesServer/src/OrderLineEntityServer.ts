@@ -74,7 +74,7 @@ export interface OrderLineParentOrderFact {
     Status: string | null;
 }
 
-const PARENT_ORDER_CACHE_NAMESPACE = 'OrderLine::ParentOrderHeader';
+export const PARENT_ORDER_CACHE_NAMESPACE = `entity:${ORDER_HEADER_ENTITY.toLowerCase()}:status`;
 
 function asMetadataProvider(provider: IEntityDataProvider | IMetadataProvider): IMetadataProvider {
     return provider as IMetadataProvider;
@@ -225,7 +225,7 @@ export const ORDER_LINE_CROSS_ENTITY_POLICY: ICrossEntityPolicy = {
 };
 
 export function registerOrderLineCrossEntityPolicy(): void {
-    CrossEntityPolicyEngine.Instance.RegisterPolicy(ORDER_LINE_CROSS_ENTITY_POLICY);
+    CrossEntityPolicyEngine?.Instance?.RegisterPolicy(ORDER_LINE_CROSS_ENTITY_POLICY);
 }
 
 registerOrderLineCrossEntityPolicy();

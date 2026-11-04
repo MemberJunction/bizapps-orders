@@ -464,11 +464,14 @@ class CapabilityBackedAccountingOperation<TInput, TOutput> extends BaseRemotable
  * call would route with no operation key.
  */
 export function ResolveAccountingOperation<I, O>(key: string, what: string): BaseRemotableOperation<I, O> {
-    const contract = DefineCapabilityContract<I, O>(key, 1);
-    if (AppCapabilityRegistry.Instance.IsRegistered(contract)) {
-        const capabilityProvider = AppCapabilityRegistry.Instance.Resolve<I, O>(contract);
-        if (capabilityProvider) {
-            return new CapabilityBackedAccountingOperation<I, O>(key, capabilityProvider);
+    const registry = AppCapabilityRegistry?.Instance;
+    if (registry && typeof DefineCapabilityContract === 'function') {
+        const contract = DefineCapabilityContract<I, O>(key, 1);
+        if (registry.IsRegistered(contract)) {
+            const capabilityProvider = registry.Resolve<I, O>(contract);
+            if (capabilityProvider) {
+                return new CapabilityBackedAccountingOperation<I, O>(key, capabilityProvider);
+            }
         }
     }
     const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseRemotableOperation<I, O>>(BaseRemotableOperation, key);
