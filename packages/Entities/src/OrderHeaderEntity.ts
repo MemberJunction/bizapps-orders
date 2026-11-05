@@ -396,6 +396,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                     error.Source ?? '',
                     this.IsSaved,
                     (index) => this.Lines.Items[index]?.IsSaved === true,
+                    this.EntityInfo,
                 ),
         );
         if (kept.length === result.Errors.length) return;
