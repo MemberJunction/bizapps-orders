@@ -447,7 +447,7 @@ async function zeroRenewalBooked(subscriptionID: string, invoiceID: string, prov
             EntityName: SUBSCRIPTION_EVENT_ENTITY,
             ExtraFilter:
                 `SubscriptionID = '${RequireUUID(subscriptionID, 'SubscriptionID')}' AND EventType = 'PaymentSucceeded' ` +
-                `AND EventData LIKE '%"InvoiceID":"${EscapeText(invoiceID)}"%'`,
+                `AND EventData LIKE '%"InvoiceID":"${EscapeText(invoiceID).replace(/[[%_]/g, '[$&]')}"%'`,
             Fields: ['ID'],
             ResultType: 'simple',
             BypassCache: true,

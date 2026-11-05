@@ -25,6 +25,9 @@ describe('ResolveActiveEmployerOrganization default asOf', () => {
         engine._loaded = original.loaded;
     });
 
+    // A real UUID: `FromPersonID` now goes through `RequireUUID`, and a fake id would be refused.
+    const PERSON_ID = '11111111-1111-4111-8111-111111111111';
+
     const capture = (): { provider: never; filter: () => string } => {
         let filter = '';
         const provider = { RunView: async (p: { ExtraFilter: string }) => { filter = p.ExtraFilter; return { Success: true, Results: [] }; } };
@@ -33,14 +36,14 @@ describe('ResolveActiveEmployerOrganization default asOf', () => {
 
     it('filters on the business day when no asOf is given', async () => {
         const c = capture();
-        await ResolveActiveEmployerOrganization(c.provider, 'person-1');
+        await ResolveActiveEmployerOrganization(c.provider, PERSON_ID);
         expect(c.filter()).toContain(`StartDate <= '2026-10-01'`);
         expect(c.filter()).toContain(`EndDate >= '2026-10-01'`);
     });
 
     it('reads a passed day (midnight UTC) as that day', async () => {
         const c = capture();
-        await ResolveActiveEmployerOrganization(c.provider, 'person-1', new Date('2026-09-15T00:00:00.000Z'));
+        await ResolveActiveEmployerOrganization(c.provider, PERSON_ID, new Date('2026-09-15T00:00:00.000Z'));
         expect(c.filter()).toContain(`StartDate <= '2026-09-15'`);
     });
 });
