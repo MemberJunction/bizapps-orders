@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-entities
 
+## 5.42.0
+
+### Minor Changes
+
+- 5529725: Bug sweep across checkout, payments, order entry, accounting, the Bill.com rail, access overrides and tooling. Adds four migrations (one open checkout session per widget and client key, a foreign key from OrderHeader.ApprovalTaskID to Tasks, an immutability guard on InstalmentLineBilling, and DiscountAmount/ChargeAmount in the confirmed-line freeze) and metadata changes (webhook delivery view filter, entity-permission pull filter, progress observation field descriptions, a revenue recognition type description).
+- 72787da: The 5.42 Metadata_Sync ships what metadata/ changed since 5.41: three progress-observation entity fields, the Record Progress remote operation's output type, the Percentage of Completion revenue recognition type, and the Payment Webhook Deliveries: Not Applied view, so a host that upgrades by migration gets the same metadata as one that ran `mj sync push`. It has a Postgres counterpart.
+
 ## 5.41.0
 
 ### Minor Changes
@@ -835,8 +842,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                  "FK_EntityFieldValue_EntityField"
+                                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                    "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
