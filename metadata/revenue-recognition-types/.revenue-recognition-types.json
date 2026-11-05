@@ -60,7 +60,7 @@
     "fields": {
       "Code": "PercentComplete",
       "Name": "Percentage of Completion",
-      "Description": "Recognised by cumulative catch-up as progress is attested, not on a schedule computed at booking (plan D90). The line books to Deferred Revenue and stages no release entries; each Orders.RecordProgress observation posts LineTotalNet × percent complete minus what is already recognised, so a backward slide reverses through the same subtraction. DriverClass names the default progress method — ManualAttestation: a named person signs the percent.",
+      "Description": "Recognized by cumulative catch-up as progress is attested, not on a schedule computed at booking (plan D90). The line books to Deferred Revenue and stages no release entries; each Orders.RecordProgress observation posts LineTotalNet × percent complete minus what is already recognized, so a backward slide reverses through the same subtraction. DriverClass names the default progress method — ManualAttestation: a named person signs the percent.",
       "DriverClass": "ManualAttestation",
       "IsDeferred": 1,
       "RequiresServicePeriod": 1,

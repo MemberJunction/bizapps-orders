@@ -612,6 +612,49 @@ export function DepositReleasedByCompany(before: InstalmentCashFacts[], after: I
     return out;
 }
 
+/** Key of one company's slice of one schedule row in {@link DepositWorking.ReleasedByRow}. */
+export function ScheduleSliceKey(rowID: string, companyID: string): string {
+    return `${rowID.toLowerCase()}|${companyID.toLowerCase()}`;
+}
+
+/**
+ * How much deposit an event released from each company's slice of each schedule row (#812), keyed
+ * by {@link ScheduleSliceKey}, in the order the rows came back.
+ *
+ * The per-company total ({@link DepositReleasedByCompany}) says how much of a refund debits Customer
+ * Deposits; this says which row it came off, so the refund line that named that row carries the debit
+ * (its order line's dimension tags and product-level account) rather than whichever line comes first.
+ */
+export function DepositReleasedByRow(before: InstalmentCashFacts[], after: InstalmentCashFacts[]): Map<string, number> {
+    const out = new Map<string, number>();
+    for (const row of before) {
+        const key = ScheduleSliceKey(row.ID, row.CompanyID);
+        const later = after.filter((r) => ScheduleSliceKey(r.ID, r.CompanyID) === key);
+        const released = Money(HeldDeposit([row], row.CompanyID) - HeldDeposit(later, row.CompanyID));
+        if (released > 0) out.set(key, released);
+    }
+    return out;
+}
+
+/**
+ * Where a reversal's deposit planning starts: what the refund released, per company and per row,
+ * and which rows the payment's own lines name (#812).
+ */
+export function ReversalDepositWorking(
+    before: InstalmentCashFacts[],
+    after: InstalmentCashFacts[],
+    namedRowIDs: Iterable<string | null | undefined>,
+): DepositWorking {
+    const named = new Set<string>();
+    for (const id of namedRowIDs) if (id) named.add(id.toLowerCase());
+    return {
+        Facts: before,
+        Released: DepositReleasedByCompany(before, after),
+        ReleasedByRow: DepositReleasedByRow(before, after),
+        NamedRows: named,
+    };
+}
+
 /** One company's share of a payment line, as the allocation factory divides it. */
 export interface ShareAmount {
     CompanyID: string;
@@ -624,6 +667,60 @@ export interface DepositWorking {
     Facts: InstalmentCashFacts[];
     /** Reversal: deposit the refund released and no earlier line has claimed, per company. */
     Released: Map<string, number>;
+    /**
+     * Reversal: the same release per company slice of each row ({@link DepositReleasedByRow}). When
+     * present, a line that names a row draws only on that row's release, and an unnamed line draws on
+     * rows no line of the payment names before it touches a named one (#812).
+     */
+    ReleasedByRow?: Map<string, number>;
+    /** Reversal: lower-cased ids of the rows the payment's lines name. */
+    NamedRows?: Set<string>;
+}
+
+/**
+ * Draw one reversal share's deposit from the per-row release, mutating the maps passed in.
+ *
+ * A named row's release came off that row because the line naming it took its cash back, so only
+ * that line may claim it. Unnamed cash draws on rows nobody named first, and on named rows only once
+ * those are spent (the cascade placed it there). The company total caps every draw, so the entry
+ * never debits Customer Deposits for more than the schedule released.
+ */
+function drawRowRelease(
+    company: string,
+    amount: number,
+    namedRowID: string | null,
+    facts: InstalmentCashFacts[],
+    released: Map<string, number>,
+    byRow: Map<string, number>,
+    namedRows: Set<string>,
+): number {
+    let left = Math.min(amount, released.get(company) ?? 0);
+    const suffix = `|${company}`;
+    // A named row this company has a slice of is the only source, even when it released nothing: the
+    // cascade took that line's cash off that row, so whatever it did not release un-clears AR.
+    const namedKey =
+        namedRowID && facts.some((r) => ScheduleSliceKey(r.ID, r.CompanyID) === ScheduleSliceKey(namedRowID, company))
+            ? ScheduleSliceKey(namedRowID, company)
+            : null;
+    const slices = [...byRow.keys()].filter((k) => k.endsWith(suffix));
+    const order =
+        namedKey
+            ? [namedKey]
+            : [
+                  ...slices.filter((k) => !namedRows.has(k.slice(0, -suffix.length))),
+                  ...slices.filter((k) => namedRows.has(k.slice(0, -suffix.length))),
+              ];
+    let drawn = 0;
+    for (const key of order) {
+        if (left <= 0) break;
+        const take = Math.min(left, byRow.get(key) ?? 0);
+        if (take <= 0) continue;
+        byRow.set(key, Money((byRow.get(key) ?? 0) - take));
+        left = Money(left - take);
+        drawn = Money(drawn + take);
+    }
+    released.set(company, Money((released.get(company) ?? 0) - drawn));
+    return drawn;
 }
 
 /**
@@ -643,9 +740,16 @@ export function PlanLineDeposits(
     const deposits = new Map<string, number>();
     let facts = working.Facts;
     const released = new Map(working.Released);
+    const byRow = working.ReleasedByRow ? new Map(working.ReleasedByRow) : undefined;
+    const namedRows = working.NamedRows ?? new Set<string>();
     for (const share of shares) {
         const company = share.CompanyID.toLowerCase();
         const amount = Money(Math.abs(share.Amount));
+        if (isReversal && byRow) {
+            const deposit = drawRowRelease(company, amount, namedRowID, facts, released, byRow, namedRows);
+            if (deposit > 0) deposits.set(company, Money(deposit));
+            continue;
+        }
         if (isReversal) {
             const deposit = Math.min(amount, released.get(company) ?? 0);
             released.set(company, Money((released.get(company) ?? 0) - deposit));
@@ -657,5 +761,8 @@ export function PlanLineDeposits(
         facts = ConsumeDeposit(facts, share.CompanyID, split.Deposit, namedRowID);
         if (split.Deposit > 0) deposits.set(company, split.Deposit);
     }
-    return { Deposits: deposits, Working: { Facts: facts, Released: released } };
+    return {
+        Deposits: deposits,
+        Working: { Facts: facts, Released: released, ReleasedByRow: byRow, NamedRows: working.NamedRows },
+    };
 }

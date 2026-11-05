@@ -560,7 +560,7 @@ export class SubscriptionBehavior {
                 Action: 'Reject',
                 RejectReason:
                     `This subscription type (${ctx.Rules.Code}) does not allow a second concurrent ` +
-                    `subscription for the same subscriber, and an active one already exists.` +
+                    `subscription for the same subscriber, and one whose coverage has not ended already exists.` +
                     (ctx.RequestedAction === 'CreateNew'
                         ? ` The line asks for a new subscription, which this type cannot have; extend the existing one instead.`
                         : ''),
@@ -570,10 +570,14 @@ export class SubscriptionBehavior {
         // An extension starts where the existing coverage ends — never overlapping it. That rule
         // outranks a stated start: honoring one here would either overlap the term still running
         // or leave a gap in coverage the customer has already been sold.
-        // A gateway renewal of a cancelled subscription continues its coverage too: the gateway charged
-        // for the period right after the last term, not one starting on the day the charge was booked.
+        // Reactivating a canceled subscription whose coverage still runs continues that coverage
+        // too, rather than starting a second term over the same dates (#737). A gateway renewal of a
+        // cancelled subscription continues it even after it lapsed: the gateway charged for the
+        // period right after the last term, not one starting on the day the charge was booked.
         const extending =
-            action === 'ExtendExisting' || (!!ctx.GatewayRenewal && action === 'Reactivate' && !!ctx.Existing?.LatestTermEnd);
+            action === 'ExtendExisting' ||
+            (action === 'Reactivate' &&
+                (this.CanceledCoverageRunning(ctx) || (!!ctx.GatewayRenewal && !!ctx.Existing?.LatestTermEnd)));
         const existingCoverageEnd = extending ? (ctx.Existing?.LatestTermEnd ?? null) : null;
         const start = existingCoverageEnd
             ? addDays(existingCoverageEnd, 1)
@@ -828,11 +832,15 @@ export class SubscriptionBehavior {
         // reactivation window says.
         if (ctx.GatewayRenewal) return isActive ? 'ExtendExisting' : 'Reactivate';
         if (ctx.IsRenewal && isActive) return 'ExtendExisting';
+        // A canceled subscription whose paid coverage has not ended still holds those dates, so a
+        // second purchase follows the concurrency rule as it would for a live one (#737). Treating
+        // it as lapsed reactivated it with a term over the same window and a second Active grant.
+        const covering = isActive || this.CanceledCoverageRunning(ctx);
         // The line's own answer, when it gives one (golive #299). Before this the type's rule was
         // the only answer, so every same-product purchase under `ExtendExisting` became the next
         // term and started a year late.
         if (!ctx.IsRenewal && ctx.RequestedAction === 'CreateNew') {
-            if (isActive && ctx.Rules.ConcurrencyMode === 'RejectDuplicate') return 'Reject';
+            if (covering && ctx.Rules.ConcurrencyMode === 'RejectDuplicate') return 'Reject';
             return 'CreateNew';
         }
         if (!ctx.IsRenewal && ctx.RequestedAction === 'ExtendExisting' && isActive) return 'ExtendExisting';
@@ -840,6 +848,16 @@ export class SubscriptionBehavior {
             switch (ctx.Rules.ConcurrencyMode) {
                 case 'AllowMultiple': return 'CreateNew';
                 case 'ExtendExisting': return 'ExtendExisting';
+                case 'RejectDuplicate': return 'Reject';
+            }
+        }
+        // Canceled with coverage still running. Extending it must also undo the cancellation, which
+        // is what 'Reactivate' does; `Decide` starts that term the day after the coverage ends.
+        if (covering) {
+            if (!ctx.IsRenewal && ctx.RequestedAction === 'ExtendExisting') return 'Reactivate';
+            switch (ctx.Rules.ConcurrencyMode) {
+                case 'AllowMultiple': return 'CreateNew';
+                case 'ExtendExisting': return 'Reactivate';
                 case 'RejectDuplicate': return 'Reject';
             }
         }
@@ -857,6 +875,16 @@ export class SubscriptionBehavior {
                 return withinWindow ? 'Reactivate' : 'CreateNew';
             }
         }
+    }
+
+    /**
+     * True when the existing subscription is Canceled but its latest term has not ended by the
+     * purchase date: a cancellation at end of term keeps the paid coverage running (#737).
+     */
+    protected CanceledCoverageRunning(ctx: SubscriptionPurchaseContext): boolean {
+        const existing = ctx.Existing;
+        if (!existing || existing.Status !== 'Canceled' || !existing.LatestTermEnd) return false;
+        return utcDay(existing.LatestTermEnd).getTime() >= ctx.PurchaseDate.getTime();
     }
 
     /**

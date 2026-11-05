@@ -2156,11 +2156,14 @@ export interface OrdersRecordProgressOutput {
     LineNumber?: number;
     MeasurementDate?: string;
     PercentComplete?: number;
-    /** The line's LineTotalNet — the amount the percent applies to. */
+    /** The size of the line's LineTotalNet — the amount the percent applies to. */
     LineAmount?: number;
-    /** Revenue recognised on the line before this observation. */
+    /**
+     * Revenue recognised on the line before this observation, as a magnitude: positive on a
+     * reversal (negative-quantity) line too, whose own RecognizedToDate is negative.
+     */
     RecognizedToDateBefore?: number;
-    /** LineAmount × PercentComplete, to the cent. */
+    /** LineAmount × PercentComplete, to the cent. A magnitude, like RecognizedToDateBefore. */
     RecognizedToDateAfter?: number;
     /** After − Before. Negative on a backward slide; zero means no entry was written. */
     RecognitionAmount?: number;
