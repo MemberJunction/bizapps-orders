@@ -1024,7 +1024,7 @@ export const BillComRailChecks: NamedCheck[] = [
         const ref = bill.ReceivePayment({ Status: "PAID", Applied: [{ InvoiceRef: legacy, Amount: 250 }] });
         const out = await poll(ctx, rail);
         AssertEqual(out.ResultCode, "ATTENTION", `a payment nobody here can place needs a person: ${out.Message}`);
-        Assert(!out.Success, "and the pass reports it as not clean, so a job that notifies on failure tells somebody");
+        Assert(out.Success, "and the pass still succeeds: the payment is announced once by notification, not by failing every run");
         AssertEqual(out.Unmatched, 1, "one payment unmatched");
         const ep = await externalPayment(ctx, rail, ref);
         AssertEqual(ep?.Disposition, "Unmatched", "recorded as Unmatched for the exceptions worklist");

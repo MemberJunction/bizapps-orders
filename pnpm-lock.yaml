@@ -358,6 +358,9 @@ importers:
       '@memberjunction/integration-engine-base':
         specifier: ^6.1.6
         version: 6.1.6
+      '@memberjunction/notifications':
+        specifier: ^6.1.6
+        version: 6.1.6(@aws-sdk/credential-provider-node@3.972.79)(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(@smithy/signature-v4@5.7.0)(axios@1.19.0)(chokidar@3.6.0)(encoding@0.1.13)(typescript@5.9.3)(ws@8.21.3)(zod@3.25.76)
       '@memberjunction/sqlserver-dataprovider':
         specifier: ^6.1.6
         version: 6.1.6(@aws-sdk/credential-provider-node@3.972.79)(@modelcontextprotocol/sdk@1.30.0(zod@3.25.76))(@smithy/signature-v4@5.7.0)(axios@1.19.0)(chokidar@3.6.0)(encoding@0.1.13)(typescript@5.9.3)(ws@8.21.3)(zod@3.25.76)
