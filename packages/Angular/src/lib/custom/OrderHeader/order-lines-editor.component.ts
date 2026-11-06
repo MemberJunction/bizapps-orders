@@ -773,6 +773,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         return OrdersEngine.Instance.ServicePeriodSource(line.ProductID) === 'Line';
     }
 
+    /**
+     * A percentage-of-completion line: its dates are optional and only say when the work is expected
+     * to run, since recognition follows attested progress (bc-aidp-next-golive#455). Shown when they
+     * can be typed, or when a booked line carries them.
+     */
+    public ShowsExpectedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (this.NeedsStatedServicePeriod(line) || !OrdersEngine.Instance.IsProgressMeasured(line.ProductID)) return false;
+        return this.CanEditServicePeriod() || !!line.ServicePeriodStart || !!line.ServicePeriodEnd;
+    }
+
     /** The order is booked, so its lines' dates are the settled ones. */
     public get IsMoneyLocked(): boolean {
         return !!this._order?.MoneyLocked;
