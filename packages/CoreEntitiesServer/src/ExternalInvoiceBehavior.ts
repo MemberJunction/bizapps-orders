@@ -122,7 +122,7 @@ export function BuildExternalInvoicePayload(
                 Amount: amount,
                 Lines: [
                     {
-                        Description: withPeriod(`Instalment ${unit.InstallmentNumber} of ${unit.InstallmentCount} — order ${doc.OrderNumber}`, orderSpan(doc.Rows)),
+                        Description: withPeriod(`Installment ${unit.InstallmentNumber} of ${unit.InstallmentCount} — order ${doc.OrderNumber}`, orderSpan(doc.Rows)),
                         Quantity: 1,
                         UnitPrice: amount,
                     },

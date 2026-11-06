@@ -4529,7 +4529,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const holder = this.holderFilter(match);
         if (!holder) return null;
         const person = match.PersonID === 'Any' ? null : match.PersonID;
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`, person);
+        return this.loadSubscriptionState(
+            `ProductID='${productID}' AND Status <> 'Migrated' AND (Status <> 'Canceled' OR ProviderSubscriptionID IS NOT NULL) AND ${holder}`,
+            person,
+        );
     }
 
     /**

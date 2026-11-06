@@ -11,11 +11,14 @@ import {
     type mjBizAppsOrdersOrderLineEntity,
 } from '../../../Entities/src/index.js';
 import { OrderLineEntityServer } from '../OrderLineEntityServer.js';
+import { OrderEntityServer } from '../OrderEntityServer.js';
 import { OrdersSettings, ORDERS_SETTING } from '../OrdersSettings.js';
 import { PreviewPriceOperation } from '../PreviewPriceOperation.js';
 import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
 import { DetectOverlappingSubscriptionsOperation } from '../DetectOverlappingSubscriptionsOperation.js';
 import { ReconcilePaymentProviderChargesOperation } from '../ReconcilePaymentProviderChargesOperation.js';
+import { MergeDerivedTags, MergeLineDimensions } from '../LineDimensionMerge.js';
+import { SubscriptionViewParams } from '../../../Angular/src/lib/data/orders-queries.js';
 
 const USER = { ID: '11111111-2222-4333-8444-555555555555', Name: 'Test User' } as unknown as UserInfo;
 
@@ -197,5 +200,72 @@ describe('Group 04 — Bill.com application settings (#741, #970, #755)', () => 
         } finally {
             OrdersSettings.ClearOverrides();
         }
+    });
+});
+
+describe('Group 05 — Subscription placement & Order Subscriptions tab (#384)', () => {
+    it('findExistingSubscription excludes non-gateway Canceled and Migrated subscriptions while preserving gateway-billed Canceled (#384)', async () => {
+        const capturedFilters: string[] = [];
+        const order = Object.create(OrderEntityServer.prototype) as {
+            findExistingSubscription: (
+                productID: string,
+                match: { OrganizationID: string | null; PersonID: string | null },
+            ) => Promise<unknown>;
+        };
+        Object.defineProperty(order, 'ContextCurrentUser', { value: USER, configurable: true });
+        Object.defineProperty(order, 'ProviderToUse', {
+            value: {
+                RunView: async (params: { ExtraFilter?: string }) => {
+                    if (params.ExtraFilter) capturedFilters.push(params.ExtraFilter);
+                    return { Success: true, Results: [] };
+                },
+            } as unknown as IMetadataProvider,
+            configurable: true,
+        });
+
+        await order.findExistingSubscription('aaaaaaaa-1111-4222-8333-444444444444', {
+            OrganizationID: 'bbbbbbbb-1111-4222-8333-444444444444',
+            PersonID: null,
+        });
+
+        expect(capturedFilters).toHaveLength(1);
+        expect(capturedFilters[0]).toContain("Status <> 'Migrated'");
+        expect(capturedFilters[0]).toContain("(Status <> 'Canceled' OR ProviderSubscriptionID IS NOT NULL)");
+    });
+
+    it('SubscriptionViewParams includes subscriptions whose terms reference the order lines (#384)', () => {
+        const lineID = 'cccccccc-1111-4222-8333-444444444444';
+        const params = SubscriptionViewParams([lineID]);
+        expect(params).not.toBeNull();
+        expect(params?.ExtraFilter).toContain(`OrderLineID IN ('${lineID}')`);
+        expect(params?.ExtraFilter).toContain(
+            `OR ID IN (SELECT SubscriptionID FROM [__mj_BizAppsOrders].[vwSubscriptionTerms] WHERE OrderLineID IN ('${lineID}'))`,
+        );
+    });
+});
+
+describe('Group 06 — Payment allocation line dimension merging (#383)', () => {
+    it('merges OrderLine.DimensionID/DimensionValueID, OrderLineDimension rows, and default dimensions without duplicating axes (#383)', () => {
+        const ventureDim = '11111111-aaaa-4bbb-8ccc-111111111111';
+        const ventureVal = '22222222-aaaa-4bbb-8ccc-222222222222';
+        const productDim = '33333333-aaaa-4bbb-8ccc-333333333333';
+        const productValDefault = '44444444-aaaa-4bbb-8ccc-444444444444';
+        const productValStored = '55555555-aaaa-4bbb-8ccc-555555555555';
+
+        const defaultDims = [
+            { DimensionID: ventureDim, DimensionValueID: ventureVal },
+            { DimensionID: productDim, DimensionValueID: productValDefault },
+        ];
+        const storedDims = [{ DimensionID: productDim, DimensionValueID: productValStored }];
+
+        const merged = MergeLineDimensions(
+            { DimensionID: ventureDim, DimensionValueID: ventureVal },
+            MergeDerivedTags(defaultDims, storedDims),
+        );
+
+        expect(merged).toEqual([
+            { DimensionID: productDim, DimensionValueID: productValStored },
+            { DimensionID: ventureDim, DimensionValueID: ventureVal },
+        ]);
     });
 });

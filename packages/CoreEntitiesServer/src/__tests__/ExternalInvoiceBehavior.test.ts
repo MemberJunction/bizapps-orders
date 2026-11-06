@@ -201,7 +201,7 @@ describe('BuildExternalInvoicePayload', () => {
         const r = BuildExternalInvoicePayload(doc(), whole({ InstallmentNumber: 2, InstallmentCount: 4, Amount: 66.31, DocumentNumber: 'ORD-1-2', DueDate: '2027-03-18' }), '2026-09-22');
         expect(r.OK && r.Payload).toMatchObject({
             DocumentNumber: 'ORD-1-2', DueDate: '2027-03-18', Amount: 66.31,
-            Lines: [{ Description: 'Instalment 2 of 4 — order ORD-1', Quantity: 1, UnitPrice: 66.31 }],
+            Lines: [{ Description: 'Installment 2 of 4 — order ORD-1', Quantity: 1, UnitPrice: 66.31 }],
         });
     });
 
@@ -411,6 +411,6 @@ describe('BuildExternalInvoicePayload — service period in the line text', () =
             row(2, 50, 1, { Children: [row(3, 0, 1, { IncludedInParent: true, ServicePeriodStart: '2026-10-15', ServicePeriodEnd: '2027-01-14' })] }),
         ];
         const r = BuildExternalInvoicePayload(doc({ Rows: rows }), whole({ InstallmentNumber: 1, InstallmentCount: 2, Amount: 75, DocumentNumber: 'ORD-1-1' }), '2026-09-22');
-        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'Instalment 1 of 2 — order ORD-1 (Oct 15, 2026 – Oct 31, 2027)', Quantity: 1, UnitPrice: 75 }]);
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'Installment 1 of 2 — order ORD-1 (Oct 15, 2026 – Oct 31, 2027)', Quantity: 1, UnitPrice: 75 }]);
     });
 });
