@@ -5,7 +5,8 @@
  *
  * The selection is pure and tested directly. The recheck itself runs through the real poller against
  * a faked ledger (the harness of `PollReappliedResolution.test.ts`), with the capture operation
- * stubbed, so what is asserted is which rows the poll re-decides and what it writes for them.
+ * stubbed, so what is asserted is which rows the poll re-decides and what it writes for them. One
+ * test drives the whole provider pass, so the recheck cannot drop out of it unnoticed.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
@@ -16,6 +17,10 @@ const mocks = vi.hoisted(() => ({
     externalInvoices: [] as Array<{ ID: string; ExternalInvoiceRef: string; OrderHeaderID: string; CompanyID: string; OrderHeaderPaymentScheduleID: string | null }>,
     /** Filters the poller sent for ExternalPayment reads. */
     paymentFilters: [] as string[],
+    /** Every ExternalPayment read the poller sent, as sent. */
+    paymentReads: [] as Array<Record<string, unknown>>,
+    /** The rail the resolver hands `pollProvider`. */
+    rail: null as unknown,
     /** Captures the poller asked for. */
     captures: [] as Array<Record<string, unknown>>,
     /** What upsertExternalPayment wrote, per call. */
@@ -31,6 +36,7 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                 const filter = params.ExtraFilter ?? '';
                 if (params.EntityName.includes('External Payments')) {
                     mocks.paymentFilters.push(filter);
+                    mocks.paymentReads.push(params);
                     const m = /Disposition = '(\w+)'/.exec(filter);
                     return { Success: true, Results: mocks.externalPayments.filter((r) => !m || r.Disposition === m[1]) };
                 }
@@ -57,6 +63,11 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
             }
         },
     };
+});
+
+vi.mock('../InvoiceRailResolver.js', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('../InvoiceRailResolver.js')>();
+    return { ...actual, ResolveInvoiceRail: vi.fn(async () => mocks.rail) };
 });
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
@@ -176,6 +187,8 @@ beforeEach(() => {
     mocks.externalPayments = [];
     mocks.externalInvoices = [];
     mocks.paymentFilters = [];
+    mocks.paymentReads = [];
+    mocks.rail = rail;
     mocks.captures = [];
     mocks.writes = [];
 });
@@ -221,5 +234,47 @@ describe('a payment parked Unmatched before its invoice was loaded', () => {
         mocks.externalInvoices = [invoice('invA')];
         expect(await recheck(['0rp01'])).toEqual([]);
         expect(mocks.captures).toHaveLength(0);
+    });
+});
+
+describe('reading the open unmatched rows', () => {
+    it('reads every row, not the first page the entity row limit allows, and names the columns it uses', async () => {
+        mocks.externalPayments = [row()];
+        await recheck();
+        expect(mocks.paymentReads).toHaveLength(1);
+        expect(mocks.paymentReads[0]).toMatchObject({ IgnoreMaxRows: true, BypassCache: true });
+        expect(mocks.paymentReads[0].MaxRows).toBeUndefined();
+        expect(mocks.paymentReads[0].Fields).toEqual(
+            expect.arrayContaining(['ID', 'ExternalPaymentRef', 'Disposition', 'DispositionReason', 'PaymentHeaderID', 'ExternalUpdatedAt', 'Payload']),
+        );
+    });
+});
+
+interface Pollable {
+    pollProvider(
+        paymentProviderID: string,
+        opts: { preview: boolean; maxCount: number; since: string | null },
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<{ Outcomes: Array<{ ExternalPaymentRef: string; Disposition: string }>; Fault: string | null }>;
+}
+
+describe('a provider pass', () => {
+    it('captures a parked payment whose invoice was loaded, though the rail no longer returns it', async () => {
+        // The rail returns nothing new: only the recheck in the pass can reach the parked payment.
+        mocks.rail = Object.assign(new BillComInvoiceRail(), {
+            Config: rail.Config,
+            GetInvoice: rail.GetInvoice,
+            CheckConfiguration: async () => ({ Success: true, Value: true }),
+            FetchPaymentsSince: async () => ({ Success: true, Value: { Payments: [], NewWatermark: null } }),
+        });
+        mocks.externalPayments = [row()];
+        mocks.externalInvoices = [invoice('invA')];
+        const op = new PollExternalPaymentsOperation() as unknown as Pollable;
+        const out = await op.pollProvider(PROVIDER_ID, { preview: false, maxCount: 100, since: null }, fakeProvider, {} as UserInfo);
+        expect(out.Fault).toBeNull();
+        expect(out.Outcomes).toEqual([expect.objectContaining({ ExternalPaymentRef: '0rp01', Disposition: 'Captured' })]);
+        expect(mocks.captures).toHaveLength(1);
+        expect(mocks.writes).toContainEqual(expect.objectContaining({ Disposition: 'Captured', PaymentHeaderID: HEADER_ID }));
     });
 });

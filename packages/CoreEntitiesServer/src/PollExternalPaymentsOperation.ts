@@ -78,6 +78,9 @@ const DEFAULT_MAX = 100;
 /** Invoice refs per `ExternalInvoice` read when re-checking open Unmatched payments. */
 const INVOICE_REF_CHUNK = 500;
 
+/** The `ExternalPayment` columns the open-Unmatched recheck reads. */
+const OPEN_UNMATCHED_FIELDS = ['ID', 'ExternalPaymentRef', 'Disposition', 'DispositionReason', 'PaymentHeaderID', 'ExternalUpdatedAt', 'Payload'];
+
 export interface ExternalPaymentRow extends Record<string, unknown> {
     ID: string;
     ExternalPaymentRef: string;
@@ -611,14 +614,20 @@ export function ReappliedRowsToRecheck(
     return out;
 }
 
-/** `Unmatched` rows for this provider, with the payload the poller stored from the rail. */
+/**
+ * Every `Unmatched` row for this provider, with the payload the poller stored from the rail. Not capped
+ * by the entity's row limit: a capped read returns the same first rows by ID every pass, so a payment
+ * past the limit would never be re-checked. `Fields` are what the selection and `handlePayment` read.
+ */
 async function loadOpenUnmatched(paymentProviderID: string, provider: IMetadataProvider, user: UserInfo): Promise<ExternalPaymentRow[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const r = await rv.RunView<ExternalPaymentRow>(
         {
             EntityName: EXTERNAL_PAYMENT_ENTITY,
             ExtraFilter: `PaymentProviderID = '${RequireUUID(paymentProviderID, 'PaymentProviderID')}' AND Disposition = 'Unmatched'`,
+            Fields: OPEN_UNMATCHED_FIELDS,
             ResultType: 'simple',
+            IgnoreMaxRows: true,
             BypassCache: true,
         },
         user,
