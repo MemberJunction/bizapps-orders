@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-entities
 
+## 5.43.0
+
+### Minor Changes
+
+- d45e6ae: Finance may type any unit price on an order line (MJ.BizApps.Orders.Price.OverrideAny), as Account Director can. Products with a single $0 price, such as the converted-pricing Betty products, had no way to set a price for anyone outside Account Director, so Finance users entering a new sale saw no price pencil. Metadata only; the release's Metadata_Sync migration carries the new authorization-role row.
+- 534b368: The 5.43 Metadata_Sync migration, with its Postgres counterpart, ships the Finance authorization role on MJ.BizApps.Orders.Price.OverrideAny.
+
 ## 5.42.0
 
 ### Minor Changes
@@ -842,8 +849,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                    "FK_EntityFieldValue_EntityField"
+                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
