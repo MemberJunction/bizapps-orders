@@ -33,6 +33,8 @@ import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from '.
 import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
 import { MJOPartyAddressPickerComponent } from './OrderHeader/party-address-picker.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
+import { MJOChangePaymentDateComponent } from './PaymentHeader/change-payment-date.component';
+import { MJOOrderPaymentDatesComponent } from './PaymentHeader/order-payment-dates.component';
 import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } from './EventOrderLine/event-order-line-form.component';
 
 @NgModule({
@@ -63,6 +65,8 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         FilterBuilderModule,
         MJOOrderLinesEditorComponent,
         MJOPartyAddressPickerComponent,
+        MJOChangePaymentDateComponent,
+        MJOOrderPaymentDatesComponent,
         DeferredRevenueWaterfallModule,
         SellingCompanyFieldComponent,
         PartyFieldComponent,

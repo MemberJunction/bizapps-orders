@@ -159,6 +159,20 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return ParseAddressSnapshot(this.ShipToAddressSnapshot);
     }
 
+    /**
+     * The day the initial payment's money arrived, when finance knows it differs from the order's
+     * date (bc-aidp-next-golive#448, g448.2). NULL dates the payment from `OrderDate`
+     * (`InitialPaymentDay`). Declared here until CodeGen emits the column added by
+     * V202611052330__v5.42.x__Payment_Received_Date; remove this pair then.
+     */
+    public get InitialPaymentReceivedDate(): Date | null {
+        return AsDateValue(this.Get('InitialPaymentReceivedDate'));
+    }
+
+    public set InitialPaymentReceivedDate(value: Date | null) {
+        this.Set('InitialPaymentReceivedDate', value);
+    }
+
     public get InitialPaymentReference(): string | null {
         return (
             this.InitialPaymentDetailID_Object?.ReferenceNumber ??
@@ -604,6 +618,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             case 'InitialPaymentAmount':
             case 'InitialPaymentReference':
             case 'InitialPaymentDetailID':
+            case 'InitialPaymentReceivedDate':
                 return 'payment';
             default:
                 return 'header';

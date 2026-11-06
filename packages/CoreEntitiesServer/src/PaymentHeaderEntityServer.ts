@@ -64,8 +64,22 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
+import {
+    IsPaymentDateCorrection,
+    PaymentDateCorrectionRefusal,
+    PaymentHeaderEntity,
+    ToISODate,
+    mjBizAppsOrdersPaymentLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import {
+    BuildGLAccountResolver,
+    BuildIntercompanyLookup,
+    BuildLegalEntityLookup,
+    EntityIDFor,
+    RedatePaymentJournalEntries,
+    ResolveAccountingOperation,
+    type PaymentEntrySource,
+} from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -124,12 +138,26 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             );
         }
 
+        // Correcting a captured payment's date moves its journal entries (bc-aidp-next-golive#448),
+        // which is finance's to do. Accounting checks the same authorization; asking here first gives
+        // the person a sentence about the payment rather than about journal entries.
+        const dateRefusal = PaymentDateCorrectionRefusal(this, this.ContextCurrentUser, this.ProviderToUse as unknown as IMetadataProvider);
+        if (dateRefusal) {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo('PaymentDate', dateRefusal, this.PaymentDate, ValidationErrorType.Failure));
+        }
+
         return result;
     }
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         if (!this.PaymentNumber) {
             this.PaymentNumber = await this.assignPaymentNumber();
+        }
+
+        // A date correction on a captured payment moves its entries in the same transaction.
+        if (IsPaymentDateCorrection(this)) {
+            return this.saveDateCorrection(options);
         }
 
         // A rail that settles on somebody else's schedule may not reach Captured here, whoever asked.
@@ -247,6 +275,63 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         }
+    }
+
+    /**
+     * Save a captured payment's corrected date and move its journal entries to the same day, in one
+     * transaction (bc-aidp-next-golive#448, g448.1 A). The entries are the header's own (cash, fee)
+     * and each allocation's; accounting refuses, with its own message, once any of them is batched,
+     * and then nothing is written. A correction never comes with other changes to a captured
+     * payment: trigger 51005 freezes the rest of its money.
+     */
+    private async saveDateCorrection(options?: EntitySaveOptions): Promise<boolean> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
+        const user = this.ContextCurrentUser;
+        const day = ToISODate(this.PaymentDate);
+        if (!day) {
+            this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(`Payment ${this.PaymentNumber} needs a payment date.`)));
+            return false;
+        }
+        await dbProvider.BeginTransaction();
+        try {
+            const sources: PaymentEntrySource[] = [
+                { EntityName: PAYMENT_HEADER_ENTITY, RecordIDs: [this.ID] },
+                { EntityName: PAYMENT_LINE_ENTITY, RecordIDs: await this.loadSavedLineIDs() },
+            ];
+            await RedatePaymentJournalEntries(sources, day, this.PaymentNumber, provider, user);
+            if (!(await super.Save(options))) {
+                throw new Error(`Failed to save payment ${this.PaymentNumber}: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            }
+            await dbProvider.CommitTransaction();
+            return true;
+        } catch (err) {
+            LogError(`PaymentHeaderEntityServer.saveDateCorrection failed for ${this.PaymentNumber ?? this.ID}: ${err}`);
+            try {
+                await dbProvider.RollbackTransaction();
+            } catch (rollbackErr) {
+                LogError(`Rollback failed after payment date correction error: ${rollbackErr}`);
+            }
+            this.RegisterResultHistoryEntry(this.buildFailureResult(err));
+            return false;
+        }
+    }
+
+    /** The IDs of this payment's saved allocations, whose entries are booked against them. */
+    private async loadSavedLineIDs(): Promise<string[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string }>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID = '${RequireUUID(this.ID, 'PaymentHeaderID')}'`,
+                Fields: ['ID'],
+                ResultType: 'simple',
+                IgnoreMaxRows: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res.Success) throw new Error(`Could not read payment ${this.PaymentNumber}'s allocations: ${res.ErrorMessage ?? 'unknown error'}`);
+        return (res.Results ?? []).map((r) => r.ID);
     }
 
     /**
