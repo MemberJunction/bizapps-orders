@@ -123,6 +123,8 @@ The review is an `ORDERS_ORDER_REVIEW` task linked to the order and assigned, by
 
 **Which orders.** Every order is reviewed except a checkout order (`Origin` = `Widget`), a provider-payment order (`ProviderPayment`), a reversal, and an order of renewals only (reviewed only once its carried-forward price is edited). `Origin` is free text, so the exemption is an exact allow-list (`SYSTEM_ORDER_ORIGINS`) and any other value is reviewed; and `OrderEntityServer.Save` refuses any write of `Origin` (a new order claiming anything but `Direct`, or a change to a saved order's) that the creating process did not make through `SetSystemOrderOrigin`. That guard applies whether or not review is on. Code: `packages/Entities/src/order-review.ts` (rules), `packages/CoreEntitiesServer/src/OrderReview.ts` (reads, the task, and the two hooks in `OrderEntityServer.Save`), `packages/CoreEntitiesServer/src/SystemOrderOrigin.ts` (the Origin guard).
 
+**Where reviewers find them (golive #442).** The Orders home's Overview tab shows the Tasks approval inbox (`mjo-order-review-queue`, `panels/order-review-queue.component.ts`), filtered to the task type named `Order Review`, which both this review (`ORDERS_ORDER_REVIEW`) and sales' close-won review (`ORDER_REVIEW`) carry. It lists the open reviews assigned to the signed-in user's Person and records the decision in place. It shows nothing for a user with no active Person.
+
 ### What is still a remote operation
 
 An operation is an **act** the entity cannot express: decide over a set, talk to a third party, or stay atomic with a write that is not "save this graph."
