@@ -95,7 +95,9 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     // This used to keep its fields in the widget so the panel could never hide-when-empty
     // and take the GL links with it. That is not a risk: CompanyID and
     // RevenueRecognitionTypeID are NOT NULL, so a saved record always has a renderable field
-    // here, and an unsaved one opens in edit mode where fields render regardless.
+    // here, and an unsaved one opens in edit mode where fields render regardless. In read mode
+    // RevenueRecognitionTypeID renders as mjo-product-rev-rec-field instead, which leaves
+    // CompanyID as the NOT NULL field the section always sees.
     template: `
         <mj-collapsible-panel
             SectionKey="accounting"
@@ -118,16 +120,25 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
                     LinkType="Record"
                     (Navigate)="FormComponent.OnFormNavigate($event)">
                 </mj-form-field>
-                <mj-form-field
-                    [Record]="Record"
-                    [ShowLabel]="true"
-                    FieldName="RevenueRecognitionTypeID"
-                    Type="textbox"
-                    [EditMode]="EditMode"
-                    [FormContext]="FormContext"
-                    LinkType="Record"
-                    (Navigate)="FormComponent.OnFormNavigate($event)">
-                </mj-form-field>
+                <!-- Read mode shows the name resolved by id, the value the header shows, instead of
+                     the record's virtual name, which can lag the id (bc-aidp-next-golive#436). -->
+                @if (EditMode) {
+                    <mj-form-field
+                        [Record]="Record"
+                        [ShowLabel]="true"
+                        FieldName="RevenueRecognitionTypeID"
+                        Type="textbox"
+                        [EditMode]="EditMode"
+                        [FormContext]="FormContext"
+                        LinkType="Record"
+                        (Navigate)="FormComponent.OnFormNavigate($event)">
+                    </mj-form-field>
+                } @else {
+                    <mjo-product-rev-rec-field
+                        [Record]="Record"
+                        (Navigate)="FormComponent.OnFormNavigate($event)">
+                    </mjo-product-rev-rec-field>
+                }
                 <mj-form-field
                     [Record]="Record"
                     [ShowLabel]="true"
@@ -221,7 +232,7 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
 export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {}
 
 /**
- * Lifecycle: Status and the availability window (golive#433).
+ * Lifecycle: Status, the availability window and IsSellableNew (golive#433).
  *
  * Status decides whether a product is sellable: the deal and order pickers show Active products
  * only. It sat under Fulfillment, where nobody looked for it, so it moved here with the dates that
@@ -236,7 +247,7 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
         sortKey: 95,
         contributionKey: 'lifecycle',
         // Claims the generated `catalogLifecycle` section, which would render these fields a
-        // second time. Its fourth field, SuccessorProductID, renders in the Fulfillment panel.
+        // second time. Its other field, SuccessorProductID, renders in the Fulfillment panel.
         replacesSectionKey: 'catalogLifecycle',
     },
 })
@@ -274,6 +285,17 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
                 [ShowLabel]="true"
                 FieldName="AvailableTo"
                 Type="datepicker"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="FormComponent.OnFormNavigate($event)">
+            </mj-form-field>
+            <!-- Off for products kept for existing orders, imports and renewals: the add-product
+                 pickers stop offering them, and pricing still accepts them (golive#360). -->
+            <mj-form-field
+                [Record]="Record"
+                [ShowLabel]="true"
+                FieldName="IsSellableNew"
+                Type="checkbox"
                 [EditMode]="EditMode"
                 [FormContext]="FormContext"
                 (Navigate)="FormComponent.OnFormNavigate($event)">

@@ -7,7 +7,7 @@ import {
     type mjBizAppsOrdersProductEntity,
 } from '@mj-biz-apps/orders-entities';
 import { LoadProductListPriceLabel } from '../panels/catalog-list-price';
-import { LoadProductLookupNames, type ProductLookupNames } from '../panels/product-lookup-names';
+import { ProductLookupNamesTracker, REV_REC_FROM_TYPE_LABEL, type ProductLookupNames } from '../panels/product-lookup-names';
 import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
 import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } from './product-readiness';
 
@@ -29,23 +29,24 @@ import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } 
 })
 export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> implements OnInit {
     public ListPriceLabel = '—';
-    /** Resolved by id — the record's virtual name fields are unreliable (Pin 28). */
-    public Lookups: ProductLookupNames = { Type: '—', Category: '—', RevRec: '—', Successor: '—' };
     private listPriceFor: string | null = null;
-    /** The ids `Lookups` was resolved for; a change re-resolves, so the header follows edits. */
-    private lookupsFor: string | null = null;
     private cdr = inject(ChangeDetectorRef, { optional: true });
+    /** Resolved by id — the record's virtual name fields are unreliable (Pin 28). Follows edits. */
+    private lookups = new ProductLookupNamesTracker(() => this.cdr?.markForCheck());
 
     public get Title(): string {
         return this.Record.Name || 'New product';
     }
 
     public async ngOnInit(): Promise<void> {
-        await this.refreshLookups();
+        await this.lookups.Refresh(this.Record);
+    }
+
+    public get Lookups(): ProductLookupNames {
+        return this.lookups.For(this.Record);
     }
 
     public get TypeName(): string {
-        this.refreshLookupsIfChanged();
         return this.Lookups.Type;
     }
 
@@ -71,18 +72,14 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         this.cdr?.markForCheck();
     }
 
+    /** The same name the Accounting section shows: the product's own type, else its type's default. */
     public get RevRec(): string {
-        this.refreshLookupsIfChanged();
         return this.Lookups.RevRec;
     }
 
-    private lookupsKey(): string {
-        const r = this.Record;
-        return [r?.ProductTypeID, r?.ProductCategoryID, r?.RevenueRecognitionTypeID, r?.SuccessorProductID].join('|');
-    }
-
-    private refreshLookupsIfChanged(): void {
-        if (this.lookupsFor !== null && this.lookupsFor !== this.lookupsKey()) void this.refreshLookups();
+    /** Says where `RevRec` comes from when the product does not set it itself. */
+    public get RevRecSource(): string | null {
+        return this.Lookups.RevRecFromType ? REV_REC_FROM_TYPE_LABEL : null;
     }
 
     // ── Draft → Active (golive#433) ───────────────────────────────────────────────────────────
@@ -178,14 +175,5 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
             this.Record.Status = previous;
             this.ActivateError = this.Record.LatestResult?.CompleteMessage || 'The product could not be activated.';
         }
-    }
-
-    private async refreshLookups(): Promise<void> {
-        const key = this.lookupsKey();
-        this.lookupsFor = key;
-        const lookups = await LoadProductLookupNames(this.Record);
-        if (this.lookupsFor !== key) return; // a newer edit started its own resolve
-        this.Lookups = lookups;
-        this.cdr?.markForCheck();
     }
 }

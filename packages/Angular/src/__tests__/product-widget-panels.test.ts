@@ -130,7 +130,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
         {
             name: 'lifecycle',
             panel: ProductLifecyclePanel,
-            fields: ['Status', 'AvailableFrom', 'AvailableTo'],
+            fields: ['Status', 'AvailableFrom', 'AvailableTo', 'IsSellableNew'],
         },
     ])('the $name panel declares its fields in its own template', ({ panel, fields }) => {
         // Declared in the panel template => a ContentChild of mj-collapsible-panel =>
