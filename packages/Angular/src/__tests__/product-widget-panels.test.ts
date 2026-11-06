@@ -7,6 +7,7 @@ import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductSubscriptionsPanel,
 } from '../lib/form-panels/product-widget.panels';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
@@ -68,7 +69,7 @@ function PanelRegistrationMetadata(panel: unknown): Record<string, unknown> | un
 describe('Product widget panels replace their duplicate generated sections', () => {
     it.each([
         { name: 'accounting', panel: ProductAccountingPanel, sectionKey: 'financialAndAccounting' },
-        { name: 'fulfillment', panel: ProductFulfillmentPanel, sectionKey: 'catalogLifecycle' },
+        { name: 'lifecycle', panel: ProductLifecyclePanel, sectionKey: 'catalogLifecycle' },
         { name: 'subscriptions', panel: ProductSubscriptionsPanel, sectionKey: 'subscriptionAndEntitlements' },
     ])('the $name panel claims the generated $sectionKey section', ({ panel, sectionKey }) => {
         expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBe(sectionKey);
@@ -78,6 +79,7 @@ describe('Product widget panels replace their duplicate generated sections', () 
         const rendered = new Set([
             ...FieldNames(PanelTemplate(ProductAccountingPanel)),
             ...FieldNames(PanelTemplate(ProductFulfillmentPanel)),
+            ...FieldNames(PanelTemplate(ProductLifecyclePanel)),
             ...FieldNames(PanelTemplate(ProductSubscriptionsPanel)),
             ...FieldNames(SUBSCRIPTION_WIDGET_HTML),
             ...FieldNames(FULFILLMENT_WIDGET_HTML),
@@ -119,14 +121,16 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
             name: 'fulfillment',
             panel: ProductFulfillmentPanel,
             fields: [
-                'Status',
-                'AvailableFrom',
-                'AvailableTo',
                 'EntitlementGrantTiming',
                 'EntitlementQuantityMode',
                 'EntitlementValidityMode',
                 'SuccessorProductID',
             ],
+        },
+        {
+            name: 'lifecycle',
+            panel: ProductLifecyclePanel,
+            fields: ['Status', 'AvailableFrom', 'AvailableTo'],
         },
     ])('the $name panel declares its fields in its own template', ({ panel, fields }) => {
         // Declared in the panel template => a ContentChild of mj-collapsible-panel =>
@@ -191,5 +195,26 @@ describe('The Product header panel owns the identification fields it claims', ()
         // to be real inputs when the form is in edit mode.
         expect(PRODUCT_HEADER_HTML).toContain('[EditMode]="EditMode"');
         expect(PRODUCT_HEADER_HTML).toContain('@if (EditMode) {');
+    });
+});
+
+/**
+ * golive#433 — Status sat under Fulfillment, where nobody found it, so a new product stayed Draft
+ * and hidden from the pickers. It now lives in Lifecycle, and only there.
+ */
+describe('Status lives in the Lifecycle panel', () => {
+    it('is not in the Fulfillment panel', () => {
+        expect(FieldNames(PanelTemplate(ProductFulfillmentPanel))).not.toContain('Status');
+    });
+
+    it('the Fulfillment panel no longer claims a generated section', () => {
+        expect(PanelRegistrationMetadata(ProductFulfillmentPanel)?.['replacesSectionKey']).toBeUndefined();
+    });
+
+    it('the header offers Activate on a Draft product', () => {
+        expect(PRODUCT_HEADER_HTML).toContain('@if (IsDraft) {');
+        expect(PRODUCT_HEADER_HTML).toContain('Draft — not sellable on deals or orders.');
+        expect(PRODUCT_HEADER_HTML).toContain('(click)="Activate()"');
+        expect(PRODUCT_HEADER_HTML).toContain('(click)="ActivateAnyway()"');
     });
 });

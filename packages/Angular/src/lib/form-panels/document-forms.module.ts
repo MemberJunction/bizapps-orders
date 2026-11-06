@@ -22,6 +22,7 @@ import { ProductHeaderPanel } from './product-header.panel';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductSubscriptionsPanel,
@@ -81,6 +82,7 @@ const PANELS = [
     ProductPromosPanel,
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductSubscriptionsPanel,
     PriceListHeaderPanel,
     PriceListSimulatorPanel,
