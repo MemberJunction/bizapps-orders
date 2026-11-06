@@ -160,6 +160,8 @@ export async function BuildGLAccountResolver(
             // through.
             CompanyID: account?.CompanyID ?? '',
             AccountLabel: account?.Code ? `${account.Code}${account.Name ? ` ${account.Name}` : ''}` : glAccountID,
+            AccountCode: account?.Code,
+            AccountName: account?.Name,
             RequiredDimensions: requiredIDs.map((id) => ({
                 DimensionID: id,
                 Code: engine.Dimensions.find((d) => key(d.ID) === key(id))?.Code ?? id,

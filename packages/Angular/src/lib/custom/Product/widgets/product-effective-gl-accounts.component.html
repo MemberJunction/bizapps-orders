@@ -1,0 +1,73 @@
+<div class="mjo-eff-gl">
+    <div class="mjo-eff-gl__head">
+        <span class="mjo-eff-gl__title">
+            <i class="fa-solid fa-diagram-project"></i>
+            Effective accounts
+        </span>
+        <span class="mjo-eff-gl__actions">
+            <label class="mjo-eff-gl__company">
+                <span>Company</span>
+                <select
+                    [ngModel]="SelectedCompany"
+                    (ngModelChange)="OnCompanyChange($event)"
+                    [disabled]="Loading || !CanExplain"
+                    aria-label="Company to explain the accounts for">
+                    @if (!Companies.length && CompanyID) {
+                        <option [value]="CompanyID">{{ Product.Company }} (product's company)</option>
+                    }
+                    @for (c of Companies; track c.ID) {
+                        <option [value]="c.ID">{{ c.Name }}{{ IsOwnCompany(c.ID) ? " (product's company)" : '' }}</option>
+                    }
+                </select>
+            </label>
+            <button
+                type="button"
+                class="mjo-eff-gl__refresh"
+                title="Re-read where each role's account comes from"
+                [disabled]="Loading || !CanExplain"
+                (click)="Refresh()">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
+        </span>
+    </div>
+
+    <!--
+        Read from the walk confirm books through (Orders.ExplainProductGLAccounts), in order:
+        product, category and its parents, product type, company default. Nothing here is resolved in
+        the browser.
+    -->
+    <p class="mjo-eff-gl__hint">
+        Where each role's account comes from: the product, its category and parent categories, its
+        product type, then the company default. The most specific link is used.
+        @if (AsOf) {
+            <span>Links in force on {{ AsOf }}.</span>
+        }
+    </p>
+
+    @if (!CanExplain) {
+        <p class="mjo-eff-gl__muted">Save the product to see the accounts it books to.</p>
+    } @else if (Loading && !Roles.length) {
+        <p class="mjo-eff-gl__muted">Reading the accounts…</p>
+    } @else if (LoadError) {
+        <p class="mjo-eff-gl__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            {{ LoadError }}
+        </p>
+    } @else {
+        @if (Unresolved.length) {
+            <p class="mjo-eff-gl__warn" role="status">
+                <i class="fa-solid fa-triangle-exclamation"></i>
+                {{ Unresolved.length === 1 ? '1 role resolves' : Unresolved.length + ' roles resolve' }} to no account,
+                so confirm refuses an order line for this product that books to it: {{ Unresolved.join(', ') }}.
+            </p>
+        }
+        @for (role of Roles; track role.Role) {
+            <div class="mjo-eff-gl__role">
+                <mj-gl-resolution-preview [Result]="role"></mj-gl-resolution-preview>
+                @if (role.Message) {
+                    <p class="mjo-eff-gl__refusal">{{ role.Message }}</p>
+                }
+            </div>
+        }
+    }
+</div>

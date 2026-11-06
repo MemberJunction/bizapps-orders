@@ -97,6 +97,7 @@ import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
 import { RequireUUID } from './sql-guards.js';
+import { OrderCustomerName, type OrderCustomerFields } from './JournalEntryCustomer.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -642,7 +643,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                         `there is no basis for deciding whose revenue the cash settles.`,
                 );
             }
-            const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
+            const order = await this.loadOrderLabel(line.OrderHeaderID);
 
             const orderKey = String(line.OrderHeaderID).toLowerCase();
             const before = scheduleFactsByOrder.get(orderKey);
@@ -669,7 +670,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             const { Drafts } = await factory.BuildAllocationDrafts({
                 PaymentLineID: line.ID,
                 PaymentNumber: this.PaymentNumber,
-                OrderNumber: orderNumber,
+                OrderNumber: order.OrderNumber,
+                CustomerName: order.CustomerName,
                 Amount: line.Amount ?? 0,
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
@@ -709,19 +711,21 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 
 
-    private async loadOrderNumber(orderHeaderID: string): Promise<string> {
+    /** An order's number and customer, for the entry descriptions; the id stands in for a missing number. */
+    private async loadOrderLabel(orderHeaderID: string): Promise<{ OrderNumber: string; CustomerName: string | null }> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ OrderNumber: string }>(
+        const res = await rv.RunView<{ OrderNumber: string } & OrderCustomerFields>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID='${orderHeaderID}'`,
-                Fields: ['OrderNumber'],
+                Fields: ['OrderNumber', 'BillToOrganization', 'BillToPerson'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        return res?.Results?.[0]?.OrderNumber ?? String(orderHeaderID);
+        const row = res?.Results?.[0];
+        return { OrderNumber: row?.OrderNumber ?? String(orderHeaderID), CustomerName: row ? OrderCustomerName(row) : null };
     }
 
     /**
