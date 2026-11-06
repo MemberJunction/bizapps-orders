@@ -23,6 +23,9 @@
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">Rev-rec</span>
             <span class="mjo-doc-stat__value">{{ RevRec }}</span>
+            @if (RevRecSource) {
+                <span class="mjo-doc-stat__sub">{{ RevRecSource }}</span>
+            }
         </div>
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">Tax</span>
