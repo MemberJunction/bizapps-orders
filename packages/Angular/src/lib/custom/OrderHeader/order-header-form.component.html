@@ -248,6 +248,7 @@
                 </div>
                 @if (record.IsSaved && PaymentParams) {
                     <mj-explorer-entity-data-grid
+                        #paymentGrid
                         [Params]="PaymentParams"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
@@ -257,7 +258,7 @@
                         [MaxHeight]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
-                    <mjo-order-payment-dates [OrderHeaderID]="record.ID"></mjo-order-payment-dates>
+                    <mjo-order-payment-dates [OrderHeaderID]="record.ID" (Changed)="paymentGrid.Refresh()"></mjo-order-payment-dates>
                 } @else {
                     <div class="mjo-oh-hint">Intent only — the payment is created when the order is confirmed.</div>
                 }

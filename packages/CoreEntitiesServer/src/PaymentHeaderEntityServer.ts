@@ -140,8 +140,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         }
 
         // Correcting a captured payment's date moves its journal entries (bc-aidp-next-golive#448),
-        // which is finance's to do. Accounting checks the same authorization; asking here first gives
-        // the person a sentence about the payment rather than about journal entries.
+        // which is finance's to do. Save checks this before it opens the correction's transaction
+        // (saveDateCorrection), so a save never reaches accounting's own check of the same
+        // authorization; this copy reports it to a caller that validates without saving.
         const dateRefusal = PaymentDateCorrectionRefusal(this, this.ContextCurrentUser, this.ProviderToUse as unknown as IMetadataProvider);
         if (dateRefusal) {
             result.Success = false;
@@ -289,6 +290,13 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         const user = this.ContextCurrentUser;
+        // A person without the authorization gets a sentence about the payment, not accounting's
+        // refusal about journal entries, and nothing is opened or written.
+        const refusal = PaymentDateCorrectionRefusal(this, user, provider);
+        if (refusal) {
+            this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+            return false;
+        }
         const day = ToISODate(this.PaymentDate);
         if (!day) {
             this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(`Payment ${this.PaymentNumber} needs a payment date.`)));
