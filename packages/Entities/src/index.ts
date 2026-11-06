@@ -111,6 +111,8 @@ export * from './pricing/linePriceContext';
 export * from './accessOverride';
 // Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
 export * from './coverage-overlap';
+// Reversing booked money (bc-aidp-next-golive#454) — cancel, refund, credit transfer and amount change are finance's.
+export * from './order-reversal';
 export * from './pricing/linePricePick';
 
 /**
