@@ -122,6 +122,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
                 'Status',
                 'AvailableFrom',
                 'AvailableTo',
+                'IsSellableNew',
                 'EntitlementGrantTiming',
                 'EntitlementQuantityMode',
                 'EntitlementValidityMode',
