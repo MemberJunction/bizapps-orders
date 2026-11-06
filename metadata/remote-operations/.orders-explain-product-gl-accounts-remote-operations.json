@@ -1,0 +1,30 @@
+[
+  {
+    "_comments": [
+      "WHERE A PRODUCT'S GL ACCOUNTS COME FROM (golive#439). Its own dot-json so it conflicts with no other",
+      "change to the remote operations. Called by the product's Accounting tab so its Effective accounts block",
+      "shows the walk confirm books through, not a copy of it."
+    ],
+    "fields": {
+      "Name": "Explain Product GL Accounts",
+      "OperationKey": "Orders.ExplainProductGLAccounts",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "For one product, company and day: which GL account each role books to (Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances, Accounts Receivable by default) and every level the walk tried — the product, its category and the category's parents, its product type, and the company default — with the winning level marked. A role that resolves nowhere, or whose winning account belongs to other books, carries the refusal confirm would give. Read-only. Runs the same walk confirm books through, so the product screen cannot disagree with booking.",
+      "InputTypeName": "OrdersExplainProductGLAccountsInput",
+      "InputTypeDefinition": "@file:types/orders-explain-product-gl-accounts.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersExplainProductGLAccountsOutput",
+      "OutputTypeDefinition": "@file:types/orders-explain-product-gl-accounts.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "864BF4FB-4643-4B8E-8C0F-84CD8A2CF61F"
+    }
+  }
+]
