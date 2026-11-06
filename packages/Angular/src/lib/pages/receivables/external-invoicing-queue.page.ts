@@ -8,7 +8,10 @@ import {
     OrdersPollExternalPaymentsOperation,
     OrdersSendExternalInvoicesOperation,
     ClassifyPollJobGroups,
+    IsBefore,
     LoadPollJobs,
+    PlanSetAside,
+    SetAsideExternalPayments,
     type ExternalInvoicingWorklistRow,
     type PollJobState,
 } from '@mj-biz-apps/orders-entities';
@@ -25,7 +28,8 @@ interface PaymentExceptionRow {
     PaymentDate: string | null;
     ExternalStatus: string | null;
     Disposition: 'Held' | 'Unmatched' | 'Refused' | 'Reapplied' | 'ReversalNeeded';
-    Reason: string | null;
+    DispositionReason: string | null;
+    PaymentHeaderID: string | null;
     LastSeenAt: string | null;
 }
 
@@ -149,12 +153,35 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 <span class="small muted">{{ PollHint }}</span>
             </div>
 
+            <div class="row wrap mjo-xq__actions">
+                <label class="mjo-xq__field">
+                    <span class="small muted">Paid before</span>
+                    <input type="date" [value]="PaidBefore ?? ''" (change)="OnPaidBefore($any($event.target).value)" aria-label="Show payments dated before this day">
+                </label>
+                <label class="mjo-xq__field mjo-xq__field--grow">
+                    <span class="small muted">Reason for setting aside</span>
+                    <input
+                        type="text"
+                        maxlength="400"
+                        [value]="SetAsideReason"
+                        (input)="SetAsideReason = $any($event.target).value"
+                        placeholder="e.g. Pre-go-live payment against AR not converted">
+                </label>
+                <button type="button" mjButton variant="outline" [disabled]="Busy || !CheckedIDs.length || !SetAsideReason.trim()" (click)="SetAsideChecked()">
+                    <i class="fa-solid fa-box-archive" aria-hidden="true"></i> Set aside{{ CheckedIDs.length ? ' (' + CheckedIDs.length + ')' : '' }}
+                </button>
+            </div>
+
             <mjo-worklist-table
                 [Columns]="PaymentColumns"
-                [Rows]="Exceptions"
+                [Rows]="ShownExceptions"
                 [Presets]="[]"
                 [Searchable]="false"
                 RowKey="ID"
+                [Selectable]="true"
+                [CheckedKeys]="CheckedIDs"
+                (CheckedKeysChange)="CheckedIDs = $event"
+                [FootNote]="ExceptionFootNote"
                 EmptyTitle="Nothing needs attention"
                 EmptyHint="Every payment the rail reported has been recorded or set aside."
                 EmptyIcon="fa-solid fa-hand-holding-dollar" />
@@ -174,6 +201,14 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 align-items: center;
                 gap: var(--mj-space-3);
                 margin-bottom: var(--mj-space-4);
+            }
+            .mjo-xq__field {
+                display: flex;
+                flex-direction: column;
+                gap: var(--mj-space-1);
+            }
+            .mjo-xq__field--grow {
+                flex: 1 1 260px;
             }
             .mjo-xq__tabs {
                 display: flex;
@@ -231,6 +266,13 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     public Preset = 'all';
 
     public Exceptions: PaymentExceptionRow[] = [];
+    /** `Exceptions` narrowed by the "paid before" day. */
+    public ShownExceptions: PaymentExceptionRow[] = [];
+    /** The "paid before" cut day (`YYYY-MM-DD`), or null for every exception. */
+    public PaidBefore: string | null = null;
+    /** Rows checked for setting aside; always a subset of `ShownExceptions`. */
+    public CheckedIDs: string[] = [];
+    public SetAsideReason = '';
     /** The scheduled poll job's state, which decides what the button may do. Null when it could not be read. */
     /**
      * The most permissive state across the poll jobs (one per provider a job names, plus the jobs that
@@ -269,7 +311,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             ChipClass: (r) => DispositionChipClass(r.Disposition),
             Format: (r) => DispositionLabel(r.Disposition),
         },
-        { Key: 'Reason', Label: 'What happened', Format: (r) => r.Reason ?? '—' },
+        { Key: 'DispositionReason', Label: 'What happened', Format: (r) => r.DispositionReason ?? '—' },
     ];
 
     public Presets: MJOPreset[] = [];
@@ -298,6 +340,11 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         const reversals = this.Exceptions.filter((e) => e.Disposition === 'ReversalNeeded').length;
         if (!this.Exceptions.length) return 'Nothing waiting';
         return reversals ? `${reversals} needing a reversal` : 'Money the poll could not place';
+    }
+
+    public get ExceptionFootNote(): string | null {
+        if (!this.PaidBefore) return null;
+        return `${this.ShownExceptions.length} of ${this.Exceptions.length} dated before ${FormatDate(this.PaidBefore, { Short: true })}.`;
     }
 
     /** The poll job is off or missing: the server would refuse, so the button does not offer it. */
@@ -365,6 +412,57 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             this.SelectedInvoice = null;
             this.cdr.detectChanges();
             return { Tone: 'success' as const, Text: out.Message ?? `${row.DocumentNumber} sent.` };
+        });
+    }
+
+    public OnPaidBefore(day: string): void {
+        this.PaidBefore = day || null;
+        this.applyExceptionFilter();
+    }
+
+    /**
+     * Set the checked exceptions aside (bc-aidp-next-golive#449). Permanent: a payment set aside is never
+     * captured, even once its invoice is loaded. So the confirmation says what the bulk guard leaves out
+     * (`PlanSetAside`: recent Unmatched rows that may be waiting for an invoice, rows with cash recorded),
+     * and `SetAsideExternalPayments` applies the same guard again to what the database holds.
+     */
+    public async SetAsideChecked(): Promise<void> {
+        const reason = this.SetAsideReason.trim();
+        const rows = this.ShownExceptions.filter((r) => this.CheckedIDs.includes(r.ID));
+        if (this.Busy || !rows.length || !reason) return;
+        const plan = PlanSetAside(rows, { PaidBefore: this.PaidBefore });
+        if (!plan.Eligible.length) {
+            this.Notice = { Tone: 'warning', Text: `Nothing was set aside. ${plan.Excluded.map((x) => `${x.Row.ExternalPaymentRef}: ${x.Why}`).join(' ')}` };
+            this.cdr.detectChanges();
+            return;
+        }
+        const total = plan.Eligible.reduce((s, r) => s + Number(r.Amount), 0);
+        const unmatched = plan.Eligible.filter((r) => r.Disposition === 'Unmatched').length;
+        const proceed = await this.confirm.Confirm({
+            title: `Set aside ${plan.Eligible.length} payment${plan.Eligible.length === 1 ? '' : 's'}?`,
+            message: `${FormatMoney(total)} will stop showing here and will never be recorded as cash, even if the invoice is loaded later.`,
+            detail: [
+                unmatched ? `${unmatched} of them ${unmatched === 1 ? 'is' : 'are'} Unmatched: check none is waiting for an invoice still to be loaded.` : '',
+                plan.Excluded.length ? `${plan.Excluded.length} checked row${plan.Excluded.length === 1 ? ' is' : 's are'} left out: recent Unmatched payments, or ones with cash recorded.` : '',
+                `Reason: ${reason}`,
+            ]
+                .filter(Boolean)
+                .join(' '),
+            type: 'warning',
+            confirmText: 'Set aside',
+            cancelText: 'Not yet',
+        });
+        if (!proceed) return;
+
+        await this.run(async () => {
+            const result = await SetAsideExternalPayments({ IDs: plan.Eligible.map((r) => r.ID), Reason: reason, PaidBefore: this.PaidBefore });
+            this.CheckedIDs = [];
+            if (!result.Failed.length && !result.Excluded.length) this.SetAsideReason = '';
+            this.cdr.detectChanges();
+            const left = [...result.Excluded, ...result.Failed].map((x) => `${x.ExternalPaymentRef}: ${x.Why}`);
+            const skipped = plan.Excluded.length ? ` ${plan.Excluded.length} checked row(s) were left out by the bulk guard.` : '';
+            const text = `${result.SetAside.length} payment(s) set aside.${skipped}${left.length ? ` Not set aside: ${left.join(' ')}` : ''}`;
+            return { Tone: left.length ? ('warning' as const) : ('success' as const), Text: text };
         });
     }
 
@@ -483,7 +581,16 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             ResultType: 'simple',
         });
         this.Exceptions = result.Success ? (result.Results ?? []) : [];
+        this.applyExceptionFilter();
         this.cdr.detectChanges();
+    }
+
+    /** Narrow to the "paid before" day, and drop checked rows that are no longer shown. */
+    private applyExceptionFilter(): void {
+        const cut = this.PaidBefore;
+        this.ShownExceptions = cut ? this.Exceptions.filter((r) => IsBefore(r.PaymentDate, cut)) : this.Exceptions;
+        const shown = new Set(this.ShownExceptions.map((r) => r.ID));
+        this.CheckedIDs = this.CheckedIDs.filter((id) => shown.has(id));
     }
 
     private async loadPollJob(): Promise<void> {

@@ -162,7 +162,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
 | `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. |
-| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person sets `Ignored` to close a row. |
+| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 
 `PaymentProvider.CompanyIntegrationID` points a provider row at its `MJ: Company Integrations` row. A

@@ -153,6 +153,9 @@ export * from './base-entity-augmentation';
 export * from './billing-location';
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
 export * from './ExternalPaymentBehavior.js';
+// Setting an external-payment exception aside, and the shared entity that enforces it (golive#449).
+export * from './external-payment-set-aside';
+export * from './ExternalPaymentEntity';
 // Whether the scheduled poll job lets the payment poll record cash — read by the operation, the webhook and the queue page (#583).
 export * from './external-payment-poll-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
