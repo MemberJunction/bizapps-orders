@@ -411,7 +411,8 @@ export async function GetOrders(
         const escaped = likeText(options.Search);
         filters.push(
             `(OrderNumber LIKE '%${escaped}%' OR Description LIKE '%${escaped}%' ` +
-                `OR ExternalDocumentNumber LIKE '%${escaped}%')`,
+                `OR ExternalDocumentNumber LIKE '%${escaped}%' ` +
+                `OR BillToOrganization LIKE '%${escaped}%' OR BillToPerson LIKE '%${escaped}%')`,
         );
     }
 

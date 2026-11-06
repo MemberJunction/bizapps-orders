@@ -212,5 +212,16 @@
     "primaryKey": {
       "ID": "9B5424D7-102D-4F00-A569-8D8B6E92C10E"
     }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "ReturnReasons",
+      "Value": "Booked in error,Customer terminated,Damaged in transit,Wrong item shipped,Customer changed mind,Duplicate order,Pricing error",
+      "Comments": "Comma-separated reasons offered when booking a return (bc-aidp-next-golive#380). Empty or unset falls back to the seeded list."
+    },
+    "primaryKey": {
+      "ID": "B4E62D81-7F19-4C0A-9E35-61D42A8B5C90"
+    }
   }
 ]

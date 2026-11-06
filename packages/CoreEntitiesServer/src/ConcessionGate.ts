@@ -62,6 +62,8 @@ import {
     ResolveRequiresSaleApproval,
     ConcessionValue,
     Money,
+    OrdersEngine,
+    OrdersEngineReady,
     PickConcessionTier,
     ResolveLinePriceStanding,
     ShareBreach,
@@ -405,14 +407,72 @@ export async function ProductsRequiringSaleApproval(
         Fields: ['ID', 'ProductTypeID', 'ProductCategoryID', 'RequiresSaleApproval'],
     });
     if (products.length === 0) return new Set();
-    const categories = await read<{ ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null }>({
-        EntityName: PRODUCT_CATEGORY_ENTITY,
-        Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
-    });
-    const types = await read<{ ID: string; RequiresSaleApproval: boolean | null }>({
-        EntityName: PRODUCT_TYPE_ENTITY,
-        Fields: ['ID', 'RequiresSaleApproval'],
-    });
+
+    type CategoryFact = { ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null };
+    type TypeFact = { ID: string; RequiresSaleApproval: boolean | null };
+
+    const engineReady = OrdersEngine.Instance.Loaded || (await OrdersEngineReady(provider, user));
+    const cachedCategories: CategoryFact[] = engineReady
+        ? OrdersEngine.Instance.ProductCategories.map((c) => ({
+              ID: c.ID,
+              ParentProductCategoryID: c.ParentProductCategoryID ?? null,
+              RequiresSaleApproval: (c as { RequiresSaleApproval?: boolean | null }).RequiresSaleApproval ?? null,
+          }))
+        : [];
+    const cachedTypes: TypeFact[] = engineReady
+        ? OrdersEngine.Instance.ProductTypes.map((t) => ({
+              ID: t.ID,
+              RequiresSaleApproval: (t as { RequiresSaleApproval?: boolean | null }).RequiresSaleApproval ?? null,
+          }))
+        : [];
+
+    const cachedCategoryByID = new Map(cachedCategories.map((c) => [c.ID.toLowerCase(), c]));
+    const cachedTypeByID = new Map(cachedTypes.map((t) => [t.ID.toLowerCase(), t]));
+
+    const needsCategories = products.some((p) => p.RequiresSaleApproval === null && !!p.ProductCategoryID);
+    const categoriesInCache =
+        needsCategories &&
+        cachedCategoryByID.size > 0 &&
+        products.every((p) => {
+            if (p.RequiresSaleApproval !== null || !p.ProductCategoryID) return true;
+            const seen = new Set<string>();
+            let cur: string | null = p.ProductCategoryID.toLowerCase();
+            while (cur && !seen.has(cur)) {
+                seen.add(cur);
+                const hit = cachedCategoryByID.get(cur);
+                if (!hit) return false;
+                cur = hit.ParentProductCategoryID?.toLowerCase() ?? null;
+            }
+            return true;
+        });
+
+    const categories: CategoryFact[] = !needsCategories
+        ? []
+        : categoriesInCache
+          ? cachedCategories
+          : await read<CategoryFact>({
+                EntityName: PRODUCT_CATEGORY_ENTITY,
+                Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
+            });
+
+    const needsTypes = products.some((p) => p.RequiresSaleApproval === null && !!p.ProductTypeID);
+    const typesInCache =
+        needsTypes &&
+        cachedTypeByID.size > 0 &&
+        products.every((p) => {
+            if (p.RequiresSaleApproval !== null || !p.ProductTypeID) return true;
+            return cachedTypeByID.has(p.ProductTypeID.toLowerCase());
+        });
+
+    const types: TypeFact[] = !needsTypes
+        ? []
+        : typesInCache
+          ? cachedTypes
+          : await read<TypeFact>({
+                EntityName: PRODUCT_TYPE_ENTITY,
+                Fields: ['ID', 'RequiresSaleApproval'],
+            });
+
     const category = new Map(categories.map((c) => [c.ID.toLowerCase(), c]));
     const type = new Map(types.map((t) => [t.ID.toLowerCase(), t]));
     const required = new Set<string>();
