@@ -11,6 +11,7 @@ import { DragDropModule } from '@angular/cdk/drag-drop';
 // MemberJunction Form Primitives
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
+import { ExportServiceModule } from '@memberjunction/ng-export-service';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 
@@ -53,6 +54,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         DragDropModule,
         BaseFormsModule,
         EntityViewerModule,
+        ExportServiceModule,
         LinkDirectivesModule,
         MJButtonDirective,
         MJTabNavComponent,

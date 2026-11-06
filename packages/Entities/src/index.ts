@@ -29,6 +29,7 @@ export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
 export * from './attendee-seats';
+export * from './bundle-lines';
 export * from './order-line-edit-veto';
 export * from './order-confirm-veto';
 export * from './order-origin';
@@ -42,6 +43,8 @@ export * from './order-review';
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
 export * from './SubscriptionTermEntity';
+export * from './SubscriptionEntity';
+export * from './provider-billed';
 export * from './ProductPriceEntity';
 export * from './ProductEntity';
 export * from './OrderLineExtensionCompanion';
@@ -100,6 +103,7 @@ export * from './sql-guards';
 export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
+export * from './pricing/organizationRevenue';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
@@ -123,6 +127,7 @@ export * from './displaced-term-start';
 export * from './subscription-term-length';
 // Whether a subscription line's subscriber already holds its product — the extend-or-new question.
 export * from './existing-holding';
+export * from './subscription-type';
 
 /**
  * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.

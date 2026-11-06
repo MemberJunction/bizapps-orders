@@ -74,6 +74,7 @@ metadata descriptions predate the code.
 | `Orders.PreviewPrice` | `orders:read` | Sync | One product's price and how it resolved. Explicitly advisory — promotions stack against order totals, so a per-line answer cannot be final. |
 | **Order lifecycle and fulfillment** | | | |
 | `Orders.AdvanceOrderState` | `orders:write` | Sync | Back-office entry of something already done (a counter sale, a shipment made before anyone opened the system, a migration): marks a Confirmed order's fulfillable lines, then sets its `FulfillmentStatus` to Fulfilled. The caller decides whether it may move with lines still Pending. Refuses an order that is not Confirmed; books nothing. |
+| `Orders.ConfirmReadiness` | `orders:read` | Sync | The concession problems that would make confirm refuse a saved, unbooked order, one sentence each. Runs the check confirm runs; the order form lists them under "Before this can be confirmed" and keeps Confirm off while any remain. Writes nothing. |
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Marks lines Fulfilled and sets the order's `FulfillmentStatus` once nothing is left to ship, in one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
 | `Orders.GetPriorReturns` | `orders:read` | Sync | How much of each line has been returned and how much may still come back, from the same cap confirm enforces. |

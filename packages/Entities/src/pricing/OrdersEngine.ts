@@ -47,6 +47,7 @@ import type {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '../generated/entity_subclasses';
+import { ResolveSubscriptionTypeID } from '../subscription-type';
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
@@ -190,14 +191,12 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     /**
-     * The subscription type a line of this product starts at confirm: `Product.SubscriptionTypeID`,
-     * otherwise its product type's `DefaultSubscriptionTypeID` — the same resolution confirm uses.
-     * Undefined when the product sells no subscription or the cache has not loaded.
+     * The subscription type a line of this product starts at confirm, resolved by
+     * {@link ResolveSubscriptionTypeID}. Undefined when the product sells no subscription or the
+     * cache has not loaded.
      */
     public SubscriptionTypeForProduct(productID: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
-        const product = this.ProductByID(productID);
-        if (!product) return undefined;
-        const id = product.SubscriptionTypeID?.trim() || this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID?.trim();
+        const id = this.ResolveSubscriptionTypeID(productID);
         return id ? this.SubscriptionTypeByID(id) : undefined;
     }
 
@@ -211,6 +210,15 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         const explicit = product.RevenueRecognitionTypeID?.trim();
         if (explicit) return explicit;
         return this.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID?.trim() || null;
+    }
+    /**
+     * Product.SubscriptionTypeID when set, otherwise the product type's DefaultSubscriptionTypeID:
+     * the type confirm builds a term from (golive #339). Null means the line is not a subscription.
+     */
+    public ResolveSubscriptionTypeID(productID: string | null | undefined): string | null {
+        const product = this.ProductByID(productID);
+        if (!product) return null;
+        return ResolveSubscriptionTypeID(product.SubscriptionTypeID, this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID);
     }
     public EventProductByID(id: string | null | undefined): mjBizAppsOrdersEventProductEntity | undefined {
         return byID(this.EventProducts, id);
@@ -328,7 +336,7 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         if ((type?.Code ?? '').trim().toLowerCase() === GIFT_CARD_TYPE_CODE) return 'NotRequired';
         const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
         if (!revRec?.RequiresServicePeriod) return 'NotRequired';
-        if (product.SubscriptionTypeID) return 'Subscription';
+        if (this.ResolveSubscriptionTypeID(productID)) return 'Subscription';
         // The ROW, not the product type: the order save stamps the window from the Event Products row
         // (`applyEventServicePeriod`), so an event-type product loaded without one has no dates to
         // stamp and has to be asked for them like any other line.

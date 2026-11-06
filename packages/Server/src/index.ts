@@ -28,6 +28,9 @@ import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overla
 import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-progress.action.js';
 import { LoadReconcilePaymentProviderChargesAction } from './custom/reconcile-payment-provider-charges.action.js';
 import { LoadCheckPaymentWebhookEndpointsAction } from './custom/check-payment-webhook-endpoints.action.js';
+import { LoadCreateProviderSubscriptionsAction } from './custom/create-provider-subscriptions.action.js';
+import { LoadSyncProviderSubscriptionsAction } from './custom/sync-provider-subscriptions.action.js';
+import { LoadLinkProviderSubscriptionAction } from './custom/link-provider-subscription.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -36,6 +39,7 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadSubscriptionEntityServer,
     LoadProductPriceEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
@@ -64,6 +68,7 @@ import {
     LoadGetFulfillmentQueueOperation,
     LoadGetPriorReturnsOperation,
     LoadCheckCoverageOverlapOperation,
+    LoadConfirmReadinessOperation,
     LoadSubscriptionFamilyRules,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
@@ -170,11 +175,13 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     LoadOrderAdjustmentEntityServer();     // a recorded discount is neither re-authorized nor deleted by hand (golive #328)
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadSubscriptionEntityServer();        // a gateway-billed subscription changes only where the gateway is told
     LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadCheckCoverageOverlapOperation(); // 'Orders.CheckCoverageOverlap' — the band-overlap notice, from the rule confirm refuses with
+    LoadConfirmReadinessOperation();     // 'Orders.ConfirmReadiness' — the order form's concession blockers, from the gate confirm refuses with
     LoadSubscriptionFamilyRules();       // a product's subscription family must be in the product's company
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
@@ -230,6 +237,9 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDetectUnattestedProgressAction(); // 'Orders.DetectUnattestedProgress' — nightly unattested-progress exceptions (golive #279)
     LoadReconcilePaymentProviderChargesAction(); // 'Orders.ReconcilePaymentProviderCharges' — nightly charge reconciliation (#477)
     LoadCheckPaymentWebhookEndpointsAction(); // 'Orders.CheckPaymentWebhookEndpoints' — webhook endpoint drift check (#477)
+    LoadCreateProviderSubscriptionsAction(); // 'Orders.CreateProviderSubscriptions' — retry/backfill of gateway-billed subscriptions (option E)
+    LoadSyncProviderSubscriptionsAction(); // 'Orders.SyncProviderSubscriptions' — nightly sync of gateway-billed subscriptions (E3/E4/E6)
+    LoadLinkProviderSubscriptionAction(); // 'Orders.LinkProviderSubscription' — the checked link of an existing subscription (E3)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

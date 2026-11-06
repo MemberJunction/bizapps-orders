@@ -77,6 +77,22 @@ describe('FindUnapprovedConcessions — line prices', () => {
         expect((lineQuery?.[0] as { ExtraFilter: string }).ExtraFilter).not.toMatch(/PriceOverridden/);
     });
 
+    it('counts a DiscountPct on a line with no engine price, against its stated price (#905)', async () => {
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+        database([], [{ ...apiLine, UnitPrice: 1000, Quantity: 1, DiscountPct: 0.4 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 1 is discounted 40%, a concession worth 400.00/)]);
+    });
+
+    it('counts nothing on a line with no engine price and no discount', async () => {
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+        database([], [{ ...apiLine, UnitPrice: 1000, Quantity: 1, DiscountPct: 0 }]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
     it('clears the line once an approved concession covers its value', async () => {
         database([{ Status: 'Approved', DeliveryForm: 'Price', ReasonCategory: 'Retention', ComputedValue: 80, OrderLineID: LINE_ID }], [apiLine]);
 

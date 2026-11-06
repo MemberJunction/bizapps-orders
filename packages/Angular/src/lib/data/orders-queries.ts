@@ -51,6 +51,7 @@ import {
     LoadOrdersEngine,
     OrdersEngine,
     OverdueFilter,
+    ResolveSubscriptionTypeID,
     Today,
     ToISODate,
     type DateCell,
@@ -83,6 +84,8 @@ import type {
     mjBizAppsAccountingJournalEntryEntity,
 } from '@mj-biz-apps/accounting-entities';
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
+import { FormatDate } from '../panels/money-format';
+import { CREDITS_HELD_WHERE } from './credit-statuses';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -286,7 +289,7 @@ function likeText(value: string): string {
  * Renamed for what it selects rather than what it once excluded: an order that has BOOKED, which is
  * `IsBooked` in `OrderStatusBehavior` — "journal entries exist and the receivable is real".
  */
-export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'drafts' | 'credits';
+export type MJOOrderPreset = 'all' | 'overdue' | 'unpaid' | 'booked' | 'returnable' | 'drafts' | 'credits';
 
 export interface MJOGetOrdersOptions {
     Preset?: MJOOrderPreset;
@@ -321,8 +324,12 @@ export interface MJOGetOrdersOptions {
  *   owes nothing yet.
  * - `booked` — the order has confirmed, so journal entries exist and the receivable is real. This
  *   is `IsBooked` in `OrderStatusBehavior`, and it is what a return reverses.
- * - `credits` — a NEGATIVE balance, which IS the customer's credit. There is no separate instrument
- *   to look up.
+ * - `returnable` — `booked`, minus return orders themselves. A return made on the Returns page is
+ *   typed `Return` and reverses line by line, so its header `ReversesOrderHeaderID` can be empty;
+ *   either marks it. A return cannot be returned, so the Returns picker offers only these (#835).
+ * - `credits` — a NEGATIVE balance on a confirmed order, which IS the customer's credit. There is no
+ *   separate instrument to look up. A Draft, Quoted or Voided order's negative balance is no credit
+ *   (`credit-statuses.ts`; Orders.ApplyAccountCredit refuses it).
  */
 export async function GetOrders(
     options: MJOGetOrdersOptions = {},
@@ -345,11 +352,15 @@ export async function GetOrders(
             // but if `IsBooked` ever widens, this is the other half that has to widen with it.
             filters.push(`Status = 'Confirmed'`);
             break;
+        case 'returnable':
+            filters.push(`Status = 'Confirmed' AND ReversesOrderHeaderID IS NULL AND (OrderType IS NULL OR OrderType <> 'Return')`);
+            break;
         case 'drafts':
             filters.push(`Status IN ('Draft','Quoted')`);
             break;
         case 'credits':
-            filters.push(`Balance < 0`);
+            // Only a confirmed order's negative balance is a credit (credit-statuses.ts; the server refuses the rest).
+            filters.push(CREDITS_HELD_WHERE);
             break;
         default:
             filters.push(`Status <> 'Voided'`);
@@ -776,8 +787,13 @@ export interface OrderJournalRollup {
     JournalCount: number;
     /** Entries the As-of date pushed out of view. */
     ExcludedAfterAsOf: number;
-    /** Entries excluded on the posting-date basis because their batch is not Posted (or absent). */
+    /** Entries excluded on the posting-date basis because their batch is still on its way (or absent). */
     ExcludedNotPosted: number;
+    /**
+     * Entries excluded on the posting-date basis because their batch was Cancelled, Failed or
+     * Archived: it will not post as it stands, so they are not "not yet posted" (#790).
+     */
+    ExcludedStoppedBatch: number;
     /** One line per payment whose fee entry is also carried in full on other orders. */
     SharedPaymentNotes: string[];
 }
@@ -803,6 +819,8 @@ export interface JournalHeaderRow {
     CompanyID: string;
     Company: string;
     EntryNumber: string | null;
+    /** The entry type's name — Order Booking, Payment Receipt, a recognition type. */
+    EntryType: string | null;
     Description: string | null;
     EffectiveDate: DateCell;
     JournalEntryBatchID: string | null;
@@ -874,6 +892,7 @@ const EMPTY_ROLLUP: OrderJournalRollup = {
     JournalCount: 0,
     ExcludedAfterAsOf: 0,
     ExcludedNotPosted: 0,
+    ExcludedStoppedBatch: 0,
     SharedPaymentNotes: [],
 };
 
@@ -897,7 +916,17 @@ export async function LoadOrderJournalData(
         'EffectiveDate',
         500,
         user,
-        ['ID', 'CompanyID', 'Company', 'EntryNumber', 'Description', 'EffectiveDate', 'JournalEntryBatchID', 'LinkedRecordID'],
+        [
+            'ID',
+            'CompanyID',
+            'Company',
+            'EntryNumber',
+            'EntryType',
+            'Description',
+            'EffectiveDate',
+            'JournalEntryBatchID',
+            'LinkedRecordID',
+        ],
     );
     if (Journals.length === 0) return { ...EMPTY_DATA, SharedPaymentOrderCounts: origins.SharedPaymentOrderCounts };
 
@@ -912,7 +941,11 @@ export interface OrderJournalDateFilter {
     Journals: JournalHeaderRow[];
     ExcludedAfterAsOf: number;
     ExcludedNotPosted: number;
+    ExcludedStoppedBatch: number;
 }
+
+/** Batch statuses that end without posting: an entry in one is not on its way to the GL. */
+const STOPPED_BATCH_STATUSES = new Set(['Cancelled', 'Failed', 'Archived']);
 
 /**
  * Apply the As-of date and the date basis. Pure.
@@ -922,7 +955,9 @@ export interface OrderJournalDateFilter {
  *
  * On the **posting** basis an entry is dated by the `PostingDate` of the batch it belongs to, and
  * only a `Posted` batch counts: an entry sitting in a Pending, Approved or Sent batch, or in no
- * batch at all, has not reached the GL and so is excluded outright, As-of date or not.
+ * batch at all, has not reached the GL and so is excluded outright, As-of date or not. An entry in
+ * a Cancelled, Failed or Archived batch is excluded too, and counted apart from those still on
+ * their way.
  */
 export function FilterOrderJournals(
     data: OrderJournalData,
@@ -930,12 +965,13 @@ export function FilterOrderJournals(
 ): OrderJournalDateFilter {
     const asOf = options.AsOf ? ToISODate(options.AsOf) : null;
     const posting = options.Basis === 'posting';
-    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0 };
+    const result: OrderJournalDateFilter = { Journals: [], ExcludedAfterAsOf: 0, ExcludedNotPosted: 0, ExcludedStoppedBatch: 0 };
 
     for (const journal of data.Journals) {
         const batch = batchOf(data, journal);
         if (posting && (batch?.Status ?? '') !== 'Posted') {
-            result.ExcludedNotPosted += 1;
+            if (STOPPED_BATCH_STATUSES.has(batch?.Status ?? '')) result.ExcludedStoppedBatch += 1;
+            else result.ExcludedNotPosted += 1;
             continue;
         }
         const day = ToISODate(posting ? batch?.PostingDate : journal.EffectiveDate);
@@ -1072,6 +1108,7 @@ export function BuildOrderJournalRollup(
             ...EMPTY_ROLLUP,
             ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
             ExcludedNotPosted: filtered.ExcludedNotPosted,
+            ExcludedStoppedBatch: filtered.ExcludedStoppedBatch,
         };
     }
 
@@ -1087,6 +1124,7 @@ export function BuildOrderJournalRollup(
         JournalCount: filtered.Journals.length,
         ExcludedAfterAsOf: filtered.ExcludedAfterAsOf,
         ExcludedNotPosted: filtered.ExcludedNotPosted,
+        ExcludedStoppedBatch: filtered.ExcludedStoppedBatch,
         SharedPaymentNotes: sharedPaymentNotes(data, filtered.Journals),
     };
 }
@@ -1130,20 +1168,178 @@ export function BuildOrderJournalEntryRows(
     });
 }
 
+/** A column of an accounting-tab export. Matches MJ's `ExportColumn`, so it goes to the export dialog as is. */
+export interface OrderJournalExportColumn {
+    name: string;
+    displayName: string;
+    dataType: 'string' | 'number' | 'dateonly';
+    numberFormat?: string;
+}
+
+export type OrderJournalExportRow = Record<string, string | number | null>;
+
+/** Rows and columns for the export dialog. Dimension columns depend on which dimensions the rows carry. */
+export interface OrderJournalExport {
+    Columns: OrderJournalExportColumn[];
+    Rows: OrderJournalExportRow[];
+}
+
+const EXPORT_AMOUNT_FORMAT = '#,##0.00';
+
+function textColumn(name: string, displayName: string): OrderJournalExportColumn {
+    return { name, displayName, dataType: 'string' };
+}
+
+function dayColumn(name: string, displayName: string): OrderJournalExportColumn {
+    return { name, displayName, dataType: 'dateonly' };
+}
+
+function amountColumn(name: string, displayName: string): OrderJournalExportColumn {
+    return { name, displayName, dataType: 'number', numberFormat: EXPORT_AMOUNT_FORMAT };
+}
+
+/**
+ * One column per dimension name, sorted, keyed `Dim1`, `Dim2`… so a dimension called "Name" or
+ * "Debit" cannot overwrite a fixed column.
+ */
+function dimensionColumns(dimensionSets: OrderJournalDimension[][]): {
+    Columns: OrderJournalExportColumn[];
+    Cells: (dims: OrderJournalDimension[]) => OrderJournalExportRow;
+} {
+    const names = [...new Set(dimensionSets.flat().map((dim) => dim.Name))].sort((a, b) => a.localeCompare(b));
+    const keyByName = new Map(names.map((name, index) => [name, `Dim${index + 1}`]));
+    return {
+        Columns: names.map((name) => textColumn(keyByName.get(name) ?? name, name)),
+        Cells: (dims) => {
+            const cells: OrderJournalExportRow = {};
+            for (const name of names) cells[keyByName.get(name) ?? name] = null;
+            for (const dim of dims) cells[keyByName.get(dim.Name) ?? dim.Name] = dim.Value;
+            return cells;
+        },
+    };
+}
+
+/**
+ * The By line export: one row per journal LINE of every entry By line shows, with the entry's fields
+ * repeated on each of its lines. Pure.
+ *
+ * The screen shows one row per entry; the export goes one level down because tying out to the GL
+ * needs the account and dimensions, which only a line has. Same snapshot and same filter as the
+ * screen, so the file holds exactly the entries in view.
+ */
+export function BuildOrderJournalLineExport(
+    data: OrderJournalData,
+    options: OrderJournalViewOptions = {},
+): OrderJournalExport {
+    const filtered = FilterOrderJournals(data, options);
+    const labels = rollupLabels(filtered.Journals, data.Lines, data.Dims, data.Accounts);
+    const linesByJournal = new Map<string, JournalLineRow[]>();
+    for (const line of data.Lines) {
+        const key = line.JournalEntryID.toLowerCase();
+        const list = linesByJournal.get(key) ?? [];
+        list.push(line);
+        linesByJournal.set(key, list);
+    }
+    const dimsByLine = new Map<string, OrderJournalDimension[]>();
+    for (const dim of data.Dims) {
+        const key = dim.JournalEntryLineID.toLowerCase();
+        const list = dimsByLine.get(key) ?? [];
+        list.push(...presentDimensions([{ DimensionID: dim.DimensionID, DimensionValueID: dim.DimensionValueID }], labels));
+        dimsByLine.set(key, list);
+    }
+
+    const pairs = filtered.Journals.flatMap((journal) =>
+        (linesByJournal.get(journal.ID.toLowerCase()) ?? []).map((line) => ({ journal, line })),
+    );
+    const dimensions = dimensionColumns(pairs.map(({ line }) => dimsByLine.get(line.ID.toLowerCase()) ?? []));
+
+    const Rows = pairs.map(({ journal, line }) => {
+        const batch = batchOf(data, journal);
+        const account = labels.Account[line.GLAccountID.toLowerCase()];
+        return {
+            EntryNumber: journal.EntryNumber ?? '',
+            EntryType: journal.EntryType ?? '',
+            Description: journal.Description ?? '',
+            Company: journal.Company,
+            EffectiveDate: ToISODate(journal.EffectiveDate),
+            PostingDate: ToISODate(batch?.PostingDate),
+            Batch: batch?.JournalEntryBatchNumber ?? '',
+            BatchStatus: batch?.Status ?? 'Not batched',
+            AccountCode: account?.Code ?? '',
+            AccountName: account?.Name || line.GLAccount,
+            Debit: line.DebitAmount ?? 0,
+            Credit: line.CreditAmount ?? 0,
+            ...dimensions.Cells(dimsByLine.get(line.ID.toLowerCase()) ?? []),
+        };
+    });
+
+    return {
+        Columns: [
+            textColumn('EntryNumber', 'Entry'),
+            textColumn('EntryType', 'Entry type'),
+            textColumn('Description', 'Description'),
+            textColumn('Company', 'Company'),
+            dayColumn('EffectiveDate', 'Effective date'),
+            dayColumn('PostingDate', 'Posting date'),
+            textColumn('Batch', 'Batch'),
+            textColumn('BatchStatus', 'Batch status'),
+            textColumn('AccountCode', 'Account code'),
+            textColumn('AccountName', 'Account'),
+            amountColumn('Debit', 'Debit'),
+            amountColumn('Credit', 'Credit'),
+            ...dimensions.Columns,
+        ],
+        Rows,
+    };
+}
+
+/** The Rolled up export: the cards' rows, flattened, one row per company × account × dimension set. Pure. */
+export function BuildOrderJournalRollupExport(rollup: OrderJournalRollup): OrderJournalExport {
+    const rows = rollup.Cards.flatMap((card) => card.Rows);
+    const dimensions = dimensionColumns(rows.map((row) => row.Dimensions));
+    return {
+        Columns: [
+            textColumn('Company', 'Company'),
+            textColumn('AccountCode', 'Account code'),
+            textColumn('AccountName', 'Account'),
+            amountColumn('Debit', 'Debit'),
+            amountColumn('Credit', 'Credit'),
+            { name: 'SourceLineCount', displayName: 'Source lines', dataType: 'number' },
+            ...dimensions.Columns,
+        ],
+        Rows: rows.map((row) => ({
+            Company: row.Company,
+            AccountCode: row.AccountCode,
+            AccountName: row.AccountName,
+            Debit: row.Debit,
+            Credit: row.Credit,
+            SourceLineCount: row.SourceLineCount,
+            ...dimensions.Cells(row.Dimensions),
+        })),
+    };
+}
+
 /**
  * The one-line "what you are not seeing" note under the rollup, or null when nothing is hidden.
  *
- * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after 2026-09-10'
+ * The As-of date is written the way the rest of the order form writes dates (#791).
+ *
+ * @example ExcludedEntriesLabel(rollup, '2026-09-10') // '3 entries scheduled after Sep 10, 2026'
  */
 export function ExcludedEntriesLabel(rollup: OrderJournalRollup, asOf?: DateCell): string | null {
     const parts: string[] = [];
     if (rollup.ExcludedAfterAsOf > 0) {
-        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ?? 'the As-of date'}`);
+        parts.push(`${plural(rollup.ExcludedAfterAsOf)} scheduled after ${ToISODate(asOf) ? FormatDate(asOf) : 'the As-of date'}`);
     }
     if (rollup.ExcludedNotPosted > 0) {
         parts.push(`${plural(rollup.ExcludedNotPosted)} not yet posted`);
     }
-    return parts.length ? parts.join(', ') : null;
+    if (rollup.ExcludedStoppedBatch > 0) {
+        const one = rollup.ExcludedStoppedBatch === 1;
+        parts.push(`${plural(rollup.ExcludedStoppedBatch)} in ${one ? 'a canceled, failed or archived batch' : 'canceled, failed or archived batches'}`);
+    }
+    // A semicolon, not a comma: the formatted date carries its own comma ("Sep 1, 2026").
+    return parts.length ? parts.join('; ') : null;
 }
 
 function plural(count: number): string {
@@ -1363,16 +1559,17 @@ function toNettableLines(
     const companyByJE = new Map(journals.map((j) => [j.ID.toLowerCase(), j.CompanyID]));
     const dimsByLine = new Map<string, NettableLine['dims']>();
     for (const dim of dims) {
-        const existing = dimsByLine.get(dim.JournalEntryLineID) ?? [];
+        const key = dim.JournalEntryLineID.toLowerCase();
+        const existing = dimsByLine.get(key) ?? [];
         existing.push({ DimensionID: dim.DimensionID, DimensionValueID: dim.DimensionValueID });
-        dimsByLine.set(dim.JournalEntryLineID, existing);
+        dimsByLine.set(key, existing);
     }
     return lines.map((line) => ({
         companyId: companyByJE.get(line.JournalEntryID.toLowerCase()) ?? '',
         glAccountId: line.GLAccountID,
         debit: line.DebitAmount ?? 0,
         credit: line.CreditAmount ?? 0,
-        dims: dimsByLine.get(line.ID) ?? [],
+        dims: dimsByLine.get(line.ID.toLowerCase()) ?? [],
     }));
 }
 
@@ -2075,8 +2272,9 @@ export interface MJOProductOption {
     /** NULL = no cap. 1 = one unit per line (conference tickets). */
     MaxQuantityPerLine: number | null;
     /**
-     * Set when buying this product starts a subscription — the same column the server reads to
-     * decide which lines get a term (`OrderEntityServer.subscriptionLines`).
+     * Set when buying this product starts a subscription: the product's own type, or its product
+     * type's default, resolved the way the server decides which lines get a term
+     * (`OrderEntityServer.subscriptionLines`, golive #339).
      *
      * The catalog row carries it because a line editor otherwise cannot tell a membership from a
      * mug: `TypeName` is the product TYPE, and a subscription is a property of the product. Fields
@@ -2107,7 +2305,7 @@ export function CatalogOptionFrom(
         | 'MaxQuantityPerLine'
         | 'SubscriptionTypeID'
     >,
-    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity'> | undefined,
+    type: Pick<mjBizAppsOrdersProductTypeEntity, 'OrderLineExtensionEntity' | 'DefaultSubscriptionTypeID'> | undefined,
     listPrice: number | null,
     containsSubscription = false,
 ): MJOProductOption {
@@ -2123,7 +2321,7 @@ export function CatalogOptionFrom(
         ListPrice: listPrice,
         Taxable: !!product.IsTaxable,
         MaxQuantityPerLine: readMaxQuantityPerLine(product),
-        SubscriptionTypeID: product.SubscriptionTypeID ?? null,
+        SubscriptionTypeID: ResolveSubscriptionTypeID(product.SubscriptionTypeID, type?.DefaultSubscriptionTypeID),
         ContainsSubscription: containsSubscription,
     };
 }
@@ -2136,8 +2334,8 @@ export interface MJOBundleItemRow {
 
 /**
  * The bundles (lower-cased ids) with a subscription product among their components. A component sells
- * a subscription when its product names a subscription type, the same test bundle expansion uses to
- * decide which components take the bundle line's term start.
+ * a subscription when its product names a subscription type or inherits its product type's, the same
+ * test bundle expansion uses to decide which components take the bundle line's term start.
  */
 export function BundlesWithSubscription(
     items: readonly MJOBundleItemRow[],
@@ -2251,7 +2449,7 @@ async function getBundlesWithSubscription(user?: UserInfo): Promise<Set<string>>
         return new Set();
     }
     const engine = OrdersEngine.Instance;
-    return BundlesWithSubscription(result.Results ?? [], (id) => !!engine.ProductByID(id)?.SubscriptionTypeID);
+    return BundlesWithSubscription(result.Results ?? [], (id) => !!engine.ResolveSubscriptionTypeID(id));
 }
 
 /** Promotions, newest window first. */

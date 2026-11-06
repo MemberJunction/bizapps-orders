@@ -85,7 +85,7 @@
       "Name": "Cancel Subscription",
       "OperationKey": "Orders.CancelSubscription",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
-      "Description": "Cancel a subscription: policy in, reversal out. The subscription type's cancellation mode, refund mode and grace period decide when coverage ends, when access ends and what is refunded; the operation emits the reversal order, stamps the term and logs the lifecycle event in one transaction. Grace extends ACCESS, never revenue — storing one in place of the other silently revokes access early.",
+      "Description": "Cancel a subscription: policy in, reversal out. The subscription type's cancellation mode, refund mode and grace period decide when coverage ends, when access ends and what is refunded; the operation emits the reversal order, stamps the term and logs the lifecycle event in one transaction. Grace extends ACCESS, never revenue — storing one in place of the other silently revokes access early. When a payment gateway bills the subscription, the gateway is read first and cancelled first: the cancel is refused, with nothing changed, when the gateway cannot be read, has started a billing period Orders has not booked (its renewal on the term's last day), does not confirm, or an open gateway alert says another gateway subscription may be billing; a cancel the gateway already completed is recorded.",
       "InputTypeName": "CancelSubscriptionInput",
       "InputTypeDefinition": "@file:types/orders-cancel-subscription.input.ts",
       "InputTypeIsArray": false,

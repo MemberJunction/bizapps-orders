@@ -486,6 +486,11 @@ export interface CancelSubscriptionOutput {
     /** The reversal order, when one was needed. Absent when nothing was refunded. */
     ReversalOrderID?: string;
     ReversalOrderNumber?: string;
+    /**
+     * What the cancel did (or, on a preview, will do) at the payment gateway that bills the
+     * subscription. Absent when no gateway bills it.
+     */
+    Gateway?: CancelGatewayResult;
 }
 
 /** A later term cancelled alongside the affected one. */
@@ -493,6 +498,21 @@ export interface CanceledLaterTermResult {
     SubscriptionTermID: string;
     TermNumber: number;
     Decision: CancellationDecisionResult;
+}
+
+/**
+ * The payment gateway's part of a cancel, when a gateway bills the subscription. The gateway is
+ * asked before Orders writes anything; if it does not confirm, the cancel fails and nothing changes.
+ */
+export interface CancelGatewayResult {
+    /** The gateway's subscription id (Stripe `sub_...`). */
+    ProviderSubscriptionID: string;
+    /** `Now`: the gateway stops billing today. `EndOfCoverage`: it charges nothing after coverage ends. */
+    When: 'Now' | 'EndOfCoverage';
+    /** ISO instant after which the gateway charges nothing. */
+    BillingEndsAt?: string;
+    /** The gateway's answer. Absent on a preview. */
+    Outcome?: 'CanceledNow' | 'EndsAtPeriodEnd' | 'EndsAt' | 'AlreadyEnded' | 'AlreadyEnding';
 }
 
 /**
@@ -831,6 +851,37 @@ export interface CheckEntitlementOutput {
     EvaluatedAt: string;
     /** min(ValidTo, wall-clock now + 60s). Never derived from AsOf. Fail closed when stale. */
     CacheUntil: string;
+}
+
+/**
+ * Input for `Orders.ConfirmReadiness`.
+ *
+ * What would make confirm refuse this order on the concession gate. The order form asks this so the
+ * list it shows under "Before this can be confirmed" is the rule confirm enforces, not a copy of it.
+ *
+ * Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ConfirmReadinessInput {
+    /** A saved order. Its saved header and lines are checked, not unsaved edits in a browser. */
+    OrderHeaderID: string;
+}
+
+/**
+ * Output of `Orders.ConfirmReadiness`.
+ *
+ * Empty when confirm would pass the concession gate, and for an order that is already booked or
+ * voided.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ConfirmReadinessOutput {
+    /**
+     * One sentence per problem, in the wording confirm refuses with, e.g. "Line 1 is discounted 10%,
+     * a concession worth 1000.00 with no approved Price concession recorded for it."
+     */
+    ConcessionProblems: string[];
 }
 
 /**
@@ -2105,11 +2156,14 @@ export interface OrdersRecordProgressOutput {
     LineNumber?: number;
     MeasurementDate?: string;
     PercentComplete?: number;
-    /** The line's LineTotalNet — the amount the percent applies to. */
+    /** The size of the line's LineTotalNet — the amount the percent applies to. */
     LineAmount?: number;
-    /** Revenue recognised on the line before this observation. */
+    /**
+     * Revenue recognised on the line before this observation, as a magnitude: positive on a
+     * reversal (negative-quantity) line too, whose own RecognizedToDate is negative.
+     */
     RecognizedToDateBefore?: number;
-    /** LineAmount × PercentComplete, to the cent. */
+    /** LineAmount × PercentComplete, to the cent. A magnitude, like RecognizedToDateBefore. */
     RecognizedToDateAfter?: number;
     /** After − Before. Negative on a backward slide; zero means no entry was written. */
     RecognitionAmount?: number;
@@ -2697,6 +2751,22 @@ export class OrdersCheckEntitlementOperation extends BaseRemotableOperation<Chec
     public readonly OperationKey = "Orders.CheckEntitlement";
     public readonly ExecutionMode = 'Sync' as const;
     public readonly RequiredScope = "orders:entitlement-check";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ConfirmReadiness — Confirm Readiness
+// ============================================================
+/**
+ * Confirm Readiness
+ * The concession problems that would make confirm refuse a saved, unbooked order, one sentence each in the wording confirm refuses with: a concession awaiting approval, a line priced or discounted below its catalog price with no approved Price concession, a line whose product needs sale approval with none recorded. Read-only. Runs the same check confirm runs, over the saved order, so the order form's list cannot disagree with the refusal. A booked or voided order returns no problems.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ConfirmReadiness'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersConfirmReadinessOperation extends BaseRemotableOperation<ConfirmReadinessInput, ConfirmReadinessOutput> {
+    public readonly OperationKey = "Orders.ConfirmReadiness";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 
