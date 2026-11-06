@@ -233,7 +233,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         if (this.pickerCache?.Key !== key) {
             this.pickerCache = {
                 Key: key,
-                Results: RankCatalogMatches(this.Catalog, query, companyID || null).slice(
+                Results: RankCatalogMatches(
+                    this.Catalog.filter((p) => !p.NotSellableNew),
+                    query,
+                    companyID || null,
+                ).slice(
                     0,
                     PICKER_RESULT_LIMIT,
                 ),
@@ -1640,7 +1644,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
 
     private async loadCatalog(): Promise<void> {
         try {
-            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser);
+            // Keeps products not sold new: lines already on the order still need their name, subscription
+            // flag and quantity cap from here (`ProductFor`). `PickerResults` leaves them out.
+            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser, true);
             this.CatalogError = null;
         } catch (error) {
             this.Catalog = [];
