@@ -1,7 +1,7 @@
 import '@angular/compiler';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import {
@@ -216,5 +216,72 @@ describe('Status lives in the Lifecycle panel', () => {
         expect(PRODUCT_HEADER_HTML).toContain('Draft — not sellable on deals or orders.');
         expect(PRODUCT_HEADER_HTML).toContain('(click)="Activate()"');
         expect(PRODUCT_HEADER_HTML).toContain('(click)="ActivateAnyway()"');
+    });
+});
+
+/**
+ * "Activate anyway" saves the record, so it must not run once the user is editing: the save would
+ * write their pending edits too.
+ */
+describe('Activate never saves pending edits', () => {
+    type Header = ProductHeaderPanel;
+
+    /** Replaces the server round trip with a stub. */
+    function stubReadiness(panel: Header, check: () => Promise<unknown>): void {
+        (panel as unknown as { checkReadiness: () => Promise<unknown> }).checkReadiness = check;
+    }
+
+    /** A header on a saved Draft product, built without Angular's injector. */
+    function header(): { panel: Header; form: { EditMode: boolean }; save: ReturnType<typeof vi.fn> } {
+        const save = vi.fn().mockResolvedValue(true);
+        const form = { EditMode: false };
+        const panel = Object.create(ProductHeaderPanel.prototype) as Header;
+        Object.assign(panel, {
+            Record: { Status: 'Draft', IsSaved: true, ID: 'p-1', Save: save },
+            FormComponent: form,
+            Activating: false,
+            Readiness: null,
+            ActivateError: null,
+        });
+        return { panel, form, save };
+    }
+
+    const GAPS = { Ready: false, Missing: ['No price is in force today.'] };
+
+    it('closes the readiness warning on entering edit mode', () => {
+        const { panel, form } = header();
+        panel.Readiness = GAPS as never;
+        panel.ngDoCheck();
+        expect(panel.Readiness).not.toBeNull();
+        form.EditMode = true;
+        panel.ngDoCheck();
+        expect(panel.Readiness).toBeNull();
+    });
+
+    it('Activate anyway does not save in edit mode', async () => {
+        const { panel, form, save } = header();
+        panel.Readiness = GAPS as never;
+        form.EditMode = true;
+        await panel.ActivateAnyway();
+        expect(save).not.toHaveBeenCalled();
+        expect(panel.Record.Status).toBe('Draft');
+    });
+
+    it('Activate does not save when edit mode starts while the check runs', async () => {
+        const { panel, form, save } = header();
+        stubReadiness(panel, async () => {
+            form.EditMode = true;
+            return { Ready: true, Missing: [] };
+        });
+        await panel.Activate();
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    it('Activate saves Active when the product is ready and the form is not editing', async () => {
+        const { panel, save } = header();
+        stubReadiness(panel, async () => ({ Ready: true, Missing: [] }));
+        await panel.Activate();
+        expect(save).toHaveBeenCalledOnce();
+        expect(panel.Record.Status).toBe('Active');
     });
 });

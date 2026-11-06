@@ -1867,6 +1867,12 @@ export interface PreviewPriceInput {
     /** Force a specific list, ignoring the customer's assignment — for "what if" comparisons. */
     PriceListID?: string | null;
     FeeType?: string;
+    /**
+     * Price the product whatever its Status and availability window. For the product form's
+     * Activate check, which asks whether a Draft product has a price before it is sold. Order
+     * pricing never sets it, so a product that may not be sold still cannot be booked.
+     */
+    IgnoreSellability?: boolean;
 }
 
 /**

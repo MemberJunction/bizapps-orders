@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, DoCheck, OnInit, inject } from '@angular/core';
 import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import {
@@ -27,7 +27,7 @@ import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } 
     templateUrl: './product-header.panel.html',
     styleUrls: ['./document-hero.css'],
 })
-export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> implements OnInit {
+export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> implements OnInit, DoCheck {
     public ListPriceLabel = '—';
     private listPriceFor: string | null = null;
     private cdr = inject(ChangeDetectorRef, { optional: true });
@@ -105,7 +105,20 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
      * also write whatever else the user had changed and not yet saved.
      */
     public get CanActivate(): boolean {
-        return this.IsDraft && !this.EditMode && !!this.Record?.IsSaved && !this.Activating;
+        return this.mayActivate && !this.Activating;
+    }
+
+    /** `CanActivate` without the in-flight guard, for the save that runs while `Activating` is set. */
+    private get mayActivate(): boolean {
+        return this.IsDraft && !this.EditMode && !!this.Record?.IsSaved;
+    }
+
+    /**
+     * Entering edit mode closes an open readiness warning: "Activate anyway" saves the record, which
+     * would write the edits too. The form has no edit-mode event, so this checks on each pass.
+     */
+    public ngDoCheck(): void {
+        if (this.Readiness && this.EditMode) this.Readiness = null;
     }
 
     public async Activate(): Promise<void> {
@@ -130,6 +143,7 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     /** The user read the gaps and activates anyway. */
     public async ActivateAnyway(): Promise<void> {
         this.Readiness = null;
+        if (!this.CanActivate) return;
         this.Activating = true;
         this.cdr?.markForCheck();
         try {
@@ -149,7 +163,8 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         const productID = this.Record.ID;
         const [price, gl] = await Promise.all([
             new OrdersPreviewPriceOperation()
-                .Execute({ ProductID: productID })
+                // A Draft product may not be sold, so pricing refuses it unless told to ignore that.
+                .Execute({ ProductID: productID, IgnoreSellability: true })
                 .then((r) =>
                     r.Success && r.Output
                         ? { PriceInForce: r.Output.Success, PriceMessage: r.Output.Success ? null : r.Output.Message }
@@ -168,7 +183,9 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
         return EvaluateProductReadiness({ ...price, ...gl });
     }
 
+    /** Refuses once the user has entered edit mode, including while the readiness check ran. */
     private async saveActive(): Promise<void> {
+        if (!this.mayActivate) return;
         const previous = this.Record.Status;
         this.Record.Status = 'Active';
         if (!(await this.Record.Save())) {
