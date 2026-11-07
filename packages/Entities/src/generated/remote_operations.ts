@@ -1810,9 +1810,9 @@ export interface OrdersPollExternalPaymentsInput {
 /**
  * Output for `Orders.PollExternalPayments`.
  *
- * One outcome per payment considered. `ATTENTION` means the pass completed but left Unmatched or
- * ReversalNeeded rows a person must look at — reported as Success false so a job that notifies only
- * on failure tells somebody.
+ * One outcome per payment considered. `ATTENTION` means the pass completed but left Unmatched,
+ * Refused, Reapplied or ReversalNeeded rows a person must look at. It is reported as Success true:
+ * each such payment is announced once, by a notification on the pass that moved it into that state.
  *
  * NO import statements — definitions are emitted verbatim.
  */

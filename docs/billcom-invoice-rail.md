@@ -127,8 +127,11 @@ needs `orders:read`, the others `orders:write`.
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
-corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows fails with `ATTENTION`, so the
-job notifies.
+corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
+Each payment that pass moved into one of those states (or from one to another) gets one
+`Payment Needs Review` notification (in-app and email by default) to the poll job's notify user, else
+its owner, else the user running the poll; payments already waiting from earlier passes are not
+announced again.
 
 ## Actions, jobs and the webhook
 
