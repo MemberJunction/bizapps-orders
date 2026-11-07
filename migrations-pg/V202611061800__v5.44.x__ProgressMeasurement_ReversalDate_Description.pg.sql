@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202610291200__v5.39.x__ProgressMeasurement_ReversalDate_Description.sql
+-- PostgreSQL counterpart of V202611061800__v5.44.x__ProgressMeasurement_ReversalDate_Description.sql
 -- =============================================================================================
 -- Written by hand: the T-SQL side is one sp_updateextendedproperty call, which is COMMENT ON
 -- COLUMN here. No schema change. Schema names are written unquoted so they fold to the lowercase

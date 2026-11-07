@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202610291200 — ReversalJournalEntryID's description follows the closed-books
+-- V202611061800 — ReversalJournalEntryID's description follows the closed-books
 -- rule (golive #316)
 -- =============================================================================
 -- Orders.RecordProgress no longer decides a month is closed because a journal-
