@@ -18,6 +18,7 @@ import {
     type ResolvedPrice,
 } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+import { RequireUUID } from '../sql-guards.js';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
 
 /** The line fields the context depends on. */
@@ -141,7 +142,10 @@ async function loadHeader(
     const res = await rv.RunView<HeaderPricingFacts>(
         {
             EntityName: 'MJ_BizApps_Orders: Order Headers',
-            ExtraFilter: `ID = '${orderHeaderID}'`,
+            // The id can come from an UNSAVED, client-populated line during ValidateAsync. A non-UUID
+            // throws `InvalidOperationInputError` (reject, don't escape — see sql-guards.ts); the
+            // price-override gate's catch defers the line, and the FK refuses the bad id at save.
+            ExtraFilter: `ID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
             Fields: [
                 'CompanyID',
                 'OrderDate',
