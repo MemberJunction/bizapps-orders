@@ -264,7 +264,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         }>(
             {
                 EntityName: PAYMENT_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.PaymentHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.PaymentHeaderID, 'PaymentHeaderID')}'`,
                 Fields: ['PaymentNumber', 'ReceivingCompanyID', 'Status', 'PaymentDate', 'PaymentDetailID'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -294,7 +294,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const res = await rv.RunView<{ OrderNumber: string } & OrderCustomerFields>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['OrderNumber', 'BillToOrganization', 'BillToPerson'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -382,7 +382,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string; Balance: number | null; AmountPaid: number | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'TotalGross', 'OrderNumber', 'Balance', 'AmountPaid'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -396,7 +396,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const siblings = await rv.RunView<{ ID: string; Amount: number }>(
             {
                 EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${this.OrderHeaderID}'`,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'Amount'],
                 ResultType: 'simple',
                 BypassCache: true,
