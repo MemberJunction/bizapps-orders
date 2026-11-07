@@ -160,11 +160,26 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                         previewed.push(`provider ${p.ID}: ${job.Why}`);
                     }
                 }
-                const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, provider, user);
-                passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0, NewlyWaiting: result.NewlyWaiting ?? [] });
-                out.Outcomes.push(...result.Outcomes);
-                out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
-                if (result.Fault) faults.push(result.Fault);
+                // Filled as the pass goes, so payments it already moved into a waiting disposition are
+                // still announced when the pass throws part-way.
+                const newlyWaiting: PaymentReviewItem[] = [];
+                try {
+                    const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, newlyWaiting, provider, user);
+                    passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0, NewlyWaiting: newlyWaiting });
+                    out.Outcomes.push(...result.Outcomes);
+                    out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
+                    if (result.Fault) faults.push(result.Fault);
+                } catch (err) {
+                    // One provider throwing (a rail that is missing, inactive or not registered) must not
+                    // drop what the other providers recorded and collected: it is reported as a fault.
+                    const why = err instanceof Error ? err.message : String(err);
+                    LogError(`Orders.PollExternalPayments: provider ${p.ID} failed: ${why}`);
+                    faults.push(`provider ${p.ID}: ${why}`);
+                    if (newlyWaiting.length) passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: [], RailUnmatched: 0, NewlyWaiting: newlyWaiting });
+                }
+            }
+            if (!passes.length && faults.length) {
+                return { ...out, Success: false, ResultCode: 'ERROR', Message: `The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
             if (!passes.length) {
                 return {
@@ -264,14 +279,14 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
     private async pollProvider(
         paymentProviderID: string,
         opts: { preview: boolean; maxCount: number; since: string | null },
+        // Receives the payments this pass moved into a waiting disposition. A preview writes nothing,
+        // so a later live pass still finds them new; only a live pass collects them.
+        newlyWaiting: PaymentReviewItem[],
         provider: IMetadataProvider,
         user: UserInfo,
-    ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null; RailUnmatched?: number; NewlyWaiting?: PaymentReviewItem[] }> {
+    ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null; RailUnmatched?: number }> {
         const outcomes: ExternalPaymentOutcome[] = [];
         let railUnmatched = 0;
-        // Payments this pass moved into a waiting disposition. A preview writes nothing, so a later
-        // live pass still finds them new; only a live pass collects them.
-        const newlyWaiting: PaymentReviewItem[] = [];
         const rail = await ResolveInvoiceRail(paymentProviderID, provider, user);
         // A configuration fault (no Company Integration, live/sandbox mismatch, connector not loaded)
         // is the provider's problem, not any payment's: report it as a fault, write nothing.
@@ -371,7 +386,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                     : { Watermark: newWatermark, LastSucceededAt: new Date(), LastError: capped ? `Capped at ${opts.maxCount}; ${fresh.length - freshBatch.length} more next pass.` : null },
             );
         }
-        return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null, RailUnmatched: railUnmatched, NewlyWaiting: newlyWaiting };
+        return { Outcomes: outcomes, NewWatermark: newWatermark, Fault: fault ? `${rail.Config.Name}: ${fault}` : null, RailUnmatched: railUnmatched };
     }
 
     private async handlePayment(

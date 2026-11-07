@@ -8,6 +8,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const PROVIDER_ID = '11111111-2222-4333-8444-555555555555';
+const SECOND_PROVIDER_ID = '22222222-2222-4333-8444-555555555555';
 const COMPANY_ID = 'cccccccc-2222-4333-8444-555555555555';
 const NOTIFY_USER = 'aaaaaaaa-1111-4111-8111-111111111111';
 const OWNER_USER = 'bbbbbbbb-1111-4111-8111-111111111111';
@@ -28,6 +29,10 @@ const mocks = vi.hoisted(() => ({
     jobs: [] as unknown[],
     sends: [] as Array<{ userId: string; typeNameOrId: string; title: string; message: string; templateData?: Record<string, unknown> }>,
     sendBehaviour: 'ok' as 'ok' | 'throws' | 'refused',
+    /** What `RestorePaymentRecord` rebuilds from a stored payload; null rebuilds nothing. */
+    restored: null as unknown,
+    /** How a second provider behaves; 'none' lists only the first. */
+    secondProvider: 'none' as 'none' | 'throws' | 'fault',
 }));
 
 vi.mock('@memberjunction/notifications', () => ({
@@ -69,13 +74,24 @@ const fakeRail = {
     Config: { PaymentProviderID: PROVIDER_ID, Name: 'Test rail', TypeCode: 'BillCom', CompanyID: COMPANY_ID },
     CheckConfiguration: async () => ({ Success: true }),
     FetchPaymentsSince: async () => ({ Success: true, Value: { Payments: mocks.payments, NewWatermark: '2026-11-01T00:00:00.000Z' } }),
-    RestorePaymentRecord: () => null,
+    RestorePaymentRecord: () => mocks.restored,
     GetInvoice: async () => ({ Success: false }),
 };
 
 vi.mock('../InvoiceRailResolver.js', () => ({
-    ListPaymentSourceProviderIDs: async () => [{ ID: PROVIDER_ID, CompanyID: COMPANY_ID }],
-    ResolveInvoiceRail: async () => fakeRail,
+    ListPaymentSourceProviderIDs: async () => [
+        { ID: PROVIDER_ID, CompanyID: COMPANY_ID },
+        ...(mocks.secondProvider === 'none' ? [] : [{ ID: SECOND_PROVIDER_ID, CompanyID: COMPANY_ID }]),
+    ],
+    ResolveInvoiceRail: async (id: string) => {
+        if (id !== SECOND_PROVIDER_ID) return fakeRail;
+        if (mocks.secondProvider === 'throws') throw new Error('No invoice rail is registered for this provider');
+        return {
+            ...fakeRail,
+            Config: { ...fakeRail.Config, PaymentProviderID: SECOND_PROVIDER_ID, Name: 'Second rail' },
+            FetchPaymentsSince: async () => ({ Success: false, Reason: 'rail unreachable' }),
+        };
+    },
 }));
 
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
@@ -141,6 +157,8 @@ beforeEach(() => {
     mocks.jobs = [liveJob()];
     mocks.sends = [];
     mocks.sendBehaviour = 'ok';
+    mocks.restored = null;
+    mocks.secondProvider = 'none';
 });
 
 describe('a poll that leaves payments waiting for a person', () => {
@@ -208,6 +226,38 @@ describe('a poll that leaves payments waiting for a person', () => {
         expect(out.Success).toBe(true);
         expect(out.ResultCode).toBe('ATTENTION');
         expect(out.Message).toContain('0 notification(s) sent, 1 failed');
+    });
+
+    it('sends one notification when a re-applied payment the rail no longer returns is re-checked into a different waiting state', async () => {
+        // The rail returns nothing this pass; the open Reapplied row is rebuilt from its stored payload.
+        mocks.payments = [];
+        mocks.seen = [{ ...seenRow('Reapplied', '2026-10-29T12:00:00.000Z'), PaymentHeaderID: '99999999-2222-4333-8444-555555555555', Payload: '{}' } as SeenRow];
+        mocks.restored = payment({ Status: 'VOID' });
+        const out = await run();
+        expect(out.ReversalNeeded).toBe(1);
+        expect(mocks.sends).toHaveLength(1);
+        expect(mocks.sends[0].message).toContain('ReversalNeeded');
+    });
+
+    it('announces what one provider collected when another provider faults', async () => {
+        mocks.secondProvider = 'fault';
+        const out = await run();
+        expect(out.Success).toBe(false);
+        expect(out.ResultCode).toBe('ERROR');
+        expect(out.Message).toContain('rail unreachable');
+        expect(mocks.sends).toHaveLength(1);
+        expect(out.Message).toContain('1 payment(s) newly need review; 1 notification(s) sent.');
+    });
+
+    it('announces what one provider collected when another provider throws, and keeps its outcomes', async () => {
+        mocks.secondProvider = 'throws';
+        const out = await run();
+        expect(out.Success).toBe(false);
+        expect(out.ResultCode).toBe('ERROR');
+        expect(out.Message).toContain('No invoice rail is registered');
+        expect(out.Unmatched).toBe(1);
+        expect(out.Outcomes).toHaveLength(1);
+        expect(mocks.sends).toHaveLength(1);
     });
 
     it('sends nothing while the job is in Preview, so the first live run still announces it', async () => {
