@@ -254,6 +254,7 @@ interface Pollable {
     pollProvider(
         paymentProviderID: string,
         opts: { preview: boolean; maxCount: number; since: string | null },
+        newlyWaiting: unknown[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<{ Outcomes: Array<{ ExternalPaymentRef: string; Disposition: string }>; Fault: string | null }>;
@@ -271,7 +272,7 @@ describe('a provider pass', () => {
         mocks.externalPayments = [row()];
         mocks.externalInvoices = [invoice('invA')];
         const op = new PollExternalPaymentsOperation() as unknown as Pollable;
-        const out = await op.pollProvider(PROVIDER_ID, { preview: false, maxCount: 100, since: null }, fakeProvider, {} as UserInfo);
+        const out = await op.pollProvider(PROVIDER_ID, { preview: false, maxCount: 100, since: null }, [], fakeProvider, {} as UserInfo);
         expect(out.Fault).toBeNull();
         expect(out.Outcomes).toEqual([expect.objectContaining({ ExternalPaymentRef: '0rp01', Disposition: 'Captured' })]);
         expect(mocks.captures).toHaveLength(1);
