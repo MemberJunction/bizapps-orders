@@ -99,9 +99,16 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         // booked as each instalment is invoiced, and that entry is stamped on the schedule row
         // rather than on the line. Filtering on `JournalEntryID` therefore hid exactly the case this
         // screen exists for, and hid it silently — the line was simply absent, not refused.
+        //
+        // The order view is named from entity metadata, not a literal schema, so a host that installs
+        // the app under another schema name still gets a working list (#804).
+        const headerEntity = provider.EntityByName(ORDER_HEADER_ENTITY);
+        if (!headerEntity) {
+            return { Success: false, Message: `Entity '${ORDER_HEADER_ENTITY}' is not in metadata.`, Rows: [], RowCount: 0, Truncated: false, CanSupersede: canSupersede };
+        }
         const filters = [
-            `ProductID IN (${pocProductIDs.map((id) => `'${id}'`).join(',')})`,
-            `OrderHeaderID IN (SELECT ID FROM __mj_BizAppsOrders.vwOrderHeaders WHERE ConfirmedAt IS NOT NULL)`,
+            `ProductID IN (${pocProductIDs.map((id) => `'${RequireUUID(id, 'ProductID')}'`).join(',')})`,
+            `OrderHeaderID IN (SELECT ID FROM [${headerEntity.SchemaName}].[${headerEntity.BaseView}] WHERE ConfirmedAt IS NOT NULL)`,
         ];
         if (input?.CompanyIDs?.length) {
             filters.push(`CompanyID IN (${input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',')})`);

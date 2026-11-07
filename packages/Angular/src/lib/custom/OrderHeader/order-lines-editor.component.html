@@ -55,13 +55,13 @@
                         <!-- The pencil opens the PRICE editor, the DISCOUNT editor, or both — a user
                              may hold one authority without the other, and an order that can be
                              discounted but not re-priced still needs a way in. -->
-                        @if (CanOverride || CanDiscount) {
+                        @if (CanOverride || CanDiscount || CanPickBand(line)) {
                             <button
                                 type="button"
                                 class="mjo-ol-iconbtn mjo-ol-price__pencil"
                                 (click)="ToggleOverrideEditor(line)"
                                 [attr.aria-expanded]="IsOverrideEditorOpen(line)"
-                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : 'Discount line'">
+                                [attr.aria-label]="CanOverride ? (IsOverridden(line) ? 'Edit price override' : 'Override price or discount line') : (CanPickBand(line) ? 'Pick revenue band' : 'Discount line')">
                                 <i class="fa-solid fa-pencil" aria-hidden="true"></i>
                             </button>
                         }
@@ -110,7 +110,7 @@
 
             @if (IsOverrideEditorOpen(line)) {
                 <div class="mjo-ol-override" role="region" [attr.aria-label]="'Price and discount for ' + (ProductFor(line)?.Name ?? 'line')">
-                    @if (CanOverride) {
+                    @if (CanOverride || CanPickBand(line)) {
                         <mjo-line-price-picker
                             [Line]="line"
                             [OverrideKind]="OverrideKind"
@@ -408,6 +408,45 @@
                     } @else if (ServicePeriodMissing(line)) {
                         <span class="mjo-ol-term__hint">
                             Needed to confirm: revenue on this line is recognized against these dates.
+                        </span>
+                    }
+                </div>
+            }
+
+            <!--
+                EXPECTED DATES — percentage-of-completion lines (golive #455). Recognition follows
+                attested progress, so the dates are optional and only record the expected window.
+            -->
+            @if (ShowsExpectedServicePeriod(line)) {
+                <div class="mjo-ol-term">
+                    @if (CanEditServicePeriod()) {
+                        <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-exp-start-' + line.ID">Expected start</label>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [id]="'mjo-ol-exp-start-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'Start')"
+                            (change)="SetServicePeriod(line, 'Start', $event)">
+                        <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-exp-end-' + line.ID">Expected end</label>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [id]="'mjo-ol-exp-end-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'End')"
+                            (change)="SetServicePeriod(line, 'End', $event)">
+                    } @else {
+                        <span class="mjo-ol-term__label">Expected start</span>
+                        <span class="mjo-ol-term__value">{{ ServicePeriodValue(line, 'Start') || '—' }}</span>
+                        <span class="mjo-ol-term__label">Expected end</span>
+                        <span class="mjo-ol-term__value">{{ ServicePeriodValue(line, 'End') || '—' }}</span>
+                    }
+                    @if (ServicePeriodBackwards(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            End date must be on or after the start date.
+                        </span>
+                    } @else if (CanEditServicePeriod()) {
+                        <span class="mjo-ol-term__hint">
+                            Optional. Revenue on this line follows recorded progress, not these dates.
                         </span>
                     }
                 </div>

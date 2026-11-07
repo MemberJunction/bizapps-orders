@@ -85,6 +85,15 @@
  *             journal entries at all
  *   CS37      a line kept at list price with a 100% DiscountPct is a Scope concession worth list times quantity, and
  *             confirms once it is approved
+ * The order form asks what still holds confirm before the rep presses it (golive #340):
+ *
+ *   CS38      Orders.ConfirmReadiness lists each concession problem confirm refuses with, in its wording, writes
+ *             nothing, and lists none once a concession covers the line
+ *
+ * A price entered today does not apply to an order dated earlier (bc-aidp-next-golive#437):
+ *
+ *   CS39      a typed price on an order dated before the product's only price is in force confirms, measured as
+ *             a product with no price is
  *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
@@ -111,6 +120,7 @@ import type {
   mjBizAppsOrdersSalesRuleEntity,
   mjBizAppsOrdersSubscriptionTermEntity,
 } from "@mj-biz-apps/orders-entities";
+import { AsDateValue, Today } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
   AcknowledgeAmendmentsWith,
@@ -124,6 +134,7 @@ import {
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  upsertViaEntity,
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
@@ -132,6 +143,7 @@ import {
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
   PERSON_ENTITY,
+  PRODUCT_PRICE_ENTITY,
   REFERRAL_PROGRAM_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
   TASK_DECISION_ENTITY,
@@ -456,6 +468,16 @@ async function amendTerms(ctx: IntegrationCheckContext, input: Record<string, un
   const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
   Assert(result.Success, `Orders.AmendArrangement did not execute: ${result.ErrorMessage ?? result.ResultCode ?? "unknown"}`);
   return result.Output as AmendTermsOutput;
+}
+
+/** `Orders.ConfirmReadiness` through the class factory, as the form calls it. */
+async function confirmReadiness(ctx: IntegrationCheckContext, orderID: string): Promise<string[]> {
+  const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<{ OrderHeaderID: string }, { ConcessionProblems: string[] }>>(
+    BaseRemotableOperation, "Orders.ConfirmReadiness");
+  Assert(op != null, "'Orders.ConfirmReadiness' is not registered");
+  const result = await op!.Execute({ OrderHeaderID: orderID }, { provider: ctx.Provider, user: ctx.User });
+  Assert(result.Success, `Orders.ConfirmReadiness did not execute: ${result.ErrorMessage ?? result.ResultCode ?? "unknown"}`);
+  return result.Output?.ConcessionProblems ?? [];
 }
 
 interface AmendTermOutput {
@@ -1735,6 +1757,80 @@ export const ConcessionChecks: NamedCheck[] = [
         const line = await TxOne<{ LineTotalNet: number }>(ctx,
           `SELECT LineTotalNet FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${built.Lines[0].ID}'`);
         AssertEqual(Number(line.LineTotalNet), 0, "the line is given away");
+      }),
+  },
+  {
+    Id: "concessions.CS38",
+    Name: "CS38: Orders.ConfirmReadiness lists what confirm refuses on, writes nothing, and clears once covered",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, { maxPct: 0.25, maxValue: 1000 });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 2, DiscountPct: 0.1 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        const before = await confirmReadiness(ctx, built.Order.ID);
+        AssertEqual(before.length, 1, `one problem expected, got: ${JSON.stringify(before)}`);
+        Assert(/^Line 1 is discounted 10%, a concession worth 20\.00 .*no approved Price concession recorded for it\.$/.test(before[0]),
+          `the problem should be the gate's sentence, got: ${before[0]}`);
+        AssertEqual((await TxOne<{ Status: string }>(ctx,
+          `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`)).Status, "Draft",
+          "asking did not confirm the order");
+
+        // The refusal confirm gives carries the same clause.
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "the discounted line must still hold the confirm");
+        const refusal = built.Order.LatestResult?.CompleteMessage ?? "";
+        const clause = before[0].charAt(0).toLowerCase() + before[0].slice(1, -1);
+        Assert(refusal.includes(clause), `the refusal should carry "${clause}", got: ${refusal}`);
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID });
+        Assert(c.Saved && c.Entity.Status === "Approved", `recording failed: ${c.Message}`);
+        AssertEqual((await confirmReadiness(ctx, built.Order.ID)).length, 0, "an approved concession clears the list");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `with the list empty, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
+        AssertEqual((await confirmReadiness(ctx, built.Order.ID)).length, 0, "a booked order lists nothing");
+      }),
+  },
+  {
+    Id: "concessions.CS39",
+    Name: "CS39: a typed price on an order dated before the product's only price is in force confirms",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const today = Today();
+        // Every price the product could resolve starts today, as one entered in the app does.
+        const prices = await TxQuery<{ ID: string }>(ctx,
+          `SELECT pp.ID FROM ${ORDERS_SCHEMA}.ProductPrice pp
+            WHERE pp.Status = 'Active'
+              AND (pp.ProductID = '${f.Products.WidgetA}'
+                   OR pp.ProductCategoryID = (SELECT ProductCategoryID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.WidgetA}'))`);
+        Assert(prices.length > 0, "WidgetA has no price to move");
+        for (const p of prices) {
+          await upsertViaEntity(ctx, PRODUCT_PRICE_ENTITY, p.ID, { EffectiveFrom: today, EffectiveTo: null });
+        }
+
+        const dayBefore = new Date(`${today}T00:00:00Z`);
+        dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: AsDateValue(dayBefore.toISOString().slice(0, 10)) ?? undefined,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 6000 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(),
+          `a typed price with no price in force on the order date should confirm: ${built.Order.LatestResult?.CompleteMessage}`);
       }),
   },
 ];

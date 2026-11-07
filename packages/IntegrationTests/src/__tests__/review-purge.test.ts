@@ -4,6 +4,8 @@
  * The seeder books on the shared ORD-WORLD companies, so the company sweep never reached its rows.
  * These pin the marker shape and the batch that deletes by it; running the batch needs a database.
  */
+import { readdirSync, readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { CheckoutRunPurgeSQL, NewReviewMarker, REVIEW_MARKER_PREFIX, ReviewPurgeSQL } from '../fixture.js';
 
@@ -43,7 +45,6 @@ describe('ReviewPurgeSQL', () => {
         expect(sql.indexOf('SET XACT_ABORT ON')).toBeLessThan(sql.indexOf('BEGIN TRANSACTION'));
         const disables = sql.match(/DISABLE TRIGGER/g) ?? [];
         const enables = sql.match(/ENABLE TRIGGER/g) ?? [];
-        expect(disables.length).toBe(5);
         expect(enables.length).toBe(disables.length);
         expect(sql.lastIndexOf('ENABLE TRIGGER')).toBeGreaterThan(sql.indexOf('DELETE FROM'));
         expect(sql.trimEnd().endsWith('COMMIT TRANSACTION;')).toBe(true);
@@ -108,4 +109,55 @@ describe('CheckoutRunPurgeSQL (#950: what SR46-OT commits outside the harness tr
         expect((sql.match(/DISABLE TRIGGER/g) ?? []).length).toBe((sql.match(/ENABLE TRIGGER/g) ?? []).length);
         expect(sql.trimEnd().endsWith('COMMIT TRANSACTION;')).toBe(true);
     });
+});
+
+/**
+ * Every refusing trigger in the migrations, at its newest definition: name, table, and whether it
+ * fires on DELETE. A guard trigger is one whose body THROWs; CodeGen's trgUpdate* triggers never do.
+ */
+function guardTriggers(): { name: string; table: string; onDelete: boolean }[] {
+    const dir = fileURLToPath(new URL('../../../../migrations/', import.meta.url));
+    const latest = new Map<string, { name: string; table: string; onDelete: boolean; throws: boolean }>();
+    // Filenames sort by version, so a later CREATE OR ALTER replaces an earlier definition.
+    for (const file of readdirSync(dir).filter((f) => /^V\d{12}__.*\.sql$/.test(f)).sort()) {
+        for (const batch of readFileSync(dir + file, 'utf8').split(/^\s*GO\s*$/im)) {
+            const m = /CREATE\s+(?:OR\s+ALTER\s+)?TRIGGER\s+\[[^\]]+\]\.\[?(\w+)\]?\s+ON\s+\[[^\]]+\]\.\[(\w+)\]\s+AFTER\s+([\w\s,]+?)\s+AS\b/i.exec(batch);
+            if (m) latest.set(m[1], { name: m[1], table: m[2], onDelete: /DELETE/i.test(m[3]), throws: /\bTHROW\b/i.test(batch) });
+        }
+    }
+    return [...latest.values()].filter((t) => t.throws);
+}
+
+describe('purge trigger list against the trigger definitions', () => {
+    const guards = guardTriggers();
+    const purges = {
+        ReviewPurgeSQL: ReviewPurgeSQL('REVIEW-ABC123'),
+        CheckoutRunPurgeSQL: CheckoutRunPurgeSQL({
+            OrderIDs: ['11111111-1111-1111-1111-111111111111'],
+            SubscriptionIDs: [],
+            PaymentProviderID: '44444444-4444-4444-4444-444444444444',
+        }),
+    };
+
+    it('finds the guard triggers, so an unparsed migration cannot pass this vacuously', () => {
+        expect(guards.map((t) => t.name)).toContain('trg_OrderLineProgressMeasurement_Immutable');
+        expect(guards.map((t) => t.name)).toContain('trg_InstalmentLineBilling_Immutable');
+    });
+
+    for (const [purge, sql] of Object.entries(purges)) {
+        it(`${purge} disables every guard that refuses a DELETE it runs`, () => {
+            const missing = guards
+                .filter((t) => t.onDelete && sql.includes(`DELETE FROM __mj_BizAppsOrders.${t.table} `))
+                .filter((t) => !sql.includes(`DISABLE TRIGGER __mj_BizAppsOrders.${t.name} ON __mj_BizAppsOrders.${t.table};`))
+                .map((t) => t.name);
+            expect(missing).toEqual([]);
+        });
+
+        it(`${purge} names only triggers that exist, each re-enabled`, () => {
+            const known = new Set(guards.map((t) => `${t.name} ON __mj_BizAppsOrders.${t.table}`));
+            const disabled = [...sql.matchAll(/DISABLE TRIGGER __mj_BizAppsOrders\.(\w+ ON __mj_BizAppsOrders\.\w+);/g)].map((m) => m[1]);
+            expect(disabled.filter((t) => !known.has(t))).toEqual([]);
+            for (const t of disabled) expect(sql).toContain(`ENABLE TRIGGER __mj_BizAppsOrders.${t};`);
+        });
+    }
 });

@@ -19,12 +19,14 @@ import type {
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
 } from './generated/entity_subclasses';
+import { ResolveSubscriptionTypeID } from './subscription-type';
 
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 
 /**
@@ -289,8 +291,8 @@ async function reactivationOf(
  * no renewal target, and a subscriber who already holds the product.
  *
  * Renewal lines are left out: they name the subscription they continue. Lines are returned in the
- * order given. Three reads whatever the line count: products, then the candidate subscriptions,
- * then their terms.
+ * order given. At most four reads whatever the line count: products, their product types (only when
+ * a product inherits its subscription type), then the candidate subscriptions, then their terms.
  */
 export async function FindUnansweredHeldLines(
     order: HoldingOrder | null,
@@ -355,11 +357,11 @@ async function subscriptionLinesToAsk(
     const open = lines.filter((l) => !l.SubscriptionAction && !l.RenewsSubscriptionID && UUID_PATTERN.test(l.ProductID ?? ''));
     if (open.length === 0) return [];
 
-    const products = await rv.RunView<{ ID: string; SubscriptionTypeID: string | null }>(
+    const products = await rv.RunView<{ ID: string; SubscriptionTypeID: string | null; ProductTypeID: string | null }>(
         {
             EntityName: PRODUCT_ENTITY,
             ExtraFilter: `ID IN (${inList(open.map((l) => l.ProductID))})`,
-            Fields: ['ID', 'SubscriptionTypeID'],
+            Fields: ['ID', 'SubscriptionTypeID', 'ProductTypeID'],
             ResultType: 'simple',
         },
         user,
@@ -368,9 +370,31 @@ async function subscriptionLinesToAsk(
         throw new Error(`Could not read the products on the order: ${products.ErrorMessage}`);
     }
 
+    // A product with no type of its own inherits its product type's default, as confirm does.
+    const typeIDs = products.Results.filter((p) => !p.SubscriptionTypeID && p.ProductTypeID && UUID_PATTERN.test(p.ProductTypeID))
+        .map((p) => p.ProductTypeID as string);
+    const typeDefaults = new Map<string, string | null>();
+    if (typeIDs.length > 0) {
+        const types = await rv.RunView<{ ID: string; DefaultSubscriptionTypeID: string | null }>(
+            {
+                EntityName: PRODUCT_TYPE_ENTITY,
+                ExtraFilter: `ID IN (${inList(typeIDs)})`,
+                Fields: ['ID', 'DefaultSubscriptionTypeID'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        if (!types.Success) {
+            throw new Error(`Could not read the product types on the order: ${types.ErrorMessage}`);
+        }
+        for (const t of types.Results) typeDefaults.set(t.ID.toLowerCase(), t.DefaultSubscriptionTypeID);
+    }
+    const isSubscriptionProduct = (p: { SubscriptionTypeID: string | null; ProductTypeID: string | null }): boolean =>
+        !!ResolveSubscriptionTypeID(p.SubscriptionTypeID, typeDefaults.get((p.ProductTypeID ?? '').toLowerCase()));
+
     const asked: AskedLine[] = [];
     for (const line of open) {
-        const isSubscription = products.Results.some((p) => UUIDsEqual(p.ID, line.ProductID) && !!p.SubscriptionTypeID);
+        const isSubscription = products.Results.some((p) => UUIDsEqual(p.ID, line.ProductID) && isSubscriptionProduct(p));
         const subscriber = isSubscription ? HoldingSubscriberFor(line, order) : null;
         if (subscriber) asked.push({ Line: line, Subscriber: subscriber });
     }

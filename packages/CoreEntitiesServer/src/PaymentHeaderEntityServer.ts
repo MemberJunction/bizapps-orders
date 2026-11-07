@@ -51,7 +51,6 @@
 import {
     BaseEntity,
     BaseEntityResult,
-    BaseRemotableOperation,
     DatabaseProviderBase,
     EntitySaveOptions,
     IMetadataProvider,
@@ -64,9 +63,9 @@ import {
     ValidationErrorType,
     ValidationResult,
 } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { RegisterClass } from '@memberjunction/global';
 import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -74,8 +73,8 @@ import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJourna
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import {
-    DepositReleasedByCompany,
     PlanLineDeposits,
+    ReversalDepositWorking,
     type DepositWorking,
     type InstalmentCashFacts,
 } from './PaymentScheduleBehavior.js';
@@ -84,6 +83,7 @@ import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
 import { RequireUUID } from './sql-guards.js';
+import { OrderCustomerName, type OrderCustomerFields } from './JournalEntryCustomer.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -466,14 +466,20 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * Where each order's deposit planning starts: the pre-payment schedule, plus — when this payment
      * takes cash back — what that took out of the rows' deposits, read now that every line is down.
      */
-    private async depositWorkingFor(orderID: string, before: InstalmentCashFacts[], reversing: boolean): Promise<DepositWorking> {
+    private async depositWorkingFor(
+        orderID: string,
+        before: InstalmentCashFacts[],
+        reversing: boolean,
+        namedRowIDs: Iterable<string | null | undefined>,
+    ): Promise<DepositWorking> {
         if (!reversing || !before.length) return { Facts: before, Released: new Map() };
         const after = await LoadInstalmentCashFacts(
             this.ProviderToUse as unknown as IRunViewProvider,
             this.ContextCurrentUser as UserInfo,
             orderID,
         );
-        return { Facts: before, Released: DepositReleasedByCompany(before, after) };
+        // Per row as well as per company, so the line that named a row carries its release (#812).
+        return ReversalDepositWorking(before, after, namedRowIDs);
     }
 
     private async bookAllocations(
@@ -513,6 +519,12 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         }
 
         if (unbookedLines.length === 0) return;
+        // Reversing lines that name an instalment plan first, so each claims the deposit released from
+        // its own row before an unnamed line draws on what is left (#812). Lines that put cash in keep
+        // their order (the sort is stable), since the capture split depends on it.
+        const namedReversalFirst = (l: mjBizAppsOrdersPaymentLineEntity): number =>
+            (this.Status === 'Refunded' || (l.Amount ?? 0) < 0) && l.OrderHeaderPaymentScheduleID ? 0 : 1;
+        unbookedLines.sort((a, b) => namedReversalFirst(a) - namedReversalFirst(b));
 
         // Both builders configure the accounting engine on the way in, so the intercompany pairs
         // and account links are current without a separate Config call here.
@@ -546,7 +558,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                         `there is no basis for deciding whose revenue the cash settles.`,
                 );
             }
-            const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
+            const order = await this.loadOrderLabel(line.OrderHeaderID);
 
             const orderKey = String(line.OrderHeaderID).toLowerCase();
             const before = scheduleFactsByOrder.get(orderKey);
@@ -557,7 +569,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 );
             }
             const isReversal = this.Status === 'Refunded' || (line.Amount ?? 0) < 0;
-            const working = workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal));
+            const namedRowIDs = unbookedLines
+                .filter((l) => String(l.OrderHeaderID).toLowerCase() === orderKey)
+                .map((l) => l.OrderHeaderPaymentScheduleID);
+            const working =
+                workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal, namedRowIDs));
             const plan = PlanLineDeposits(
                 AllocateByCompany(Math.abs(line.Amount ?? 0), orderLines, line.OrderLineID ?? null),
                 isReversal,
@@ -569,7 +585,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             const { Drafts } = await factory.BuildAllocationDrafts({
                 PaymentLineID: line.ID,
                 PaymentNumber: this.PaymentNumber,
-                OrderNumber: orderNumber,
+                OrderNumber: order.OrderNumber,
+                CustomerName: order.CustomerName,
                 Amount: line.Amount ?? 0,
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
@@ -609,19 +626,21 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 
 
-    private async loadOrderNumber(orderHeaderID: string): Promise<string> {
+    /** An order's number and customer, for the entry descriptions; the id stands in for a missing number. */
+    private async loadOrderLabel(orderHeaderID: string): Promise<{ OrderNumber: string; CustomerName: string | null }> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ OrderNumber: string }>(
+        const res = await rv.RunView<{ OrderNumber: string } & OrderCustomerFields>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID='${orderHeaderID}'`,
-                Fields: ['OrderNumber'],
+                Fields: ['OrderNumber', 'BillToOrganization', 'BillToPerson'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        return res?.Results?.[0]?.OrderNumber ?? String(orderHeaderID);
+        const row = res?.Results?.[0];
+        return { OrderNumber: row?.OrderNumber ?? String(orderHeaderID), CustomerName: row ? OrderCustomerName(row) : null };
     }
 
     /**
@@ -897,16 +916,10 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CreateJournalEntriesResult> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-            BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>
-        >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-
-        if (!op) {
-            throw new Error(
-                `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps ` +
-                    `Accounting server package must be loaded before payments can book the cash leg.`,
-            );
-        }
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
+            'Accounting.CreateJournalEntries',
+            'book the cash leg of a payment',
+        );
 
         const result = await op.Execute({ Drafts: drafts }, { provider, user });
         if (!result.Success) {

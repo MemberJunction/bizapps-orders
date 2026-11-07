@@ -29,6 +29,8 @@ import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-p
 import { LoadReconcilePaymentProviderChargesAction } from './custom/reconcile-payment-provider-charges.action.js';
 import { LoadCheckPaymentWebhookEndpointsAction } from './custom/check-payment-webhook-endpoints.action.js';
 import { LoadCreateProviderSubscriptionsAction } from './custom/create-provider-subscriptions.action.js';
+import { LoadSyncProviderSubscriptionsAction } from './custom/sync-provider-subscriptions.action.js';
+import { LoadLinkProviderSubscriptionAction } from './custom/link-provider-subscription.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -67,6 +69,8 @@ import {
     LoadGetPriorReturnsOperation,
     LoadCheckCoverageOverlapOperation,
     LoadCheckOrderLinesEditableOperation,
+    LoadConfirmReadinessOperation,
+    LoadExplainProductGLAccountsOperation,
     LoadSubscriptionFamilyRules,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
@@ -180,6 +184,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadCheckCoverageOverlapOperation(); // 'Orders.CheckCoverageOverlap' — the band-overlap notice, from the rule confirm refuses with
     LoadCheckOrderLinesEditableOperation(); // 'Orders.CheckOrderLinesEditable' — the editor's read-only state, from the veto the line save refuses with
+    LoadConfirmReadinessOperation();     // 'Orders.ConfirmReadiness' — the order form's concession blockers, from the gate confirm refuses with
+    LoadExplainProductGLAccountsOperation(); // 'Orders.ExplainProductGLAccounts' — a product's GL accounts per role, from the walk confirm books through (golive#439)
     LoadSubscriptionFamilyRules();       // a product's subscription family must be in the product's company
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
@@ -236,6 +242,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadReconcilePaymentProviderChargesAction(); // 'Orders.ReconcilePaymentProviderCharges' — nightly charge reconciliation (#477)
     LoadCheckPaymentWebhookEndpointsAction(); // 'Orders.CheckPaymentWebhookEndpoints' — webhook endpoint drift check (#477)
     LoadCreateProviderSubscriptionsAction(); // 'Orders.CreateProviderSubscriptions' — retry/backfill of gateway-billed subscriptions (option E)
+    LoadSyncProviderSubscriptionsAction(); // 'Orders.SyncProviderSubscriptions' — nightly sync of gateway-billed subscriptions (E3/E4/E6)
+    LoadLinkProviderSubscriptionAction(); // 'Orders.LinkProviderSubscription' — the checked link of an existing subscription (E3)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class

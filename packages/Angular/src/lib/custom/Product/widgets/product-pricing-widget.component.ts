@@ -26,7 +26,16 @@ import type {
     mjBizAppsOrdersPriceListEntity
 } from '@mj-biz-apps/orders-entities';
 import { FormatDate, FormatMoney } from '../../../panels/money-format';
-import { LoadOrdersEngine, OrdersEngine, PRICE_APPLICABILITY_SOURCES, ProductPriceEntity, TodayAsDateValue, priceApplies } from '@mj-biz-apps/orders-entities';
+import {
+    AsDateValue,
+    LoadOrdersEngine,
+    OrdersEngine,
+    PRICE_APPLICABILITY_SOURCES,
+    ProductPriceEntity,
+    Today,
+    TodayAsDateValue,
+    priceApplies,
+} from '@mj-biz-apps/orders-entities';
 
 export interface PriceChannel {
     ID: string | null;
@@ -147,6 +156,11 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     public WhenFields: FilterFieldInfo[] = [];
     public NewPriceName = 'Base';
     public NewPriceAmount = 0;
+    /**
+     * Effective From for the next price or tier added, as `YYYY-MM-DD` for the date input. Defaults to
+     * the business day; an order dated before it gets no list price from it (bc-aidp-next-golive#437).
+     */
+    public NewPriceEffectiveFrom = Today();
     public QuoteOrgType = 'Member';
     public QuoteResult = { AmountText: '—', Why: '', Skipped: '' };
     public InheritedRecords: ProductPriceEntity[] = [];
@@ -200,6 +214,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     ngOnInit(): void {
+        // Again here: the field initializer can run before the business time zone has loaded.
+        this.NewPriceEffectiveFrom = Today();
         this.LoadPricingData();
     }
 
@@ -636,9 +652,9 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             newPrice.FeeType = 'Standard';
             newPrice.Priority = 0;
             newPrice.Status = 'Active';
-            // The LOCAL calendar day, not new Date(): an instant serialises in UTC, which dated
-            // every evening-created price TOMORROW and made it refuse to apply until then.
-            newPrice.EffectiveFrom = TodayAsDateValue();
+            // The chosen calendar day pinned to midnight UTC, not new Date(): an instant serialises in
+            // UTC, which dated every evening-created price TOMORROW and made it refuse to apply until then.
+            newPrice.EffectiveFrom = this.newPriceEffectiveFromValue();
             const bracket = maxQty != null ? `${minQty}–${maxQty}` : `${minQty}+`;
             (newPrice as { Name?: string }).Name = `${this.NewTierModel || 'Volume'} ${bracket}`.slice(0, 100);
 
@@ -859,6 +875,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         const md = new Metadata();
         const out: FilterFieldInfo[] = [];
         for (const src of PRICE_APPLICABILITY_SOURCES) {
+            if (src.fields) {
+                for (const f of src.fields) {
+                    out.push({ name: `${src.key}.${f.name}`, displayName: `${src.label} · ${f.label}`, type: f.type });
+                }
+                continue;
+            }
+            if (!src.entityName) continue;
             const ent = md.EntityByName(src.entityName);
             if (!ent) continue;
             for (const f of ent.Fields) {
@@ -984,9 +1007,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             newPrice.FeeType = 'Standard';
             newPrice.Priority = this.nextPriorityOnChannel();
             newPrice.Status = 'Active';
-            // Same rule as AddTierBracket: the LOCAL calendar day, or the price starts tomorrow
-            // for anyone saving in the evening.
-            newPrice.EffectiveFrom = TodayAsDateValue();
+            // Same rule as AddTierBracket.
+            newPrice.EffectiveFrom = this.newPriceEffectiveFromValue();
             const saved = await this.saveProductGraph();
             if (saved) {
                 this.ShowToast(`Added ${name} · ${this.FormatCurrency(newPrice.Amount)}`, 'success');
@@ -1003,6 +1025,11 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             this.IsSaving = false;
             this.cdr?.markForCheck();
         }
+    }
+
+    /** The Effective From the add row names, or today when the input was cleared. */
+    private newPriceEffectiveFromValue(): Date {
+        return AsDateValue(this.NewPriceEffectiveFrom) ?? TodayAsDateValue();
     }
 
     public async OverrideInherited(row: PriceCard): Promise<void> {

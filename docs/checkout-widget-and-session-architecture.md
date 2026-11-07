@@ -175,7 +175,8 @@ The diagram shows a few columns; discovery lists every column the rules below ke
    - `ntext` / `text`, `nvarchar(max)` / `varchar(max)` (stored as `Length` -1), and strings longer than 255 characters (`EntityField.MaxLength`; `Length` is bytes) ➔ `textarea`
    - Any other string ➔ `text`
 3. **Exclusions**: System audit fields (`__mj_CreatedAt`, `__mj_UpdatedAt`), primary keys (`ID`), parent `OrderLine` fields, `PersonID` (replaced by the contact inputs), `CheckInAt`, virtual fields and fields the API cannot update are excluded.
-4. **Required**: a discovered field is required when its column is `NOT NULL` and has no default. A column with a default (Event Order Lines' `AttendanceStatus`, default `Registered`) is optional, since the database fills it.
+4. **Required**: a discovered field is required when its column is `NOT NULL` and has no default. A column with a default (Event Order Lines' `AttendanceStatus`, default `Registered`) is optional, since the database fills it. A blank answer to such a field, or to a nullable one, is not written, so the default applies; a number that does not parse is dropped.
+5. **What the server writes**: draft and completion write only the extension columns the widget presents: its authored `extensionFields` when it has them, otherwise the columns these rules discover. Any other key a request sends is ignored, so a column added to the extension entity later is never writable through a widget that lists its own fields.
 
 ---
 
@@ -212,7 +213,7 @@ Both `ProductType` and `CheckoutWidget` have a `Configuration` column holding JS
 | `redirectUrl` | Where the public checkout sends the buyer once the order is confirmed, with `order=<order number>` appended. |
 | `sendReceipt` | Asks the payment gateway to e-mail its own receipt to the buyer (Stripe `receipt_email`). Off by default. Server-side only. |
 | `extensionEntityName` | The order-line extension entity; `/initialize` fills it from the product type when it discovers the fields. |
-| `extensionFields` | Form fields for the extension entity (`name`, `label`, `type`, `required`, `placeholder`, `options`). Discovered from metadata when not authored (see [Metadata Reflection & Auto-Discovery](#metadata-reflection--auto-discovery)). |
+| `extensionFields` | Form fields for the extension entity (`name`, `label`, `type`, `required`, `placeholder`, `options`, `perPerson`). Discovered from metadata when not authored (see [Metadata Reflection & Auto-Discovery](#metadata-reflection--auto-discovery)). |
 | `questions` | Questions the buyer answers before paying (see [Questions at Checkout](#questions-at-checkout-questions)). |
 | `choiceGroups` | "Choose N of these M options" groups (see [Choice Groups at Checkout](#choice-groups-at-checkout-choicegroups)). |
 | `paymentProviderId` | The Payment Provider row that opens payment intents for this widget's sessions. Never taken from the client; required before a paid checkout can complete. Server-side only. |
@@ -243,10 +244,10 @@ When rendered, the checkout component applies theme tokens directly as CSS varia
 If `customUI.css` is supplied in the widget or product type configuration, the rules are injected into a custom style tag for granular design customization.
 
 ### Client-Side Lifecycle JavaScript Hooks
-Custom JS defined in `customUI.js` executes within the widget context:
+Custom JS defined in `customUI.js` executes within the widget context and registers its hooks on `widgetContext.hooks`, which belong to that widget alone:
 
 ```javascript
-window.MJCheckoutHooks = {
+Object.assign(widgetContext.hooks, {
     onInit({ config, distributionSlug }) {
         console.log("Widget initialized for distribution:", distributionSlug);
     },
@@ -264,10 +265,10 @@ window.MJCheckoutHooks = {
     onDestroy({ component }) {
         console.log("Widget instance unmounted");
     }
-};
+});
 ```
 
-The widget calls whatever `window.MJCheckoutHooks` holds, so the host page's own script can set it too. `customUI.js` runs through `new Function`, which a Content-Security-Policy without `'unsafe-eval'` blocks. The public checkout page MJAPI serves has such a policy, so there `customUI.js` does not run and the widget shows a notice instead.
+A widget calls its own hooks first, then any the host page's own script set on `window.MJCheckoutHooks`, which every widget on the page shares. A `customUI.js` written for `window.MJCheckoutHooks` still works: what it assigns there while it runs moves to its widget, and the page-wide object is put back, so two widgets on one page never call each other's hooks. A destroyed widget's hooks stop running. `customUI.js` runs through `new Function`, which a Content-Security-Policy without `'unsafe-eval'` blocks. The public checkout page MJAPI serves has such a policy, so there `customUI.js` does not run and the widget shows a notice instead.
 
 ---
 
@@ -280,7 +281,7 @@ Products represent different purchasing units:
 ### UI Behavior
 When `unitMode === 'perUnit'` (or the Angular config sets `isEvent`) and the quantity is above 1:
 - The form shows one card per unit, **Item 1** to **Item N**, under **Item Details (N)**.
-- A **Copy Primary Info to All** button copies the first card's fields, except name and e-mail, into the others.
+- A **Copy Primary Info to All** button copies the first card's shared fields (company, dietary needs) into the others. Fields that identify one attendee stay as they are: a field whose definition sets `perPerson: true`, or, when `perPerson` is unset, one whose name holds "email" or "name" or ends in "id".
 
 ### Database Persistence
 In `CheckoutSessionService.CompleteCheckout`:
@@ -630,13 +631,13 @@ Reference the class from the server bootstrap so the decorator is not tree-shake
 
 **Flow.**
 1. `POST /checkout/complete` confirms the order and answers straight away, without calling the host. When a step is registered the response carries `AccountStep: true`.
-2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired, VerificationNote?, PasswordSetMessage? }`, where `VerificationRequired` is true for every `Created` account and the last two carry the host's wording when it gave any. The wording is kept with the session, so a reload shows the same text. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
+2. The widget then calls `POST /checkout/account` with `{ sessionId, clientSessionKey }`, showing "Setting up your account…". Orders calls `EnsureAccount` with the buyer's e-mail, name, Person, order, company, session id and when the session began, and answers `Account: { Outcome, Message?, CanSetPassword, VerificationRequired, VerificationNote?, PasswordSetMessage? }`, where `VerificationRequired` is true for every `Created` account and the last two carry the host's wording when it gave any. With `Account` comes `Confirmation: { OrderNumber, RedirectUrl, SuccessMessage }`, the order number and the widget's settings, which a reload needs because it skips `/initialize`. The wording is kept with the session, so a reload shows the same text. A step that throws, or doesn't answer within `HostTimeoutSeconds` (default 10), is reported as `Failed`. It never changes the confirmed order.
 3. `Created`: the widget shows a password form with the verification note, and after the password is set tells the buyer to verify the e-mail before signing in, or shows the host's wording instead. `POST /checkout/account/password` with `{ sessionId, clientSessionKey, password }` passes the password to `SetPassword`. The password is never stored or logged.
 4. `Exists`: the widget shows the step's message, or a default telling the buyer to sign in.
 5. `Failed`: the widget says the order is confirmed and offers "Try again", which calls `/checkout/account` again. "Not now" follows the redirect.
 6. `NotApplicable`: the session has no account step. The response carries no `Account`, exactly as when no step is registered.
 
-The widget's `redirectUrl` is followed once the step is settled, or when the buyer chooses "Not now". The widget remembers the completing session in `sessionStorage`, so a reload in the same tab after payment returns to an unsettled account step instead of starting a new checkout.
+The widget's `redirectUrl` is followed once the step is settled, or when the buyer chooses "Not now". The widget remembers the completing session in `sessionStorage`, so a reload in the same tab after payment returns to an unsettled account step instead of starting a new checkout. That screen shows the order number and follows the redirect from `/account`'s `Confirmation`.
 
 **Rules.**
 - The outcome is recorded in the session's `MetadataJSON`. `Created`, `Exists` and `NotApplicable` are final; asking again returns them without calling the host. Only `Failed` is asked again.
@@ -701,7 +702,7 @@ Example: `http://localhost:4103/checkout/summit-2027`
 
 That route returns a small, first-party HTML page (nonce-based CSP, no Explorer shell, no login) that talks only to the POST edge below (`initialize` → `draft` → `payment-intent` if required → `complete`; after the sale the element also calls `access-status`, and `account` and `account/password` when a host registered an account step). What the page contains depends on whether the element bundle was built:
 
-- **Bundle built (the normal case):** the page loads the `<mj-orders-checkout>` Angular Element from `GET {MJAPI}/checkout/element/main.js` and renders `<mj-orders-checkout slug="…" api-root="/checkout">`. The buyer gets the full reusable widget — `customUI` theming and the introspected extension fields. MJAPI finds the bundle in `@mj-biz-apps/orders-ng`'s `dist/checkout-element` (`resolveCheckoutElementDir` in `CheckoutServerExtension.ts`).
+- **Bundle built (the normal case):** the page loads the `<mj-orders-checkout>` Angular Element from `GET {MJAPI}/checkout/element/main.js` and renders `<mj-orders-checkout slug="…" api-root="/checkout">`. The buyer gets the full reusable widget — `customUI` theming and the introspected extension fields. MJAPI finds the bundle in `@mj-biz-apps/orders-ng`'s `dist/checkout-element` (`resolveCheckoutElementDir` in `CheckoutServerExtension.ts`). The `CHECKOUT_ELEMENT_DIR` environment variable, when set, names the one directory to serve it from instead.
 - **Bundle not found:** the page falls back to a minimal vanilla form driven by an inline boot script, against the same POST edge.
 
 Either way it is not an Explorer route. The element bundle itself is public static code, served to every origin, so a third-party site can load the same `main.js` and embed `<mj-orders-checkout>` directly (see *Embedding the checkout inside another widget* below).
@@ -718,7 +719,7 @@ When Orders is installed as an Open App (`dynamicPackages.server[]` includes `@m
 |---|---|---|
 | `checkout-state-change` | each change of state: `LOADING`, `CHECKOUT`, `PROCESSING`, `SUCCESS`, `PASSWORD`, `ERROR`. `PASSWORD` is sent while the account step's password form shows after a sale (after `SUCCESS`, or on a reload that returns to the form); `SUCCESS` follows once the password is set or skipped | `{ state }` |
 | `checkout-complete` | the order is confirmed, before any `redirectUrl` is followed | `{ sessionId, productName, productId, amount, currency, coupon }` — `amount` is the order's total in major units; `currency` is the widget's `currency` upper-cased, or `null` when the widget sets none; `coupon` is the promotion code the draft applied, or `null` when none was |
-| `checkout-error` | the checkout could not load, or a step failed | `{ message }` |
+| `checkout-error` | the checkout could not load, or a step failed | `{ stage, message }` — `stage` is where it failed: `initialize`, `draft`, `payment`, `complete` or `card` (card entry did not load). `message` is the text shown to the buyer, which can include server or payment-gateway wording: show it, but track `stage` and do not forward `message` to analytics |
 | `checkout-cancel` | the buyer pressed Cancel; the form has been reset to blank | `{}` |
 | `checkout-close` | sent with `checkout-cancel`, for a container such as a modal to close itself | `{}` |
 | `checkout-reset-refused` | a host's `checkout-reset` arrived while a payment was in flight or the account step was unsettled | `{ state }` |
@@ -728,7 +729,7 @@ With a `redirectUrl`, the page navigates away soon after `checkout-complete` (on
 
 Cancel clears every field, the error banner and the card entry; the checkout session stays open, so the buyer can start again. It is ignored while a payment is in flight.
 
-No detail carries the buyer's e-mail, name or any other personal data: the events reach every script on the host page. `productName` is the widget's `productName`, which `/initialize` fills from the product's name, or else its `title`.
+No detail is built from the buyer's e-mail, name or any other personal data: the events reach every script on the host page. The one free-text field is `checkout-error`'s `message`, buyer-facing text that is not meant for analytics. `productName` is the widget's `productName`, which `/initialize` fills from the product's name, or else its `title`.
 
 ```javascript
 document.addEventListener('checkout-complete', (e) => {
