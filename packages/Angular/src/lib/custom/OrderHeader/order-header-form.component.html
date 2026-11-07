@@ -140,17 +140,30 @@
             </div>
         </div>
 
-        @if (ConfirmBlockedReason) {
+        @if (ConfirmBlocked) {
             <div class="mjo-oh-todo">
                 <i class="fa-solid fa-circle-exclamation"></i>
                 <span>Before this can be confirmed</span>
-                @if (NeedsBillTo) {
-                    <button type="button" (click)="JumpToBill()">Need a bill-to party</button>
-                } @else if (NeedsPaymentReference) {
-                    <button type="button" (click)="JumpToPayment()">Need a check / ACH reference</button>
-                } @else {
-                    <span class="mjo-oh-todo__hint">{{ ConfirmBlockedReason }}</span>
+                @if (ConfirmBlockedReason) {
+                    @if (NeedsBillTo) {
+                        <button type="button" (click)="JumpToBill()">Need a bill-to party</button>
+                    } @else if (NeedsPaymentReference) {
+                        <button type="button" (click)="JumpToPayment()">Need a check / ACH reference</button>
+                    } @else {
+                        <span class="mjo-oh-todo__hint">{{ ConfirmBlockedReason }}</span>
+                    }
                 }
+                <!-- What the server's confirm gate would refuse on (golive #340), one item each. -->
+                @for (problem of ConcessionBlockers; track $index) {
+                    <span class="mjo-oh-todo__hint">{{ problem }}</span>
+                }
+            </div>
+        }
+
+        @if (ConcessionCheckError) {
+            <div class="mjo-oh-todo" role="status">
+                <i class="fa-solid fa-circle-info"></i>
+                <span>{{ ConcessionCheckError }}</span>
             </div>
         }
         <!-- Subscription lengths other than the type's term (golive #338). They do not block confirm, so
@@ -235,6 +248,47 @@
                 } @else {
                     <div class="mjo-oh-hint">Intent only — the payment is created when the order is confirmed.</div>
                 }
+                @if (record.IsSaved) {
+                    <h3 class="mjo-oh-subhead">Payment schedule</h3>
+                    @if (InstalmentsError) {
+                        <div class="mjo-oh-hint">{{ InstalmentsError }}</div>
+                    } @else if (Instalments === null) {
+                        <div class="mjo-oh-hint">Loading payment schedule…</div>
+                    } @else if (Instalments.length === 0) {
+                        <div class="mjo-oh-hint">{{ NoScheduleNote }}</div>
+                    } @else {
+                        <table class="mjo-oh-je__table mjo-oh-je__table--detail">
+                            <thead>
+                                <tr>
+                                    <th>Instalment</th>
+                                    <th>Due</th>
+                                    <th class="is-num">Amount</th>
+                                    <th>Status</th>
+                                    <th>Invoice</th>
+                                    <th>AR raised</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @for (row of Instalments; track row.ID) {
+                                    <tr class="is-clickable" (click)="OpenInstalment(row)">
+                                        <td>{{ row.InstallmentNumber }}</td>
+                                        <td>{{ InstalmentDue(row) }}</td>
+                                        <td class="is-num">{{ InstalmentAmount(row) }}</td>
+                                        <td>{{ row.Status }}</td>
+                                        <td>{{ row.DocumentNumber || '—' }}</td>
+                                        <td>
+                                            @if (row.JournalEntryID) {
+                                                <button type="button" class="mjo-oh-linkbtn" (click)="OpenInstalmentEntry($event, row)">{{ InstalmentAR(row) }}</button>
+                                            } @else {
+                                                <span class="mjo-oh-dim">{{ InstalmentAR(row) }}</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                }
             </div>
         }
 
@@ -286,17 +340,24 @@
                             }
                         </p>
                     </div>
-                    <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
-                        <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
-                        <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
-                            By line
-                            @if (RollupJournalCount) {
-                                <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
-                            }
-                        </button>
-                        <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
-                            <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
-                        </button>
+                    <div class="mjo-oh-acct__actions">
+                        @if (AccountingView !== 'waterfall') {
+                            <button type="button" mjButton variant="outline" size="sm" [disabled]="!CanExportAccounting" (click)="OpenAccountingExport()">
+                                <i class="fa-solid fa-file-export"></i> Export
+                            </button>
+                        }
+                        <div class="mjo-oh-switch" role="group" aria-label="Accounting view">
+                            <button type="button" [class.is-on]="AccountingView === 'summary'" (click)="SetAccountingView('summary')">Rolled up</button>
+                            <button type="button" [class.is-on]="AccountingView === 'detail'" (click)="SetAccountingView('detail')">
+                                By line
+                                @if (RollupJournalCount) {
+                                    <span class="mjo-oh-switch__n">{{ RollupJournalCount }}</span>
+                                }
+                            </button>
+                            <button type="button" [class.is-on]="AccountingView === 'waterfall'" (click)="SetAccountingView('waterfall')">
+                                <i class="fa-solid fa-chart-line"></i> Rev-Rec Waterfall
+                            </button>
+                        </div>
                     </div>
                 </div>
 
@@ -472,6 +533,12 @@
                 }
             </div>
         }
+
+        <mj-export-dialog
+            [visible]="AccountingExportVisible"
+            [config]="AccountingExportConfig"
+            (closed)="CloseAccountingExport()">
+        </mj-export-dialog>
 
         @if (ActiveTab === 'subs' && record.IsSaved) {
             <div class="mjo-oh-tabpane">

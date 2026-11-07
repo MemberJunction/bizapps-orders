@@ -15,6 +15,7 @@ import {
     SubscriptionTypeRulesFrom,
     OverlappingCoverage,
     MonthsCovered,
+    MultiTermLineMonths,
     WholeMonthsBetween,
     type CoverageOverlap,
     type LaterTermBilling,
@@ -420,6 +421,20 @@ describe('a stated term end (golive #338)', () => {
             expect(MonthsCovered(d('2026-11-01'), d('2027-11-30'))).toBe(13);
             expect(MonthsCovered(d('2026-11-01'), d('2026-11-15'))).toBeCloseTo(0.5, 6);
         });
+
+        it('MultiTermLineMonths: the months a line covers when it bought earlier terms too (golive #338)', () => {
+            const d = (s: string) => new Date(`${s}T00:00:00Z`);
+            // 24 months as two 12-month terms; the second is the one expiring.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2028-10-31'), d('2027-11-01'))).toBe(24);
+            // 13 months as a 12-month and a 1-month term.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2027-11-30'), d('2027-11-01'))).toBe(13);
+            // 6 months is one term, starting on the line's own start: one term's price.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2027-04-30'), d('2026-11-01'))).toBeNull();
+            // A line with no stated period.
+            expect(MultiTermLineMonths(null, null, d('2026-11-01'))).toBeNull();
+            // A stated start with no end: the line's length is unknown, so no share is taken.
+            expect(MultiTermLineMonths(d('2026-11-01'), null, d('2027-11-01'))).toBeNull();
+        });
     });
 });
 
@@ -490,6 +505,49 @@ describe('concurrency and reactivation', () => {
 
         expect(decide(r, new Date('2026-08-01T00:00:00Z'), 1200, { Existing: lapsed }).Action).toBe('Reactivate');
         expect(decide(r, new Date('2026-12-01T00:00:00Z'), 1200, { Existing: lapsed }).Action).toBe('CreateNew');
+    });
+
+    describe('a canceled subscription whose coverage still runs (#737)', () => {
+        // Canceled at end of term on the day it was bought: paid through 2027-10-14.
+        const PURCHASE = new Date('2026-10-15T00:00:00Z');
+        const canceled = { ID: 'sub-1', Status: 'Canceled', LatestTermEnd: new Date('2027-10-14T00:00:00Z'), LatestTermNumber: 1 };
+
+        it('reactivates it with a term that starts the day after its coverage ends', () => {
+            const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), PURCHASE, 1200, { Existing: canceled });
+            expect(decision.Action).toBe('Reactivate');
+            expect(decision.SubscriptionID).toBe('sub-1');
+            expect(iso(decision.Term!.StartDate)).toBe('2027-10-15');
+            expect(iso(decision.Term!.EndDate)).toBe('2028-10-14');
+            expect(decision.Term!.TermNumber).toBe(2);
+        });
+
+        it('continues the coverage whatever the reactivation policy says', () => {
+            const decision = decide(rules({ ReactivationMode: 'AlwaysCreateNew' }), PURCHASE, 1200, { Existing: canceled });
+            expect(decision.Action).toBe('Reactivate');
+            expect(iso(decision.Term!.StartDate)).toBe('2027-10-15');
+        });
+
+        it('follows AllowMultiple and RejectDuplicate as for a live subscription', () => {
+            expect(decide(rules({ ConcurrencyMode: 'AllowMultiple' }), PURCHASE, 1200, { Existing: canceled }).Action).toBe('CreateNew');
+            expect(decide(rules({ ConcurrencyMode: 'RejectDuplicate' }), PURCHASE, 1200, { Existing: canceled }).Action).toBe('Reject');
+        });
+
+        it('reports a stated start that the continuation displaced', () => {
+            const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), PURCHASE, 1200, {
+                Existing: canceled,
+                RequestedStartDate: PURCHASE,
+            });
+            expect(iso(decision.Term!.StartDate)).toBe('2027-10-15');
+            expect(decision.StartOverrideIgnored).toBe(true);
+        });
+
+        it('goes back to the reactivation policy once the coverage has ended', () => {
+            const after = new Date('2027-11-01T00:00:00Z');
+            const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), after, 1200, { Existing: canceled });
+            expect(decision.Action).toBe('Reactivate');
+            expect(iso(decision.Term!.StartDate)).toBe('2027-11-01');
+            expect(decide(rules({ ReactivationMode: 'AlwaysCreateNew' }), after, 1200, { Existing: canceled }).Action).toBe('CreateNew');
+        });
     });
 });
 

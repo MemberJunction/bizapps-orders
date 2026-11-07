@@ -246,14 +246,17 @@ describe('CancelBlockingAlerts', () => {
         mocks.readAlerts.mockResolvedValue({
             Ok: true,
             Open: new Map([
-                ['SUB-000110', new Set(['NotRecorded', 'GatewayFault', 'LinkedElsewhere', 'AmbiguousAtGateway', 'ChargedAtCreation'])],
+                ['SUB-000110', new Set(['NotRecorded', 'GatewayFault', 'LinkedElsewhere', 'AmbiguousAtGateway', 'ChargedAtCreation', 'RenewalNotBooked'])],
                 ['SUB-000112', new Set(['NoCard', 'PriceMismatch'])],
             ]),
         });
-        expect(await CancelBlockingAlerts('SUB-000110', user, md)).toEqual({ Codes: ['NotRecorded', 'GatewayFault', 'LinkedElsewhere', 'AmbiguousAtGateway', 'ChargedAtCreation'] });
+        expect(await CancelBlockingAlerts('SUB-000110', user, md)).toEqual({
+            Codes: ['NotRecorded', 'GatewayFault', 'LinkedElsewhere', 'AmbiguousAtGateway', 'ChargedAtCreation', 'RenewalNotBooked'],
+        });
         expect(await CancelBlockingAlerts('SUB-000112', user, md)).toEqual({ Codes: [] });
         expect(await CancelBlockingAlerts('SUB-000999', user, md)).toEqual({ Codes: [] });
-        expect([...CANCEL_BLOCKING_ALERT_CODES]).toEqual(['NotRecorded', 'GatewayFault', 'LinkedElsewhere', 'AmbiguousAtGateway', 'ChargedAtCreation']);
+        // E4 adds RenewalNotBooked: a cancel must not end coverage the gateway was paid for before that payment is settled.
+        expect([...CANCEL_BLOCKING_ALERT_CODES]).toEqual(['NotRecorded', 'GatewayFault', 'LinkedElsewhere', 'AmbiguousAtGateway', 'ChargedAtCreation', 'RenewalNotBooked']);
     });
 });
 

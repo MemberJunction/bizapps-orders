@@ -117,7 +117,28 @@ describe('CheckoutPublicHostComponent events', () => {
         await create().ngOnInit();
         expect(seen.slice(-2)).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'This checkout is not available.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout is not available.' } },
+        ]);
+    });
+
+    it('reports ERROR for a checkout link with no reference (#859)', async () => {
+        const c = create();
+        c.slug = '';
+        await c.ngOnInit();
+        expect(c.loadError).toBe('This checkout link is missing its reference.');
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'ERROR' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout link is missing its reference.' } },
+        ]);
+    });
+
+    it('reports ERROR when the page has no secure random source (#859)', async () => {
+        const c = create();
+        (c as unknown as { clientKey(): string }).clientKey = () => '';
+        await c.ngOnInit();
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'ERROR' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'Checkout requires a secure random source. Open this page over HTTPS.' } },
         ]);
     });
 
@@ -162,13 +183,44 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'Could not price this checkout.' } },
+            { type: 'checkout-error', detail: { stage: 'draft', message: 'Could not price this checkout.' } },
         ]);
         responses['/draft'] = { Success: true, RequiresPayment: false };
         seen = [];
         await c.onSubmitted(submission());
         expect(seen[0]).toEqual({ type: 'checkout-state-change', detail: { state: 'PROCESSING' } });
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
+    });
+
+    it('names the stage that failed: payment, then complete (#860)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: true, TotalGross: 0 };
+        responses['/payment-intent'] = { Success: false, ErrorMessage: 'Could not start payment.' };
+        const c = create();
+        await c.ngOnInit();
+        await c.onSubmitted(submission());
+        expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'payment', message: 'Could not start payment.' });
+
+        responses['/draft'] = { Success: true, RequiresPayment: false };
+        responses['/complete'] = { Success: false, ErrorMessage: 'Failed to complete checkout: boom' };
+        seen = [];
+        await c.onSubmitted(submission());
+        expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'complete', message: 'Failed to complete checkout: boom' });
+    });
+
+    it('shows a changed total as a notice, not an error, and reports no error (#819)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: true, TotalGross: 107.5, Tax: 7.5 };
+        const c = create();
+        await c.ngOnInit();
+        seen = [];
+        await c.onSubmitted({ ...submission(), totalGross: 100 } as CheckoutSubmissionEvent);
+        expect(c.errorMessage).toBeNull();
+        expect(c.noticeMessage).toBe('The total is 107.50, including 7.50 sales tax. Review it and press Pay again.');
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
+            { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+        ]);
+        c.onQuoteInvalidated();
+        expect(c.noticeMessage).toBeNull();
     });
 
     describe('/complete outlasting the gateway in front of the server', () => {
@@ -291,6 +343,47 @@ describe('CheckoutPublicHostComponent events', () => {
             seen = [];
             c.skipPassword();
             expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+    });
+
+    describe('a reload into the account step (#858)', () => {
+        const completing = (): void => {
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => (k === 'mj-checkout-completing:annual' ? 'sess-1' : null),
+                setItem: () => undefined,
+                removeItem: () => undefined,
+            });
+        };
+
+        it('shows the order number and follows the widget’s redirect once the step settles', async () => {
+            completing();
+            responses['/account'] = {
+                Success: true,
+                Account: { Outcome: 'Created', CanSetPassword: true },
+                Confirmation: { OrderNumber: 'SO-7', RedirectUrl: 'https://example.com/thanks', SuccessMessage: null },
+            };
+            const location = { href: 'https://shop.example.com/checkout/annual' };
+            vi.stubGlobal('window', { location });
+            const c = create();
+            await c.ngOnInit();
+            expect(c.orderNumber).toBe('SO-7');
+            expect(c.successMessage).toBe('Thank you. Order SO-7 is confirmed.');
+            expect(c.redirectUrl).toBe('https://example.com/thanks');
+            expect(location.href).toBe('https://shop.example.com/checkout/annual');
+
+            c.skipPassword();
+            expect(location.href).toContain('https://example.com/thanks');
+            expect(location.href).toContain('SO-7');
+        });
+
+        it('keeps the generic wording when the confirmation is missing', async () => {
+            completing();
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            const c = create();
+            await c.ngOnInit();
+            expect(c.orderNumber).toBeNull();
+            expect(c.redirectUrl).toBeNull();
+            expect(c.successMessage).toBe('Thank you. Your order is confirmed.');
         });
     });
 

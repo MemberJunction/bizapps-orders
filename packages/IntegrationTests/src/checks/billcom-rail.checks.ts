@@ -55,6 +55,7 @@ import {
   type OrdersPollExternalPaymentsInput,
   type OrdersPollExternalPaymentsOutput,
   type OrdersSendExternalInvoicesOutput,
+  Today,
 } from "@mj-biz-apps/orders-entities";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
 import {
@@ -126,7 +127,8 @@ interface FakeCall {
 }
 
 const money = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
-const today = (): string => new Date().toISOString().slice(0, 10);
+/** The business calendar day, as the product stamps it; the UTC day is tomorrow every US evening (#811). */
+const today = (): string => Today();
 
 /**
  * Bill.com as far as the rail can see it: customers, invoices and receivable payments, each with the

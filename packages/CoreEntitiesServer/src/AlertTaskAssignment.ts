@@ -42,6 +42,8 @@ export const ORDERS_ALERT_TASK_PREFIX = {
     // A gateway subscription Orders could not create, record or cancel (#972), and its urgent form.
     GatewaySubscription: 'Gateway subscription needs attention: ',
     GatewaySubscriptionUrgent: 'URGENT: Gateway subscription needs attention: ',
+    // A gateway subscription no Orders subscription records (#989, E3): linked by a person or left alone.
+    UnknownGatewaySubscription: 'Gateway subscription not recorded in Orders: ',
 } as const;
 
 /** Unassigned alerts assigned per sweep, at most: a backlog clears over a few passes, never in one long one. */
