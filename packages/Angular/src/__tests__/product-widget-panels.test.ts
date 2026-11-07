@@ -44,6 +44,7 @@ const SUBSCRIPTION_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-subscriptio
 const FULFILLMENT_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-fulfillment-widget.component.html`);
 const ACCOUNTING_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-accounting-widget.component.html`);
 const PRODUCT_HEADER_HTML = ReadRepoFile('../lib/form-panels/product-header.panel.html');
+const PRODUCT_HEADER_TS = ReadRepoFile('../lib/form-panels/product-header.panel.ts');
 const GENERATED_PRODUCT_FORM_HTML = ReadRepoFile(
     '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component.html'
 );
@@ -216,6 +217,11 @@ describe('Status lives in the Lifecycle panel', () => {
         expect(PRODUCT_HEADER_HTML).toContain('Draft — not sellable on deals or orders.');
         expect(PRODUCT_HEADER_HTML).toContain('(click)="Activate()"');
         expect(PRODUCT_HEADER_HTML).toContain('(click)="ActivateAnyway()"');
+    });
+
+    it("the readiness check asks pricing to ignore the product's Draft status", () => {
+        // Without the flag, pricing refuses every Draft product, so the check could never pass.
+        expect(PRODUCT_HEADER_TS).toContain('IgnoreSellability: true');
     });
 });
 
