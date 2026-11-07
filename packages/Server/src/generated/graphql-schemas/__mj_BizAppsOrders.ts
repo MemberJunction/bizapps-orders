@@ -3430,6 +3430,9 @@ export class mjBizAppsOrdersEventProduct_ {
     @MaxLength(255)
     VenueAddress?: string;
         
+    @Field(() => Boolean, {nullable: true}) 
+    IsSellableNew?: boolean;
+        
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
         
@@ -3536,6 +3539,9 @@ export class CreatemjBizAppsOrdersEventProductInput {
     @Field(() => Boolean, { nullable: true })
     RequiresSaleApproval: boolean | null;
 
+    @Field(() => Boolean, { nullable: true })
+    IsSellableNew?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -3641,6 +3647,9 @@ export class UpdatemjBizAppsOrdersEventProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresSaleApproval?: boolean | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsSellableNew?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -6918,6 +6927,9 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(2)
     CardIssuingCountry?: string;
         
+    @Field({nullable: true, description: "The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself."}) 
+    InitialPaymentReceivedDate?: Date;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -7123,6 +7135,9 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     CardIssuingCountry: string | null;
 
+    @Field({ nullable: true })
+    InitialPaymentReceivedDate: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7249,6 +7264,9 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     CardIssuingCountry?: string | null;
+
+    @Field({ nullable: true })
+    InitialPaymentReceivedDate?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -14346,6 +14364,9 @@ export class mjBizAppsOrdersProduct_ {
     @Field(() => Boolean, {nullable: true, description: `When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`}) 
     RequiresSaleApproval?: boolean;
         
+    @Field(() => Boolean, {nullable: true, description: "0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it."}) 
+    IsSellableNew?: boolean;
+        
     @Field({nullable: true}) 
     @MaxLength(100)
     ProductType?: string;
@@ -14456,6 +14477,9 @@ export class CreatemjBizAppsOrdersProductInput {
     @Field(() => Boolean, { nullable: true })
     RequiresSaleApproval: boolean | null;
 
+    @Field(() => Boolean, { nullable: true })
+    IsSellableNew?: boolean;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -14537,6 +14561,9 @@ export class UpdatemjBizAppsOrdersProductInput {
 
     @Field(() => Boolean, { nullable: true })
     RequiresSaleApproval?: boolean | null;
+
+    @Field(() => Boolean, { nullable: true })
+    IsSellableNew?: boolean;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

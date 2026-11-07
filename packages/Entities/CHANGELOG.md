@@ -1,5 +1,20 @@
 # @mj-biz-apps/orders-entities
 
+## 5.44.0
+
+### Minor Changes
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- a48a6e2: Percentage of Completion lines confirm without service dates: the revenue recognition type no longer requires a service period, since its revenue follows recorded progress. The order lines editor shows those dates as optional "Expected start" and "Expected end". The metadata change reaches hosts through the release's Metadata_Sync migration.
+- a17a7bf: `Product.IsSellableNew` gains its PostgreSQL migration (V202611061740). The field inherited on Event Products is placed in the Product Details section of its form.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- 7b693a7: `Orders.PreviewPrice` takes `IgnoreSellability`, which prices a product whatever its Status and availability window. The product header's Activate check uses it, so a priced Draft product no longer reads as "could not be checked". Entering edit mode closes the readiness warning, and Activate refuses to save once the form is in edit mode.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+
+### Patch Changes
+
+- 3f9d524: A typed price on an order dated before the product's only price is in force now confirms, measured as a product with no price is; a line with no typed price is still refused. The add-price row on the product form shows Effective From, defaulting to today, so an earlier start can be chosen.
+
 ## 5.43.0
 
 ### Minor Changes
@@ -849,8 +864,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                      "FK_EntityFieldValue_EntityField"
+                                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                        "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

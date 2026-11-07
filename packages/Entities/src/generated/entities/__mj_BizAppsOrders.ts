@@ -1420,6 +1420,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
         * * SQL Data Type: nvarchar(255)`),
+    IsSellableNew: z.boolean().describe(`
+        * * Field Name: IsSellableNew
+        * * Display Name: Is Sellable New
+        * * SQL Data Type: bit`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -2823,6 +2827,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Card Issuing Country
         * * SQL Data Type: char(2)
         * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
+    InitialPaymentReceivedDate: z.date().nullable().describe(`
+        * * Field Name: InitialPaymentReceivedDate
+        * * Display Name: Initial Payment Received Date
+        * * SQL Data Type: date
+        * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -5674,6 +5683,12 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Requires Sale Approval
         * * SQL Data Type: bit
         * * Description: When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`),
+    IsSellableNew: z.boolean().describe(`
+        * * Field Name: IsSellableNew
+        * * Display Name: Is Sellable New
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: 0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -11308,6 +11323,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     get VenueAddress(): string | null {
         return this.Get('VenueAddress');
     }
+
+    /**
+    * * Field Name: IsSellableNew
+    * * Display Name: Is Sellable New
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get IsSellableNew(): boolean {
+        return this.Get('IsSellableNew');
+    }
+    set IsSellableNew(value: boolean) {
+        this.Set('IsSellableNew', value);
+    }
 }
 
 
@@ -15658,6 +15686,19 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set CardIssuingCountry(value: string | null) {
         this.Set('CardIssuingCountry', value);
+    }
+
+    /**
+    * * Field Name: InitialPaymentReceivedDate
+    * * Display Name: Initial Payment Received Date
+    * * SQL Data Type: date
+    * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.
+    */
+    get InitialPaymentReceivedDate(): Date | null {
+        return this.Get('InitialPaymentReceivedDate');
+    }
+    set InitialPaymentReceivedDate(value: Date | null) {
+        this.Set('InitialPaymentReceivedDate', value);
     }
 
     /**
@@ -24025,6 +24066,20 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set RequiresSaleApproval(value: boolean | null) {
         this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
+    * * Field Name: IsSellableNew
+    * * Display Name: Is Sellable New
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: 0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it.
+    */
+    get IsSellableNew(): boolean {
+        return this.Get('IsSellableNew');
+    }
+    set IsSellableNew(value: boolean) {
+        this.Set('IsSellableNew', value);
     }
 
     /**
