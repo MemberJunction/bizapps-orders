@@ -3668,6 +3668,9 @@ export class CheckoutSessionService {
             LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} to stamp retrieved status ${retrieved.Status}`);
             return retrieved;
         }
+        if (SETTLED_INTENT_STATUSES.includes(intent.Status) && !SETTLED_INTENT_STATUSES.includes(retrieved.Status)) {
+            return { ...retrieved, Status: intent.Status };
+        }
         const amount = typeof retrieved.Amount === 'number' && retrieved.Amount > 0 ? retrieved.Amount : null;
         if (retrieved.Status === intent.Status && (amount === null || amount === intent.Amount)) {
             return retrieved;

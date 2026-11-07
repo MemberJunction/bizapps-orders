@@ -93,6 +93,7 @@
 import {
     BaseEntity,
     BaseEntityResult,
+    CompositeKey,
     DatabaseProviderBase,
     EntityDeleteOptions,
     EntitySaveOptions,
@@ -109,6 +110,9 @@ import {
     ConcessionShare,
     ConcessionValue,
     InclusiveDays,
+    LineGross,
+    Money,
+    NetAfterDiscount,
     ShiftNeedsFinanceReview,
     SplitTermDateChange,
     TermLengthChangeDays,
@@ -195,10 +199,32 @@ interface LineRow {
     ProductID: string;
     Quantity: number;
     UnitPrice: number;
+    ExtendedAmount: number | null;
     ProductPriceID: string | null;
     DiscountPct: number | null;
+    DiscountAmount: number | null;
     RenewsSubscriptionID: string | null;
 }
+
+interface ExistingLineConcessionRow {
+    ID: string;
+    OrderHeaderID: string;
+    OrderLineID: string;
+    DeliveryForm: 'Price' | 'Scope';
+    Status: string;
+    ReasonCategory: 'Competitive' | 'Retention' | 'MultiYear' | 'Volume' | 'NonProfit' | 'Timing' | 'Other';
+    Reason: string;
+    ComputedValue: number;
+    OrderNetTotal: number | null;
+    CumulativeShare: number | null;
+    RequestedByUserID: string;
+    AuthorizedBySalesAuthorityID: string | null;
+    SalesRuleID: string | null;
+    DecidedByUserID: string | null;
+    DecidedAt: Date | null;
+}
+
+const LINE_CONCESSION_TOLERANCE = 0.005;
 
 interface TermRow {
     OrderLineID: string;
@@ -222,6 +248,14 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         if (problem) {
             this.RegisterResultHistoryEntry(this.buildRejection(problem));
             return false;
+        }
+        if (recording && this.duplicateOf) {
+            const existing = this.duplicateOf;
+            this.duplicateOf = null;
+            if (typeof this.InnerLoad === 'function') {
+                await this.InnerLoad(CompositeKey.FromID(existing.ID));
+            }
+            return true;
         }
 
         if (recording && this.Status === 'Pending' && this.approvingRole) {
@@ -500,8 +534,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.saleApprovalRequired = false;
         this.extendedLine = null;
         this.extendedTerm = null;
+        this.duplicateOf = null;
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
+        if (this.duplicateOf) {
+            this.adoptExistingConcession(this.duplicateOf);
+            return null;
+        }
 
         // Measured against the order as it stands, with every concession on it that is not Rejected.
         const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
@@ -864,6 +903,28 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         return typeof verdict === 'string' ? verdict : verdict.InProgram;
     }
 
+    /** Set by `valueLinePrice` when a resent save matches an existing Pending/Approved concession on the same line (#387). */
+    private duplicateOf: ExistingLineConcessionRow | null = null;
+
+    private adoptExistingConcession(existing: ExistingLineConcessionRow): void {
+        this.ID = existing.ID;
+        this.OrderHeaderID = existing.OrderHeaderID;
+        this.OrderLineID = existing.OrderLineID;
+        this.DeliveryForm = existing.DeliveryForm;
+        this.Status = existing.Status as 'Pending' | 'Approved' | 'Rejected';
+        this.ReasonCategory = existing.ReasonCategory as typeof this.ReasonCategory;
+        this.Reason = existing.Reason;
+        this.ComputedValue = Number(existing.ComputedValue ?? 0);
+        this.OrderNetTotal = existing.OrderNetTotal == null ? null : Number(existing.OrderNetTotal);
+        this.CumulativeShare = existing.CumulativeShare == null ? null : Number(existing.CumulativeShare);
+        this.RequestedByUserID = existing.RequestedByUserID;
+        this.AuthorizedBySalesAuthorityID = existing.AuthorizedBySalesAuthorityID;
+        this.SalesRuleID = existing.SalesRuleID;
+        this.DecidedByUserID = existing.DecidedByUserID;
+        this.DecidedAt = existing.DecidedAt;
+        this.approvingRole = null;
+    }
+
     private async valueLinePrice(user: UserInfo): Promise<ConcessionValuation | string> {
         const line = await this.requireLine(user);
         if (typeof line === 'string') return line;
@@ -875,21 +936,70 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             user,
         );
         this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
+        let valuation: ConcessionValuation;
         if (!concession && this.saleApprovalRequired) {
             // Nothing given away against an engine price, often because the product has none: the approval is
-            // of the sale itself, so it is recorded at no value.
+            // of the sale itself, so it is valued at the line's net amount for tier routing (#714).
             this.OrderHeaderID = line.OrderHeaderID;
-            return { Value: 0, Percent: null };
-        }
-        if (!concession) {
+            const gross = LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), line.ExtendedAmount);
+            const net = NetAfterDiscount(gross, line.DiscountPct, line.DiscountAmount);
+            valuation = { Value: Money(Math.max(0, net)), Percent: null };
+        } else if (!concession) {
             return (
                 `Line ${line.LineNumber} is charged its engine price or another named price that applies, with no ` +
                 `discount, so there is no price concession on it to record.`
             );
+        } else {
+            this.DeliveryForm = concession.Form;
+            this.OrderHeaderID = line.OrderHeaderID;
+            valuation = concession.Valuation;
         }
-        this.DeliveryForm = concession.Form;
-        this.OrderHeaderID = line.OrderHeaderID;
-        return concession.Valuation;
+        const existingProblem = await this.checkExistingLinePriceConcession(line, valuation.Value, user);
+        if (existingProblem) return existingProblem;
+        return valuation;
+    }
+
+    private async checkExistingLinePriceConcession(line: LineRow, value: number, user: UserInfo): Promise<string | null> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<ExistingLineConcessionRow>(
+            {
+                EntityName: ORDER_CONCESSION_ENTITY,
+                ExtraFilter:
+                    `OrderLineID = '${RequireUUID(line.ID, 'OrderLineID')}' AND NewAmount IS NULL ` +
+                    `AND DeliveryForm IN ('Price', 'Scope') AND Status IN ('Pending', 'Approved')`,
+                Fields: [
+                    'ID',
+                    'OrderHeaderID',
+                    'OrderLineID',
+                    'DeliveryForm',
+                    'Status',
+                    'ReasonCategory',
+                    'Reason',
+                    'ComputedValue',
+                    'OrderNetTotal',
+                    'CumulativeShare',
+                    'RequestedByUserID',
+                    'AuthorizedBySalesAuthorityID',
+                    'SalesRuleID',
+                    'DecidedByUserID',
+                    'DecidedAt',
+                ],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            user,
+        );
+        const existing = res?.Results?.[0];
+        if (!existing) return null;
+        const existingValue = Number(existing.ComputedValue ?? 0);
+        if (Math.abs(existingValue - value) <= LINE_CONCESSION_TOLERANCE) {
+            this.duplicateOf = existing;
+            return null;
+        }
+        return (
+            `Line ${line.LineNumber} already has a ${existing.Status.toLowerCase()} ${existing.DeliveryForm} concession ` +
+            `worth ${existingValue.toFixed(2)}. Withdraw it before recording a concession of ${value.toFixed(2)} on the same line.`
+        );
     }
 
     private async valueSeats(user: UserInfo): Promise<ConcessionValuation | string> {
@@ -1163,8 +1273,10 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
                 'ProductID',
                 'Quantity',
                 'UnitPrice',
+                'ExtendedAmount',
                 'ProductPriceID',
                 'DiscountPct',
+                'DiscountAmount',
                 'RenewsSubscriptionID',
             ],
             user,

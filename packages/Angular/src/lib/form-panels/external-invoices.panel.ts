@@ -7,6 +7,7 @@ import {
     OrdersAdoptExternalInvoiceOperation,
     OrdersCancelExternalInvoiceOperation,
     OrdersIssueExternalInvoiceOperation,
+    OrdersPollExternalPaymentsOperation,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { FormatInstantDate, FormatMoney } from '../panels/money-format';
@@ -169,6 +170,11 @@ const SECTION_KEY = 'externalInvoices';
                 }
 
                 <div class="row mjo-xi__actions">
+                    @if (CanCheckPayments) {
+                        <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="CheckPayments()">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i> Check for payments now
+                        </button>
+                    }
                     @if (Cancellable) {
                         <button type="button" mjButton variant="outline" [disabled]="Busy" (click)="Cancel()">
                             <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel in {{ ProviderName }}
@@ -335,6 +341,15 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /** A send that was never confirmed, which only a person with the rail open can resolve. */
     public get Resolvable(): boolean {
         return CanResolveInFlight(this.Selected, this.Visible);
+    }
+
+    /** Whether this order has a Sent invoice on the rail and an open balance waiting on payment. */
+    public get CanCheckPayments(): boolean {
+        return (
+            this.Visible &&
+            Number(this.Record?.Balance ?? 0) > 0 &&
+            this.Rows.some((r) => r.Status === 'Sent')
+        );
     }
 
     /** Selecting a different row drops a half-typed reference: it was meant for the row it was typed against. */
@@ -506,6 +521,33 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
             this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was canceled.' };
             this.Selected = null;
             await this.load();
+        } finally {
+            this.Busy = false;
+            this.cdr.detectChanges();
+        }
+    }
+
+    /** Poll the rail for payments now, so a payment just made in the rail shows on the order without switching screens. */
+    public async CheckPayments(): Promise<void> {
+        if (this.Busy || !this.CanCheckPayments) return;
+        this.Busy = true;
+        this.Notice = null;
+        this.cdr.detectChanges();
+        try {
+            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: false });
+            const out = result.Output;
+            if (!result.Success || !out) {
+                this.Notice = { Tone: 'error', Text: result.ErrorMessage?.trim() || 'The payment check could not run.' };
+                return;
+            }
+            this.Notice = {
+                Tone: out.Success ? 'success' : 'warning',
+                Text: out.Message ?? `${out.Captured} payment(s) recorded.`,
+            };
+            await this.load();
+            if (typeof (this.FormComponent as { RefreshRecord?: () => Promise<boolean> } | null)?.RefreshRecord === 'function') {
+                await (this.FormComponent as unknown as { RefreshRecord(): Promise<boolean> }).RefreshRecord();
+            }
         } finally {
             this.Busy = false;
             this.cdr.detectChanges();

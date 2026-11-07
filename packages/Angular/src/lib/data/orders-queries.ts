@@ -384,10 +384,11 @@ export async function GetOrders(
         if (options.BillToOrganizationID) filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
     }
     if (options.Search?.trim()) {
-        const escaped = likeText(options.Search);
+        const escaped = likeText(options.Search.trim());
         filters.push(
             `(OrderNumber LIKE '%${escaped}%' OR Description LIKE '%${escaped}%' ` +
-                `OR ExternalDocumentNumber LIKE '%${escaped}%')`,
+                `OR ExternalDocumentNumber LIKE '%${escaped}%' ` +
+                `OR BillToOrganization LIKE '%${escaped}%' OR BillToPerson LIKE '%${escaped}%')`,
         );
     }
 
@@ -1599,13 +1600,13 @@ function rollupLabels(
     return { Company, Account, Dimension, DimensionValue };
 }
 
-/** What this order started, as grid params. Null when the order has no lines. */
+/** What this order started or extended, as grid params. Null when the order has no lines. */
 export function SubscriptionViewParams(orderLineIDs: string[]): RunViewParams | null {
     const list = uuidList(orderLineIDs);
     if (!list) return null;
     return {
         EntityName: MJO_ENTITIES.Subscription,
-        ExtraFilter: `OrderLineID IN (${list})`,
+        ExtraFilter: `OrderLineID IN (${list}) OR ID IN (SELECT SubscriptionID FROM [__mj_BizAppsOrders].[vwSubscriptionTerms] WHERE OrderLineID IN (${list}))`,
         OrderBy: 'StartDate DESC',
         ResultType: 'entity_object',
     };

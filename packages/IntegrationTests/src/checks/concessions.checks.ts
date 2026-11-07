@@ -1330,7 +1330,7 @@ export const ConcessionChecks: NamedCheck[] = [
         const c = await recordConcession(ctx, { DeliveryForm: "Price", OrderLineID: built.Lines[0].ID, Reason: "custom scope" });
         Assert(c.Saved, `recording failed: ${c.Message}`);
         AssertEqual(c.Entity.Status, "Pending", "the requester's authority never approves it");
-        AssertEqual(Number(c.Entity.ComputedValue), 0, "nothing is given away against an engine price");
+        AssertEqual(Number(c.Entity.ComputedValue), 500, "valued at the line's net amount when nothing is given away against an engine price");
 
         const own = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderConcessionEntity>(ORDER_CONCESSION_ENTITY, ctx.User);
         Assert(await own.Load(c.Entity.ID), "the concession did not load");

@@ -45,6 +45,7 @@ import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
+import { IsMarkedPriceStated, IsProductReplacedWithoutPriceEdit } from './linePricePick.js';
 import { AllocateProRata, DropStaleExtendedAmount, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
@@ -621,12 +622,20 @@ export class OrderPricingService {
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price
-        // for a free line and must not be mistaken for silence.
+        // for a free line and must not be mistaken for silence. Changing a saved line's product
+        // without typing a new price clears the old product's stored price so the new product is priced.
         const field = line.GetFieldByName('UnitPrice');
-        const stated = field?.Dirty === true || (line.UnitPrice ?? 0) > 0;
+        const productReplaced = IsProductReplacedWithoutPriceEdit(line);
+        const stated =
+            !productReplaced &&
+            (field?.Dirty === true || (line.UnitPrice ?? 0) > 0 || IsMarkedPriceStated(line));
         if (stated) {
             if (this.ctx.IncludeDefaultsForStatedLines) await this.recordDefaultForStatedLine(line);
             return;
+        }
+        if (productReplaced) {
+            line.ProductPriceID = null;
+            line.ExtendedAmount = null;
         }
 
         const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));

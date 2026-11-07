@@ -54,5 +54,35 @@
       "lastModified": "2026-10-03T21:47:05.839Z",
       "checksum": "574a632b0f0f0764ddfb53b9b7898772c24dc452081fd085d9551343f7277ffb"
     }
+  },
+  {
+    "fields": {
+      "Name": "Senior Finance (AR)",
+      "Description": "Accounts receivable lead who may request and review payment-gated access overrides in BizApps Orders.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "8A71E3E2-41B9-4D7E-9A55-71B983B8E011"
+    }
+  },
+  {
+    "fields": {
+      "Name": "CFO",
+      "Description": "Company financial approver who decides payment-gated access overrides and self-approval escalations in BizApps Orders.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "8A71E3E2-41B9-4D7E-9A55-71B983B8E012"
+    }
+  },
+  {
+    "fields": {
+      "Name": "CEO Approver",
+      "Description": "Executive approver for fallback payment-gated access override decisions and top-tier concession escalations in BizApps Orders.",
+      "SQLName": null
+    },
+    "primaryKey": {
+      "ID": "8A71E3E2-41B9-4D7E-9A55-71B983B8E013"
+    }
   }
 ]

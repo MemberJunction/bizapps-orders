@@ -93,8 +93,9 @@ export class PreviewPriceOperation extends OrdersPreviewPriceOperationBase {
         // answered for the wrong day is wrong with nothing to notice. The guard also rejects
         // `2026-02-30`, which `Date.parse` used to roll forward to 2 March, and an invalid `Date`
         // (#272), which `CalendarDayOrToday` would otherwise read as no day at all.
+        let asOfDay: Date | string | null;
         try {
-            RequireOptionalDay(input.AsOf, 'AsOf');
+            asOfDay = RequireOptionalDay(input.AsOf, 'AsOf');
         } catch (e) {
             return { Success: false, Message: String((e as Error).message) };
         }
@@ -113,7 +114,7 @@ export class PreviewPriceOperation extends OrdersPreviewPriceOperationBase {
         // columns, so the as-of value is a calendar day (#209). An instant answers the UTC day,
         // which for an evening preview is tomorrow — quoting a price that is not yet in effect.
         // Its shape was validated at the boundary above.
-        const asOf = await CalendarDayOrToday(input.AsOf, provider, user);
+        const asOf = await CalendarDayOrToday(asOfDay, provider, user);
 
         const md = new Metadata();
         const line = await md.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);

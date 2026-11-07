@@ -43,6 +43,16 @@ export interface BillComGatewaySeams {
     /** Every record changed since the watermark, all pages drained. */
     fetchChanges(ci: MJCompanyIntegrationEntity, object: string, watermark: string | null, user: UserInfo): Promise<FetchBatchResult>;
     /**
+     * Find active Bill.com customers whose `accountNumber` matches one of the candidate keys.
+     * Optional on test seams so existing unit tests that only stub `createRecord`/`fetchChanges`
+     * continue to work without an extra `fetchChanges('customers')` call on `EnsureCustomer`.
+     */
+    findCustomersByAccountNumber?(
+        ci: MJCompanyIntegrationEntity,
+        accountNumbers: readonly string[],
+        user: UserInfo,
+    ): Promise<Array<{ ExternalID: string; Name: string | null; AccountNumber: string | null }>>;
+    /**
      * `POST /invoices/{id}/archive` — BILL's only way to archive an invoice. Verified live 2026-09-21
      * (spike S1): `PUT {archived:true}` is refused with 400 because PUT is a full replace that demands
      * `customer` and `invoiceLineItems`; the archive verb returns 200 with `archived: true`,
@@ -219,6 +229,29 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
                 );
             }
             return { Records: all, HasMore: false, NewWatermarkValue: last?.NewWatermarkValue };
+        },
+        async findCustomersByAccountNumber(ci, accountNumbers, user) {
+            const keys = new Set(
+                accountNumbers
+                    .map((k) => k?.trim().toLowerCase())
+                    .filter((k): k is string => !!k),
+            );
+            if (!keys.size) return [];
+            const batch = await this.fetchChanges(ci, 'customers', null, user);
+            const matches: Array<{ ExternalID: string; Name: string | null; AccountNumber: string | null }> = [];
+            for (const rec of batch.Records) {
+                const f = rec.Fields ?? {};
+                if (f.archived === true || String(f.isActive ?? 'true').toLowerCase() === 'false') continue;
+                const acct = f.accountNumber == null ? null : String(f.accountNumber).trim();
+                if (acct && keys.has(acct.toLowerCase())) {
+                    matches.push({
+                        ExternalID: rec.ExternalID,
+                        Name: f.name == null ? null : String(f.name),
+                        AccountNumber: acct,
+                    });
+                }
+            }
+            return matches;
         },
     };
 }

@@ -62,6 +62,7 @@ import {
     type WebhookDeliveryReasonCode,
 } from './PaymentWebhookDeliveryLog.js';
 import { EscapeSQLString } from './sql-guards.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 import { SettlePaymentForEvent } from './PaymentSettlement.js';
 import { BookProviderRefunds } from './ProviderRefundBooking.js';
 import { BuildPaymentProvider, LoadPaymentProviderConfig } from './PaymentProviderResolver.js';
@@ -246,6 +247,27 @@ interface HandledDelivery {
     Reason: string;
 }
 
+/**
+ * Run `work` on an isolated provider instance when one can be created, falling back to `shared`
+ * only if `CreateIndependentInstance` itself fails before `work` begins.
+ */
+async function withIsolatedOrSharedProvider<T>(
+    work: (own: IMetadataProvider) => Promise<T>,
+    shared: IMetadataProvider,
+): Promise<T> {
+    let entered = false;
+    try {
+        return await WithIsolatedProvider(async (own) => {
+            entered = true;
+            return work(own);
+        }, shared);
+    } catch (err) {
+        if (entered) throw err;
+        LogError(`PaymentWebhookHandler: could not create isolated provider, falling back to shared provider: ${(err as Error).message}`);
+        return work(shared);
+    }
+}
+
 /** Steps 4 and 5 once the decision is made. */
 async function act(
     decision: WebhookDecision,
@@ -276,26 +298,28 @@ async function act(
 
     // ── 5. Apply it. ───────────────────────────────────────────────────────
     try {
-        // SETTLEMENT RUNS FIRST, AND THE ORDER IS LOAD-BEARING. `applyEvent` stamps
-        // `ProviderEventID`, which is the idempotency key — so an event recorded BEFORE settlement
-        // that then failed to settle would be judged `AlreadyApplied` on every retry, and a payment
-        // the bank confirmed would sit `Pending` for ever with nothing left to move it. Settling
-        // first means a failure returns 500 with nothing stamped and the gateway asks again.
-        //
-        // Only for drivers that have SAID they settle late. A card driver never reaches this line, so
-        // the guarantee in `applyEvent`'s note — that a webhook cannot reach the ledger — still holds
-        // everywhere it held before. Checkout CapturePayment is a separate, explicit call below.
-        if (driver.SettlesAsynchronously) {
-            await SettlePaymentForEvent(event, existing!.ID, provider, user);
-        }
-        // A refund made at the gateway is booked before the event is stamped, for the same reason as
-        // settlement: a failure here answers 500 with nothing stamped, and the retry books only what is
-        // still missing (#476).
         let refundReview: string | undefined;
-        if (event.Kind === REFUND_EVENT_KIND) {
-            refundReview = (await BookProviderRefunds(event, existing!.ID, driver, provider, user)).ReviewReason;
-        }
-        await applyEvent(event, existing!.ID, provider, user);
+        await withIsolatedOrSharedProvider(async (own) => {
+            // SETTLEMENT RUNS FIRST, AND THE ORDER IS LOAD-BEARING. `applyEvent` stamps
+            // `ProviderEventID`, which is the idempotency key — so an event recorded BEFORE settlement
+            // that then failed to settle would be judged `AlreadyApplied` on every retry, and a payment
+            // the bank confirmed would sit `Pending` for ever with nothing left to move it. Settling
+            // first means a failure returns 500 with nothing stamped and the gateway asks again.
+            //
+            // Only for drivers that have SAID they settle late. A card driver never reaches this line, so
+            // the guarantee in `applyEvent`'s note — that a webhook cannot reach the ledger — still holds
+            // everywhere it held before. Checkout CapturePayment is a separate, explicit call below.
+            if (driver.SettlesAsynchronously) {
+                await SettlePaymentForEvent(event, existing!.ID, own, user);
+            }
+            // A refund made at the gateway is booked before the event is stamped, for the same reason as
+            // settlement: a failure here answers 500 with nothing stamped, and the retry books only what is
+            // still missing (#476).
+            if (event.Kind === REFUND_EVENT_KIND) {
+                refundReview = (await BookProviderRefunds(event, existing!.ID, driver, own, user)).ReviewReason;
+            }
+            await applyEvent(event, existing!.ID, own, user);
+        }, provider);
         const booked = await bookCheckoutCaptureFromWebhook(event, existing!.ID, user);
         if (!booked) {
             return failed('the settled checkout payment did not book; the gateway will redeliver');

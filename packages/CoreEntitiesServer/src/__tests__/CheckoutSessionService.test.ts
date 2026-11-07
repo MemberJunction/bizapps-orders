@@ -2608,6 +2608,21 @@ describe('CheckoutSessionService', () => {
                     expect(res.Success).toBe(true);
                     expect(stored.OrderHeaderID).toBe('order-999');
                 });
+
+                it('does not move a Succeeded intent back when the gateway read returns a non-settled status (#943)', async () => {
+                    unpaidSession();
+                    retrieve.mockImplementation(async () => {
+                        webhookStamps();
+                        return { Success: true, Status: 'Processing', Amount: 100 };
+                    });
+
+                    const res = await CheckoutSessionService.CompleteCheckout('sess-123', KEY, testUser);
+
+                    expect(res.Success).toBe(true);
+                    expect(stored.Status).toBe('Succeeded');
+                    expect(stored.ProviderEventID).toBe('evt_page_race');
+                    expect(stored.LastEventAt).toEqual(EVENT_AT);
+                });
             });
         });
 
