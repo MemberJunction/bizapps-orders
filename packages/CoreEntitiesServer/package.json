@@ -44,8 +44,8 @@
     "@mj-biz-apps/accounting-core-entities-server": "0.21.2",
     "@mj-biz-apps/accounting-engine-base": "0.21.2",
     "@mj-biz-apps/common-entities": "5.56.0",
-    "@mj-biz-apps/tasks-core": "1.4.1",
-    "@mj-biz-apps/tasks-entities": "1.4.1",
+    "@mj-biz-apps/tasks-core": "1.10.0",
+    "@mj-biz-apps/tasks-entities": "1.10.0",
     "typescript": "^5.9.3",
     "vite": "^7.1.5",
     "vitest": "^4.0.18"
