@@ -65,4 +65,47 @@ describe('CompanyScopeService', () => {
         );
         expect(scoped).toEqual([CO_A]);
     });
+
+    it("does not treat MJ's default UI or Developer role as all-companies (#813)", () => {
+        expect(UserHoldsAllCompaniesRole({ UserRoles: [{ Role: 'UI' }] } as unknown as UserInfo)).toBe(false);
+        expect(UserHoldsAllCompaniesRole({ UserRoles: [{ Role: 'Developer' }] } as unknown as UserInfo)).toBe(false);
+    });
+
+    it('scopes a non-Finance user with no employee record to no company (fails closed)', async () => {
+        const scoped = await CompanyScopeService.ResolveReceivablesCompanyIDs(
+            [CO_A],
+            {} as unknown as IMetadataProvider,
+            { ID: 'user-2', EmployeeID: null, UserRoles: [{ Role: 'UI' }] } as unknown as UserInfo,
+        );
+        expect(scoped).toEqual([]);
+    });
+
+    it('scopes to no company when the employee record cannot be read', async () => {
+        mocks.runViewImpl.mockResolvedValueOnce({ Success: false, Results: [] });
+        const scoped = await CompanyScopeService.ResolveReceivablesCompanyIDs(
+            undefined,
+            {} as unknown as IMetadataProvider,
+            { ID: 'user-3', EmployeeID: EMP_1, UserRoles: [{ Role: 'Operations' }] } as unknown as UserInfo,
+        );
+        expect(scoped).toEqual([]);
+    });
+
+    it('still gives a Finance user every company', async () => {
+        const scoped = await CompanyScopeService.ResolveReceivablesCompanyIDs(
+            undefined,
+            {} as unknown as IMetadataProvider,
+            { ID: 'user-4', EmployeeID: null, UserRoles: [{ Role: 'UI' }, { Role: 'Finance' }] } as unknown as UserInfo,
+        );
+        expect(scoped).toBeNull();
+    });
+
+    it('lets the scheduled send sweep every company when its job user cannot be placed in one', async () => {
+        const scoped = await CompanyScopeService.ResolveReceivablesCompanyIDs(
+            undefined,
+            {} as unknown as IMetadataProvider,
+            { ID: 'job', EmployeeID: null, UserRoles: [{ Role: 'UI' }] } as unknown as UserInfo,
+            { UnplacedUserSeesAll: true },
+        );
+        expect(scoped).toBeNull();
+    });
 });

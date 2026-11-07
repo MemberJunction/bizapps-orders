@@ -102,6 +102,11 @@ jobs:
           node ./.github/scripts/check-migration-entityfield-sequence.mjs --self-test
           node ./.github/scripts/check-migration-entityfield-sequence.mjs ${{ steps.mb.outputs.sha }} HEAD
 
+      - name: EntityFieldValue inserts must name a field a migration creates
+        run: |
+          node ./.github/scripts/check-migration-entityfieldvalue-ids.mjs --self-test
+          node ./.github/scripts/check-migration-entityfieldvalue-ids.mjs ${{ steps.mb.outputs.sha }} HEAD
+
       - name: Versioned migrations must not contain spDeleteUnneededEntityFields
         run: |
           node ./.github/scripts/check-migration-no-prune.mjs --self-test
