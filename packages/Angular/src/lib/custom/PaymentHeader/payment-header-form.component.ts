@@ -1304,6 +1304,12 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         return count === 1 ? '1 allocation' : `${count} allocations`;
     }
 
+    /** After finance corrects the date: the entries moved with it, so the journal view reloads. */
+    public OnPaymentDateChanged(): void {
+        if (this.AccountingView === 'summary') void this.loadPaymentJournalRollup();
+        this.cdr?.detectChanges?.();
+    }
+
     public async loadPaymentJournalRollup(): Promise<void> {
         if (!this.record?.IsSaved || !this.record?.ID) {
             this.RollupCards = [];
