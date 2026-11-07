@@ -563,6 +563,13 @@
     color: var(--mj-text-muted);
 }
 
+.mjo-oh-acct__actions {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+    flex-wrap: wrap;
+}
+
 .mjo-oh-switch {
     display: inline-flex;
     padding: 2px;

@@ -1,0 +1,377 @@
+[
+  {
+    "_comments": [
+      "HEARING THE GATEWAY THAT BILLS A SUBSCRIPTION (option E, E3 + E4 + E6). Its own dot-json so parallel work on other actions conflicts on nothing.",
+      "",
+      "Orders.SyncProviderSubscriptions: the nightly backstop of the webhook. The webhook brings one subscription in line when the gateway",
+      "renews, fails, retries or ends it; this reads every gateway-billed subscription from the gateway and does the same, so a missed",
+      "webhook is caught within a day, and it is the cutover's catch-up after the import. The class holds no logic: SyncProviderSubscriptions",
+      "in CoreEntitiesServer does the work, the same function the webhook calls. Safe to ship Active: the scheduled job ships Disabled + Preview.",
+      "",
+      "Orders.LinkProviderSubscription: the checked door that records that a gateway already bills an existing subscription. Linking cannot",
+      "be undone and the shared entity refuses it from any form or API; this checks the gateway subscription first, then links and syncs."
+    ],
+    "fields": {
+      "Name": "Sync Provider Subscriptions",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "For subscriptions a payment gateway bills (ProviderSubscriptionID set): read each one and its invoices from the gateway and bring Orders in line. Each renewal the gateway was paid for is booked as a renewal order with its payment and next term, on the subscription's own product at the amount charged; each failed collection attempt is recorded, and access is kept to the end of the gateway's next retry; a cancel-at-period-end set or withdrawn at the gateway turns automatic renewal off or on; a subscription the gateway ended is cancelled in Orders. Anything a person must decide raises one open alert Task per subscription and problem; nothing is fixed silently, and every run reports each difference it found and what it did. Preview (the default) reads both sides and writes nothing.",
+      "Type": "Custom",
+      "DriverClass": "Orders.SyncProviderSubscriptions",
+      "IconClass": "fa-solid fa-rotate",
+      "UserPrompt": "Bring gateway-billed subscriptions in line with the gateway, or preview the differences.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "23AB340D-13FE-4BFC-B65D-7789D0D9588D"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SubscriptionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Sync only this subscription (an operator's targeted run). Omit for every gateway-billed subscription that is live, paused, or cancelled within the lookback."
+          },
+          "primaryKey": {
+            "ID": "93B25443-C2E6-46C1-8EE1-D69F8F4A1B0C"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.115Z",
+            "checksum": "33f8fc258c6b901db97b41b3335a1563f1f1d84f5d631f7729055cb0a53b3126"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True (the default) reads the gateway and Orders and reports every difference and what a run would do, writing nothing; false brings Orders in line. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "EB0EF949-4949-419A-BD3A-2D0B6078DD8E"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.147Z",
+            "checksum": "d37245c126b19deb46e8ba3be4f427f6a67af74b2ed6ac5bb6edf27b258765d0"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Read",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Gateway-billed subscriptions read."
+          },
+          "primaryKey": {
+            "ID": "8FE9B210-D2E4-4343-8018-1E5AF627A389"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.175Z",
+            "checksum": "6ef735fde43ce08866a0628a9849ef97171a2f9b8c27f8321e1cda2ff979705a"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Changed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Subscriptions brought in line (or, in a preview, that would be)."
+          },
+          "primaryKey": {
+            "ID": "2D363480-4C7D-40E1-8ECB-AC0CE25D6321"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.205Z",
+            "checksum": "40aaa8b6f868954f351cec88bdd2e03c8441ae9ac4ac3e1c4efef20772d9a895"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "NeedsPerson",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Subscriptions with nothing more to write but an open alert Task for a person."
+          },
+          "primaryKey": {
+            "ID": "F109E4CF-829E-4DA0-9029-A339255CADB7"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.232Z",
+            "checksum": "6ba9bd88b3d93ef7e4337cf9d1ff4d696ba9c67282fff045740da20b418b5384"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Failed",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Subscriptions the run could not read or book; the next run tries again."
+          },
+          "primaryKey": {
+            "ID": "D7EACBA0-AB31-444C-A494-D2CAC7EF9AD9"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.262Z",
+            "checksum": "7ac25ce78be23ecd3f280c8c8ecfdc91a6b699eea597a6eec6f08577e59f7be6"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Differences",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Every difference found between Orders and the gateway, counted."
+          },
+          "primaryKey": {
+            "ID": "10CE9A30-658D-4961-994C-99E2E2EC0136"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.288Z",
+            "checksum": "8c78c35316fbef22482d0882e8d00973b3d732645c301bb17ec59bca1d6266d9"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Results",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Per subscription: the outcome, the differences found and what was done."
+          },
+          "primaryKey": {
+            "ID": "27A9FF6D-1D08-43CE-A401-9BF765FDF74F"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.314Z",
+            "checksum": "d9cae7b62bf080b32e6cad3add6d221697a453afb2acf76e7488a1af3c3405d5"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when the run was a preview and wrote nothing."
+          },
+          "primaryKey": {
+            "ID": "C9F53790-6E83-4808-ACD5-746AA5AFD0BF"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.343Z",
+            "checksum": "26684dda5f0ce8daab7056f85fc67f80d2b55788f0fc20620fb9fbb83dafb7f3"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-10-29T21:20:42.048Z",
+      "checksum": "9c8525c2f814d738d4fd58b37b59af07eab24b325d9656f8689f51d9a88b4d78"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Link Provider Subscription",
+      "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
+      "Description": "Record that a payment gateway already bills an existing Orders subscription, after checking the gateway subscription: the account must be the subscription's company's and bill subscriptions; the gateway subscription must exist and not have ended, no other Orders subscription may record it, and it must not have been created by Orders for another subscription; the Orders subscription must record no gateway id and no other payment provider yet; the gateway customer's e-mail must be the subscriber's (a mismatch always refuses; with nothing to compare, such as no e-mail at the gateway or an organization's subscription naming no subscriber, a person must confirm the customer with CustomerConfirmed); and the price it bills must map to the subscription's product (unless a person confirms an older price with AllowPriceOfAnotherProduct). Then link it and sync it, booking everything the gateway charged since the subscription's term ended. Linking cannot be undone. Preview (the default) runs every check and links nothing. Use it for an UnknownGatewaySubscription Task.",
+      "Type": "Custom",
+      "DriverClass": "Orders.LinkProviderSubscription",
+      "IconClass": "fa-solid fa-link",
+      "UserPrompt": "Link an existing subscription to the gateway subscription that already bills it.",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "1168470A-1E46-4DB5-9298-FF2AC103D292"
+    },
+    "relatedEntities": {
+      "MJ: Action Params": [
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "SubscriptionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The Orders subscription to link. It must record no gateway id yet."
+          },
+          "primaryKey": {
+            "ID": "4C381DB2-E845-4CF0-AE6E-01B75B59D970"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.371Z",
+            "checksum": "5f4d9dbf7ca92480a95d5f8ecd89b8623e27b40ea9e2ddf771fd074d422c021d"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PaymentProviderID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The payment provider account whose gateway bills it."
+          },
+          "primaryKey": {
+            "ID": "DD401B15-B23D-4025-BE26-6C26157763DA"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.399Z",
+            "checksum": "d71d6228e2139899e691e199636559578e21b03fe60bf620237a27daca1ec65c"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "ProviderSubscriptionID",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": true,
+            "Description": "The gateway's subscription id (Stripe: sub_...). Checked at the gateway before anything is written."
+          },
+          "primaryKey": {
+            "ID": "0452F630-F15A-47DE-A52C-929ED2D63A32"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.427Z",
+            "checksum": "fe255df1f4a89178ae3417ba56e4fbd0b629631359551234df7399b5e36b9a2f"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Preview",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True (the default) runs every check and links nothing; false links and then syncs."
+          },
+          "primaryKey": {
+            "ID": "70D1D8FC-154C-4B48-ADB6-177362DB9ACB"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.453Z",
+            "checksum": "48e5178f013f66430aec0d1ca4df8d3fd76ec00115864c6a96ee57e17eb251ac"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "AllowPriceOfAnotherProduct",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True links although the gateway bills a price this account maps to another product, or to none: a person checked that the subscription's product is right (an imported subscriber on an older price). False (the default) refuses such a link. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "4EEAC249-D0C1-4F39-9D22-E0C899BB03FF"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "CustomerConfirmed",
+            "Type": "Input",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when a person checked at the gateway that it bills this subscription's customer, for a link with nothing to compare (no e-mail at the gateway, or no subscriber e-mail, as for most organization-held subscriptions). It never overrides an e-mail mismatch. False (the default) refuses such a link. A value that is neither is refused rather than guessed."
+          },
+          "primaryKey": {
+            "ID": "D376D73B-627D-4A5E-B0B2-458CA985BCAE"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Code",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "Linked, WouldLink, or why it was refused (SubscriptionNotFound, AlreadyLinked, ProviderCannotBill, NotAtGateway, EndedAtGateway, LinkedElsewhere, EmailMismatch, LinkFailed, BadInput)."
+          },
+          "primaryKey": {
+            "ID": "6F6C3508-3C51-4BFD-8891-5DCAAFDDD1FF"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.479Z",
+            "checksum": "8024e2413002355ecd65f575978753f5c35976371e7bf9bb731e7e2959116aed"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "Sync",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "The sync that followed the link: what was booked."
+          },
+          "primaryKey": {
+            "ID": "FBFA2D44-1E54-46DF-811C-624CCB309D32"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.505Z",
+            "checksum": "6e172e1944c5d2a2983d3d908c6f9765d73f6b446c27945da2b0ae8614e682b1"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "PreviewedOnly",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": false,
+            "IsRequired": false,
+            "Description": "True when nothing was linked."
+          },
+          "primaryKey": {
+            "ID": "2DAAA611-BEF1-4268-8A55-7E93C7DFDB4E"
+          },
+          "sync": {
+            "lastModified": "2026-10-29T21:20:42.534Z",
+            "checksum": "43d2b5fe0e732411b3edf63285ce06f234b52450ad167d3cb8a664cad3e80154"
+          }
+        }
+      ]
+    },
+    "sync": {
+      "lastModified": "2026-10-29T21:20:42.075Z",
+      "checksum": "5abfc1977be32d0288e88064faebecea1ecd9904963472ebc70284891777f7bb"
+    }
+  }
+]

@@ -1,6 +1,6 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule, type RecordSelectedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { FormatDate, FormatInstantDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
@@ -22,6 +22,12 @@ import {
     type mjBizAppsOrdersSubscriptionEventEntity,
     type mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
+
+/**
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`. The workspace declares it inline
+ * rather than exporting a named type, so it is restated here.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
@@ -83,11 +89,12 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
 
                 <div class="mjo-sub__viewer-host">
                     @if (SubscriptionEntityInfo) {
-                        <mj-entity-viewer
+                        <mj-view-workspace
                             [Entity]="SubscriptionEntityInfo"
+                            [AutoSaveView]="true"
                             (RecordSelected)="OnRecordSelected($event)"
-                            (RecordOpened)="OnRecordOpened($event)">
-                        </mj-entity-viewer>
+                            (OpenRecordRequested)="OnRecordOpened($event)">
+                        </mj-view-workspace>
                     } @else {
                         <div class="small muted" style="padding: 24px;">Loading subscriptions...</div>
                     }
@@ -248,7 +255,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -318,9 +325,12 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         }
     }
 
-    /** Double-click opens the form; the single click before it has already filled the side panel. */
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    /**
+     * Double-click opens the form; the single click before it has already filled the side panel.
+     * The workspace hands back the opened row; Subscription's key is `ID`, so the row carries it.
+     */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) this.SubscriptionOpened.emit({ ID: id });
     }
 

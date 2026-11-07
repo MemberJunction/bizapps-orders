@@ -92,25 +92,24 @@ describe('CatalogOptionFrom', () => {
         expect(option.SubscriptionTypeID).toBe('subtype-annual');
     });
 
-    it("inherits the product type's default subscription type when the product names none (golive #339)", () => {
+    it("falls back to the product type's default subscription type, as confirm does (#903)", () => {
         const option = CatalogOptionFrom(
             {
-                ID: 'prod-7',
-                Name: 'Chapter Membership',
-                SKU: 'MEM-CHAPTER',
+                ID: 'prod-6',
+                Name: 'Legacy Membership',
+                SKU: 'MEM-LEGACY',
                 ProductType: 'Membership',
                 ProductTypeID: 'type-membership',
-                CompanyID: 'co-1',
                 Company: 'Meridian',
                 IsTaxable: false,
                 MaxQuantityPerLine: null,
                 SubscriptionTypeID: null,
             },
-            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-annual' },
+            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-rolling' },
             0,
         );
 
-        expect(option.SubscriptionTypeID).toBe('subtype-annual');
+        expect(option.SubscriptionTypeID).toBe('subtype-rolling');
     });
 
     it("prefers the product's own subscription type over its type's default", () => {
