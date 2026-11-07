@@ -77,6 +77,16 @@
   },
   {
     "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Access.Override",
+      "RoleID": "@lookup:MJ: Roles.Name=Senior Finance (AR)",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "1119F4B9-4989-4D22-947C-27C90E4293BE"
+    }
+  },
+  {
+    "fields": {
       "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Price.OverrideAny",
       "RoleID": "@lookup:MJ: Roles.Name=Finance",
       "Type": "Allow"
