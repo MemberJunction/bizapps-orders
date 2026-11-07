@@ -78,21 +78,6 @@ export function IsLineOnUndecidedBand(
     return !!band && moneyEqual(Number(line.UnitPrice ?? 0), band.UnitPrice);
 }
 
-/**
- * The unit price a pricing pass must HOLD for this line, or null when the engine is to resolve one.
- *
- * The same test the save walk applies (`OrderPricingService.applyResolvedPrice`): a price being
- * edited, or any positive stored price, is held. A saved line carrying a price therefore shows what
- * it books, whether the price was typed as an override, written through the API, carried in by a
- * conversion, apportioned from a bundle, or resolved from a rule that has since changed. Re-resolving
- * such a line on screen is what golive #275 was: the screen showed today's rules price as the line
- * total while the stored line and its journal entry carried the stored one.
- *
- * The rules' answer for a held line is still reported as the engine default, which is what the
- * picker's Default row offers.
- *
- * Null is not zero. Zero would pin the line as deliberately free.
- */
 const statedPriceLines = new WeakSet<object>();
 
 /**
@@ -120,6 +105,21 @@ export function IsProductReplacedWithoutPriceEdit(line: mjBizAppsOrdersOrderLine
     return line.IsSaved === true && anyFieldIsDirty(line, ['ProductID']) && !anyFieldIsDirty(line, ['UnitPrice']);
 }
 
+/**
+ * The unit price a pricing pass must HOLD for this line, or null when the engine is to resolve one.
+ *
+ * The same test the save walk applies (`OrderPricingService.applyResolvedPrice`): a price being
+ * edited, or any positive stored price, is held. A saved line carrying a price therefore shows what
+ * it books, whether the price was typed as an override, written through the API, carried in by a
+ * conversion, apportioned from a bundle, or resolved from a rule that has since changed. Re-resolving
+ * such a line on screen is what golive #275 was: the screen showed today's rules price as the line
+ * total while the stored line and its journal entry carried the stored one.
+ *
+ * The rules' answer for a held line is still reported as the engine default, which is what the
+ * picker's Default row offers.
+ *
+ * Null is not zero. Zero would pin the line as deliberately free.
+ */
 export function StatedLineUnitPrice(line: mjBizAppsOrdersOrderLineEntity): number | null {
     if (IsProductReplacedWithoutPriceEdit(line)) return null;
     const unit = Number(line.UnitPrice ?? 0);

@@ -1,9 +1,8 @@
 [
   {
     "fields": {
-      "Name": "MJ_BizApps_Orders: Order Status Changed To Confirmed",
-      "Description": "True when the save transitions OrderHeader.Status to Confirmed.",
-      "Code": "return DidFieldChangeToValue(change, 'Status', 'Confirmed');",
+      "UserDescription": "MJ_BizApps_Orders: Order Status Changed To Confirmed. True when the save transitions OrderHeader.Status to Confirmed.",
+      "Code": "return ActionFilterContext.DidFieldChangeToValue('Status', 'Confirmed');",
       "CodeExplanation": "Evaluates to true only on the save where OrderHeader.Status changes to 'Confirmed', preventing subsequent saves on an already-confirmed order from re-triggering the bound Entity Action."
     },
     "primaryKey": {

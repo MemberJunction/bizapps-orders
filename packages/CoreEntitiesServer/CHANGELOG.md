@@ -1,5 +1,37 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.43.0
+
+### Patch Changes
+
+- Updated dependencies [d45e6ae]
+- Updated dependencies [534b368]
+  - @mj-biz-apps/orders-entities@5.43.0
+
+## 5.42.0
+
+### Minor Changes
+
+- 5529725: Bug sweep across checkout, payments, order entry, accounting, the Bill.com rail, access overrides and tooling. Adds four migrations (one open checkout session per widget and client key, a foreign key from OrderHeader.ApprovalTaskID to Tasks, an immutability guard on InstalmentLineBilling, and DiscountAmount/ChargeAmount in the confirmed-line freeze) and metadata changes (webhook delivery view filter, entity-permission pull filter, progress observation field descriptions, a revenue recognition type description).
+
+### Patch Changes
+
+- Updated dependencies [5529725]
+- Updated dependencies [72787da]
+  - @mj-biz-apps/orders-entities@5.42.0
+
+## 5.41.0
+
+### Minor Changes
+
+- 0045f58: Spawn Renewals prices the renewal of a line that bought several terms at a typed price (`PriceOverridden`) at one term's share of that price, so a 24-month line typed at 20,000 on a 12-month type renews at 10,000 rather than 20,000. An engine-priced line already carries one term's price whatever period it states, and renews at it unchanged. A line no longer than the type's term renews at its own price as before. Each renewal candidate, preview included, now reports the renewal term's start and end (`RenewalTermStart`, `RenewalTermEnd`).
+
+### Patch Changes
+
+- Updated dependencies [0caaeb0]
+- Updated dependencies [0045f58]
+  - @mj-biz-apps/orders-entities@5.41.0
+
 ## 5.40.0
 
 ### Minor Changes
@@ -1179,8 +1211,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                "FK_EntityFieldValue_EntityField"
+                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

@@ -1,5 +1,26 @@
 # @mj-biz-apps/orders-entities
 
+## 5.43.0
+
+### Minor Changes
+
+- d45e6ae: Finance may type any unit price on an order line (MJ.BizApps.Orders.Price.OverrideAny), as Account Director can. Products with a single $0 price, such as the converted-pricing Betty products, had no way to set a price for anyone outside Account Director, so Finance users entering a new sale saw no price pencil. Metadata only; the release's Metadata_Sync migration carries the new authorization-role row.
+- 534b368: The 5.43 Metadata_Sync migration, with its Postgres counterpart, ships the Finance authorization role on MJ.BizApps.Orders.Price.OverrideAny.
+
+## 5.42.0
+
+### Minor Changes
+
+- 5529725: Bug sweep across checkout, payments, order entry, accounting, the Bill.com rail, access overrides and tooling. Adds four migrations (one open checkout session per widget and client key, a foreign key from OrderHeader.ApprovalTaskID to Tasks, an immutability guard on InstalmentLineBilling, and DiscountAmount/ChargeAmount in the confirmed-line freeze) and metadata changes (webhook delivery view filter, entity-permission pull filter, progress observation field descriptions, a revenue recognition type description).
+- 72787da: The 5.42 Metadata_Sync ships what metadata/ changed since 5.41: three progress-observation entity fields, the Record Progress remote operation's output type, the Percentage of Completion revenue recognition type, and the Payment Webhook Deliveries: Not Applied view, so a host that upgrades by migration gets the same metadata as one that ran `mj sync push`. It has a Postgres counterpart.
+
+## 5.41.0
+
+### Minor Changes
+
+- 0caaeb0: The 5.41 Metadata_Sync ships the Spawn Renewals remote operation's updated output type, so a host that upgrades by migration describes the operation's output the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+- 0045f58: Spawn Renewals prices the renewal of a line that bought several terms at a typed price (`PriceOverridden`) at one term's share of that price, so a 24-month line typed at 20,000 on a 12-month type renews at 10,000 rather than 20,000. An engine-priced line already carries one term's price whatever period it states, and renews at it unchanged. A line no longer than the type's term renews at its own price as before. Each renewal candidate, preview included, now reports the renewal term's start and end (`RenewalTermStart`, `RenewalTermEnd`).
+
 ## 5.40.0
 
 ### Minor Changes
@@ -828,8 +849,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                "FK_EntityFieldValue_EntityField"
+                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

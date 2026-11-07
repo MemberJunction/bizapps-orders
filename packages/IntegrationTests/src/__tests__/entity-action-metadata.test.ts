@@ -56,8 +56,11 @@ const actionFilters = readJSON<MetadataRecord[]>('metadata/action-filters/.order
 /** The action names this app defines, which is what an `@lookup:MJ: Actions.Name=` can resolve to. */
 const actionNames = new Set(actions.map((a) => String(a.fields.Name)));
 
-/** The action filter names this app defines, which is what an `@lookup:MJ: Action Filters.Name=` resolves to. */
-const actionFilterNames = new Set(actionFilters.map((f) => String(f.fields.Name)));
+/**
+ * The action filter IDs this app defines. `MJ: Action Filters` has no Name column, so a binding
+ * names its filter by the filter record's fixed primary key rather than an `@lookup:`.
+ */
+const actionFilterIDs = new Set(actionFilters.map((f) => String((f as { primaryKey?: { ID?: string } }).primaryKey?.ID ?? '').toUpperCase()));
 
 /** Every param name each action declares, so a binding cannot pass one the action never accepts. */
 const paramsByAction = new Map<string, Set<string>>(
@@ -187,12 +190,21 @@ describe('entity-action metadata', () => {
             const filters = b.relatedEntities?.['MJ: Entity Action Filters'] ?? [];
             expect(filters.length, 'an AfterUpdate binding must carry a transition filter').toBeGreaterThan(0);
             for (const f of filters) {
-                const filterName = lookupValue(f.fields.ActionFilterID);
-                expect(filterName, 'ActionFilterID must be a resolvable @lookup').not.toBeNull();
-                expect(actionFilterNames, `no such ActionFilter in metadata/action-filters: ${filterName}`).toContain(
-                    filterName as string,
-                );
+                const filterID = String(f.fields.ActionFilterID).toUpperCase();
+                expect(actionFilterIDs, `no such ActionFilter in metadata/action-filters: ${filterID}`).toContain(filterID);
             }
+        }
+    });
+
+    it('defines each action filter with columns MJ: Action Filters has and Code the engine can run', () => {
+        // ActionEngine runs Code as `new Function('ActionFilterContext', Code)`: only that one name is
+        // in scope, so a bare helper call throws ReferenceError on the first save it is asked about.
+        const columns = new Set(['UserDescription', 'UserComments', 'Code', 'CodeExplanation']);
+        for (const f of actionFilters) {
+            for (const key of Object.keys(f.fields)) expect(columns, `MJ: Action Filters has no column ${key}`).toContain(key);
+            const code = String(f.fields.Code);
+            expect(code).toMatch(/ActionFilterContext\./);
+            expect(code).not.toMatch(/(^|[^.\w])DidFieldChangeToValue\(/);
         }
     });
 

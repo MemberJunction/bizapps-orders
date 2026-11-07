@@ -1,5 +1,7 @@
 import '@angular/compiler';
 import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import '../public-api';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormComponent, BaseFormPanel } from '@memberjunction/ng-base-forms';
@@ -399,6 +401,31 @@ describe('BizAppsPaymentHeaderFormComponent Custom Form Registration & Getters',
         expect(instance.record.Amount).toBe(300);
     });
 
+    it('picks the instrument panel by tender code, so Gift Card and Account Credit are not cards (#846)', () => {
+        const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
+        const types = [
+            { ID: 't-card', Code: 'CreditCard', Name: 'Credit Card', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-ach', Code: 'ACH', Name: 'ACH', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-check', Code: 'Check', Name: 'Check', RequiresInstrument: true, RequiresReference: true },
+            { ID: 't-wire', Code: 'Wire', Name: 'Wire', RequiresInstrument: false, RequiresReference: true },
+            { ID: 't-gift', Code: 'GiftCard', Name: 'Gift Card / Stored Value', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-credit', Code: 'AccountCredit', Name: 'Account Credit', RequiresInstrument: true, RequiresReference: false },
+            { ID: 't-cash', Code: 'Cash', Name: 'Cash', RequiresInstrument: false, RequiresReference: false },
+        ];
+        (instance as unknown as { PaymentTypes: unknown[] }).PaymentTypes = types;
+        const panelFor = (id: string) => {
+            instance.record = { PaymentTypeID: id } as unknown as mjBizAppsOrdersPaymentHeaderEntity;
+            return instance.InstrumentPanel;
+        };
+        expect(panelFor('t-card')).toBe('card');
+        expect(panelFor('t-ach')).toBe('ach');
+        expect(panelFor('t-check')).toBe('check');
+        expect(panelFor('t-wire')).toBe('reference');
+        expect(panelFor('t-gift')).toBe('giftcard');
+        expect(panelFor('t-credit')).toBe('none');
+        expect(panelFor('t-cash')).toBe('none');
+    });
+
     it('properly reads and writes tender-specific instrument details on PaymentDetailID_Object', () => {
         const instance = Object.create(BizAppsPaymentHeaderFormComponent.prototype) as BizAppsPaymentHeaderFormComponent;
         let mockDetail: mjBizAppsOrdersPaymentDetailEntity | null = null;
@@ -612,6 +639,41 @@ describe('BizAppsPaymentHeaderFormComponent capture (golive #283)', () => {
         expect(instance.CaptureError).toContain('Receiving Company cannot be null');
     });
 
+    it('shows the payment an earlier attempt saved when the idempotency key refuses a retry (#847)', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+        const loadByKey = vi.fn(async () => {
+            record.IsSaved = true;
+            record.Status = 'Captured';
+            return true;
+        });
+        Object.assign(record, { SaveRefusedAsDuplicateKey: true, LoadByIdempotencyKey: loadByKey });
+        (instance as unknown as { loadPaymentJournalRollup: () => Promise<void> }).loadPaymentJournalRollup = vi.fn(async () => undefined);
+
+        await instance.CapturePayment();
+        expect(record.Save).toHaveBeenCalledOnce();
+        expect(loadByKey).toHaveBeenCalledOnce();
+        expect(instance.CaptureError).toBeNull();
+        expect(record.Status).toBe('Captured');
+    });
+
+    it('asks for another press when the earlier attempt saved only a draft (#847)', async () => {
+        const { instance, record } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 500 }]);
+        instance.SetOrderAllocation('ord-1', 500);
+        Object.assign(record, {
+            SaveRefusedAsDuplicateKey: true,
+            LoadByIdempotencyKey: vi.fn(async () => {
+                record.IsSaved = true;
+                record.Status = 'Pending';
+                return true;
+            }),
+        });
+        (instance as unknown as { populateExistingAllocations: () => void }).populateExistingAllocations = vi.fn();
+
+        await instance.CapturePayment();
+        expect(instance.CaptureError).toContain('already saved this payment as a draft');
+    });
+
     it('shows an over-applied order as a negative balance and the credit it creates', () => {
         const { instance } = form([{ ID: 'ord-1', CompanyID: CO_A, Balance: 5000 }]);
         const order = instance.OpenOrders[0];
@@ -742,5 +804,30 @@ describe('BizAppsPaymentHeaderFormComponent captured payment (golive #342)', () 
         instance.record.Status = 'Pending';
         instance.ngDoCheck();
         expect(load).toHaveBeenCalledOnce();
+    });
+});
+
+describe('BizAppsPaymentHeaderFormComponent payer pickers (bc-aidp-next-golive#372)', () => {
+    // The stock FK field lists rows on focus and scans the whole party file; the payer fields use
+    // the fast party picker and keep their mode, context and Navigate handler.
+    const html = readFileSync(
+        join(import.meta.dirname, '../lib/custom/PaymentHeader/payment-header-form.component.html'),
+        'utf8',
+    );
+    const tagFor = (field: string) =>
+        [...html.matchAll(/<(mj-form-field|bizapps-party-field)\b[^>]*>/g)]
+            .map((m) => m[0])
+            .find((tag) => tag.includes(`FieldName="${field}"`));
+
+    it.each([
+        ['BillToOrganizationID', 'Organization'],
+        ['BillToPersonID', 'Person'],
+    ])('%s is a bizapps-party-field of Kind %s', (field, kind) => {
+        const tag = tagFor(field);
+        expect(tag, field).toMatch(/^<bizapps-party-field\b/);
+        expect(tag).toContain(`Kind="${kind}"`);
+        expect(tag).toContain('[EditMode]="ComposeMode"');
+        expect(tag).toContain('[FormContext]="formContext"');
+        expect(tag).toContain('(Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()"');
     });
 });

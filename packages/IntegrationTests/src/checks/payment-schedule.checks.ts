@@ -755,7 +755,7 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 AssertEqual(doc.AmountPaid, 40, 'what was paid on THIS instalment');
                 AssertEqual(doc.AmountDue, 60, 'the instalment less its payments');
                 AssertEqual(doc.DueDate, '2027-07-01', "the instalment's due date, not the header's");
-                AssertEqual(doc.Ladder.some((r) => r.Kind === 'Instalment' && r.Label === 'Instalment 2 of 3'), true, 'the ladder names the instalment');
+                AssertEqual(doc.Ladder.some((r) => r.Kind === 'Instalment' && r.Label === 'Installment 2 of 3'), true, 'the ladder names the instalment');
             }),
     },
     {

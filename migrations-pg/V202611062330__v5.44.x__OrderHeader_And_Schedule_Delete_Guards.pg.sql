@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202611021930 — OrderHeader and OrderHeaderPaymentSchedule delete guards
+-- V202611062330 — OrderHeader and OrderHeaderPaymentSchedule delete guards
 --                 (PostgreSQL)
 -- =============================================================================
 -- 1. trg_OrderHeader_ImmutableAfterConfirm gains an AFTER DELETE trigger and

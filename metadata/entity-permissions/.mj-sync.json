@@ -13,7 +13,7 @@
     "mergeStrategy": "merge",
     "backupBeforeUpdate": true,
     "backupDirectory": ".backups",
-    "filter": "RoleID IN (SELECT ID FROM ${flyway:defaultSchema}.Role WHERE Name IN ('Engagement Lead', 'Account Director', 'Finance', 'Senior Finance (AR)', 'CFO', 'CEO Approver'))",
+    "filter": "RoleName IN ('Engagement Lead', 'Account Director', 'Finance', 'Senior Finance (AR)', 'CFO', 'CEO Approver', 'Checkout Operator')",
     "externalizeFields": [],
     "lookupFields": {
       "EntityID": { "entity": "MJ: Entities", "field": "Name" },

@@ -45,6 +45,7 @@ const G1 = '6A4D0000-0000-4000-8000-0000000000C1'; // draft, then confirmed
 const G2 = '6A4D0000-0000-4000-8000-0000000000C2'; // created Confirmed, not yet booked (conversion)
 const G3 = '6A4D0000-0000-4000-8000-0000000000C3'; // stays draft
 const G4 = '6A4D0000-0000-4000-8000-0000000000C4'; // draft that carries a ConfirmedAt
+const G5 = '6A4D0000-0000-4000-8000-0000000000C5'; // Confirmed, no lines or schedule rows
 const GL1 = '6A4D0000-0000-4000-8000-0000000000D1'; // G1
 const GL3 = '6A4D0000-0000-4000-8000-0000000000D3'; // G3, already linked to a journal entry
 const GL3B = '6A4D0000-0000-4000-8000-0000000000D4'; // G3, no journal entry
@@ -56,7 +57,7 @@ const PS3 = '6A4D0000-0000-4000-8000-0000000000F3'; // G3 (Draft), sole row
 const C2_FALLBACK = '6A4D0000-0000-4000-8000-0000000000A2';
 const P1_FALLBACK = '6A4D0000-0000-4000-8000-0000000000B1';
 const P2_FALLBACK = '6A4D0000-0000-4000-8000-0000000000B2';
-const ORDERS = [G1, G2, G3, G4].map((id) => `'${id}'`).join(',');
+const ORDERS = [G1, G2, G3, G4, G5].map((id) => `'${id}'`).join(',');
 
 /** Every guard check each trigger must carry. A redefinition that drops one fails the first cases. */
 const HEADER_CHECKS = ['51013', '51014', '51015', '51017', '51018', '51019'];
@@ -116,7 +117,8 @@ async function setup() {
           ('${G1}', 'GUARD-1', '2026-09-23', '${companyID}', 'Draft',     NULL, NULL),
           ('${G2}', 'GUARD-2', '2026-09-23', '${companyID}', 'Confirmed', NULL, NULL),
           ('${G3}', 'GUARD-3', '2026-09-23', '${companyID}', 'Draft',     NULL, NULL),
-          ('${G4}', 'GUARD-4', '2026-09-23', '${companyID}', 'Draft',     SYSDATETIMEOFFSET(), '${users[0].ID}');
+          ('${G4}', 'GUARD-4', '2026-09-23', '${companyID}', 'Draft',     SYSDATETIMEOFFSET(), '${users[0].ID}'),
+          ('${G5}', 'GUARD-5', '2026-09-23', '${companyID}', 'Confirmed', NULL, NULL);
         INSERT ${O}.OrderLine (ID, OrderHeaderID, ProductID, CompanyID, LineNumber, Quantity, UnitPrice, JournalEntryID) VALUES
           ('${GL1}',  '${G1}', '${productID}', '${companyID}', 1, 1, 10, NULL),
           ('${GL3}',  '${G3}', '${productID}', '${companyID}', 1, 1, 10, '${JE1}'),
@@ -228,8 +230,11 @@ try {
     await expectOutcome('Confirmed: delete one of two Scheduled rows', 'ok', `DELETE FROM ${O}.OrderHeaderPaymentSchedule WHERE ID = '${PS1}'`);
     await expectOutcome('Confirmed: delete last Scheduled row for company', 51020, `DELETE FROM ${O}.OrderHeaderPaymentSchedule WHERE ID = '${PS2}'`);
     await expectValue('Refused delete left the last schedule row in place', '1', `SELECT COUNT(*) AS v FROM ${O}.OrderHeaderPaymentSchedule WHERE ID = '${PS2}'`);
-    await expectOutcome('Confirmed: delete header', 51019, `DELETE FROM ${O}.OrderHeader WHERE ID = '${G2}'`);
-    await expectValue('Refused delete left the header in place', '1', `SELECT COUNT(*) AS v FROM ${O}.OrderHeader WHERE ID = '${G2}'`);
+    // The trigger is AFTER DELETE, so a header that still has schedule rows is refused by the foreign
+    // key (547) before 51019 can fire. 51019 answers for a Confirmed header with no child rows.
+    await expectOutcome('Confirmed with schedule rows: delete header', 547, `DELETE FROM ${O}.OrderHeader WHERE ID = '${G2}'`);
+    await expectOutcome('Confirmed: delete header', 51019, `DELETE FROM ${O}.OrderHeader WHERE ID = '${G5}'`);
+    await expectValue('Refused delete left the header in place', '1', `SELECT COUNT(*) AS v FROM ${O}.OrderHeader WHERE ID = '${G5}'`);
     await expectOutcome('Draft: delete header', 'ok', `DELETE FROM ${O}.OrderHeader WHERE ID = '${G4}'`);
 } finally {
     await cleanup();

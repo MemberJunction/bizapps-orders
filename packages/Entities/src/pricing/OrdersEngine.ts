@@ -191,14 +191,12 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     /**
-     * The subscription type a line of this product starts at confirm: `Product.SubscriptionTypeID`,
-     * otherwise its product type's `DefaultSubscriptionTypeID` — the same resolution confirm uses.
-     * Undefined when the product sells no subscription or the cache has not loaded.
+     * The subscription type a line of this product starts at confirm, resolved by
+     * {@link ResolveSubscriptionTypeID}. Undefined when the product sells no subscription or the
+     * cache has not loaded.
      */
     public SubscriptionTypeForProduct(productID: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
-        const product = this.ProductByID(productID);
-        if (!product) return undefined;
-        const id = product.SubscriptionTypeID?.trim() || this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID?.trim();
+        const id = this.ResolveSubscriptionTypeID(productID);
         return id ? this.SubscriptionTypeByID(id) : undefined;
     }
 
@@ -344,6 +342,16 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         // stamp and has to be asked for them like any other line.
         if (this.EventProductByID(productID)) return 'Event';
         return 'Line';
+    }
+
+    /**
+     * True when the product's recognition type is percentage of completion (`ScheduleBasis =
+     * 'OnMeasurement'`): revenue follows attested progress, so a line's service dates are an expected
+     * window, not something recognition reads (bc-aidp-next-golive#455).
+     */
+    public IsProgressMeasured(productID: string | null | undefined): boolean {
+        const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
+        return revRec?.ScheduleBasis === 'OnMeasurement';
     }
 
     /** Active base-channel (no list) prices on a product, highest priority first. */

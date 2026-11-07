@@ -58,7 +58,7 @@
         {
           "fields": {
             "EntityActionID": "@parent:ID",
-            "ActionFilterID": "@lookup:MJ: Action Filters.Name=MJ_BizApps_Orders: Order Status Changed To Confirmed",
+            "ActionFilterID": "4A91F2E3-8C47-4D62-9B15-7E2A3C4D5F60",
             "Sequence": 1,
             "Status": "Active"
           },
