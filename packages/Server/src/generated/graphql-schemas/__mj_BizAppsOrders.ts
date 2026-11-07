@@ -6927,6 +6927,9 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(2)
     CardIssuingCountry?: string;
         
+    @Field({nullable: true, description: "The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself."}) 
+    InitialPaymentReceivedDate?: Date;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -7132,6 +7135,9 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     CardIssuingCountry: string | null;
 
+    @Field({ nullable: true })
+    InitialPaymentReceivedDate: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7258,6 +7264,9 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     CardIssuingCountry?: string | null;
+
+    @Field({ nullable: true })
+    InitialPaymentReceivedDate?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

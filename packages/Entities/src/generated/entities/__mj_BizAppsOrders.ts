@@ -2827,6 +2827,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Card Issuing Country
         * * SQL Data Type: char(2)
         * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
+    InitialPaymentReceivedDate: z.date().nullable().describe(`
+        * * Field Name: InitialPaymentReceivedDate
+        * * Display Name: Initial Payment Received Date
+        * * SQL Data Type: date
+        * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -15681,6 +15686,19 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set CardIssuingCountry(value: string | null) {
         this.Set('CardIssuingCountry', value);
+    }
+
+    /**
+    * * Field Name: InitialPaymentReceivedDate
+    * * Display Name: Initial Payment Received Date
+    * * SQL Data Type: date
+    * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.
+    */
+    get InitialPaymentReceivedDate(): Date | null {
+        return this.Get('InitialPaymentReceivedDate');
+    }
+    set InitialPaymentReceivedDate(value: Date | null) {
+        this.Set('InitialPaymentReceivedDate', value);
     }
 
     /**

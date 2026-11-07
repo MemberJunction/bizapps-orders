@@ -15,7 +15,7 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-10-29 · latest migration `V202611031730__v5.42.x__OrderLine_Freeze_Discount_And_Charge.sql`
+> **Verified against the live database:** 2026-11-06 · latest migration `V202611062300__v5.44.x__Payment_Received_Date.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
 > **71 tables · 128 internal relationships · 77 cross-app foreign keys ·
@@ -694,6 +694,7 @@ erDiagram
         uuid ConfirmedByUserID FK
         char IPCountry
         char CardIssuingCountry
+        date InitialPaymentReceivedDate
     }
     OrderLine {
         uuid ID PK "required"
@@ -1748,7 +1749,7 @@ show either, and code that ignores them will fail at runtime rather than at comp
 | `OrderLine` | `trg_OrderLine_RollupTotals` | The order's `TotalGross`, `Balance` and `FulfillmentStatus`, and its instalment rollups, are recomputed from the lines by the database, so a client cannot supply a total that disagrees with what was booked. |
 | `OrderLineProgressMeasurement` | `trg_OrderLineProgressMeasurement_Immutable` | A posted progress observation cannot be changed or deleted (51030), and nothing may promote a Draft one to Posted (51031): `Orders.RecordProgress` writes a row Posted in the same transaction as its journal entry. A correction is a new observation that supersedes the old one. |
 | `PaymentDetail` | `trg_PaymentDetail_Immutable` | Once written, an instrument's company, payment type, provider customer and instrument references, brand, last four, expiry, bank name, routing and account tails, reference number and stored-value account cannot change (51009). Not covered: `HolderName`, `BankAccountType`, `InstrumentDate`, `PaymentProviderID`, `SourceCustomerPaymentMethodID`, `SourceOrderHeaderID` and `Notes`. The trigger fires on UPDATE only; the foreign keys from a payment, an order or a saved method keep a referenced detail from being deleted. |
-| `PaymentHeader` | `trg_PaymentHeader_ImmutableAfterCapture` | Captured money is frozen. A captured payment cannot be deleted (51004), its amount, fees, type, date, receiving company and customer cannot change (51005), a set `JournalEntryID` is never cleared or replaced (51006), and its status cannot go back (51007). |
+| `PaymentHeader` | `trg_PaymentHeader_ImmutableAfterCapture` | Captured money is frozen. A captured payment cannot be deleted (51004), its amount, fees, type, receiving company and customer cannot change (51005), its date changes only while none of its journal entries is batched or posted (51033, bc-aidp-next-golive#448), a set `JournalEntryID` is never cleared or replaced (51006), and its status cannot go back (51007). |
 | `PaymentHeader` | `trg_PaymentHeader_RollupTotals` | A payment status change (Pending to Captured, say) changes what counts as paid, so the orders its lines touch are recomputed. |
 | `PaymentLine` | `trg_PaymentLine_ImmutableAfterCapture` | Once its payment is captured, an applied payment line cannot be deleted (51010), and its amount, order and order line cannot change (51011); the instalment it names (`OrderHeaderPaymentScheduleID`) is not covered. A set `BookedAt` is never cleared or replaced (51012). |
 | `PaymentLine` | `trg_PaymentLine_RollupTotals` | The order's `AmountPaid` and `Balance`, and its instalments', are recomputed from the lines of its captured payments. |
