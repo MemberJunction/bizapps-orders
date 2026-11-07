@@ -78,6 +78,7 @@ metadata descriptions predate the code.
 | `Orders.ExplainProductGLAccounts` | `orders:read` | Sync | For one product, company and day: the GL account each role books to and every level of the walk (product, category and its parents, product type, company default) with the winner marked, or the refusal confirm would give. Runs `GLAccountResolver.Explain`, which shares `Resolve`'s walk; the product's Accounting tab shows it as Effective accounts. Writes nothing. |
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Marks lines Fulfilled and sets the order's `FulfillmentStatus` once nothing is left to ship, in one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
+| `Orders.CheckOrderLinesEditable` | `orders:read` | Sync | Whether the order-line veto another app registered on the server (Sales, while the deal behind the order is closed) would refuse adding, changing or removing a line, with its refusal. Asks the veto the line save asks, so the order editor shows the lines read-only before anyone types a change the save refuses. A vetoer that fails counts as a refusal. |
 | `Orders.GetPriorReturns` | `orders:read` | Sync | How much of each line has been returned and how much may still come back, from the same cap confirm enforces. |
 | **Payments and credits** | | | |
 | `Orders.CapturePayment` | `orders:write` | Sync | Settles with the provider before the money is recorded, recognises a re-submitted capture as the same payment, turns over-payment into credit. |

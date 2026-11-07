@@ -174,6 +174,7 @@ export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } f
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
+export { CheckOrderLinesEditableOperation, LoadCheckOrderLinesEditableOperation } from './CheckOrderLinesEditableOperation.js';
 export { ConfirmReadinessOperation, LoadConfirmReadinessOperation, ConcessionProblemSentence } from './ConfirmReadinessOperation.js';
 export {
     ExplainProductGLAccountsOperation,
