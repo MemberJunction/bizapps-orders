@@ -57,10 +57,13 @@
       "type, rather than the generic Approval Request or sales' ORDER_REVIEW (raised for every won deal), so the",
       "confirm gate can find an order's reviews by Code and so a host can route its OnAssign notices separately.",
       "IsApproval lists its tasks in the Tasks approvals inbox. An approving decision by an assignee lets the order",
-      "confirm; nothing runs on completion, the confirm reads the decision."
+      "confirm; nothing runs on completion, the confirm reads the decision.",
+      "Named apart from sales' 'Order Review': the Metadata_Sync migration creates a task type only when none has its ID",
+      "or Name, so on a host where sales was installed first the shared name skipped this row, and every order that hit",
+      "a trigger was refused for want of its task type."
     ],
     "fields": {
-      "Name": "Order Review",
+      "Name": "Order Trigger Review",
       "Code": "ORDERS_ORDER_REVIEW",
       "Description": "Review an order that hit a review trigger. Approve to let it confirm, or reject with a note saying what to correct. A change to the order after approval sends it back for review.",
       "IconClass": "fa-solid fa-magnifying-glass-dollar",
