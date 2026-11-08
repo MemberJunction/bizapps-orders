@@ -377,7 +377,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         // invoice loaded here more than a day after the payment last changed on the rail never let it
         // capture. Each open row is rebuilt from its stored payload; one whose every invoice now has an
         // `ExternalInvoice` row is captured the normal way, and the rest are left exactly as they are.
-        outcomes.push(...(await this.recheckOpenUnmatched(rail, all.map((p) => p.ExternalPaymentRef), opts.preview, bookingCurrency, provider, user)));
+        outcomes.push(...(await this.recheckOpenUnmatched(rail, all.map((p) => p.ExternalPaymentRef), opts.preview, bookingCurrency, provider, user, newlyWaiting)));
 
         // THE WATERMARK: on a clean, uncapped pass, the newest instant the rail returned. On a capped
         // pass, the newest instant among the payments actually processed — everything older is done
@@ -405,7 +405,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
      * Re-decides the provider's open `Unmatched` rows the rail did not return this pass, but only those
      * whose every invoice now has an `ExternalInvoice` row: the capture rule stays all invoices or
      * nothing, and a payment still missing one is not rewritten. Like the re-applied recheck, a failure
-     * is logged and left for the next pass and does not hold the watermark back.
+     * is logged and left for the next pass and does not hold the watermark back. A recheck that ends
+     * in a disposition finance must act on (`Refused`, say) is added to `newlyWaiting`, as the other
+     * two paths do.
      */
     private async recheckOpenUnmatched(
         rail: BaseInvoiceRail,
@@ -414,6 +416,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         bookingCurrency: string,
         provider: IMetadataProvider,
         user: UserInfo,
+        newlyWaiting: PaymentReviewItem[],
     ): Promise<ExternalPaymentOutcome[]> {
         const providerID = rail.Config.PaymentProviderID;
         const outcomes: ExternalPaymentOutcome[] = [];
@@ -429,7 +432,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             }
             for (const { Row, Record } of candidates.filter((c) => EveryInvoiceIssued(c.Record, issued))) {
                 try {
-                    outcomes.push(await this.handlePayment(rail, Record, Row, preview, bookingCurrency, provider, user));
+                    const outcome = await this.handlePayment(rail, Record, Row, preview, bookingCurrency, provider, user);
+                    outcomes.push(outcome);
+                    if (!preview && IsNewlyWaiting(Row.Disposition, outcome, !!Record.UnmatchedReason)) newlyWaiting.push({ Outcome: outcome, RailName: rail.Config.Name });
                 } catch (err) {
                     LogError(`Orders.PollExternalPayments: re-checking unmatched payment ${Row.ExternalPaymentRef} failed: ${err instanceof Error ? err.message : String(err)}`);
                 }

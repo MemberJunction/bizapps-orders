@@ -23,6 +23,8 @@ const mocks = vi.hoisted(() => ({
     rail: null as unknown,
     /** Captures the poller asked for. */
     captures: [] as Array<Record<string, unknown>>,
+    /** When set, the capture operation refuses with this message. */
+    captureRefusal: null as string | null,
     /** What upsertExternalPayment wrote, per call. */
     writes: [] as Array<Record<string, unknown>>,
 }));
@@ -59,6 +61,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
         OrdersCapturePaymentOperation: class {
             async Execute(input: Record<string, unknown>) {
                 mocks.captures.push(input);
+                if (mocks.captureRefusal) return { Success: true, Output: { Success: false, Message: mocks.captureRefusal } };
                 return { Success: true, Output: { Success: true, PaymentNumber: 'PAY-1', PaymentHeaderID: HEADER_ID, WasRetry: false } };
             }
         },
@@ -152,6 +155,7 @@ interface Callable {
         bookingCurrency: string,
         provider: IMetadataProvider,
         user: UserInfo,
+        newlyWaiting: unknown[],
     ): Promise<Array<{ ExternalPaymentRef: string; Disposition: string }>>;
 }
 
@@ -178,9 +182,9 @@ const rail = Object.assign(new BillComInvoiceRail(), {
     GetInvoice: async () => ({ Success: false, Reason: 'not needed here' }),
 });
 
-function recheck(fetchedRefs: string[] = []) {
+function recheck(fetchedRefs: string[] = [], newlyWaiting: unknown[] = []) {
     const op = new PollExternalPaymentsOperation() as unknown as Callable;
-    return op.recheckOpenUnmatched(rail, fetchedRefs, false, 'USD', fakeProvider, {} as UserInfo);
+    return op.recheckOpenUnmatched(rail, fetchedRefs, false, 'USD', fakeProvider, {} as UserInfo, newlyWaiting);
 }
 
 beforeEach(() => {
@@ -190,6 +194,7 @@ beforeEach(() => {
     mocks.paymentReads = [];
     mocks.rail = rail;
     mocks.captures = [];
+    mocks.captureRefusal = null;
     mocks.writes = [];
 });
 
@@ -227,6 +232,21 @@ describe('a payment parked Unmatched before its invoice was loaded', () => {
         expect(mocks.paymentFilters[0]).toContain(`Disposition = 'Unmatched'`);
         expect(mocks.captures).toHaveLength(0);
         expect(mocks.writes).toHaveLength(0);
+    });
+
+    it('is announced once when the capture refuses it, and not when it captures', async () => {
+        mocks.externalPayments = [row()];
+        mocks.externalInvoices = [invoice('invA')];
+        mocks.captureRefusal = 'Order is split across companies.';
+        const newlyWaiting: Array<{ Outcome: { ExternalPaymentRef: string; Disposition: string }; RailName: string }> = [];
+        const out = await recheck([], newlyWaiting);
+        expect(out.map((o) => o.Disposition)).toEqual(['Refused']);
+        expect(newlyWaiting).toEqual([{ Outcome: expect.objectContaining({ ExternalPaymentRef: '0rp01', Disposition: 'Refused' }), RailName: 'Bill.com Sandbox' }]);
+
+        mocks.captureRefusal = null;
+        const captured: unknown[] = [];
+        await recheck([], captured);
+        expect(captured).toEqual([]);
     });
 
     it('leaves a payment the fetch already re-decided this pass to the fetch', async () => {
