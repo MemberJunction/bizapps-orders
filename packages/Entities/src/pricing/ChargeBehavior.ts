@@ -50,6 +50,12 @@ export interface ChargeRequest {
     /** An operator's override, which REPLACES the computed amount but never hides it. */
     OverrideAmount?: number | null;
     OverrideReason?: string | null;
+    /**
+     * Who overrode it and when, for an override restated from a saved row. Absent on a new override,
+     * which is stamped with the saving user and the time.
+     */
+    OverriddenByUserID?: string | null;
+    OverriddenAt?: Date | null;
 }
 
 /** One line's share of one charge. */

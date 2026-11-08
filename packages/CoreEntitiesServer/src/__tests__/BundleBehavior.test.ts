@@ -10,12 +10,16 @@ import { describe, expect, it } from 'vitest';
 import {
     AllocateBundlePrice,
     ChildQuantity,
+    InheritedFields,
+    PickRenewalComponent,
     PlanBundleExpansion,
+    PlanInheritanceRefresh,
     PlanQuantityRipple,
     RollupTotal,
     SplitExactly,
     type BundleComponent,
     type BundleLineFacts,
+    type InheritableLineFields,
 } from '../BundleBehavior.js';
 
 const component = (over: Partial<BundleComponent> = {}): BundleComponent => ({
@@ -310,5 +314,34 @@ describe('RollupTotal', () => {
 
     it('is zero for an order of nothing but parents', () => {
         expect(RollupTotal([{ IsRollupParent: true, Amount: 100 }])).toBe(0);
+    });
+});
+
+describe('what a component inherits from its bundle line (#548)', () => {
+    const blank: InheritableLineFields = {
+        ShipToOrganizationID: null,
+        ShipToPersonID: null,
+        ShipToAddressID: null,
+        ServicePeriodStart: null,
+        SubscriptionAction: null,
+        RenewsSubscriptionID: null,
+    };
+
+    it('places a renewal on the one component selling the renewed product', () => {
+        expect(PickRenewalComponent('P-2', ['p-1', 'p-2', 'p-3'])).toEqual({ Index: 1 });
+        expect(PickRenewalComponent('P-9', ['p-1'])).toEqual({ Refusal: 'NoComponentSellsTarget' });
+        expect(PickRenewalComponent('P-1', ['p-1', 'p-1'])).toEqual({ Refusal: 'SeveralComponentsSellTarget' });
+    });
+
+    it('gives a non-subscription component the ship-to but no start, action or renewal', () => {
+        const parent = { ...blank, ShipToPersonID: 'person', ServicePeriodStart: '2026-11-01', SubscriptionAction: 'CreateNew', RenewsSubscriptionID: 'sub' };
+        expect(InheritedFields(parent, { IsSubscription: false, IsRenewalTarget: false })).toEqual({ ...blank, ShipToPersonID: 'person' });
+    });
+
+    it('refreshes only fields the bundle line changed and the component did not', () => {
+        const before = { ...blank, ShipToPersonID: 'a', ServicePeriodStart: new Date('2026-11-01') };
+        const after = { ...blank, ShipToPersonID: 'b', ServicePeriodStart: new Date('2026-12-01') };
+        const child = { ...blank, ShipToPersonID: 'A', ServicePeriodStart: new Date('2027-01-01') };
+        expect(PlanInheritanceRefresh(child, before, after)).toEqual({ ShipToPersonID: 'b' });
     });
 });

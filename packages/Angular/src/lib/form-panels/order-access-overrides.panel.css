@@ -72,6 +72,10 @@
     flex: 1 1 12rem;
 }
 
+.mjo-ao-waiting {
+    margin-top: var(--mj-space-2);
+}
+
 @media (max-width: 600px) {
     .mjo-ao-form {
         grid-template-columns: 1fr;

@@ -31,15 +31,17 @@ const user = { ID: 'user-1' } as never;
 
 type Row = Record<string, unknown>;
 
-/** Answers each RunView by entity: concessions, sales authorities and persisted lines. */
-function database(concessions: Row[], lines: Row[], authorities: Row[] = []) {
+/** Answers each RunView by entity: concessions, sales authorities, manual discounts and persisted lines. */
+function database(concessions: Row[], lines: Row[], authorities: Row[] = [], adjustments: Row[] = []) {
     mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
         Success: true,
         Results: params.EntityName.endsWith('Order Concessions')
             ? concessions
             : params.EntityName.endsWith('Sales Authorities')
               ? authorities
-              : lines,
+              : params.EntityName.endsWith('Order Adjustments')
+                ? adjustments
+                : lines,
     }));
 }
 
@@ -73,6 +75,22 @@ describe('FindUnapprovedConcessions — line prices', () => {
         expect(problems).toEqual([expect.stringMatching(/line 1 is priced at 60.00 .* worth 80.00 with no approved Price/)]);
         const lineQuery = mockRunView.mock.calls.find((c) => (c[0] as { EntityName: string }).EntityName.endsWith('Order Lines'));
         expect((lineQuery?.[0] as { ExtraFilter: string }).ExtraFilter).not.toMatch(/PriceOverridden/);
+    });
+
+    it('counts a DiscountPct on a line with no engine price, against its stated price (#905)', async () => {
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+        database([], [{ ...apiLine, UnitPrice: 1000, Quantity: 1, DiscountPct: 0.4 }]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        expect(problems).toEqual([expect.stringMatching(/line 1 is discounted 40%, a concession worth 400.00/)]);
+    });
+
+    it('counts nothing on a line with no engine price and no discount', async () => {
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+        database([], [{ ...apiLine, UnitPrice: 1000, Quantity: 1, DiscountPct: 0 }]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
     });
 
     it('clears the line once an approved concession covers its value', async () => {
@@ -124,6 +142,171 @@ describe('FindUnapprovedConcessions — line prices', () => {
         mockStanding.mockResolvedValue({ EngineUnitPrice: 60, IsEnginePrice: true, IsNamedListPick: false });
 
         expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+});
+
+/**
+ * A `DiscountPct` gives value away as surely as a lower price (golive #305). A deal's Discount %, the
+ * API and an import all write it straight onto the line, so the gate counts it whoever set it.
+ */
+describe('FindUnapprovedConcessions — DiscountPct', () => {
+    const atEngine = { EngineUnitPrice: 100, IsEnginePrice: true, IsNamedListPick: false };
+    const discounted = { ...apiLine, UnitPrice: 100, DiscountPct: 0.1 };
+
+    beforeEach(() => mockStanding.mockResolvedValue(atEngine));
+
+    it('holds a line at its engine price that carries a discount', async () => {
+        database([], [discounted]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is discounted 10%, a concession worth 20.00 with no approved Price/),
+        ]);
+    });
+
+    it('asks for the discount on the persisted line it reads', async () => {
+        database([], [discounted]);
+        await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+
+        const lineQuery = mockRunView.mock.calls.find((c) => (c[0] as { EntityName: string }).EntityName.endsWith('Order Lines'));
+        expect((lineQuery?.[0] as { Fields: string[] }).Fields).toEqual(expect.arrayContaining(['DiscountPct', 'RenewsSubscriptionID']));
+    });
+
+    it('clears the line once an approved Price concession covers the discount', async () => {
+        database([{ Status: 'Approved', DeliveryForm: 'Price', ReasonCategory: 'Other', ComputedValue: 20, OrderLineID: LINE_ID }], [discounted]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('is not cleared by a Pending concession', async () => {
+        database([{ Status: 'Pending', DeliveryForm: 'Price', ReasonCategory: 'Other', ComputedValue: 20, OrderLineID: LINE_ID }], [discounted]);
+
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+        expect(problems).toEqual([expect.stringMatching(/awaiting approval/), expect.stringMatching(/discounted 10%/)]);
+    });
+
+    it('counts the discount on a named list pick, which is not itself a concession', async () => {
+        database([], [{ ...discounted, UnitPrice: 80 }]);
+        mockStanding.mockResolvedValue({ EngineUnitPrice: 100, IsEnginePrice: false, IsNamedListPick: true });
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is discounted 10%, a concession worth 16.00/),
+        ]);
+    });
+
+    it('adds a discount on a below-engine price to the price concession, so one approval covers both', async () => {
+        database([], [{ ...discounted, UnitPrice: 60 }]);
+        mockStanding.mockResolvedValue(engineAt100);
+
+        // (100 - 60) x 2 = 80 by price, plus 60 x 2 x 10% = 12 by discount.
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/priced at 60.00 against an engine price of 100.00 and discounted 10%, a concession worth 92.00/),
+        ]);
+    });
+
+    it('values an unsaved line whose price the engine has yet to fill at the engine price', async () => {
+        database([], []);
+        const blank = { ...discounted, ID: null, UnitPrice: null, PriceStated: false };
+
+        expect(await FindUnapprovedConcessions(null, [blank], true, provider, user)).toEqual([
+            expect.stringMatching(/discounted 10%, a concession worth 20.00. Save the order/),
+        ]);
+    });
+
+    it('leaves the discount a renewal carries forward from the line it renews', async () => {
+        database([], [{ ...discounted, RenewsSubscriptionID: '3f2504e0-4f89-41d3-9a0c-0305e82c3305' }]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('still skips a reversal that carries its origin line\'s discount', async () => {
+        const reversal = { ...discounted, ReversesOrderLineID: '3f2504e0-4f89-41d3-9a0c-0305e82c3304', Quantity: -1 };
+        database([], [reversal]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+        expect(mockStanding).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * A giveaway is the list price with a 100% discount (golive #328). A line charged nothing once its
+ * concession is taken off is Scope, worth list price times quantity; a manual discount above the rep's
+ * authority is saved held and counted until an approved concession covers it.
+ */
+describe('FindUnapprovedConcessions — giveaways and held discounts (golive #328)', () => {
+    const atEngine = { EngineUnitPrice: 100, IsEnginePrice: true, IsNamedListPick: false };
+    const listLine = { ...apiLine, UnitPrice: 100 };
+    const heldRow = (amount: number) => ({ OrderLineID: LINE_ID, Amount: amount });
+
+    beforeEach(() => mockStanding.mockResolvedValue(atEngine));
+
+    it('classes a line kept at list price with a 100% discount as Scope, worth list times quantity', async () => {
+        database([], [{ ...listLine, DiscountPct: 1 }]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is discounted 100%, a concession worth 200\.00 with no approved Scope concession/),
+        ]);
+    });
+
+    it('keeps a typed price of zero as Scope', async () => {
+        database([], [{ ...apiLine, UnitPrice: 0 }]);
+        mockStanding.mockResolvedValue(engineAt100);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/priced at 0\.00 .* worth 200\.00 with no approved Scope concession/),
+        ]);
+    });
+
+    it('holds a line carrying a held manual discount', async () => {
+        database([], [listLine], [], [heldRow(50)]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is given a manual discount of 50\.00 that needs approval, a concession worth 50\.00 with no approved Price/),
+        ]);
+        const adjustmentQuery = mockRunView.mock.calls.find((c) => (c[0] as { EntityName: string }).EntityName.endsWith('Order Adjustments'));
+        expect((adjustmentQuery?.[0] as { ExtraFilter: string }).ExtraFilter).toMatch(
+            /PromotionID IS NULL AND AuthorizedBySalesAuthorityID IS NULL AND ApprovedByUserID IS NULL/,
+        );
+    });
+
+    it('classes a held discount of the whole line as Scope, and clears it once a Scope concession is approved', async () => {
+        database([], [listLine], [], [heldRow(200)]);
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/worth 200\.00 with no approved Scope concession/),
+        ]);
+
+        database([{ Status: 'Approved', DeliveryForm: 'Scope', ReasonCategory: 'Other', ComputedValue: 200, OrderLineID: LINE_ID }], [listLine], [], [heldRow(200)]);
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('holds a held discount on a line with no engine price', async () => {
+        database([], [{ ...apiLine, UnitPrice: 500, Quantity: 1 }], [], [heldRow(500)]);
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([
+            expect.stringMatching(/manual discount of 500\.00 that needs approval, a concession worth 500\.00 with no approved Scope/),
+        ]);
+    });
+
+    it('counts the held discount on a line the caller holds', async () => {
+        database([], [], [], [heldRow(50)]);
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [{ ...listLine, PriceStated: true }], true, provider, user)).toHaveLength(1);
+    });
+
+    // A renewal line kept at the renewal pass's price is not a stated price, and the discount it
+    // carries forward is not counted, so a held discount is the only thing that makes it a candidate.
+    it('holds a renewal line at its renewal price that carries a held manual discount', async () => {
+        database([], [], [], [heldRow(50)]);
+        const renewal = {
+            ...listLine,
+            DiscountPct: 0,
+            RenewsSubscriptionID: '3f2504e0-4f89-41d3-9a0c-0305e82c3305',
+            PriceStated: false,
+        };
+
+        expect(await FindUnapprovedConcessions(ORDER_ID, [renewal], true, provider, user)).toEqual([
+            expect.stringMatching(/line 1 is given a manual discount of 50\.00 that needs approval, a concession worth 50\.00 with no approved Price/),
+        ]);
     });
 });
 
@@ -208,6 +391,85 @@ describe('FindUnapprovedConcessions — share of the order', () => {
     it('does not measure a confirmed order', async () => {
         database([onAuthority], [lineAt(100)], fivePercent);
 
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
+    });
+});
+
+describe('FindUnapprovedConcessions — products that always need approval (golive #281)', () => {
+    const PRODUCT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3310';
+    const CATEGORY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3311';
+    const PARENT_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3312';
+    const TYPE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3313';
+    /** A line at its stated price with no engine price: nothing for the price check to compare against. */
+    const servicesLine = { ...apiLine, ProductID: PRODUCT_ID, UnitPrice: 500, Quantity: 1 };
+
+    function catalog(opts: {
+        concessions?: Row[];
+        lines?: Row[];
+        product?: boolean | null;
+        category?: boolean | null;
+        parent?: boolean | null;
+        type?: boolean | null;
+    }) {
+        mockRunView.mockImplementation(async (params: { EntityName: string }) => {
+            const name = params.EntityName;
+            const results = name.endsWith('Order Concessions')
+                ? opts.concessions ?? []
+                : name.endsWith('Order Adjustments')
+                  ? []
+                  : name.endsWith('Product Categories')
+                  ? [
+                        { ID: CATEGORY_ID, ParentProductCategoryID: PARENT_ID, RequiresSaleApproval: opts.category ?? null },
+                        { ID: PARENT_ID, ParentProductCategoryID: null, RequiresSaleApproval: opts.parent ?? null },
+                    ]
+                  : name.endsWith('Product Types')
+                    ? [{ ID: TYPE_ID, RequiresSaleApproval: opts.type ?? null }]
+                    : name.endsWith('Products')
+                      ? [{ ID: PRODUCT_ID, ProductTypeID: TYPE_ID, ProductCategoryID: CATEGORY_ID, RequiresSaleApproval: opts.product ?? null }]
+                      : opts.lines ?? [servicesLine];
+            return { Success: true, Results: results };
+        });
+        mockStanding.mockResolvedValue({ EngineUnitPrice: null, IsEnginePrice: false, IsNamedListPick: false });
+    }
+
+    it('holds a line whose product type requires approval, with no engine price to compare against', async () => {
+        catalog({ type: true });
+        const problems = await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user);
+        expect(problems).toEqual([
+            'line 1 is for a product that always needs approval, and no Price or Scope concession approved by the ' +
+                'ConcessionLimit approver is recorded for it',
+        ]);
+    });
+
+    it('takes the nearest stated level: a category opting out wins over its parent and the type', async () => {
+        catalog({ category: false, parent: true, type: true });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('is cleared only by an approved concession decided under the ConcessionLimit rule', async () => {
+        const onAuthority = { Status: 'Approved', DeliveryForm: 'Price', ComputedValue: 0, OrderLineID: LINE_ID, AuthorizedBySalesAuthorityID: '3f2504e0-4f89-41d3-9a0c-0305e82c3314', SalesRuleID: null, ReasonCategory: 'Other' };
+        catalog({ product: true, concessions: [onAuthority] });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toHaveLength(1);
+
+        catalog({ product: true, concessions: [{ ...onAuthority, AuthorizedBySalesAuthorityID: null, SalesRuleID: 'rule-1' }] });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('leaves a renewal line alone', async () => {
+        catalog({ product: true, lines: [{ ...servicesLine, RenewsSubscriptionID: 'sub-1' }] });
+        expect(await FindUnapprovedConcessions(ORDER_ID, [], true, provider, user)).toEqual([]);
+    });
+
+    it('tells the rep to save first when the line is not saved', async () => {
+        catalog({ product: true, lines: [] });
+        const unsaved = { ...servicesLine, ID: null, PriceStated: true };
+        const problems = await FindUnapprovedConcessions(null, [unsaved], true, provider, user);
+        expect(problems).toHaveLength(1);
+        expect(problems[0]).toMatch(/always needs approval\. Save the order without confirming it first/);
+    });
+
+    it('does not check a confirmed order', async () => {
+        catalog({ product: true });
         expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
     });
 });

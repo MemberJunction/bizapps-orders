@@ -1,6 +1,9 @@
 # Subscriptions — model audit and proposed design
 
-> **Status:** Proposal for review (2026-07-25). Raised by Amith: recurring behaviour is far more
+> **Status:** Built 2026-07-25 to 2026-07-26: `SubscriptionType`, `SubscriptionTerm`,
+> `Orders.CancelSubscription` and `Orders.SpawnRenewals`. §6b records what shipped and §7 how each
+> open question was settled. Archived 2026-08-16.
+> Proposed for review 2026-07-25. Raised by Amith: recurring behaviour is far more
 > variable than the current model expresses, and the rules that govern a subscription's term should
 > also govern its revenue recognition.
 > **Parent plan:** [`bizapps-orders-master.md`](./bizapps-orders-master.md) §4.5, D20, D43.

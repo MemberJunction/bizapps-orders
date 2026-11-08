@@ -9,6 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     AllocateOldestFirst,
+    CrossesLegalEntities,
     SumAllocations,
     UnallocatedRemainder,
     type MJOAllocatableOrderLike,
@@ -128,5 +129,22 @@ describe('AllocateOldestFirst', () => {
         for (const amount of [10, 137.42, 200, 225.61, 999.99]) {
             expect(UnallocatedRemainder(amount, AllocateOldestFirst(amount, orders))).toBe(0);
         }
+    });
+});
+
+describe('CrossesLegalEntities', () => {
+    // A Division of the consulting entity, and a separate legal entity.
+    const legalEntityFor = (id: string) => ({ brand: 'CONSULTING' } as Record<string, string>)[id] ?? id;
+
+    it('is false for a legal entity and its own Division: one set of books, no intercompany', () => {
+        expect(CrossesLegalEntities(['consulting', 'brand'], legalEntityFor)).toBe(false);
+    });
+
+    it('is true across two legal entities', () => {
+        expect(CrossesLegalEntities(['brand', 'studio'], legalEntityFor)).toBe(true);
+    });
+
+    it('is false for one company', () => {
+        expect(CrossesLegalEntities(['studio', 'studio'], legalEntityFor)).toBe(false);
     });
 });

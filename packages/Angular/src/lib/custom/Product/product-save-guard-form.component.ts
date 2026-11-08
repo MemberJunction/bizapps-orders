@@ -48,8 +48,7 @@ export function ShouldConfirmEventRevRec(input: EventRevRecConfirmInput): boolea
  *
  * It reuses the GENERATED template verbatim, so the UI is unchanged and keeps tracking CodeGen;
  * the only behavioural delta is `SaveRecord`. Priority 2 puts it ahead of the generated form's own
- * registration — `BizAppsProductFormComponent` in this same folder is NOT registered and is not the
- * form that renders.
+ * registration.
  */
 @RegisterClass(BaseFormComponent, 'MJ_BizApps_Orders: Products', 2)
 @Component({

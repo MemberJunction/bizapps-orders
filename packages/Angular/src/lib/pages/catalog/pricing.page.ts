@@ -74,7 +74,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                                     </td>
                                     <td class="small">{{ windowOf(list) }}</td>
                                     <td>
-                                        <span class="mj-chip" [class]="statusChip(list['Status'])">
+                                        <span class="mjo-chip" [class]="statusChip(list['Status'])">
                                             {{ list['Status'] ?? '—' }}
                                         </span>
                                     </td>
@@ -300,13 +300,15 @@ export class MJOPricingPageComponent implements OnInit {
     }
 
     protected windowOf(row: mjBizAppsOrdersPriceListEntity): string {
-        const from = row['EffectiveFrom'] ? FormatDate(String(row['EffectiveFrom']), { Short: true }) : '—';
-        const to = row['EffectiveTo'] ? FormatDate(String(row['EffectiveTo']), { Short: true }) : 'open';
+        // `date` columns, passed as they are: `String()` of a `Date` is the long human form, and the
+        // window read "— → —".
+        const from = row.EffectiveFrom ? FormatDate(row.EffectiveFrom, { Short: true }) : '—';
+        const to = row.EffectiveTo ? FormatDate(row.EffectiveTo, { Short: true }) : 'open';
         return `${from} → ${to}`;
     }
 
     protected statusChip(status: unknown): string {
-        return status === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+        return status === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline';
     }
 
     protected money(value: unknown): string {

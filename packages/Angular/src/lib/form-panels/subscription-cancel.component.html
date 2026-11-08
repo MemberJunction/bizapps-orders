@@ -1,0 +1,83 @@
+@if (CanCancel && !Open) {
+    <div class="mjo-sc-toolbar">
+        @if (EditMode) {
+            <span class="mjo-sc__hint" id="mjo-sc-edit-hint">Save or discard your edits first</span>
+        }
+        <button type="button" mjButton variant="outline" size="sm" (click)="Start()" [disabled]="EditMode"
+            [attr.aria-describedby]="EditMode ? 'mjo-sc-edit-hint' : null">
+            <i class="fa-solid fa-ban" aria-hidden="true"></i> Cancel subscription
+        </button>
+    </div>
+}
+@if (Open) {
+    <section class="mjo-sc" aria-labelledby="mjo-sc-title">
+        <h2 id="mjo-sc-title" class="mjo-sc__title">Cancel subscription</h2>
+        @if (GatewaySubscriptionID) {
+            <p class="mjo-sc__gateway" id="mjo-sc-gateway">
+                <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
+                The payment gateway bills this subscription ({{ GatewaySubscriptionID }}). Cancelling here also cancels it there,
+                first: if the gateway does not confirm, nothing changes. Refunds of what the gateway charged are made at the gateway;
+                the Refund below is a credit on the order and moves no money.
+            </p>
+        }
+        <fieldset class="mjo-sc__timing" [disabled]="Busy">
+            <legend>When does access end?</legend>
+            <label class="mjo-sc__option">
+                <input type="radio" name="timing" value="Type" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>As the subscription type sets it</strong>
+                    <span class="mjo-sc__hint">{{ TypeName }}'s cancellation rule and grace period decide when coverage and access end. Preview shows the dates.</span>
+                </span>
+            </label>
+            <label class="mjo-sc__option">
+                <input type="radio" name="timing" value="EndOfTerm" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>At the end of the term instead</strong>
+                    <span class="mjo-sc__hint">Access runs to the last day of what was paid for, with no grace period. It does not renew.</span>
+                </span>
+            </label>
+            <label class="mjo-sc__option">
+                <input type="radio" name="timing" value="Immediate" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>Immediately instead</strong>
+                    <span class="mjo-sc__hint">Coverage and access end today. Any refund follows the subscription type's refund rule; give other money back from the payment's Refund page.</span>
+                </span>
+            </label>
+        </fieldset>
+        <label class="mjo-sc__field">
+            <span>Reason</span>
+            <textarea name="reason" rows="2" maxlength="1000" [(ngModel)]="Reason" (ngModelChange)="Changed()" [disabled]="Busy"></textarea>
+        </label>
+
+        @if (Preview?.Decision; as d) {
+            <dl class="mjo-sc__preview" aria-live="polite">
+                <div><dt>Coverage ends</dt><dd>{{ Day(d.EffectiveDate) }}</dd></div>
+                <div><dt>Access ends</dt><dd>{{ Day(d.AccessThroughDate) }}</dd></div>
+                <div><dt>Refund</dt><dd>{{ Preview?.TotalRefundAmount ?? d.RefundAmount | mjoMoney: { Zero: 'None' } }}</dd></div>
+                @if (Preview?.Gateway; as g) {
+                    <div><dt>Payment gateway</dt><dd>{{ GatewayLine(g, d.EffectiveDate) }}</dd></div>
+                }
+                @if (Preview?.LaterTerms?.length) {
+                    <div><dt>Later terms canceled</dt><dd>{{ Preview?.LaterTerms?.length }}</dd></div>
+                }
+            </dl>
+            <p class="mjo-sc__explain">{{ Preview?.Message || d.Explanation }}</p>
+        }
+
+        @if (EditMode) {
+            <p class="mjo-sc__hint">Save or discard your edits first</p>
+        }
+        @if (Error) {
+            <p class="mjo-sc__error" role="alert"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> {{ Error }}</p>
+        }
+
+        <div class="mjo-sc__actions">
+            <button type="button" mjButton variant="flat" size="sm" (click)="Close()" [disabled]="Busy">Keep subscription</button>
+            @if (Preview) {
+                <button type="button" mjButton variant="danger" size="sm" (click)="Confirm()" [disabled]="Busy || EditMode">Confirm cancellation</button>
+            } @else {
+                <button type="button" mjButton variant="primary" size="sm" (click)="RunPreview()" [disabled]="Busy">Preview</button>
+            }
+        </div>
+    </section>
+}

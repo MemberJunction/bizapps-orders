@@ -14,6 +14,13 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '..', '.env'), quiet: true });
 
 const tag = process.argv[2] ?? 'WIRE-VOL:%';
+// The tag is spliced into SQL text, so it is validated, not escaped: `WIRE-VOL:` followed by a run id
+// of letters, digits, `_` and `-`, or `%` for every run. Anything else is refused before connecting.
+const runId = tag.startsWith('WIRE-VOL:') ? tag.slice('WIRE-VOL:'.length) : null;
+if (runId === null || (runId !== '%' && !/^[A-Za-z0-9_-]+$/.test(runId))) {
+    console.error(`Refusing tag '${tag}': expected WIRE-VOL:<run id> (letters, digits, _ or -) or WIRE-VOL:%`);
+    process.exit(2);
+}
 const { DB_HOST, DB_PORT, DB_DATABASE, DB_USERNAME, DB_PASSWORD } = process.env;
 const pool = await new sql.ConnectionPool({
     server: DB_HOST,
@@ -27,7 +34,7 @@ const pool = await new sql.ConnectionPool({
 
 const ORDERS = '__mj_BizAppsOrders';
 const ACCT = '__mj_BizAppsAccounting';
-const like = tag.replace(/'/g, "''");
+const like = tag;
 const orderScope = `SELECT ID FROM ${ORDERS}.OrderHeader WHERE Notes LIKE '${like}'`;
 
 const statements = [

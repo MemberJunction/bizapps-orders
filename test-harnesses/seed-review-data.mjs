@@ -29,10 +29,14 @@
  * is what you look at to see whether the invariants hold across a realistic ledger rather than a
  * demo. They are the same question the `volume` bundle asks, except these rows stay.
  *
- * Everything is tagged with a run marker (printed at the end) so it can be found and deleted.
+ * Everything is tagged with a run marker, `REVIEW-<base36 time>` (printed at the end), so it can be
+ * found and deleted: each order's Description opens with it and each promotion's Code starts with it.
+ * The orders book on the shared ORD-WORLD companies, so `PurgeAllFixtureData` (which sweeps
+ * `IT-ORD-…` companies) never reaches them; `PurgeReviewRun` deletes by the marker instead.
  *
- * Usage:  node test-harnesses/seed-review-data.mjs                 (clears earlier runs first)
- *         node test-harnesses/seed-review-data.mjs --keep-existing (adds to what is there)
+ * Usage:  node test-harnesses/seed-review-data.mjs                    (clears earlier review runs first)
+ *         node test-harnesses/seed-review-data.mjs --keep-existing    (adds to what is there)
+ *         node test-harnesses/seed-review-data.mjs --purge [<marker>] (deletes one run, or every run, and exits)
  */
 import path from 'node:path';
 import { importAccountingPackage } from './resolve-app-packages.mjs';
@@ -71,7 +75,7 @@ await importAccountingPackage('@mj-biz-apps/accounting-server').then((m) => m.Lo
 await import('@mj-biz-apps/orders-server').then((m) => m.LoadBizAppsOrdersServer?.());
 
 const it = await import('@mj-biz-apps/orders-integration-tests');
-const { CreateOrdersFixture, PurgeAllFixtureData, ORDERS_SCHEMA, ACCT_SCHEMA } = it;
+const { CreateOrdersFixture, PurgeAllFixtureData, PurgeReviewRun, NewReviewMarker, ORDERS_SCHEMA, ACCT_SCHEMA } = it;
 const { CreateProductPrice, CreatePromotion, EnsureTaxNexus, EnsureIntercompanyAccounts, CreateBundleItem } = it;
 const { ConfirmOrder } = it;
 
@@ -86,19 +90,37 @@ const ctx = {
 const q = (text) => pool.request().query(text);
 const say = (n, what) => console.log(`  ${String(n).padStart(2)}. ${what}`);
 
+const purgeAt = process.argv.indexOf('--purge');
+if (purgeAt !== -1) {
+    const target = process.argv[purgeAt + 1];
+    const marker = target && !target.startsWith('--') ? target : undefined;
+    const removed = await PurgeReviewRun(ctx, marker);
+    console.log(`\nRemoved ${removed} orders of ${marker ? `review run ${marker}` : 'every review run'}.\n`);
+    await pool.close();
+    process.exit(0);
+}
+
 console.log('\nSeeding review data — this COMMITS, unlike the checks.\n');
 
-// CLEAN FIRST, unless told not to. Each run mints its own companies, so a second run without this
-// leaves two overlapping sets of orders under different owners — technically fine, unreadable in
-// practice, and the point of this script is that somebody can read it.
+// CLEAN FIRST, unless told not to. A second run without this leaves two overlapping sets of orders
+// on the same companies — technically fine, unreadable in practice, and the point of this script is
+// that somebody can read it. Earlier review runs go by their marker; the IT-ORD sweep stays for
+// fixture companies an interrupted suite run left behind.
 if (!process.argv.includes('--keep-existing')) {
+    const runs = await PurgeReviewRun(ctx);
+    if (runs) console.log(`Removed ${runs} orders from earlier review runs.`);
     const purged = await PurgeAllFixtureData(ctx);
-    if (purged) console.log(`Removed ${purged} companies' worth of earlier fixture data.\n`);
+    if (purged) console.log(`Removed ${purged} companies' worth of earlier fixture data.`);
+    if (runs || purged) console.log('');
 }
+
+// This run's marker. Every order below carries it at the start of its Description, and every
+// promotion at the start of its Code, which is all PurgeReviewRun needs to find the run again.
+const marker = NewReviewMarker();
 
 // The fixture is already committed reference data (companies, GL links, products, tax geography).
 const f = await CreateOrdersFixture(ctx);
-console.log(`Fixture: ${f.Run}\n`);
+console.log(`Fixture: ${f.Run}, review run: ${marker}\n`);
 
 // ── Reference data the scenarios need ──────────────────────────────────────────────────────────
 //
@@ -143,7 +165,7 @@ const promotion = ({ kind = 'PercentOff', value, appliesAt = 'Order', targetProd
         Value: value,
         AppliesAt: appliesAt,
         TargetProductID: targetProductID,
-        Code: `REVIEW-${randomUUID().slice(0, 5).toUpperCase()}`,
+        Code: `${marker}-${randomUUID().slice(0, 5).toUpperCase()}`,
     });
 
 // Intercompany pairs, so a payment across two companies can settle each one's own receivable.
@@ -159,7 +181,7 @@ const paymentType = [...f.PaymentTypeIDs.entries()].find(([c]) => c !== 'Account
 // ── The scenarios ──────────────────────────────────────────────────────────────────────────────
 const seeded = [];
 const confirm = async (label, spec) => {
-    const order = await ConfirmOrder(user, spec);
+    const order = await ConfirmOrder(user, { ...spec, Description: `${marker} ${label}` });
     if (!order.Saved) throw new Error(`${label} failed to confirm: ${order.Message}`);
     seeded.push({ label, number: order.Order.OrderNumber, id: order.Order.ID });
     say(seeded.length, `${order.Order.OrderNumber}  ${label}`);
@@ -297,6 +319,7 @@ for (let i = 0; i < POPULATION; i++) {
         BillToOrganizationID: i % 3 === 0 ? f.Customers.SecondOrganizationID : f.Customers.OrganizationID,
         BillToPersonID: i % 7 === 0 ? f.Customers.PersonID : undefined,
         ShipToAddressID: addressKey ? f.Tax.AddressIDs.get(addressKey) : undefined,
+        Description: `${marker} population ${i}`,
         Lines: [],
     };
 
@@ -357,6 +380,7 @@ for (let i = 0; i < POPULATION; i++) {
             const back = await ConfirmOrder(user, {
                 CompanyID: f.CoA.ID,
                 OrderType: 'Return',
+                Description: `${marker} population ${i} return`,
                 BillToOrganizationID: spec.BillToOrganizationID,
                 ShipToAddressID: spec.ShipToAddressID,
                 Lines: [
@@ -377,12 +401,15 @@ for (let i = 0; i < POPULATION; i++) {
 }
 console.log(`\n${created} population orders committed in ${((Date.now() - started) / 1000).toFixed(1)}s${failed ? `, ${failed} skipped` : ''}.`);
 
-console.log(`\nSeeded ${seeded.length} labelled scenarios plus ${created} population orders. Fixture marker: ${f.Run}`);
+console.log(`\nSeeded ${seeded.length} labelled scenarios plus ${created} population orders. Run marker: ${marker}`);
+console.log(`Remove this run with: node test-harnesses/seed-review-data.mjs --purge ${marker}`);
 console.log(`\nStart here:\n`);
-console.log(`  SELECT h.OrderNumber, h.OrderType, h.Status, h.TotalGross, h.AmountPaid, h.Balance, h.PaymentStatus,`);
+console.log(`  SELECT h.OrderNumber, h.OrderType, h.Status, h.TotalGross, h.AmountPaid, h.Balance, h.IsOverdue,`);
 console.log(`         (SELECT SUM(LineTotalNet) FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = h.ID) AS Net,`);
 console.log(`         (SELECT SUM(LineTax)      FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = h.ID) AS Tax`);
-console.log(`    FROM ${ORDERS_SCHEMA}.OrderHeader h ORDER BY h.OrderNumber;\n`);
+// Payment state is AmountPaid / Balance on the row and IsOverdue from the view (D32); the stored
+// PaymentStatus column was dropped in V202608241300.
+console.log(`    FROM ${ORDERS_SCHEMA}.vwOrderHeaders h WHERE h.Description LIKE '${marker} %' ORDER BY h.OrderNumber;\n`);
 console.log(`See docs/reviewing-the-data.md for the rest.\n`);
 
 await pool.close();

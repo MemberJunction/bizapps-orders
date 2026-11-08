@@ -17,6 +17,8 @@ export class mjBizAppsOrdersOutboundEventFormComponent extends BaseFormComponent
         await super.ngOnInit();
         this.initSections([
             { sectionKey: 'details', sectionName: 'Details', isExpanded: true },
+            { sectionKey: 'eventDetails', sectionName: 'Event Details', isExpanded: true },
+            { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOutboundDeliveries', sectionName: 'Outbound Deliveries', isExpanded: false }
         ]);
     }

@@ -2,23 +2,28 @@ import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJComboboxComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import { RelatedChipsComponent } from '@mj-biz-apps/common-ng';
 import { CustomFormsModule } from '../custom/custom-forms.module';
 import { ExternalInvoicesPanel } from './external-invoices.panel';
+import { ChargeExceptionOrderPanel } from './charge-exception-order.panel';
 import { PaymentHeaderPanel } from './payment-header.panel';
 import { PaymentJournalsPanel } from './payment-journals.panel';
 import { SubscriptionHeaderPanel } from './subscription-header.panel';
+import { MJOSubscriptionCancelComponent } from './subscription-cancel.component';
+import { MJOMoneyPipe } from '../panels/money-format';
 import { SubscriptionTermsPanel } from './subscription-terms.panel';
 import { SubscriptionRevRecPanel } from './subscription-revrec.panel';
 import { SubscriptionTermHeaderPanel } from './subscription-term-header.panel';
 import { SubscriptionTermRevRecPanel } from './subscription-term-revrec.panel';
 import { OrderAccessOverridesPanel } from './order-access-overrides.panel';
 import { ProductHeaderPanel } from './product-header.panel';
+import { MJOProductRevRecFieldComponent } from './product-rev-rec-field.component';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductSubscriptionsPanel,
@@ -67,16 +72,19 @@ const PANELS = [
     PaymentHeaderPanel,
     PaymentJournalsPanel,
     SubscriptionHeaderPanel,
+    MJOSubscriptionCancelComponent,
     SubscriptionTermsPanel,
     SubscriptionRevRecPanel,
     SubscriptionTermHeaderPanel,
     SubscriptionTermRevRecPanel,
     OrderAccessOverridesPanel,
     ProductHeaderPanel,
+    MJOProductRevRecFieldComponent,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductSubscriptionsPanel,
     PriceListHeaderPanel,
     PriceListSimulatorPanel,
@@ -106,6 +114,7 @@ const PANELS = [
     PaymentProviderOverviewPanel,
     PaymentTypeOverviewPanel,
     ExternalInvoicesPanel,
+    ChargeExceptionOrderPanel,
 ];
 
 /**
@@ -120,6 +129,9 @@ const PANELS = [
         BaseFormsModule,
         MJAlertComponent,
         MJButtonDirective,
+        MJOMoneyPipe,
+        MJComboboxComponent,
+        MJEmptyStateComponent,
         RelatedChipsComponent,
         DeferredRevenueWaterfallModule,
         CustomFormsModule,

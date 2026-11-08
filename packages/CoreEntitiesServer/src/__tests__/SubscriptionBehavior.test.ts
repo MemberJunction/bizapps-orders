@@ -14,7 +14,11 @@ import {
     ResolveRevenueRecognitionTypeID,
     SubscriptionTypeRulesFrom,
     OverlappingCoverage,
+    MonthsCovered,
+    MultiTermLineMonths,
+    WholeMonthsBetween,
     type CoverageOverlap,
+    type LaterTermBilling,
     type SubscriptionTypeRules,
 } from '../SubscriptionBehavior.js';
 
@@ -278,6 +282,162 @@ describe('a stated term start (D-TERMSTART)', () => {
     });
 });
 
+describe('a stated term end (golive #338)', () => {
+    // An Annual Rolling product at 11,000, ordered 2026-10-13 for coverage from 2026-11-01. Confirm
+    // used to build one 12-month term whatever end the line stated, and stamp it back over the line.
+    const BOOKED = new Date('2026-10-13T00:00:00Z');
+    const START = new Date('2026-11-01T00:00:00Z');
+    const annual = rules();
+    const span = (end: string, extra = {}) =>
+        decide(annual, BOOKED, 11000, { RequestedStartDate: START, RequestedEndDate: new Date(`${end}T00:00:00Z`), ...extra });
+    const windows = (terms: Array<{ StartDate: Date; EndDate: Date }>) => terms.map((t) => `${iso(t.StartDate)}..${iso(t.EndDate)}`);
+    const amounts = (terms: Array<{ Amount: number }>) => terms.map((t) => t.Amount);
+
+    it('6 months: one short term ending on the stated date, at the line price', () => {
+        const d = span('2027-04-30');
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-04-30']);
+        expect(amounts(d.Terms!)).toEqual([11000]);
+        expect(d.Terms![0].IsProrated).toBe(false);
+        expect(d.EndOverrideIgnored).toBe(false);
+    });
+
+    it('12 months: the same single term as before', () => {
+        const d = span('2027-10-31');
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-10-31']);
+        expect(d.Term).toBe(d.Terms![0]);
+        expect(d.Terms![0].Share).toBe(1);
+        expect(d.EndOverrideIgnored).toBe(false);
+    });
+
+    it('13 months: a year and a one-month term, split so every month is worth the same', () => {
+        const d = span('2027-11-30');
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-10-31', '2027-11-01..2027-11-30']);
+        expect(d.Terms!.map((t) => t.TermNumber)).toEqual([1, 2]);
+        // 11,000 / 13 = 846.15 a month: 12 of them in the first term, one in the second.
+        expect(amounts(d.Terms!)).toEqual([10153.85, 846.15]);
+        expect(d.EndOverrideIgnored).toBe(false);
+    });
+
+    it('18 months: a year and a six-month term', () => {
+        const d = span('2028-04-30');
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-10-31', '2027-11-01..2028-04-30']);
+        expect(amounts(d.Terms!)).toEqual([7333.33, 3666.67]);
+    });
+
+    it('24 months: two full years', () => {
+        const d = span('2028-10-31');
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-10-31', '2027-11-01..2028-10-31']);
+        expect(amounts(d.Terms!)).toEqual([5500, 5500]);
+        expect(d.Terms!.map((t) => t.Share)).toEqual([0.5, 0.5]);
+    });
+
+    it('the terms of a split always add up to the line amount', () => {
+        for (const end of ['2027-11-30', '2028-04-30', '2028-10-31', '2029-01-15']) {
+            const total = span(end).Terms!.reduce((a, t) => a + t.Amount, 0);
+            expect(Math.round(total * 100) / 100).toBe(11000);
+        }
+    });
+
+    it('extension of a held product: the stated length is kept from the continuation date', () => {
+        // The subscriber holds the product through 2027-10-31. A 6-month line stated 2026-11-01 to
+        // 2027-04-30 used to become a 12-month term a year later; it now stays 6 months.
+        const held = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-10-31T00:00:00Z'), LatestTermNumber: 1 };
+        const d = span('2027-04-30', { Existing: held });
+        expect(d.Action).toBe('ExtendExisting');
+        expect(windows(d.Terms!)).toEqual(['2027-11-01..2028-04-30']);
+        expect(d.Terms![0].TermNumber).toBe(2);
+        expect(d.StartOverrideIgnored).toBe(true);
+        expect(d.EndOverrideIgnored).toBe(true);
+    });
+
+    it('extension stated on the continuation dates is reported as nothing', () => {
+        const held = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2026-10-31T00:00:00Z'), LatestTermNumber: 1 };
+        const d = span('2027-10-31', { Existing: held });
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-10-31']);
+        expect(d.StartOverrideIgnored).toBe(false);
+        expect(d.EndOverrideIgnored).toBe(false);
+    });
+
+    it('extension of a held product by a stated length that is not whole months keeps its day count', () => {
+        const held = { ID: 'sub-1', Status: 'Active', LatestTermEnd: new Date('2027-10-31T00:00:00Z'), LatestTermNumber: 1 };
+        const d = span('2026-12-14', { Existing: held });
+        // 2026-12-14 is 43 days after the stated start, so the moved term ends 43 days after its own.
+        expect(windows(d.Terms!)).toEqual(['2027-11-01..2027-12-14']);
+    });
+
+    it('a stated end with no stated start runs from the start the type derives', () => {
+        const d = decide(annual, BOOKED, 11000, { RequestedEndDate: new Date('2028-04-12T00:00:00Z') });
+        expect(windows(d.Terms!)).toEqual(['2026-10-13..2027-10-12', '2027-10-13..2028-04-12']);
+    });
+
+    it('a stated end before the start is not used, and says so', () => {
+        const d = decide(rules({ StartMode: 'Deferred', DeferredStartDays: 30 }), BOOKED, 11000, {
+            RequestedEndDate: new Date('2026-10-31T00:00:00Z'),
+        });
+        expect(windows(d.Terms!)).toEqual(['2026-11-12..2027-11-11']);
+        expect(d.EndOverrideIgnored).toBe(true);
+    });
+
+    it('no stated end: unchanged, one term by the type', () => {
+        const d = decide(annual, BOOKED, 11000, { RequestedStartDate: START });
+        expect(windows(d.Terms!)).toEqual(['2026-11-01..2027-10-31']);
+        expect(d.EndOverrideIgnored).toBe(false);
+    });
+
+    describe('an anchored type', () => {
+        const calendar = rules({ StartMode: 'CalendarAnchored', AnchorMonth: 1, AnchorDay: 1, PartialPeriodMode: 'Prorate' });
+
+        it('a stated end equal to the anchor keeps the type\'s proration', () => {
+            const d = decide(calendar, BOOKED, 1200, {
+                RequestedStartDate: new Date('2026-09-01T00:00:00Z'),
+                RequestedEndDate: new Date('2026-12-31T00:00:00Z'),
+            });
+            expect(windows(d.Terms!)).toEqual(['2026-09-01..2026-12-31']);
+            expect(d.Term!.IsProrated).toBe(true);
+        });
+
+        it('a stated end past the anchor adds calendar-year terms and does not reprice', () => {
+            const d = decide(calendar, BOOKED, 1600, {
+                RequestedStartDate: new Date('2026-09-01T00:00:00Z'),
+                RequestedEndDate: new Date('2027-12-31T00:00:00Z'),
+            });
+            expect(windows(d.Terms!)).toEqual(['2026-09-01..2026-12-31', '2027-01-01..2027-12-31']);
+            expect(d.Terms!.every((t) => !t.IsProrated)).toBe(true);
+            expect(amounts(d.Terms!)).toEqual([400, 1200]);
+        });
+    });
+
+    describe('month arithmetic', () => {
+        it('WholeMonthsBetween', () => {
+            const d = (s: string) => new Date(`${s}T00:00:00Z`);
+            expect(WholeMonthsBetween(d('2026-11-01'), d('2027-04-30'))).toBe(6);
+            expect(WholeMonthsBetween(d('2026-11-01'), d('2027-11-30'))).toBe(13);
+            expect(WholeMonthsBetween(d('2026-01-31'), d('2026-02-27'))).toBe(1);
+            expect(WholeMonthsBetween(d('2026-11-01'), d('2027-04-29'))).toBeNull();
+        });
+
+        it('MonthsCovered', () => {
+            const d = (s: string) => new Date(`${s}T00:00:00Z`);
+            expect(MonthsCovered(d('2026-11-01'), d('2027-11-30'))).toBe(13);
+            expect(MonthsCovered(d('2026-11-01'), d('2026-11-15'))).toBeCloseTo(0.5, 6);
+        });
+
+        it('MultiTermLineMonths: the months a line covers when it bought earlier terms too (golive #338)', () => {
+            const d = (s: string) => new Date(`${s}T00:00:00Z`);
+            // 24 months as two 12-month terms; the second is the one expiring.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2028-10-31'), d('2027-11-01'))).toBe(24);
+            // 13 months as a 12-month and a 1-month term.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2027-11-30'), d('2027-11-01'))).toBe(13);
+            // 6 months is one term, starting on the line's own start: one term's price.
+            expect(MultiTermLineMonths(d('2026-11-01'), d('2027-04-30'), d('2026-11-01'))).toBeNull();
+            // A line with no stated period.
+            expect(MultiTermLineMonths(null, null, d('2026-11-01'))).toBeNull();
+            // A stated start with no end: the line's length is unknown, so no share is taken.
+            expect(MultiTermLineMonths(d('2026-11-01'), null, d('2027-11-01'))).toBeNull();
+        });
+    });
+});
+
 describe('proration', () => {
     const prorated = rules({
         StartMode: 'CalendarAnchored',
@@ -345,6 +505,49 @@ describe('concurrency and reactivation', () => {
 
         expect(decide(r, new Date('2026-08-01T00:00:00Z'), 1200, { Existing: lapsed }).Action).toBe('Reactivate');
         expect(decide(r, new Date('2026-12-01T00:00:00Z'), 1200, { Existing: lapsed }).Action).toBe('CreateNew');
+    });
+
+    describe('a canceled subscription whose coverage still runs (#737)', () => {
+        // Canceled at end of term on the day it was bought: paid through 2027-10-14.
+        const PURCHASE = new Date('2026-10-15T00:00:00Z');
+        const canceled = { ID: 'sub-1', Status: 'Canceled', LatestTermEnd: new Date('2027-10-14T00:00:00Z'), LatestTermNumber: 1 };
+
+        it('reactivates it with a term that starts the day after its coverage ends', () => {
+            const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), PURCHASE, 1200, { Existing: canceled });
+            expect(decision.Action).toBe('Reactivate');
+            expect(decision.SubscriptionID).toBe('sub-1');
+            expect(iso(decision.Term!.StartDate)).toBe('2027-10-15');
+            expect(iso(decision.Term!.EndDate)).toBe('2028-10-14');
+            expect(decision.Term!.TermNumber).toBe(2);
+        });
+
+        it('continues the coverage whatever the reactivation policy says', () => {
+            const decision = decide(rules({ ReactivationMode: 'AlwaysCreateNew' }), PURCHASE, 1200, { Existing: canceled });
+            expect(decision.Action).toBe('Reactivate');
+            expect(iso(decision.Term!.StartDate)).toBe('2027-10-15');
+        });
+
+        it('follows AllowMultiple and RejectDuplicate as for a live subscription', () => {
+            expect(decide(rules({ ConcurrencyMode: 'AllowMultiple' }), PURCHASE, 1200, { Existing: canceled }).Action).toBe('CreateNew');
+            expect(decide(rules({ ConcurrencyMode: 'RejectDuplicate' }), PURCHASE, 1200, { Existing: canceled }).Action).toBe('Reject');
+        });
+
+        it('reports a stated start that the continuation displaced', () => {
+            const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), PURCHASE, 1200, {
+                Existing: canceled,
+                RequestedStartDate: PURCHASE,
+            });
+            expect(iso(decision.Term!.StartDate)).toBe('2027-10-15');
+            expect(decision.StartOverrideIgnored).toBe(true);
+        });
+
+        it('goes back to the reactivation policy once the coverage has ended', () => {
+            const after = new Date('2027-11-01T00:00:00Z');
+            const decision = decide(rules({ ReactivationMode: 'ReactivateExisting' }), after, 1200, { Existing: canceled });
+            expect(decision.Action).toBe('Reactivate');
+            expect(iso(decision.Term!.StartDate)).toBe('2027-11-01');
+            expect(decide(rules({ ReactivationMode: 'AlwaysCreateNew' }), after, 1200, { Existing: canceled }).Action).toBe('CreateNew');
+        });
     });
 });
 
@@ -616,6 +819,63 @@ describe('cancellation policy', () => {
         });
     });
 
+    describe('a timing chosen at cancellation (RulesForTiming)', () => {
+        /** The type an annual rolling product carries: ride the term out, no refund, 30 days' grace. */
+        const rolling: Partial<SubscriptionTypeRules> = {
+            CancellationMode: 'EndOfTerm',
+            CancellationRefundMode: 'NoRefund',
+            GracePeriodDays: 30,
+        };
+        const cancelTimed = (timing: 'Immediate' | 'EndOfTerm' | undefined, request: string) => {
+            const behavior = new SubscriptionBehavior();
+            return behavior.DecideCancellation({
+                Rules: behavior.RulesForTiming(rules(rolling), timing),
+                RequestDate: new Date(`${request}T00:00:00Z`),
+                Term: term,
+            });
+        };
+
+        it('leaves the type\'s rules alone when no timing is chosen', () => {
+            const base = rules(rolling);
+            expect(new SubscriptionBehavior().RulesForTiming(base, undefined)).toBe(base);
+            const d = cancelTimed(undefined, '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2027-01-30');
+        });
+
+        it('Immediate ends coverage AND access on the request day, dropping the grace', () => {
+            const d = cancelTimed('Immediate', '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-07-01');
+            expect(iso(d.AccessThroughDate)).toBe('2026-07-01');
+            expect(d.TermStatus).toBe('Canceled');
+        });
+
+        it('EndOfTerm on the type\'s own mode still drops its grace: access ends on the term\'s last day', () => {
+            const d = cancelTimed('EndOfTerm', '2026-07-01');
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
+            expect(d.TermStatus).toBe('Completed');
+        });
+
+        it('Immediate keeps the type\'s refund mode: NoRefund reverses nothing', () => {
+            const d = cancelTimed('Immediate', '2026-07-01');
+            expect(d.RefundAmount).toBe(0);
+            expect(d.ReversalFraction).toBe(0);
+        });
+
+        it('EndOfTerm on an Immediate type rides the term out and drops the type\'s grace', () => {
+            const behavior = new SubscriptionBehavior();
+            const d = behavior.DecideCancellation({
+                Rules: behavior.RulesForTiming(rules({ CancellationMode: 'Immediate', GracePeriodDays: 10 }), 'EndOfTerm'),
+                RequestDate: new Date('2026-07-01T00:00:00Z'),
+                Term: term,
+            });
+            expect(iso(d.EffectiveDate)).toBe('2026-12-31');
+            expect(iso(d.AccessThroughDate)).toBe('2026-12-31');
+            expect(d.TermStatus).toBe('Completed');
+        });
+    });
+
     describe('a later term that never started (#406)', () => {
         const renewal = {
             StartDate: new Date('2027-01-01T00:00:00Z'),
@@ -623,15 +883,15 @@ describe('cancellation policy', () => {
             Amount: 1300,
             TermNumber: 2,
         };
-        const laterWith = (r: Partial<SubscriptionTypeRules>) =>
+        const laterWith = (r: Partial<SubscriptionTypeRules>, billing: LaterTermBilling = 'Invoiced') =>
             new SubscriptionBehavior().DecideLaterTermCancellation({
                 Rules: rules(r),
                 Term: renewal,
                 CoverageEndsDate: new Date('2026-12-31T00:00:00Z'),
+                Billing: billing,
             });
 
         it.each([
-            ['NoRefund', { CancellationRefundMode: 'NoRefund' as const }],
             ['ProrateUnused', { CancellationRefundMode: 'ProrateUnused' as const }],
             ['an expired refund window', { CancellationRefundMode: 'FullRefundWithinWindow' as const, CancellationWindowDays: 0 }],
         ])('is canceled and reversed in full under %s', (_name, r) => {
@@ -643,11 +903,28 @@ describe('cancellation policy', () => {
             expect(d.Explanation).toMatch(/Term 2 starts 2027-01-01, after coverage ends 2026-12-31/);
         });
 
+        it.each(['Invoiced', 'PartInvoiced'] as const)('keeps what was invoiced under NoRefund when %s (#560)', (billing) => {
+            const d = laterWith({ CancellationRefundMode: 'NoRefund' }, billing);
+            expect(d.RefundAmount).toBe(0);
+            expect(d.ReversalFraction).toBe(0);
+            expect(d.TermStatus).toBe('Canceled');
+            expect(iso(d.AccessThroughDate)).toBe('2027-01-01');
+            expect(d.Explanation).toMatch(/what was invoiced for it is kept/);
+        });
+
+        it('reverses a NoRefund term in full when nothing was invoiced yet (#560)', () => {
+            const d = laterWith({ CancellationRefundMode: 'NoRefund' }, 'NotInvoiced');
+            expect(d.RefundAmount).toBe(1300);
+            expect(d.ReversalFraction).toBe(1);
+            expect(d.Explanation).toMatch(/Nothing has been invoiced for it yet/);
+        });
+
         it('reverses nothing when the term charged nothing', () => {
             const d = new SubscriptionBehavior().DecideLaterTermCancellation({
                 Rules: rules(),
                 Term: { ...renewal, Amount: 0 },
                 CoverageEndsDate: new Date('2026-12-31T00:00:00Z'),
+                Billing: 'NotInvoiced',
             });
             expect(d.ReversalFraction).toBe(0);
             expect(d.TermStatus).toBe('Canceled');
@@ -724,6 +1001,9 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
         CoveredThrough: day('2028-09-25'),
         ConcurrencyMode: 'AllowMultiple',
         SubscriptionTypeCode: 'OTHER',
+        CancellationMode: 'EndOfTerm',
+        GracePeriodDays: 0,
+        Cancelable: true,
     };
     const overlapFor = (mode: SubscriptionTypeRules['ConcurrencyMode'], acknowledged: boolean, overlaps = [existing]) =>
         new SubscriptionBehavior().DecideCoverageOverlap({
@@ -746,14 +1026,14 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
         expect(d.Message).toContain('SUB-000001 (Tier Two, 2026-09-26 to 2027-09-25)');
         expect(d.Message).toContain('family Tiered (TIERED)');
         expect(d.Message).toContain('Start this band after 2028-09-25, or mark the line to run alongside it.');
-        expect(d.Message).not.toContain('Cancel');
+        expect(d.Message).not.toContain('cancel');
     });
 
     it('tells a refused line to start after the latest coverage end', () => {
         const later = { ...existing, SubscriptionID: 'sub-2', SubscriptionNumber: 'SUB-000002', CoveredThrough: day('2029-01-31') };
         const d = overlapFor('RejectDuplicate', false, [existing, later]);
         expect(d.Message).toContain('Start this band after 2029-01-31.');
-        expect(d.Message).not.toContain('Cancel');
+        expect(d.Message).not.toContain('cancel');
     });
 
     describe('the stricter of the two bands\' types applies', () => {
@@ -807,6 +1087,63 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
         expect(d.Message).toContain('another line of this order (Tier Two');
     });
 
+    describe('cancelling the held band first (#470)', () => {
+        const held = (overrides: Partial<CoverageOverlap> = {}): CoverageOverlap => ({
+            ...existing,
+            ConcurrencyMode: 'ExtendExisting',
+            CancellationMode: 'Immediate',
+            ...overrides,
+        });
+
+        it('offers it under Immediate, where cancelling ends coverage on the cancellation date', () => {
+            const d = overlapFor('ExtendExisting', false, [held()]);
+            expect(d.Outcome).toBe('NeedsAck');
+            expect(d.Message).toContain(
+                'Start this band after 2028-09-25, cancel SUB-000001 first and start it the day after the cancellation date, ' +
+                    'or mark the line to run alongside it.',
+            );
+        });
+
+        it('offers it on a RejectDuplicate refusal too', () => {
+            const d = overlapFor('RejectDuplicate', false, [held()]);
+            expect(d.Outcome).toBe('Refused');
+            expect(d.Message).toContain(
+                'Start this band after 2028-09-25, or cancel SUB-000001 first and start it the day after the cancellation date.',
+            );
+        });
+
+        it('starts the new band after the grace period, since grace keeps access and access counts', () => {
+            const d = overlapFor('ExtendExisting', false, [held({ GracePeriodDays: 30 })]);
+            expect(d.Message).toContain(
+                'cancel SUB-000001 first and start it 31 days after the cancellation date, once its 30-day grace period ends',
+            );
+        });
+
+        it('does not offer it under EndOfTerm, where coverage runs to the term end', () => {
+            expect(overlapFor('ExtendExisting', false, [held({ CancellationMode: 'EndOfTerm' })]).Message).not.toContain('cancel');
+        });
+
+        it('does not offer it under EndOfBillingPeriod, where coverage runs to the period end', () => {
+            expect(overlapFor('ExtendExisting', false, [held({ CancellationMode: 'EndOfBillingPeriod' })]).Message).not.toContain('cancel');
+        });
+
+        it('does not offer it when the held subscription is already cancelled', () => {
+            expect(overlapFor('ExtendExisting', false, [held({ Cancelable: false })]).Message).not.toContain('cancel');
+        });
+
+        it('does not offer it when the overlap is another line of this order', () => {
+            const sibling = held({ SubscriptionID: null, SubscriptionNumber: null, Cancelable: false });
+            expect(overlapFor('ExtendExisting', false, [sibling]).Message).not.toContain('cancel');
+        });
+
+        it('offers it only when every overlapping band qualifies, and names each one', () => {
+            const second = held({ SubscriptionID: 'sub-2', SubscriptionNumber: 'SUB-000002' });
+            expect(overlapFor('ExtendExisting', false, [held(), second]).Message).toContain('cancel SUB-000001, SUB-000002 first');
+            const endOfTerm = { ...second, CancellationMode: 'EndOfTerm' as const };
+            expect(overlapFor('ExtendExisting', false, [held(), endOfTerm]).Message).not.toContain('cancel');
+        });
+    });
+
     describe('OverlappingCoverage', () => {
         const term = (id: string | null, start: string, end: string) => ({
             SubscriptionID: id,
@@ -816,6 +1153,9 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
             EndDate: day(end),
             ConcurrencyMode: 'ExtendExisting' as const,
             SubscriptionTypeCode: 'STD',
+            CancellationMode: 'Immediate' as const,
+            GracePeriodDays: 0,
+            Cancelable: id !== null,
         });
 
         it('clips each overlap to the new term', () => {
@@ -824,6 +1164,8 @@ describe('coverage overlap with another band of the family (golive #276)', () =>
             expect(iso(out[0].CoverageStart)).toBe('2026-07-01');
             expect(iso(out[0].CoverageEnd)).toBe('2026-12-31');
             expect(out[0].ConcurrencyMode).toBe('ExtendExisting');
+            expect(out[0].CancellationMode).toBe('Immediate');
+            expect(out[0].Cancelable).toBe(true);
         });
 
         it('reports coverage through the last term, including terms after the new one', () => {
@@ -965,5 +1307,29 @@ describe("the line's own choice when the subscriber already holds the product (g
             RequestedAction: 'ExtendExisting',
         });
         expect(decision.Action).toBe('Reactivate');
+    });
+});
+
+describe('seat count from the line quantity (#589)', () => {
+    const behavior = new SubscriptionBehavior();
+
+    it('records the whole-number quantity as the seats bought', () => {
+        expect(behavior.SeatCount(rules(), 10)).toEqual({ Seats: 10 });
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Organization' }), 25)).toEqual({ Seats: 25 });
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Individual' }), 1)).toEqual({ Seats: 1 });
+    });
+
+    it('refuses a fractional quantity: a half seat covers nobody', () => {
+        const result = behavior.SeatCount(rules(), 2.5);
+        expect('Error' in result && result.Error).toMatch(/whole seats/);
+    });
+
+    it('refuses zero and negative quantities', () => {
+        expect('Error' in behavior.SeatCount(rules(), 0)).toBe(true);
+        expect('Error' in behavior.SeatCount(rules(), -3)).toBe(true);
+    });
+
+    it('records more than one seat on a type that benefits one named person', () => {
+        expect(behavior.SeatCount(rules({ BenefitModel: 'Individual', Code: 'SEAT' }), 10)).toEqual({ Seats: 10 });
     });
 });

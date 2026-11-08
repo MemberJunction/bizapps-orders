@@ -17,6 +17,13 @@
  * TWO LAYERS, DO NOT CONFUSE THEM
  *   - `BasePriceResolver` subclasses are PLUGINS, registered by ClassFactory key. A company with
  *     genuinely bespoke pricing registers one for its ID and owns the whole decision.
+ *   - Which plugin applies is named in METADATA first: `PricingDriverClass` on the product, its
+ *     category chain, its type, or the company's OrderCompanyPolicy (most specific wins). That is
+ *     `ResolvePricingDriver`'s walk — the same one the browser runs to decide whether it may price
+ *     locally — so both tiers agree on the plugin. A named key with no registered resolver is
+ *     refused (D5's tripwire), never priced by the default. After the named key, the ID-key
+ *     convention (`Product:<id>`, `Category:<id>`, `Company:<id>`) still applies, so plugins
+ *     registered before the column existed keep working.
  *   - `DefaultPriceResolver` is the data-driven one everybody else gets: resolve the customer's
  *     price list, find the applicable `ProductPrice` rules, pick by priority, compute.
  *
@@ -32,20 +39,29 @@
  *   DOC:    plans/archive/pricing-charges-and-promotions.md
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
-import { MJGlobal, RegisterClassEx } from '@memberjunction/global';
+import { EscapeSQLString, MJGlobal, RegisterClassEx } from '@memberjunction/global';
 import {
     ComputeAmount,
     DescribeInapplicableReason,
     IsRuleApplicable,
     Money,
     PickPriceRule,
+    type InapplicableReason,
     type PriceRule,
     type PriceTierRule,
     type PricingModel,
 } from './PricingBehavior.js';
 import { priceApplies, type FilterEvalContext } from './applicability.js';
+import { RequireUUID, RequireUUIDs } from '../sql-guards.js';
 import { collapseInheritedPrices } from './inheritPrices.js';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
+import { ResolvePricingDriver } from '../PricingDriverResolver.js';
+import {
+    FormatRevenue,
+    IsRevenueBandApplicability,
+    ORGANIZATION_REVENUE_SOURCE,
+    type OrganizationRevenue,
+} from './organizationRevenue.js';
 
 const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
@@ -62,6 +78,53 @@ export class PriceResolutionError extends Error {
     ) {
         super(message);
         this.name = 'PriceResolutionError';
+    }
+}
+
+/**
+ * The product is priced by revenue band and the buyer's revenue is unknown, so the band cannot be
+ * chosen automatically. Not a catalog fault: the rep picks one of `BandNames`, and that pick needs
+ * no override grant (`ListApplicablePrices` offers the bands; the override gate accepts them).
+ */
+export class RevenueBandRequiredError extends PriceResolutionError {
+    constructor(
+        ProductID: string,
+        public readonly BandNames: string[],
+    ) {
+        super(
+            ProductID,
+            `This product is priced by the buyer's annual revenue, and the bill-to organization has no revenue on ` +
+                `record, so its band cannot be chosen automatically. Pick the band on the line: ${BandNames.join(', ')}.`,
+        );
+        this.name = 'RevenueBandRequiredError';
+    }
+}
+
+/** The reasons that put a rule outside its Effective From–To window on the day priced. */
+const OUT_OF_FORCE_REASONS: ReadonlySet<InapplicableReason> = new Set(['NotYetEffective', 'Expired']);
+
+/**
+ * Price rules exist for the product, but none applies to this quantity on this day. `Reasons` holds
+ * why each considered rule did not, in the order considered.
+ */
+export class NoApplicablePriceRuleError extends PriceResolutionError {
+    constructor(
+        ProductID: string,
+        message: string,
+        /** Null where a rule's reason is unknown (the pick and the test disagree). */
+        public readonly Reasons: (InapplicableReason | null)[],
+    ) {
+        super(ProductID, message);
+        this.name = 'NoApplicablePriceRuleError';
+    }
+
+    /**
+     * Every rule failed only on its Effective From–To window: on the day priced, the product has no
+     * list price. A caller measuring a stated price treats this as no engine price
+     * (bc-aidp-next-golive#437); a caller that must find a price still refuses.
+     */
+    public get NoneInForce(): boolean {
+        return this.Reasons.length > 0 && this.Reasons.every((r) => r != null && OUT_OF_FORCE_REASONS.has(r));
     }
 }
 
@@ -115,11 +178,14 @@ export interface ResolvedPrice {
 }
 
 /**
- * Base class for pricing plugins. Register a subclass to take over pricing for a product, a
- * category, a company, or globally:
+ * Base class for pricing plugins. Register a subclass under any key and name that key in
+ * `PricingDriverClass` on the product, category, type or company policy it should price:
  *
- *     @RegisterClass(BasePriceResolver, `Company:${someCompanyId}`)
- *     export class AcmeResolver extends BasePriceResolver { ... }
+ *     @RegisterClass(BasePriceResolver, 'EventTicketPricing')
+ *     export class EventTicketResolver extends BasePriceResolver { ... }
+ *
+ * The older ID-key convention (`Product:<id>`, `Category:<id>`, `Company:<id>`) still resolves,
+ * but the browser cannot see it — set `PricingDriverClass` to that key too so clients escalate.
  *
  * Return `null` to decline and let the walk continue to the next level.
  */
@@ -167,6 +233,13 @@ interface TierRow {
 
 const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toLowerCase();
 
+/** The buyer's revenue from the applicability bag, or null when the host has no figure. */
+function revenueOf(ctx: PriceResolutionContext): OrganizationRevenue | null {
+    const rec = ctx.ApplicabilityContext?.[ORGANIZATION_REVENUE_SOURCE];
+    if (!rec || rec['AnnualRevenue'] == null) return null;
+    return rec as unknown as OrganizationRevenue;
+}
+
 function priceLabel(row: Pick<ProductPriceRow, 'Name' | 'Description' | 'ID' | 'PricingModel' | 'PriceListID'>): string {
     const named = row.Name?.trim();
     if (named) return named;
@@ -194,8 +267,12 @@ export class DefaultPriceResolver extends BasePriceResolver {
 
         const chain = await categoryChain(ctx.ProductCategoryID, provider, user);
         const loaded = await this.loadRules(ctx, priceListIDs, chain, provider, user);
-        const rows = this.filterApplicable(collapseInheritedPrices(loaded, ctx.ProductID, chain), ctx);
-        if (!rows.length) return null;
+        const candidates = collapseInheritedPrices(loaded, ctx.ProductID, chain);
+        const rows = this.filterApplicable(candidates, ctx);
+        if (!rows.length) {
+            this.refuseUndecidedBand(candidates, ctx);
+            return null;
+        }
 
         const tiers = await this.loadTiers(rows.map((r) => r.ID), provider, user);
         const rules: PriceRule[] = rows.map((r) => ({
@@ -238,16 +315,18 @@ export class DefaultPriceResolver extends BasePriceResolver {
             // Nothing applied, but rules EXIST — say why the nearest one did not, in words that
             // carry the fix: "Base: not in force until 2026-09-05 — change that date or date the
             // order later" beats both "no price found" and the bare reason code it replaced.
+            const reasons = rules.map((r) => IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf }));
             const why = rules
                 .map((r, i) => {
-                    const reason = IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf });
+                    const reason = reasons[i];
                     return `'${priceLabel(rows[i])}' did not apply: ${reason ? DescribeInapplicableReason(r, reason) : 'unknown'}`;
                 })
                 .slice(0, 4);
-            throw new PriceResolutionError(
+            throw new NoApplicablePriceRuleError(
                 ctx.ProductID,
                 `No price rule applies to quantity ${ctx.Quantity} on ${ctx.AsOf.toISOString().slice(0, 10)}. ` +
                     `${rules.length} rule(s) were considered. ${why.join('; ')}.`,
+                reasons,
             );
         }
 
@@ -256,7 +335,11 @@ export class DefaultPriceResolver extends BasePriceResolver {
         const extended = ComputeAmount(winner, ctx.Quantity);
         const unit = ctx.Quantity > 0 ? Money(extended / ctx.Quantity) : Money(extended);
 
-        const label = priceLabel(row);
+        const revenue = revenueOf(ctx);
+        const label =
+            revenue && IsRevenueBandApplicability(row.Applicability)
+                ? `${priceLabel(row)} · revenue ${FormatRevenue(revenue.AnnualRevenue)} (${revenue.Source})`
+                : priceLabel(row);
 
         return {
             UnitPrice: unit,
@@ -296,13 +379,13 @@ export class DefaultPriceResolver extends BasePriceResolver {
         if (!(await OrdersEngineReady(provider, user))) {
             const rv = new RunView(provider as unknown as IRunViewProvider);
             const listClause = priceListIDs.length
-                ? `(PriceListID IN (${priceListIDs.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}) OR PriceListID IS NULL)`
+                ? `(PriceListID IN (${RequireUUIDs(priceListIDs, 'PriceListID').map((id) => `'${id}'`).join(',')}) OR PriceListID IS NULL)`
                 : `PriceListID IS NULL`;
-            const feeClause = `FeeType = '${(ctx.FeeType ?? 'Standard').replace(/'/g, "''")}'`;
+            const feeClause = `FeeType = '${EscapeSQLString(ctx.FeeType ?? 'Standard')}'`;
             const catClause = categoryChainNearestFirst.length
-                ? ` OR ProductCategoryID IN (${categoryChainNearestFirst.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`
+                ? ` OR ProductCategoryID IN (${RequireUUIDs(categoryChainNearestFirst, 'ProductCategoryID').map((id) => `'${id}'`).join(',')})`
                 : '';
-            const scopeClause = `(ProductID = '${ctx.ProductID.replace(/'/g, "''")}'${catClause})`;
+            const scopeClause = `(ProductID = '${RequireUUID(ctx.ProductID, 'ProductID')}'${catClause})`;
             const res = await rv.RunView<ProductPriceRow>(
                 {
                     EntityName: PRODUCT_PRICE_ENTITY,
@@ -348,6 +431,24 @@ export class DefaultPriceResolver extends BasePriceResolver {
             }
         }
         return rows;
+    }
+
+    /**
+     * Nothing applied: when that is because the product is priced by revenue band, say which part
+     * is missing. Revenue unknown → the rep picks a band. Revenue known but outside every band →
+     * the catalog has a gap, named with the figure so it can be fixed.
+     */
+    private refuseUndecidedBand(candidates: ProductPriceRow[], ctx: PriceResolutionContext): void {
+        const bands = candidates.filter((r) => IsRevenueBandApplicability(r.Applicability));
+        if (!bands.length) return;
+        const revenue = revenueOf(ctx);
+        if (!revenue) throw new RevenueBandRequiredError(ctx.ProductID, bands.map(priceLabel));
+        throw new PriceResolutionError(
+            ctx.ProductID,
+            `The bill-to organization's revenue, ${FormatRevenue(revenue.AnnualRevenue)} (${revenue.Source}), ` +
+                `falls in none of this product's revenue bands: ${bands.map(priceLabel).join(', ')}. ` +
+                `Add a band covering it, or pick a price on the line.`,
+        );
     }
 
     private filterApplicable(rows: ProductPriceRow[], ctx: PriceResolutionContext): ProductPriceRow[] {
@@ -398,7 +499,12 @@ export class DefaultPriceResolver extends BasePriceResolver {
         return out;
     }
 
-    /** Active, inherited, When-matching rows — the OverrideList set, before a winner is picked. */
+    /**
+     * Active, inherited, When-matching rows — the OverrideList set, before a winner is picked.
+     *
+     * When the buyer's revenue is unknown, every revenue-band row is included too: none of them can
+     * be ruled out, and choosing among them is the rep's job (`RevenueBandRequiredError`).
+     */
     public async CollectApplicable(
         ctx: PriceResolutionContext,
         provider: IMetadataProvider,
@@ -409,7 +515,14 @@ export class DefaultPriceResolver extends BasePriceResolver {
             : await ResolvePriceListsForCustomer(ctx, provider, user);
         const chain = await categoryChain(ctx.ProductCategoryID, provider, user);
         const loaded = await this.loadRules(ctx, priceListIDs, chain, provider, user);
-        return this.filterApplicable(collapseInheritedPrices(loaded, ctx.ProductID, chain), ctx);
+        const candidates = collapseInheritedPrices(loaded, ctx.ProductID, chain);
+        const applicable = this.filterApplicable(candidates, ctx);
+        if (revenueOf(ctx)) return applicable;
+        const kept = new Set(applicable.map((r) => uuidKey(r.ID)));
+        const undecided = candidates.filter(
+            (r) => !kept.has(uuidKey(r.ID)) && IsRevenueBandApplicability(r.Applicability),
+        );
+        return [...applicable, ...undecided];
     }
 }
 
@@ -506,23 +619,35 @@ export async function ResolvePriceListForCustomer(
 }
 
 /**
- * Run the resolver walk: product → category → ancestors → company → default.
+ * Run the resolver walk: the metadata-named driver (`PricingDriverClass`), then the ID keys
+ * product → category → ancestors → company, then the default.
  *
- * The first resolver returning a price ends it. Nothing resolving is the caller's decision to
- * refuse or to accept a directly-entered price — this function reports, it does not decide.
+ * The first resolver returning a price ends it; a plugin returning null declines and the walk
+ * continues. Nothing resolving is the caller's decision to refuse or to accept a directly-entered
+ * price — this function reports, it does not decide.
+ *
+ * @throws PriceResolutionError when `PricingDriverClass` names a key with no registered resolver,
+ *   or when the driver lookup itself could not be read.
  */
 export async function ResolvePrice(
     ctx: PriceResolutionContext,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ResolvedPrice | null> {
-    const keys: string[] = [`Product:${ctx.ProductID}`];
+    const keys: string[] = [];
+    const named = await namedDriverKey(ctx, provider, user);
+    if (named) keys.push(named);
+    keys.push(`Product:${ctx.ProductID}`);
     for (const cat of await categoryChain(ctx.ProductCategoryID, provider, user)) {
         keys.push(`Category:${cat}`);
     }
     keys.push(`Company:${ctx.CompanyID}`);
 
+    const tried = new Set<string>();
     for (const key of keys) {
+        // A named driver may BE an ID key (`Company:<id>` is the documented convention) — ask once.
+        if (tried.has(key.toLowerCase())) continue;
+        tried.add(key.toLowerCase());
         // Probe first. CreateInstance falls back to the no-key default and warns when the
         // Product/Category/Company key has no plugin — which is the common case.
         if (!isRegistered(key)) continue;
@@ -532,9 +657,61 @@ export async function ResolvePrice(
         if (hit) return { ...hit, ResolvedBy: key };
     }
 
-    const fallback = MJGlobal.Instance.ClassFactory.CreateInstance<BasePriceResolver>(BasePriceResolver);
+    const fallback = defaultResolver();
     if (!fallback) return null;
     return fallback.Resolve(ctx, provider, user);
+}
+
+/**
+ * The no-key registration — `DefaultPriceResolver` unless a host overrides it.
+ *
+ * Not `CreateInstance(BasePriceResolver)`: with no key, ClassFactory matches EVERY registration and
+ * returns the highest priority, which on equal priorities is the last registered. Any keyed plugin
+ * loaded after this module would then become the "default" for products it was never named for.
+ */
+function defaultResolver(): BasePriceResolver | null {
+    const unkeyed = (MJGlobal.Instance.ClassFactory.GetAllRegistrations(BasePriceResolver) ?? []).filter(
+        (r) => !r.Key?.trim(),
+    );
+    if (!unkeyed.length) return null;
+    const top = Math.max(...unkeyed.map((r) => r.Priority));
+    const reg = unkeyed.filter((r) => r.Priority === top).pop();
+    return reg ? (new reg.SubClass() as BasePriceResolver) : null;
+}
+
+/**
+ * The resolver key `PricingDriverClass` names for this line, or null when no level names one.
+ *
+ * Uses `ResolvePricingDriver`, the walk the browser runs before pricing locally, so the server
+ * invokes exactly the plugin whose presence made the browser escalate. A name with no registration
+ * is refused rather than skipped: it is misconfiguration, and the default resolver's answer would
+ * be a confident wrong price (the GL walk's tripwire, D5). A failed lookup is refused for the same
+ * reason — it cannot be told apart from "no driver".
+ */
+async function namedDriverKey(
+    ctx: PriceResolutionContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string | null> {
+    const verdict = await ResolvePricingDriver(
+        ctx.ProductID,
+        ctx.CompanyID,
+        provider as unknown as IRunViewProvider,
+        user,
+    );
+    if (verdict.Unresolved) {
+        throw new PriceResolutionError(ctx.ProductID, `Could not determine the pricing driver: ${verdict.Unresolved}`);
+    }
+    const key = verdict.DriverClass?.trim();
+    if (!key) return null;
+    if (!isRegistered(key)) {
+        throw new PriceResolutionError(
+            ctx.ProductID,
+            `PricingDriverClass '${key}' (set on the ${verdict.Level}) names no registered BasePriceResolver. ` +
+                `Register a resolver under that key on the server, or clear the column.`,
+        );
+    }
+    return key;
 }
 
 /** Whether a ClassFactory registration exists for this exact key. */
@@ -629,6 +806,20 @@ function productPriceRowFrom(p: {
     };
 }
 
+/**
+ * Whether the product (or a category it inherits from) is priced by revenue band. Reads the loaded
+ * `OrdersEngine`, so a screen can ask cheaply before loading a line's applicable prices; false when
+ * the engine is not loaded.
+ */
+export function ProductHasRevenueBands(productID: string | null | undefined): boolean {
+    if (!productID || !OrdersEngine.Instance.Loaded) return false;
+    const product = OrdersEngine.Instance.ProductByID(productID);
+    const chain = OrdersEngine.Instance.CategoryChain(product?.ProductCategoryID ?? null);
+    return OrdersEngine.Instance.ProductPricesFor(productID, chain).some(
+        (p) => (p.Status ?? 'Active') === 'Active' && IsRevenueBandApplicability(p.Applicability),
+    );
+}
+
 /** Named prices that apply to this context, before PickPriceRule chooses a winner. OverrideList uses this set. */
 export interface ApplicablePrice {
     ID: string;
@@ -638,6 +829,13 @@ export interface ApplicablePrice {
     PriceListID: string | null;
     InheritedFrom: 'product' | 'category';
     InheritedFromCategoryID: string | null;
+    /** The price is a revenue band (its Applicability tests the buyer's revenue). */
+    IsRevenueBand?: boolean;
+    /**
+     * A revenue band offered because the buyer's revenue is unknown, so the rules could not choose
+     * it. Picking one is the rep's call and needs no override grant.
+     */
+    BandUndecided?: boolean;
 }
 
 export async function ListApplicablePrices(
@@ -648,7 +846,9 @@ export async function ListApplicablePrices(
     const resolver = new DefaultPriceResolver();
     const rows = await resolver.CollectApplicable(ctx, provider, user);
     const tiers = await resolver.loadTiers(rows.map((r) => r.ID), provider, user);
+    const revenueUnknown = revenueOf(ctx) == null;
     return rows.map((r) => {
+        const isBand = IsRevenueBandApplicability(r.Applicability);
         const rule: PriceRule = {
             ID: r.ID,
             PricingModel: r.PricingModel as PricingModel,
@@ -678,6 +878,8 @@ export async function ListApplicablePrices(
             PriceListID: r.PriceListID,
             InheritedFrom: r.ProductID ? 'product' as const : 'category' as const,
             InheritedFromCategoryID: r.ProductID ? null : r.ProductCategoryID,
+            IsRevenueBand: isBand,
+            BandUndecided: isBand && revenueUnknown,
         };
     });
 }

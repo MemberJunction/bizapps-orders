@@ -110,6 +110,18 @@ describe('page outputs are wired to the section', () => {
         expect(missing, `primary actions point at unknown pages: ${missing.join(', ')}`).toEqual([]);
     });
 
+    it('reaches a subscription\'s form, and so its Cancel button, from the Subscriptions page (#932)', () => {
+        // Cancel lives on the Subscription form. The Subscriptions page had no output at all, so the
+        // guard above had nothing to check and passed while support could not reach Cancel. Pin the
+        // output by name, and that the shell sends it to the Subscription entity's form.
+        expect(pageOutputs.get('receivables/subscriptions.page.ts') ?? []).toContain('SubscriptionOpened');
+        expect(shell).toMatch(/'SubscriptionOpened',[^\n]*openEntity\(MJO_ENTITIES\.Subscription,/);
+        // The side panel's Open button is the visible way in; double-click is easy to miss. The page
+        // tests call OpenSelected() directly, so only the template shows the button is still there.
+        const page = readFileSync(join(LIB, 'pages', 'receivables', 'subscriptions.page.ts'), 'utf8');
+        expect(page).toContain('(click)="OpenSelected()"');
+    });
+
     it('reaches the confirm from the UI', () => {
         // The specific regression: this is the only path to the code that writes journal entries,
         // and it was once unreachable.
@@ -140,4 +152,19 @@ describe('page outputs are wired to the section', () => {
         expect(code).not.toMatch(/PreviewConfirm/);
         expect(code).not.toMatch(/OpenPreflight/);
     });
+
+    it('notifies the resource host when the initial section page finishes mounting', () => {
+        expect(shell).toMatch(/await this\.showPage\(this\.ActivePageId!\);\s*this\.LoadedAt = new Date\(\);\s*this\.NotifyLoadComplete\(\);/);
+    });
+
+    it('avoids uncapped entity_object GetOrders({ Preset: "all" }) reads on dashboard, document, and AR pages', () => {
+        const dash = readFileSync(join(LIB, 'pages', 'orders', 'orders-dashboard.page.ts'), 'utf8');
+        const doc = readFileSync(join(LIB, 'pages', 'orders', 'order-document.page.ts'), 'utf8');
+        const ar = readFileSync(join(LIB, 'pages', 'receivables', 'customer-ar.page.ts'), 'utf8');
+        expect(dash).toMatch(/GetDashboardOrders\(\)/);
+        expect(dash).not.toMatch(/GetOrders\(\{\s*Preset:\s*'all'\s*\}\)/);
+        expect(doc).toMatch(/GetOrders\(\{\s*OrderHeaderID:\s*this\.OrderID\s*\}\)/);
+        expect(ar).toMatch(/GetOpenBalanceOrders\(\)/);
+    });
 });
+

@@ -26,6 +26,13 @@
  * metering); a company may have a house resolver — which is where every plugin registered before the
  * column existed is keyed, as `Company:<id>`.
  *
+ * ## The server runs this same walk
+ *
+ * `ResolvePrice` calls this function and invokes the `BasePriceResolver` registered under the key it
+ * returns, before the older `Product:` / `Category:` / `Company:` ID keys. One walk on both tiers, so
+ * the plugin that made a client escalate is the one the server runs. A key with no registration is
+ * refused there, not priced by the default.
+ *
  * ## The direction of the safe answer
  *
  * `null` at every level means "no plugin", so price locally. **Anything else escalates.** When the

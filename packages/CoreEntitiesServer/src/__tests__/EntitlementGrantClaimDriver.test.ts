@@ -4,29 +4,33 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import type { UserInfo } from '@memberjunction/core';
-// Local fallback contracts — see ../identityClaimContracts.ts. Restore this import to
-// '@memberjunction/core-entities' once MJ publishes these exports.
 import {
     BaseIdentityClaimDriver,
     type ClaimRedeemContext,
     type ClaimContext,
     type MJIdentityClaimEntity
-} from '../identityClaimContracts.js';
+} from '@memberjunction/core-entities';
 
-const mockGrantSave = vi.fn().mockResolvedValue(true);
-const mockGrantLoad = vi.fn().mockResolvedValue(true);
+// Hoisted with the mocks: the driver's imports reach orders-entities at load time, so the module
+// factory below runs before ordinary top-level declarations exist.
+const { mockGrantSave, mockGrantLoad, MockEntitlementGrant } = vi.hoisted(() => {
+    const mockGrantSave = vi.fn().mockResolvedValue(true);
+    const mockGrantLoad = vi.fn().mockResolvedValue(true);
 
-class MockEntitlementGrant {
-    ID = 'grant-100';
-    BeneficiaryPersonID: string | null = null;
-    ProductEntitlementID = 'pe-200';
-    Status: 'Active' | 'Expired' | 'Revoked' | 'Suspended' = 'Active';
-    ProvisionedAt: Date | null = null;
-    LatestResult = { Success: true, Message: '' };
+    class MockEntitlementGrant {
+        ID = 'grant-100';
+        BeneficiaryPersonID: string | null = null;
+        ProductEntitlementID = 'pe-200';
+        Status: 'Active' | 'Expired' | 'Revoked' | 'Suspended' = 'Active';
+        ProvisionedAt: Date | null = null;
+        LatestResult = { Success: true, Message: '' };
 
-    Load = mockGrantLoad;
-    Save = mockGrantSave;
-}
+        Load = mockGrantLoad;
+        Save = mockGrantSave;
+    }
+
+    return { mockGrantSave, mockGrantLoad, MockEntitlementGrant };
+});
 
 const mockGrantInstance = new MockEntitlementGrant();
 

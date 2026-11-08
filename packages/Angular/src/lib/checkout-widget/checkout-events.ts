@@ -6,7 +6,9 @@
  * shadow root. These builders are the element's public contract, kept pure so it is testable.
  *
  * NO PERSONAL DATA IN ANY DETAIL. The events reach every script on the host page, so no detail
- * carries the buyer's e-mail, name or anything they typed beyond the promotion code.
+ * carries the buyer's e-mail, name or anything they typed beyond the promotion code. The one
+ * free-text field, `checkout-error`'s `message`, is the buyer-facing text and can carry server or
+ * gateway wording; its `stage` is what a host should track.
  */
 
 /** The element's state, as `checkout-state-change` reports it. */
@@ -38,7 +40,20 @@ export interface CheckoutCompleteDetail {
     coupon: string | null;
 }
 
+/**
+ * Where the checkout failed, for a host page that tracks the funnel (#860): `initialize` (the
+ * checkout could not load), `draft` (pricing the order), `payment` (starting or confirming the
+ * payment), `complete` (booking the paid order) or `card` (loading card entry).
+ */
+export type CheckoutErrorStage = 'initialize' | 'draft' | 'payment' | 'complete' | 'card';
+
 export interface CheckoutErrorDetail {
+    /** A stable value to track and forward. */
+    stage: CheckoutErrorStage;
+    /**
+     * The text shown to the buyer. It can include text the server or the payment gateway returned,
+     * so it is for display only: do not forward it to analytics.
+     */
     message: string;
 }
 

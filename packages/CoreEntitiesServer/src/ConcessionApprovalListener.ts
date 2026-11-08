@@ -137,7 +137,12 @@ async function routeAgain(
         throw new Error(`concession ${concession.ID} names no ConcessionLimit rule with an approving role, so it cannot be routed again`);
     }
     const reraised = await RaiseConcessionApprovalAgain(
-        { ID: concession.ID, OrderHeaderID: concession.OrderHeaderID, RequestedByUserID: concession.RequestedByUserID },
+        {
+            ID: concession.ID,
+            OrderHeaderID: concession.OrderHeaderID,
+            RequestedByUserID: concession.RequestedByUserID,
+            SalesRuleID: concession.SalesRuleID,
+        },
         roleID,
         refusedTaskID,
         refusal,

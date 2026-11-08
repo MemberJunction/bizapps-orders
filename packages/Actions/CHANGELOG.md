@@ -1,5 +1,50 @@
 # @mj-biz-apps/orders-actions
 
+## 5.43.0
+
+## 5.42.0
+
+## 5.41.0
+
+## 5.40.0
+
+## 5.39.0
+
+## 5.38.0
+
+## 5.37.0
+
+## 5.36.1
+
+## 5.36.0
+
+## 5.35.1
+
+## 5.35.0
+
+## 5.34.1
+
+## 5.34.0
+
+## 5.33.0
+
+## 5.32.1
+
+## 5.32.0
+
+## 5.31.0
+
+## 5.30.0
+
+### Patch Changes
+
+- 0db962e: MemberJunction and other BizApps packages are peer dependencies with caret ranges (`^6.1.5` for
+  MemberJunction, `^5.49.0` for common, `>=0.21.0` for accounting; no `~`, nothing in
+  `dependencies`), so a 6.2 host keeps one copy of each instead of installing a second tree. MemberJunction
+  devDependencies and the root `pnpm.overrides` use the same `^6.1.5` floor. Adds `check-dependency-model` to CI.
+
+## 5.29.0
+
 ## 5.28.0
 
 ### Patch Changes

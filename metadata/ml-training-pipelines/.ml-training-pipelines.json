@@ -19,6 +19,9 @@
     "primaryKey": {
       "ID": "5F1E03E7-06C8-46BB-B0AE-216065446FFF"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.102Z",
       "checksum": "df4ef8e20e515b4017efc038850c17f61a007bf6b951bacd8688180b39c63dfd"
@@ -43,6 +46,9 @@
     },
     "primaryKey": {
       "ID": "907117CB-F9D7-4D70-BE94-A6B5465896C1"
+    },
+    "deleteRecord": {
+      "delete": true
     },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.102Z",
@@ -69,6 +75,9 @@
     "primaryKey": {
       "ID": "35F47C23-2384-4BA7-90A0-AC069C58237A"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.106Z",
       "checksum": "00d8b211202cd2705b9e96fca70631c05b70fc14f4e7d2da7473ee7f6d0807c6"
@@ -93,6 +102,9 @@
     },
     "primaryKey": {
       "ID": "AC9B75DE-5C8F-44A6-AFC8-4EFD955DD9B8"
+    },
+    "deleteRecord": {
+      "delete": true
     },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.135Z",
@@ -119,6 +131,9 @@
     "primaryKey": {
       "ID": "9CE2C6B8-D8A2-4766-9EF1-9769B4292DB9"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.153Z",
       "checksum": "d9f3c2e4a6327e9cef3022763021f11b8d3c8cf2ed9699b31013c8e8df320ce0"
@@ -143,6 +158,9 @@
     },
     "primaryKey": {
       "ID": "EF9EE1B1-9CF2-4F60-B09E-B1361CA1CE70"
+    },
+    "deleteRecord": {
+      "delete": true
     },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.166Z",
@@ -169,6 +187,9 @@
     "primaryKey": {
       "ID": "6EDE93DE-1964-4E40-BF56-864B480B51D4"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.179Z",
       "checksum": "b014aff10302913b9e20736bea7a377453813dbb4a627815e8f4b0edef58572a"
@@ -194,6 +215,9 @@
     "primaryKey": {
       "ID": "FD851D6A-C67D-46A9-A932-013FC830FB40"
     },
+    "deleteRecord": {
+      "delete": true
+    },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.192Z",
       "checksum": "166efc0727409325a57293b344f17b2f041acdc40abefab4ba5afeb6eb18019f"
@@ -218,6 +242,9 @@
     },
     "primaryKey": {
       "ID": "8EC6BE82-BC1F-4CA0-96D8-63BAFDE71E2A"
+    },
+    "deleteRecord": {
+      "delete": true
     },
     "sync": {
       "lastModified": "2026-09-20T23:33:23.203Z",

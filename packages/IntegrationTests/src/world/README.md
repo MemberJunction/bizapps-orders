@@ -2,7 +2,7 @@
 
 Committed integration-test catalog. **Not** app metadata.
 
-Types (Product Type, Charge Type, Rev Rec, Subscription, Payment, Organization Type, Relationship Type, GL Account Role) live in `metadata/` and are **looked up**. Missing metadata fails the load loudly.
+Types (Product Type, Charge Type, Rev Rec, Subscription, Payment, Organization Type, Relationship Type, GL Account Role) are metadata and are **looked up**: this app's `metadata/`, or bizapps-common's and bizapps-accounting's for the last three. Missing metadata fails the load loudly.
 
 Everything else in this folder is tenant/world data: selling companies, GL, people, organizations, catalog, prices, tax geography. The suite and Explorer share it.
 
@@ -11,7 +11,7 @@ Everything else in this folder is tenant/world data: selling companies, GL, peop
 `LoadWorld()` reads the CSVs and upserts through `BaseEntity.Save()`. No raw SQL. Natural keys (`CompanyCode`, `SKU`, `Email`, …). Re-running is idempotent.
 
 - **ORD-00 / `catalog-world`** — the first bundle. One check (`CW1`) loads the world and asserts referential integrity.
-- **Later bundles** call `CreateOrdersFixture()`, which remaps this world onto the existing `Fx()` shape (`CoA` = Blue Cypress Press, `CoB` = Harbor House, `CoC` = Orphan Ledger; `WidgetA` = Style Handbook, …). Mutations run inside rolled-back transactions.
+- **Later bundles** call `CreateOrdersFixture()`, which remaps this world onto the existing `Fx()` shape (`CoA` = Blue Cypress Press, `CoB` = Harbor House, `CoC` = Orphan Ledger, `CoD` = Unpaired Press; `WidgetA` = Style Handbook, …). Mutations run inside rolled-back transactions.
 
 ## The companies
 
@@ -22,6 +22,7 @@ Everything else in this folder is tenant/world data: selling companies, GL, peop
 | DEMO    | DEMO Publishing Co  | Demo seller still in the catalog          |
 | PARTNER | DEMO Partner Press  | Second demo seller                        |
 | ORPHAN  | Orphan Ledger       | Accounts exist, **no** GL links — refuse  |
+| UNPAIRED | Unpaired Press     | GL-linked, in **no** intercompany pair    |
 
 ## Product category tree
 
@@ -63,7 +64,9 @@ Dimensions (`DEPT`, `LOC`) and their values are world data. They are **not** att
 yet — attaching a required dimension without a matching order-line tag would refuse the confirm.
 
 Intercompany pairs are declared in `intercompany-matches.csv` and saved through BaseEntity.
-Orphan Ledger is not in that file, so the missing-pair refuse path stays real.
+Unpaired Press is GL-linked and not in that file, so an order with its product confirms and a
+payment across it refuses on the missing pair (IC5). Orphan Ledger is not in that file either, but
+it has no GL links, so its orders refuse at confirm before any pair is looked up.
 
 ## Adding a product
 

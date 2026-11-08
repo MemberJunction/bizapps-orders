@@ -74,6 +74,8 @@ async function addPromotion(
     stackSequence?: number;
     maxRedemptions?: number | null;
     maxPerCustomer?: number | null;
+    /** The code's own limit, separate from the promotion's. */
+    codeMax?: number | null;
     minOrder?: number | null;
     minQty?: number | null;
     qualifierKey?: string | null;
@@ -106,6 +108,7 @@ async function addPromotion(
     PromotionID: promotionID,
     Code: code,
     Status: "Active",
+    MaxRedemptions: opts.codeMax ?? null,
   });
 
   if (opts.targetProductID || opts.targetCategoryID) {
@@ -313,6 +316,13 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(order.Saved, `confirm failed: ${order.Message}`);
         const t = await totals(ctx, order.Order.ID as string);
         AssertEqual(Number(t.Discount), 200, "only the 20% applied — the customer gets the better one");
+
+        // The code that lost is told why, naming the offer that won (#686).
+        const unusable = order.Order.UnusablePromotionCodes;
+        Assert(
+          unusable.length === 1 && unusable[0].Code === small.Code && unusable[0].Reason.includes(`${big.Code} promotion`),
+          `expected one reason for ${small.Code} naming ${big.Code}'s promotion, got: ${JSON.stringify(unusable)}`,
+        );
       }),
   },
   {
@@ -414,10 +424,14 @@ export const PromotionChecks: NamedCheck[] = [
         const tooSmall = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 2 }], codes: [Code] });
         Assert(tooSmall.Saved, `confirm failed: ${tooSmall.Message}`);
         AssertEqual(Number((await totals(ctx, tooSmall.Order.ID as string)).Discount), 0, "100 does not reach the 500 minimum");
+        const unusable = tooSmall.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && /minimum of 500\.00/.test(unusable[0].Reason),
+          `expected a 'minimum of 500.00' reason, got: ${JSON.stringify(unusable)}`);
 
         const bigEnough = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 20 }], codes: [Code] });
         Assert(bigEnough.Saved, `confirm failed: ${bigEnough.Message}`);
         AssertEqual(Number((await totals(ctx, bigEnough.Order.ID as string)).Discount), 200, "1000 qualifies");
+        AssertEqual(bigEnough.Order.UnusablePromotionCodes.length, 0, "a code that applied is not reported");
       }),
   },
   {
@@ -860,7 +874,197 @@ export const PromotionChecks: NamedCheck[] = [
         );
       }),
   },
+  {
+    Id: "promotions.PR27",
+    Name: "PR27: a code on a saved draft discounts once when the draft is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1 });
+
+        // Both saves run the pricing walk with the code, because the code rides the order object.
+        // The confirm re-decides the promotion, so it must replace the draft's adjustment rows
+        // rather than add a second set beside them.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          PromotionCodes: [Code],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const t = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(t.Discount), 100, "the line carries the discount once");
+        const trail = await adjustmentTrail(ctx, built.Order.ID as string);
+        AssertEqual(trail.PromotionRows, 1, "one adjustment row for the promotion");
+        AssertEqual(trail.PromotionAmount, 100, "the adjustment trail records the discount once");
+        AssertEqual(trail.AllocatedAmount, 100, "and allocates it once");
+      }),
+  },
+  {
+    Id: "promotions.PR28",
+    Name: "PR28: a manual discount on a saved draft survives the confirm beside a re-decided code",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await grantAuthority(ctx, 0.5);
+        const { Code } = await addPromotion(ctx, { value: 0.1 });
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          PromotionCodes: [Code],
+          ManualDiscountsByLineIndex: [{ LineIndex: 0, Amount: 50, Reason: "retention concession" }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        const draft = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(draft.Discount), 150, "the draft carries the promotion and the manual discount");
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const t = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(t.Discount), 150, "the confirm keeps both discounts, once each");
+        const trail = await adjustmentTrail(ctx, built.Order.ID as string);
+        AssertEqual(trail.PromotionAmount, 100, "the promotion is recorded once");
+        AssertEqual(trail.ManualRows, 1, "the manual discount keeps its one row");
+        AssertEqual(trail.ManualAmount, 50, "at the amount it was granted");
+        AssertEqual(trail.AllocatedAmount, 150, "and the allocations add up to the line's discount");
+      }),
+  },
+  {
+    Id: "promotions.PR29",
+    Name: "PR29: a single-use code a saved draft took still applies when that draft is confirmed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1, maxRedemptions: 1 });
+
+        // The draft's own adjustment row is not another order's redemption. Counting it would make
+        // the confirm find the code used up by the order that is using it.
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          PromotionCodes: [Code],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(), `the confirm failed: ${built.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        AssertEqual(built.Order.UnusablePromotionCodes.length, 0, "the code is not reported as used up");
+        const t = await totals(ctx, built.Order.ID as string);
+        AssertEqual(Number(t.Discount), 100, "the confirmed line keeps the discount");
+        const trail = await adjustmentTrail(ctx, built.Order.ID as string);
+        AssertEqual(trail.PromotionAmount, 100, "recorded once");
+      }),
+  },
+  {
+    Id: "promotions.PR30",
+    Name: "PR30: an order-level promotion on a two-line order spends one redemption",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        await addPrice(ctx, f.Products.WidgetB, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1, appliesAt: "Order", maxRedemptions: 2 });
+
+        // Allocation writes one adjustment row per line. A redemption is the order, not the row.
+        const first = await confirmWith(ctx, {
+          lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 1 },
+            { ProductID: f.Products.WidgetB, Quantity: 1 },
+          ],
+          codes: [Code],
+        });
+        Assert(first.Saved, `first confirm failed: ${first.Message}`);
+        AssertEqual(Number((await totals(ctx, first.Order.ID as string)).Discount), 40, "the first order took the discount");
+
+        const second = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(second.Saved, `second confirm failed: ${second.Message}`);
+        AssertEqual(Number((await totals(ctx, second.Order.ID as string)).Discount), 30, "the second order is the second redemption");
+        AssertEqual(second.Order.UnusablePromotionCodes.length, 0, "and the code is not reported as used up");
+      }),
+  },
+  {
+    Id: "promotions.PR31",
+    Name: "PR31: a code stopped by its redemption limit says so",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1, maxRedemptions: 1 });
+
+        const first = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(first.Saved, `first confirm failed: ${first.Message}`);
+
+        const second = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(second.Saved, `second confirm failed: ${second.Message}`);
+        const unusable = second.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && unusable[0].Code === Code && /redemption limit/i.test(unusable[0].Reason),
+          `expected one 'redemption limit' reason for ${Code}, got: ${JSON.stringify(unusable)}`);
+      }),
+  },
+  {
+    Id: "promotions.PR32",
+    Name: "PR32: a code's own redemption limit is enforced",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        // The promotion has no limit; the code does.
+        const { Code } = await addPromotion(ctx, { value: 0.1, codeMax: 1 });
+
+        const first = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(first.Saved, `first confirm failed: ${first.Message}`);
+        AssertEqual(Number((await totals(ctx, first.Order.ID as string)).Discount), 10, "the first use applied");
+
+        const second = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(second.Saved, `second confirm failed: ${second.Message}`);
+        AssertEqual(Number((await totals(ctx, second.Order.ID as string)).Discount), 0, "the second use was refused");
+        const unusable = second.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && /redemption limit/i.test(unusable[0].Reason),
+          `expected a 'redemption limit' reason, got: ${JSON.stringify(unusable)}`);
+      }),
+  },
 ];
+
+/** The order's adjustment rows, split into promotion and manual, plus what their allocations total. */
+async function adjustmentTrail(
+  ctx: IntegrationCheckContext,
+  orderID: string,
+): Promise<{ PromotionRows: number; PromotionAmount: number; ManualRows: number; ManualAmount: number; AllocatedAmount: number }> {
+  const row = await TxOne<{ PR: number; PA: number; MR: number; MA: number; AA: number }>(
+    ctx,
+    `SELECT
+        (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NOT NULL) AS PR,
+        (SELECT ISNULL(SUM(Amount),0) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NOT NULL) AS PA,
+        (SELECT COUNT(*) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NULL) AS MR,
+        (SELECT ISNULL(SUM(Amount),0) FROM ${ORDERS_SCHEMA}.OrderAdjustment WHERE OrderHeaderID='${orderID}' AND PromotionID IS NULL) AS MA,
+        (SELECT ISNULL(SUM(a.Amount),0) FROM ${ORDERS_SCHEMA}.OrderAdjustmentAllocation a
+           JOIN ${ORDERS_SCHEMA}.OrderAdjustment j ON j.ID = a.OrderAdjustmentID
+          WHERE j.OrderHeaderID='${orderID}') AS AA`,
+  );
+  return {
+    PromotionRows: Number(row.PR),
+    PromotionAmount: Number(row.PA),
+    ManualRows: Number(row.MR),
+    ManualAmount: Number(row.MA),
+    AllocatedAmount: Number(row.AA),
+  };
+}
 
 for (const check of PromotionChecks) {
   IntegrationCheckRegistry.Instance.Register(check);

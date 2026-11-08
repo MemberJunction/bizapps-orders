@@ -167,8 +167,10 @@ export function CheckAnswersAgainstQuestions(questions: CheckoutQuestion[], answ
             }
             if (q.otherOptionKey !== undefined && value === q.otherOptionKey) {
                 if (!otherText) return refuse(`Please say more about your answer to "${q.label}".`);
-                if (otherText.length > MAX_CHECKOUT_ANSWER_LENGTH) {
-                    return refuse(`The answer to "${q.label}" is too long (at most ${MAX_CHECKOUT_ANSWER_LENGTH} characters).`);
+                // The same limit as the answer itself: the page caps the "Other" box at the
+                // question's maxLength, and a direct post must not store more than the page allows.
+                if (otherText.length > CheckoutAnswerMaxLength(q)) {
+                    return refuse(`The answer to "${q.label}" is too long (at most ${CheckoutAnswerMaxLength(q)} characters).`);
                 }
                 recordedOther = otherText;
             }

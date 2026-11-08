@@ -1,12 +1,14 @@
 import '@angular/compiler';
+import { EventEmitter } from '@angular/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
 import { Today, type mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
+import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { MJOSubscriptionsPageComponent } from '../receivables/subscriptions.page';
 import { LoadSubscriptionRevRec } from '../../data/orders-queries';
 
 type PageInternals = {
-    dateOf(value: unknown): string;
+    instantOf(value: unknown): string;
     termDateOf(value: unknown): string;
     AllRows: Array<Record<string, unknown>>;
     SelectedID: string | null;
@@ -50,16 +52,16 @@ function day(offsetFromToday: number): Date {
 
 describe('MJOSubscriptionsPageComponent dates', () => {
     it('formats a Date, which is how entity-object terms and events deliver their dates', () => {
-        expect(page().dateOf(new Date(2026, 7, 10))).toBe('Aug 10, 2026');
+        expect(page().termDateOf(new Date(Date.UTC(2026, 7, 10)))).toBe('Aug 10, 2026');
     });
 
     it('formats ISO text', () => {
-        expect(page().dateOf('2026-08-10')).toBe('Aug 10, 2026');
+        expect(page().termDateOf('2026-08-10')).toBe('Aug 10, 2026');
     });
 
     it('renders a dash for a missing date', () => {
-        expect(page().dateOf(null)).toBe('—');
-        expect(page().dateOf(undefined)).toBe('—');
+        expect(page().termDateOf(undefined)).toBe('—');
+        expect(page().instantOf(null)).toBe('—');
     });
 });
 
@@ -85,10 +87,21 @@ describe('MJOSubscriptionsPageComponent term dates west of Greenwich', () => {
         });
     });
 
-    it('keeps history timestamps in local time, since they are instants', () => {
-        inZone('America/Chicago', () => {
-            expect(page().dateOf(jan1)).toBe('Dec 31, 2026');
-        });
+    it('shows history timestamps as the business day they fell on, since they are instants', () => {
+        // Midnight UTC on Jan 1 is 6 PM Dec 31 in Central. A browser in Auckland reads Jan 1 locally;
+        // the business zone decides the day, so every viewer sees Dec 31.
+        const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
+        const original = { rows: engine._configurations, loaded: engine._loaded };
+        engine._configurations = [{ FeatureKey: 'BizApps.BusinessTimeZone', Value: '{"iana":"America/Chicago","sql":"Central Standard Time"}', DefaultValue: '{"iana":"UTC","sql":"UTC"}' }];
+        engine._loaded = true;
+        try {
+            inZone('Pacific/Auckland', () => {
+                expect(page().instantOf(jan1)).toBe('Dec 31, 2026');
+            });
+        } finally {
+            engine._configurations = original.rows;
+            engine._loaded = original.loaded;
+        }
     });
 
     it('renders a dash for a missing term date', () => {
@@ -230,5 +243,51 @@ describe('LoadSubscriptionRevRec', () => {
         expect(loaded.CanRead).toBe(false);
         expect(loaded.Entries).toEqual([]);
         expect(runView).not.toHaveBeenCalled();
+    });
+});
+
+/**
+ * #932. The Cancel button lives on the Subscription FORM, and this page is where support finds a
+ * subscription. Double-click used to do what a single click does (fill the side panel), and the
+ * side panel had no way out, so the form, and with it Cancel, could not be reached from the app.
+ */
+describe('MJOSubscriptionsPageComponent opening a subscription (#932)', () => {
+    type Opener = {
+        SubscriptionOpened: EventEmitter<{ ID: string }>;
+        SelectedID: string | null;
+        AllRows: Array<Record<string, unknown>>;
+        OnRecordOpened(event: unknown): void;
+        OpenSelected(): void;
+    };
+
+    function opener(): { p: Opener; opened: string[] } {
+        const p = Object.create(MJOSubscriptionsPageComponent.prototype) as Opener;
+        p.SubscriptionOpened = new EventEmitter<{ ID: string }>();
+        const opened: string[] = [];
+        p.SubscriptionOpened.subscribe((row) => opened.push(row.ID));
+        return { p, opened };
+    }
+
+    it('opens the form on double-click', () => {
+        const { p, opened } = opener();
+        p.OnRecordOpened({ record: { ID: SUB_ID } });
+        expect(opened).toEqual([SUB_ID]);
+    });
+
+    it('opens the selected subscription from the side panel button', () => {
+        const { p, opened } = opener();
+        p.AllRows = [{ ID: SUB_ID, SubscriptionNumber: 'SUB-000089', Status: 'Active' }];
+        p.SelectedID = SUB_ID;
+        p.OpenSelected();
+        expect(opened).toEqual([SUB_ID]);
+    });
+
+    it('opens nothing when nothing is selected', () => {
+        const { p, opened } = opener();
+        p.AllRows = [];
+        p.SelectedID = null;
+        p.OpenSelected();
+        p.OnRecordOpened({ record: {} });
+        expect(opened).toEqual([]);
     });
 });

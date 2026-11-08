@@ -3,15 +3,27 @@
 **MJ Actions for BizApps Orders** — the seam through which agents, workflows and the Explorer UI
 invoke order behaviour.
 
-## Status: scaffolded, not yet populated
+## Status: generated action subclasses only
 
 The package builds and is wired into the CodeGen pipeline, and generated action subclasses land in
-`src/generated/`. No hand-authored actions ship yet.
+`src/generated/`. Hand-authored actions do not live here.
 
-That is deliberate. Multi-step order behaviour is currently exposed as **remotable operations** in
-`@mj-biz-apps/orders-core-entities-server` — `Orders.PreviewPrice`, `Orders.ApplyAccountCredit`,
-`Orders.RefundPayment`, `Orders.CancelSubscription`, `Orders.SpawnRenewals` — because they are called
-by code, need typed inputs and outputs, and return structured refusals rather than prose.
+They live in `@mj-biz-apps/orders-server` (`packages/Server/src/custom/`), each anchored by a
+`Load*Action()` call in `LoadBizAppsOrdersServer()`, with their `Action` rows in `metadata/actions/`.
+The reason is the browser bundle. This package is declared `shared` in `mj-app.json`, so MJExplorer
+installs it too and everything it imports reaches the browser. Most of the hand-authored actions
+import `@mj-biz-apps/orders-core-entities-server`, which pulls in `@memberjunction/storage` and
+through it Node's `stream`; esbuild cannot bundle that for a browser, and MJExplorer failed to build.
+`src/index.ts` states the rule: an action that touches the database or any server package belongs in
+`packages/Server`.
+
+Nine of the thirteen actions have a job in `metadata/scheduled-jobs/`, several of them as the
+scheduler's way into an operation. Every job except Dispatch Outbound Events ships `Disabled`, so it
+runs only once someone enables it. Multi-step order behaviour itself is exposed as
+**remote operations**: one row each in `metadata/remote-operations/`, a generated typed base in
+`@mj-biz-apps/orders-entities`, and the implementation in `@mj-biz-apps/orders-core-entities-server`.
+They are called by code, need typed inputs and outputs, and return structured refusals rather than
+prose.
 
 ## When to add an Action instead of an operation
 

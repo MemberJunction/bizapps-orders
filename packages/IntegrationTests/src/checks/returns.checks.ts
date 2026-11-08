@@ -45,8 +45,12 @@ import {
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  createViaEntity,
 } from "../fixture.js";
-import { ConfirmOrder } from "../order-builder.js";
+import { Metadata } from "@memberjunction/core";
+import type { OrderEntityServer } from "@mj-biz-apps/orders-core-entities-server";
+import { ORDER_HEADER_ENTITY, SALES_AUTHORITY_ENTITY } from "../entity-names.js";
+import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 
 async function addPrice(ctx: IntegrationCheckContext, productID: string, amount: number): Promise<void> {
   // Delegates to the shared builder so the price goes through `ProductPriceEntityServer` and its
@@ -762,6 +766,56 @@ export const ReturnsChecks: NamedCheck[] = [
           Math.round(expected.reduce((t, r) => t + r.Amount, 0) * 100) / 100,
           "and the line's tax is their sum",
         );
+      }),
+  },
+  {
+    Id: "returns.RT17",
+    Name: "RT17: a draft return cut from 4 units to 2 carries half the allocated discount, not all of it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        // 4 × 100 less a 50 order-level discount: 350 paid, 12.50 of discount per unit. The return's
+        // share used to be filled on its first save and never again, so cutting the draft to 2 units
+        // kept all 50 and refunded −150.00 (#668).
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        await createViaEntity(ctx, SALES_AUTHORITY_ENTITY, {
+          SalesRepUserID: ctx.User.ID,
+          MaxDiscountPct: 1,
+          MaxConcessionValue: 1000,
+          IsActive: 1,
+        });
+        const sale = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 4 }],
+          ManualDiscounts: [{ Amount: 50, Reason: "order-level discount" }],
+        });
+        Assert(sale.Saved, `the sale did not confirm: ${sale.Message}`);
+        const sold = await lineTotals(ctx, sale.Order.ID as string);
+        AssertEqual(Number(sold.Discount), 50, "the order-level discount is allocated to the line");
+        AssertEqual(Number(sold.Net), 350, "4 × 100 less 50");
+
+        const draft = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderType: "Return",
+          BillToOrganizationID: f.Customers.OrganizationID,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: -4, ReversesOrderLineID: sale.Lines[0].ID as string }],
+        });
+        Assert(await draft.Order.Save(), `the draft return did not save: ${draft.Order.LatestResult?.CompleteMessage ?? "unknown error"}`);
+        const returnID = draft.Order.ID as string;
+        AssertEqual(Number((await lineTotals(ctx, returnID)).Discount), 50, "the full return inherits all 50");
+
+        // Reloaded, so the line's quantity before this save is the -4 already stored.
+        const fresh = await new Metadata().GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
+        Assert(await fresh.LoadWithLines(returnID), "the draft return did not reload");
+        fresh.Lines.Items[0].Quantity = -2;
+        fresh.Status = "Confirmed";
+        Assert(await fresh.Save(), `the return did not confirm: ${fresh.LatestResult?.CompleteMessage ?? "unknown error"}`);
+
+        const back = await lineTotals(ctx, returnID);
+        AssertEqual(Number(back.Discount), 25, "two of four units carry half the discount");
+        AssertEqual(Number(back.Net), -175, "the return refunds what two units were paid");
       }),
   },
 ];

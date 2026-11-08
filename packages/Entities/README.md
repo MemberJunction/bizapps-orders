@@ -1,7 +1,8 @@
 # `@mj-biz-apps/orders-entities`
 
-**Generated entity subclasses and Zod schemas for every table in `__mj_BizAppsOrders`.** Browser-safe:
-depends on `@memberjunction/core` and `zod`, nothing server-side.
+**Generated entity subclasses and Zod schemas for every table in `__mj_BizAppsOrders`, the typed
+remote-operation bases, and the hand-written rules both tiers share.** Browser-safe: none of its
+dependencies is server-side.
 
 ## Do not edit anything in `src/generated/`
 
@@ -12,24 +13,36 @@ To change what appears here, change the **schema**:
 
 ```bash
 # 1. add a new V migration (docs/database-migrations.md)
-pnpm run mj:migrate            # 2. apply it
-pnpm run mj:codegen            # 3. regenerate
+pnpm run mj:migrate                               # 2. apply it
+pnpm run mj:codegen                               # 3. regenerate
+scripts/append-codegen.sh migrations/V<new>.sql   # 4. fold CodeGen's SQL into the new migration
 ```
 
 ## What CodeGen gives you, and what it does not
 
 **Does:** a typed class per entity, a Zod schema per entity, string-union types derived from CHECK
 constraints (`OrderType`, `Status`, `PricingModel`…), and field descriptions lifted from the
-migration's `MS_Description` extended properties.
+migration's `MS_Description` extended properties. It also emits a typed `BaseRemotableOperation`
+base per row in `metadata/remote-operations/` (`src/generated/remote_operations.ts`), so a browser can
+call an operation without the server engine.
 
-That last one is why the migration is so heavily commented — those comments become the developer
-documentation and the AI-facing metadata. A column added without an extended property arrives here
-undocumented.
+The field descriptions are why the migration is so heavily commented — those comments become the
+developer documentation and the AI-facing metadata. A column added without an extended property
+arrives here undocumented.
 
-**Does not:** business rules. Every invariant lives in
-`@mj-biz-apps/orders-core-entities-server`, whose subclasses override `Save()` and are resolved by
-`ClassFactory` at runtime. Instantiating an entity from this package on the client gets you the
-shape; the rules run on the server.
+**Does not:** business rules. Those are hand-written, and they split by what they need:
+
+- **Here, beside the generated code:** every rule decidable from the record and its lines, on shared
+  subclasses such as `OrderHeaderEntity` and `OrderLineEntity`; the order lifecycle
+  (`OrderStatusBehavior`); and the pricing engine under `src/pricing/` — price resolution, promotions,
+  charges and tax, run by `OrderPricingService`. The engine reads through `RunView`, which works on
+  both tiers, so the browser can price an order with the code that books it, and the shared rules
+  run in the browser's `Validate()` before a round trip and again on the server, which adds checks
+  that need the database.
+- **In `@mj-biz-apps/orders-core-entities-server`:** persistence and everything only the server does —
+  booking, journal entries, subscriptions, payments, sequence numbers. Its subclasses extend the
+  shared class (the generated class where there is none, and for Product Prices) and override
+  `Save()` or validation; `ClassFactory` picks them on the server because they register later.
 
 ## Two things that will bite
 

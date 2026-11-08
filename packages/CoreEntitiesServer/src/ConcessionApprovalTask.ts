@@ -10,11 +10,18 @@
  * at the order's most recent open approval task.
  *
  * ASSIGNED TO THE ROLE'S HOLDERS, BY PERSON. The tasks app has no group assignee, and it notifies and lists
- * an assignee through a `MJ_BizApps_Common: People` record (its `LinkedUserID` is the user told). So the
+ * an assignee through a `MJ_BizApps_Common: People` record (the user bound to it is the user told). So the
  * ConcessionLimit rule's role is expanded here: each active holder other than the requester is assigned
- * through the active person record linked to their user. A holder with no such record is skipped and
+ * through the active person record linked to their user (./person-user-link.ts: the user's People link,
+ * else the deprecated `People.LinkedUserID`). A holder with no such record is skipped and
  * logged; when no holder is left, recording is refused, for the reason a missing rule is — nobody would be
  * told the concession is waiting.
+ *
+ * A HOLDER'S OWN CONCESSION GOES UP (bc-aidp-next-golive#320). When the Orders setting
+ * `ConcessionSelfApprovalEscalation` is set and the requester holds the rule's role, the task is assigned to
+ * the escalation instead (`SelfApprovalEscalation`): the order company's `ApprovalCFOUserID` for `CompanyCFO`,
+ * or a named role's active holders, the first target in the list that names someone other than the requester.
+ * Nobody is left: recording is refused. Unset, the requester approves their own as before.
  *
  * CLOSING. Deciding a concession on its own record closes its open task: Completed when approved,
  * Cancelled when rejected. Withdrawing it cancels its task and removes its link. A decision recorded on the
@@ -26,7 +33,8 @@
  * CONNECTS TO:
  *   CALLER: OrderConcessionEntityServer (record, decide, withdraw) · ConcessionApprovalListener (decide on task)
  *   WRITES: Tasks · Task Links · Task Assignments · Task Activities · Order Headers (ApprovalTaskID)
- *   READS:  Task Types · MJ: User Roles · MJ: Users · MJ_BizApps_Common: People
+ *   READS:  Task Types · MJ: User Roles · MJ: Roles · MJ: Users · MJ_BizApps_Common: People
+ *           Accounting Company Profiles (ApprovalCFOUserID, for the CompanyCFO escalation)
  */
 import {
     BaseEntity,
@@ -46,8 +54,10 @@ import type {
     mjBizAppsTasksTaskLinkEntity,
     mjBizAppsTasksTaskTypeEntity,
 } from '@mj-biz-apps/tasks-entities';
-import type { mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { UserHoldsRole, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY } from './entity-names.js';
+import { OrdersSettings } from './OrdersSettings.js';
+import { ResolvePersonIDsForUsers } from './person-user-link.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
@@ -61,11 +71,17 @@ export const TASK_DECISION_OUTCOME_ENTITY = 'MJ_BizApps_Tasks: Task Decision Out
 /** The entity the tasks app resolves an assignee through, for its notices and its approvals inbox. */
 export const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 
-/** The tasks app's seeded approval type, resolved by Code — the type its approvals inbox lists. */
-export const APPROVAL_TASK_TYPE_CODE = 'APPROVAL_REQUEST';
+/**
+ * The concession approval task type, resolved by Code. Shipped in this app's metadata. It is its own type,
+ * not the tasks app's generic Approval Request, so that its OnAssign action (a Teams channel post) fires for
+ * concessions only. It is flagged IsApproval, so the tasks app's approvals inbox lists its tasks.
+ */
+export const APPROVAL_TASK_TYPE_CODE = 'ORDERS_CONCESSION_APPROVAL';
 
 const USER_ENTITY = 'MJ: Users';
 const USER_ROLE_ENTITY = 'MJ: User Roles';
+const ROLE_ENTITY = 'MJ: Roles';
+const COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
 const LOG_PREFIX = '[BizAppsOrders] Concession approval:';
 
 /** The provider and user every read and write here runs as. */
@@ -79,10 +95,15 @@ export interface ConcessionForApproval {
     ID: string;
     OrderHeaderID: string;
     RequestedByUserID: string;
+    /**
+     * The ConcessionLimit rule it is routed under. Set, a requester holding the rule's role is escalated per
+     * `ConcessionSelfApprovalEscalation`; unset (a shift under finance review), the role's other holders decide.
+     */
+    SalesRuleID?: string | null;
 }
 
 export type ConcessionDecision = 'Approved' | 'Rejected';
-export type ConcessionTaskClosing = ConcessionDecision | 'Withdrawn';
+export type ConcessionTaskClosing = ConcessionDecision | 'Withdrawn' | 'Escalated';
 
 /**
  * The concession status a terminal task outcome decides, or null for an outcome this app does not know.
@@ -101,10 +122,16 @@ export function ConcessionStatusForOutcome(code: string): ConcessionDecision | n
     }
 }
 
+/** The task statuses that close a task: nothing more is decided or done on it. */
+const CLOSED_TASK_STATUSES = ['Completed', 'Cancelled'] as const;
+
 /** A task that can still take a decision. */
 export function IsOpenApprovalTask(status: string): boolean {
-    return status !== 'Completed' && status !== 'Cancelled';
+    return !(CLOSED_TASK_STATUSES as readonly string[]).includes(status);
 }
+
+/** `IsOpenApprovalTask` as a filter on a Tasks view, for every reader that asks "still open?" in SQL. */
+export const OPEN_TASK_SQL = `Status NOT IN (${CLOSED_TASK_STATUSES.map((st) => `'${st}'`).join(', ')})`;
 
 /** What a concession looks like to its approver, for the task title: "25% discount, 3,000.00". */
 export interface ConcessionSummaryFacts {
@@ -134,6 +161,11 @@ export function ConcessionSummary(facts: ConcessionSummaryFacts): string {
         case 'Seats': {
             const seats = Number(facts.AddedQuantity ?? 0);
             return `${seats} added seat${seats === 1 ? '' : 's'}, ${amount}`;
+        }
+        case 'Shift': {
+            // Valued at nothing: AddedDays carries how far the term moves.
+            const days = Number(facts.AddedDays ?? 0);
+            return `term moved ${Math.abs(days)} day${Math.abs(days) === 1 ? '' : 's'} ${days < 0 ? 'earlier' : 'later'}`;
         }
         case 'Terms': {
             // Valued in days to payment, not currency: AddedDays holds the change.
@@ -180,6 +212,118 @@ export function ApproverAssignees(
     return { PersonIDs: personIDs, WithoutPerson: others.filter((h) => !h.PersonID).map((h) => h.UserID) };
 }
 
+/** The `ConcessionSelfApprovalEscalation` target that names the order company's `ApprovalCFOUserID`. */
+export const COMPANY_CFO_ESCALATION = 'CompanyCFO';
+
+/** What one escalation target resolved to: its active users, or why it named none. */
+export interface EscalationCandidate {
+    Target: string;
+    UserIDs: string[];
+    /** Why the target named no one (a role that does not exist, a company with no CFO approver). */
+    Problem?: string;
+}
+
+/** Who decides a self-requested concession, or why no one can. */
+export type SelfApprovalEscalationResult = { Target: string; UserIDs: string[] } | { Refusal: string };
+
+/**
+ * The first target that names an active user other than the requester, with those users; never the requester.
+ * When none does, a refusal saying what each target came to, so the setting or the role can be fixed.
+ */
+export function ChooseEscalationApprovers(
+    requesterUserID: string,
+    candidates: readonly EscalationCandidate[],
+): SelfApprovalEscalationResult {
+    for (const c of candidates) {
+        const others: string[] = [];
+        for (const id of c.UserIDs) {
+            if (!UUIDsEqual(id, requesterUserID) && !others.some((o) => UUIDsEqual(o, id))) others.push(id);
+        }
+        if (others.length > 0) return { Target: c.Target, UserIDs: others };
+    }
+    const tried = candidates
+        .map((c) => `'${c.Target}' (${c.Problem ?? (c.UserIDs.length > 0 ? 'only the requester' : 'no active user')})`)
+        .join(', ');
+    return {
+        Refusal:
+            'This concession was requested by a holder of the role that approves it, so it goes to the next approver ' +
+            `up (Orders setting ConcessionSelfApprovalEscalation), and no one other than the requester is there: ${tried}. ` +
+            'Name an approver for it.',
+    };
+}
+
+/**
+ * Who decides a concession its requester would otherwise approve themselves (bc-aidp-next-golive#320): null when
+ * the escalation does not apply (the setting is unset, or the requester does not hold `roleID`), else the users
+ * of the first target that names someone other than the requester, or a refusal when none does.
+ */
+export async function SelfApprovalEscalation(
+    roleID: string,
+    concession: Pick<ConcessionForApproval, 'OrderHeaderID' | 'RequestedByUserID'>,
+    ctx: ApprovalTaskContext,
+): Promise<SelfApprovalEscalationResult | null> {
+    await OrdersSettings.Load(ctx.Provider, ctx.User);
+    const targets = OrdersSettings.ConcessionSelfApprovalEscalation;
+    if (targets.length === 0) return null;
+    if (!(await UserHoldsRole(RequireUUID(roleID, 'RoleID'), ctx.Provider, ctx.User, RequireUUID(concession.RequestedByUserID, 'UserID')))) {
+        return null;
+    }
+    const candidates: EscalationCandidate[] = [];
+    for (const target of targets) {
+        const candidate = target.toLowerCase() === COMPANY_CFO_ESCALATION.toLowerCase()
+            ? await companyCFOCandidate(target, concession.OrderHeaderID, ctx)
+            : await roleCandidate(target, ctx);
+        candidates.push(candidate);
+        // Stop at the first that names someone else: later targets are not read.
+        if (candidate.UserIDs.some((id) => !UUIDsEqual(id, concession.RequestedByUserID))) break;
+    }
+    return ChooseEscalationApprovers(concession.RequestedByUserID, candidates);
+}
+
+/** The order company's active `ApprovalCFOUserID`, as an access override resolves it. */
+async function companyCFOCandidate(target: string, orderHeaderID: string, ctx: ApprovalTaskContext): Promise<EscalationCandidate> {
+    if (!ctx.Provider.EntityByName(COMPANY_PROFILE_ENTITY)) {
+        return { Target: target, UserIDs: [], Problem: 'the accounting app is not installed' };
+    }
+    const order = (await view<{ CompanyID: string | null }>(ctx, {
+        EntityName: ORDER_HEADER_ENTITY,
+        ExtraFilter: `ID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+        Fields: ['CompanyID'],
+        ResultType: 'simple',
+    }))[0];
+    if (!order?.CompanyID) return { Target: target, UserIDs: [], Problem: 'the order names no company' };
+    // IS-A: the accounting profile shares its company's ID.
+    const profile = (await view<{ ApprovalCFOUserID: string | null }>(ctx, {
+        EntityName: COMPANY_PROFILE_ENTITY,
+        ExtraFilter: `ID = '${RequireUUID(order.CompanyID, 'CompanyID')}'`,
+        Fields: ['ApprovalCFOUserID'],
+        ResultType: 'simple',
+    }))[0];
+    const named = profile?.ApprovalCFOUserID ?? null;
+    if (!named) return { Target: target, UserIDs: [], Problem: "the order's company names no ApprovalCFOUserID" };
+    const active = await view<{ ID: string }>(ctx, {
+        EntityName: USER_ENTITY,
+        ExtraFilter: `ID = '${RequireUUID(named, 'ApprovalCFOUserID')}' AND IsActive = 1`,
+        Fields: ['ID'],
+        ResultType: 'simple',
+    });
+    return active.length > 0
+        ? { Target: target, UserIDs: [active[0].ID] }
+        : { Target: target, UserIDs: [], Problem: "the company's ApprovalCFOUserID is not an active user" };
+}
+
+/** A role's active holders, by the role's name. */
+async function roleCandidate(roleName: string, ctx: ApprovalTaskContext): Promise<EscalationCandidate> {
+    const role = (await view<{ ID: string }>(ctx, {
+        EntityName: ROLE_ENTITY,
+        ExtraFilter: `Name = '${EscapeText(roleName)}'`,
+        Fields: ['ID'],
+        ResultType: 'simple',
+    }))[0];
+    if (!role) return { Target: roleName, UserIDs: [], Problem: 'no role has that name' };
+    return { Target: roleName, UserIDs: await ActiveRoleHolderIDs(role.ID, ctx) };
+}
+
 /**
  * Raise an approval task for one Pending concession: assign the role's holders by person, link the order
  * and the concession, and point the order at the task. Throws when the tasks app is absent or no one could
@@ -216,7 +360,7 @@ export async function RaiseConcessionApprovalAgain(
     const order = await loadOrder(concession.OrderHeaderID, ctx);
     const summary = linkDescriptionOf(refused.Name, order.OrderNumber);
     const newTaskID = await raiseTask(concession, roleID, refused.Name, summary, reason, order, ctx);
-    await recordActivity(
+    await RecordTaskActivity(
         refusedTaskID,
         `The decision was not applied to the concession, which is still awaiting approval: ${reason} ` +
             `A new approval task was raised for it.`,
@@ -226,8 +370,8 @@ export async function RaiseConcessionApprovalAgain(
 }
 
 /**
- * Close a concession's open approval task once it is decided on its own record or withdrawn: Completed
- * when approved, Cancelled otherwise. The order moves on to its most recent other open task, unless
+ * Close a concession's open approval task once it is decided on its own record, withdrawn, or escalated to
+ * another approver (`note` says why): Completed when approved, Cancelled otherwise. The order moves on to its most recent other open task, unless
  * `releaseOrder` is false: a draft-line removal runs inside the order's own save, where a second save of
  * the same header would race it, so there the order keeps its pointer.
  */
@@ -237,6 +381,7 @@ export async function CloseConcessionTasks(
     closing: ConcessionTaskClosing,
     ctx: ApprovalTaskContext,
     releaseOrder = true,
+    note?: string,
 ): Promise<void> {
     if (!ctx.Provider.EntityByName(TASK_LINK_ENTITY)) return; // without the tasks app nothing was ever raised
     const closed: string[] = [];
@@ -247,7 +392,9 @@ export async function CloseConcessionTasks(
         task.CompletionNotes =
             closing === 'Withdrawn'
                 ? 'The concession was withdrawn.'
-                : `The concession was ${closing.toLowerCase()} on its own record.`;
+                : closing === 'Escalated'
+                  ? `Escalated to the ConcessionLimit approver: ${note ?? ''}`.trim()
+                  : `The concession was ${closing.toLowerCase()} on its own record.`;
         if (!(await task.Save())) {
             throw new Error(`Approval task ${task.ID} could not be closed: ${task.LatestResult?.CompleteMessage}`);
         }
@@ -272,7 +419,7 @@ export async function ReleaseOrderFromTasks(orderHeaderID: string, taskIDs: read
         EntityName: TASK_ENTITY,
         ExtraFilter:
             `ID IN (${RequireUUIDs(candidates, 'TaskID').map((id) => `'${id}'`).join(', ')}) ` +
-            `AND Status NOT IN ('Completed', 'Cancelled')`,
+            `AND ${OPEN_TASK_SQL}`,
         Fields: ['ID'],
         OrderBy: '__mj_CreatedAt DESC',
         MaxRows: 1,
@@ -338,15 +485,15 @@ async function raiseTask(
     order: mjBizAppsOrdersOrderHeaderEntity,
     ctx: ApprovalTaskContext,
 ): Promise<string> {
-    const approverPersonIDs = await approverPersons(roleID, concession.RequestedByUserID, ctx);
-    const task = await createTask(order, name, refusal, ctx);
+    const { PersonIDs: approverPersonIDs, EscalatedTo } = await approverPersons(roleID, concession, ctx);
+    const task = await createTask(order, name, refusal, EscalatedTo, ctx);
 
-    await createLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, `Order ${order.OrderNumber}`, ctx);
-    await createLink(task.ID, entityID(ORDER_CONCESSION_ENTITY, ctx), concession.ID, linkDescription, ctx);
+    await CreateTaskLink(task.ID, entityID(ORDER_HEADER_ENTITY, ctx), order.ID, `Order ${order.OrderNumber}`, ctx);
+    await CreateTaskLink(task.ID, entityID(ORDER_CONCESSION_ENTITY, ctx), concession.ID, linkDescription, ctx);
 
     const personEntityID = entityID(PERSON_ENTITY, ctx);
     for (const personID of approverPersonIDs) {
-        await createAssignment(task.ID, personEntityID, personID, ctx);
+        await CreateTaskAssignment(task.ID, personEntityID, personID, ctx);
     }
 
     order.ApprovalTaskID = task.ID;
@@ -358,10 +505,23 @@ async function raiseTask(
 
 /**
  * The person records to assign: one per active holder of the role other than the requester, through the
- * active person linked to their user. Throws when that leaves no one.
+ * active person linked to their user, or the self-approval escalation's users when it applies (with the
+ * target they came from). Throws when that leaves no one.
  */
-async function approverPersons(roleID: string, requesterUserID: string, ctx: ApprovalTaskContext): Promise<string[]> {
-    const holderIDs = await ActiveRoleHolderIDs(roleID, ctx);
+async function approverPersons(
+    roleID: string,
+    concession: ConcessionForApproval,
+    ctx: ApprovalTaskContext,
+): Promise<{ PersonIDs: string[]; EscalatedTo: string | null }> {
+    const requesterUserID = concession.RequestedByUserID;
+    const resolved = concession.SalesRuleID ? await SelfApprovalEscalation(roleID, concession, ctx) : null;
+    let escalation: { Target: string; UserIDs: string[] } | null = null;
+    if (resolved) {
+        if ('Refusal' in resolved) throw new Error(resolved.Refusal);
+        escalation = resolved;
+    }
+
+    const holderIDs = escalation ? escalation.UserIDs : await ActiveRoleHolderIDs(roleID, ctx);
     const others = holderIDs.filter((id) => !UUIDsEqual(id, requesterUserID));
     if (others.length === 0) {
         throw new Error(
@@ -370,34 +530,32 @@ async function approverPersons(roleID: string, requesterUserID: string, ctx: App
         );
     }
 
-    const persons = await view<{ ID: string; LinkedUserID: string }>(ctx, {
-        EntityName: PERSON_ENTITY,
-        ExtraFilter:
-            `Status = 'Active' AND LinkedUserID IN (${RequireUUIDs(others, 'UserID').map((id) => `'${id}'`).join(', ')})`,
-        Fields: ['ID', 'LinkedUserID'],
-        OrderBy: '__mj_CreatedAt',
-        ResultType: 'simple',
-    });
+    const persons = await ResolvePersonIDsForUsers(RequireUUIDs(others, 'UserID'), ctx.Provider, ctx.User, { ActiveOnly: true });
     const holders: RoleHolder[] = others.map((userID) => ({
         UserID: userID,
-        PersonID: persons.find((p) => UUIDsEqual(p.LinkedUserID, userID))?.ID ?? null,
+        PersonID: persons.get(userID.toLowerCase()) ?? null,
     }));
     const { PersonIDs, WithoutPerson } = ApproverAssignees(holders, requesterUserID);
     if (PersonIDs.length === 0) {
         throw new Error(
-            'This concession is outside the requester\'s authority, and none of the active holders of the role the ' +
-                'ConcessionLimit rule names has an active person record linked to their user. The tasks app tells ' +
-                'and lists an approver through that person record, so no one would be told the concession is ' +
-                'waiting. Link a person record to an approver\'s user.',
+            escalation
+                ? `This concession goes to '${escalation.Target}' (Orders setting ConcessionSelfApprovalEscalation), and ` +
+                      'no approver there has an active person record linked to their user. The tasks app tells and lists ' +
+                      'an approver through that person record, so no one would be told the concession is waiting. Link a ' +
+                      "person record to the approver's user."
+                : 'This concession is outside the requester\'s authority, and none of the active holders of the role the ' +
+                      'ConcessionLimit rule names has an active person record linked to their user. The tasks app tells ' +
+                      'and lists an approver through that person record, so no one would be told the concession is ' +
+                      'waiting. Link a person record to an approver\'s user.',
         );
     }
     if (WithoutPerson.length > 0) {
         LogStatus(
-            `${LOG_PREFIX} ${WithoutPerson.length} holder(s) of role ${roleID} have no active person record linked ` +
-                `to their user and were not assigned the approval task: ${WithoutPerson.join(', ')}`,
+            `${LOG_PREFIX} ${WithoutPerson.length} approver(s) for ${escalation ? `'${escalation.Target}'` : `role ${roleID}`} ` +
+                `have no active person record linked to their user and were not assigned the approval task: ${WithoutPerson.join(', ')}`,
         );
     }
-    return PersonIDs;
+    return { PersonIDs, EscalatedTo: escalation ? escalation.Target : null };
 }
 
 /** Every active user holding the role, by name order. The tasks app has no group assignee, so a role is expanded to these. */
@@ -442,6 +600,7 @@ async function createTask(
     order: mjBizAppsOrdersOrderHeaderEntity,
     name: string,
     refusal: string | null,
+    escalatedTo: string | null,
     ctx: ApprovalTaskContext,
 ): Promise<mjBizAppsTasksTaskEntity> {
     const types = await view<mjBizAppsTasksTaskTypeEntity>(ctx, {
@@ -462,7 +621,11 @@ async function createTask(
         (refusal ? `A decision recorded on this concession's previous approval task was not applied: ${refusal} ` : '') +
         `This concession on order ${order.OrderNumber} is outside the requester's sales authority. The order ` +
         `cannot be confirmed, and its documents cannot be sent, until it is decided. A decision on this task ` +
-        `decides this concession only.`;
+        `decides this concession only.` +
+        (escalatedTo
+            ? ` It was requested by a holder of the role that approves it, so it comes to '${escalatedTo}' instead ` +
+              `(Orders setting ConcessionSelfApprovalEscalation).`
+            : '');
     task.Priority = 'High';
     task.Status = 'Open';
     if (!(await task.Save())) {
@@ -471,7 +634,7 @@ async function createTask(
     return task;
 }
 
-async function createLink(
+export async function CreateTaskLink(
     taskID: string,
     linkEntityID: string,
     recordID: string,
@@ -490,7 +653,7 @@ async function createLink(
     }
 }
 
-async function createAssignment(taskID: string, personEntityID: string, personID: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function CreateTaskAssignment(taskID: string, personEntityID: string, personID: string, ctx: ApprovalTaskContext): Promise<void> {
     const assignment = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskAssignmentEntity>(TASK_ASSIGNMENT_ENTITY, ctx.User);
     requireSubclass(assignment, TASK_ASSIGNMENT_ENTITY);
     assignment.NewRecord();
@@ -551,7 +714,7 @@ export async function EnsureTaskAssignment(taskID: string, userEntityID: string,
 }
 
 /** A note on a task's activity feed, where the tasks app shows it with the task. */
-async function recordActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
+export async function RecordTaskActivity(taskID: string, description: string, ctx: ApprovalTaskContext): Promise<void> {
     const activity = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskActivityEntity>(TASK_ACTIVITY_ENTITY, ctx.User);
     requireSubclass(activity, TASK_ACTIVITY_ENTITY);
     activity.NewRecord();
@@ -559,7 +722,7 @@ async function recordActivity(taskID: string, description: string, ctx: Approval
     activity.ActivityType = 'StatusChange';
     activity.Description = description;
     if (!(await activity.Save())) {
-        throw new Error(`The refusal could not be recorded on approval task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
+        throw new Error(`A note could not be recorded on task ${taskID}: ${activity.LatestResult?.CompleteMessage}`);
     }
 }
 

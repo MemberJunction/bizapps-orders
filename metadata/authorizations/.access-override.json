@@ -5,7 +5,7 @@
       "ParentID": null,
       "IsActive": true,
       "UseAuditLog": true,
-      "Description": "Parent grant for requesting exceptions to payment-gated access on an order. Child authorizations are WaivePaymentHold and DeferCutoff, one per override type. Holding the parent grants both. Who may approve a request is decided separately (bizapps-orders#360)."
+      "Description": "Parent grant for requesting exceptions to payment-gated access on an order. Child authorizations are WaivePaymentHold and DeferCutoff, one per override type. Holding the parent grants both. A request is approved by the order company's ApprovalCFOUserID, or by the AccessOverrideFallbackApproverRole when that user requested it (bizapps-orders#360)."
     },
     "primaryKey": {
       "ID": "AB81C474-1942-40C9-A05F-90E441C7A7F7"

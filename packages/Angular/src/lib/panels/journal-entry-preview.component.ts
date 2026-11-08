@@ -59,14 +59,14 @@ export interface MJOJournalEntry {
     template: `
         @if (Entries.length) {
             <div class="row wrap mjo-je__summary">
-                <span class="mj-chip" [class.mj-chip--success]="allBalanced" [class.mj-chip--error]="!allBalanced">
+                <span class="mjo-chip" [class.mjo-chip--success]="allBalanced" [class.mjo-chip--error]="!allBalanced">
                     <i class="fa-solid fa-scale-balanced" aria-hidden="true"></i>
                     {{ Entries.length }} {{ Entries.length === 1 ? 'entry' : 'entries' }} ·
                     {{ companyCount }} {{ companyCount === 1 ? 'company' : 'companies' }} ·
                     {{ allBalanced ? 'all balanced' : 'NOT balanced' }}
                 </span>
                 @if (Pending) {
-                    <span class="mj-chip mj-chip--info">will post as Pending</span>
+                    <span class="mjo-chip mjo-chip--info">will post as Pending</span>
                 }
             </div>
 
@@ -80,7 +80,7 @@ export interface MJOJournalEntry {
                             </span>
                         }
                         <span class="spacer"></span>
-                        <span class="mj-chip" [class.mj-chip--success]="isBalanced(entry)" [class.mj-chip--error]="!isBalanced(entry)">
+                        <span class="mjo-chip" [class.mjo-chip--success]="isBalanced(entry)" [class.mjo-chip--error]="!isBalanced(entry)">
                             {{ isBalanced(entry) ? 'balanced' : 'out by ' + variance(entry) }}
                         </span>
                         @if (entry.JournalEntryID) {
@@ -88,7 +88,7 @@ export interface MJOJournalEntry {
                                 Open in Accounting <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
                             </a>
                         } @else {
-                            <span class="mj-chip mj-chip--outline">not yet created</span>
+                            <span class="mjo-chip mjo-chip--outline">not yet created</span>
                         }
                     </div>
 

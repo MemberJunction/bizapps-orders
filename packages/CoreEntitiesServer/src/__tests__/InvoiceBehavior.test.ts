@@ -23,6 +23,7 @@ import {
     DueDateFor,
     InstalmentDocumentNumber,
     LineDiscountOf,
+    ListAmountOf,
     ListSubtotalOf,
     PaymentStatusLabel,
     SpreadAcrossCompanies,
@@ -51,7 +52,6 @@ const order = (over: Partial<InvoiceOrderFacts> = {}): InvoiceOrderFacts => ({
     AmountPaid: 0,
     Balance: 0,
     DueDate: null,
-    PaymentStatus: 'Unpaid',
     ExternalDocumentNumber: null,
     ReversesOrderHeaderID: null,
     ReversesOrderNumber: null,
@@ -73,6 +73,8 @@ const line = (over: Partial<InvoiceLineFacts> = {}): InvoiceLineFacts => ({
     CompanyName: 'Acme',
     Quantity: 1,
     UnitPrice: 100,
+    ExtendedAmount: null,
+    DiscountPct: 0,
     DiscountAmount: 0,
     LineTotalNet: 100,
     ChargeAmount: 0,
@@ -138,7 +140,7 @@ describe('document kind', () => {
 describe('discount derivation', () => {
     it('finds a percentage discount that leaves DiscountAmount at zero', () => {
         // The seeded shape: 2 x 300 at 10% off. The column says nothing happened.
-        const l = line({ Quantity: 2, UnitPrice: 300, DiscountAmount: 0, LineTotalNet: 540 });
+        const l = line({ Quantity: 2, UnitPrice: 300, DiscountPct: 0.1, DiscountAmount: 0, LineTotalNet: 540 });
         expect(Number(l.DiscountAmount)).toBe(0);
         expect(LineDiscountOf(l)).toBe(60);
     });
@@ -152,6 +154,49 @@ describe('discount derivation', () => {
         const l = line({ Quantity: -1, UnitPrice: 300, DiscountAmount: 10.72, LineTotalNet: -289.28 });
         expect(LineDiscountOf(l)).toBe(-10.72);
         expect(ListSubtotalOf([l]) - DiscountTotalOf([l])).toBeCloseTo(-289.28, 2);
+    });
+
+    // #579. A Flat price that does not divide by the quantity stores a rounded unit rate, so
+    // quantity × unit price is a few cents off the amount the line was actually priced at.
+    it('lists a Flat line at the stored rule figure, with no residual row (qty 3)', () => {
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100, LineTotalNet: 100, LineTotalGross: 100 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(LineDiscountOf(l)).toBe(0);
+        const ladder = build({ Lines: [l] })[0].Ladder;
+        expect(ladder.filter((r) => r.Kind === 'Discount')).toEqual([]);
+        expect(ladder.find((r) => r.Kind === 'Subtotal')?.Amount).toBe(100);
+    });
+
+    it('lists a Flat line at the stored rule figure, with no residual row (qty 7)', () => {
+        const l = line({ Quantity: 7, UnitPrice: 14.29, ExtendedAmount: 100, LineTotalNet: 100, LineTotalGross: 100 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(build({ Lines: [l] })[0].Ladder.filter((r) => r.Kind === 'Discount')).toEqual([]);
+    });
+
+    it('derives a Flat line\'s percentage discount from the stored figure, not the re-multiplied rate', () => {
+        // Flat 100 at qty 3, 10% off: the line nets 90.00, so the discount is 10.00, not 9.99.
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: 100, DiscountPct: 0.1, LineTotalNet: 90, LineTotalGross: 90 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(LineDiscountOf(l)).toBe(10);
+    });
+
+    it('lists an undiscounted line written before the figure was stored at its net', () => {
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: null, LineTotalNet: 100, LineTotalGross: 100 });
+        expect(ListAmountOf(l)).toBe(100);
+        expect(LineDiscountOf(l)).toBe(0);
+    });
+
+    it('treats a gap of exactly half a cent per unit as rounding', () => {
+        // Flat 100.01 at qty 2: unit 50.01, so 2 × 50.01 = 100.02 against a net of 100.01.
+        const l = line({ Quantity: 2, UnitPrice: 50.01, ExtendedAmount: null, LineTotalNet: 100.01, LineTotalGross: 100.01 });
+        expect(ListAmountOf(l)).toBe(100.01);
+    });
+
+    it('keeps quantity × unit price when the gap is wider than rounding, so the discount still prints', () => {
+        // A discount the columns do not record: listing at the net would hide it.
+        const l = line({ Quantity: 3, UnitPrice: 33.33, ExtendedAmount: null, LineTotalNet: 99.9, LineTotalGross: 99.9 });
+        expect(ListAmountOf(l)).toBe(99.99);
+        expect(LineDiscountOf(l)).toBe(0.09);
     });
 
     it('does not list a rollup parent, which would inflate the subtotal by a whole bundle', () => {

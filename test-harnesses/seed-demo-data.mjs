@@ -519,9 +519,10 @@ async function confirmOrder({ lines, customer, orderDate, initialPayment, note }
     if (!(await order.Save())) {
         throw new Error(`confirm failed: ${order.LatestResult?.CompleteMessage ?? 'unknown'}`);
     }
-    const row = (await q(`SELECT OrderNumber, TotalGross, AmountPaid, Balance, PaymentStatus
-                          FROM ${ORDERS}.OrderHeader WHERE ID='${order.ID}'`))[0];
-    say(`  ${row.OrderNumber}  gross ${row.TotalGross}  paid ${row.AmountPaid}  balance ${row.Balance}  ${row.PaymentStatus}`);
+    // IsOverdue comes from the view (D32); the stored PaymentStatus column was dropped in V202608241300.
+    const row = (await q(`SELECT OrderNumber, TotalGross, AmountPaid, Balance, IsOverdue
+                          FROM ${ORDERS}.vwOrderHeaders WHERE ID='${order.ID}'`))[0];
+    say(`  ${row.OrderNumber}  gross ${row.TotalGross}  paid ${row.AmountPaid}  balance ${row.Balance}${row.IsOverdue ? '  overdue' : ''}`);
     return order;
 }
 

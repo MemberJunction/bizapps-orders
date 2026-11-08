@@ -186,3 +186,12 @@ function isLongNvarchar(sql: string, length: number | null): boolean {
 function splitName(name: string): string {
     return name.replace(/([a-z])([A-Z])/g, '$1 $2');
 }
+
+/**
+ * Notice shown after a line of an attendee-required event was split into one line per seat.
+ * A manual discount is not copied, because a fixed amount copied to every seat would multiply it.
+ */
+export function DescribeSeatSplit(productName: string, seats: number, keptDiscount: boolean): string {
+    const split = `${productName} needs an attendee per seat, so it is now ${seats} lines at quantity 1. Enter an attendee on each.`;
+    return keptDiscount ? `${split} The discount stayed on the first line.` : split;
+}

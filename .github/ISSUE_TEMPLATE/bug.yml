@@ -1,0 +1,134 @@
+name: Bug report
+description: Something is broken or behaving wrongly. Every report lands as needs-triage; a second person reproduces it before it is treated as confirmed.
+title: ""
+labels: ["bug", "needs-triage", "origin:human"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Title:** the symptom, not the theory. *"Order balance shows '-' instead of the amount due"*, not *"null handling bug in BalanceResolver"*.
+
+        **Before filing:** search existing issues (the box above the list). If it already exists, add a comment there with your environment and what differs, instead of opening a second issue. A second report from a different setup is genuinely useful; a duplicate issue is not.
+
+        Landing as `needs-triage` is not a judgment about your report. Fill in what you know, mark your confidence honestly, and watch for a follow-up question.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: For a person. Three sentences at most, as concise as possible while still useful to a human — what breaks, where in the code, and what a fix would change. People read this and the title, little else.
+      placeholder: Confirming a saved draft that carries a promotion code books the discount twice in the adjustment trail. The pricing walk in OrderEntityServer re-adds promotion rows on every save instead of replacing the draft's set. A fix replaces only the rows a promotion re-decides, leaving manual discounts alone.
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: A plain explanation of what you did and what the system did instead, with the expected and actual behaviour stated inside it.
+      placeholder: |
+        Saved a draft order with a 10% promotion code, then set Status = Confirmed and saved again. I expected one adjustment of 100 on the order; the trail shows two, so SUM(OrderAdjustment.Amount) is 200 while the line's DiscountAmount is still 100.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Steps someone else can follow cold. If you cannot reproduce it yet, say so plainly and describe what you observed; an unreproducible real bug is still worth filing.
+      placeholder: |
+        1. On next at 429cb18c, fresh database
+        2. Build an order with a 10% code on 10 × WidgetA at 100, save as draft
+        3. Set Status = Confirmed, save again
+        4. SUM(OrderAdjustment.Amount) = 200
+    validations:
+      required: true
+
+  - type: dropdown
+    id: confidence
+    attributes:
+      label: Confidence
+      description: How sure are you, and on what basis? A field, not a gate.
+      options:
+        - Reproduced with a minimal repro (attached above)
+        - Observed directly, no minimal repro yet
+        - Inferred from code, not observed
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Software versions only — MJ version, this app's version, branch and commit, Node and package manager, linked apps and their versions. No machine details (OS, hardware). Report the ACTUAL MJ version (packages/MJCore or node_modules/@memberjunction/core) as well as the branch; they diverge.
+      render: shell
+      placeholder: |
+        MJ 6.1.5 · bizapps-orders 0.21.0 @ next 429cb18c
+        common 5.49.0 · tasks 1.4.1 · accounting 0.17.0
+        Node 24.4 · pnpm 10.33
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity proposed
+      description: Triage confirms or changes it. Blocker = someone cannot work. Breaking = feature does not work, no workaround. Vulnerability = security. Degraded = works with a workaround. Minor = cosmetic.
+      options:
+        - blocker
+        - breaking
+        - vulnerability
+        - degraded
+        - minor
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target
+    attributes:
+      label: Target line
+      description: Where the fix must land. Default is next. Choose "next + backport" only for a blocker, breaking or vulnerability that is live on a release line.
+      options:
+        - next
+        - next + backport to the current release line
+    validations:
+      required: true
+
+  - type: textarea
+    id: duplicate-search
+    attributes:
+      label: Duplicate search
+      description: What you searched for and what you found.
+      placeholder: Searched "promotion adjustment twice", "OrderAdjustment confirm" — found #484 (tax rows, same shape, kept separate).
+    validations:
+      required: true
+
+  - type: input
+    id: blocking
+    attributes:
+      label: Blocking?
+      description: Can you keep working, or are you stopped?
+      placeholder: Not blocked — worked around by re-saving.
+    validations:
+      required: false
+
+  - type: textarea
+    id: suspected-cause
+    attributes:
+      label: Suspected cause (optional)
+      description: How you think it happens — the code path, component or change you suspect, with file and line if you know them. A lead for triage and the fixer, not a source of truth; the repro decides.
+      placeholder: |
+        writePromotionRecords (OrderEntityServer) only adds OrderAdjustment rows and never removes the draft's set, so the confirm save writes a second set. Not verified.
+    validations:
+      required: false
+
+  - type: textarea
+    id: proposed-fix
+    attributes:
+      label: Proposed fix (optional) — tested? yes / no
+      description: Be honest about whether you tested it. An untested theory read as a diagnosis costs someone a day.
+      placeholder: |
+        Proposed: replace only the rows a promotion re-decides in writePromotionRecords.
+        Tested: no.
+    validations:
+      required: false

@@ -2,6 +2,9 @@
 -- Returns all overview KPI figures, 6-month spend trajectory, recent orders, and active subscriptions in one shot.
 -- PartyKind is only used in Nunjucks branches — it never touches SQL text.
 -- PartyID is quoted via sqlString.
+-- "Now" is the BUSINESS day (fnBusinessToday), not the UTC clock: the UTC day is already tomorrow
+-- for the whole American evening, which moved the six-month window a month ahead on the last
+-- evening of every month and turned the customer-years over on Dec 31.
 SELECT
     ISNULL(o.OrderCount, 0) AS OrderCount,
     ISNULL(o.OpenCount, 0) AS OpenCount,
@@ -14,13 +17,14 @@ SELECT
     o.FirstOrderDate,
     CASE
         WHEN o.FirstOrderDate IS NULL THEN NULL
-        ELSE DATEDIFF(year, o.FirstOrderDate, SYSUTCDATETIME())
+        ELSE DATEDIFF(year, o.FirstOrderDate, bt.Today)
     END AS YearsAsCustomer,
     ISNULL(s.ActiveSubCount, 0) AS ActiveSubCount,
     r.RecentOrdersJson,
     sub_agg.ActiveSubscriptionsJson,
     traj.MonthlyTrajectoryJson
 FROM (SELECT 1 AS OneRow) AS seed
+CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt
 OUTER APPLY (
     SELECT
         COUNT(*) AS OrderCount,
@@ -97,13 +101,14 @@ OUTER APPLY (
             m.MonthLabel,
             m.MonthShort,
             ISNULL(SUM(h.TotalGross), 0) AS Amount
-        FROM (
-            SELECT 0 AS MonthOffset, FORMAT(DATEADD(month, 0, SYSUTCDATETIME()), 'yyyy-MM') AS MonthKey, FORMAT(DATEADD(month, 0, SYSUTCDATETIME()), 'MMMM yyyy') AS MonthLabel, FORMAT(DATEADD(month, 0, SYSUTCDATETIME()), 'MMM') AS MonthShort
-            UNION ALL SELECT 1, FORMAT(DATEADD(month, -1, SYSUTCDATETIME()), 'yyyy-MM'), FORMAT(DATEADD(month, -1, SYSUTCDATETIME()), 'MMMM yyyy'), FORMAT(DATEADD(month, -1, SYSUTCDATETIME()), 'MMM')
-            UNION ALL SELECT 2, FORMAT(DATEADD(month, -2, SYSUTCDATETIME()), 'yyyy-MM'), FORMAT(DATEADD(month, -2, SYSUTCDATETIME()), 'MMMM yyyy'), FORMAT(DATEADD(month, -2, SYSUTCDATETIME()), 'MMM')
-            UNION ALL SELECT 3, FORMAT(DATEADD(month, -3, SYSUTCDATETIME()), 'yyyy-MM'), FORMAT(DATEADD(month, -3, SYSUTCDATETIME()), 'MMMM yyyy'), FORMAT(DATEADD(month, -3, SYSUTCDATETIME()), 'MMM')
-            UNION ALL SELECT 4, FORMAT(DATEADD(month, -4, SYSUTCDATETIME()), 'yyyy-MM'), FORMAT(DATEADD(month, -4, SYSUTCDATETIME()), 'MMMM yyyy'), FORMAT(DATEADD(month, -4, SYSUTCDATETIME()), 'MMM')
-            UNION ALL SELECT 5, FORMAT(DATEADD(month, -5, SYSUTCDATETIME()), 'yyyy-MM'), FORMAT(DATEADD(month, -5, SYSUTCDATETIME()), 'MMMM yyyy'), FORMAT(DATEADD(month, -5, SYSUTCDATETIME()), 'MMM')
+        FROM [__mj_BizAppsCommon].[fnBusinessToday]() AS mbt
+        CROSS APPLY (
+            SELECT 0 AS MonthOffset, FORMAT(DATEADD(month, 0, mbt.Today), 'yyyy-MM') AS MonthKey, FORMAT(DATEADD(month, 0, mbt.Today), 'MMMM yyyy') AS MonthLabel, FORMAT(DATEADD(month, 0, mbt.Today), 'MMM') AS MonthShort
+            UNION ALL SELECT 1, FORMAT(DATEADD(month, -1, mbt.Today), 'yyyy-MM'), FORMAT(DATEADD(month, -1, mbt.Today), 'MMMM yyyy'), FORMAT(DATEADD(month, -1, mbt.Today), 'MMM')
+            UNION ALL SELECT 2, FORMAT(DATEADD(month, -2, mbt.Today), 'yyyy-MM'), FORMAT(DATEADD(month, -2, mbt.Today), 'MMMM yyyy'), FORMAT(DATEADD(month, -2, mbt.Today), 'MMM')
+            UNION ALL SELECT 3, FORMAT(DATEADD(month, -3, mbt.Today), 'yyyy-MM'), FORMAT(DATEADD(month, -3, mbt.Today), 'MMMM yyyy'), FORMAT(DATEADD(month, -3, mbt.Today), 'MMM')
+            UNION ALL SELECT 4, FORMAT(DATEADD(month, -4, mbt.Today), 'yyyy-MM'), FORMAT(DATEADD(month, -4, mbt.Today), 'MMMM yyyy'), FORMAT(DATEADD(month, -4, mbt.Today), 'MMM')
+            UNION ALL SELECT 5, FORMAT(DATEADD(month, -5, mbt.Today), 'yyyy-MM'), FORMAT(DATEADD(month, -5, mbt.Today), 'MMMM yyyy'), FORMAT(DATEADD(month, -5, mbt.Today), 'MMM')
         ) m
         LEFT JOIN [__mj_BizAppsOrders].vwOrderHeaders h
           ON FORMAT(h.OrderDate, 'yyyy-MM') = m.MonthKey

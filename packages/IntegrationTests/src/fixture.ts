@@ -31,10 +31,12 @@
  */
 import { randomUUID } from 'node:crypto';
 import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
-import { OrdersEngine, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersEngine, RequireUUID, RequireUUIDs, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
-import { ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
+import { ORDERS_SETTING, OrdersSettings, TermDayEnd, TermDayStart } from '@mj-biz-apps/orders-core-entities-server';
+import { JoinCallerTransactionForTests } from '@mj-biz-apps/orders-core-entities-server/testing';
 import { LoadWorld } from './world/load-world.js';
 import { SetWorld } from './world/world.js';
 import { FindId, FindRows, Quote } from './world/entity-io.js';
@@ -97,6 +99,8 @@ export interface OrdersFixture {
     CoB: FixtureCompany;
     /** Has GL accounts but NO links at all — the unresolvable case that must roll the whole confirm back (D12). */
     CoC: FixtureCompany;
+    /** GL-linked like CoA and CoB but in NO intercompany pair, so a payment across it refuses on the missing pair (IC5). */
+    CoD: FixtureCompany;
     /**
      * REAL US tax geography (D73). Seeded HERE, in the integration fixture, and deliberately NOT in
      * `metadata/` — these are test facts, not application seed data, and shipping a US rate table
@@ -129,7 +133,7 @@ export interface OrdersFixture {
      * WHICH of these is legal — so we need both an organization and an individual to prove the
      * organization-only type rejects a person and the Either types accept both.
      */
-    Customers: { OrganizationID: string; SecondOrganizationID: string; PersonID: string };
+    Customers: { OrganizationID: string; SecondOrganizationID: string; PersonID: string; SecondPersonID: string };
     /** Products by mnemonic — see {@link CreateOrdersFixture} for what each one is for. */
     Products: Record<string, string>;
     /**
@@ -234,6 +238,69 @@ const provider = (ctx: IntegrationCheckContext) =>
     };
 
 /**
+ * Run `body` inside a rolled-back transaction with the business time zone set to `iana`, as a host that
+ * set `BizApps.BusinessTimeZone` sees it. The setting row is changed inside the transaction (so the
+ * rollback undoes it) and the zone engine reloaded; AFTER the rollback the engine is reloaded again, so
+ * no later check inherits this zone from the process-wide engine.
+ *
+ * Example: `WithBusinessZone(ctx, 'America/Chicago', 'Central Standard Time', async () => { ... })`.
+ */
+export async function WithBusinessZone(
+    ctx: IntegrationCheckContext,
+    iana: string,
+    sqlName: string,
+    body: () => Promise<void>,
+): Promise<void> {
+    try {
+        await InRolledBackTransaction(ctx, async () => {
+            await TxQuery(
+                ctx,
+                `UPDATE __mj.InstanceConfiguration SET Value = '${JSON.stringify({ iana, sql: sqlName }).replace(/'/g, "''")}' ` +
+                    `WHERE FeatureKey = 'BizApps.BusinessTimeZone'`,
+            );
+            await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
+            if (BusinessTimeZoneEngine.Instance.Zone !== iana) {
+                throw new Error(`precondition: the business zone reads ${BusinessTimeZoneEngine.Instance.Zone}, not ${iana}`);
+            }
+            await body();
+        });
+    } finally {
+        await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
+    }
+}
+
+/**
+ * Assert a term's standing SubscriptionTerm grants cover its days in full, in the business zone (access sync G5):
+ * from 00:00 business time on `firstDay` (when given) to 00:00 business time on the day after `lastDay`. The
+ * writers are booking, TermExtension and TermShift; each must land on `TermGrantWindow`'s instants.
+ *
+ * Example: a term ending 2026-12-31 under UTC must have grants ending 2027-01-01T00:00:00.000Z.
+ */
+export async function AssertTermGrantWindow(
+    ctx: IntegrationCheckContext,
+    termID: string,
+    firstDay: string | null,
+    lastDay: string,
+    what: string,
+): Promise<void> {
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
+    const grants = await TxQuery<{ ID: string; ValidFrom: Date | null; ValidTo: Date | null }>(
+        ctx,
+        `SELECT ID, ValidFrom, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant ` +
+            `WHERE SubscriptionTermID = '${RequireUUID(termID, 'termID')}' AND ValidityModeApplied = 'SubscriptionTerm' AND Status = 'Active'`,
+    );
+    Assert(grants.length > 0, `${what}: the term has standing SubscriptionTerm grants to check`);
+    const end = TermDayEnd(lastDay, zone).toISOString();
+    const start = firstDay ? TermDayStart(firstDay, zone).toISOString() : null;
+    for (const g of grants) {
+        Assert(g.ValidTo != null && new Date(g.ValidTo).toISOString() === end, `${what}: grant ${g.ID} ends ${g.ValidTo ? new Date(g.ValidTo).toISOString() : 'never'}, expected ${end} (00:00 ${zone} after ${lastDay})`);
+        if (start) {
+            Assert(g.ValidFrom != null && new Date(g.ValidFrom).toISOString() === start, `${what}: grant ${g.ID} starts ${g.ValidFrom ? new Date(g.ValidFrom).toISOString() : 'never'}, expected ${start}`);
+        }
+    }
+}
+
+/**
  * Run `body` inside a transaction that ALWAYS rolls back — the isolation primitive every mutating
  * check is written against.
  *
@@ -246,6 +313,10 @@ const provider = (ctx: IntegrationCheckContext) =>
  * after each rollback: reloading only the prices left a product or category one check changed as
  * the cached row every later check was judged against, which made checks pass or fail depending on
  * which bundles ran before them.
+ *
+ * Inside the body, `WithIsolatedProvider` runs its work on this provider (`JoinCallerTransactionForTests`), so
+ * a check proves what isolated work writes but not that it writes on its own transaction; that stays
+ * with `isolatedProvider.test.ts`. A check that needs the real isolation runs `OutsideTransaction`.
  */
 export async function InRolledBackTransaction(
     ctx: IntegrationCheckContext,
@@ -254,7 +325,10 @@ export async function InRolledBackTransaction(
     const p = provider(ctx);
     await p.BeginTransaction();
     try {
-        await body();
+        // Work the code under test runs on an isolated provider (`WithIsolatedProvider`: the checkout
+        // capture, the webhook's delivery row) joins this transaction instead. On its own connection it
+        // would wait on this transaction's locks while the check waited for it (#947).
+        await JoinCallerTransactionForTests(p, body);
     } finally {
         try {
             // A trigger that refused a write has already rolled the transaction back on the server.
@@ -369,6 +443,11 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             Name: world.Companies.ORPHAN.Name,
             Accounts: world.Companies.ORPHAN.Accounts,
         },
+        CoD: {
+            ID: world.Companies.UNPAIRED.ID,
+            Name: world.Companies.UNPAIRED.Name,
+            Accounts: world.Companies.UNPAIRED.Accounts,
+        },
         RevRecTypeIDs: world.RevRecTypeIDs,
         SubscriptionTypeIDs: world.SubscriptionTypeIDs,
         PaymentTypeIDs: world.PaymentTypeIDs,
@@ -383,6 +462,7 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             OrganizationID: world.Organizations.RIV,
             SecondOrganizationID: world.Organizations.NGS,
             PersonID: world.People['jordan.blake@example.com'],
+            SecondPersonID: world.People['nora.calhoun@riverside.org'],
         },
         Products: {
             WidgetA: requireProduct('WidgetA'),
@@ -394,6 +474,8 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             BundlePartY: requireProduct('BundlePartY'),
             WidgetB: requireProduct('WidgetB'),
             WidgetC: requireProduct('WidgetC'),
+            /** CoD's product: confirms (CoD is GL-linked) but has no intercompany pair with CoA. */
+            WidgetD: requireProduct('WidgetD'),
             EventA: requireProduct('EventA'),
             DeferredA: requireProduct('DeferredA'),
             PocA: requireProduct('PocA'),
@@ -405,6 +487,8 @@ export async function CreateOrdersFixture(ctx: IntegrationCheckContext): Promise
             /** Two bands of one offering (subscription family MEM-TIER) on an ExtendExisting type. */
             SubTierStandard: requireProduct('SubTierStandard'),
             SubTierPremium: requireProduct('SubTierPremium'),
+            /** A third band on CalendarYear, whose cancellation is Immediate with a 30-day grace period. */
+            SubTierBasic: requireProduct('SubTierBasic'),
             EventTicket: requireProduct('EventTicket'),
             EventTicketB: requireProduct('EventTicketB'),
         },
@@ -750,7 +834,8 @@ export async function EnsureGLAccount(
  * explicitly rather than by a correlated subquery, which reads identically whichever way round the
  * pair is and therefore cannot catch a reversal.
  *
- * CoC is deliberately left UNPAIRED so the missing-pair case has something genuine to exercise.
+ * CoD (ORD-WORLD's Unpaired Press) is GL-linked and in no pair, so the missing-pair case has something
+ * genuine to exercise.
  */
 export async function EnsureIntercompanyAccounts(
     ctx: IntegrationCheckContext,
@@ -914,8 +999,9 @@ export async function TeardownOrdersFixture(_ctx: IntegrationCheckContext): Prom
  * Remove EVERY fixture run's data, not just the current one.
  *
  * `TeardownOrdersFixture` is scoped to the companies of the run that is finishing, which is right
- * for a test run and wrong for housekeeping: each run mints new companies, so an interrupted run —
- * or the review-data seeder, which commits on purpose — leaves rows nothing later will reach.
+ * for a test run and wrong for housekeeping: each run mints new companies, so an interrupted run
+ * leaves rows nothing later will reach. The review-data seeder books on ORD-WORLD's companies, which
+ * this does not sweep; {@link PurgeReviewRun} removes its runs by marker.
  *
  * Finds every company the fixture has ever created (they are all named `IT-ORD-…`) and sweeps them.
  * Safe to run against a development database and nowhere else; it deletes orders.
@@ -950,6 +1036,303 @@ export async function PurgeAllFixtureData(ctx: IntegrationCheckContext): Promise
     }
     currentFixture = undefined;
     return runs.length;
+}
+
+// ─── Review-data runs ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * What every `test-harnesses/seed-review-data.mjs` run tags its rows with: `REVIEW-<base36 time>`.
+ *
+ * The seeder books on the shared ORD-WORLD companies, so {@link PurgeAllFixtureData}, which sweeps
+ * companies named `IT-ORD-…`, never reaches its orders. The marker is what makes them findable: it
+ * opens each order's `Description` (`<marker> <label>`) and each promotion's `Code`
+ * (`<marker>-<suffix>`). Everything else the seeder writes hangs off one of those orders.
+ */
+export const REVIEW_MARKER_PREFIX = 'REVIEW-';
+const REVIEW_MARKER = /^REVIEW-[A-Z0-9]+$/;
+
+/** A new review-run marker. Base36 time, so markers sort in run order. */
+export function NewReviewMarker(now: Date = new Date()): string {
+    return `${REVIEW_MARKER_PREFIX}${now.getTime().toString(36).toUpperCase()}`;
+}
+
+/**
+ * The order guards a purge of committed orders has to lift; both purges disable and re-enable them.
+ * review-purge.test.ts reads the guard triggers from the migrations and fails when one that refuses a
+ * DELETE these purges run is missing. trg_PaymentDetail_Immutable is not here: it fires on UPDATE
+ * only, and the one PaymentDetail column a purge updates, SourceCustomerPaymentMethodID, is not guarded.
+ */
+const ORDER_PURGE_TRIGGERS = [
+    `${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+    // A confirmed reversal's ReversesOrderHeaderID is cleared before the delete (a committed credit order, D20).
+    `${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
+    `${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
+    `${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
+    // A Posted progress observation refuses deletion (51030); a progress-measured line has some.
+    `${ORDERS_SCHEMA}.trg_OrderLineProgressMeasurement_Immutable ON ${ORDERS_SCHEMA}.OrderLineProgressMeasurement`,
+    // An Invoiced instalment refuses deletion; a renewal paid through the link has one (#950).
+    `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
+    // Billing rows refuse deletion; an issued instalment always leaves some.
+    `${ORDERS_SCHEMA}.trg_InstalmentLineBilling_Immutable ON ${ORDERS_SCHEMA}.InstalmentLineBilling`,
+];
+
+/**
+ * The statements that delete a set of COMMITTED orders and every row that hangs off them, in an
+ * order the foreign keys accept. `selectOrders` is a SELECT of order IDs. The caller wraps this in a
+ * transaction with {@link ORDER_PURGE_TRIGGERS} disabled. Shared by {@link ReviewPurgeSQL} and
+ * {@link CheckoutRunPurgeSQL}, so there is one delete order to keep right.
+ */
+function orderTreePurgeSQL(selectOrders: string): string {
+    const O = ORDERS_SCHEMA;
+    const A = ACCT_SCHEMA;
+    const ids = (table: string) => `SELECT ID FROM ${table}`;
+    return `DECLARE @orders TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @lines TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @subs TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @terms TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @payments TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @details TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @accounts TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @grants TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+DECLARE @linked TABLE (ID NVARCHAR(400));
+DECLARE @entries TABLE (ID UNIQUEIDENTIFIER PRIMARY KEY);
+
+INSERT @orders ${selectOrders};
+INSERT @lines SELECT ID FROM ${O}.OrderLine WHERE OrderHeaderID IN (${ids('@orders')});
+INSERT @subs SELECT ID FROM ${O}.Subscription WHERE OrderLineID IN (${ids('@lines')});
+INSERT @terms SELECT ID FROM ${O}.SubscriptionTerm
+  WHERE OrderLineID IN (${ids('@lines')}) OR SubscriptionID IN (${ids('@subs')});
+INSERT @payments SELECT DISTINCT PaymentHeaderID FROM ${O}.PaymentLine WHERE OrderHeaderID IN (${ids('@orders')});
+INSERT @accounts SELECT ID FROM ${O}.StoredValueAccount WHERE IssuedFromOrderLineID IN (${ids('@lines')});
+INSERT @details SELECT DISTINCT d.ID FROM ${O}.PaymentDetail d
+  WHERE d.ID IN (SELECT InitialPaymentDetailID FROM ${O}.OrderHeader WHERE ID IN (${ids('@orders')}))
+     OR d.ID IN (SELECT PaymentDetailID FROM ${O}.PaymentHeader WHERE ID IN (${ids('@payments')}))
+     OR d.SourceOrderHeaderID IN (${ids('@orders')})
+     OR d.StoredValueAccountID IN (${ids('@accounts')});
+INSERT @grants SELECT ID FROM ${O}.EntitlementGrant
+  WHERE OrderLineID IN (${ids('@lines')}) OR SubscriptionID IN (${ids('@subs')}) OR SubscriptionTermID IN (${ids('@terms')});
+
+-- Every row a journal entry can be linked to, so the entries go before the rows do.
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM @orders;
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM @lines;
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM @terms;
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM @payments;
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM ${O}.PaymentLine
+  WHERE OrderHeaderID IN (${ids('@orders')}) OR PaymentHeaderID IN (${ids('@payments')});
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM ${O}.OrderHeaderPaymentSchedule WHERE OrderHeaderID IN (${ids('@orders')});
+INSERT @linked SELECT LOWER(CAST(ID AS NVARCHAR(400))) FROM ${O}.OrderLineProgressMeasurement WHERE OrderLineID IN (${ids('@lines')});
+INSERT @entries SELECT DISTINCT ID FROM ${A}.JournalEntry WHERE LOWER(LinkedRecordID) IN (SELECT ID FROM @linked);
+INSERT @entries SELECT DISTINCT JournalEntryID FROM ${O}.OrderLine
+  WHERE ID IN (${ids('@lines')}) AND JournalEntryID IS NOT NULL AND JournalEntryID NOT IN (${ids('@entries')});
+
+-- Rows that point at a grant, an order or a line.
+DELETE FROM ${O}.OutboundDelivery WHERE OutboundEventID IN
+  (SELECT ID FROM ${O}.OutboundEvent WHERE EntitlementGrantID IN (${ids('@grants')}) OR OrderHeaderID IN (${ids('@orders')}));
+DELETE FROM ${O}.OutboundEvent WHERE EntitlementGrantID IN (${ids('@grants')}) OR OrderHeaderID IN (${ids('@orders')});
+DELETE FROM ${O}.EntitlementAccessOverride WHERE OrderHeaderID IN (${ids('@orders')});
+DELETE FROM ${O}.EntitlementGrant WHERE ID IN (${ids('@grants')});
+DELETE FROM ${O}.OrderConcession WHERE OrderHeaderID IN (${ids('@orders')}) OR SubscriptionTermID IN (${ids('@terms')});
+DELETE FROM ${O}.OrderLinePriceComponent WHERE OrderLineID IN (${ids('@lines')});
+DELETE FROM ${O}.OrderLineChoice WHERE OrderLineID IN (${ids('@lines')});
+DELETE FROM ${O}.OrderLineDimension WHERE OrderLineID IN (${ids('@lines')});
+DELETE FROM ${O}.OrderAdjustmentAllocation
+  WHERE OrderLineID IN (${ids('@lines')})
+     OR OrderAdjustmentID IN (SELECT ID FROM ${O}.OrderAdjustment WHERE OrderHeaderID IN (${ids('@orders')}));
+DELETE FROM ${O}.OrderAdjustment WHERE OrderHeaderID IN (${ids('@orders')});
+DELETE FROM ${O}.OrderChargeAllocation
+  WHERE OrderLineID IN (${ids('@lines')})
+     OR OrderChargeID IN (SELECT ID FROM ${O}.OrderCharge WHERE OrderHeaderID IN (${ids('@orders')}));
+DELETE FROM ${O}.OrderCharge WHERE OrderHeaderID IN (${ids('@orders')});
+DELETE FROM ${O}.OrderCheckoutAnswer WHERE OrderHeaderID IN (${ids('@orders')});
+DELETE FROM ${O}.ExternalInvoice WHERE OrderHeaderID IN (${ids('@orders')});
+DELETE FROM ${O}.PaymentIntent WHERE OrderHeaderID IN (${ids('@orders')});
+UPDATE ${O}.CheckoutSession SET DraftOrderID = NULL WHERE DraftOrderID IN (${ids('@orders')});
+
+-- The journal entries, before the lines, payments, terms and observations they link to.
+UPDATE ${O}.OrderLine SET JournalEntryID = NULL WHERE ID IN (${ids('@lines')});
+UPDATE ${O}.PaymentHeader SET JournalEntryID = NULL WHERE ID IN (${ids('@payments')});
+DELETE jeld FROM ${A}.JournalEntryLineDimension jeld
+  JOIN ${A}.JournalEntryLine jel ON jel.ID = jeld.JournalEntryLineID
+ WHERE jel.JournalEntryID IN (${ids('@entries')});
+DELETE FROM ${A}.JournalEntryLine WHERE JournalEntryID IN (${ids('@entries')});
+DELETE FROM ${A}.JournalEntry WHERE ID IN (${ids('@entries')});
+DELETE FROM ${O}.OrderLineProgressMeasurement WHERE OrderLineID IN (${ids('@lines')});
+DELETE FROM ${O}.InstalmentLineBilling
+  WHERE OrderLineID IN (${ids('@lines')})
+     OR OrderHeaderPaymentScheduleID IN (SELECT ID FROM ${O}.OrderHeaderPaymentSchedule WHERE OrderHeaderID IN (${ids('@orders')}));
+DELETE FROM ${O}.OrderHeaderPaymentSchedule WHERE OrderHeaderID IN (${ids('@orders')});
+
+-- Money: stored value, then the payments, then their instruments.
+DELETE FROM ${O}.StoredValueTransaction
+  WHERE StoredValueAccountID IN (${ids('@accounts')})
+     OR RelatedOrderHeaderID IN (${ids('@orders')})
+     OR RelatedPaymentID IN (${ids('@payments')});
+DELETE FROM ${O}.SubscriptionEvent
+  WHERE SubscriptionID IN (${ids('@subs')})
+     OR RelatedOrderHeaderID IN (${ids('@orders')})
+     OR RelatedPaymentID IN (${ids('@payments')});
+DELETE FROM ${O}.ExternalPayment WHERE PaymentHeaderID IN (${ids('@payments')});
+DELETE FROM ${O}.PaymentLine WHERE OrderHeaderID IN (${ids('@orders')}) OR PaymentHeaderID IN (${ids('@payments')});
+UPDATE ${O}.OrderHeader SET InitialPaymentDetailID = NULL WHERE ID IN (${ids('@orders')});
+UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL, ReversalSource = NULL WHERE ID IN (${ids('@payments')});
+DELETE FROM ${O}.PaymentHeader WHERE ID IN (${ids('@payments')});
+DELETE FROM ${O}.CustomerPaymentMethod WHERE PaymentDetailID IN (${ids('@details')});
+DELETE FROM ${O}.PaymentDetail WHERE ID IN (${ids('@details')});
+DELETE FROM ${O}.StoredValueAccount WHERE ID IN (${ids('@accounts')});
+
+-- Subscriptions and lines point at each other, so the line's pointer is cleared first.
+UPDATE ${O}.OrderLine SET SubscriptionID = NULL, ParentOrderLineID = NULL, ReversesOrderLineID = NULL
+ WHERE ID IN (${ids('@lines')});
+DELETE FROM ${O}.SubscriptionTerm WHERE ID IN (${ids('@terms')});
+UPDATE ${O}.Subscription SET MigratesFromSubscriptionID = NULL, MigratesToSubscriptionID = NULL WHERE ID IN (${ids('@subs')});
+DELETE FROM ${O}.Subscription WHERE ID IN (${ids('@subs')});
+DELETE FROM ${O}.EventOrderLine WHERE ID IN (${ids('@lines')});
+DELETE FROM ${O}.OrderLine WHERE ID IN (${ids('@lines')});
+UPDATE ${O}.OrderHeader SET ReversesOrderHeaderID = NULL WHERE ID IN (${ids('@orders')});
+DELETE FROM ${O}.OrderHeader WHERE ID IN (${ids('@orders')});
+`;
+}
+
+/**
+ * The one batch that removes a review run (or every review run, when `marker` is omitted).
+ *
+ * The marker is validated against its own shape rather than escaped: it is generated, never typed,
+ * so anything else is a mistake to refuse rather than a value to quote.
+ *
+ * ONE TRANSACTION, XACT_ABORT ON. A failure part-way rolls the whole purge back, the trigger
+ * disables included, instead of leaving half a run and the immutability triggers off. That is the
+ * difference from {@link PurgeAllFixtureData}, whose per-statement catch logs and carries on.
+ *
+ * Scope: the marked orders and every row that hangs off them (lines, charges, adjustments,
+ * concessions, subscriptions and terms they created, grants, stored value, payments applied to them,
+ * progress observations, outbound events, and the journal entries linked to any of those), plus the
+ * marked promotions no remaining order uses. The prices and bundle items the seeder sets are
+ * updates to ORD-WORLD rows, which the next world load restores from CSV, so they are not touched.
+ */
+export function ReviewPurgeSQL(marker?: string): string {
+    if (marker !== undefined && !REVIEW_MARKER.test(marker)) {
+        throw new Error(`'${marker}' is not a review-run marker (expected ${REVIEW_MARKER.source}).`);
+    }
+    const O = ORDERS_SCHEMA;
+    const orderPattern = marker ? `${marker} %` : `${REVIEW_MARKER_PREFIX}%`;
+    const promoPattern = marker ? `${marker}-%` : `${REVIEW_MARKER_PREFIX}%`;
+    const triggers = ORDER_PURGE_TRIGGERS;
+
+    return `
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+${triggers.map((t) => `DISABLE TRIGGER ${t};`).join('\n')}
+
+${orderTreePurgeSQL(`SELECT ID FROM ${O}.OrderHeader WHERE Description LIKE '${orderPattern}'`)}
+-- The run's promotions, unless an order outside the run still carries one.
+DELETE FROM ${O}.PromotionTarget WHERE PromotionID IN
+  (SELECT ID FROM ${O}.Promotion WHERE Code LIKE '${promoPattern}'
+     AND ID NOT IN (SELECT PromotionID FROM ${O}.OrderAdjustment WHERE PromotionID IS NOT NULL));
+DELETE FROM ${O}.PromotionCode WHERE PromotionID IN
+  (SELECT ID FROM ${O}.Promotion WHERE Code LIKE '${promoPattern}'
+     AND ID NOT IN (SELECT PromotionID FROM ${O}.OrderAdjustment WHERE PromotionID IS NOT NULL));
+DELETE FROM ${O}.Promotion WHERE Code LIKE '${promoPattern}'
+  AND ID NOT IN (SELECT PromotionID FROM ${O}.OrderAdjustment WHERE PromotionID IS NOT NULL);
+
+${triggers.map((t) => `ENABLE TRIGGER ${t};`).join('\n')}
+SELECT COUNT(*) AS Orders FROM @orders;
+COMMIT TRANSACTION;
+`;
+}
+
+/**
+ * Remove a review run's rows (or every review run's) and return how many orders went.
+ *
+ * Outside any check: the seeder commits on purpose, and this is how it takes its rows back.
+ */
+export async function PurgeReviewRun(ctx: IntegrationCheckContext, marker?: string): Promise<number> {
+    const rows = await PoolQuery<{ Orders: number }>(ctx, ReviewPurgeSQL(marker));
+    return Number(rows[0]?.Orders ?? 0);
+}
+
+/** What a check run {@link OutsideTransaction} committed through a checkout, for {@link CheckoutRunPurgeSQL}. */
+export interface CheckoutRun {
+    /** Orders the check made or paid. Orders whose lines belong to `SubscriptionIDs` are included anyway. */
+    OrderIDs: string[];
+    SubscriptionIDs: string[];
+    /** The check's own payment provider. Everything that names it goes: intents, instruments, wallets. */
+    PaymentProviderID?: string;
+    /** The check's own checkout widget. Its distributions and every session opened in it go. */
+    CheckoutWidgetID?: string;
+}
+
+/**
+ * The one batch that removes what a checkout check committed outside the harness transaction.
+ *
+ * Scoped by IDs the check made, never by company or customer, so ORD-WORLD and anything else on the
+ * same companies is out of reach. ONE TRANSACTION, XACT_ABORT ON, like {@link ReviewPurgeSQL}: a
+ * failure part-way leaves everything in place and the triggers on, and the check that called it
+ * fails on its own leftover assertion rather than leaving half a run behind.
+ *
+ * Beyond the order tree: the checkout sessions (they point at the intents and the widget), the
+ * widget and its distributions, the wallet entries and payment instruments on the check's provider
+ * (a subscription's default wallet, and an instrument's source wallet, are cleared first), anything
+ * else that names the provider, and the provider.
+ */
+export function CheckoutRunPurgeSQL(run: CheckoutRun): string {
+    const O = ORDERS_SCHEMA;
+    const list = (values: string[], field: string) => {
+        const checked = RequireUUIDs(values, field);
+        return checked.length ? checked.map((v) => `'${v}'`).join(',') : 'NULL';
+    };
+    const orders = list(run.OrderIDs, 'OrderIDs');
+    const subs = list(run.SubscriptionIDs, 'SubscriptionIDs');
+    // A check that failed before making its provider or widget passes none; NULL then matches nothing.
+    const one = (value: string | undefined, field: string) => (value ? `'${RequireUUID(value, field)}'` : 'NULL');
+    const provider = one(run.PaymentProviderID, 'PaymentProviderID');
+    const widget = one(run.CheckoutWidgetID, 'CheckoutWidgetID');
+    const triggers = ORDER_PURGE_TRIGGERS;
+
+    return `
+SET XACT_ABORT ON;
+BEGIN TRANSACTION;
+${triggers.map((t) => `DISABLE TRIGGER ${t};`).join('\n')}
+
+-- Sessions first: they point at the intents the order tree deletes, and at the widget.
+DELETE FROM ${O}.CheckoutSessionStep WHERE CheckoutSessionID IN (SELECT ID FROM ${O}.CheckoutSession WHERE CheckoutWidgetID IN (${widget}));
+DELETE FROM ${O}.CheckoutSession WHERE CheckoutWidgetID IN (${widget});
+-- Pointers into the wallet entries the order tree deletes.
+UPDATE ${O}.Subscription SET DefaultCustomerPaymentMethodID = NULL WHERE ID IN (${subs});
+UPDATE ${O}.PaymentDetail SET SourceCustomerPaymentMethodID = NULL WHERE PaymentProviderID IN (${provider});
+-- A captured payment points at its intent, and the order tree deletes intents before payments.
+UPDATE ${O}.PaymentHeader SET PaymentIntentID = NULL
+ WHERE PaymentIntentID IN (SELECT ID FROM ${O}.PaymentIntent WHERE PaymentProviderID IN (${provider}));
+
+${orderTreePurgeSQL(
+    `SELECT ID FROM ${O}.OrderHeader WHERE ID IN (${orders})
+  UNION SELECT OrderHeaderID FROM ${O}.OrderLine WHERE SubscriptionID IN (${subs}) OR RenewsSubscriptionID IN (${subs})`,
+)}
+-- What is left on the check's provider and widget.
+DELETE FROM ${O}.PaymentWebhookDelivery WHERE PaymentProviderID IN (${provider});
+DELETE FROM ${O}.PaymentIntent WHERE PaymentProviderID IN (${provider});
+DELETE FROM ${O}.CustomerPaymentMethod WHERE PaymentDetailID IN (SELECT ID FROM ${O}.PaymentDetail WHERE PaymentProviderID IN (${provider}));
+DELETE FROM ${O}.PaymentDetail WHERE PaymentProviderID IN (${provider});
+DELETE FROM ${O}.ExternalCustomer WHERE PaymentProviderID IN (${provider});
+DELETE FROM ${O}.PaymentProviderSyncState WHERE PaymentProviderID IN (${provider});
+DELETE FROM ${O}.PaymentProviderPrice WHERE PaymentProviderID IN (${provider});
+DELETE FROM ${O}.CheckoutWidgetDistribution WHERE CheckoutWidgetID IN (${widget});
+DELETE FROM ${O}.CheckoutWidget WHERE ID IN (${widget});
+DELETE FROM ${O}.PaymentProvider WHERE ID IN (${provider});
+
+${triggers.map((t) => `ENABLE TRIGGER ${t};`).join('\n')}
+SELECT COUNT(*) AS Orders FROM @orders;
+COMMIT TRANSACTION;
+`;
+}
+
+/**
+ * Remove what a checkout check committed (see {@link CheckoutRunPurgeSQL}), reload `OrdersEngine`
+ * (the raw deletes fire no entity events), and return how many orders went.
+ */
+export async function PurgeCheckoutRun(ctx: IntegrationCheckContext, run: CheckoutRun): Promise<number> {
+    const rows = await PoolQuery<{ Orders: number }>(ctx, CheckoutRunPurgeSQL(run));
+    await ReloadOrdersEngine(ctx);
+    return Number(rows[0]?.Orders ?? 0);
 }
 
 /** The delete order, shared by the per-run teardown and the whole-database purge. */

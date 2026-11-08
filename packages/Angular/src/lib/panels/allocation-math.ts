@@ -116,3 +116,15 @@ export function AllocateOldestFirst(
 
     return allocations;
 }
+
+/**
+ * Whether settling these companies' orders together raises intercompany entries (golive #313).
+ *
+ * Intercompany is between LEGAL ENTITIES, not companies: a Division, Department or Branch uses the
+ * books of its legal entity, so cash one collects for the other is settled directly. `legalEntityFor`
+ * is `AccountingEngineBase.LegalEntityFor` in the app, injected so this stays pure.
+ */
+export function CrossesLegalEntities(companyIDs: ReadonlyArray<string>, legalEntityFor: (companyID: string) => string): boolean {
+    const entities = new Set(companyIDs.map((id) => legalEntityFor(id).trim().toLowerCase()));
+    return entities.size > 1;
+}

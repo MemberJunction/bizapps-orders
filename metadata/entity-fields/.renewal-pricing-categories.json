@@ -7,74 +7,80 @@
       "its pricing policies."
     ],
     "fields": {
-      "Category": "Renewal Settings"
+      "Category": "Renewal Settings",
+      "GeneratedFormSection": "Category"
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions&Name=RenewalIncreasePercent"
     },
     "sync": {
-      "lastModified": "2026-10-05T21:01:49.246Z",
-      "checksum": "f069e2b2e1369aa7376172637729521991c546b388f652f66e25d3904383174d"
+      "lastModified": "2026-10-08T21:17:25.768Z",
+      "checksum": "1024335d2091715464f5fa5357f44ead408169e5fc43ad8d2ab66afe23b37e11"
     }
   },
   {
     "fields": {
-      "Category": "Renewal Settings"
+      "Category": "Renewal Settings",
+      "GeneratedFormSection": "Category"
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Subscriptions&Name=CarryDiscountOnRenewal"
     },
     "sync": {
-      "lastModified": "2026-10-05T21:01:49.276Z",
-      "checksum": "f069e2b2e1369aa7376172637729521991c546b388f652f66e25d3904383174d"
+      "lastModified": "2026-10-08T21:17:25.791Z",
+      "checksum": "1024335d2091715464f5fa5357f44ead408169e5fc43ad8d2ab66afe23b37e11"
     }
   },
   {
     "fields": {
-      "Category": "Subscription and Entitlements"
+      "Category": "Subscription and Entitlements",
+      "GeneratedFormSection": "Category"
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=RenewalIncreasePercent"
     },
     "sync": {
-      "lastModified": "2026-10-05T21:01:49.319Z",
-      "checksum": "2510bf49330305b1e4eda6cc9ff8bac47ca6147e8a799535959db39153828b3e"
+      "lastModified": "2026-10-08T21:17:25.812Z",
+      "checksum": "f38e9d15e5fcead30a3160f111e67f796602a81b5d0ab5488d28d7a4f63be54d"
     }
   },
   {
     "fields": {
-      "Category": "Product Details"
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=RenewalIncreasePercent"
     },
     "sync": {
-      "lastModified": "2026-10-05T21:01:49.355Z",
-      "checksum": "dc9fdd9754eca58852135a39355da8ff413be1920959a9d52e9ce312e984fd69"
+      "lastModified": "2026-10-08T21:17:25.834Z",
+      "checksum": "973bf067b193f4212a496b8b6645f6840ff5d4a4564b783cf399d63ca3fa015f"
     }
   },
   {
     "fields": {
-      "Category": "Default Settings"
+      "Category": "Default Settings",
+      "GeneratedFormSection": "Category"
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Product Categories&Name=RenewalIncreasePercent"
     },
     "sync": {
-      "lastModified": "2026-10-05T21:01:49.394Z",
-      "checksum": "4aaaa1a2f1ec2098d6b6eecdfe367c027eff2e904545e1e9ffce751d5f7dbb04"
+      "lastModified": "2026-10-08T21:17:25.855Z",
+      "checksum": "8cd33abfc06fbb15d591b6783f6c68a40623247bc083c15682b309032ac7ccd0"
     }
   },
   {
     "fields": {
-      "Category": "Pricing Policies"
+      "Category": "Pricing Policies",
+      "GeneratedFormSection": "Category"
     },
     "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Company Policies&Name=RenewalIncreasePercent"
     },
     "sync": {
-      "lastModified": "2026-10-05T21:01:49.430Z",
-      "checksum": "6bb7c8d18e1a86e2aba575c00f44fba373dbcfaf2963683c8230af9b28ccce54"
+      "lastModified": "2026-10-08T21:17:25.878Z",
+      "checksum": "4adeddfa0f990cf7d4cf05eec7985bc3ed4cf36d07d8b9ba03717afd83114465"
     }
   }
 ]

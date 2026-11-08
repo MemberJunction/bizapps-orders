@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CatalogOptionFrom } from '../orders-queries';
+import { BundlesWithSubscription, CatalogOptionFrom } from '../orders-queries';
 
 describe('CatalogOptionFrom', () => {
     it('carries the product type and its order-line extension entity', () => {
@@ -92,6 +92,26 @@ describe('CatalogOptionFrom', () => {
         expect(option.SubscriptionTypeID).toBe('subtype-annual');
     });
 
+    it("falls back to the product type's default subscription type, as confirm does (#903)", () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-6',
+                Name: 'Legacy Membership',
+                SKU: 'MEM-LEGACY',
+                ProductType: 'Membership',
+                ProductTypeID: 'type-membership',
+                Company: 'Meridian',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: null,
+            },
+            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-rolling' },
+            0,
+        );
+
+        expect(option.SubscriptionTypeID).toBe('subtype-rolling');
+    });
+
     it('shows no list price when the product has no base price row', () => {
         const option = CatalogOptionFrom(
             {
@@ -112,5 +132,34 @@ describe('CatalogOptionFrom', () => {
 
         // Null, not $0.00: the line will not price it, and zero reads as free.
         expect(option.ListPrice).toBeNull();
+    });
+
+    it('marks a bundle that contains a subscription, and nothing else (u623.1)', () => {
+        const base = {
+            ID: 'prod-6',
+            Name: 'Member Starter Kit',
+            SKU: 'KIT-1',
+            ProductType: 'Bundle',
+            ProductTypeID: 'type-bundle',
+            CompanyID: 'co-1',
+            Company: 'Meridian',
+            IsTaxable: false,
+            MaxQuantityPerLine: null,
+            SubscriptionTypeID: null,
+        };
+        expect(CatalogOptionFrom(base, { OrderLineExtensionEntity: null }, 100, true).ContainsSubscription).toBe(true);
+        expect(CatalogOptionFrom(base, { OrderLineExtensionEntity: null }, 100).ContainsSubscription).toBe(false);
+    });
+});
+
+describe('BundlesWithSubscription', () => {
+    it('finds the bundles with a subscription component, by lower-cased id', () => {
+        const items = [
+            { BundleProductID: 'KIT-A', ComponentProductID: 'p-book' },
+            { BundleProductID: 'KIT-A', ComponentProductID: 'p-member' },
+            { BundleProductID: 'KIT-B', ComponentProductID: 'p-book' },
+        ];
+        const found = BundlesWithSubscription(items, (id) => id === 'p-member');
+        expect([...found]).toEqual(['kit-a']);
     });
 });

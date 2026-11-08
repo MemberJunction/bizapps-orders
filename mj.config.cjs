@@ -148,8 +148,11 @@ module.exports = {
    */
   advancedGeneration: {
     features: [
-      // Every run: categorises fields with AutoUpdateCategory=1 and an empty Category, which is
-      // what turns a flat field list into a real form layout.
+      // Change events only: categorises fields with AutoUpdateCategory=1 and an empty Category,
+      // which is what turns a flat field list into a real form layout. It runs for a new entity,
+      // a new field, or a field whose description or type changed — not on every run — so a field
+      // that arrives uncategorized another way stays in the Details panel. Those get a Category in
+      // metadata/entity-fields (#276); .github/scripts/check-form-details-panel.mjs catches them.
       { name: 'FormLayoutGeneration', enabled: true },
       // Existing objects: CHECK-constraint descriptions + Validate() bodies in the subclasses.
       { name: 'ParseCheckConstraints', enabled: true },
@@ -224,10 +227,12 @@ module.exports = {
        * of CheckoutSessionService, mounted pre-auth like the webhook. Access control is the
        * distribution slug + per-session client key, layered with rate limiting, a per-widget
        * origin allowlist (`Configuration.allowedOrigins`), and optional Cloudflare Turnstile
-       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar).
+       * (`Configuration.requireTurnstile` + the secret named by TurnstileSecretEnvVar and its TurnstileSiteKey).
        * Settings:
        *   ServiceUserEmail      — named checkout principal for writes (falls back to system user)
        *   TurnstileSecretEnvVar — env var holding the Turnstile secret (e.g. 'CHECKOUT_TURNSTILE_SECRET')
+       *   TurnstileSiteKey      — public Turnstile site key paired with that secret; sent to the
+       *                           checkout clients so they can render the challenge
        *   RateLimitWindowMs / RateLimitMax — fixed-window limits per client IP (defaults 60000 / 30)
        */
       Enabled: true,
@@ -263,6 +268,15 @@ module.exports = {
   testing: {
     checkModules: ['@mj-biz-apps/orders-integration-tests'],
   },
+
+  /**
+   * Migrations source for `pnpm run mj:migrate`. The script passes no `--dir`, so `mj migrate`
+   * reads this location and, with `DB_PLATFORM=postgresql`, swaps it to `./migrations-pg`. An
+   * explicit `--dir` turns that swap off, which is how the script used to run the T-SQL set on
+   * PostgreSQL (#687). Leave `mjRepoVersion` unset: with it set and no `--dir`, `mj migrate`
+   * fetches MJ core's migrations instead of this repo's.
+   */
+  migrationsLocation: 'filesystem:./migrations',
 
   SQLOutput: {
     enabled: true,

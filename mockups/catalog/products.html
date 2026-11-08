@@ -27,7 +27,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="ct-count">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="ct-count">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-folder-plus"></i> New category</button>
@@ -205,7 +205,7 @@ function render() {
          onclick="CT.cat('${it.ids.join(',')}');return false"
          title="${it.companies.map(c => DB.companies[c].name).join(' · ')}">
         <i class="fa-solid fa-folder"></i> ${it.name}
-        ${it.ids.length > 1 ? `<span class="mj-chip mj-chip--outline tiny">${it.ids.length} cos</span>` : ''}
+        ${it.ids.length > 1 ? `<span class="mjo-chip mjo-chip--outline tiny">${it.ids.length} cos</span>` : ''}
         <span class="n">${it.count}</span></a>
       ${it.children.map(ch => `
         <a class="child ${CAT === ch.id ? 'is-active' : ''}" href="#" onclick="CT.cat('${ch.id}');return false">
@@ -229,8 +229,8 @@ function render() {
       ${Object.values(DB.productTypes).map(t => `<tr>
         <td><i class="fa-solid ${t.icon} muted"></i> ${t.name}</td>
         <td class="small">${t.revRec}</td>
-        <td>${t.taxable ? '<span class="mj-chip mj-chip--warning">yes</span>' : '<span class="mj-chip mj-chip--outline">no</span>'}</td>
-        <td>${t.fulfil ? '<span class="mj-chip mj-chip--info">yes</span>' : '<span class="mj-chip mj-chip--outline">no</span>'}</td>
+        <td>${t.taxable ? '<span class="mjo-chip mjo-chip--warning">yes</span>' : '<span class="mjo-chip mjo-chip--outline">no</span>'}</td>
+        <td>${t.fulfil ? '<span class="mjo-chip mjo-chip--info">yes</span>' : '<span class="mjo-chip mjo-chip--outline">no</span>'}</td>
       </tr>`).join('')}
     </tbody></table>`;
 
@@ -254,10 +254,10 @@ function render() {
     const t = DB.productTypes[p.typeID];
     const cat = DB.categories.find(c => c.id === p.categoryID);
     const beh = [];
-    if (p.subscriptionType) beh.push('<span class="mj-chip mj-chip--violet">subscription</span>');
-    if (p.event) beh.push('<span class="mj-chip mj-chip--info">event dates</span>');
-    if (t.fulfil) beh.push('<span class="mj-chip mj-chip--outline">ships</span>');
-    if (p.bundle) beh.push('<span class="mj-chip mj-chip--outline">bundle</span>');
+    if (p.subscriptionType) beh.push('<span class="mjo-chip mjo-chip--violet">subscription</span>');
+    if (p.event) beh.push('<span class="mjo-chip mjo-chip--info">event dates</span>');
+    if (t.fulfil) beh.push('<span class="mjo-chip mjo-chip--outline">ships</span>');
+    if (p.bundle) beh.push('<span class="mjo-chip mjo-chip--outline">bundle</span>');
     return `<tr class="is-clickable" data-row="${p.id}">
       <td class="mono small">${p.sku}</td>
       <td><span class="primary">${p.name}</span>
@@ -267,8 +267,8 @@ function render() {
       <td class="small">${cat ? cat.name : '—'}</td>
       <td class="num strong">${F.money(p.price)}</td>
       <td>${beh.join(' ') || '<span class="muted">—</span>'}</td>
-      <td>${p.status === 'Active' ? '<span class="mj-chip mj-chip--success">Active</span>'
-        : `<span class="mj-chip">${p.status}</span>`}</td>
+      <td>${p.status === 'Active' ? '<span class="mjo-chip mjo-chip--success">Active</span>'
+        : `<span class="mjo-chip">${p.status}</span>`}</td>
     </tr>`;
   }).join('');
 }

@@ -84,12 +84,6 @@ const MJ_OWNED = new Set<string>([
 
 const HOOK_ONLY = new Set<string>([
     'mjo-preflight', // panel root; every child is styled, the root needs nothing
-    // The caption span inside the already-styled `.ws-tabs__new` button. It carries no rule in
-    // either copy of the parked workspace-tabs component, and it does not need one — it inherits
-    // the button's typography and exists as a handle (a narrow strip could hide the label and keep
-    // the icon). Deliberately NOT given a rule here: the parked copy must stay identical to
-    // accounting's so promotion is a file move, and styling it in one app only would break that.
-    'ws-tabs__new-label',
 ]);
 
 const walk = (dir: string, out: string[] = []): string[] => {

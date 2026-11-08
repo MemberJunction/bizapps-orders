@@ -18,6 +18,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
+import { Today } from '@mj-biz-apps/orders-entities';
 
 import {
     AccountIsOfferable,
@@ -172,7 +173,7 @@ describe('#113 — the write half refuses to act on an incomplete draft', () => 
         expect(c.CanWrite).toBe(false);
     });
 
-    it('opens a draft dated today in UTC, and closing it clears the error', () => {
+    it('opens a draft dated today on the business calendar, and closing it clears the error', () => {
         const c = withProduct({ ID: 'p1', IsSaved: true });
         (c as unknown as { WriteError: string | null }).WriteError = 'previous refusal';
         c.OpenDraft();
@@ -180,11 +181,10 @@ describe('#113 — the write half refuses to act on an incomplete draft', () => 
         expect(c.Draft, 'opening must produce a draft').toBeTruthy();
         expect(c.WriteError, 'opening clears a stale refusal from a previous attempt').toBeNull();
 
-        // UTC, not local. The window is stored and rendered in UTC, and a local date would put the
-        // start a day out for anyone west of Greenwich — the same defect the From/To columns had.
-        const now = new Date();
-        const utc = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-${String(now.getUTCDate()).padStart(2, '0')}`;
-        expect(c.Draft?.StartedAt).toBe(utc);
+        // The BUSINESS day, not the browser's local day and not the UTC day (golive #168). The window
+        // is stored as that day at midnight UTC and rendered by UTC parts; what has to be right is the
+        // day. The 8 PM Central case is pinned in date-display-golive-168.test.ts.
+        expect(c.Draft?.StartedAt).toBe(Today());
 
         c.CancelDraft();
         expect(c.Draft).toBeNull();

@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MJEmptyStateComponent, MJFilterChipComponent } from '@memberjunction/ng-ui-components';
 
 /** How a column's value is rendered. */
 export type MJOColumnKind =
@@ -11,7 +12,7 @@ export type MJOColumnKind =
     | 'number'
     /** Formatted date. */
     | 'date'
-    /** A `mj-chip`; `ChipClass` picks the variant. */
+    /** A `mjo-chip`; `ChipClass` picks the variant. */
     | 'chip'
     /** Monospace — document numbers and references. */
     | 'mono';
@@ -49,7 +50,7 @@ export interface MJOColumn<TRow = any> {
 export interface MJOPreset {
     Key: string;
     Label: string;
-    /** Shown as a count pill. Omit — or pass 0 — to render no pill. */
+    /** Shown in brackets after the label. Omit — or pass 0 — to show none. */
     Count?: number | null;
     Icon?: string;
 }
@@ -95,7 +96,7 @@ export type MJORow = any;
 @Component({
     selector: 'mjo-worklist-table',
     standalone: true,
-    imports: [CommonModule],
+    imports: [CommonModule, MJFilterChipComponent, MJEmptyStateComponent],
     template: `
         @if (Presets.length || Searchable) {
             <div class="mjo-wl__toolbar">
@@ -113,20 +114,13 @@ export type MJORow = any;
                 @if (Presets.length) {
                     <div class="row wrap mjo-wl__presets" role="group" aria-label="Quick filters">
                         @for (preset of Presets; track preset.Key) {
-                            <button
-                                type="button"
-                                class="mj-filter-chip"
-                                [class.is-active]="preset.Key === ActivePreset"
-                                [attr.aria-pressed]="preset.Key === ActivePreset"
-                                (click)="PresetChanged.emit(preset.Key)">
-                                @if (preset.Icon) {
-                                    <i [class]="preset.Icon" aria-hidden="true"></i>
-                                }
-                                {{ preset.Label }}
-                                @if (preset.Count) {
-                                    <span class="count">{{ preset.Count }}</span>
-                                }
-                            </button>
+                            <!-- A zero count is left off, as before: "(0)" on a preset reads as an error. -->
+                            <mj-filter-chip
+                                [Label]="preset.Label"
+                                [Icon]="preset.Icon ?? null"
+                                [Count]="preset.Count || null"
+                                [Active]="preset.Key === ActivePreset"
+                                (Clicked)="PresetChanged.emit(preset.Key)" />
                         }
                     </div>
                 }
@@ -172,7 +166,7 @@ export type MJORow = any;
                                     [class.mono]="column.Kind === 'mono'"
                                     [class]="hideClass(column)">
                                     @if (column.Kind === 'chip') {
-                                        <span class="mj-chip" [class]="column.ChipClass?.(row) ?? ''">
+                                        <span class="mjo-chip" [class]="column.ChipClass?.(row) ?? ''">
                                             {{ display(row, column) }}
                                         </span>
                                     } @else {
@@ -187,11 +181,11 @@ export type MJORow = any;
                     } @empty {
                         <tr>
                             <td [attr.colspan]="Columns.length">
-                                <div class="mj-empty mjo-wl__empty">
-                                    <i [class]="EmptyIcon" aria-hidden="true"></i>
-                                    <div class="t">{{ EmptyTitle }}</div>
-                                    <div class="small">{{ EmptyHint }}</div>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    [Icon]="EmptyIcon"
+                                    [Title]="EmptyTitle"
+                                    [Message]="EmptyHint" />
                             </td>
                         </tr>
                     }
@@ -214,9 +208,6 @@ export type MJORow = any;
             }
             .mjo-wl__presets {
                 gap: 6px;
-            }
-            .mjo-wl__empty {
-                padding: var(--mj-space-8);
             }
             .mjo-wl__note {
                 margin-top: var(--mj-space-3);

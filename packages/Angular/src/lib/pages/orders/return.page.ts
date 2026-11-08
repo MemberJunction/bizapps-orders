@@ -22,7 +22,7 @@ import { Metadata } from '@memberjunction/core';
 
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 
-import { MJAlertComponent, MJButtonDirective, MJDropdownComponent } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJDropdownComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { GetOrderLines, GetOrders } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
@@ -69,7 +69,7 @@ interface MJOReturnLine {
 @Component({
     selector: 'mjo-return-page',
     standalone: true,
-    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, MJDropdownComponent, CommonModule, FormsModule, MJOStatedValueComponent, MJOMoneyPipe, MJAlertComponent, MJEmptyStateComponent],
     template: `
         <mj-alert Variant="info" Icon="fa-solid fa-rotate-left" class="mjo-rt__note">
                 <strong>A return is recorded as a new order that reverses the original.</strong>
@@ -128,6 +128,13 @@ interface MJOReturnLine {
                     </div>
                 }
             </div>
+
+            @if (NothingLeftToReturn) {
+                <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
+                          data-testid="return-nothing-left">
+                    Everything on this order has been returned. Choose another order to start a return.
+                </mj-alert>
+            }
 
             <div class="mjo-rt__split">
                 <div class="mjo-rt__left">
@@ -248,10 +255,10 @@ interface MJOReturnLine {
                 </aside>
             </div>
         } @else {
-            <div class="mj-empty mjo-rt__empty">
-                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
-                <div class="t">Select an order to return</div>
-                <div class="small">Choose the original order to start a return.</div>
+            <mj-empty-state
+                Icon="fa-solid fa-rotate-left"
+                Title="Select an order to return"
+                Message="Choose the original order to start a return.">
                 <!--
                     THREE STATES, NOT TWO. "Not asked yet" and "asked and got nothing" used to render
                     the same sentence, so the "no booked orders" message flashed on every open — and a
@@ -280,7 +287,7 @@ interface MJOReturnLine {
                         before it can be reversed — if you expected one here, the read may have failed.
                     </div>
                 }
-            </div>
+            </mj-empty-state>
         }
     `,
     styles: [
@@ -307,7 +314,6 @@ interface MJOReturnLine {
             .mjo-rt__reason { margin-top: var(--mj-space-4); }
             .mjo-rt__qty { width: 74px; }
             .mjo-rt__actions { margin-top: var(--mj-space-4); }
-            .mjo-rt__empty { padding: var(--mj-space-12); }
             /* A SERVER ERROR IS NOT A SENTENCE. Measured on the golive#251 save failure: 11,636
                characters and 4,003px tall, which pushed the whole return off screen. The text is
                kept in full -- it is the only diagnostic anyone gets -- but it scrolls in its own
@@ -384,7 +390,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      * Only BOOKED orders are offered, because that is what a return reverses — `IsBooked` is
      * "journal entries exist and the receivable is real". A Draft or Quoted order has no money to
      * give back, and `ReversalResolver` skips Draft and Voided on the server, so offering one would
-     * be offering a choice the server refuses.
+     * be offering a choice the server refuses. Return orders themselves are left out too (the
+     * `returnable` preset, #835): a return cannot be returned.
      *
      * Filtered server-side rather than fetched-and-filtered: `MJOGetOrdersOptions` records a real
      * performance bug from doing the latter, and a returns picker on a long-lived instance is
@@ -450,8 +457,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
      *
      * The section shell hands a cached page its record with `setInput(...)`, which runs `ngOnChanges`
      * and nothing else. Without this the page would load an order only when it happened to be
-     * constructed with one already set, and silently keep showing the previous origin otherwise —
-     * the shape `order-document.page.ts` still has.
+     * constructed with one already set, and silently keep showing the previous origin otherwise.
+     * `order-document.page.ts` follows the same pattern.
      */
     public async ngOnChanges(changes: SimpleChanges): Promise<void> {
         if (changes['OriginOrderID'] && !changes['OriginOrderID'].firstChange) {
@@ -462,7 +469,7 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        this.PickerOrders = await GetOrders({ Preset: 'booked', MaxRows: 200, Search: search?.trim() || undefined });
+        this.PickerOrders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -616,6 +623,14 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         }
         for (const row of result.Output.Lines) out.set(row.OrderLineID, row.AlreadyReturned);
         return out;
+    }
+
+    /**
+     * Every line of the loaded order has already come back in full (#835). The confirm button is
+     * disabled then, and without saying why the page read as broken.
+     */
+    public get NothingLeftToReturn(): boolean {
+        return this.Lines.length > 0 && this.Lines.every((line) => this.remaining(line) === 0);
     }
 
     /** What may still come back — prior returns count against it. */

@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-server",
   "type": "module",
-  "version": "5.28.0",
+  "version": "5.43.0",
   "description": "BizApps Orders server bootstrap - GraphQL resolvers and class registrations for the unified order-management Open App",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -13,8 +13,8 @@
   ],
   "scripts": {
     "build": "tsc && tsc-alias -f",
-    "test": "vitest run",
-    "test:watch": "vitest"
+    "test": "vitest run --root ../.. packages/Server/",
+    "test:watch": "vitest --root ../.. packages/Server/"
   },
   "memberjunction": {
     "serverExtensions": [
@@ -41,31 +41,43 @@
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "devDependencies": {
-    "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
-    "@mj-biz-apps/accounting-entities": ">=0.17.0",
-    "@mj-biz-apps/accounting-server": ">=0.17.0",
+    "@memberjunction/actions": "^6.1.6",
+    "@memberjunction/actions-base": "^6.1.6",
+    "@memberjunction/core": "^6.1.6",
+    "@memberjunction/generic-database-provider": "^6.1.6",
+    "@memberjunction/global": "^6.1.6",
+    "@memberjunction/server": "^6.1.6",
+    "@memberjunction/server-extensions-core": "^6.1.6",
+    "@memberjunction/templates": "^6.1.6",
+    "@mj-biz-apps/accounting-engine-base": "0.24.0",
+    "@mj-biz-apps/accounting-entities": "0.24.0",
+    "@mj-biz-apps/accounting-server": "0.24.0",
+    "@mj-biz-apps/common-entities": "5.56.0",
+    "@mj-biz-apps/common-server": "5.56.0",
     "@types/express": "^5.0.6",
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-actions": "5.28.0",
-    "@mj-biz-apps/orders-core-entities-server": "5.28.0",
-    "@mj-biz-apps/orders-entities": "5.28.0",
+    "@mj-biz-apps/orders-actions": "^5.43.0",
+    "@mj-biz-apps/orders-core-entities-server": "^5.43.0",
+    "@mj-biz-apps/orders-entities": "^5.43.0",
     "body-parser": "^2.2.0",
     "class-validator": "^0.14.3"
   },
   "peerDependencies": {
-    "@memberjunction/actions": "~6.1.5",
-    "@memberjunction/actions-base": "~6.1.5",
-    "@memberjunction/core": "~6.1.5",
-    "@memberjunction/global": "~6.1.5",
-    "@memberjunction/server": "~6.1.5",
-    "@memberjunction/server-extensions-core": "~6.1.5",
-    "@memberjunction/generic-database-provider": "~6.1.5",
-    "@memberjunction/templates": "~6.1.5",
-    "@mj-biz-apps/accounting-engine-base": ">=0.17.0",
-    "@mj-biz-apps/accounting-entities": ">=0.17.0",
-    "@mj-biz-apps/accounting-server": ">=0.17.0"
+    "@memberjunction/actions": "^6.1.6",
+    "@memberjunction/actions-base": "^6.1.6",
+    "@memberjunction/core": "^6.1.6",
+    "@memberjunction/global": "^6.1.6",
+    "@memberjunction/server": "^6.1.6",
+    "@memberjunction/server-extensions-core": "^6.1.6",
+    "@memberjunction/generic-database-provider": "^6.1.6",
+    "@memberjunction/templates": "^6.1.6",
+    "@mj-biz-apps/accounting-engine-base": ">=0.24.0",
+    "@mj-biz-apps/accounting-entities": ">=0.24.0",
+    "@mj-biz-apps/accounting-server": ">=0.24.0",
+    "@mj-biz-apps/common-entities": "^5.56.0",
+    "@mj-biz-apps/common-server": "^5.56.0"
   },
   "repository": {
     "type": "git",

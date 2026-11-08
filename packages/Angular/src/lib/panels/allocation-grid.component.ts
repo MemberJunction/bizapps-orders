@@ -1,7 +1,9 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MJOMoneyPipe, FormatMoney, FormatDate } from './money-format';
-import { MJAlertComponent, MJButtonDirective } from '@memberjunction/ng-ui-components';
+import { CrossesLegalEntities } from './allocation-math';
+import { LegalEntityForHint } from './legal-entity-hint';
+import { MJAlertComponent, MJButtonDirective, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 
 /** An open order a payment can be applied to. */
 export interface MJOAllocatableOrder {
@@ -58,7 +60,7 @@ export type MJOAllocationMap = Record<string, number>;
 @Component({
     selector: 'mjo-allocation-grid',
     standalone: true,
-    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJAlertComponent],
+    imports: [MJButtonDirective, CommonModule, MJOMoneyPipe, MJAlertComponent, MJEmptyStateComponent],
     template: `
         <div class="mj-card">
             <div class="mj-card-head">
@@ -96,7 +98,7 @@ export type MJOAllocationMap = Record<string, number>;
                                 }
                             </td>
                             <td class="mjo-ag__co">
-                                <span class="mj-chip mj-chip--outline">{{ order.CompanyName ?? '—' }}</span>
+                                <span class="mjo-chip mjo-chip--outline">{{ order.CompanyName ?? '—' }}</span>
                             </td>
                             <td class="num">{{ order.Balance | mjoMoney }}</td>
                             <td class="num">
@@ -117,13 +119,11 @@ export type MJOAllocationMap = Record<string, number>;
                     } @empty {
                         <tr>
                             <td colspan="7">
-                                <div class="mj-empty mjo-ag__empty">
-                                    <i class="fa-solid fa-check" aria-hidden="true"></i>
-                                    <div class="t">No open orders</div>
-                                    <div class="small">
-                                        This payment will create a credit on the order it is applied to.
-                                    </div>
-                                </div>
+                                <mj-empty-state
+                                    Size="compact"
+                                    Icon="fa-solid fa-check"
+                                    Title="No open orders"
+                                    Message="This payment will create a credit on the order it is applied to." />
                             </td>
                         </tr>
                     }
@@ -154,7 +154,7 @@ export type MJOAllocationMap = Record<string, number>;
             </mj-alert>
         }
 
-        @if (companiesInvolved.length > 1) {
+        @if (crossesLegalEntities) {
             <mj-alert Variant="warning" Icon="fa-solid fa-building-columns" class="mjo-ag__effect">
                     <strong>This allocation crosses companies.</strong>
                     Intercompany entries will be created for {{ companiesInvolved.join(' and ') }}.
@@ -174,8 +174,6 @@ export type MJOAllocationMap = Record<string, number>;
                 color: var(--mj-status-error-text);
                 font-weight: var(--mj-font-semibold);
             }
-            .mjo-ag__empty { padding: var(--mj-space-6); }
-
             .mjo-ag__unallocated {
                 position: sticky;
                 bottom: 0;
@@ -275,6 +273,12 @@ export class MJOAllocationGridComponent {
             (o) => o.CompanyName ?? o.CompanyID,
         );
         return [...new Set(names)];
+    }
+
+    /** Intercompany entries are raised only between legal entities, not between a company and its Division. */
+    protected get crossesLegalEntities(): boolean {
+        const companies = this.Orders.filter((o) => this.applied(o) > 0).map((o) => o.CompanyID);
+        return CrossesLegalEntities(companies, LegalEntityForHint);
     }
 
     protected applied(order: MJOAllocatableOrder): number {

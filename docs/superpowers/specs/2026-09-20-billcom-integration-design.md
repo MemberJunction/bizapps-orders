@@ -1,13 +1,23 @@
 # Bill.com integration for Orders — design
 
-**Date:** 2026-09-20 · **Author:** Claude (for Robert Kihm) · **Status:** DRAFT, awaiting Robert's review
+> **Status (2026-10-11): shipped.** Released in 5.20.0 (`packages/Server/CHANGELOG.md`). The billing
+> unit changed in 5.27.0 (golive #311: the order's company bills every unit, one invoice per order or
+> per instalment, instead of one per product company; an order that had already issued an instalment
+> under per-company schedule rows keeps them). What is built, and what is still open, is described in
+> [`docs/billcom-invoice-rail.md`](../../billcom-invoice-rail.md).
+> This file is the record of the design decisions (D-B1 to D-B12) and of the findings that changed
+> them (§13). Each section describes the state on its date; where one disagrees with the code, the
+> code is current. The migrations shipped as `V202609291000` to `V202609291003`, not under the
+> numbers used below.
+
+**Date:** 2026-09-20 · **Author:** Claude
 **Stories:** golive #146 (O-US6 invoice), #147 (O-US7 cancel), #148 (O-US8 payment polling), #242 (trigger hazard)
 **Depends on:** bizapps-orders PR #220 (`OrderHeaderPaymentSchedule`, golive #239) · `@memberjunction/connector-bill-com` 0.3.1
 
-> **How to read this.** Robert was away while this was drafted, so every place where a
+> **How to read this.** The requester was away while this was drafted, so every place where a
 > colleague would normally have asked a question is written as a **Decision** with the reasoning,
-> and collected again in §12 as **open questions**. Nothing here is implemented. The companion
-> implementation plan is `docs/superpowers/plans/2026-09-20-billcom-integration.md`.
+> and collected again in §12 as **open questions**. The companion implementation plan is
+> `docs/superpowers/plans/2026-09-20-billcom-integration.md`.
 
 ---
 
@@ -21,7 +31,7 @@ Three behaviours, all Orders-side. The connector half is done and published.
 | B | Cancel (archive) a Bill.com invoice on a unit with no payment recorded, and let it be re-issued. | #147 |
 | C | Poll Bill.com for receivable payments, and capture each cleared payment once, against the orders its invoices belong to, through `Orders.CapturePayment`. | #148 |
 
-"Billing unit" is defined in §4.1. It is what reconciles Robert's brief ("when an order is locked,
+"Billing unit" is defined in §4.1. It is what reconciles the original brief ("when an order is locked,
 create the invoice") with issue #242 ("the trigger must be the schedule row, not the order").
 
 **Out of scope:** refunds via Bill.com (descoped, #149 — v3 has no AR refund endpoint), access
@@ -58,14 +68,14 @@ sending the invoice *email* from Bill.com (see D-B12), Stripe.
 - **No Bill.com code, metadata row or package dependency.** Prior art (master plan D77) dropped
   Bill.com as a *payment rail* in favour of Stripe; it was retained as a downstream sync target.
 
-**In PR #220 (open, Craig, branch `aidp-24`):** `OrderHeaderPaymentSchedule` with
+**In PR #220 (open, branch `aidp-24`):** `OrderHeaderPaymentSchedule` with
 `ExternalSystem`, `ExternalInvoiceRef`, `SentAt` reserved for this work; `Orders.IssueInstalmentInvoice`
 (freezes `DocumentNumber`, idempotent); `Orders.GetBillingWorklist`; per-instalment document via
 `InvoiceInstalmentFacts` / `ImplicitInstalment`; `PaymentLine.OrderHeaderPaymentScheduleID`. The
 immutability trigger permits `ExternalSystem`/`ExternalInvoiceRef`/`SentAt` edits on an `Invoiced` row.
 
 **In the connector (`MemberJunction/Integrations`, `Finance/BillCom`, published 0.3.1):**
-- Peer range is now `>=5.43.0 <7.0.0`, so Andrew's 5.x/6.x concern (#146 comment) is resolved.
+- Peer range is now `>=5.43.0 <7.0.0`, so the 5.x/6.x concern raised in a #146 comment is resolved.
 - `BillComConnector extends BaseRESTIntegrationConnector`, registered as
   `'@memberjunction/connector-bill-com'`. It owns session login, 25-minute proactive re-login,
   rate limiting and the sandbox/production base URL. **It has no domain methods.** Consumers use the
@@ -108,7 +118,7 @@ record. Making the channel carry structured facts and skip recipient resolution 
 channel that behaves like nothing else registered under that base. #242 itself allows the
 alternative: "if Bill.com has to be a batch push, read the billing worklist and write back per row".
 
-**B. Bill.com invoicing inside the confirm transaction** (Robert's brief taken literally). Rejected:
+**B. Bill.com invoicing inside the confirm transaction** (the original brief taken literally). Rejected:
 `OrderEntityServer.Save` deliberately makes no network calls; a Bill.com timeout would roll back a
 booking, and once instalments exist the whole term would be invoiced on day one (#242's hazard).
 
@@ -258,7 +268,7 @@ Plus one metadata row in `metadata/payment-provider-types`: `Code: BillCom`, `Na
 `DriverClass: BillComPaymentProvider`, tokenization 0, refund 0, webhooks 0, `IsActive: 1`.
 
 **D-B2.** The schedule row's `ExternalSystem` / `ExternalInvoiceRef` / `SentAt` are **also** written,
-as the contract in #239/#242 promises and so Jeremy's "unsent means `SentAt IS NULL`" stays a
+as the contract in #239/#242 promises and so Finance's "unsent means `SentAt IS NULL`" stays a
 one-column query. `ExternalInvoice` is the authoritative mapping (it is the only home for a
 schedule-less unit, it survives cancellation as history, and the poller matches on it); the schedule
 columns are the denormalised convenience.
@@ -391,11 +401,11 @@ provider row.
 
 **D-B8 — Bill.com is the AR ledger of record for BillCom companies.** A payment recorded in BILL by
 any means is captured here, and Finance must **not** also key it into Orders by hand (O-US3), or it
-double-counts. Confirm with Jeremy (§12 Q4).
+double-counts. Confirm with Finance (§12 Q4).
 
 **D-B9 — fees.** BILL's fee to us is not in the payment payload; `convenienceFeeAmount` is charged to
 the customer. The cash-leg entry therefore books gross with a zero fee leg, and bank reconciliation
-sees BILL's fee as a separate expense. Confirm with Jeremy (§12 Q5).
+sees BILL's fee as a separate expense. Confirm with Finance (§12 Q5).
 
 **D-B10 — multi-company orders.** `Orders.CapturePayment` refuses an allocation whose order's
 header `CompanyID` differs from `ReceivingCompanyID`. A unit for selling company B on an order
@@ -490,7 +500,7 @@ Go-live is the renewal job's two acts: enable, read the preview run's list with 
 |---|---|---|---|
 | U1 ([#391](https://github.com/MemberJunction/Integrations/issues/391), PR [#392](https://github.com/MemberJunction/Integrations/pull/392)) | Integrations `Finance/BillCom` | Expose archive/restore as a connector verb (or a generic `InvokeObjectAction(object, id, 'archive')`). | ~~Spike S1: `UpdateRecord({archived:true})` via `PUT` if BILL honours it.~~ **It does not (400).** The last resort is what shipped: `BillComGateway.archiveInvoice` calls `POST /invoices/{id}/archive` through the connector's session helpers (§13.7). |
 | U2 (not filed) | MJ `integration-engine` / connector | Honour `WatermarkValue` in `FetchChanges` (`filters=updatedTime:gte:…`) or add a filtered `ListRecords`. | Full scan + local filter (works, scales poorly). |
-| U3 ([#390](https://github.com/MemberJunction/Integrations/issues/390), PR [#392](https://github.com/MemberJunction/Integrations/pull/392)) | Integrations `Finance/BillCom` | Fix the double `/v3` (seed paths without the version prefix, or collapse it in `BuildFullURL`); read BILL's array-shaped error bodies in `ExtractErrorMessage`. | Per-database metadata patch stripping `/v3` from the three objects' paths (applied to QA). |
+| U3 ([#390](https://github.com/MemberJunction/Integrations/issues/390), PR [#392](https://github.com/MemberJunction/Integrations/pull/392)) | Integrations `Finance/BillCom` | Fix the double `/v3` (seed paths without the version prefix, or collapse it in `BuildFullURL`); read BILL's array-shaped error bodies in `ExtractErrorMessage`. | Per-database metadata patch stripping `/v3` from the three objects' paths (applied to the test database). |
 | U3 | `aidp-next` | Add `@memberjunction/connector-bill-com` to `apps/MJAPI/package.json`; create the `Bill.com` `MJ: Integrations`/`Company Integrations`/`Credentials` rows per company (sandbox first). | None — deployment prerequisite. |
 | U4 | Integrations | Optional: ship the `customers` Get/Create Actions so agents can use them too. Not needed by this design. | — |
 
@@ -509,7 +519,7 @@ Go-live is the renewal job's two acts: enable, read the preview run's list with 
 
 ---
 
-## 12. Open questions and assumptions for Robert
+## 12. Open questions and assumptions
 
 Decisions above were made so work can start; each is reversible before phase 2 ships.
 
@@ -520,18 +530,20 @@ Decisions above were made so work can start; each is reversible before phase 2 s
    sees an invoice; D-B12 places that gate in Bill.com itself. If Finance wants the gate in Orders,
    set the send job to stay in Preview and use the button — zero code change.
 3. **Instalment invoice number format** in BILL (`ORD-1234-2`) and whether a re-issue may reuse it
-   (D-B7, spike S4). Plan §14.3 already flags this for Jeremy/Craig.
-4. **D-B8:** BILL-recorded checks are captured by the poller and must not be keyed manually. Jeremy.
-5. ~~**D-B9:** zero fee leg on BILL payments. Jeremy/Johanna.~~ **CLOSED** — no fee leg in AIDP by
-   design; the bank's fee is booked in Business Central at bank reconciliation (Jeremy, 2026-09-25,
+   (D-B7, spike S4). The format was already an open confirmation for Finance and the payment-schedule
+   owner.
+4. **D-B8:** BILL-recorded checks are captured by the poller and must not be keyed manually. For
+   Finance to confirm.
+5. ~~**D-B9:** zero fee leg on BILL payments. For Finance.~~ **CLOSED** — no fee leg in AIDP by
+   design; the bank's fee is booked in Business Central at bank reconciliation (Finance, 2026-09-25,
    §13 B).
 6. ~~**Tender mapping** for BILL payments (`ACH` default). Is there a `receivablesType`/funding value
    Finance wants mapped to `Check` or `Wire`?~~ **CLOSED** — see the Q6 answer above and §13 A:
-   `CHECK` → `Check`, and `OTHER` → `Wire` by agreed convention (Jeremy, 2026-09-25).
+   `CHECK` → `Check`, and `OTHER` → `Wire` by agreed convention (Finance, 2026-09-25).
 7. **D-B10 multi-company orders** are out of v1's capture path. Acceptable for cutover?
 8. **Reversal automation.** v1 flags voided/failed BILL payments as `ReversalNeeded`; O-US13's
    manual path handles them. Automate in a follow-up?
-9. **Who owns U1/U2** in Integrations (Madhav?) and whether phase 3 waits for U2 or ships with the
+9. **Who owns U1/U2** in Integrations, and whether phase 3 waits for U2 or ships with the
    full-scan fallback.
 10. **Assumption:** the `PaymentProvider` row is the right home for per-company Bill.com config
     (D-B4), rather than a new `OrderCompanyPolicy` column. Reasoning: #146 says "provider registration
@@ -580,21 +592,21 @@ the spikes S1–S5 (they need sandbox credentials; the harness is ready).
 ### 13.3 PR #208 and PR #220, as of 2026-09-20 evening
 
 - **#220 was rebased onto `next`** the same day: migrations renumbered `V202609211200` / `V202609211300`,
-  CodeGen `Sequence` literals replaced with `MAX+1`, and Andrew's review (changes requested) asked for
+  CodeGen `Sequence` literals replaced with `MAX+1`, and the review of #220 (changes requested) asked for
   (1) plain DDL above the CodeGen banner — done in `44b554e7`; (2) **merge #208 first and rebase onto
-  Robert's `OverdueViewSQL()` emitter** — pending; (3) a fresh-database replay — pending. Andrew is out
-  and told Craig to coordinate the #208 order with Robert and merge without him.
+  #208's `OverdueViewSQL()` emitter** — pending; (3) a fresh-database replay — pending. The reviewer
+  left the merge order of #208 and #220 to the two PRs' authors, without a further review.
 - **#208 conflicted with `next` only on package versions and the lockfile** (`next` had released 5.13.0
-  and raised the bizapps-common floor to `>=5.44.0`). Resolved in the `bizapps-orders-tz` worktree:
-  `next`'s versions win, #208's `@mj-biz-apps/common-entities` dependency stays at the new floor,
-  lockfile regenerated. Build green, 1,704 unit tests pass (the two checkout-element failures are the
-  local Angular-build ones). **Not pushed** — Robert's PR, Robert's call.
-- **The #208 × #220 reconciliation** is the one Craig's item (2) needs, and it is done on this branch:
+  and raised the bizapps-common floor to `>=5.44.0`). Resolved locally: `next`'s versions win, #208's
+  `@mj-biz-apps/common-entities` dependency stays at the new floor, lockfile regenerated. Build green,
+  1,704 unit tests pass (the two checkout-element failures are the local Angular-build ones).
+  **Not pushed**: that is for #208's author.
+- **The #208 × #220 reconciliation** is the one the review's item (2) needs, and it is done on this branch:
   `OverdueSQL(alias, dueDateExpression = alias.DueDate, todayExpression = 'bt.Today')`; the filter reads
   `NextDueDate`; `OverdueViewSQL()` emits the view with `nd` (CROSS APPLY over live unpaid instalments,
   falling back to the header) and `bt` (CROSS JOIN `fnBusinessToday()`); #220's migration carries that
-  text byte for byte so both branches' drift tests hold. Craig can lift `packages/Entities/src/overdue.ts`,
-  its test, and the view block from this branch.
+  text byte for byte so both branches' drift tests hold. #220's author can lift
+  `packages/Entities/src/overdue.ts`, its test, and the view block from this branch.
 - **This design is unchanged by #220's updates.** The trigger contract (schedule row → invoiceable when
   `Invoiced`; whole order → invoiceable at `Confirmed`) is what #220 ships. Two code-level uses were
   added: `BuildInvoiceDocuments({ PaymentScheduleID })` renders the instalment's own document for the
@@ -608,8 +620,8 @@ the spikes S1–S5 (they need sandbox credentials; the harness is ready).
 - Schedule (PR #220) support is still checked at runtime (`provider.EntityByName`) so a database that
   has not run #220's migration reads every order as billed as a whole; the `ExternalInvoice →
   OrderHeaderPaymentSchedule` FK is plain, because this branch's migrations sort after #220's.
-- Migrations are plain DDL (Amith's direction on #220), not the idempotent guards `CLAUDE.md` asks for —
-  flagged for Robert in the plan's Global Constraints.
+- Migrations are plain DDL (the direction on #220). That is now the repo rule: migrations run once,
+  in order, with no existence guards, and `CLAUDE.md` no longer asks for idempotent ones (#514).
 - The generated remote-operation base classes were added to `remote_operations.ts` by hand in exactly
   CodeGen's emitted shape; the next CodeGen run reproduces them.
 - TypeScript here compiles without `strictNullChecks`, so union narrowing uses `=== false` / `=== true`
@@ -656,7 +668,7 @@ Also: `Refused` output on the poll Action and its metadata param.
 - 13 *Hard-coded schema* in `paidOnUnit`'s subquery (`[__mj_BizAppsOrders].[PaymentHeader]`): the same
   precedent as `nextPaymentNumber`; the app schema is not parameterised at runtime.
 - 14 *Schedule stamp is best-effort.* If stamping `SentAt` on the instalment fails after the
-  `ExternalInvoice` row is `Sent`, the worklist is still right (it reads `ExternalInvoice`) but Jeremy's
+  `ExternalInvoice` row is `Sent`, the worklist is still right (it reads `ExternalInvoice`) but Finance's
   `SentAt IS NULL` query is not; the failure is logged. Making the two writes one transaction is a
   follow-up once the operation's transaction boundary is settled with the rail call outside it.
 - 16 *Re-issue numbering* after a cancel still sends the same `DocumentNumber`; whether BILL accepts a
@@ -682,12 +694,11 @@ the fixes introduced; all four are fixed:
 
 - **PR #208 merged to `next`** (`660cc823`) after its view migration was renumbered `V202609211100` past the
   append-only gate's new floor (`V202609201435`, #219's event attributes). CI green.
-- **Craig's rebase of #220 is prepared** on the local branch `aidp-24-rebase-208` (worktree `wt-220`,
-  commit `94c2ef48`): `next` merged into `aidp-24`, `overdue.ts` and its test reconciled, migrations renumbered
-  `V202609211200` / `V202609211300`, the view block byte-identical to `OverdueViewSQL()`, the generated GraphQL
-  schema a union of both CodeGen outputs. Builds; 1,729 unit tests pass (the two checkout-element failures
-  are the local Angular-build ones). Not pushed — Robert decides whether it goes to Craig as a PR against
-  `aidp-24` or as a pointer.
+- **A rebase of #220 onto #208 is prepared** on a local branch: `next` merged into `aidp-24`, `overdue.ts`
+  and its test reconciled, migrations renumbered `V202609211200` / `V202609211300`, the view block
+  byte-identical to `OverdueViewSQL()`, the generated GraphQL schema a union of both CodeGen outputs.
+  Builds; 1,729 unit tests pass (the two checkout-element failures are the local Angular-build ones). Not
+  pushed: whether it goes to #220's author as a PR against `aidp-24` or as a pointer is still to decide.
 - **This branch** now carries `next` (with #208 and the predictive/event-attribute PRs) plus that rebase;
   the Bill.com migrations still sort after #220's (`V2026092210xx` > `V202609211300`).
 - **Deploy prerequisites carried forward:** bizapps-common ≥ 5.43 on the host (`fnBusinessToday`) and the
@@ -701,7 +712,7 @@ the version segment moved out of the base URL and into the paths (#390), and `Ar
 
 Three consequences, all now done:
 
-1. **The QA `/v3` patch is REVERSED.** Stripping the prefix from the three seeded `IntegrationObject`
+1. **The test database's `/v3` patch is REVERSED.** Stripping the prefix from the three seeded `IntegrationObject`
    rows was a workaround for 0.3.1, where the base URL already carried the version. On 0.3.2 the base
    is `…/connect` and the seeded paths are correct as the connector ships them. A host installing
    0.3.2 needs no patch at all; a host still pinned to 0.3.1 needs the old one.
@@ -728,17 +739,18 @@ monthly for the console and monthly per instance, invoiced separately. Booking t
 a zero fee leg is therefore correct, and bank reconciliation sees Bill.com's fee as an ordinary
 monthly expense. One caveat the CFO raised: on the rare credit-card receipt, the convenience fee
 Bill.com passes to the customer and the fee it charges us rarely line up, so a few pennies are
-reconciled by hand today. That is unchanged by this integration. Tyler owns the day-to-day detail.
+reconciled by hand today. That is unchanged by this integration. Finance owns the day-to-day detail.
 
 **Q6 (tender mapping) — CLOSED, and it changed the build.** "I am unaware of any PayPal, wallet, or
 other payment types." The bulk is ACH; credit card is rare. That answer did more than make the
-unmapped residue harmless — it freed `OTHER`, which Jeremy then spent on wires (§13 A, 2026-09-25):
+unmapped residue harmless — it freed `OTHER`, which Finance then spent on wires (§13 A, 2026-09-25):
 Finance selects `Other` when marking a wire paid, and `OTHER` maps to Orders' `Wire`. `PAYPAL`,
 `WALLET` and `UNDEFINED` still fall to ACH and are unreachable, because they do not occur.
 
-**Q3 (instalment numbering) — effectively Craig's call.** The CFO's own preference is to suffix the
-re-issue, matching how they operate today, but he defers: "I am fine with any approach that gives us
-clear traceability," and notes Craig favours a new schedule row. Either satisfies Finance.
+**Q3 (instalment numbering) — effectively the payment-schedule owner's call.** The CFO prefers to suffix
+the re-issue, matching how Finance operates today, but defers: "I am fine with any approach that gives us
+clear traceability," noting that the payment-schedule owner favours a new schedule row. Either satisfies
+Finance.
 
 **A cancel must NOT push a credit memo to the rail — and does not.** Today, cancelling in Business
 Central generates a corrective credit memo which syncs to Bill.com and sits there active and
@@ -754,13 +766,13 @@ Two things the answer exposes, neither previously visible.
 
 **A. WIRES ARE REAL AND RECURRING — SETTLED 2026-09-25: `OTHER` MEANS WIRE.**
 
-> **Jeremy's answer (PR #235, 2026-09-25):** "Wires arriving as OTHER: let's map OTHER to Wire. We
+> **Finance's answer (on PR #235, 2026-09-25):** "Wires arriving as OTHER: let's map OTHER to Wire. We
 > don't use PayPal, wallet or other tender, so OTHER is free for this. Finance will select Other when
 > marking a wire paid in Bill.com. I'd rather not read a marker from the description or reference
 > number, since that depends on consistent typing."
 >
 > Option one below, taken. Implemented in `BILLCOM_TENDER` (`OTHER: 'Wire'`) and covered by tests.
-> The marker-reading option is explicitly rejected, for the reason Jeremy gives: a rule that depends
+> The marker-reading option is explicitly rejected, for the reason Finance gives: a rule that depends
 > on a person typing consistently is not a rule. `PAYPAL`, `WALLET` and `UNDEFINED` still fall to ACH
 > and are now unreachable rather than a guess — which is what made spending `OTHER` safe.
 
@@ -782,7 +794,7 @@ safe only because PayPal and wallet genuinely do not occur here); read Bill.com'
 
 **B. THE WIRE FEE — SETTLED 2026-09-25: NO FEE LEG IN AIDP, BY DESIGN.**
 
-> **Jeremy's answer (PR #235, 2026-09-25):** "No fee leg in AiDP. Capture books the payment gross and
+> **Finance's answer (on PR #235, 2026-09-25):** "No fee leg in AiDP. Capture books the payment gross and
 > relieves the full invoice amount. Finance books the bank's fee in BC as a bank fee expense during
 > the bank reconciliation. Bank feeds come after go-live, and that's where fees belong."
 >
@@ -800,8 +812,8 @@ This is not a Bill.com defect and not fixable inside this rail; it is the distan
 paid for gross" and "the bank credited less". Finance and accounting have placed it in the bank
 reconciliation, not here.
 
-**Left open by the CFO, back to Robert:** whether the Stripe and HubSpot cash-receipt flows need the
-same examination. Outside this integration's scope, but he asked.
+**Left open by the CFO:** whether the Stripe and HubSpot cash-receipt flows need the same examination.
+Outside this integration's scope, but the CFO asked.
 
 ### 13.9 2026-09-22 — adversarial review, and the six defects it found
 
@@ -811,12 +823,13 @@ were fixed; the rest are recorded here or in the plan.
 1. **Migration ordering, and it was the worst of them.** While this branch sat unpushed, `next` gained
    `V202609221500`. The Bill.com migrations started at `V202609221000`, below it, so the CI append-only
    gate fails and the runner refuses to migrate at all on a database holding the newer one. Renumbered
-   to `V2026092215{51,52,53}`. The QA database's history rows were rewritten to match; nothing re-ran.
+   to `V2026092215{51,52,53}`. The test database's history rows were rewritten to match; nothing re-ran.
    **This is the second time these files have been renumbered, and the reason it is dangerous both
    times is that they carry no `IF NOT EXISTS` guards** — a renumber makes them new versions, so they
    re-execute, and plain `CREATE TABLE` then fails and rolls the whole run back. CLAUDE.md asks for
-   idempotent migrations; #220 asked for plain DDL. That conflict is still unruled and is now the
-   thing standing between this branch and a safe renumber. **Robert: this needs a decision.**
+   idempotent migrations; #220 asked for plain DDL. **Since ruled:** plain DDL, no guards, and
+   `CLAUDE.md` now says so (#514). Renumbering stays safe only for a migration no shared database
+   has run; a merged one is locked (`docs/database-migrations.md`).
 2. **The tie check refused correctly priced orders.** `rowLines` derives a unit price from an
    already-rounded line amount, and the check summed the raw products. Three lines of 2.5 × 13.33 gave
    99.98 against a unit amount of 99.99, and with both sides cent-quantised the half-cent tolerance is
@@ -854,7 +867,7 @@ memos at any company with a rail; `ExternalInvoice.Amount > 0` makes a zero-valu
 
 ### 13.8 2026-09-22 — where the provider abstraction leaks
 
-Robert asked whether Bill.com is hard-coded or swappable. The seam is real: `BaseInvoiceRail` is
+The requester asked whether Bill.com is hard-coded or swappable. The seam is real: `BaseInvoiceRail` is
 class-factory keyed by `PaymentProviderType.Code`, `INVOICE_RAIL_TYPE_CODES` is a list, the four new
 tables and all five operations are named for the concept rather than the vendor, and every Bill.com
 specific is confined to four files. A second rail is a new `PaymentProviderType` row, a class, and one
@@ -892,7 +905,7 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
 - **D-B7 hardens, but not for the reason first written.** A duplicate `invoiceNumber` is refused while
   the invoice holding it is LIVE. The second half of this bullet — "an archived invoice keeps its
   number" — was extrapolated, never probed, and is **wrong**: see S6 (2026-09-29), where the same
-  number is accepted once the first invoice is archived. The `-R1` suffix stays (Craig, golive #242),
+  number is accepted once the first invoice is archived. The `-R1` suffix stays (ruled on golive #242),
   and the corrected reasoning is stronger: reuse IS an option BILL offers, and taking it would put a
   second, different `ORD-1234` in front of a customer who already holds the first.
 - **D-B12 stands.** Creating an invoice shows no sent indicator; the human gate remains BILL's Send.
@@ -901,10 +914,10 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
   [#391](https://github.com/MemberJunction/Integrations/issues/391) (archive verb) on
   MemberJunction/Integrations, with PR [#392](https://github.com/MemberJunction/Integrations/pull/392) against
   `next` carrying both fixes plus `ArchiveInvoice`/`RestoreInvoice`; CI green, awaiting review. The PR needs no
-  metadata migration — the connector normalises a base URL that ends in `/v3` — so **once it releases, the QA
+  metadata migration — the connector normalises a base URL that ends in `/v3` — so **once it releases, the test
   database's `/v3` patch becomes harmless rather than required**, and `BillComGateway.archiveInvoice` can move
   to the connector verb.
-- **S2 closed 2026-09-22.** Robert recorded an offline check in the sandbox and the poller read it end to
+- **S2 closed 2026-09-22.** An offline check was recorded by hand in the sandbox and the poller read it end to
   end. BILL's status enum is exactly `PAID`, `VOID`, `SCHEDULED`, `CANCELED`, `ESCHEATED`, `UNDEFINED`;
   `receivablesType` is `CASH`, `CHECK`, `CREDIT_CARD`, `ACH`, `PAYPAL`, `OTHER`, `WALLET`,
   `VIRTUAL_CARD`, `UNDEFINED`. Three consequences:
@@ -917,11 +930,12 @@ Full table in `2026-09-20-billcom-spike-results.md`. What it changed in this des
     authoritative. **Orders' `Wire` tender is unreachable from this rail** — worth saying out loud to
     Finance, since §12 q6 asked about it. **Since settled — see §13 A: `OTHER` now maps to `Wire`, so
     Orders' `Wire` tender is reachable after all, by agreed convention rather than by a BILL type.**
-  - `PAYPAL`, `WALLET` and `UNDEFINED` still fall to ACH. **§12 q6 is CLOSED** (Jeremy, 2026-09-25): AIDP
+  - `PAYPAL`, `WALLET` and `UNDEFINED` still fall to ACH. **§12 q6 is CLOSED** (Finance, 2026-09-25): AIDP
     uses no PayPal, wallet or other tender, so the residue is unreachable rather than a placeholder.
 - **The capture leg is still unproven.** The poll correctly returned `Unmatched`, because the probe invoice
-  was created in BILL directly and Orders never issued it. Proving capture needs a Confirmed QA order, an
-  issued invoice, and a payment against that. That is the last live gap.
+  was created in BILL directly and Orders never issued it. Proving capture needs a Confirmed test order, an
+  issued invoice, and a payment against that. That is the last live gap. (Proven 2026-09-22: spike
+  results S2d.)
 - **`status` is a bare string, not an object** (§2 corrected). The design's `str()` helper flattened both,
   so this cost nothing — but the assumption was wrong and is worth not repeating.
 

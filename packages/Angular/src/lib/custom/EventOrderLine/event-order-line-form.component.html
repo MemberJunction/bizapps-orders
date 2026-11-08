@@ -28,16 +28,15 @@
         <!-- 1. Essential / Primary Fields (Always Visible) -->
         <div class="mjo-eol-primary-grid">
             <div class="mjo-eol-field mjo-eol-field--attendee">
-                <mj-form-field 
-                    [Record]="record" 
-                    [ShowLabel]="true" 
-                    FieldName="PersonID" 
-                    Type="textbox" 
-                    [EditMode]="EditMode" 
-                    [FormContext]="formContext" 
-                    LinkType="Record"
+                <bizapps-party-field
+                    [Record]="record"
+                    [ShowLabel]="true"
+                    FieldName="PersonID"
+                    Kind="Person"
+                    [EditMode]="EditMode"
+                    [FormContext]="formContext"
                     (Navigate)="OnFormNavigate($event)">
-                </mj-form-field>
+                </bizapps-party-field>
             </div>
             <div class="mjo-eol-field mjo-eol-field--status">
                 <mj-form-field 
