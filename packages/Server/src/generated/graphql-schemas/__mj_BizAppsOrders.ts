@@ -6927,6 +6927,9 @@ export class mjBizAppsOrdersOrderHeader_ {
     @MaxLength(2)
     CardIssuingCountry?: string;
         
+    @Field({nullable: true, description: "The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself."}) 
+    InitialPaymentReceivedDate?: Date;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -7132,6 +7135,9 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     CardIssuingCountry: string | null;
 
+    @Field({ nullable: true })
+    InitialPaymentReceivedDate: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7258,6 +7264,9 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     CardIssuingCountry?: string | null;
+
+    @Field({ nullable: true })
+    InitialPaymentReceivedDate?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
@@ -7994,7 +8003,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurement_ {
     @MaxLength(36)
     SupersedesMeasurementID?: string;
         
-    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
+    @Field({nullable: true, description: `Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate, so the revenue it recognised nets to zero on that date, unless that date is on or before the company's AccountingCompanyProfile.BooksClosedThroughDate; then on the first day after it. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`}) 
     @MaxLength(36)
     ReversalJournalEntryID?: string;
         

@@ -21,10 +21,14 @@
  * `PaymentHeaderEntityServer` books the cash leg — the same path a keyed check takes (A-US2).
  *
  * WHAT NEEDS A PERSON. `Unmatched` (an invoice we did not issue — pre-cutover AR, or created directly
- * in Bill.com) and `ReversalNeeded` (captured, then voided on the rail) are reported as `ATTENTION`
- * with Success false so a job that notifies on failure tells somebody; the rows stay in
- * `ExternalPayment` until dealt with. A payment the rail itself records Unmatched (HubSpot, which
- * cannot name a payment's deal yet) is counted but does not fail the run on its own.
+ * in Bill.com), `Refused`, `Reapplied` and `ReversalNeeded` (captured, then voided on the rail) stay in
+ * `ExternalPayment` until dealt with. A live pass that leaves any reports `ATTENTION` with Success
+ * TRUE: the pass did its work, and these rows are re-read every pass, so failing the run told the
+ * job's owner about the same payments every hour (#1033). Instead each payment is announced once,
+ * through the `Payment Needs Review` notification, on the pass that moves it into a waiting
+ * disposition or from one to another (`PaymentReviewNotices.ts`). A payment the rail itself records
+ * Unmatched (HubSpot, which cannot name a payment's deal yet) is counted but neither raises
+ * `ATTENTION` nor a notice on its own.
  *
  * @module @mj-biz-apps/orders-core-entities-server
  */
@@ -46,6 +50,8 @@ import {
     Today,
     ClassifyPollJobsFor,
     LoadPollJobs,
+    PollJobRecipients,
+    type PollJobRow,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
@@ -57,6 +63,7 @@ import {
 } from './entity-names.js';
 import { ListPaymentSourceProviderIDs, ResolveInvoiceRail } from './InvoiceRailResolver.js';
 import { LoadExternalInvoicesByRef, updateExternalInvoice, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
+import { IsNewlyWaiting, SendPaymentReviewNotices, type PaymentReviewItem } from './PaymentReviewNotices.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
 
 const RAIL_OBJECT = 'receivable-payments';
@@ -139,7 +146,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const faults: string[] = [];
             const skipped: string[] = [];
             const previewed: string[] = [];
-            const passes: Array<{ Preview: boolean; Outcomes: ExternalPaymentOutcome[]; RailUnmatched: number }> = [];
+            const passes: Array<{ ProviderID: string; Preview: boolean; Outcomes: ExternalPaymentOutcome[]; RailUnmatched: number; NewlyWaiting: PaymentReviewItem[] }> = [];
             for (const p of providers) {
                 let providerPreview = preview;
                 if (jobs) {
@@ -153,11 +160,26 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                         previewed.push(`provider ${p.ID}: ${job.Why}`);
                     }
                 }
-                const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, provider, user);
-                passes.push({ Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0 });
-                out.Outcomes.push(...result.Outcomes);
-                out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
-                if (result.Fault) faults.push(result.Fault);
+                // Filled as the pass goes, so payments it already moved into a waiting disposition are
+                // still announced when the pass throws part-way.
+                const newlyWaiting: PaymentReviewItem[] = [];
+                try {
+                    const result = await this.pollProvider(p.ID, { preview: providerPreview, maxCount, since: input?.SinceWatermark ?? null }, newlyWaiting, provider, user);
+                    passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: result.Outcomes, RailUnmatched: result.RailUnmatched ?? 0, NewlyWaiting: newlyWaiting });
+                    out.Outcomes.push(...result.Outcomes);
+                    out.NewWatermarks.push({ PaymentProviderID: p.ID, Watermark: result.NewWatermark });
+                    if (result.Fault) faults.push(result.Fault);
+                } catch (err) {
+                    // One provider throwing (a rail that is missing, inactive or not registered) must not
+                    // drop what the other providers recorded and collected: it is reported as a fault.
+                    const why = err instanceof Error ? err.message : String(err);
+                    LogError(`Orders.PollExternalPayments: provider ${p.ID} failed: ${why}`);
+                    faults.push(`provider ${p.ID}: ${why}`);
+                    if (newlyWaiting.length) passes.push({ ProviderID: p.ID, Preview: providerPreview, Outcomes: [], RailUnmatched: 0, NewlyWaiting: newlyWaiting });
+                }
+            }
+            if (!passes.length && faults.length) {
+                return { ...out, Success: false, ResultCode: 'ERROR', Message: `The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
             }
             if (!passes.length) {
                 return {
@@ -186,8 +208,11 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 else if (o.Disposition === 'ReversalNeeded') out.ReversalNeeded++;
                 else out.Ignored++;
             }
+            // Announced before a fault is reported: the rows are already written, so the next pass reads
+            // them as already waiting and would never announce them.
+            const notices = await this.announceNewlyWaiting(passes.filter((x) => !x.Preview), jobs, user);
             if (faults.length) {
-                return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}` };
+                return { ...out, Success: false, ResultCode: 'ERROR', Message: `${previewNote}The poll hit a fault on ${faults.length} provider(s): ${faults.join(' | ')}${notices}` };
             }
             // A payment the rail itself records Unmatched (every HubSpot payment, until its deal can be read) is the
             // expected state, not something this run found wrong: it is counted and listed, but on its own it does
@@ -195,17 +220,19 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             const railUnmatched = passes.filter((x) => x.Preview === preview).reduce((n, x) => n + x.RailUnmatched, 0);
             const awaitingNote = railUnmatched > 0 ? ` ${railUnmatched} recorded Unmatched by a rail that cannot match payments to orders yet (see External Payments).` : '';
             const needsPerson = out.Unmatched - railUnmatched + out.Refused + out.Reapplied + out.ReversalNeeded;
+            // Waiting payments are not a failed run (#1033): each was announced once, on the pass that
+            // moved it into the state it waits in.
             if (!preview && needsPerson > 0) {
                 return {
                     ...out,
-                    Success: false,
+                    Success: true,
                     ResultCode: 'ATTENTION',
-                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched - railUnmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).${awaitingNote}`,
+                    Message: `${previewNote}${out.Captured} payment(s) captured; ${out.Unmatched - railUnmatched} unmatched, ${out.Refused} refused, ${out.Reapplied} re-applied on the rail and ${out.ReversalNeeded} needing reversal are waiting for a person (see External Payments).${awaitingNote}${notices}`,
                 };
             }
             out.Message = preview
                 ? `${previewNote}Would capture ${out.Outcomes.filter((o) => o.Disposition === 'Captured').length} payment(s); ${out.Held} held, ${out.Unmatched} unmatched.`
-                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.${awaitingNote}`;
+                : `${previewNote}${out.Captured} payment(s) captured, ${out.Held} held, ${out.Ignored} already known.${awaitingNote}${notices}`;
             return out;
         } catch (err) {
             LogError(`Orders.PollExternalPayments failed: ${err}`);
@@ -213,9 +240,48 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
         }
     }
 
+    /**
+     * Notify about the payments live passes moved into a waiting disposition. Recipients are the
+     * governing poll job's notify user, else its owner (the people MJ's scheduler tells when the run
+     * fails); when no job names anybody, or the jobs were not read, the user running the poll.
+     * Returns a sentence for the run's message, empty when there was nothing to announce. Never throws.
+     */
+    private async announceNewlyWaiting(
+        livePasses: ReadonlyArray<{ ProviderID: string; NewlyWaiting: PaymentReviewItem[] }>,
+        jobs: readonly PollJobRow[] | null,
+        user: UserInfo,
+    ): Promise<string> {
+        let count = 0;
+        let sent = 0;
+        let failed = 0;
+        for (const pass of livePasses) {
+            if (!pass.NewlyWaiting.length) continue;
+            count += pass.NewlyWaiting.length;
+            try {
+                const named = jobs ? PollJobRecipients(jobs, pass.ProviderID) : [];
+                const recipients = named.length ? named : user?.ID ? [user.ID] : [];
+                if (!recipients.length) {
+                    LogError(`Orders.PollExternalPayments: ${pass.NewlyWaiting.length} payment(s) newly need review, but there is nobody to notify.`);
+                    continue;
+                }
+                const r = await SendPaymentReviewNotices(pass.NewlyWaiting, recipients, user);
+                sent += r.Sent;
+                failed += r.Failed;
+            } catch (err) {
+                failed += pass.NewlyWaiting.length;
+                LogError(`Orders.PollExternalPayments: review notices failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
+        }
+        if (!count) return '';
+        return ` ${count} payment(s) newly need review; ${sent} notification(s) sent${failed ? `, ${failed} failed (see the server log)` : ''}.`;
+    }
+
     private async pollProvider(
         paymentProviderID: string,
         opts: { preview: boolean; maxCount: number; since: string | null },
+        // Receives the payments this pass moved into a waiting disposition. A preview writes nothing,
+        // so a later live pass still finds them new; only a live pass collects them.
+        newlyWaiting: PaymentReviewItem[],
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<{ Outcomes: ExternalPaymentOutcome[]; NewWatermark: string | null; Fault: string | null; RailUnmatched?: number }> {
@@ -272,6 +338,7 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
                 const outcome = await this.handlePayment(rail, p, prior, opts.preview, bookingCurrency, provider, user);
                 outcomes.push(outcome);
                 if (outcome.Disposition === 'Unmatched' && p.UnmatchedReason) railUnmatched++;
+                if (!opts.preview && IsNewlyWaiting(prior?.Disposition, outcome, !!p.UnmatchedReason)) newlyWaiting.push({ Outcome: outcome, RailName: rail.Config.Name });
             } catch (err) {
                 // One bad payment must not stop the pass — but it must stop the watermark.
                 fault = `${p.ExternalPaymentRef}: ${err instanceof Error ? err.message : String(err)}`;
@@ -292,7 +359,9 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             rail,
         )) {
             try {
-                outcomes.push(await this.handlePayment(rail, Record, Row, opts.preview, bookingCurrency, provider, user));
+                const outcome = await this.handlePayment(rail, Record, Row, opts.preview, bookingCurrency, provider, user);
+                outcomes.push(outcome);
+                if (!opts.preview && IsNewlyWaiting(Row.Disposition, outcome, !!Record.UnmatchedReason)) newlyWaiting.push({ Outcome: outcome, RailName: rail.Config.Name });
             } catch (err) {
                 LogError(`Orders.PollExternalPayments: re-checking re-applied payment ${Row.ExternalPaymentRef} failed: ${err instanceof Error ? err.message : String(err)}`);
             }

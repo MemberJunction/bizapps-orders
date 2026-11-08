@@ -80,10 +80,10 @@ describe('PollExternalPaymentsAction', () => {
         expect(executePoll.mock.calls[0][0]).toMatchObject({ Preview: false, SinceWatermark: '2026-09-01T00:00:00.000Z' });
     });
 
-    it('ATTENTION comes back as a failure so the job notifies', async () => {
-        executePoll.mockResolvedValue({ Success: true, Output: { Success: false, ResultCode: 'ATTENTION', Captured: 1, Held: 0, Unmatched: 1, ReversalNeeded: 0, Ignored: 0, Outcomes: [], NewWatermarks: [], PreviewedOnly: false, Message: 'look' } });
+    it('ATTENTION passes through as a success, so waiting payments do not fail the job every hour', async () => {
+        executePoll.mockResolvedValue({ Success: true, Output: { Success: true, ResultCode: 'ATTENTION', Captured: 1, Held: 0, Unmatched: 1, ReversalNeeded: 0, Ignored: 0, Outcomes: [], NewWatermarks: [], PreviewedOnly: false, Message: 'look' } });
         const r = await action().InternalRunAction(run([]));
-        expect(r.Success).toBe(false);
+        expect(r.Success).toBe(true);
         expect(r.ResultCode).toBe('ATTENTION');
     });
 

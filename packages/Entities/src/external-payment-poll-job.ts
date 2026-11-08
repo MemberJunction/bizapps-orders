@@ -40,6 +40,9 @@ export interface PollJobState {
 export interface PollJobRow {
     Status: string | null;
     Configuration: string | null;
+    /** Who the job's notifications go to. MJ's scheduler uses this, then `OwnerUserID`. */
+    NotifyUserID?: string | null;
+    OwnerUserID?: string | null;
 }
 
 /**
@@ -131,14 +134,37 @@ export function ClassifyPollJobs(jobs: readonly PollJobRow[]): PollJobState {
  */
 export function ClassifyPollJobsFor(jobs: readonly PollJobRow[], paymentProviderID: string | null | undefined): PollJobState {
     if (!paymentProviderID) return ClassifyPollJobs(jobs);
+    const governing = PollJobsGoverning(jobs, paymentProviderID);
+    if (governing.length) return ClassifyPollJobs(governing);
+    return { State: 'NotInstalled', Why: 'no scheduled poll job covers this payment provider' };
+}
+
+/**
+ * The jobs that govern one provider: those naming it, or, when none does, those naming no provider.
+ * Empty when no job covers it. With no provider given, every job.
+ */
+export function PollJobsGoverning(jobs: readonly PollJobRow[], paymentProviderID: string | null | undefined): PollJobRow[] {
+    if (!paymentProviderID) return [...jobs];
     const own = jobs.filter((j) => {
         const id = PollJobProviderID(j.Configuration);
         return id != null && UUIDsEqual(id, paymentProviderID);
     });
-    if (own.length) return ClassifyPollJobs(own);
-    const catchAll = jobs.filter((j) => PollJobProviderID(j.Configuration) == null);
-    if (catchAll.length) return ClassifyPollJobs(catchAll);
-    return { State: 'NotInstalled', Why: 'no scheduled poll job covers this payment provider' };
+    if (own.length) return own;
+    return jobs.filter((j) => PollJobProviderID(j.Configuration) == null);
+}
+
+/**
+ * Who hears about the jobs governing one provider: each job's `NotifyUserID`, else its `OwnerUserID`
+ * (the same choice MJ's scheduler makes for a failed run), without duplicates. Empty when no governing
+ * job names anybody.
+ */
+export function PollJobRecipients(jobs: readonly PollJobRow[], paymentProviderID: string | null | undefined): string[] {
+    const out: string[] = [];
+    for (const j of PollJobsGoverning(jobs, paymentProviderID)) {
+        const id = (j.NotifyUserID || j.OwnerUserID || '').trim();
+        if (id && !out.some((x) => UUIDsEqual(x, id))) out.push(id);
+    }
+    return out;
 }
 
 /** One state per provider a job names, plus one for the jobs that name none (`ProviderID` null). */
@@ -161,7 +187,7 @@ export async function LoadPollJobs(user?: UserInfo, provider?: IRunViewProvider)
         {
             EntityName: SCHEDULED_JOB_ENTITY,
             ExtraFilter: `Configuration LIKE '%${POLL_EXTERNAL_PAYMENTS_ACTION_ID}%'`,
-            Fields: ['Status', 'Configuration'],
+            Fields: ['Status', 'Configuration', 'NotifyUserID', 'OwnerUserID'],
             OrderBy: 'Name',
             ResultType: 'simple',
             BypassCache: true,

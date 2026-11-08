@@ -8,6 +8,7 @@ import { NavigationService } from '@memberjunction/ng-shared';
 import type { ExportDialogConfig } from '@memberjunction/ng-export-service';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
+    AsDateValue,
     CanOfferConfirm,
     DescribeClearedEmployers,
     DescribeDisplacedTermStart,
@@ -15,6 +16,7 @@ import {
     OrderHeaderEntity,
     OrdersConfirmReadinessOperation,
     OrdersPollExternalPaymentsOperation,
+    ToISODate,
     type DateCell,
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     type mjBizAppsOrdersPaymentTypeEntity,
@@ -787,6 +789,22 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public OpenProduct(id: string): void {
         this.openRecord(MJO_ENTITIES.Product, id);
+    }
+
+    /** The initial payment's received day (`YYYY-MM-DD`), or '' when it takes the order's date. */
+    public get InitialPaymentReceivedDay(): string {
+        return ToISODate(this.record?.InitialPaymentReceivedDate) ?? '';
+    }
+
+    public SetInitialPaymentReceivedDay(value: string): void {
+        if (!this.record) return;
+        this.record.InitialPaymentReceivedDate = AsDateValue(value);
+    }
+
+    public get InitialPaymentReceivedHint(): string {
+        return this.InitialPaymentReceivedDay
+            ? 'The payment is dated this day.'
+            : "Leave blank to date the payment on the order's date.";
     }
 
     public get PaymentParams(): RunViewParams | null {

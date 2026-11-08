@@ -652,6 +652,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             case 'InitialPaymentAmount':
             case 'InitialPaymentReference':
             case 'InitialPaymentDetailID':
+            case 'InitialPaymentReceivedDate':
                 return 'payment';
             default:
                 return 'header';
