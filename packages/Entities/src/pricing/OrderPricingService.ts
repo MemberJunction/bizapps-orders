@@ -133,6 +133,12 @@ export interface OrderPricingContext {
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
     /**
+     * Skip the check that each product may be sold (Status Active, inside its availability window).
+     * PreviewPrice sets it for the product form's Activate check, which asks whether a Draft product
+     * has a price. Off for every walk that books or quotes an order.
+     */
+    IgnoreSellability?: boolean;
+    /**
      * Also resolve what the rules WOULD say for a line whose price the caller stated.
      *
      * A stated price pins the line and the walk normally stops there — the engine fills a blank and
@@ -617,7 +623,7 @@ export class OrderPricingService {
         // draft whose product was retired since. Refusing here aborts the confirm before any line is
         // written.
         const product = await this.loadProductForPricing(line.ProductID);
-        if (product) this.assertProductSellable(line, product);
+        if (product && !this.ctx.IgnoreSellability) this.assertProductSellable(line, product);
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price

@@ -14,7 +14,7 @@ import type {
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
 import { FormatListPriceFromRows } from '../panels/catalog-list-price';
-import { LoadProductLookupNames } from '../panels/product-lookup-names';
+import { LoadProductLookupNames, REV_REC_FROM_TYPE_LABEL } from '../panels/product-lookup-names';
 import { FormatShortDate, FormatShortInstantDate, YesNo } from './document-form.helpers';
 import type { MJOOverviewCard } from './overview-cards.component';
 import { CountOverviewRows, LoadOverviewRows } from './overview-load';
@@ -238,7 +238,7 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                 Icon: 'fa-solid fa-chart-column',
                 Facts: [
                     { Label: 'Order lines', Value: String(orderCount) },
-                    { Label: 'Rev-rec', Value: names.RevRec },
+                    { Label: 'Rev-rec', Value: names.RevRecFromType ? `${names.RevRec} (${REV_REC_FROM_TYPE_LABEL})` : names.RevRec },
                     { Label: 'Tax', Value: this.Record.IsTaxable ? 'Taxable' : 'Exempt' },
                     { Label: 'Successor', Value: names.Successor },
                 ],

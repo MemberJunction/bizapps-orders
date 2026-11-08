@@ -71,6 +71,7 @@ import {
     HostOrderLineEditVeto,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
+    InitialPaymentDay,
     registerOrderLifecyclePolicy,
     registerOrdersDocumentNumberingPolicies,
 } from '@mj-biz-apps/orders-entities';
@@ -5214,12 +5215,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
-        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
-        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
-        // next caller to reach this method with no order date should not discover that. Keeping the
-        // stated day matters just as much: a backdated order's payment must carry the same date.
-        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
+        // The day the money arrived when finance gave one (bc-aidp-next-golive#448), else the order's
+        // own day, else today's business day (#209). `OrderDate` is defaulted at `NewRecord()` since
+        // #168, so the last fallback is very likely unreachable — but a `DATE` column fed `new Date()`
+        // is dated tomorrow for the whole American evening, and the next caller to reach this method
+        // with no order date should not discover that. Keeping the stated day matters just as much:
+        // a backdated order's payment must carry the same date, and so must its cash entry.
+        payment.PaymentDate = await CalendarDayOrToday(InitialPaymentDay(this.OrderDate, this.InitialPaymentReceivedDate), provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;

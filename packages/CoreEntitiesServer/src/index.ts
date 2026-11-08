@@ -6,7 +6,7 @@
  * these subclasses higher priority than the generated ones.
  */
 export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccountResolver.js';
-export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
+export type { GLRole, GLRoleExplanation, GLWalkLevel, GLWalkStep, ResolverEntityIDs } from './GLAccountResolver.js';
 
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
@@ -175,6 +175,13 @@ export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from '
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
 export { ConfirmReadinessOperation, LoadConfirmReadinessOperation, ConcessionProblemSentence } from './ConfirmReadinessOperation.js';
+export {
+    ExplainProductGLAccountsOperation,
+    LoadExplainProductGLAccountsOperation,
+    PRODUCT_GL_ROLES,
+    RequireGLRoles,
+    ShapeRoleExplanation,
+} from './ExplainProductGLAccountsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
