@@ -20,7 +20,6 @@ import {
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
 import { RequireUUID } from '../sql-guards.js';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
-import { RequireUUID } from '../sql-guards.js';
 
 /** The line fields the context depends on. */
 export interface PricedLineFacts {
