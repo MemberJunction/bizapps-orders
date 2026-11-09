@@ -45,7 +45,7 @@ BEGIN
   p_ID_f427f9435c1f := 'A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F04';
   IF EXISTS (
     SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
-     WHERE n.nspname = '__mj_bizappsLOrders' AND p.proname = 'spUpdateRevenueRecognitionType'
+     WHERE n.nspname = '__mj_bizappsorders' AND p.proname = 'spUpdateRevenueRecognitionType'
        AND p.pronargs = 1 AND p.proargtypes[0] = 'jsonb'::regtype
   ) THEN
     PERFORM __mj_BizAppsOrders."spUpdateRevenueRecognitionType"(p_data := jsonb_build_object(
