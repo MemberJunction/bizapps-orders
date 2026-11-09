@@ -599,6 +599,17 @@
         {
           "fields": {
             "SuiteID": "@parent:ID",
+            "TestID": "@lookup:MJ: Tests.Name=ORD-42 - IS-A Entities",
+            "Sequence": 42,
+            "Status": "Active"
+          },
+          "primaryKey": {
+            "ID": "4E98F0B3-5247-40E0-91B4-94AEB1EEC0CB"
+          }
+        },
+        {
+          "fields": {
+            "SuiteID": "@parent:ID",
             "TestID": "@lookup:MJ: Tests.Name=ORD-43 - Amount Change",
             "Sequence": 43,
             "Status": "Active"

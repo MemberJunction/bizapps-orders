@@ -216,6 +216,11 @@
                             <span class="mjo-sub-label">Amount</span>
                             <input type="number" class="mjo-input-price" [(ngModel)]="NewPriceAmount" min="0" step="0.01">
                         </label>
+                        <label class="mjo-field-group">
+                            <span class="mjo-sub-label">Effective from</span>
+                            <input type="date" class="mjo-input-text" [(ngModel)]="NewPriceEffectiveFrom" [disabled]="IsSaving">
+                        </label>
+                        <span class="mjo-quick-add-hint">Orders dated before this day won't get this price.</span>
                         <button type="button" class="mjo-btn-add" [disabled]="IsSaving" (click)="AddPrice()">
                             @if (IsSaving) {
                                 <mj-loading class="mjo-btn-add__loading" [showText]="false" size="small" logoColor="currentColor"></mj-loading>

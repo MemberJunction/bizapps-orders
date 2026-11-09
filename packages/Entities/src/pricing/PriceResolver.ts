@@ -46,6 +46,7 @@ import {
     IsRuleApplicable,
     Money,
     PickPriceRule,
+    type InapplicableReason,
     type PriceRule,
     type PriceTierRule,
     type PricingModel,
@@ -96,6 +97,34 @@ export class RevenueBandRequiredError extends PriceResolutionError {
                 `record, so its band cannot be chosen automatically. Pick the band on the line: ${BandNames.join(', ')}.`,
         );
         this.name = 'RevenueBandRequiredError';
+    }
+}
+
+/** The reasons that put a rule outside its Effective From–To window on the day priced. */
+const OUT_OF_FORCE_REASONS: ReadonlySet<InapplicableReason> = new Set(['NotYetEffective', 'Expired']);
+
+/**
+ * Price rules exist for the product, but none applies to this quantity on this day. `Reasons` holds
+ * why each considered rule did not, in the order considered.
+ */
+export class NoApplicablePriceRuleError extends PriceResolutionError {
+    constructor(
+        ProductID: string,
+        message: string,
+        /** Null where a rule's reason is unknown (the pick and the test disagree). */
+        public readonly Reasons: (InapplicableReason | null)[],
+    ) {
+        super(ProductID, message);
+        this.name = 'NoApplicablePriceRuleError';
+    }
+
+    /**
+     * Every rule failed only on its Effective From–To window: on the day priced, the product has no
+     * list price. A caller measuring a stated price treats this as no engine price
+     * (bc-aidp-next-golive#437); a caller that must find a price still refuses.
+     */
+    public get NoneInForce(): boolean {
+        return this.Reasons.length > 0 && this.Reasons.every((r) => r != null && OUT_OF_FORCE_REASONS.has(r));
     }
 }
 
@@ -286,16 +315,18 @@ export class DefaultPriceResolver extends BasePriceResolver {
             // Nothing applied, but rules EXIST — say why the nearest one did not, in words that
             // carry the fix: "Base: not in force until 2026-09-05 — change that date or date the
             // order later" beats both "no price found" and the bare reason code it replaced.
+            const reasons = rules.map((r) => IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf }));
             const why = rules
                 .map((r, i) => {
-                    const reason = IsRuleApplicable(r, { Quantity: ctx.Quantity, AsOf: ctx.AsOf });
+                    const reason = reasons[i];
                     return `'${priceLabel(rows[i])}' did not apply: ${reason ? DescribeInapplicableReason(r, reason) : 'unknown'}`;
                 })
                 .slice(0, 4);
-            throw new PriceResolutionError(
+            throw new NoApplicablePriceRuleError(
                 ctx.ProductID,
                 `No price rule applies to quantity ${ctx.Quantity} on ${ctx.AsOf.toISOString().slice(0, 10)}. ` +
                     `${rules.length} rule(s) were considered. ${why.join('; ')}.`,
+                reasons,
             );
         }
 

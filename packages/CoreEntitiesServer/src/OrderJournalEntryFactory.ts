@@ -106,6 +106,7 @@ import { RecognitionMirrors, RevenueRecognitionDriver, type RevRecEntry } from '
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
+import { CustomerPart, OrderCustomerName } from './JournalEntryCustomer.js';
 import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
@@ -583,6 +584,8 @@ export class OrderJournalEntryFactory {
         if (!product) {
             throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
         }
+        // Named in each entry's description so accounting's batch view shows whose order it is (bc-aidp-next-golive#452).
+        const customer = CustomerPart(OrderCustomerName(order));
 
         const typeDefault = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID;
         const revRecID = ResolveRevenueRecognitionTypeID(product.RevenueRecognitionTypeID, typeDefault);
@@ -909,10 +912,10 @@ export class OrderJournalEntryFactory {
                           EntryType: memo > 0 ? await ResolveInstalmentEntryType(this._provider, this._contextUser) : 'OrderBooking',
                           Description:
                               memo > 0
-                                  ? `Order ${order.OrderNumber} line ${line.LineNumber} — credit memo ` +
+                                  ? `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — credit memo ` +
                                     `reversing order ${creditMemo?.OriginOrderNumber ?? 'unknown'} line ` +
                                     `${creditMemo?.OriginLineNumber ?? '?'} — ${product.Name}`
-                                  : `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                  : `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — ` +
                                     `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
                           LinkedEntityID: this._orderLineEntityID,
                           LinkedRecordID: line.ID,
@@ -1020,7 +1023,7 @@ export class OrderJournalEntryFactory {
                             EffectiveDate: isoDate(entry.RecognitionDate),
                             EntryType: 'RevenueRecognition',
                             Description:
-                                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — ` +
                                 `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
                             // D46: anchor to the TERM when there is one; otherwise the line (event
                             // products are deferred but have no subscription and therefore no term).
@@ -1263,7 +1266,7 @@ export class OrderJournalEntryFactory {
             EffectiveDate: measurementDate,
             EntryType: 'RevenueRecognition',
             Description:
-                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                `Order ${order.OrderNumber} line ${line.LineNumber}${CustomerPart(OrderCustomerName(order))} — ` +
                 `${delta < 0 ? 'unrecognize' : 'recognize'} ${product.Name} ${note}`,
             LinkedEntityID: this._orderLineEntityID,
             LinkedRecordID: line.ID,

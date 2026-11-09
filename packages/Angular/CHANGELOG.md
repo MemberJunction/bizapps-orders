@@ -1,5 +1,51 @@
 # @mj-biz-apps/orders-ng
 
+## 5.45.0
+
+### Patch Changes
+
+- Updated dependencies [38ecc01]
+  - @mj-biz-apps/orders-entities@5.45.0
+
+## 5.44.0
+
+### Minor Changes
+
+- a17a7bf: The order line editor keeps showing the name, subscription flag and quantity cap of a line whose product is not sold new; only its add-product picker leaves such products out. `GetCatalogOptions` takes `includeNotSellableNew` (default off), which keeps those products and marks them `NotSellableNew`. Product names sort decimals by value, so "$1.25M" comes before "$1.5M" (`CompareProductNames`).
+- 601f3d3: The add-product picker orders numbers in product names by value, so revenue bands list as $1M-$2M, $2M-$5M, $10M-$15M instead of putting $10M first. `RankCatalogMatches` now accepts any row with `Name`, `SKU` and `CompanyID` (the new `RankableProduct`) and returns the same row type, so another app's picker can rank its own rows.
+
+  Products gain `IsSellableNew` (default on). A product with it off stays Active, so orders, imports and renewals that already hold it keep saving, but the add-product pickers stop offering it for a new sale. Use it for catch-all products imported invoice lines book to, and products kept only for converted subscriptions.
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- 7b693a7: `Orders.PreviewPrice` takes `IgnoreSellability`, which prices a product whatever its Status and availability window. The product header's Activate check uses it, so a priced Draft product no longer reads as "could not be checked". Entering edit mode closes the readiness warning, and Activate refuses to save once the form is in edit mode.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+- de11edd: Progress attestation follows finance's books-closed-through date instead of posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` reads the line's company's `AccountingCompanyProfile.BooksClosedThroughDate` once per call and refuses a measurement date on or before it, on preview and post and on a supersede, with the message "This month has already been closed by finance. Please contact them to proceed." If that date cannot be read, the attestation is refused; a line with no company, no profile or no date has nothing closed. A supersede's reversal is dated on the replaced observation's own date, or on the first open day when finance has closed that month, and the message says why it moved. The replacement's catch-up always posts on the date entered, so `CatchUpDate` equals `MeasurementDate` whenever there is a catch-up. The supersede no longer reads journal entry batches. The attestation screen's supersede text matches. It needs accounting 0.24.0, the first release with `BooksClosedThroughDate` and the shared closed-books rule, so the accounting peer ranges and the `mj-app.json` dependency now start at 0.24.0.
+
+### Patch Changes
+
+- ea6f7b7: The product form shows one revenue recognition value: the Accounting section now shows the type resolved from its ID, as the header does, instead of the record's cached name, which could still read the previous type. When the product sets none, both places show its product type's default and say "from product type".
+- e7740d1: The payment header's payer (Bill to Organization and Person) and the event order line's attendee search with the fast party picker from common (nothing listed until two characters, prefix search on indexed columns) instead of the stock lookup.
+- 235438d: A Draft product now shows a banner in its header, "Draft — not sellable on deals or orders", with an Activate button. Activate first checks for a price in force today and for Sales and Deferred Revenue GL accounts, lists anything missing, and lets the user activate anyway or cancel. The Status field moved out of Fulfillment into a new Lifecycle section with Available From, Available To and Is Sellable New.
+- Updated dependencies [3f9d524]
+- Updated dependencies [a4dba56]
+- Updated dependencies [a48a6e2]
+- Updated dependencies [a17a7bf]
+- Updated dependencies [fbf3ad4]
+- Updated dependencies [d2a22a0]
+- Updated dependencies [7b693a7]
+- Updated dependencies [cc62ad9]
+- Updated dependencies [de11edd]
+  - @mj-biz-apps/orders-entities@5.44.0
+
+## 5.43.0
+
+### Patch Changes
+
+- Updated dependencies [d45e6ae]
+- Updated dependencies [534b368]
+  - @mj-biz-apps/orders-entities@5.43.0
+
 ## 5.42.0
 
 ### Minor Changes
@@ -1009,8 +1055,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                    "FK_EntityFieldValue_EntityField"
+                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

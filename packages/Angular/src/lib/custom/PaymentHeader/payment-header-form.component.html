@@ -105,28 +105,24 @@
                     </div>
                     <div class="mjo-card__body">
                         <div class="mjo-ph-fields-stack">
-                            <mj-form-field
+                            <bizapps-party-field
                                 [Record]="record"
                                 [ShowLabel]="true"
-                                DisplayNameOverride="Organization"
                                 FieldName="BillToOrganizationID"
-                                Type="textbox"
-                                LinkType="Record"
+                                Kind="Organization"
                                 [EditMode]="ComposeMode"
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()">
-                            </mj-form-field>
-                            <mj-form-field
+                            </bizapps-party-field>
+                            <bizapps-party-field
                                 [Record]="record"
                                 [ShowLabel]="true"
-                                DisplayNameOverride="Person"
                                 FieldName="BillToPersonID"
-                                Type="textbox"
-                                LinkType="Record"
+                                Kind="Person"
                                 [EditMode]="ComposeMode"
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()">
-                            </mj-form-field>
+                            </bizapps-party-field>
                         </div>
                         @if (hasPayer) {
                             <div class="mjo-payer-chip">
@@ -175,6 +171,10 @@
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event)">
                             </mj-form-field>
+                            <!-- bc-aidp-next-golive#448: finance corrects a captured payment's date; its entries move with it. -->
+                            @if (!ComposeMode) {
+                                <mjo-change-payment-date [Payment]="record" (Changed)="OnPaymentDateChanged()"></mjo-change-payment-date>
+                            }
 
                             <div class="mjo-field">
                                 <label class="mjo-label">Payment Type <span class="mjo-required-mark" title="Required to capture and book">*</span></label>
