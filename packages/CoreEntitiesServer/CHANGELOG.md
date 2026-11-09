@@ -1,5 +1,33 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.44.0
+
+### Minor Changes
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- 7b693a7: `Orders.PreviewPrice` takes `IgnoreSellability`, which prices a product whatever its Status and availability window. The product header's Activate check uses it, so a priced Draft product no longer reads as "could not be checked". Entering edit mode closes the readiness warning, and Activate refuses to save once the form is in edit mode.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+- de11edd: Progress attestation follows finance's books-closed-through date instead of posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` reads the line's company's `AccountingCompanyProfile.BooksClosedThroughDate` once per call and refuses a measurement date on or before it, on preview and post and on a supersede, with the message "This month has already been closed by finance. Please contact them to proceed." If that date cannot be read, the attestation is refused; a line with no company, no profile or no date has nothing closed. A supersede's reversal is dated on the replaced observation's own date, or on the first open day when finance has closed that month, and the message says why it moved. The replacement's catch-up always posts on the date entered, so `CatchUpDate` equals `MeasurementDate` whenever there is a catch-up. The supersede no longer reads journal entry batches. The attestation screen's supersede text matches. It needs accounting 0.24.0, the first release with `BooksClosedThroughDate` and the shared closed-books rule, so the accounting peer ranges and the `mj-app.json` dependency now start at 0.24.0.
+
+### Patch Changes
+
+- 4480151: The payment poll now re-checks open Unmatched Bill.com payments from their stored record on every pass, and captures one once every invoice it settles has been loaded, however long ago Bill.com last changed it.
+
+  A re-checked payment whose capture is refused gets the same Payment Needs Review notice as one the fetch refuses.
+
+- 5c9cdd5: Journal entries Orders writes for a payment allocation, an order booking or a revenue recognition now name the customer (billing organization, else billing person) in their description, so accounting's batch views show whose payment or order each entry is for.
+- Updated dependencies [3f9d524]
+- Updated dependencies [a4dba56]
+- Updated dependencies [a48a6e2]
+- Updated dependencies [a17a7bf]
+- Updated dependencies [fbf3ad4]
+- Updated dependencies [d2a22a0]
+- Updated dependencies [7b693a7]
+- Updated dependencies [cc62ad9]
+- Updated dependencies [de11edd]
+  - @mj-biz-apps/orders-entities@5.44.0
+
 ## 5.43.0
 
 ### Patch Changes
@@ -1211,8 +1239,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                      "FK_EntityFieldValue_EntityField"
+                                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                        "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
