@@ -281,7 +281,7 @@ describe('the subscription calls carry a timeout; the payment calls do not', () 
             throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
         }) as typeof fetch;
         try {
-            await expect(driver.CreateProviderSubscription(request)).rejects.toThrow(/unreachable calling POST \/subscriptions: The operation was aborted due to timeout/);
+            await expect(driver.CreateProviderSubscription(request)).rejects.toThrow(/Could not reach Stripe \(POST \/subscriptions\).*The operation was aborted due to timeout/);
         } finally {
             globalThis.fetch = orig;
         }
@@ -739,8 +739,8 @@ describe('StripePaymentProvider.CancelProviderSubscription (E2b)', () => {
     it('a 5xx on the read or on the change throws (a fault; the caller catches it)', async () => {
         const { driver, restore } = live([{ status: 503, body: {} }, { body: subscription() }, { status: 500, body: {} }]);
         try {
-            await expect(driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).rejects.toThrow(/503 calling GET \/subscriptions\/sub_x/);
-            await expect(driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).rejects.toThrow(/500 calling POST \/subscriptions\/sub_x/);
+            await expect(driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: null, IdempotencyKey: KEY })).rejects.toThrow(/error \(503\) on GET \/subscriptions\/sub_x/);
+            await expect(driver.CancelProviderSubscription({ ProviderSubscriptionID: 'sub_x', BillingEndsAt: WANTED, IdempotencyKey: KEY })).rejects.toThrow(/error \(500\) on POST \/subscriptions\/sub_x/);
         } finally {
             restore();
         }

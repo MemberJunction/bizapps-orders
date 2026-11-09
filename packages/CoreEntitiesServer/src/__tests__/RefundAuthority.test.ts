@@ -229,6 +229,6 @@ describe('CheckRefundAuthority', () => {
     });
 
     it('refuses a receiving company ID that is not a UUID before it reaches a filter', async () => {
-        await expect(CheckRefundAuthority({ ...request, ReceivingCompanyID: "x' OR 1=1 --" }, provider, user(CALLER))).rejects.toThrow(/must be a UUID/);
+        await expect(CheckRefundAuthority({ ...request, ReceivingCompanyID: "x' OR 1=1 --" }, provider, user(CALLER))).rejects.toThrow(/must be a valid ID \(a UUID\)/);
     });
 });

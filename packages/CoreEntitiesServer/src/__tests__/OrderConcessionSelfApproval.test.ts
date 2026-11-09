@@ -185,7 +185,7 @@ describe('recording a holder\'s own concession', () => {
         approval.ActiveRoleHolderIDs.mockResolvedValue([CEO.ID]);
         const { row } = concession();
 
-        expect(await row.prepareNew()).toContain('no active user other than the requester holds the role');
+        expect(await row.prepareNew()).toContain('no active user other than the requester holds the approving role');
     });
 });
 
@@ -230,6 +230,6 @@ describe('deciding a holder\'s own concession', () => {
         roles.UserHoldsRole.mockResolvedValue(false);
         const { row } = concession({ user: CFO, saved: true, status: 'Approved', salesRuleID: 'rule-top' });
 
-        expect(await row.applyDecision()).toBe('Only a holder of the role named by the ConcessionLimit rule can decide this concession.');
+        expect(await row.applyDecision()).toBe("Only a holder of the role named by this concession's approval rule can decide it.");
     });
 });

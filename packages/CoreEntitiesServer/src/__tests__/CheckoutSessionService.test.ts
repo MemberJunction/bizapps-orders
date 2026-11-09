@@ -2868,7 +2868,7 @@ describe('CheckoutSessionService', () => {
                 await vi.advanceTimersByTimeAsync(31_000);
                 const res = await pending;
                 expect(res.Success).toBe(false);
-                expect(res.ErrorMessage).toContain('Session is not in an Open status');
+                expect(res.ErrorMessage).toContain('This checkout is no longer open (it is processing)');
                 expect(mocks.mockOrderInstance.Confirm).not.toHaveBeenCalled();
             } finally {
                 vi.useRealTimers();

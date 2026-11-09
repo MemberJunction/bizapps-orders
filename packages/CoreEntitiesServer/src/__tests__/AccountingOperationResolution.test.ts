@@ -19,7 +19,7 @@ describe('an unregistered accounting operation is reported by name (#865)', () =
         await expect(
             SubmitJournalEntryDrafts([], 'the test entry', {} as IMetadataProvider, {} as UserInfo),
         ).rejects.toThrow(
-            "The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting server package must be loaded before orders can book the test entry.",
+            "The 'Accounting.CreateJournalEntries' operation is not registered, so orders cannot book the test entry. Ask an administrator to load the BizApps Accounting server package.",
         );
     });
 
