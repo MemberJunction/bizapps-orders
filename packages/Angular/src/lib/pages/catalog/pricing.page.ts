@@ -74,7 +74,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
                                     </td>
                                     <td class="small">{{ windowOf(list) }}</td>
                                     <td>
-                                        <span class="mj-chip" [class]="statusChip(list['Status'])">
+                                        <span class="mjo-chip" [class]="statusChip(list['Status'])">
                                             {{ list['Status'] ?? '—' }}
                                         </span>
                                     </td>
@@ -308,7 +308,7 @@ export class MJOPricingPageComponent implements OnInit {
     }
 
     protected statusChip(status: unknown): string {
-        return status === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+        return status === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline';
     }
 
     protected money(value: unknown): string {

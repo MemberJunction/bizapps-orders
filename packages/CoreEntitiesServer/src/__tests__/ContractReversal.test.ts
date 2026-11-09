@@ -6,14 +6,17 @@
  * not billed. Andrew's worked Scenario 1 — a 12,000 contract billed quarterly in advance, reversed
  * after five months — is the case these were written against and is asserted at the end.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 import {
     InstalmentsToCancel,
     BuildCreditMemoLines,
     ProratedCreditMemo,
+    RefuseCancellingPaidInstalments,
     RefuseEarlierThanPriorReversal,
     RefuseEarnedNotBilled,
+    StagedDeferredAfter,
     StagedEarnedThrough,
+    TrueUpFinalMirrors,
     type DatedRelease,
     type ContractLineBalance,
     type ReversalPosition,
@@ -252,5 +255,99 @@ describe('BuildCreditMemoLines', () => {
         const [debit, credit] = BuildCreditMemoLines(33.335, ACCOUNTS, 'x', DIMS);
         expect(debit.DebitAmount).toBe(33.34);
         expect(credit.CreditAmount).toBe(33.34);
+    });
+});
+
+describe("earned to date is measured on the origin's own window (#839)", () => {
+    // A 12,000 line over 2026-01-01..2026-12-31, released monthly; returned on 2026-05-15 with a
+    // stated window that is shorter than the origin's.
+    let Factory: typeof import('../OrderJournalEntryFactory.js').OrderJournalEntryFactory;
+    beforeAll(async () => {
+        await import('../RevenueRecognition.js');
+        Factory = (await import('../OrderJournalEntryFactory.js')).OrderJournalEntryFactory;
+    }, 60_000);
+
+    const earnedThrough = async (originWindow: { Start: string | null; End: string | null }): Promise<number> => {
+        const factory = new Factory({} as never, 'e', 'e', 'e', {} as never, {} as never);
+        const staged = (factory as unknown as {
+            stagedEarnedThrough: (revRec: unknown, line: unknown, origin: unknown, asOf: string, months?: number) => number;
+        }).stagedEarnedThrough.bind(factory);
+        return staged(
+            { Code: 'EOT', DriverClass: 'EvenOverTime' },
+            { ServicePeriodStart: new Date('2026-04-01T00:00:00Z'), ServicePeriodEnd: new Date('2026-06-30T00:00:00Z') },
+            {
+                OriginLineID: 'origin-1',
+                OriginNet: 12000,
+                OriginServicePeriodStart: originWindow.Start ? new Date(`${originWindow.Start}T00:00:00Z`) : null,
+                OriginServicePeriodEnd: originWindow.End ? new Date(`${originWindow.End}T00:00:00Z`) : null,
+                PriorReversals: [],
+                ScheduleRows: [],
+                BilledToDate: 0,
+                RecognizedToDate: 0,
+                RemainingQuantity: 1,
+            },
+            '2026-05-15',
+            1,
+        );
+    };
+
+    it("rebuilds the origin's releases over its own window, not the reversing line's", async () => {
+        // Five monthly releases of 1,000 (January to May) have fallen due by 15 May.
+        expect(await earnedThrough({ Start: '2026-01-01', End: '2026-12-31' })).toBe(5000);
+    });
+
+    it("falls back to the reversing line's window when the origin carries none", async () => {
+        // Over the line's 3-month window, April and May have fallen due: 2 × 4,000.
+        expect(await earnedThrough({ Start: null, End: null })).toBe(8000);
+    });
+});
+
+describe('RefuseCancellingPaidInstalments (#840)', () => {
+    it('lets a reversal cancel instalments nobody has paid ahead', () => {
+        expect(RefuseCancellingPaidInstalments([{ InstallmentNumber: 3, AmountPaid: 0 }, { InstallmentNumber: 4, AmountPaid: null }], 'order ORD-1')).toBeNull();
+    });
+
+    it('refuses when a cancelled instalment carries a deposit, and names the amount to refund', () => {
+        const refusal = RefuseCancellingPaidInstalments(
+            [{ InstallmentNumber: 3, AmountPaid: 250 }, { InstallmentNumber: 4, AmountPaid: 0 }],
+            'order ORD-1',
+        );
+        expect(refusal).toMatch(/Refund the deposit of 250\.00 on instalment 3 first/);
+        expect(refusal).not.toMatch(/instalment 4/);
+    });
+});
+
+describe('the reversal that takes the last units back empties Deferred exactly (#841)', () => {
+    let Driver: InstanceType<typeof import('../RevenueRecognition.js').EvenOverTimeDriver>;
+    beforeAll(async () => {
+        Driver = new (await import('../RevenueRecognition.js')).EvenOverTimeDriver();
+    }, 60_000);
+    const schedule = (amount: number): DatedRelease[] =>
+        Driver.BuildSchedule({
+            Amount: amount,
+            BookingDate: new Date('2026-01-01T00:00:00Z'),
+            ServicePeriodStart: new Date('2026-01-01T00:00:00Z'),
+            ServicePeriodEnd: new Date('2026-12-31T00:00:00Z'),
+            PeriodMonths: 1,
+        }).Entries.map((e) => ({ Date: e.RecognitionDate.toISOString().slice(0, 10), Amount: Number(e.Amount) }));
+    const sum = (rows: Array<{ Amount: number }>) => Math.round(rows.reduce((s, r) => s + r.Amount, 0) * 100) / 100;
+
+    it('trues the final reversal of an uneven amount so its mirrors and the earlier ones total what the origin deferred', () => {
+        // 3 units, 1,000 over 12 months; 1 reversed and then the other 2, both on 15 November.
+        const asOf = '2026-11-15';
+        const origin = schedule(1000);
+        const first = schedule(333.33).filter((r) => r.Date > asOf);
+        const last = schedule(666.67).filter((r) => r.Date > asOf);
+        const target = StagedDeferredAfter(origin, first, asOf);
+        const trued = TrueUpFinalMirrors(last.map((r) => r.Amount), target, 0.01 * origin.length * 2);
+        expect(Math.round((sum(first) + trued.reduce((s, a) => s + a, 0)) * 100) / 100).toBe(sum(origin.filter((r) => r.Date > asOf)));
+    });
+
+    it('leaves amounts alone when the gap is larger than rounding could make', () => {
+        expect(TrueUpFinalMirrors([100, 100], 250, 0.12)).toEqual([100, 100]);
+    });
+
+    it('moves only the last release, by the difference', () => {
+        expect(TrueUpFinalMirrors([27.78, 27.78], 55.54, 0.12)).toEqual([27.78, 27.76]);
     });
 });

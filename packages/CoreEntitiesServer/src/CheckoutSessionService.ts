@@ -57,11 +57,13 @@ import { ExplainMissingCheckoutAttendees, LoadProductsRequiringAttendees } from 
 import { ResolvePersonByEmail } from './PersonByEmail.js';
 import { OpenPaymentIntent, SUPPORTED_PAYMENT_CURRENCY } from './PaymentIntentService.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
+import { ResolveCheckoutPublishableKey } from './CheckoutPublishableKey.js';
 import {
     FindReusableProviderCustomerRef,
     SnapshotSellsSubscription,
     SaveCheckoutInstrumentForRenewals,
 } from './CheckoutSavedInstrument.js';
+import { EnsureProviderSubscriptionsOnOwnProvider } from './ProviderSubscriptions.js';
 import {
     CheckoutMemberDiscountNotConfiguredError,
     DEFAULT_TYPED_CODE_PRECEDENCE,
@@ -70,6 +72,7 @@ import {
     type CheckoutTypedCodePrecedence,
 } from './CheckoutMemberDiscountResolver.js';
 import { CapturePaymentOperation } from './CapturePaymentOperation.js';
+import { WithIsolatedProvider } from './isolatedProvider.js';
 import { ToIsoCountryCode, type CheckoutLocationEvidence } from './VatLocationEvidence.js';
 import type { RetrieveIntentResult } from './BasePaymentProvider.js';
 import { raiseCheckoutCaptureTerminalAlert, raiseCheckoutSettledNotBookedAlert } from './checkoutCaptureAlert.js';
@@ -79,6 +82,7 @@ import {
     isTerminalCapturePrecheck,
 } from './checkoutCaptureRetry.js';
 import { DescribeCheckoutSnapshot, SendOrderDescriptionToGateway } from './IntentDescription.js';
+import { SetSystemOrderOrigin } from './SystemOrderOrigin.js';
 import {
     LoadRenewalPaymentOrder,
     PayerOwnsRenewalCustomer,
@@ -100,6 +104,9 @@ const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
 const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
 const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
+
+/** Shown when no checkout session could be created or resumed for a widget and client key. */
+const SESSION_START_RETRY_MESSAGE = 'Checkout could not start just now. Please try again in a minute.';
 const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
 const ADDRESS_TYPE_ENTITY = 'MJ_BizApps_Common: Address Types';
 const BILLING_ADDRESS_TYPE = 'Billing';
@@ -388,6 +395,29 @@ export interface CompleteCheckoutResult {
     ClaimToken?: string;
 }
 
+/**
+ * How long a caller that finds a session Processing waits for the other completion to finish. The
+ * browser's complete call and the payment webhook can both arrive for one payment (#724); the one
+ * that loses the latch waits for the winner and answers with its order.
+ */
+const PROCESSING_WAIT_MS = 30_000;
+const PROCESSING_POLL_MS = 1_000;
+
+/** Who is completing a session, and what happened that the result does not carry. */
+interface CompletionTrigger {
+    Source: CheckoutStepSource;
+    Evidence?: CheckoutLocationEvidence;
+    /** Filled in by the completion. */
+    Report: {
+        /** The capture booked after Confirm, when one ran. */
+        Capture?: BookCheckoutPaymentResult;
+        /** The "settled with no order" alert was already raised. */
+        Alerted?: boolean;
+        /** The refusal may pass on a later attempt: another caller held the latch, or a save threw. */
+        Retryable?: boolean;
+    };
+}
+
 export interface OpenSessionPaymentIntentResult {
     Success: boolean;
     ErrorMessage?: string;
@@ -437,20 +467,10 @@ export class CheckoutSessionService {
             return { Success: false, ErrorMessage: 'This checkout is not available right now.' };
         }
 
-        // Check for existing unexpired session for this client. An ISO-8601 literal compares
-        // correctly on both SQL Server and PostgreSQL — GETUTCDATE() is T-SQL-only.
-        const escapedKey = EscapeText(clientSessionKey.trim());
-        const nowUtc = new Date().toISOString();
-        const sessRes = await rv.RunView<mjBizAppsOrdersCheckoutSessionEntity>({
-            EntityName: CHECKOUT_SESSION_ENTITY,
-            ExtraFilter: `CheckoutWidgetID = '${widget.ID}' AND ClientSessionKey = '${escapedKey}' AND Status = 'Open' AND ExpiresAt > '${nowUtc}'`,
-            ResultType: 'entity_object'
-        }, contextUser);
-
-        let session: mjBizAppsOrdersCheckoutSessionEntity;
-        if (sessRes.Success && sessRes.Results && sessRes.Results.length > 0) {
-            session = sessRes.Results[0];
-        } else {
+        // One open sale session per widget and client key: a unique index holds it (#782), so an
+        // overlapping second call's insert fails and that call resumes the first call's session.
+        let session = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
+        if (!session) {
             session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
             session.NewRecord();
             session.CheckoutWidgetID = widget.ID;
@@ -462,9 +482,20 @@ export class CheckoutSessionService {
             expires.setHours(expires.getHours() + 2); // 2 hour checkout session TTL
             session.ExpiresAt = expires;
 
-            const saved = await session.Save();
+            let saved = false;
+            try {
+                saved = await session.Save();
+            } catch (err) {
+                LogError(`[CheckoutSessionService] Checkout session insert failed: ${err instanceof Error ? err.message : String(err)}`);
+            }
             if (!saved) {
-                return { Success: false, ErrorMessage: 'The checkout could not be started. Please try again in a moment.' };
+                const concurrent = await this.findOpenSaleSession(widget.ID, clientSessionKey, contextUser);
+                if (!concurrent) {
+                    // Most likely an expired session that could not be marked Expired still holds
+                    // the index; ReapExpiredOpenSessions clears it within a minute.
+                    return { Success: false, ErrorMessage: SESSION_START_RETRY_MESSAGE };
+                }
+                session = concurrent;
             }
         }
 
@@ -501,11 +532,40 @@ export class CheckoutSessionService {
             WidgetID: widget.ID,
             WidgetName: widget.Name,
             CompanyID: widget.CompanyID,
-            Configuration: this.sanitizeConfigurationForClient(configObj),
+            Configuration: await this.clientConfiguration(configObj, widget.Name, contextUser),
             CustomCSS: configObj.customUI.css || widget.CustomCSS,
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString()
         };
+    }
+
+    /**
+     * The open, unexpired sale session for this widget and client key, or null. A sale session has
+     * no DraftOrderID while open; a pay-renewal session for the same key is not resumed here. An
+     * open session past its expiry is marked Expired on the way, so it no longer holds the
+     * one-open-session index against the new session the caller is about to create.
+     */
+    private static async findOpenSaleSession(
+        widgetID: string,
+        clientSessionKey: string,
+        contextUser?: UserInfo
+    ): Promise<mjBizAppsOrdersCheckoutSessionEntity | null> {
+        const res = await new RunView().RunView<mjBizAppsOrdersCheckoutSessionEntity>({
+            EntityName: CHECKOUT_SESSION_ENTITY,
+            ExtraFilter: `CheckoutWidgetID = '${EscapeText(widgetID)}' AND ClientSessionKey = '${EscapeText(clientSessionKey.trim())}' AND Status = 'Open' AND DraftOrderID IS NULL`,
+            OrderBy: 'ExpiresAt DESC',
+            ResultType: 'entity_object'
+        }, contextUser);
+        if (!res.Success) {
+            return null;
+        }
+        let open: mjBizAppsOrdersCheckoutSessionEntity | null = null;
+        for (const candidate of res.Results ?? []) {
+            if (await this.enforceSessionExpiry(candidate)) {
+                open ??= candidate;
+            }
+        }
+        return open;
     }
 
     /**
@@ -608,7 +668,7 @@ export class CheckoutSessionService {
             WidgetID: widget.ID,
             WidgetName: widget.Name,
             CompanyID: widget.CompanyID,
-            Configuration: this.sanitizeConfigurationForClient(configObj),
+            Configuration: await this.clientConfiguration(configObj, widget.Name, contextUser),
             CustomCSS: configObj.customUI.css || widget.CustomCSS,
             CustomJS: configObj.customUI.js || widget.CustomJS,
             ExpiresAt: session.ExpiresAt.toISOString(),
@@ -651,7 +711,8 @@ export class CheckoutSessionService {
      * anonymous caller. `Configuration` is admin-authored JSON with an open index signature,
      * so a future secret-shaped key (a webhook secret, an API credential, a server-side
      * payment provider ref) must never ride along to the browser. `stripePublishableKey`
-     * is publishable by definition and survives.
+     * is publishable by definition and survives — but its VALUE is decided by
+     * `ResolveCheckoutPublishableKey` (see `clientConfiguration`), not taken from here as is.
      */
     /**
      * Keys that may cross to an unauthenticated browser. Anything else in the
@@ -684,6 +745,28 @@ export class CheckoutSessionService {
         'questions',
         'choiceGroups',
     ]);
+
+    /**
+     * The Configuration an anonymous browser receives: the allowlisted keys, with
+     * `stripePublishableKey` replaced by the resolved key — the payment provider's
+     * `<CredentialsRef>_PUBLISHABLE_KEY` when the server has one, else the widget's own value.
+     * Every path that hands a browser a widget Configuration goes through here, so the session API
+     * and the server-rendered host page cannot disagree about which key to load Stripe.js with.
+     */
+    private static async clientConfiguration(
+        configObj: CheckoutWidgetConfiguration,
+        widgetName: string,
+        contextUser: UserInfo | undefined
+    ): Promise<CheckoutWidgetConfiguration> {
+        const client = this.sanitizeConfigurationForClient(configObj);
+        const publishable = await ResolveCheckoutPublishableKey(configObj, widgetName, contextUser);
+        if (publishable.Key) {
+            client.stripePublishableKey = publishable.Key;
+        } else {
+            delete client.stripePublishableKey;
+        }
+        return client;
+    }
 
     private static sanitizeConfigurationForClient(configObj: CheckoutWidgetConfiguration): CheckoutWidgetConfiguration {
         const sanitized: CheckoutWidgetConfiguration = {};
@@ -732,7 +815,12 @@ export class CheckoutSessionService {
         return allowed;
     }
 
-    /** Marks expired-but-still-Open sessions Expired. Bounded; best-effort. */
+    /**
+     * Marks expired-but-still-Open sessions Expired. Bounded; best-effort.
+     *
+     * A session whose payment settled has charged the buyer with no order, so expiring it raises the
+     * "settled with no order" alert: otherwise it would leave nothing for staff to see (#724).
+     */
     public static async ReapExpiredOpenSessions(contextUser?: UserInfo, limit = 50): Promise<number> {
         const rv = new RunView();
         const nowUtc = new Date().toISOString();
@@ -760,12 +848,47 @@ export class CheckoutSessionService {
                 session.Status = 'Expired';
                 if (await session.Save()) {
                     n++;
+                    if (await this.sessionPaymentSettled(session, md, contextUser)) {
+                        void raiseCheckoutSettledNotBookedAlert(
+                            session.ID,
+                            session.PaymentIntentID,
+                            'The checkout expired after its payment settled, and no order was created.',
+                            contextUser,
+                        );
+                    }
                 }
             } catch (err) {
                 LogError(`[CheckoutSessionService] ReapExpiredOpenSessions failed for ${row.ID}: ${err instanceof Error ? err.message : String(err)}`);
             }
         }
         return n;
+    }
+
+    /** True when the session's payment intent is recorded as settled. Reads our row, not the gateway. */
+    private static async sessionPaymentSettled(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<boolean> {
+        if (!session.PaymentIntentID) {
+            return false;
+        }
+        const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
+        return (await intent.Load(session.PaymentIntentID)) && SETTLED_INTENT_STATUSES.includes(intent.Status);
+    }
+
+    /**
+     * Waits, up to `PROCESSING_WAIT_MS`, for a session another caller latched to Processing to leave
+     * that state, reloading it in place. Returns at once when it is not Processing.
+     */
+    private static async awaitProcessingFinished(session: mjBizAppsOrdersCheckoutSessionEntity): Promise<void> {
+        const deadline = Date.now() + PROCESSING_WAIT_MS;
+        while (session.Status === 'Processing' && Date.now() < deadline) {
+            await new Promise<void>((resolve) => setTimeout(resolve, PROCESSING_POLL_MS));
+            if (!(await session.Load(session.ID))) {
+                return;
+            }
+        }
     }
 
     /**
@@ -797,7 +920,9 @@ export class CheckoutSessionService {
         if (session.ExpiresAt && new Date(session.ExpiresAt).getTime() <= Date.now()) {
             if (session.Status === 'Open') {
                 session.Status = 'Expired';
-                const saved = await session.Save();
+                // Retried once: a session left Open holds the one-open-session index (#782), so
+                // a new session for the same key cannot start until the reaper expires it.
+                const saved = (await session.Save()) || (await session.Save());
                 if (!saved) {
                     LogError(`[CheckoutSessionService] Failed to mark session ${session.ID} Expired: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
                 }
@@ -922,20 +1047,7 @@ export class CheckoutSessionService {
             );
         }
 
-        const excluded = new Set(['id', 'personid', 'checkinat']);
-        const parentFields = new Set<string>();
-        if (extEntityInfo.ParentEntityFieldNames) {
-            for (const n of extEntityInfo.ParentEntityFieldNames) {
-                parentFields.add(n.toLowerCase());
-            }
-        }
-
-        for (const f of extEntityInfo.Fields) {
-            const lower = f.Name.toLowerCase();
-            if (excluded.has(lower) || parentFields.has(lower) || lower.startsWith('__mj_') || f.IsPrimaryKey || f.IsVirtual || !f.AllowUpdateAPI) {
-                continue;
-            }
-
+        for (const f of this.buyerExtensionFields(extEntityInfo)) {
             let fieldType: 'text' | 'textarea' | 'number' | 'date' | 'boolean' | 'select' = 'text';
             const sqlType = (f.Type || '').toLowerCase();
             const valList = (f.ValueListType || '').toLowerCase();
@@ -974,6 +1086,50 @@ export class CheckoutSessionService {
         }
 
         configObj.extensionFields = discoveredFields;
+    }
+
+    /**
+     * The extension columns a buyer may fill: what discovery shows when the widget names no fields
+     * of its own. Not the key, not virtual, updatable through the API, not inherited from the
+     * parent entity, not an `__mj_` audit column, and not one the checkout sets itself.
+     */
+    private static buyerExtensionFields(extEntityInfo: { Fields: EntityFieldInfo[]; ParentEntityFieldNames?: Iterable<string> | null }): EntityFieldInfo[] {
+        const excluded = new Set(['id', 'personid', 'checkinat']);
+        const parentFields = new Set([...(extEntityInfo.ParentEntityFieldNames ?? [])].map((n) => n.toLowerCase()));
+        return (extEntityInfo.Fields ?? []).filter((f) => {
+            const lower = f.Name.toLowerCase();
+            return !excluded.has(lower) && !parentFields.has(lower) && !lower.startsWith('__mj_') && !f.IsPrimaryKey && !f.IsVirtual && f.AllowUpdateAPI;
+        });
+    }
+
+    /** The widget's own `extensionFields`, or undefined when it names none or its JSON does not parse. */
+    private static configuredExtensionFields(widget: { Configuration?: string | null }): CheckoutWidgetConfiguration['extensionFields'] | undefined {
+        if (!widget.Configuration) return undefined;
+        try {
+            const parsed: unknown = JSON.parse(widget.Configuration);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined;
+            return (parsed as CheckoutWidgetConfiguration).extensionFields;
+        } catch {
+            return undefined;
+        }
+    }
+
+    /**
+     * Lower-cased names of the extension columns a checkout writes from the buyer's input: the
+     * fields the widget presents (#781). A widget that lists its own `extensionFields` presents only
+     * those; otherwise it presents what discovery finds. Any other column (a staff-only flag, a
+     * column the widget does not list) is never written from a request.
+     */
+    private static writableExtensionFieldNames(
+        extEntityInfo: { Fields: EntityFieldInfo[]; ParentEntityFieldNames?: Iterable<string> | null },
+        configuredFields: CheckoutWidgetConfiguration['extensionFields'] | undefined
+    ): Set<string> {
+        const discovered = new Set(this.buyerExtensionFields(extEntityInfo).map((f) => f.Name.toLowerCase()));
+        if (!Array.isArray(configuredFields) || configuredFields.length === 0) {
+            return discovered;
+        }
+        const shown = new Set(configuredFields.map((f) => String(f?.name ?? '').toLowerCase()).filter(Boolean));
+        return new Set([...discovered].filter((n) => shown.has(n)));
     }
 
     /**
@@ -1223,7 +1379,8 @@ export class CheckoutSessionService {
         extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo,
-        createPersons = true
+        createPersons = true,
+        configuredFields?: CheckoutWidgetConfiguration['extensionFields']
     ): Promise<{ PersonID: string | null; Extension: BaseEntity | null }> {
         if (!fieldValues || Object.keys(fieldValues).length === 0) {
             return { PersonID: null, Extension: null };
@@ -1264,16 +1421,27 @@ export class CheckoutSessionService {
                 const extFieldsByName = new Map<string, EntityFieldInfo>(
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
                 );
+                const writable = this.writableExtensionFieldNames(
+                    { Fields: ext.EntityInfo?.Fields ?? [], ParentEntityFieldNames: ext.EntityInfo?.ParentEntityFieldNames },
+                    configuredFields
+                );
                 if (resolvedPersonID) {
                     this.setExtensionPerson(ext, resolvedPersonID);
                 }
                 for (const [key, rawValue] of Object.entries(fieldValues)) {
                     const lowerKey = key.toLowerCase();
-                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_')) {
+                    // The deny list stays as a second guard behind the writable set.
+                    if (excludedClientFields.has(lowerKey) || lowerKey.startsWith('__mj_') || !writable.has(lowerKey)) {
                         continue;
                     }
                     const field = extFieldsByName.get(lowerKey);
                     if (field && !field.IsPrimaryKey && !field.IsVirtual && field.AllowUpdateAPI) {
+                        // A blank answer to an optional field is left out, so the column keeps its
+                        // database default (or stays null) instead of holding '' (#877).
+                        const blank = rawValue == null || (typeof rawValue === 'string' && rawValue.trim() === '');
+                        if (blank && (field.HasDefaultValue || field.AllowsNull)) {
+                            continue;
+                        }
                         let coerced = rawValue;
                         if (field.Type.toLowerCase().includes('int') && typeof rawValue === 'string') {
                             coerced = parseInt(rawValue, 10);
@@ -1281,6 +1449,10 @@ export class CheckoutSessionService {
                             coerced = parseFloat(rawValue);
                         } else if (field.Type.toLowerCase() === 'bit' && typeof rawValue === 'string') {
                             coerced = rawValue === 'true' || rawValue === '1';
+                        }
+                        // An unparseable number is not an answer; writing NaN fails the save after payment.
+                        if (typeof coerced === 'number' && Number.isNaN(coerced)) {
+                            continue;
                         }
                         ext.Set(field.Name, coerced);
                     }
@@ -1488,7 +1660,7 @@ export class CheckoutSessionService {
         order.NewRecord();
         order.CompanyID = widget.CompanyID;
         order.Status = 'Draft';
-        order.Origin = 'Widget';
+        SetSystemOrderOrigin(order, 'Widget');
         order.SourceCheckoutWidgetID = widget.ID;
         // Defence-in-depth: the server pre-warms this engine at startup (@RegisterForStartup),
         // but that pre-warm only reaches modules already evaluated when Startup() runs, which
@@ -1594,7 +1766,7 @@ export class CheckoutSessionService {
                     line.Quantity = 1;
                     line.LineNumber = sequence++;
 
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, widgetConfig.extensionFields);
                 }
             } else {
                 const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
@@ -1603,7 +1775,7 @@ export class CheckoutSessionService {
                 line.LineNumber = sequence++;
 
                 if (unitPayloads.length > 0) {
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false);
+                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false, widgetConfig.extensionFields);
                 }
             }
         }
@@ -1620,6 +1792,7 @@ export class CheckoutSessionService {
             PersonID: session.PersonID ?? null,
             CompanyID: widget.CompanyID,
             Lines: lines.map((l) => ({ ProductID: l.ProductID, Quantity: l.Quantity })),
+            ProviderBilledSubscriptionMessage: CheckoutSessionService.providerBilledSubscriptionMessage(widgetConfig),
             ContextUser: contextUser,
         });
         if (refused) {
@@ -1886,7 +2059,8 @@ export class CheckoutSessionService {
 
         // Again here, not only at the draft: this is the last step before money moves, and a
         // host's own records can change between the two calls.
-        const refused = await this.recheckDraftedPurchase(session, widget.CompanyID, contextUser);
+        const widgetConfig = this.readWidgetConfiguration(widget);
+        const refused = await this.recheckDraftedPurchase(session, widget.CompanyID, widgetConfig, contextUser);
         if (refused) {
             return { ...failed(refused.Message), Refusal: refused.Refusal };
         }
@@ -1899,24 +2073,14 @@ export class CheckoutSessionService {
             return failed(missingAttendees);
         }
 
-        let paymentProviderId: string | undefined;
-        let currencyCode: string | undefined;
-        let autoRenewConsentText: string | undefined;
-        let sendReceipt = false;
-        if (widget.Configuration) {
-            try {
-                const configObj = JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration;
-                paymentProviderId = typeof configObj.paymentProviderId === 'string' ? configObj.paymentProviderId : undefined;
-                currencyCode = typeof configObj.currency === 'string' ? configObj.currency : undefined;
-                autoRenewConsentText =
-                    typeof configObj.autoRenewConsentText === 'string' && configObj.autoRenewConsentText.trim()
-                        ? configObj.autoRenewConsentText.trim()
-                        : undefined;
-                sendReceipt = configObj.sendReceipt === true;
-            } catch {
-                // Malformed configuration already fails InitializeSession; treat as unset here.
-            }
-        }
+        // Malformed configuration already fails InitializeSession; it reads as unset here.
+        const paymentProviderId = typeof widgetConfig.paymentProviderId === 'string' ? widgetConfig.paymentProviderId : undefined;
+        const currencyCode = typeof widgetConfig.currency === 'string' ? widgetConfig.currency : undefined;
+        const autoRenewConsentText =
+            typeof widgetConfig.autoRenewConsentText === 'string' && widgetConfig.autoRenewConsentText.trim()
+                ? widgetConfig.autoRenewConsentText.trim()
+                : undefined;
+        const sendReceipt = widgetConfig.sendReceipt === true;
         if (!paymentProviderId) {
             return failed(`Payment cannot be taken because checkout '${widget.Name}' has no payment provider set (paymentProviderId). The checkout's administrator needs to choose one.`);
         }
@@ -2158,6 +2322,7 @@ export class CheckoutSessionService {
     private static async recheckDraftedPurchase(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         companyID: string,
+        widgetConfig: CheckoutWidgetConfiguration,
         contextUser: UserInfo,
     ): Promise<PrePurchaseRefusal | null> {
         const lines = this.readDraftedLines(session);
@@ -2166,8 +2331,25 @@ export class CheckoutSessionService {
             PersonID: session.PersonID ?? null,
             CompanyID: companyID,
             Lines: lines.map((l) => ({ ProductID: l.ProductID, Quantity: l.Quantity })),
+            ProviderBilledSubscriptionMessage: this.providerBilledSubscriptionMessage(widgetConfig),
             ContextUser: contextUser,
         });
+    }
+
+    /** The widget's configuration as an object; empty when it is unset or malformed. */
+    private static readWidgetConfiguration(widget: mjBizAppsOrdersCheckoutWidgetEntity): CheckoutWidgetConfiguration {
+        try {
+            const parsed: unknown = widget.Configuration ? JSON.parse(widget.Configuration) : {};
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? (parsed as CheckoutWidgetConfiguration) : {};
+        } catch {
+            return {};
+        }
+    }
+
+    /** The widget's wording for a buyer who already holds a gateway-billed subscription, or null for the default. */
+    private static providerBilledSubscriptionMessage(config: CheckoutWidgetConfiguration | null | undefined): string | null {
+        const text = config?.providerBilledSubscriptionMessage;
+        return typeof text === 'string' && text.trim() ? text.trim() : null;
     }
 
     /**
@@ -2266,27 +2448,14 @@ export class CheckoutSessionService {
             };
         }
 
+        // The payment webhook may be completing this session right now (#724): answer with its order.
+        await this.awaitProcessingFinished(session);
+
         // Replay safety: a session that already completed returns its existing order rather
         // than an error — a network retry after a successful booking must never double-book
         // and must never strand the buyer without their order id.
         if (session.Status === 'Confirmed' && session.DraftOrderID) {
-            const existingOrder = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
-            const orderLoaded = await existingOrder.Load(session.DraftOrderID);
-            // A first complete can confirm the order and then fail to book the payment.
-            // Replay is one retry: CapturePayment is idempotent on `checkout-complete:${session.ID}`.
-            // `payment_intent.succeeded` is the other — BookSettledCheckoutPaymentIfNeeded, including
-            // on AlreadyApplied webhook deliveries so a 500 after applyEvent still converges.
-            if (orderLoaded) {
-                await this.applySettledPaymentToOrder(session, existingOrder, contextUser, { Source: 'Checkout' });
-            }
-            return {
-                Success: true,
-                SessionID: sessionID,
-                Status: 'Confirmed',
-                OrderID: session.DraftOrderID,
-                OrderNumber: orderLoaded ? (existingOrder.OrderNumber || session.DraftOrderID) : session.DraftOrderID,
-                TotalGross: orderLoaded ? (existingOrder.TotalGross ?? undefined) : undefined
-            };
+            return this.replayConfirmedSession(session, md, contextUser, { Source: 'Checkout', Report: {} });
         }
 
         if (session.Status !== 'Open') {
@@ -2305,13 +2474,95 @@ export class CheckoutSessionService {
                 Status: 'Expired'
             };
         }
+        return this.completeOpenSession(session, md, contextUser, { Source: 'Checkout', Evidence: evidence, Report: {} });
+    }
+
+    /**
+     * Completes a session paid for at the gateway whose browser never asked (#724): the buyer closed
+     * the tab, or lost the page, after the payment succeeded. Reached from the payment webhook, so there
+     * is no client session key: the signature-verified event is the proof, and the completion checks
+     * the intent's state and amount against the re-priced order exactly as the browser's call does.
+     *
+     * The session expiry is not enforced: the buyer paid inside it, and expiry stops a session from
+     * being driven further, not a paid one from being booked.
+     *
+     * Any refusal raises the "settled with no order" alert, since nobody is on the page to see it.
+     */
+    private static async completeFromWebhook(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        md: Metadata,
+        contextUser: UserInfo
+    ): Promise<BookCheckoutPaymentResult> {
+        const trigger: CompletionTrigger = { Source: 'Webhook', Report: {} };
+        const result = await this.completeOpenSession(session, md, contextUser, trigger);
+        if (result.Success) {
+            return trigger.Report.Capture ?? { Attempted: true, Booked: true };
+        }
+        const reason = result.ErrorMessage ?? 'the checkout could not be completed';
+        if (trigger.Report.Retryable) {
+            return { Attempted: true, Booked: false, Retryable: true, ErrorMessage: reason };
+        }
+        if (!trigger.Report.Alerted) {
+            void raiseCheckoutSettledNotBookedAlert(session.ID, session.PaymentIntentID, reason, contextUser);
+        }
+        return { Attempted: true, Booked: false, Retryable: false, ErrorMessage: reason };
+    }
+
+    /**
+     * The existing order of a Confirmed session, booking its payment if the first completion did
+     * not. CapturePayment is idempotent on `checkout-complete:${session.ID}`, so this is one of the
+     * retries; `payment_intent.succeeded` is the other (BookSettledCheckoutPaymentIfNeeded, including
+     * on AlreadyApplied webhook deliveries so a 500 after applyEvent still converges).
+     */
+    private static async replayConfirmedSession(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        md: Metadata,
+        contextUser: UserInfo | undefined,
+        trigger: CompletionTrigger
+    ): Promise<CompleteCheckoutResult> {
+        const orderID = session.DraftOrderID ?? '';
+        const existingOrder = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
+        const orderLoaded = await existingOrder.Load(orderID);
+        if (orderLoaded) {
+            trigger.Report.Capture = await this.applySettledPaymentToOrder(session, existingOrder, contextUser, { Source: trigger.Source });
+        }
+        return {
+            Success: true,
+            SessionID: session.ID,
+            Status: 'Confirmed',
+            OrderID: orderID,
+            OrderNumber: orderLoaded ? (existingOrder.OrderNumber || orderID) : orderID,
+            TotalGross: orderLoaded ? (existingOrder.TotalGross ?? undefined) : undefined
+        };
+    }
+
+    /**
+     * Builds and confirms the order for an Open session — the work behind both the browser's
+     * complete call and the payment webhook. The caller has checked the session may be completed.
+     */
+    private static async completeOpenSession(
+        session: mjBizAppsOrdersCheckoutSessionEntity,
+        md: Metadata,
+        contextUser: UserInfo | undefined,
+        trigger: CompletionTrigger
+    ): Promise<CompleteCheckoutResult> {
+        const sessionID = session.ID;
+        const evidence = trigger.Evidence;
         if (session.DraftOrderID) {
-            return this.completeRenewalPayment(session, md, contextUser);
+            return this.completeRenewalPayment(session, md, contextUser, trigger);
         }
 
         // Atomically latch status to Processing to prevent concurrent duplicate checkout processing
         const latched = await this.latchSessionProcessingAtomic(sessionID, md, contextUser);
         if (!latched) {
+            // The other caller for this payment (browser or webhook) holds the latch: wait for it.
+            if (await session.Load(sessionID)) {
+                await this.awaitProcessingFinished(session);
+                if (session.Status === 'Confirmed' && session.DraftOrderID) {
+                    return this.replayConfirmedSession(session, md, contextUser, trigger);
+                }
+            }
+            trigger.Report.Retryable = true;
             return {
                 Success: false,
                 ErrorMessage: 'This checkout is already being completed, or is no longer open. Wait a moment, then reload the page to see the result.',
@@ -2329,6 +2580,7 @@ export class CheckoutSessionService {
         try {
             const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
             await widget.Load(session.CheckoutWidgetID);
+            const configuredExtensionFields = this.configuredExtensionFields(widget);
 
             const snapshot = this.readSnapshot(session);
             const linesInput: CheckoutLineInput[] = Array.isArray(snapshot.Lines) ? snapshot.Lines : [];
@@ -2411,7 +2663,7 @@ export class CheckoutSessionService {
             order.CompanyID = widget.CompanyID;
             order.BillToPersonID = session.PersonID ?? null;
             order.ShipToPersonID = session.PersonID ?? null;
-            order.Origin = 'Widget';
+            SetSystemOrderOrigin(order, 'Widget');
             order.OrderType = 'Sale';
             order.SourceCheckoutWidgetID = widget.ID;
             // VAT location evidence beside the billing address (#480). Null when the edge has no
@@ -2505,7 +2757,7 @@ export class CheckoutSessionService {
                 }
 
                 const hydrate = async (line: OrderLineEntity, unitData: Record<string, unknown>): Promise<void> => {
-                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false);
+                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, configuredExtensionFields);
                     if (!hydrated.PersonID && hydrated.Extension) {
                         newAttendees.push({ Fields: unitData, Extension: hydrated.Extension });
                     }
@@ -2634,6 +2886,7 @@ export class CheckoutSessionService {
                               ? `Promotion code ${typedCodeDeclined.Code} no longer applied when the order was priced again at completion (${typedCodeDeclined.Reason}). ${paymentFailure.Message}`
                               : paymentFailure.Message;
                         void raiseCheckoutSettledNotBookedAlert(sessionID, session.PaymentIntentID, reason, contextUser);
+                        trigger.Report.Alerted = true;
                     }
                     return {
                         Success: false,
@@ -2649,7 +2902,7 @@ export class CheckoutSessionService {
                 order.CardIssuingCountry = paymentCheck.CardIssuingCountry;
                 // Payment has checked out, so from here a failure leaves a paid checkout without
                 // an order. Record the attempt; Confirm rolls back on failure, the record does not.
-                confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', 'Checkout', contextUser);
+                confirmStep = await CheckoutStepLog.Begin(sessionID, 'Confirm', trigger.Source, contextUser);
             }
 
             // Payment has checked out (or none was due): create the Persons the checkout needs.
@@ -2697,7 +2950,7 @@ export class CheckoutSessionService {
 
             // Book the PaymentHeader + allocation now that the order exists. retrieve-on-complete
             // only stamps PaymentIntent.Status = Succeeded; AmountPaid stays 0 until CapturePayment.
-            await this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Checkout' });
+            trigger.Report.Capture = await this.applySettledPaymentToOrder(session, order, contextUser, { Source: trigger.Source });
 
             // Mint the GuestOrder identity claim for the buyer's email so a later account
             // (MJ core's IdentityClaimEngineServer) can attach the order + its entitlement
@@ -2754,6 +3007,8 @@ export class CheckoutSessionService {
             }
             await CheckoutSessionService.revertSessionOpenAtomic(sessionID, md, contextUser);
             session.Status = 'Open';
+            // A thrown save or read may pass on a later attempt; a refusal above would not.
+            trigger.Report.Retryable = true;
             LogError(`[CheckoutSessionService] CompleteCheckout failed for session ${sessionID}: ${msg}`);
             return {
                 Success: false,
@@ -2825,7 +3080,8 @@ export class CheckoutSessionService {
     private static async completeRenewalPayment(
         session: mjBizAppsOrdersCheckoutSessionEntity,
         md: Metadata,
-        contextUser?: UserInfo
+        contextUser: UserInfo | undefined,
+        trigger: CompletionTrigger
     ): Promise<CompleteCheckoutResult> {
         const refuse = (message: string, status: string = session.Status): CompleteCheckoutResult => ({
             Success: false,
@@ -2845,17 +3101,19 @@ export class CheckoutSessionService {
             return refuse(paymentProblem.Message);
         }
         if (!(await this.latchSessionProcessingAtomic(session.ID, md, contextUser))) {
+            trigger.Report.Retryable = true;
             return refuse('Session is not in an Open status or was concurrently processed', 'Unknown');
         }
         if (!(await this.stampSessionConfirmedAtomic(session.ID, renewal.OrderID, md, contextUser))) {
             await this.revertSessionOpenAtomic(session.ID, md, contextUser);
+            trigger.Report.Retryable = true;
             return refuse('The renewal payment could not be recorded. Please try again.', 'Open');
         }
         session.Status = 'Confirmed';
 
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
         if (await order.Load(renewal.OrderID)) {
-            await this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Checkout' });
+            trigger.Report.Capture = await this.applySettledPaymentToOrder(session, order, contextUser, { Source: trigger.Source });
         }
         return {
             Success: true,
@@ -2867,12 +3125,27 @@ export class CheckoutSessionService {
         };
     }
 
+    /**
+     * The buyer's Billing address for this location. Reuses a Billing-linked Address of the
+     * person's with the same country, state and postal code and no street lines, so a retried
+     * completion (a confirm that failed after the address was saved) does not add a second
+     * address and link for the same location (#817). Otherwise records a new one and links it.
+     */
     private static async recordBillingAddress(
         location: BillingLocation,
         personID: string,
         md: Metadata,
         contextUser?: UserInfo
     ): Promise<string> {
+        let existing: string | null = null;
+        try {
+            existing = await this.findBillingAddress(location, personID, md, contextUser);
+        } catch (err) {
+            LogError(`[CheckoutSessionService] Billing address lookup for person ${personID} failed; recording a new one: ${err instanceof Error ? err.message : String(err)}`);
+        }
+        if (existing) {
+            return existing;
+        }
         const address = await md.GetEntityObject<mjBizAppsCommonAddressEntity>(ADDRESS_ENTITY, contextUser);
         address.NewRecord();
         address.Country = location.Country;
@@ -2885,6 +3158,61 @@ export class CheckoutSessionService {
         return address.ID;
     }
 
+    /** The ID of the Billing address type, or null when it is not defined. */
+    private static async billingAddressTypeID(contextUser?: UserInfo): Promise<string | null> {
+        const typeRes = await new RunView().RunView<{ ID: string }>({
+            EntityName: ADDRESS_TYPE_ENTITY,
+            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
+            Fields: ['ID'],
+            ResultType: 'simple'
+        }, contextUser);
+        return (typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined) ?? null;
+    }
+
+    /**
+     * A location-only Address already linked to the person as Billing that matches this location,
+     * or null. Fail-soft: a failed read means a new address is recorded, as before.
+     */
+    private static async findBillingAddress(
+        location: BillingLocation,
+        personID: string,
+        md: Metadata,
+        contextUser?: UserInfo
+    ): Promise<string | null> {
+        const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
+        const addressTypeID = await this.billingAddressTypeID(contextUser);
+        if (!personEntityID || !addressTypeID) {
+            return null;
+        }
+        const rv = new RunView();
+        const links = await rv.RunView<{ AddressID: string }>({
+            EntityName: ADDRESS_LINK_ENTITY,
+            ExtraFilter: `EntityID = '${EscapeText(personEntityID)}' AND RecordID = '${EscapeText(personID)}' AND AddressTypeID = '${EscapeText(addressTypeID)}'`,
+            Fields: ['AddressID'],
+            ResultType: 'simple'
+        }, contextUser);
+        const addressIDs = links?.Success ? (links.Results ?? []).map((l) => l.AddressID).filter(Boolean) : [];
+        if (addressIDs.length === 0) {
+            return null;
+        }
+        const matches = (column: string, value: string | null) =>
+            value == null || value === '' ? `(${column} IS NULL OR ${column} = '')` : `${column} = '${EscapeText(value)}'`;
+        const addresses = await rv.RunView<{ ID: string }>({
+            EntityName: ADDRESS_ENTITY,
+            ExtraFilter: [
+                `ID IN (${addressIDs.map((id) => `'${EscapeText(id)}'`).join(',')})`,
+                matches('Country', location.Country),
+                matches('StateProvince', location.StateProvince),
+                matches('PostalCode', location.PostalCode),
+                matches('Line1', null),
+            ].join(' AND '),
+            Fields: ['ID'],
+            OrderBy: '__mj_CreatedAt ASC',
+            ResultType: 'simple'
+        }, contextUser);
+        return (addresses?.Success ? addresses.Results?.[0]?.ID : undefined) ?? null;
+    }
+
     private static async linkBillingAddress(
         addressID: string,
         personID: string,
@@ -2892,14 +3220,7 @@ export class CheckoutSessionService {
         contextUser?: UserInfo
     ): Promise<void> {
         const personEntityID = md.EntityByName(PERSON_ENTITY)?.ID;
-        const rv = new RunView();
-        const typeRes = await rv.RunView<{ ID: string }>({
-            EntityName: ADDRESS_TYPE_ENTITY,
-            ExtraFilter: `Name = '${EscapeText(BILLING_ADDRESS_TYPE)}'`,
-            Fields: ['ID'],
-            ResultType: 'simple'
-        }, contextUser);
-        const addressTypeID = typeRes?.Success ? typeRes.Results?.[0]?.ID : undefined;
+        const addressTypeID = await this.billingAddressTypeID(contextUser);
         if (!personEntityID || !addressTypeID) {
             LogError(`[CheckoutSessionService] Billing address ${addressID} not linked to person ${personID}: ${personEntityID ? `no '${BILLING_ADDRESS_TYPE}' address type` : 'Person entity not in metadata'}`);
             return;
@@ -2974,7 +3295,11 @@ export class CheckoutSessionService {
      *   2. This method, from `payment_intent.succeeded` — including AlreadyApplied deliveries,
      *      so a 500 after the intent row is stamped still converges on the next Stripe retry.
      *
-     * No-ops when the intent is not a confirmed checkout session (back-office captures).
+     * A session the payment settled for that is still Open was never completed: the buyer's page
+     * closed before it asked (#724). This method completes it, as the browser would have. One that
+     * expired first is past completing, and raises the "settled with no order" alert.
+     *
+     * No-ops when no checkout session owns the intent (back-office captures).
      */
     public static async BookSettledCheckoutPaymentIfNeeded(
         paymentIntentID: string,
@@ -2983,23 +3308,27 @@ export class CheckoutSessionService {
         if (!paymentIntentID) {
             return { Attempted: false, Booked: false };
         }
-        const rv = new RunView();
-        const found = await rv.RunView<{ ID: string }>(
-            {
-                EntityName: CHECKOUT_SESSION_ENTITY,
-                ExtraFilter: `PaymentIntentID = '${EscapeText(paymentIntentID)}' AND Status = 'Confirmed'`,
-                MaxRows: 1,
-                ResultType: 'simple',
-            },
-            contextUser
-        );
-        const sessionID = found?.Results?.[0]?.ID;
-        if (!sessionID) {
-            return { Attempted: false, Booked: false };
-        }
         const md = new Metadata();
         const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
-        if (!(await session.Load(sessionID)) || !session.DraftOrderID) {
+        const sessionID =
+            (await this.sessionIDForIntent(paymentIntentID, `Status = 'Confirmed'`, contextUser)) ??
+            (await this.sessionIDForIntent(paymentIntentID, `Status IN ('Open', 'Processing', 'Expired')`, contextUser));
+        if (!sessionID || !(await session.Load(sessionID))) {
+            return { Attempted: false, Booked: false };
+        }
+        await this.awaitProcessingFinished(session);
+        if (session.Status === 'Open') {
+            return this.completeFromWebhook(session, md, contextUser);
+        }
+        if (session.Status === 'Processing') {
+            return { Attempted: true, Booked: false, Retryable: true, ErrorMessage: 'the checkout is still being completed' };
+        }
+        if (session.Status === 'Expired') {
+            const reason = 'The checkout expired before it was completed, so its settled payment has no order.';
+            void raiseCheckoutSettledNotBookedAlert(session.ID, session.PaymentIntentID, reason, contextUser);
+            return { Attempted: true, Booked: false, Retryable: false, ErrorMessage: reason };
+        }
+        if (session.Status !== 'Confirmed' || !session.DraftOrderID) {
             return { Attempted: false, Booked: false };
         }
         const order = await md.GetEntityObject<OrderHeaderEntity>(ORDER_HEADER_ENTITY, contextUser);
@@ -3007,6 +3336,25 @@ export class CheckoutSessionService {
             return { Attempted: false, Booked: false };
         }
         return this.applySettledPaymentToOrder(session, order, contextUser, { Source: 'Webhook' });
+    }
+
+    /** The checkout session that opened this payment intent, among those `statusFilter` admits. */
+    private static async sessionIDForIntent(
+        paymentIntentID: string,
+        statusFilter: string,
+        contextUser: UserInfo
+    ): Promise<string | undefined> {
+        const rv = new RunView();
+        const found = await rv.RunView<{ ID: string }>(
+            {
+                EntityName: CHECKOUT_SESSION_ENTITY,
+                ExtraFilter: `PaymentIntentID = '${EscapeText(paymentIntentID)}' AND ${statusFilter}`,
+                MaxRows: 1,
+                ResultType: 'simple',
+            },
+            contextUser
+        );
+        return found?.Results?.[0]?.ID;
     }
 
     /**
@@ -3103,11 +3451,19 @@ export class CheckoutSessionService {
         }
 
         if (!intent.OrderHeaderID) {
-            intent.OrderHeaderID = order.ID;
             // Second step of the gateway description: the intent was opened before the order existed.
             const mdForGateway = Metadata.Provider as IMetadataProvider | undefined;
             if (mdForGateway) {
                 await SendOrderDescriptionToGateway(intent, order.ID, mdForGateway, contextUser);
+            }
+            // Re-read after the gateway call, before the save below (#939). The save writes every
+            // field of this object, and a webhook event can land on the same row while the
+            // description is on its way, so a copy read before the call would put its stamp back.
+            if (!(await intent.Load(intent.ID))) {
+                LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} before stamping order ${order.ID}; saving the copy read before the gateway call`);
+            }
+            if (!intent.OrderHeaderID) {
+                intent.OrderHeaderID = order.ID;
             }
         }
         // The order's bill-to is authoritative. The intent can carry an earlier payer: one opened
@@ -3146,7 +3502,10 @@ export class CheckoutSessionService {
 
         try {
             const op = new CapturePaymentOperation();
-            const result = await op.ExecuteServer(
+            // On its own transaction, never the shared provider's (#927): the page and the webhook
+            // capture the same session within a second of each other, and on one provider their
+            // transactions nest, so a rollback on one side undid the other's payment.
+            const result = await WithIsolatedProvider((captureProvider) => op.ExecuteServer(
                 {
                     PaymentIntentID: intent.ID,
                     Amount: due,
@@ -3165,11 +3524,11 @@ export class CheckoutSessionService {
                     IdempotencyKey: `checkout-complete:${session.ID}`,
                 },
                 {
-                    provider: mdProvider,
+                    provider: captureProvider,
                     user: contextUser,
                     emitProgress: () => undefined,
                 }
-            );
+            ), mdProvider);
             const output = result.Output;
             if (!result.Success || !output?.Success) {
                 const detail = result.ErrorMessage
@@ -3212,6 +3571,27 @@ export class CheckoutSessionService {
                     mdProvider,
                     contextUser
                 );
+                // On an account whose gateway bills renewals itself, hand the order's new subscriptions
+                // to it now that their card is kept (option E, E2). Never on an update-card renewal:
+                // that order creates no subscription. Never throws, and a problem raises an alert
+                // Task; this is the only call a checkout makes, since a replay of a booked payment
+                // returns before here, so the daily Create Provider Subscriptions action retries it.
+                // On its own provider, like the capture above: the write that records the gateway id
+                // must not be rolled back with another request's transaction (#927). On an account
+                // that does not bill subscriptions it costs one read of the account, on this shared
+                // provider, and returns before making a provider of its own.
+                if (!renewal) {
+                    try {
+                        await EnsureProviderSubscriptionsOnOwnProvider(
+                            { OrderHeaderID: order.ID, CheckoutPaymentProviderID: intent.PaymentProviderID },
+                            mdProvider,
+                            contextUser,
+                        );
+                    } catch (err) {
+                        // Contractually unreachable; kept so a defect there can never report a booked capture as failed.
+                        LogError(`[CheckoutSessionService] Order ${order.ID}: handing subscriptions to the gateway threw: ${err instanceof Error ? err.message : String(err)}`);
+                    }
+                }
             }
             return { Attempted: true, Booked: true };
         } catch (err) {
@@ -3269,6 +3649,14 @@ export class CheckoutSessionService {
      * Pull the gateway's current intent status onto our row, and return what the gateway said.
      * Fail-soft: a retrieve error leaves the local status unchanged and the paid gate still
      * refuses.
+     *
+     * The row is re-read after the gateway call and before it is written (#939). MJ's `Save()`
+     * sends every field of the object, not only the changed ones, and the webhook writes the same
+     * row while the page waits on the gateway: saving the copy read before the call put the
+     * webhook's `ProviderEventID` back to null, which is the stamp its duplicate check reads. When
+     * the fresh row already holds what the gateway said, the webhook recorded it first, and the row
+     * is left as it wrote it, event time included. The re-read narrows the window to milliseconds;
+     * it does not lock the row (#943). MJ #4339 tracks the every-field save upstream.
      */
     private static async refreshIntentFromGateway(
         intent: mjBizAppsOrdersPaymentIntentEntity,
@@ -3281,12 +3669,23 @@ export class CheckoutSessionService {
         if (retrieved.Status === intent.Status && retrieved.Amount == null) {
             return retrieved;
         }
+        if (!(await intent.Load(intent.ID))) {
+            // Deliberate: this call then refuses (the status stays unsettled), and the caller can retry
+            // while the webhook still books the payment. Setting `Status` from `retrieved` on this copy
+            // instead would let a later save in capture write the stale copy back, the overwrite #939 fixes.
+            LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} to stamp retrieved status ${retrieved.Status}`);
+            return retrieved;
+        }
+        const amount = typeof retrieved.Amount === 'number' && retrieved.Amount > 0 ? retrieved.Amount : null;
+        if (retrieved.Status === intent.Status && (amount === null || amount === intent.Amount)) {
+            return retrieved;
+        }
         intent.Status = retrieved.Status;
         // The gateway's state as of this read, so any webhook event created before now is older
         // than this status and is not allowed to move it backwards (#475).
         intent.LastEventAt = new Date();
-        if (typeof retrieved.Amount === 'number' && retrieved.Amount > 0) {
-            intent.Amount = retrieved.Amount;
+        if (amount !== null) {
+            intent.Amount = amount;
         }
         try {
             if (!(await intent.Save())) {

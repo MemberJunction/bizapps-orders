@@ -15,7 +15,9 @@ export const CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER = '[CHECKOUT-CAPTURE-TERMINAL]
 
 /**
  * CapturePayment `Blockers[].Code` values that will not change on replay.
- * `CaptureFailed` is deliberately absent — it wraps a thrown save-path error.
+ * Deliberately absent: `CaptureFailed`, which wraps a thrown save-path error, and the read-failure
+ * codes `OrderReadFailed`, `TenderReadFailed` and `PaymentReadFailed`, which mean a read the capture
+ * needed failed (a timeout, a lock wait, a dropped connection) rather than answered "not there" (#967).
  */
 export const TERMINAL_CAPTURE_BLOCKER_CODES: ReadonlySet<string> = new Set([
     'BadCompanyID',

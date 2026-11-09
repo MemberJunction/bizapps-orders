@@ -59,6 +59,20 @@ export class GetFulfillmentQueueOperation extends OrdersGetFulfillmentQueueOpera
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<OrdersGetFulfillmentQueueOutput> {
+        // A read that fails must say so. Returned as an empty queue it reads "nothing to ship",
+        // the failure this operation exists to avoid.
+        try {
+            return await this.buildQueue(input, provider, user);
+        } catch (err) {
+            return this.empty(err instanceof Error ? err.message : String(err));
+        }
+    }
+
+    private async buildQueue(
+        input: OrdersGetFulfillmentQueueInput,
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<OrdersGetFulfillmentQueueOutput> {
         const rv = new RunView(provider as unknown as IRunViewProvider);
         const max = Math.max(1, Number(input?.MaxCount ?? DEFAULT_MAX));
 
@@ -109,6 +123,7 @@ export class GetFulfillmentQueueOperation extends OrdersGetFulfillmentQueueOpera
             },
             user,
         );
+        if (!orders.Success) throw new Error(`Could not read the confirmed orders: ${orders.ErrorMessage}`);
         const orderRows = orders.Results ?? [];
         if (!orderRows.length) return this.empty();
 
@@ -138,6 +153,7 @@ export class GetFulfillmentQueueOperation extends OrdersGetFulfillmentQueueOpera
             },
             user,
         );
+        if (!lines.Success) throw new Error(`Could not read the order lines: ${lines.ErrorMessage}`);
         const lineRows = lines.Results ?? [];
         if (!lineRows.length) return this.empty();
 

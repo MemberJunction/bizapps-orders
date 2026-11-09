@@ -14,6 +14,7 @@
  *   TS5   Orders.AmendArrangement previews a shift without writing, records it, and refuses a shortening or a
  *         shift combined with an extension
  *   TS6   instalments not yet invoiced move with the term when its line is all the order bills
+ *   TS7   in Chicago, the moved grants start and end at 00:00 Central, not 00:00 UTC (access sync G5)
  *
  * CONNECTS TO:
  *   CODE: TermShift · TermShiftPlan · OrderConcessionEntityServer · AmendArrangementOperation
@@ -32,6 +33,7 @@ import type { OrderHeaderEntity, mjBizAppsOrdersOrderConcessionEntity } from "@m
 import {
   ACCT_SCHEMA,
   AcknowledgeAmendmentsWith,
+  AssertTermGrantWindow,
   CreateOrdersFixture,
   createViaEntity,
   Fx,
@@ -40,6 +42,7 @@ import {
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  WithBusinessZone,
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
@@ -154,6 +157,7 @@ async function assertShifted(ctx: IntegrationCheckContext, term: BookedTerm, day
   AssertSame([iso(line.ServicePeriodStart), iso(line.ServicePeriodEnd)], [start, end], "and the line that bought it agrees");
   const sub = await TxOne<{ StartDate: Date }>(ctx, `SELECT StartDate FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${term.SubscriptionID}'`);
   AssertEqual(iso(sub.StartDate), start, "the subscription started with this term, so its start moved too");
+  await AssertTermGrantWindow(ctx, term.ID, start, end, "access moved with the term, its days covered in full");
 
   const entries = await recognitionOf(ctx, term.ID);
   const total = Math.round(entries.reduce((s, e) => s + Number(e.Net), 0) * 100) / 100;
@@ -395,6 +399,26 @@ export const TermShiftChecks: NamedCheck[] = [
         const rows = await TxQuery<{ DueDate: Date }>(ctx,
           `SELECT DueDate FROM ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule WHERE OrderHeaderID = '${orderID}' ORDER BY InstallmentNumber`);
         AssertSame(rows.map((r) => iso(r.DueDate)), dues.map((d) => iso(addDays(d, 15))), "each instalment not yet invoiced moved 15 days");
+      }),
+  },
+  {
+    Id: "term-shift.TS7",
+    Name: "TS7: in Chicago, a shift moves the term's grants to 00:00 Central on the new first day and after the new last day",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      WithBusinessZone(ctx, "America/Chicago", "Central Standard Time", async () => {
+        await AcknowledgeAmendmentsWith(ctx);
+        reviewShiftsFrom(30);
+        const { Term } = await bookTerm(ctx);
+        const c = await recordShift(ctx, Term, 20);
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Approved", "under the review limit it goes through");
+        const start = iso(addDays(Term.StartDate, 20));
+        const end = iso(addDays(Term.EndDate, 20));
+        await AssertTermGrantWindow(ctx, Term.ID, start, end, "Chicago days, both ends");
+        const g = await TxOne<{ ValidFrom: Date }>(ctx,
+          `SELECT TOP 1 ValidFrom FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionTermID = '${Term.ID}' AND ValidityModeApplied = 'SubscriptionTerm'`);
+        Assert(new Date(g.ValidFrom).getUTCHours() >= 5, `precondition: a Chicago start is 05:00Z or 06:00Z, not midnight UTC (got ${new Date(g.ValidFrom).toISOString()})`);
       }),
   },
 ];

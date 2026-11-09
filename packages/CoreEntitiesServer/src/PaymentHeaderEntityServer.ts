@@ -51,7 +51,6 @@
 import {
     BaseEntity,
     BaseEntityResult,
-    BaseRemotableOperation,
     DatabaseProviderBase,
     EntitySaveOptions,
     IMetadataProvider,
@@ -64,9 +63,23 @@ import {
     ValidationErrorType,
     ValidationResult,
 } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
-import { PaymentHeaderEntity, mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor } from './AccountingBridge.js';
+import { RegisterClass } from '@memberjunction/global';
+import {
+    IsPaymentDateCorrection,
+    PaymentDateCorrectionRefusal,
+    PaymentHeaderEntity,
+    ToISODate,
+    mjBizAppsOrdersPaymentLineEntity,
+} from '@mj-biz-apps/orders-entities';
+import {
+    BuildGLAccountResolver,
+    BuildIntercompanyLookup,
+    BuildLegalEntityLookup,
+    EntityIDFor,
+    RedatePaymentJournalEntries,
+    ResolveAccountingOperation,
+    type PaymentEntrySource,
+} from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -74,8 +87,8 @@ import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJourna
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import {
-    DepositReleasedByCompany,
     PlanLineDeposits,
+    ReversalDepositWorking,
     type DepositWorking,
     type InstalmentCashFacts,
 } from './PaymentScheduleBehavior.js';
@@ -84,6 +97,7 @@ import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
 import { ReconcilePaymentGatedGrants } from './PaymentGatedAccess.js';
 import { RequireUUID } from './sql-guards.js';
+import { OrderCustomerName, type OrderCustomerFields } from './JournalEntryCustomer.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
@@ -125,12 +139,27 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             );
         }
 
+        // Correcting a captured payment's date moves its journal entries (bc-aidp-next-golive#448),
+        // which is finance's to do. Save checks this before it opens the correction's transaction
+        // (saveDateCorrection), so a save never reaches accounting's own check of the same
+        // authorization; this copy reports it to a caller that validates without saving.
+        const dateRefusal = PaymentDateCorrectionRefusal(this, this.ContextCurrentUser, this.ProviderToUse as unknown as IMetadataProvider);
+        if (dateRefusal) {
+            result.Success = false;
+            result.Errors.push(new ValidationErrorInfo('PaymentDate', dateRefusal, this.PaymentDate, ValidationErrorType.Failure));
+        }
+
         return result;
     }
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         if (!this.PaymentNumber) {
             this.PaymentNumber = await this.assignPaymentNumber();
+        }
+
+        // A date correction on a captured payment moves its entries in the same transaction.
+        if (IsPaymentDateCorrection(this)) {
+            return this.saveDateCorrection(options);
         }
 
         // A rail that settles on somebody else's schedule may not reach Captured here, whoever asked.
@@ -248,6 +277,70 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         }
+    }
+
+    /**
+     * Save a captured payment's corrected date and move its journal entries to the same day, in one
+     * transaction (bc-aidp-next-golive#448, g448.1 A). The entries are the header's own (cash, fee)
+     * and each allocation's; accounting refuses, with its own message, once any of them is batched,
+     * and then nothing is written. A correction never comes with other changes to a captured
+     * payment: trigger 51005 freezes the rest of its money.
+     */
+    private async saveDateCorrection(options?: EntitySaveOptions): Promise<boolean> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
+        const user = this.ContextCurrentUser;
+        // A person without the authorization gets a sentence about the payment, not accounting's
+        // refusal about journal entries, and nothing is opened or written.
+        const refusal = PaymentDateCorrectionRefusal(this, user, provider);
+        if (refusal) {
+            this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+            return false;
+        }
+        const day = ToISODate(this.PaymentDate);
+        if (!day) {
+            this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(`Payment ${this.PaymentNumber} needs a payment date.`)));
+            return false;
+        }
+        await dbProvider.BeginTransaction();
+        try {
+            const sources: PaymentEntrySource[] = [
+                { EntityName: PAYMENT_HEADER_ENTITY, RecordIDs: [this.ID] },
+                { EntityName: PAYMENT_LINE_ENTITY, RecordIDs: await this.loadSavedLineIDs() },
+            ];
+            await RedatePaymentJournalEntries(sources, day, this.PaymentNumber, provider, user);
+            if (!(await super.Save(options))) {
+                throw new Error(`Failed to save payment ${this.PaymentNumber}: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            }
+            await dbProvider.CommitTransaction();
+            return true;
+        } catch (err) {
+            LogError(`PaymentHeaderEntityServer.saveDateCorrection failed for ${this.PaymentNumber ?? this.ID}: ${err}`);
+            try {
+                await dbProvider.RollbackTransaction();
+            } catch (rollbackErr) {
+                LogError(`Rollback failed after payment date correction error: ${rollbackErr}`);
+            }
+            this.RegisterResultHistoryEntry(this.buildFailureResult(err));
+            return false;
+        }
+    }
+
+    /** The IDs of this payment's saved allocations, whose entries are booked against them. */
+    private async loadSavedLineIDs(): Promise<string[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string }>(
+            {
+                EntityName: PAYMENT_LINE_ENTITY,
+                ExtraFilter: `PaymentHeaderID = '${RequireUUID(this.ID, 'PaymentHeaderID')}'`,
+                Fields: ['ID'],
+                ResultType: 'simple',
+                IgnoreMaxRows: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!res.Success) throw new Error(`Could not read payment ${this.PaymentNumber}'s allocations: ${res.ErrorMessage ?? 'unknown error'}`);
+        return (res.Results ?? []).map((r) => r.ID);
     }
 
     /**
@@ -466,14 +559,20 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
      * Where each order's deposit planning starts: the pre-payment schedule, plus — when this payment
      * takes cash back — what that took out of the rows' deposits, read now that every line is down.
      */
-    private async depositWorkingFor(orderID: string, before: InstalmentCashFacts[], reversing: boolean): Promise<DepositWorking> {
+    private async depositWorkingFor(
+        orderID: string,
+        before: InstalmentCashFacts[],
+        reversing: boolean,
+        namedRowIDs: Iterable<string | null | undefined>,
+    ): Promise<DepositWorking> {
         if (!reversing || !before.length) return { Facts: before, Released: new Map() };
         const after = await LoadInstalmentCashFacts(
             this.ProviderToUse as unknown as IRunViewProvider,
             this.ContextCurrentUser as UserInfo,
             orderID,
         );
-        return { Facts: before, Released: DepositReleasedByCompany(before, after) };
+        // Per row as well as per company, so the line that named a row carries its release (#812).
+        return ReversalDepositWorking(before, after, namedRowIDs);
     }
 
     private async bookAllocations(
@@ -513,6 +612,12 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         }
 
         if (unbookedLines.length === 0) return;
+        // Reversing lines that name an instalment plan first, so each claims the deposit released from
+        // its own row before an unnamed line draws on what is left (#812). Lines that put cash in keep
+        // their order (the sort is stable), since the capture split depends on it.
+        const namedReversalFirst = (l: mjBizAppsOrdersPaymentLineEntity): number =>
+            (this.Status === 'Refunded' || (l.Amount ?? 0) < 0) && l.OrderHeaderPaymentScheduleID ? 0 : 1;
+        unbookedLines.sort((a, b) => namedReversalFirst(a) - namedReversalFirst(b));
 
         // Both builders configure the accounting engine on the way in, so the intercompany pairs
         // and account links are current without a separate Config call here.
@@ -546,7 +651,7 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                         `nothing for the payment to pay for. Add lines to the order first, or apply the payment to another order.`,
                 );
             }
-            const orderNumber = await this.loadOrderNumber(line.OrderHeaderID);
+            const order = await this.loadOrderLabel(line.OrderHeaderID);
 
             const orderKey = String(line.OrderHeaderID).toLowerCase();
             const before = scheduleFactsByOrder.get(orderKey);
@@ -558,7 +663,11 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 );
             }
             const isReversal = this.Status === 'Refunded' || (line.Amount ?? 0) < 0;
-            const working = workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal));
+            const namedRowIDs = unbookedLines
+                .filter((l) => String(l.OrderHeaderID).toLowerCase() === orderKey)
+                .map((l) => l.OrderHeaderPaymentScheduleID);
+            const working =
+                workingByOrder.get(orderKey) ?? (await this.depositWorkingFor(orderKey, before, isReversal, namedRowIDs));
             const plan = PlanLineDeposits(
                 AllocateByCompany(Math.abs(line.Amount ?? 0), orderLines, line.OrderLineID ?? null),
                 isReversal,
@@ -570,7 +679,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             const { Drafts } = await factory.BuildAllocationDrafts({
                 PaymentLineID: line.ID,
                 PaymentNumber: this.PaymentNumber,
-                OrderNumber: orderNumber,
+                OrderNumber: order.OrderNumber,
+                CustomerName: order.CustomerName,
                 Amount: line.Amount ?? 0,
                 ReceivingCompanyID: this.ReceivingCompanyID,
                 OrderLines: orderLines,
@@ -610,19 +720,21 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 
 
-    private async loadOrderNumber(orderHeaderID: string): Promise<string> {
+    /** An order's number and customer, for the entry descriptions; the id stands in for a missing number. */
+    private async loadOrderLabel(orderHeaderID: string): Promise<{ OrderNumber: string; CustomerName: string | null }> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ OrderNumber: string }>(
+        const res = await rv.RunView<{ OrderNumber: string } & OrderCustomerFields>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
                 ExtraFilter: `ID='${orderHeaderID}'`,
-                Fields: ['OrderNumber'],
+                Fields: ['OrderNumber', 'BillToOrganization', 'BillToPerson'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        return res?.Results?.[0]?.OrderNumber ?? String(orderHeaderID);
+        const row = res?.Results?.[0];
+        return { OrderNumber: row?.OrderNumber ?? String(orderHeaderID), CustomerName: row ? OrderCustomerName(row) : null };
     }
 
     /**
@@ -897,16 +1009,10 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CreateJournalEntriesResult> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-            BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>
-        >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-
-        if (!op) {
-            throw new Error(
-                `Payments cannot be booked because the Accounting app is not loaded on the server. ` +
-                    `Ask an administrator to install or enable the BizApps Accounting server package.`,
-            );
-        }
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
+            'Accounting.CreateJournalEntries',
+            'book the cash leg of a payment',
+        );
 
         const result = await op.Execute({ Drafts: drafts }, { provider, user });
         if (!result.Success) {

@@ -298,7 +298,7 @@
         {
           "fields": {
             "IncludeInUserSearchAPI": true,
-            "UserSearchPredicateAPI": "BeginsWith",
+            "UserSearchPredicateAPI": "Contains",
             "AutoUpdateIncludeInUserSearchAPI": false,
             "AutoUpdateUserSearchPredicate": false
           },
@@ -385,7 +385,7 @@
         {
           "fields": {
             "IncludeInUserSearchAPI": true,
-            "UserSearchPredicateAPI": "BeginsWith",
+            "UserSearchPredicateAPI": "Contains",
             "AutoUpdateIncludeInUserSearchAPI": false,
             "AutoUpdateUserSearchPredicate": false
           },
@@ -668,7 +668,7 @@
         {
           "fields": {
             "IncludeInUserSearchAPI": true,
-            "UserSearchPredicateAPI": "BeginsWith",
+            "UserSearchPredicateAPI": "Contains",
             "AutoUpdateIncludeInUserSearchAPI": false,
             "AutoUpdateUserSearchPredicate": false
           },

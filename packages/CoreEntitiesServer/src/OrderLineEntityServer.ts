@@ -65,6 +65,29 @@ function money(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
+/**
+ * The columns that set WHEN the thing is delivered rather than WHAT was sold (golive#322).
+ *
+ * Kept beside the class rather than inline so the exemption below reads as a list someone may extend
+ * deliberately, and so a reader can see at a glance how short it is.
+ */
+const SERVICE_PERIOD_FIELDS: readonly string[] = ['ServicePeriodStart', 'ServicePeriodEnd'];
+
+/**
+ * Whether a field held NOTHING before this save.
+ *
+ * MEASURED against the SQL provider, not assumed: a date column that was never set arrives here as
+ * `null`, and one that carries a date arrives as a real `Date`. Those are the two shapes this rule
+ * actually decides between. `undefined` and the empty string are covered because a value can also
+ * reach a field before any row exists behind it, and because treating either as "set" would refuse
+ * the fill this exemption exists for -- the failure that costs is a blank read as a value, not the
+ * reverse. A non-empty string is NOT blank, so a provider that ever hands these columns back as ISO
+ * strings still sees a set date as set.
+ */
+function IsBlankValue(value: unknown): boolean {
+    return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
+}
+
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends OrderLineEntity {
     /**
@@ -202,6 +225,39 @@ export class OrderLineEntityServer extends OrderLineEntity {
         const veto = HostOrderLineEditVeto();
         if (!veto || !this.OrderHeaderID || this.BypassExternalEditVeto) return;
 
+        /**
+         * A SERVICE PERIOD IS NOT WHAT WAS SOLD (bc-aidp-next-golive#322).
+         *
+         * The lock's own refusal says it: "before changing what was sold". Service dates are the
+         * coverage WINDOW, not the thing — the product, quantity and price are untouched.
+         *
+         * Why it matters rather than being a nicety: `ConfirmEligibility` refuses to confirm a line
+         * whose product has `RequiresServicePeriod` until it has BOTH a start and an end. Sales can
+         * state a term START on a deal line (golive#32) and nothing else — `DealLine` carries no date
+         * columns at all — so the end can only be set on the order. With the lock covering every
+         * field, a perfectly ordinary Won deal could not have its order confirmed without reopening
+         * the deal, setting the dates and closing it again. That reopen is itself now refused for the
+         * confirm (golive#323), so the workaround was getting narrower, not wider.
+         *
+         * NARROWED TO FILLING A BLANK. Only a save whose every dirty field is one of those two columns
+         * AND was empty beforehand is exempt; correcting a date that is already set still meets the
+         * lock. `changesOnlyTheServicePeriod` below carries the reasoning.
+         *
+         * SCOPED TO AN ORDER THAT HAS NOT BOOKED. After confirm the stored period is the SETTLED term
+         * that `materializeSubscriptions` wrote, and recognition is derived from it.
+         *
+         * ⚠ THAT BOOKED BOUND IS NOT A UNIVERSAL FREEZE, and it would be easy to read it as one. It
+         * decides whether to SKIP this veto, so it only binds where the veto would have refused — a
+         * closed deal. `MayEdit` returns null for an open deal, and trigger 51003 freezes the product,
+         * company, quantity, price, discount, tax, total and ship-to columns at confirm but NOT these
+         * two, so a Confirmed order whose deal is open takes a service-period edit today. Measured
+         * against a live database with the REAL deal-lock vetoer registered, not inferred. That is
+         * pre-existing rather than introduced here; closing it means freezing these columns after
+         * confirm independently of the deal, which has to be weighed against `materializeSubscriptions`
+         * and whatever renewals and amendments legitimately rewrite.
+         */
+        if (kind === 'update' && (await this.changesOnlyTheServicePeriod())) return;
+
         const refusal = await ResolveOrderLineEditRefusal(
             veto,
             {
@@ -325,6 +381,43 @@ export class OrderLineEntityServer extends OrderLineEntity {
                 ValidationErrorType.Failure,
             ),
         );
+    }
+
+    /**
+     * Whether this update touches the service period and NOTHING else, on an order that has not booked.
+     *
+     * Deliberately "only": a save that moves the dates AND the quantity is still changing what was
+     * sold, and must meet the lock like any other. An empty dirty set returns false rather than true —
+     * a save with nothing dirty has no claim on an exemption, and reading it as one would hand every
+     * no-op edit a way past the lock.
+     *
+     * The status read is the same one `refuseNewLineOnBookedOrder` makes, through `ProviderToUse`, so
+     * inside the booking transaction it sees what the transaction has written. A status that cannot be
+     * read yields NO exemption — the lock then applies, which is the safe direction.
+     */
+    private async changesOnlyTheServicePeriod(): Promise<boolean> {
+        const dirty = this.Fields.filter((f) => f.Dirty);
+        if (dirty.length === 0) return false;
+        if (!dirty.every((f) => SERVICE_PERIOD_FIELDS.includes(f.Name))) return false;
+
+        /**
+         * FILLING A BLANK, NOT CHANGING A DATE (review on golive#322).
+         *
+         * The exemption exists because a date that was never set cannot be set anywhere else: Sales
+         * states only a term START on a deal line, so the END arrives blank and the order is the only
+         * place to put it. A date that is ALREADY set had a source, and moving it is a change to the
+         * coverage window that was agreed at the close -- which is what the lock is for.
+         *
+         * So the prior value decides. Blank before, and this is the fill the confirm is waiting on;
+         * populated before, and it meets the lock like any other edit to a closed deal's line.
+         *
+         * Read from the dirty fields themselves rather than through `GetFieldByName`, so this asks the
+         * same objects the test above filtered and cannot disagree with them about which fields moved.
+         */
+        if (!dirty.every((f) => IsBlankValue(f.OldValue))) return false;
+
+        const status = await this.storedOrderStatus();
+        return !!status && !IsBooked(status);
     }
 
     /**

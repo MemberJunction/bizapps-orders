@@ -29,11 +29,14 @@ import { RequireUUID } from './sql-guards.js';
 const CHECKOUT_SESSION_ENTITY = 'MJ_BizApps_Orders: Checkout Sessions';
 const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
 const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 
 /** How many times a buyer may try a password the host refuses before the step closes. */
 export const MAX_CHECKOUT_PASSWORD_ATTEMPTS = 5;
 /** Longest password passed to the host. The host's own policy decides what is acceptable. */
 export const MAX_CHECKOUT_PASSWORD_LENGTH = 256;
+/** Shortest password passed to the host — a floor, not a policy; the host may still demand more. */
+export const MIN_CHECKOUT_PASSWORD_LENGTH = 8;
 /** Default minutes after the account is created during which the buyer may set its password here. */
 export const DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES = 5;
 /** Default seconds Orders waits for the host before treating a call as unanswered. */
@@ -193,6 +196,20 @@ export interface CheckoutAccountResponse {
     ErrorMessage?: string;
     /** Absent when no host step is registered — the checkout has no account step. */
     Account?: CheckoutAccountStatus;
+    /**
+     * What the confirmation screen shows and where it leaves to, sent with `Account` so a reload
+     * that returns to the account step does not need `/initialize` (#858). Absent with no `Account`.
+     */
+    Confirmation?: CheckoutConfirmationView;
+}
+
+/** The confirmed checkout's order number and the widget's post-sale settings. */
+export interface CheckoutConfirmationView {
+    OrderNumber: string | null;
+    /** The widget's `redirectUrl`, followed once the account step settles. */
+    RedirectUrl: string | null;
+    /** The widget's `successMessage`. */
+    SuccessMessage: string | null;
 }
 
 const GENERIC_FAILURE = 'We could not set up your account just now. Your order is confirmed. Please try again in a moment.';
@@ -390,7 +407,7 @@ async function ensureAccount(
     if (existing?.Outcome === 'NotApplicable') return { Success: true };
     const shown = buyerFacing(existing);
     if (shown && shown.Outcome !== 'Failed') {
-        return { Success: true, Account: toStatus(shown, step) };
+        return { Success: true, Account: toStatus(shown, step), Confirmation: await readConfirmation(session, contextUser) };
     }
 
     const context = await buildContext(session, contextUser);
@@ -428,7 +445,35 @@ async function ensureAccount(
         PasswordAttempts: 0,
     };
     await saveAccountState(session, state);
-    return { Success: true, Account: toStatus(state, step) };
+    return { Success: true, Account: toStatus(state, step), Confirmation: await readConfirmation(session, contextUser) };
+}
+
+/**
+ * The confirmed order's number and the widget's `redirectUrl` and `successMessage`. Fail-soft: a
+ * value that cannot be read is null, and the confirmation screen shows its generic wording.
+ */
+async function readConfirmation(session: mjBizAppsOrdersCheckoutSessionEntity, contextUser?: UserInfo): Promise<CheckoutConfirmationView> {
+    const view: CheckoutConfirmationView = { OrderNumber: null, RedirectUrl: null, SuccessMessage: null };
+    const md = new Metadata();
+    const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    try {
+        const order = await md.GetEntityObject(ORDER_HEADER_ENTITY, contextUser);
+        if (session.DraftOrderID && (await order.InnerLoad(CompositeKey.FromID(session.DraftOrderID)))) {
+            view.OrderNumber = text(order.Get('OrderNumber'));
+        }
+        const widget = await md.GetEntityObject(CHECKOUT_WIDGET_ENTITY, contextUser);
+        if (session.CheckoutWidgetID && (await widget.InnerLoad(CompositeKey.FromID(session.CheckoutWidgetID)))) {
+            const raw = widget.Get('Configuration');
+            const config: unknown = typeof raw === 'string' && raw.trim() ? JSON.parse(raw) : null;
+            if (config && typeof config === 'object' && !Array.isArray(config)) {
+                view.RedirectUrl = text((config as Record<string, unknown>).redirectUrl);
+                view.SuccessMessage = text((config as Record<string, unknown>).successMessage);
+            }
+        }
+    } catch (err) {
+        LogError(`[CheckoutAccountStep] Could not read the confirmation for session ${session.ID}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    return view;
 }
 
 /**
@@ -480,6 +525,15 @@ async function setPassword(
     }
     if (typeof password !== 'string' || password.length === 0 || password.length > MAX_CHECKOUT_PASSWORD_LENGTH) {
         return { Success: false, ErrorMessage: `Please enter a password of up to ${MAX_CHECKOUT_PASSWORD_LENGTH} characters.`, Account: toStatus(state, step) };
+    }
+    // Refused BEFORE the attempt is recorded: a too-short password never reaches the host, so it
+    // does not spend one of the buyer's attempts.
+    if (password.length < MIN_CHECKOUT_PASSWORD_LENGTH) {
+        return {
+            Success: false,
+            ErrorMessage: `Please choose a password of at least ${MIN_CHECKOUT_PASSWORD_LENGTH} characters.`,
+            Account: toStatus(state, step),
+        };
     }
 
     const pending: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {

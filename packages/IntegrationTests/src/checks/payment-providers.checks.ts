@@ -38,7 +38,7 @@
  * `CreateOrderFromGatewayCharge` with the charge supplied.
  */
 import { randomUUID } from "crypto";
-import { DerivePaymentStatus } from "@mj-biz-apps/orders-entities";
+import { DerivePaymentStatus, Today } from "@mj-biz-apps/orders-entities";
 import {
   Assert,
   AssertEqual,
@@ -332,7 +332,7 @@ async function raiseChargeException(
       SourceRecordID: source.ID,
       CompanyID: Fx().CoA.ID,
       Amount: charge.Amount,
-      ExceptionDate: new Date().toISOString().slice(0, 10),
+      ExceptionDate: Today(),
       Summary: `IT: charge ${charge.ProviderChargeID} has no payment.`,
       DedupeKey: ChargeMismatchDedupeKey({ Kind: kind, ProviderChargeID: charge.ProviderChargeID, Amount: charge.Amount, Detail: "" }),
       SourceCreatedByUserID: null,

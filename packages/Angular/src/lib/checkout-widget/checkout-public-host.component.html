@@ -51,12 +51,16 @@
                 @if (account?.Outcome === 'Failed') {
                     <div class="mj-checkout-account mj-checkout-account--actions">
                         <button class="mj-checkout-account__submit" type="button" (click)="retryAccount()">Try again</button>
-                        @if (config?.redirectUrl) {
+                        @if (redirectUrl) {
                             <button class="mj-checkout-account__skip" type="button" (click)="dismissAccount()">Not now</button>
                         }
                     </div>
                 }
             }
+        </div>
+    } @else if (finishingMessage) {
+        <div class="mj-checkout-success" role="status" aria-live="polite">
+            <p class="mj-checkout-success__msg">{{ finishingMessage }}</p>
         </div>
     } @else if (!config) {
         <p class="mj-checkout-public__status" role="status">Loading checkout…</p>
@@ -115,15 +119,19 @@
             [stripePaymentMethodId]="stripePaymentMethodId"
             [prefillEmail]="prefillEmail"
             [errorMessage]="errorMessage"
+            [noticeMessage]="noticeMessage"
             [appliedPromotion]="appliedPromotion"
             [serverPricedTotal]="serverPricedTotal"
+            [memberDiscount]="memberDiscount"
+            [lockEmail]="emailLocked"
             [promotionError]="promotionError"
             (promotionCodeApplied)="onPromotionCodeApplied($event)"
             [quotedTotal]="quotedTotal"
             [quotedTax]="quotedTax"
             (submitted)="onSubmitted($event)"
             (cancelled)="onCancelled()"
-            (quoteInvalidated)="onQuoteInvalidated()">
+            (quoteInvalidated)="onQuoteInvalidated()"
+            (quoteRequested)="onQuoteRequested($event)">
         </mj-checkout-widget>
         }
     }

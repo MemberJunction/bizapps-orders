@@ -56,9 +56,16 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
   the rail of the row's company. A row is invoiceable once `Orders.IssueInstalmentInvoice` has frozen
   its document number (status `Invoiced`); its BILL invoice is one line for the instalment amount, or
   the order's lines when the schedule has a single row.
+- **Service period.** BILL's invoice has no field for it, so it rides in the line text in the format
+  our own invoice prints: `Product — description (Oct 1, 2026 – Oct 31, 2026)`. An instalment line
+  carries the span of the order's rows, earliest start to latest end.
 - **Re-issue.** A cancelled whole-order unit is sent again only on request (`AllowReissue`), as
   `ORD-1234-R1`, `-R2` and so on, since BILL would accept the archived number and the customer would
   hold two different `ORD-1234`s. An instalment is never re-issued; a new schedule row replaces it.
+- **A send refused before BILL created anything** is not a re-issue. A `Failed` row with no
+  `ExternalInvoiceRef` (no customer email, a number too long, BILL answering no) leaves nothing on the
+  rail, so the next send needs no `AllowReissue` and keeps the order's number. Once any row for the
+  unit holds a reference, sending again is a re-issue.
 - **Invoices sent per product company before 5.27.0** block the order's own invoice:
   `Orders.IssueExternalInvoice` names the one to cancel first. Schedule rows written per product company
   stay units on that company's rail.
@@ -66,7 +73,9 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
 ## The rail seam
 
 `BaseInvoiceRail` is the outbound counterpart of `BasePaymentProvider`, registered under
-`PaymentProviderType.Code`. It defines `CheckConfiguration`, `EnsureCustomer`, `IssueInvoice`,
+`PaymentProviderType.Code`. It defines `CheckConfiguration`, `CheckCustomer` (what the rail refuses
+about a new customer, decided without calling it: BILL needs an email; a preview reports it as
+`NO_CUSTOMER_EMAIL` and the order form disables Send), `EnsureCustomer`, `IssueInvoice`,
 `GetInvoice`, `CancelInvoice` and `FetchPaymentsSince`, plus `CustomerNameTargets` and
 `InvoiceNumberTargets`, the rail fields a customer name and a document number must fit
 (bc-aidp-next-golive#280); a refusal is a `RailResult` with a `Transient` flag for failures a retry
@@ -114,12 +123,17 @@ needs `orders:read`, the others `orders:write`.
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
-`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Capture
+`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Each pass
+also rebuilds every open `Unmatched` payment from its stored BILL record, and captures one whose invoices
+have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
-corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows fails with `ATTENTION`, so the
-job notifies.
+corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
+Each payment that pass moved into one of those states (or from one to another) gets one
+`Payment Needs Review` notification (in-app and email by default) to the poll job's notify user, else
+its owner, else the user running the poll; payments already waiting from earlier passes are not
+announced again.
 
 ## Actions, jobs and the webhook
 

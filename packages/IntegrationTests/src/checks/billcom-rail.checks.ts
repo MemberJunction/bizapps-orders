@@ -36,6 +36,7 @@
 import { randomUUID } from "crypto";
 import type { IMetadataProvider, UserInfo } from "@memberjunction/core";
 import type { MJCompanyIntegrationEntity } from "@memberjunction/core-entities";
+import { EscapeSQLString } from "@memberjunction/global";
 import {
   Assert,
   AssertEqual,
@@ -54,6 +55,7 @@ import {
   type OrdersPollExternalPaymentsInput,
   type OrdersPollExternalPaymentsOutput,
   type OrdersSendExternalInvoicesOutput,
+  Today,
 } from "@mj-biz-apps/orders-entities";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
 import {
@@ -67,6 +69,7 @@ import {
 import { HandleBillComWebhook } from "@mj-biz-apps/orders-server";
 import {
   ACCT_SCHEMA,
+  COMMON_SCHEMA,
   CreateOrdersFixture,
   CreateProductPrice,
   createViaEntity,
@@ -124,7 +127,8 @@ interface FakeCall {
 }
 
 const money = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
-const today = (): string => new Date().toISOString().slice(0, 10);
+/** The business calendar day, as the product stamps it; the UTC day is tomorrow every US evening (#811). */
+const today = (): string => Today();
 
 /**
  * Bill.com as far as the rail can see it: customers, invoices and receivable payments, each with the
@@ -479,8 +483,8 @@ const POLL_PREVIEW_PARAM_ID = "B8C4D3E2-0A5F-4D72-9E3B-6F2A8C4D0B13";
 
 const opContext = (ctx: IntegrationCheckContext) => ({ provider: ctx.Provider, user: ctx.User });
 
-async function issue(ctx: IntegrationCheckContext, orderID: string, preview = false): Promise<OrdersIssueExternalInvoiceOutput> {
-  const r = await new OrdersIssueExternalInvoiceOperation().Execute({ OrderHeaderID: orderID, Preview: preview }, opContext(ctx));
+async function issue(ctx: IntegrationCheckContext, orderID: string, preview = false, allowReissue = false): Promise<OrdersIssueExternalInvoiceOutput> {
+  const r = await new OrdersIssueExternalInvoiceOperation().Execute({ OrderHeaderID: orderID, Preview: preview, AllowReissue: allowReissue }, opContext(ctx));
   Assert(r.Output != null, `Orders.IssueExternalInvoice did not execute: ${r.ErrorMessage ?? "no output"}`);
   return r.Output!;
 }
@@ -1020,7 +1024,7 @@ export const BillComRailChecks: NamedCheck[] = [
         const ref = bill.ReceivePayment({ Status: "PAID", Applied: [{ InvoiceRef: legacy, Amount: 250 }] });
         const out = await poll(ctx, rail);
         AssertEqual(out.ResultCode, "ATTENTION", `a payment nobody here can place needs a person: ${out.Message}`);
-        Assert(!out.Success, "and the pass reports it as not clean, so a job that notifies on failure tells somebody");
+        Assert(out.Success, "and the pass still succeeds: the payment is announced once by notification, not by failing every run");
         AssertEqual(out.Unmatched, 1, "one payment unmatched");
         const ep = await externalPayment(ctx, rail, ref);
         AssertEqual(ep?.Disposition, "Unmatched", "recorded as Unmatched for the exceptions worklist");
@@ -1162,6 +1166,39 @@ export const BillComRailChecks: NamedCheck[] = [
         AssertEqual(Number(rowB.ExternalDueAmount), 150, "the second shows 150 still due");
         AssertEqual(Number((await orderMoney(ctx, one.ID)).Balance), 200, "the first order owes 200");
         AssertEqual(Number((await orderMoney(ctx, two.ID)).Balance), 150, "and the second owes 150");
+      }),
+  },
+  {
+    Id: "billcom-rail.BR21",
+    Name: "BR21: a send refused for a missing customer email is previewed as such, and sent plainly once the email is added",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      withBillCom(ctx, async (bill) => {
+        // The bill-to party loses its email inside this check's transaction; it rolls back with the rest.
+        const rail = await configureRail(ctx);
+        const orgID = Fx().Customers.OrganizationID;
+        const email = (await TxOne<{ Email: string | null }>(ctx, `SELECT Email FROM ${COMMON_SCHEMA}.Organization WHERE ID = '${orgID}'`)).Email;
+        await TxQuery(ctx, `UPDATE ${COMMON_SCHEMA}.Organization SET Email = NULL WHERE ID = '${orgID}'`);
+        const shown = await TxOne<{ PrimaryEmail: string | null }>(ctx, `SELECT PrimaryEmail FROM ${COMMON_SCHEMA}.vwOrganizations WHERE ID = '${orgID}'`);
+        Assert(!shown.PrimaryEmail, "precondition: the fixture organisation has no email left to fall back on");
+        const order = await sellOnRail(ctx);
+
+        const preview = await issue(ctx, order.ID, true);
+        AssertEqual(preview.ResultCode, "NO_CUSTOMER_EMAIL", `a preview reports the missing email: ${preview.Message}`);
+        AssertEqual((await externalInvoices(ctx, rail)).length, 0, "and writes no row");
+
+        const refused = await issue(ctx, order.ID);
+        AssertEqual(refused.ResultCode, "NO_CUSTOMER_EMAIL", `the send is refused for the email: ${refused.Message}`);
+        const failed = (await externalInvoices(ctx, rail)).filter((r) => r.Status === "Failed");
+        AssertEqual(failed.length, 1, "leaving one Failed row");
+        AssertEqual(failed[0].ExternalInvoiceRef, null, "that never reached Bill.com");
+        AssertEqual(bill.Creates("customers").length + bill.Creates("invoices").length, 0, "nothing was created on Bill.com");
+
+        await TxQuery(ctx, `UPDATE ${COMMON_SCHEMA}.Organization SET Email = '${EscapeSQLString(email ?? "ap@placeholder.test")}' WHERE ID = '${orgID}'`);
+        const resent = await issue(ctx, order.ID);
+        AssertEqual(resent.ResultCode, "SENT", `the next send goes through without AllowReissue: ${resent.Message}`);
+        AssertEqual(resent.DocumentNumber, order.OrderNumber, "under the order's own number: none was spent on Bill.com");
+        AssertEqual(bill.Creates("invoices").length, 1, "and Bill.com holds exactly one invoice");
       }),
   },
 ];

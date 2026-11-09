@@ -29,11 +29,14 @@ import {
     type OrdersIssueExternalInvoiceInput,
     type OrdersIssueExternalInvoiceOutput,
     type OrdersIssueExternalInvoiceResultCode,
+    ParseAddressSnapshot,
     Today,
+    type OrderAddressSnapshot,
 } from '@mj-biz-apps/orders-entities';
 
 import type { BaseInvoiceRail, RailCustomerFacts } from './BaseInvoiceRail.js';
 import {
+    ADDRESS_ENTITY,
     EXTERNAL_CUSTOMER_ENTITY,
     EXTERNAL_INVOICE_ENTITY,
     ORDER_HEADER_ENTITY,
@@ -160,6 +163,10 @@ export async function PaidOnBillingUnit(
     // Only money that is actually captured counts; a Pending or Failed header is not cash.
     filters.push(`PaymentHeaderID IN (SELECT ID FROM [__mj_BizAppsOrders].[PaymentHeader] WHERE Status IN ('Captured','Refunded','Disputed'))`);
     const r = await rv.RunView<{ Amount: number }>({ EntityName: PAYMENT_LINE_ENTITY, ExtraFilter: filters.join(' AND '), Fields: ['Amount'], ResultType: 'simple' }, user);
+    // Read as "nothing paid", a failure would invoice a part-paid unit in full (#901).
+    if (!r.Success) {
+        throw new Error(`Could not read the payments on order ${orderHeaderID}, so nothing was sent: ${r.ErrorMessage}`);
+    }
     return money((r.Results ?? []).reduce((s, l) => s + Number(l.Amount), 0));
 }
 
@@ -199,6 +206,10 @@ export async function IssueOneUnit(
         { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${unit.OrderHeaderID}'`, ResultType: 'simple' },
         user,
     );
+    // A failed read is not "no such order" (#901).
+    if (!orderResult.Success) {
+        throw new Error(`Could not read order ${unit.OrderHeaderID}, so nothing was sent: ${orderResult.ErrorMessage}`);
+    }
     const order = orderResult.Results?.[0];
     if (!order) return refuse('ERROR', `The order was not found (ID ${unit.OrderHeaderID}).`);
 
@@ -209,6 +220,10 @@ export async function IssueOneUnit(
             { EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ExtraFilter: `OrderHeaderID = '${unit.OrderHeaderID}'`, ResultType: 'simple' },
             user,
         );
+        // Read as "no instalments", a failure would invoice a scheduled order as one whole-order document (#901).
+        if (!s.Success) {
+            throw new Error(`Could not read the payment schedule of order ${order.OrderNumber}, so nothing was sent: ${s.ErrorMessage}`);
+        }
         scheduleRows = (s.Results ?? []).filter((r) => r.Status !== 'Canceled');
     } else if (unit.OrderHeaderPaymentScheduleID) {
         return refuse('ERROR', 'This database does not support payment schedules yet, so an instalment cannot be sent. Ask an administrator to apply the latest database update.');
@@ -258,12 +273,14 @@ export async function IssueOneUnit(
     // 4. History and the decision.
     const unitKey: BillingUnitKey = { OrderHeaderID: order.ID, CompanyID: companyID, OrderHeaderPaymentScheduleID: row ? String(row.ID) : null };
     const existing = await LoadExternalInvoiceForUnit(rail.Config.PaymentProviderID, unitKey, provider, user);
+    const railNumbersSpent = await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user);
     const decision = DecideInvoiceable({
         OrderStatus: String(order.Status),
         HasSchedule: scheduleRows.length > 0,
         ScheduleRowNamed: !!row,
         ScheduleRowStatus: row ? String(row.Status) : null,
         ExistingStatus: existing?.Status ?? null,
+        UnitReachedRail: railNumbersSpent > 0,
         AllowReissue: opts.AllowReissue,
     });
     if (decision.Verdict === 'AlreadySent' && existing) {
@@ -290,7 +307,7 @@ export async function IssueOneUnit(
     // the first, and neither side would say a word.
     const wholeOrderNumber = row
         ? null
-        : ReissueDocumentNumber(order.OrderNumber, await CountRailNumbersSpent(rail.Config.PaymentProviderID, unitKey, provider, user));
+        : ReissueDocumentNumber(order.OrderNumber, railNumbersSpent);
     if (wholeOrderNumber && wholeOrderNumber.length > MAX_DOCUMENT_NUMBER_LENGTH) {
         // Refused rather than truncated: a truncated number is either a duplicate the rail rejects or a
         // different document's number, and both are worse than saying so.
@@ -347,6 +364,13 @@ export async function IssueOneUnit(
     }
 
     if (opts.Preview) {
+        // A preview answers what a send would answer, short of calling the rail: a bill-to party the
+        // rail would refuse as a customer is reported here, so the order form can say so before
+        // anyone presses Send and the sweep's preview lists it.
+        const party = await checkCustomerForRail(rail, order, provider, user);
+        if (party.OK === false) {
+            return refuse(party.Code, party.Reason, { DocumentNumber: payload.Payload.DocumentNumber, Amount: payload.Payload.Amount });
+        }
         return {
             Success: true,
             ResultCode: 'PREVIEWED',
@@ -517,10 +541,16 @@ export async function LoadExternalInvoiceByID(id: string, provider: IMetadataPro
         { EntityName: EXTERNAL_INVOICE_ENTITY, ExtraFilter: `ID = '${RequireUUID(id, 'ExternalInvoiceID')}'`, ResultType: 'simple' },
         user,
     );
+    if (!r.Success) throw new Error(`Could not read external invoice ${id}: ${r.ErrorMessage}`);
     return r.Results?.[0] ?? null;
 }
 
-/** The unit's most relevant row: a live one if any, else the most recent of any status. */
+/**
+ * The unit's most relevant row: a live one if any, else the most recent of any status.
+ *
+ * Throws when the read fails. Read as "no row", a failure means "never sent", and the sweep would
+ * send the unit again: a second invoice for one order on the rail.
+ */
 export async function LoadExternalInvoiceForUnit(
     paymentProviderID: string,
     unit: BillingUnitKey,
@@ -542,6 +572,9 @@ export async function LoadExternalInvoiceForUnit(
         },
         user,
     );
+    if (!r.Success) {
+        throw new Error(`Could not read the external invoice history for order ${unit.OrderHeaderID}, so it was not sent: ${r.ErrorMessage}`);
+    }
     const rows = r.Results ?? [];
     return rows.find((x) => x.Status === 'Sent' || x.Status === 'Sending') ?? rows[0] ?? null;
 }
@@ -570,6 +603,10 @@ export async function LoadLegacySplitInvoice(
         },
         user,
     );
+    // Read as "none", a failure would send the order company's invoice beside a live split one (#901).
+    if (!r.Success) {
+        throw new Error(`Could not read the earlier invoices of order ${orderHeaderID}, so nothing was sent: ${r.ErrorMessage}`);
+    }
     // Re-checked here as well as in the filter, so the answer does not rest on how a provider compares ids.
     return (r.Results ?? []).find((x) => !UUIDsEqual(String(x.CompanyID), orderCompanyID)) ?? null;
 }
@@ -605,6 +642,10 @@ export async function CountRailNumbersSpent(
         },
         user,
     );
+    // Read as zero, a failure would reissue the original document number instead of the next -R one (#901).
+    if (!r.Success) {
+        throw new Error(`Could not read the rail numbers already used for order ${unit.OrderHeaderID}, so nothing was sent: ${r.ErrorMessage}`);
+    }
     return (r.Results ?? []).length;
 }
 
@@ -732,7 +773,19 @@ type CustomerOutcome =
     | { OK: true; ExternalCustomerRef: string }
     | { OK: false; Code: 'NO_CUSTOMER_EMAIL' | 'RAIL_REFUSED' | 'ERROR'; Reason: string };
 
-async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerOutcome> {
+/**
+ * The bill-to party, as the rail would see it, checked without calling the rail.
+ *
+ * `Known` is the party's existing customer on the rail: the rail already accepted it, so nothing is
+ * checked again. Otherwise `Facts` is what `EnsureCustomer` will send, already past the checks this
+ * app can make itself — the name's length and the rail's own `CheckCustomer` (Bill.com: an email).
+ */
+type CustomerCheck =
+    | { OK: true; Known: string; Facts: null; OrgID: string | null; PersonID: string | null }
+    | { OK: true; Known: null; Facts: RailCustomerFacts; OrgID: string | null; PersonID: string | null }
+    | { OK: false; Code: 'NO_CUSTOMER_EMAIL' | 'RAIL_REFUSED' | 'ERROR'; Reason: string };
+
+async function checkCustomerForRail(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerCheck> {
     const orgID = order.BillToOrganizationID ? RequireUUID(order.BillToOrganizationID, 'BillToOrganizationID') : null;
     const personID = !orgID && order.BillToPersonID ? RequireUUID(order.BillToPersonID, 'BillToPersonID') : null;
     if (!orgID && !personID) return { OK: false, Code: 'ERROR', Reason: `Order ${order.OrderNumber} has no bill-to customer, so there is nobody to invoice. Add a bill-to organization or person to the order.` };
@@ -748,14 +801,26 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
         user,
     );
     const known = existing.Results?.[0]?.ExternalCustomerRef;
-    if (known) return { OK: true, ExternalCustomerRef: known };
+    if (known) return { OK: true, Known: known, Facts: null, OrgID: orgID, PersonID: personID };
 
-    const facts = await loadPartyFacts(orgID, personID, provider, user);
-    if (!facts) return { OK: false, Code: 'ERROR', Reason: `The bill-to customer on order ${order.OrderNumber} could not be read.` };
+    const party = await loadPartyFacts(orgID, personID, provider, user);
+    if (!party) return { OK: false, Code: 'ERROR', Reason: `The bill-to customer on order ${order.OrderNumber} could not be read.` };
+    const facts: RailCustomerFacts = { ...party, ...RailCustomerAddress(await orderBillToAddress(order, provider, user), party) };
     // Refused here rather than by the rail: the rail would refuse the same name, days after entry,
     // with an error that does not say which field or limit (bc-aidp-next-golive#280).
     const tooLong = await CheckRailCustomerName(rail, facts.PartyKind, facts.Name, provider, user);
     if (tooLong) return { OK: false, Code: 'RAIL_REFUSED', Reason: `Not sent to ${rail.Config.Name}: ${tooLong}` };
+    const missing = rail.CheckCustomer(facts);
+    if (missing) return { OK: false, Code: missing.Code, Reason: missing.Reason };
+    return { OK: true, Known: null, Facts: facts, OrgID: orgID, PersonID: personID };
+}
+
+async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<CustomerOutcome> {
+    const check = await checkCustomerForRail(rail, order, provider, user);
+    if (check.OK === false) return check;
+    if (check.Known) return { OK: true, ExternalCustomerRef: check.Known };
+    const { Facts: facts, OrgID: orgID, PersonID: personID } = check;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
 
     const created = await rail.EnsureCustomer(facts);
     if (created.Success === false) {
@@ -788,6 +853,67 @@ async function ensureCustomer(rail: BaseInvoiceRail, order: OrderRow, provider: 
         if (adopted) return { OK: true, ExternalCustomerRef: adopted };
     }
     return { OK: true, ExternalCustomerRef: created.Value.ExternalCustomerRef };
+}
+
+/** The postal part of the customer a rail is asked to create. */
+export type RailCustomerAddressFacts = Pick<RailCustomerFacts, 'AddressLines' | 'City' | 'State' | 'PostalCode' | 'Country'>;
+
+/**
+ * The address a new rail customer is created with: the order's bill-to address, else the party's
+ * primary address (#754).
+ *
+ * The order's bill-to address is the one its invoice is addressed to, so the rail customer matches the
+ * document. The party's primary address is read from bizapps-common's view and is empty for a party
+ * with no address marked primary, even when the order names a billing address; a customer created from
+ * it alone had no address at all.
+ */
+export function RailCustomerAddress(orderAddress: OrderAddressSnapshot | null, party: RailCustomerAddressFacts): RailCustomerAddressFacts {
+    if (!orderAddress || !(orderAddress.Line1 || orderAddress.City || orderAddress.PostalCode)) return party;
+    return {
+        AddressLines: [orderAddress.Line1, orderAddress.Line2, orderAddress.Line3].filter((l): l is string => !!l),
+        City: orderAddress.City,
+        State: orderAddress.StateProvince,
+        PostalCode: orderAddress.PostalCode,
+        Country: orderAddress.Country,
+    };
+}
+
+/**
+ * The order's bill-to address: the snapshot taken at confirm, else the live Address row it names, the
+ * same order the invoice document reads them in (InvoiceBuilder). Null when the order names none.
+ */
+async function orderBillToAddress(order: OrderRow, provider: IMetadataProvider, user: UserInfo): Promise<OrderAddressSnapshot | null> {
+    try {
+        const snapshot = ParseAddressSnapshot((order.BillToAddressSnapshot as string | null | undefined) ?? null);
+        if (snapshot) return snapshot;
+    } catch (err) {
+        LogError(`Order ${order.OrderNumber}: bill-to address snapshot unreadable, reading the address row instead: ${err}`);
+    }
+    const addressID = order.BillToAddressID as string | null | undefined;
+    if (!addressID) return null;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<Record<string, unknown>>(
+        {
+            EntityName: ADDRESS_ENTITY,
+            ExtraFilter: `ID = '${RequireUUID(addressID, 'BillToAddressID')}'`,
+            Fields: ['ID', 'Line1', 'Line2', 'Line3', 'City', 'StateProvince', 'PostalCode', 'Country'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    const a = r.Results?.[0];
+    if (!a) return null;
+    const text = (v: unknown): string | null => (v == null || String(v).trim() === '' ? null : String(v).trim());
+    return {
+        AddressID: String(a.ID),
+        Line1: text(a.Line1),
+        Line2: text(a.Line2),
+        Line3: text(a.Line3),
+        City: text(a.City),
+        StateProvince: text(a.StateProvince),
+        PostalCode: text(a.PostalCode),
+        Country: text(a.Country),
+    };
 }
 
 async function loadPartyFacts(orgID: string | null, personID: string | null, provider: IMetadataProvider, user: UserInfo): Promise<RailCustomerFacts | null> {

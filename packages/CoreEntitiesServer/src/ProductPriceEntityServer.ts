@@ -26,7 +26,7 @@
  */
 import { BaseEntity, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { LoadOrdersEngine, OrdersEngine, mjBizAppsOrdersProductPriceEntity } from '@mj-biz-apps/orders-entities';
+import { LoadOrdersEngine, OrdersEngine, ProductPriceEntity } from '@mj-biz-apps/orders-entities';
 
 const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
 
@@ -64,7 +64,7 @@ function windowsOverlap(aFrom: Date, aTo: Date | null, bFrom: Date, bTo: Date | 
 }
 
 @RegisterClass(BaseEntity, PRODUCT_PRICE_ENTITY)
-export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity {
+export class ProductPriceEntityServer extends ProductPriceEntity {
     /** BaseEntity skips ValidateAsync by default; without this the check never runs. */
     public override get DefaultSkipAsyncValidation(): boolean {
         return false;
@@ -73,7 +73,7 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
     public override async ValidateAsync(): Promise<ValidationResult> {
         const result = await super.ValidateAsync();
         if (this.Status !== 'Active') return result; // an inactive rule collides with nothing
-        const productCategoryID = this.Get('ProductCategoryID') as string | null;
+        const productCategoryID = this.ProductCategoryID;
         if (!this.ProductID && !productCategoryID) return result;
 
         await LoadOrdersEngine(this.ProviderToUse as never, this.ContextCurrentUser);
@@ -89,7 +89,7 @@ export class ProductPriceEntityServer extends mjBizAppsOrdersProductPriceEntity 
             if (Number(o.Priority) !== priority) return false;
             if ((o.PriceListID ?? '').toLowerCase() !== listKey) return false;
             if (this.ProductID) return (o.ProductID ?? '').toLowerCase() === productKey;
-            return ((o as { ProductCategoryID?: string | null }).ProductCategoryID ?? '').toLowerCase() === catKey;
+            return (o.ProductCategoryID ?? '').toLowerCase() === catKey;
         });
 
         const clash = siblings.find(

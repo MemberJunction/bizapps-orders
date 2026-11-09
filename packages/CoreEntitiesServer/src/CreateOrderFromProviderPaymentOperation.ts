@@ -66,6 +66,7 @@ import {
     ProviderPaymentLineReason,
 } from './ProviderPaymentOrder.js';
 import { EscapeText, RequireUUID } from './sql-guards.js';
+import { SetSystemOrderOrigin } from './SystemOrderOrigin.js';
 import { UnitPriceForCharge } from './UnmatchedChargeRules.js';
 
 const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
@@ -219,7 +220,7 @@ async function createOrderAndIntent(
         order.ShipToPersonID = args.BillToPersonID;
         order.BillToOrganizationID = args.BillToOrganizationID;
         order.ShipToOrganizationID = args.BillToOrganizationID;
-        order.Origin = PROVIDER_PAYMENT_ORDER_ORIGIN;
+        SetSystemOrderOrigin(order, PROVIDER_PAYMENT_ORDER_ORIGIN);
         order.OrderType = 'Sale';
         order.OrderDate = orderDay;
         order.Description = `Created from provider payment ${args.ProviderChargeID}`;
@@ -409,8 +410,11 @@ async function loadOrder(
     return r.Results?.[0] ?? null;
 }
 
-/** The receiving company's booking currency, with the same USD fallback the capture path uses. */
-async function functionalCurrency(companyID: string, provider: IMetadataProvider, user: UserInfo): Promise<string> {
+/**
+ * The receiving company's booking currency, with the same USD fallback the capture path uses. Also read by
+ * the gateway-renewal sync (E4), which books only in this currency.
+ */
+export async function functionalCurrency(companyID: string, provider: IMetadataProvider, user: UserInfo): Promise<string> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const r = await rv.RunView<{ FunctionalCurrencyCode: string | null }>(
         { EntityName: ACCOUNTING_PROFILE_ENTITY, ExtraFilter: `ID = '${RequireUUID(companyID, 'CompanyID')}'`, ResultType: 'simple' },

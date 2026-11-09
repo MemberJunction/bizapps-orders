@@ -34,6 +34,8 @@ Delete this section if the PR adds no migration.
 - [ ] Timestamps sort above the highest on `next`.
 - [ ] The CodeGen output is folded under its own migration's banner.
 - [ ] A changeset carries at least a minor bump.
+- [ ] A migration that redefines an order guard or address-snapshot trigger was checked with
+      `node test-harnesses/order-guard-triggers.mjs` and `node test-harnesses/address-snapshot-triggers.mjs`.
 
 **A merged migration is locked.** Every database that ran it has recorded it as applied and never
 runs it again, so a later change never reaches those databases while the ones that never ran it get
@@ -41,7 +43,7 @@ different SQL. Renaming counts: the runner keys on the version in the filename, 
 is one nobody has run. Fix it forward in a new file.
 
 If a change to a merged migration is genuinely unavoidable, say so here, explain why nothing else
-works, and get a second reviewer. Do not merge past a red `changes_and_migrations` — that has
+works, and get a second reviewer. Do not merge past a red `migration immutability` — that has
 happened, and it is how two people end up with different schemas from the same commit.
 
 ### Reviewer notes

@@ -100,6 +100,13 @@ export interface OrderPricingContext {
     Lines: mjBizAppsOrdersOrderLineEntity[];
     PromotionCodes: string[];
     ManualDiscounts: ManualDiscountRequest[];
+    /**
+     * True when this walk prices an order that books on the same save. A manual discount above the
+     * user's authority is held for approval (golive #328), and the confirm gate that would hold it
+     * has already run, so on a booking walk it is refused instead: save the order first, then confirm
+     * once a concession covering it is approved.
+     */
+    Booking?: boolean;
     Charges: RequestedCharge[];
     /**
      * Tax already settled for a line, which is used instead of resolving it from the ship-to address.
@@ -125,6 +132,12 @@ export interface OrderPricingContext {
     PriceListID?: string | null;
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
+    /**
+     * Skip the check that each product may be sold (Status Active, inside its availability window).
+     * PreviewPrice sets it for the product form's Activate check, which asks whether a Draft product
+     * has a price. Off for every walk that books or quotes an order.
+     */
+    IgnoreSellability?: boolean;
     /**
      * Also resolve what the rules WOULD say for a line whose price the caller stated.
      *
@@ -336,14 +349,24 @@ export class OrderPricingService {
             // zero, where the net silently floors and the discount stops being visible anywhere.
             // `PerLine` holds both what is already stored and what this loop has granted so far, so
             // the first discount on a fresh line sees exactly the base it always saw.
+            // The order-level base is the same remainder summed over the lines (#824): judging "10%
+            // off the order" against nets that ignore the lines' own discounts resolved to more money
+            // and checked the authority cap against an inflated base.
+            const remainders = lines.map((l) => Math.max(0, Money(l.Net - (run.PerLine.get(l.ID) ?? 0))));
             const base = target
                 ? Money(target.Net - (run.PerLine.get(target.ID) ?? 0))
-                : lines.reduce((sum, l) => sum + l.Net, 0);
+                : Money(remainders.reduce((sum, r) => sum + r, 0));
             // A rate becomes money against the SAME base the authorization judges it on, so "20%"
             // and "$240 off a $1,200 line" are one request expressed two ways rather than two paths.
             const amount = ManualDiscountAmount(md, base);
             const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
             if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
+            if (auth.Held && this.ctx.Booking) {
+                throw new Error(
+                    `Manual discount refused: ${auth.Held} Save the order without confirming it, record a ` +
+                        `concession for the line, and confirm once it is approved.`,
+                );
+            }
 
             if (target) {
                 run.Applications.push({
@@ -360,7 +383,8 @@ export class OrderPricingService {
             } else {
                 // An order-level manual discount allocates exactly like an order-level promotion —
                 // it must reach the lines or tax and GL see the wrong base.
-                const parts = AllocateProRata(amount, lines.map((l) => l.Net));
+                // Pro rata on what each line has left, so no line's share exceeds its remainder.
+                const parts = AllocateProRata(amount, remainders);
                 lines.forEach((l, i) => {
                     if (parts[i] <= 0) return;
                     run.Applications.push({
@@ -599,7 +623,7 @@ export class OrderPricingService {
         // draft whose product was retired since. Refusing here aborts the confirm before any line is
         // written.
         const product = await this.loadProductForPricing(line.ProductID);
-        if (product) this.assertProductSellable(line, product);
+        if (product && !this.ctx.IgnoreSellability) this.assertProductSellable(line, product);
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price

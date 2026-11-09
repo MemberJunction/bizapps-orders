@@ -1,0 +1,30 @@
+[
+  {
+    "_comments": [
+      "WHAT STILL HOLDS CONFIRM ON THIS ORDER (golive #340). Its own dot-json so it conflicts with no other",
+      "change to the remote operations. Called by the order form so its 'Before this can be confirmed' list",
+      "carries the concession refusals the server's confirm gate would give."
+    ],
+    "fields": {
+      "Name": "Confirm Readiness",
+      "OperationKey": "Orders.ConfirmReadiness",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Order Lifecycle",
+      "Description": "The concession problems that would make confirm refuse a saved, unbooked order, one sentence each in the wording confirm refuses with: a concession awaiting approval, a line priced or discounted below its catalog price with no approved Price concession, a line whose product needs sale approval with none recorded. Read-only. Runs the same check confirm runs, over the saved order, so the order form's list cannot disagree with the refusal. A booked or voided order returns no problems.",
+      "InputTypeName": "ConfirmReadinessInput",
+      "InputTypeDefinition": "@file:types/orders-confirm-readiness.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "ConfirmReadinessOutput",
+      "OutputTypeDefinition": "@file:types/orders-confirm-readiness.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "D59963D2-F046-45B8-8E1D-683ACA930971"
+    }
+  }
+]

@@ -28,6 +28,7 @@ describe('ParseDisplacedTermStart', () => {
             StatedStart: '2026-10-01',
             SettledStart: '2027-10-01',
             SettledEnd: '2028-09-30',
+            StatedEnd: null,
         });
     });
 
@@ -58,7 +59,19 @@ describe('DescribeDisplacedTermStart', () => {
         const d = ParseDisplacedTermStart(displaced, lines)!;
         expect(DescribeDisplacedTermStart(d)).toBe(
             'Line 2 (Annual Report) runs 2027-10-01 to 2028-09-30, not from 2026-10-01 as entered. The customer ' +
-                'already holds this product, so the line was added as the next term of that subscription.',
+                'already holds this product, so the line was added as the next term of that subscription. It ends ' +
+                '2028-09-30, one term of its subscription type.',
+        );
+    });
+
+    it('names the end a stated period keeps when the start moved (golive #338)', () => {
+        const stated = JSON.stringify({ ...JSON.parse(displaced), RequestedEndDate: '2027-04-30', TermEndDate: '2028-03-31' });
+        const d = ParseDisplacedTermStart(stated, lines)!;
+        expect(d.StatedEnd).toBe('2027-04-30');
+        expect(DescribeDisplacedTermStart(d)).toBe(
+            'Line 2 (Annual Report) runs 2027-10-01 to 2028-03-31, not 2026-10-01 to 2027-04-30 as entered. The ' +
+                'customer already holds this product, so the line was added as the next term of that subscription. ' +
+                'It keeps the length entered, so it ends 2028-03-31.',
         );
     });
 });

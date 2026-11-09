@@ -95,7 +95,9 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     // This used to keep its fields in the widget so the panel could never hide-when-empty
     // and take the GL links with it. That is not a risk: CompanyID and
     // RevenueRecognitionTypeID are NOT NULL, so a saved record always has a renderable field
-    // here, and an unsaved one opens in edit mode where fields render regardless.
+    // here, and an unsaved one opens in edit mode where fields render regardless. In read mode
+    // RevenueRecognitionTypeID renders as mjo-product-rev-rec-field instead, which leaves
+    // CompanyID as the NOT NULL field the section always sees.
     template: `
         <mj-collapsible-panel
             SectionKey="accounting"
@@ -118,16 +120,25 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
                     LinkType="Record"
                     (Navigate)="FormComponent.OnFormNavigate($event)">
                 </mj-form-field>
-                <mj-form-field
-                    [Record]="Record"
-                    [ShowLabel]="true"
-                    FieldName="RevenueRecognitionTypeID"
-                    Type="textbox"
-                    [EditMode]="EditMode"
-                    [FormContext]="FormContext"
-                    LinkType="Record"
-                    (Navigate)="FormComponent.OnFormNavigate($event)">
-                </mj-form-field>
+                <!-- Read mode shows the name resolved by id, the value the header shows, instead of
+                     the record's virtual name, which can lag the id (bc-aidp-next-golive#436). -->
+                @if (EditMode) {
+                    <mj-form-field
+                        [Record]="Record"
+                        [ShowLabel]="true"
+                        FieldName="RevenueRecognitionTypeID"
+                        Type="textbox"
+                        [EditMode]="EditMode"
+                        [FormContext]="FormContext"
+                        LinkType="Record"
+                        (Navigate)="FormComponent.OnFormNavigate($event)">
+                    </mj-form-field>
+                } @else {
+                    <mjo-product-rev-rec-field
+                        [Record]="Record"
+                        (Navigate)="FormComponent.OnFormNavigate($event)">
+                    </mjo-product-rev-rec-field>
+                }
                 <mj-form-field
                     [Record]="Record"
                     [ShowLabel]="true"
@@ -159,10 +170,8 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
         slot: 'after-fields',
         sortKey: 50,
         contributionKey: 'fulfillment',
-        // Claims the generated `catalogLifecycle` section, which rendered
-        // SuccessorProductID / AvailableFrom / AvailableTo a second time. Its one remaining
-        // field (Status) moved into this panel so nothing is lost.
-        replacesSectionKey: 'catalogLifecycle',
+        // Status, AvailableFrom and AvailableTo moved to the Lifecycle panel (golive#433);
+        // SuccessorProductID stays here. The Lifecycle panel claims `catalogLifecycle`.
     },
 })
 @Component({
@@ -179,33 +188,6 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
             [Form]="FormComponent"
             [FormContext]="FormContext">
             <bizapps-product-fulfillment-widget>
-                <mj-form-field
-                    [Record]="Record"
-                    [ShowLabel]="true"
-                    FieldName="Status"
-                    Type="select"
-                    [EditMode]="EditMode"
-                    [FormContext]="FormContext"
-                    (Navigate)="FormComponent.OnFormNavigate($event)">
-                </mj-form-field>
-                <mj-form-field
-                    [Record]="Record"
-                    [ShowLabel]="true"
-                    FieldName="AvailableFrom"
-                    Type="datepicker"
-                    [EditMode]="EditMode"
-                    [FormContext]="FormContext"
-                    (Navigate)="FormComponent.OnFormNavigate($event)">
-                </mj-form-field>
-                <mj-form-field
-                    [Record]="Record"
-                    [ShowLabel]="true"
-                    FieldName="AvailableTo"
-                    Type="datepicker"
-                    [EditMode]="EditMode"
-                    [FormContext]="FormContext"
-                    (Navigate)="FormComponent.OnFormNavigate($event)">
-                </mj-form-field>
                 <mj-form-field
                     [Record]="Record"
                     [ShowLabel]="true"
@@ -248,6 +230,80 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
     `,
 })
 export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {}
+
+/**
+ * Lifecycle: Status, the availability window and IsSellableNew (golive#433).
+ *
+ * Status decides whether a product is sellable: the deal and order pickers show Active products
+ * only. It sat under Fulfillment, where nobody looked for it, so it moved here with the dates that
+ * bound when the product may be sold. The header's Draft banner activates in one click; this is
+ * where any other status is set.
+ */
+@RegisterClassEx(BaseFormPanel, {
+    key: 'form-panel:Products:lifecycle',
+    metadata: {
+        entity: 'MJ_BizApps_Orders: Products',
+        slot: 'after-fields',
+        sortKey: 95,
+        contributionKey: 'lifecycle',
+        // Claims the generated `catalogLifecycle` section, which would render these fields a
+        // second time. Its other field, SuccessorProductID, renders in the Fulfillment panel.
+        replacesSectionKey: 'catalogLifecycle',
+    },
+})
+@Component({
+    standalone: false,
+    selector: 'mjo-product-lifecycle-panel',
+    // Declared directly under mj-collapsible-panel so its hide-when-empty check sees them (golive#184).
+    template: `
+        <mj-collapsible-panel
+            SectionKey="lifecycle"
+            SectionName="Lifecycle"
+            Icon="fa-solid fa-flag"
+            [Form]="FormComponent"
+            [FormContext]="FormContext">
+            <mj-form-field
+                [Record]="Record"
+                [ShowLabel]="true"
+                FieldName="Status"
+                Type="select"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="FormComponent.OnFormNavigate($event)">
+            </mj-form-field>
+            <mj-form-field
+                [Record]="Record"
+                [ShowLabel]="true"
+                FieldName="AvailableFrom"
+                Type="datepicker"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="FormComponent.OnFormNavigate($event)">
+            </mj-form-field>
+            <mj-form-field
+                [Record]="Record"
+                [ShowLabel]="true"
+                FieldName="AvailableTo"
+                Type="datepicker"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="FormComponent.OnFormNavigate($event)">
+            </mj-form-field>
+            <!-- Off for products kept for existing orders, imports and renewals: the add-product
+                 pickers stop offering them, and pricing still accepts them (golive#360). -->
+            <mj-form-field
+                [Record]="Record"
+                [ShowLabel]="true"
+                FieldName="IsSellableNew"
+                Type="checkbox"
+                [EditMode]="EditMode"
+                [FormContext]="FormContext"
+                (Navigate)="FormComponent.OnFormNavigate($event)">
+            </mj-form-field>
+        </mj-collapsible-panel>
+    `,
+})
+export class ProductLifecyclePanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {}
 
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Products:subscriptions',

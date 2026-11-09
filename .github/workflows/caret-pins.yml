@@ -1,0 +1,44 @@
+# Advisory: dependency ranges are caret (^X.Y.Z), not tilde or exact.
+#
+# NOT a required status check, on purpose. A red result means a range outside devDependencies and
+# overrides is pinned with ~ or an exact version. Fix it, or, when the pin really has to stay, merge
+# anyway and add the package to .github/caret-pins-allow.json with the reason so the next PR is green.
+# The rules and accepted forms are in .github/scripts/check-caret-pins.mjs.
+#
+# The same file is copied byte-for-byte into every bizapps repo.
+name: Caret pins
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    branches: [next, main]
+    # Safe to filter because nothing requires this check: a filtered-out workflow creates no
+    # check run, which would only matter for a required context.
+    paths:
+      - '**/package.json'
+      - '.github/caret-pins-allow.json'
+      - '.github/scripts/check-caret-pins.mjs'
+      - '.github/workflows/caret-pins.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: caret-pins-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  caret-pins:
+    name: 'caret pins (advisory)'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+      - name: Check self-test
+        run: node .github/scripts/check-caret-pins.mjs --self-test
+      - name: Dependency ranges are caret
+        run: node .github/scripts/check-caret-pins.mjs

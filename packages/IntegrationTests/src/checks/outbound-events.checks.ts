@@ -4,7 +4,12 @@
  * WHAT THE UNIT TESTS CANNOT SHOW. That the event rows really are written inside the booking
  * transaction (a failed confirm leaves none), that the grant hook's own transaction nests inside
  * booking's, that the dispatcher's single-statement claim takes a row once and only once, and that
- * only a sale records OrderConfirmed.
+ * only a sale records OrderConfirmed. And (access sync, A1/A3) that a grant whose dates move records one
+ * event naming the fields and the old dates while a no-op save records none (OB9), and that a dead-lettered
+ * delivery raises one Task per event, assigned to the `AlertTaskRole` role's active holders (OB10), and that a
+ * Duration concession, the way Sess gives a free month, reaches the consumer as a ValidTo change ending at the
+ * business-day end of the new last day (OB11). An alert raised while no role could take it is assigned by the
+ * next scheduled pass (OB12).
  *
  * A TEST CONSUMER, switched on only while this bundle runs. Its registration is global, so it
  * answers "no event types" unless this bundle's Setup has turned it on; every other bundle books
@@ -24,14 +29,19 @@ import {
 import { RegisterClass } from "@memberjunction/global";
 import { CompositeKey } from "@memberjunction/core";
 import {
+  AssignUnassignedAlertTasks,
   DispatchOutboundDeliveries,
   EnforcePaymentGatedAccess,
+  ORDERS_SETTING,
   OrdersOutboundConsumer,
   OrdersSettings,
   type OutboundEventEnvelope,
   type OutboundEventType,
+  TermDayEnd,
 } from "@mj-biz-apps/orders-core-entities-server";
+import { BusinessTimeZoneEngine } from "@mj-biz-apps/common-entities";
 import {
+  AcknowledgeAmendmentsWith,
   CreateOrdersFixture,
   CreateProductPrice,
   Fx,
@@ -44,6 +54,7 @@ import {
 import { BuildOrder, ConfirmOrder } from "../order-builder.js";
 import { ENTITLEMENT_GRANT_ENTITY, ORDER_HEADER_ENTITY } from "../entity-names.js";
 import { addDays, gatesFor, payOrder, renew, withGrantTiming } from "./entitlements.checks.js";
+import { bookTerm, grantAuthority, recordExtension } from "./term-extension.checks.js";
 
 const CONSUMER_KEY = "integration-test-consumer";
 
@@ -424,6 +435,203 @@ export const OutboundEventsChecks: NamedCheck[] = [
           AssertEqual(restored.length, grantIDs.size, `paying the renewal records each grant's return (${JSON.stringify(restored)})`);
           Assert(restored.every((p) => p.FromStatus === "Suspended" && p.ToStatus === "Active"), "as Suspended to Active");
         });
+      }),
+  },
+
+  {
+    Id: "outbound-events.OB9",
+    Name: "OB9: moving a grant's dates records one event naming the fields and the old dates; a save that moves nothing records none",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const orderID = await buyWidget(ctx);
+        const before = (await eventsFor(ctx, orderID)).length;
+        const g = await TxOne<{ ID: string; ValidFrom: Date | null; ValidTo: Date | null }>(ctx,
+          `SELECT TOP 1 g.ID, g.ValidFrom, g.ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant g
+             JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = g.OrderLineID
+            WHERE ol.OrderHeaderID = '${orderID}' AND g.Status = 'Active'`);
+        const grant = await ctx.Provider.GetEntityObject(ENTITLEMENT_GRANT_ENTITY, ctx.User);
+        Assert(await grant.InnerLoad(CompositeKey.FromID(g.ID)), "the grant reloads");
+        const ofGrant = async () =>
+          (await eventsFor(ctx, orderID))
+            .filter((e) => e.EntitlementGrantID?.toLowerCase() === g.ID.toLowerCase())
+            .map((e) => JSON.parse(e.PayloadJSON) as Record<string, unknown>);
+        const seen = (await ofGrant()).length;
+
+        // A person (or a term extension) moves only the end: one event, ValidTo, with the end it had.
+        const newEnd = new Date("2031-01-01T06:00:00Z");
+        grant.Set("ValidTo", newEnd);
+        Assert(await grant.Save(), `the end moves: ${grant.LatestResult?.CompleteMessage}`);
+        let events = await ofGrant();
+        AssertEqual(events.length, seen + 1, "one new event for the moved end");
+        const moved = events[events.length - 1];
+        AssertEqual(JSON.stringify(moved.ChangedFields), JSON.stringify(["ValidTo"]), "naming ValidTo only");
+        AssertEqual(moved.FromValidTo, g.ValidTo ? new Date(g.ValidTo).toISOString() : null, "and the end it had");
+        AssertEqual(moved.ValidTo, newEnd.toISOString(), "and the end it has now");
+        AssertEqual(moved.FromStatus, "Active", "the status is reported, unchanged");
+        AssertEqual(moved.ToStatus, "Active", "on both sides");
+
+        // A save that changes nothing it reports: no event.
+        grant.Set("Notes", "touched by OB9");
+        await grant.Save();
+        AssertEqual((await ofGrant()).length, seen + 1, "a save that leaves Status and both dates alone records nothing");
+
+        // A shift moves both dates: one event naming both.
+        grant.Set("ValidFrom", new Date("2030-02-01T06:00:00Z"));
+        grant.Set("ValidTo", new Date("2031-02-01T06:00:00Z"));
+        Assert(await grant.Save(), `the shift saves: ${grant.LatestResult?.CompleteMessage}`);
+        events = await ofGrant();
+        AssertEqual(events.length, seen + 2, "one more event for the shift");
+        AssertEqual(JSON.stringify(events[events.length - 1].ChangedFields), JSON.stringify(["ValidFrom", "ValidTo"]), "naming both dates");
+
+        // The consumer receives it: the date change is a delivery like any other.
+        const out = await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+        AssertEqual(out.Delivered, (await eventsFor(ctx, orderID)).length, `every event, the date changes included, is delivered (${before} from the confirm)`);
+        Assert(probe.received.some((e) => e.EntitlementGrantID?.toLowerCase() === g.ID.toLowerCase() && (e.Payload as { ChangedFields?: string[] }).ChangedFields?.includes("ValidFrom")), "the consumer saw the shift");
+      }),
+  },
+  {
+    Id: "outbound-events.OB10",
+    Name: "OB10: a delivery dead-lettered after its deadline raises one Task per event, assigned to the AlertTaskRole's active holders",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const role = await TxOne<{ ID: string; Name: string }>(ctx,
+          `SELECT TOP 1 r.ID, r.Name FROM __mj.Role r
+            WHERE EXISTS (SELECT 1 FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1 WHERE ur.RoleID = r.ID)
+            ORDER BY r.Name`);
+        Assert(role?.ID != null, "precondition: a role with an active holder");
+        const holders = (await TxQuery<{ UserID: string }>(ctx,
+          `SELECT ur.UserID FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1 WHERE ur.RoleID = '${role.ID}'`))
+          .map((h) => h.UserID.toLowerCase()).sort();
+        OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, role.Name);
+        try {
+          const orderID = await buyWidget(ctx);
+          probe.failWith = "learning hub unreachable";
+          // Every delivery is past its deadline and due: the next failure dead-letters it.
+          await TxQuery(ctx, `UPDATE d SET d.DeadlineAt = DATEADD(MINUTE, -1, SYSDATETIMEOFFSET()), d.NextAttemptAt = DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())
+                                FROM ${ORDERS_SCHEMA}.OutboundDelivery d JOIN ${ORDERS_SCHEMA}.OutboundEvent e ON e.ID = d.OutboundEventID
+                               WHERE e.OrderHeaderID = '${orderID}'`);
+          const events = await eventsFor(ctx, orderID);
+          const out = await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+          AssertEqual(out.DeadLettered, events.length, "every delivery is dead-lettered");
+          AssertEqual(out.Success, true, "and the pass succeeds: the alerts are not its failure");
+
+          const tasks = await TxQuery<{ ID: string; Name: string; Description: string }>(ctx,
+            `SELECT ID, Name, Description FROM __mj_BizAppsTasks.Task
+              WHERE Name LIKE 'Outbound delivery failed: integration-test-consumer,%' AND (${events.map((e) => `Name LIKE '%(event ${e.ID})'`).join(" OR ")})`);
+          AssertEqual(tasks.length, events.length, "one Task per dead-lettered event");
+          Assert(tasks.every((t) => t.Description.includes("learning hub unreachable")), "each names the last error");
+          for (const t of tasks) {
+            const assigned = (await TxQuery<{ AssigneeRecordID: string }>(ctx,
+              `SELECT ta.AssigneeRecordID FROM __mj_BizAppsTasks.TaskAssignment ta JOIN __mj.Entity e ON e.ID = ta.AssigneeEntityID
+                WHERE ta.TaskID = '${t.ID}' AND e.Name = 'MJ: Users'`)).map((a) => a.AssigneeRecordID.toLowerCase()).sort();
+            AssertEqual(JSON.stringify(assigned), JSON.stringify(holders), `${t.Name} is assigned to every active holder of '${role.Name}'`);
+          }
+
+          // A second pass finds nothing due and raises nothing new.
+          await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+          const again = await TxQuery<{ N: number }>(ctx,
+            `SELECT COUNT(*) AS N FROM __mj_BizAppsTasks.Task WHERE ${events.map((e) => `Name LIKE '%(event ${e.ID})'`).join(" OR ")}`);
+          AssertEqual(Number(again[0].N), events.length, "no second Task for the same events");
+        } finally {
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, undefined);
+        }
+      }),
+  },
+  {
+    Id: "outbound-events.OB11",
+    Name: "OB11: a Duration concession records one ValidTo event per term grant, ending at the new last day's business-day end",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        try {
+          await AcknowledgeAmendmentsWith(ctx);
+          const { OrderID, Term } = await bookTerm(ctx);
+          await grantAuthority(ctx, 10_000, 365);
+          const grants = await TxQuery<{ ID: string; ValidTo: Date | null }>(ctx,
+            `SELECT ID, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant
+              WHERE SubscriptionTermID = '${Term.ID}' AND ValidityModeApplied = 'SubscriptionTerm' AND Status = 'Active'`);
+          Assert(grants.length > 0, "the booked term granted access");
+          const seen = (await eventsFor(ctx, OrderID)).length;
+
+          const c = await recordExtension(ctx, Term.ID, 30);
+          Assert(c.Saved, `recording failed: ${c.Message}`);
+          AssertEqual(c.Entity.Status, "Approved", "inside authority, approved on save and applied");
+
+          const newLastDay = new Date(new Date(Term.EndDate).getTime() + 30 * 86_400_000).toISOString().slice(0, 10);
+          const end = TermDayEnd(newLastDay, BusinessTimeZoneEngine.Instance.Zone).toISOString();
+          const events = (await eventsFor(ctx, OrderID)).slice(seen).filter((e) => e.EventType === "GrantStatusChanged");
+          AssertEqual(events.length, grants.length, "one event per term grant, nothing else");
+          for (const g of grants) {
+            const e = events.find((x) => x.EntitlementGrantID?.toLowerCase() === g.ID.toLowerCase());
+            Assert(e != null, `grant ${g.ID} recorded its moved end`);
+            const p = JSON.parse(e!.PayloadJSON) as Record<string, unknown>;
+            AssertEqual(JSON.stringify(p.ChangedFields), JSON.stringify(["ValidTo"]), "naming ValidTo only");
+            AssertEqual(p.FromValidTo, g.ValidTo ? new Date(g.ValidTo).toISOString() : null, "with the end it had");
+            AssertEqual(p.ValidTo, end, `and the new end, 00:00 business time after ${newLastDay}`);
+          }
+          const out = await DispatchOutboundDeliveries({ OrderHeaderID: OrderID }, ctx.Provider, ctx.User);
+          Assert(out.Success, "the dispatch pass succeeds");
+          Assert(probe.received.some((e) => (e.Payload as { ChangedFields?: string[] }).ChangedFields?.includes("ValidTo")), "the consumer received the new end");
+        } finally {
+          OrdersSettings.SetOverride(ORDERS_SETTING.AmendmentAcknowledgmentRole, undefined);
+        }
+      }),
+  },
+  {
+    Id: "outbound-events.OB12",
+    Name: "OB12: an alert raised unassigned is assigned by the scheduled sweep once the role resolves; a checkout kick leaves it",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        resetProbe();
+        const role = await TxOne<{ ID: string; Name: string }>(ctx,
+          `SELECT TOP 1 r.ID, r.Name FROM __mj.Role r
+            WHERE EXISTS (SELECT 1 FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1 WHERE ur.RoleID = r.ID)
+            ORDER BY r.Name`);
+        Assert(role?.ID != null, "precondition: a role with an active holder");
+        const holders = (await TxQuery<{ UserID: string }>(ctx,
+          `SELECT ur.UserID FROM __mj.UserRole ur JOIN __mj.[User] u ON u.ID = ur.UserID AND u.IsActive = 1 WHERE ur.RoleID = '${role.ID}'`))
+          .map((h) => h.UserID.toLowerCase()).sort();
+        const assigneesOf = async (taskID: string) =>
+          (await TxQuery<{ AssigneeRecordID: string }>(ctx,
+            `SELECT ta.AssigneeRecordID FROM __mj_BizAppsTasks.TaskAssignment ta WHERE ta.TaskID = '${taskID}'`))
+            .map((a) => a.AssigneeRecordID.toLowerCase()).sort();
+        try {
+          // The first assignment fails: the role named does not exist (a typo, or a role created later).
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, "No Such Role (OB12)");
+          const orderID = await buyWidget(ctx);
+          probe.failWith = "learning hub unreachable";
+          await TxQuery(ctx, `UPDATE d SET d.DeadlineAt = DATEADD(MINUTE, -1, SYSDATETIMEOFFSET()), d.NextAttemptAt = DATEADD(MINUTE, -1, SYSDATETIMEOFFSET())
+                                FROM ${ORDERS_SCHEMA}.OutboundDelivery d JOIN ${ORDERS_SCHEMA}.OutboundEvent e ON e.ID = d.OutboundEventID
+                               WHERE e.OrderHeaderID = '${orderID}'`);
+          const events = await eventsFor(ctx, orderID);
+          await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+          const tasks = await TxQuery<{ ID: string; Name: string }>(ctx,
+            `SELECT ID, Name FROM __mj_BizAppsTasks.Task WHERE ${events.map((e) => `Name LIKE '%(event ${e.ID})'`).join(" OR ")}`);
+          AssertEqual(tasks.length, events.length, "precondition: one Task per dead-lettered event");
+          for (const t of tasks) AssertEqual((await assigneesOf(t.ID)).length, 0, `precondition: ${t.Name} was raised unassigned`);
+
+          // The role is fixed. A checkout's kick does not sweep. The sweep the scheduled pass runs on the quarter
+          // hours (AlertSweepDue; the pass's wiring and cadence are unit-tested, the clock is not ours here) does.
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, role.Name);
+          await DispatchOutboundDeliveries({ OrderHeaderID: orderID }, ctx.Provider, ctx.User);
+          for (const t of tasks) AssertEqual((await assigneesOf(t.ID)).length, 0, `a kick leaves ${t.Name} for the scheduled pass`);
+          const swept = await AssignUnassignedAlertTasks(ctx.Provider, ctx.User);
+          Assert("Assigned" in swept && swept.Assigned >= tasks.length, `the sweep assigned them (${JSON.stringify(swept)})`);
+          for (const t of tasks) {
+            AssertEqual(JSON.stringify(await assigneesOf(t.ID)), JSON.stringify(holders), `the sweep assigns ${t.Name} to every holder of '${role.Name}'`);
+          }
+          // Idempotent: a further sweep adds nothing to them.
+          await AssignUnassignedAlertTasks(ctx.Provider, ctx.User);
+          for (const t of tasks) AssertEqual((await assigneesOf(t.ID)).length, holders.length, `no second assignment on ${t.Name}`);
+        } finally {
+          OrdersSettings.SetOverride(ORDERS_SETTING.AlertTaskRole, undefined);
+        }
       }),
   },
 ];

@@ -21,7 +21,7 @@ first: the MJ CLI, `scripts/` and `test-harnesses/` read their database settings
 | `pnpm run test:unit` | Vitest over `packages/*/src/**/*.test.ts`. No database, but build first: tests load the other workspace packages from `dist/`. |
 | `pnpm run test:integration` | The integration suite (`test-harnesses/integration.mjs`) against the database in `.env`, using the built packages, so build first. Each check's orders, journal entries, payments and subscription terms roll back; the shared ORD-WORLD catalog and the catalog rows a bundle's Setup adds are committed. |
 | `pnpm run verify` | Unit tests, build, integration suite, then `scripts/assert-check-count.mjs`, which fails when any check failed or fewer ran than `registry-parity.test.ts` declares. |
-| `pnpm run mj:migrate` | Apply `migrations/` to the `__mj_BizAppsOrders` schema. |
+| `pnpm run mj:migrate` | Apply `migrations/` to the `__mj_BizAppsOrders` schema (`migrations-pg/` when `DB_PLATFORM=postgresql`). |
 | `pnpm run mj:codegen` | Run MJ CodeGen against the database in `.env`. Needs an AI key; see "CodeGen output must be reproducible from this repo" below. |
 | `scripts/append-codegen.sh migrations/V<new>.sql` | Put CodeGen's SQL below a new migration's banner. Refuses a migration already on `origin/next`. |
 
@@ -114,7 +114,7 @@ schema and runs `pnpm run mj:migrate`, do they get exactly the schema this branc
 ## SQL Safety — NO MANUAL REGEX ESCAPING IN FILTERS
 
 **Never use plain inline regex like `.replace(/'/g, "''")` when constructing SQL `ExtraFilter` or `Where` clauses.**
-- For SQL string escaping, always use `EscapeSQLString` from `@memberjunction/global` (published from 6.1.5, this repo's floor). `EscapeText` in `packages/CoreEntitiesServer/src/sql-guards.ts` remains for values already known non-null.
+- For SQL string escaping, always use `EscapeSQLString` from `@memberjunction/global` (published from 6.1.5; this repo's floor is 6.1.6). `EscapeText` in `packages/CoreEntitiesServer/src/sql-guards.ts` remains for values already known non-null.
 - For IDs, use `RequireUUID` and `RequireUUIDs`, exported by `@mj-biz-apps/orders-entities` (`packages/Entities/src/sql-guards.ts`) so code on either tier can use them, and re-exported by `CoreEntitiesServer/src/sql-guards.ts`.
 - For boundary validation of IDs and dates from remote callers, use `RequireUUID`, `RequireUUIDs`, and `RequireDate` from `CoreEntitiesServer/src/sql-guards.ts`.
 - For a caller-supplied day typed `Date | string` (an optional as-of or request day), use `RequireOptionalDay` from `sql-guards.ts`. It refuses an invalid `Date` as well as a malformed string; checking only the string form lets `new Date('garbage')` reach `CalendarDayOrToday`, which silently reads it as today.
