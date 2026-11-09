@@ -1498,13 +1498,13 @@ describe('CheckoutSessionService', () => {
             expect(mocks.mockSessionInstance.Save).toHaveBeenCalled();
             expect(res.Lines[0].Description).toContain('Bob Jones');
 
-            // Assert catalog entity was used for EnsureISAChild, NOT the client override
+            // Assert SubtypeSelector-backed zero-arg EnsureISAChild was used, NOT the client override
             const orderLine = mocks.mockOrderInstance.Lines.Items[0] as unknown as {
                 EnsureISAChild: ReturnType<typeof vi.fn>;
                 Extension: { EnsureEntity: ReturnType<typeof vi.fn> };
                 extensionInstance: { Set: ReturnType<typeof vi.fn> };
             };
-            expect(orderLine.EnsureISAChild).toHaveBeenCalledWith('MJ_BizApps_Orders: Event Order Lines');
+            expect(orderLine.EnsureISAChild).toHaveBeenCalledWith();
             expect(orderLine.EnsureISAChild).not.toHaveBeenCalledWith('AttackerMaliciousEntityOverride');
 
             // Assert blocked fields were never passed to Set

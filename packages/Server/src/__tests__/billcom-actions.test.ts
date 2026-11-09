@@ -14,7 +14,10 @@ vi.mock('@mj-biz-apps/orders-entities', () => ({
     OrdersSendExternalInvoicesOperation: class { Execute = executeSend; },
     OrdersPollExternalPaymentsOperation: class { Execute = executePoll; },
 }));
-vi.mock('@memberjunction/core', () => ({ Metadata: { Provider: {} } }));
+vi.mock('@memberjunction/core', async (importOriginal) => ({
+    ...(await importOriginal<typeof import('@memberjunction/core')>()),
+    Metadata: { Provider: {} },
+}));
 
 import { SendExternalInvoicesAction } from '../custom/send-external-invoices.action.js';
 import { PollExternalPaymentsAction } from '../custom/poll-external-payments.action.js';

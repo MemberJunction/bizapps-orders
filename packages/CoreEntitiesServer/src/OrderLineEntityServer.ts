@@ -473,6 +473,15 @@ export class OrderLineEntityServer extends OrderLineEntity {
     }
 
     private async persistExtension(options?: EntitySaveOptions): Promise<void> {
+        // When `IsParentEntitySave` is true, this `OrderLineEntityServer.Save()` call is ALREADY
+        // executing inside its IS-A child's `Save()` parent-chain phase — the child will persist
+        // its own table row immediately after `parent.Save()` returns. Calling `ext.Save(options)`
+        // here with `IsParentEntitySave: true` would bypass `_pendingSave$` and re-enter the
+        // parent-chain save in an infinite loop.
+        if (options?.IsParentEntitySave) {
+            return;
+        }
+
         if (!this.Extension.IsConfigured) {
             return;
         }

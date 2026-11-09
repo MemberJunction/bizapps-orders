@@ -1346,29 +1346,15 @@ export class CheckoutSessionService {
         }
     }
 
-    private static async createOrderLine(
-        order: OrderHeaderEntity,
-        targetExtensionEntity: string | null,
-        _md: Metadata,
-        _contextUser?: UserInfo
-    ): Promise<OrderLineEntity> {
-        const line = (await order.Lines.Create()) as OrderLineEntity;
-        if (targetExtensionEntity) {
-            await line.EnsureISAChild(targetExtensionEntity);
-        } else {
-            await line.EnsureISAChild();
-        }
-        return line;
-    }
-
     /**
      * Dynamically populates and coerces extension companion properties from a field map.
+     * Resolves the extension subtype from `line.ProductID` via `OrderLine`'s declarative
+     * `SubtypeSelector` (`ProductID.ProductTypeID.OrderLineExtensionEntity`) — never from client payload.
      * Returns the Person it resolved (null when none) and the extension row, so a caller that
      * resolved without creating can create the Person later and set it with `setExtensionPerson`.
      */
     private static async hydrateLineExtension(
         line: OrderLineEntity,
-        extensionEntityName: string | null | undefined,
         fieldValues: Record<string, unknown>,
         contextUser?: UserInfo,
         createPersons = true,
@@ -1408,7 +1394,7 @@ export class CheckoutSessionService {
             '__mj_updatedat'
         ]);
 
-        const ext = await line.EnsureISAChild(extensionEntityName ?? undefined);
+        const ext = await line.EnsureISAChild();
         if (ext) {
                 const extFieldsByName = new Map<string, EntityFieldInfo>(
                     (ext.EntityInfo?.Fields ?? []).map((f: EntityFieldInfo) => [f.Name.toLowerCase(), f])
@@ -1692,7 +1678,6 @@ export class CheckoutSessionService {
                 return failed(`Invalid quantity: quantity must be a positive integer (received ${inputLine.Quantity})`);
             }
 
-            let targetExtensionEntity: string | null = null;
             let maxQuantityPerLine: number | null = null;
             let unitMode: 'perUnit' | 'perLine' = 'perLine';
 
@@ -1716,7 +1701,6 @@ export class CheckoutSessionService {
                     const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
                     const pTypeLoaded = await pType.Load(product.ProductTypeID);
                     if (pTypeLoaded) {
-                        targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
                         if (pType.Configuration) {
                             try {
                                 const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
@@ -1753,21 +1737,21 @@ export class CheckoutSessionService {
 
             if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {
                 for (const unitData of unitPayloads) {
-                    const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
+                    const line = (await order.Lines.Create()) as OrderLineEntity;
                     line.ProductID = inputLine.ProductID;
                     line.Quantity = 1;
                     line.LineNumber = sequence++;
 
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, widgetConfig.extensionFields);
+                    await this.hydrateLineExtension(line, unitData, contextUser, false, widgetConfig.extensionFields);
                 }
             } else {
-                const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
+                const line = (await order.Lines.Create()) as OrderLineEntity;
                 line.ProductID = inputLine.ProductID;
                 line.Quantity = inputLine.Quantity;
                 line.LineNumber = sequence++;
 
                 if (unitPayloads.length > 0) {
-                    await this.hydrateLineExtension(line, targetExtensionEntity, unitPayloads[0], contextUser, false, widgetConfig.extensionFields);
+                    await this.hydrateLineExtension(line, unitPayloads[0], contextUser, false, widgetConfig.extensionFields);
                 }
             }
         }
@@ -2683,7 +2667,6 @@ export class CheckoutSessionService {
                     };
                 }
 
-                let targetExtensionEntity: string | null = null;
                 let maxQuantityPerLine: number | null = null;
                 let unitMode: 'perUnit' | 'perLine' = 'perLine';
 
@@ -2695,7 +2678,6 @@ export class CheckoutSessionService {
                             if (product.ProductTypeID) {
                                 const pType = await md.GetEntityObject<mjBizAppsOrdersProductTypeEntity>(PRODUCT_TYPE_ENTITY, contextUser);
                                 if (await pType.Load(product.ProductTypeID)) {
-                                    targetExtensionEntity = pType.OrderLineExtensionEntity ?? null;
                                     if (pType.Configuration) {
                                         try {
                                             const pTypeConfig = JSON.parse(pType.Configuration) as ProductTypeConfiguration;
@@ -2749,14 +2731,14 @@ export class CheckoutSessionService {
                 }
 
                 const hydrate = async (line: OrderLineEntity, unitData: Record<string, unknown>): Promise<void> => {
-                    const hydrated = await this.hydrateLineExtension(line, targetExtensionEntity, unitData, contextUser, false, configuredExtensionFields);
+                    const hydrated = await this.hydrateLineExtension(line, unitData, contextUser, false, configuredExtensionFields);
                     if (!hydrated.PersonID && hydrated.Extension) {
                         newAttendees.push({ Fields: unitData, Extension: hydrated.Extension });
                     }
                 };
                 if ((unitMode === 'perUnit' || unitPayloads.length > 1) && unitPayloads.length > 0) {
                     for (const unitData of unitPayloads) {
-                        const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
+                        const line = (await order.Lines.Create()) as OrderLineEntity;
                         line.ProductID = inputLine.ProductID;
                         line.Quantity = 1;
                         line.LineNumber = sequence++;
@@ -2764,7 +2746,7 @@ export class CheckoutSessionService {
                         await hydrate(line, unitData);
                     }
                 } else {
-                    const line = await this.createOrderLine(order, targetExtensionEntity, md, contextUser);
+                    const line = (await order.Lines.Create()) as OrderLineEntity;
                     line.ProductID = inputLine.ProductID;
                     line.Quantity = inputLine.Quantity;
                     line.LineNumber = sequence++;

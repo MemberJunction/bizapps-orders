@@ -381,5 +381,6 @@ Not documented here yet: the steps that register a local checkout in a running M
 | Explorer sections | `packages/Angular/src/lib/sections/` |
 | Order compose form | `packages/Angular/src/lib/custom/OrderHeader/` |
 | Form contributions | `packages/Angular/src/lib/form-panels/` |
+| IS-A subtype selectors (`Products`, `Order Lines`) | `metadata/entities/.entities.json` (`Products` sets `AutoEnsureOnSave: true`; `Order Lines` omits `AutoEnsureOnSave` because general-admission event lines sell with no `EventOrderLine` row, and attendee callers invoke zero-arg `line.EnsureISAChild()`) |
 | IT fixture / builders | `packages/IntegrationTests/src/fixture.ts`, `order-builder.ts`, `payment-builder.ts` |
 | Entity name strings | `packages/IntegrationTests/src/entity-names.ts` |
