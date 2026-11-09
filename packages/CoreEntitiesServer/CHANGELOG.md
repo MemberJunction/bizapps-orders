@@ -1,5 +1,13 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.46.0
+
+### Patch Changes
+
+- 6426e7b: Removing a line from a draft order, or deleting a draft order, no longer needs Delete permission on order lines and the rows their saves write (price components, dimensions, concessions, adjustments, allocations). The signed-in user's right is checked once at the order (Update on the order and its lines to remove a line, Delete on the order to delete it), and the cleanup then reads and deletes as the system user. A user without that right is refused before anything is changed.
+- Updated dependencies [bde9dcc]
+  - @mj-biz-apps/orders-entities@5.46.0
+
 ## 5.45.0
 
 ### Minor Changes
@@ -1250,8 +1258,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                          "FK_EntityFieldValue_EntityField"
+                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-entities
 
+## 5.46.0
+
+### Minor Changes
+
+- bde9dcc: Move to MemberJunction's 6.2 LTS line: every `@memberjunction/*` range and the core/global overrides are `^6.2.1` (exact `6.2.1` devDependency anchors), and `mjVersionRange` is `>=6.2.1 <7.0.0`. Hosts must run MJ 6.2.1 or later to install this release.
+
 ## 5.45.0
 
 ### Minor Changes
@@ -872,8 +878,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                          "FK_EntityFieldValue_EntityField"
+                                                                            The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                            "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
