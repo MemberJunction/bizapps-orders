@@ -4,10 +4,12 @@ import { FormsModule } from '@angular/forms';
 import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
+import { PresetViewRef } from '../../data/preset-view';
 import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { CrossesLegalEntities } from '../../panels/allocation-math';
+import { CREDITS_HELD_WHERE, CreditTargetFilter, OwnCreditTargets } from './credit-targets';
 import { LegalEntityForHint } from '../../panels/legal-entity-hint';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
@@ -221,15 +223,17 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Credits: mjBizAppsOrdersOrderHeaderEntity[] = [];
     public Targets: mjBizAppsOrdersOrderHeaderEntity[] = [];
 
+    private readonly creditOrdersView = new PresetViewRef();
+
     public get CreditOrdersView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo) return null;
-        return {
-            EntityID: this.OrderEntityInfo.ID,
-            Entity: this.OrderEntityInfo.Name,
-            WhereClause: `Balance < 0`,
+        return this.creditOrdersView.For(this.OrderEntityInfo.ID, () => ({
+            EntityID: this.OrderEntityInfo!.ID,
+            Entity: this.OrderEntityInfo!.Name,
+            WhereClause: CREDITS_HELD_WHERE,
             ID: 'preset-credit-orders',
             Name: 'Credits Held'
-        } as unknown as MJUserViewEntityExtended;
+        } as unknown as MJUserViewEntityExtended));
     }
 
     /**
@@ -317,9 +321,8 @@ export class MJOAccountCreditPageComponent implements OnInit {
     private async applySource(row: mjBizAppsOrdersOrderHeaderEntity): Promise<void> {
         this.SourceID = row.ID;
         // Only this customer's open orders can receive it — a credit belongs to
-        // whoever earned it.
-        const customerID = (row['BillToOrganizationID'] as string) ?? undefined;
-        this.Targets = await GetOrders({ Preset: 'unpaid', BillToOrganizationID: customerID });
+        // whoever earned it (the server refuses any other: SameCustomerRefusal).
+        this.Targets = OwnCreditTargets(row, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(row) }));
         this.TargetID = this.Targets[0]?.ID ?? null;
         // Default to the most that both sides allow — the common intent.
         this.Amount = Math.min(this.Available, this.Targets[0]?.Balance ?? 0);
@@ -381,10 +384,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
         const first = !this.SourceID ? credits[0] : undefined;
 
         const targets = first
-            ? await GetOrders({
-                  Preset: 'unpaid',
-                  BillToOrganizationID: (first['BillToOrganizationID'] as string) ?? undefined,
-              })
+            ? OwnCreditTargets(first, await GetOrders({ Preset: 'unpaid', ...CreditTargetFilter(first) }))
             : [];
 
         this.Credits = credits;

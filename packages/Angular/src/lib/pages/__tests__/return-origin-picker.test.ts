@@ -136,7 +136,7 @@ describe('the returns page can be reached', () => {
         await c.ngOnInit();
 
         expect(presetOf(mockGetOrders.mock.calls[0]), 'a return reverses a booked order — IsBooked is Confirmed')
-            .toBe('booked');
+            .toBe('returnable');
         expect(c.PickerOrders, 'and the page holds them for the picker').toHaveLength(2);
     });
 
@@ -152,7 +152,7 @@ describe('the returns page can be reached', () => {
         const presets = mockGetOrders.mock.calls.map((a) => presetOf(a));
         expect(presets, 'Draft and Quoted orders have no money to give back').not.toContain('drafts');
         expect(presets, 'and "all" would offer orders the server would refuse').not.toContain('all');
-        expect(presets.every((p) => p === 'booked'), `every read must be booked — got ${JSON.stringify(presets)}`)
+        expect(presets.every((p) => p === 'returnable'), `every read must be booked and not a return — got ${JSON.stringify(presets)}`)
             .toBe(true);
     });
 
@@ -182,7 +182,7 @@ describe('the returns page can be reached', () => {
 
         const call = mockGetOrders.mock.calls[0]?.[0] as { Search?: string; Preset?: string };
         expect(call?.Search, 'the text has to reach the query, not just the rendered list').toBe('ORD-0000');
-        expect(call?.Preset, 'and it still only offers booked orders').toBe('booked');
+        expect(call?.Preset, 'and it still only offers booked orders').toBe('returnable');
     });
 
     it('distinguishes "not asked yet" from "asked and got nothing"', async () => {
@@ -395,5 +395,37 @@ describe('the returns page can be reached', () => {
             unwired.map((d) => /name="([^"]+)"/.exec(d)?.[1] ?? '(unnamed)'),
             'each order picker must query the server; one filtering its cached rows is the capped-list bug',
         ).toEqual([]);
+    });
+});
+
+describe('an order with nothing left to return (#835)', () => {
+    const line = (bought: number, alreadyReturned: number) => ({
+        LineID: `l-${bought}-${alreadyReturned}`,
+        ProductID: 'p',
+        LineNumber: 1,
+        ProductName: 'Widget',
+        UnitPrice: 10,
+        Bought: bought,
+        AlreadyReturned: alreadyReturned,
+        Returning: 0,
+        TaxRate: 0,
+    });
+    const nothingLeft = (c: ReturnType<typeof page>) =>
+        (c as unknown as { NothingLeftToReturn: boolean }).NothingLeftToReturn;
+
+    it('says so when every line has come back in full', () => {
+        const c = page();
+        c.Lines = [line(2, 2), line(1, 1)];
+        expect(nothingLeft(c)).toBe(true);
+    });
+
+    it('stays quiet while any line has something left', () => {
+        const c = page();
+        c.Lines = [line(2, 2), line(3, 1)];
+        expect(nothingLeft(c)).toBe(false);
+    });
+
+    it('stays quiet before an order is loaded', () => {
+        expect(nothingLeft(page())).toBe(false);
     });
 });

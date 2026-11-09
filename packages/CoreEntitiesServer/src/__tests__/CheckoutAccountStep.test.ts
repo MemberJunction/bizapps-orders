@@ -28,7 +28,7 @@ const mocks = vi.hoisted(() => {
         Get: (name: string) => fields[name],
     });
     // What a Load reads back: only what a successful Save wrote.
-    return { session, record, sessionExists: true, persisted: null as string | null };
+    return { session, record, sessionExists: true, persisted: null as string | null, widgetConfiguration: null as string | null };
 });
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -40,6 +40,10 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
             GetEntityObject = vi.fn().mockImplementation((name: string) => {
                 if (name === 'MJ_BizApps_Orders: Checkout Sessions') return Promise.resolve(mocks.session);
                 if (name === 'MJ_BizApps_Common: People') return Promise.resolve(mocks.record({ FirstName: 'Jane', LastName: 'Doe' }));
+                if (name === 'MJ_BizApps_Orders: Order Headers') return Promise.resolve(mocks.record({ OrderNumber: 'SO-1001' }));
+                if (name === 'MJ_BizApps_Orders: Checkout Widgets') {
+                    return Promise.resolve(mocks.record({ CompanyID: 'comp-1', Configuration: mocks.widgetConfiguration }));
+                }
                 return Promise.resolve(mocks.record({ CompanyID: 'comp-1' }));
             });
         },
@@ -133,6 +137,18 @@ describe('checkout account step', () => {
             expect(stored()).toMatchObject({ Outcome: 'Created', PasswordSet: false, PasswordAttempts: 0 });
             // What the checkout stored before is kept.
             expect(JSON.parse(mocks.session.MetadataJSON ?? '{}').Lines).toEqual([{ ProductID: 'p', Quantity: 1 }]);
+        });
+
+        it('sends the order number and the widget’s redirect and success message, so a reload can show them (#858)', async () => {
+            mocks.widgetConfiguration = JSON.stringify({ redirectUrl: 'https://example.com/thanks', successMessage: 'See you there.' });
+            try {
+                const res = await EnsureCheckoutAccount(SID, KEY);
+                expect(res.Confirmation).toEqual({ OrderNumber: 'SO-1001', RedirectUrl: 'https://example.com/thanks', SuccessMessage: 'See you there.' });
+                // A second call returns the recorded outcome, with the same confirmation.
+                expect((await EnsureCheckoutAccount(SID, KEY)).Confirmation?.OrderNumber).toBe('SO-1001');
+            } finally {
+                mocks.widgetConfiguration = null;
+            }
         });
 
         it('reports an existing account with the host message and no password', async () => {
@@ -316,7 +332,7 @@ describe('checkout account step', () => {
             expect(host.setPassword).not.toHaveBeenCalled();
         });
 
-        it.each([['empty', ''], ['not a string', 42], ['too long', 'p'.repeat(257)]])('refuses a password that is %s', async (_name, pw) => {
+        it.each([['empty', ''], ['not a string', 42], ['too long', 'p'.repeat(257)], ['too short', 'seven77']])('refuses a password that is %s', async (_name, pw) => {
             await EnsureCheckoutAccount(SID, KEY);
             const res = await SetCheckoutAccountPassword(SID, KEY, pw);
             expect(res.Success).toBe(false);
@@ -328,7 +344,8 @@ describe('checkout account step', () => {
             await EnsureCheckoutAccount(SID, KEY);
             host.setPassword.mockResolvedValue({ Success: false, Message: 'Use at least 10 characters.' });
             for (let i = 1; i <= MAX_CHECKOUT_PASSWORD_ATTEMPTS; i++) {
-                const res = await SetCheckoutAccountPassword(SID, KEY, 'short');
+                // Nine characters: past OUR floor of 8, refused by the host's own 10-character policy.
+                const res = await SetCheckoutAccountPassword(SID, KEY, 'ninechars');
                 expect(res.ErrorMessage).toBe('Use at least 10 characters.');
                 expect(res.Account?.CanSetPassword).toBe(i < MAX_CHECKOUT_PASSWORD_ATTEMPTS);
             }
@@ -340,7 +357,7 @@ describe('checkout account step', () => {
         it('treats a host that throws as a refused attempt', async () => {
             await EnsureCheckoutAccount(SID, KEY);
             host.setPassword.mockRejectedValue(new Error('boom'));
-            const res = await SetCheckoutAccountPassword(SID, KEY, 'pw');
+            const res = await SetCheckoutAccountPassword(SID, KEY, 'longenough');
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('could not be set');
             expect(stored().PasswordAttempts).toBe(1);

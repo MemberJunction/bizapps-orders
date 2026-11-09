@@ -4,17 +4,19 @@
  * @module @mj-biz-apps/orders-core-entities-server/claimDriverHelpers
  */
 
-import { EscapeSQLString } from '@memberjunction/global';
 import { RunView, UserInfo, IRunViewProvider, IEntityDataProvider, IMetadataProvider } from '@memberjunction/core';
-
-const PERSON_ENTITY = 'MJ_BizApps_Common: People';
+import { ResolvePersonByEmail } from './PersonByEmail.js';
 
 /**
- * Resolves or looks up the primary Person record associated with an authenticated UserInfo.
+ * The Person an authenticated user's e-mail means, by the same rule checkout and the entitlement
+ * check use (`ResolvePersonByEmail`): a Person with Orders activity first, then the oldest, then the
+ * lowest ID. A claim must attach a guest order or grant to the Person the sale went to, so it cannot
+ * take whichever row the database returns first (#852).
  *
  * @param user The authenticated UserInfo from the claim context
  * @param provider Optional scoped entity/metadata provider
- * @returns Person ID string if found, or null
+ * @returns Person ID string if found, or null when no Person carries the e-mail
+ * @throws Error when the lookup itself fails, so a failed read is not mistaken for "no Person"
  */
 export async function resolvePersonID(
     user: UserInfo,
@@ -26,16 +28,9 @@ export async function resolvePersonID(
 
     const runViewProvider = (provider && 'RunView' in provider) ? (provider as unknown as IRunViewProvider) : null;
     const rv = new RunView(runViewProvider);
-    const escaped = EscapeSQLString(user.Email.trim().toLowerCase());
-    const personResult = await rv.RunView<{ ID: string }>({
-        EntityName: PERSON_ENTITY,
-        ExtraFilter: `Email = '${escaped}'`,
-        ResultType: 'simple'
-    }, user);
-
-    if (personResult.Success && personResult.Results && personResult.Results.length > 0) {
-        return personResult.Results[0].ID;
+    const resolved = await ResolvePersonByEmail(user.Email, rv, user);
+    if (!resolved.Success) {
+        throw new Error(`Could not look up the Person for ${user.Email}: ${resolved.ErrorMessage ?? 'Person lookup failed'}`);
     }
-
-    return null;
+    return resolved.PersonID;
 }

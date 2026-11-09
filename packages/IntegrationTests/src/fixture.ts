@@ -32,9 +32,10 @@
 import { randomUUID } from 'node:crypto';
 import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
 import { OrdersEngine, RequireUUID, RequireUUIDs, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
 import { Assert, type IntegrationCheckContext } from '@memberjunction/testing-integration';
-import { ORDERS_SETTING, OrdersSettings } from '@mj-biz-apps/orders-core-entities-server';
+import { ORDERS_SETTING, OrdersSettings, TermDayEnd, TermDayStart } from '@mj-biz-apps/orders-core-entities-server';
 import { JoinCallerTransactionForTests } from '@mj-biz-apps/orders-core-entities-server/testing';
 import { LoadWorld } from './world/load-world.js';
 import { SetWorld } from './world/world.js';
@@ -235,6 +236,69 @@ const provider = (ctx: IntegrationCheckContext) =>
         BeginTransaction(): Promise<void>;
         RollbackTransaction(): Promise<void>;
     };
+
+/**
+ * Run `body` inside a rolled-back transaction with the business time zone set to `iana`, as a host that
+ * set `BizApps.BusinessTimeZone` sees it. The setting row is changed inside the transaction (so the
+ * rollback undoes it) and the zone engine reloaded; AFTER the rollback the engine is reloaded again, so
+ * no later check inherits this zone from the process-wide engine.
+ *
+ * Example: `WithBusinessZone(ctx, 'America/Chicago', 'Central Standard Time', async () => { ... })`.
+ */
+export async function WithBusinessZone(
+    ctx: IntegrationCheckContext,
+    iana: string,
+    sqlName: string,
+    body: () => Promise<void>,
+): Promise<void> {
+    try {
+        await InRolledBackTransaction(ctx, async () => {
+            await TxQuery(
+                ctx,
+                `UPDATE __mj.InstanceConfiguration SET Value = '${JSON.stringify({ iana, sql: sqlName }).replace(/'/g, "''")}' ` +
+                    `WHERE FeatureKey = 'BizApps.BusinessTimeZone'`,
+            );
+            await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
+            if (BusinessTimeZoneEngine.Instance.Zone !== iana) {
+                throw new Error(`precondition: the business zone reads ${BusinessTimeZoneEngine.Instance.Zone}, not ${iana}`);
+            }
+            await body();
+        });
+    } finally {
+        await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
+    }
+}
+
+/**
+ * Assert a term's standing SubscriptionTerm grants cover its days in full, in the business zone (access sync G5):
+ * from 00:00 business time on `firstDay` (when given) to 00:00 business time on the day after `lastDay`. The
+ * writers are booking, TermExtension and TermShift; each must land on `TermGrantWindow`'s instants.
+ *
+ * Example: a term ending 2026-12-31 under UTC must have grants ending 2027-01-01T00:00:00.000Z.
+ */
+export async function AssertTermGrantWindow(
+    ctx: IntegrationCheckContext,
+    termID: string,
+    firstDay: string | null,
+    lastDay: string,
+    what: string,
+): Promise<void> {
+    const zone = BusinessTimeZoneEngine.Instance.Zone;
+    const grants = await TxQuery<{ ID: string; ValidFrom: Date | null; ValidTo: Date | null }>(
+        ctx,
+        `SELECT ID, ValidFrom, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant ` +
+            `WHERE SubscriptionTermID = '${RequireUUID(termID, 'termID')}' AND ValidityModeApplied = 'SubscriptionTerm' AND Status = 'Active'`,
+    );
+    Assert(grants.length > 0, `${what}: the term has standing SubscriptionTerm grants to check`);
+    const end = TermDayEnd(lastDay, zone).toISOString();
+    const start = firstDay ? TermDayStart(firstDay, zone).toISOString() : null;
+    for (const g of grants) {
+        Assert(g.ValidTo != null && new Date(g.ValidTo).toISOString() === end, `${what}: grant ${g.ID} ends ${g.ValidTo ? new Date(g.ValidTo).toISOString() : 'never'}, expected ${end} (00:00 ${zone} after ${lastDay})`);
+        if (start) {
+            Assert(g.ValidFrom != null && new Date(g.ValidFrom).toISOString() === start, `${what}: grant ${g.ID} starts ${g.ValidFrom ? new Date(g.ValidFrom).toISOString() : 'never'}, expected ${start}`);
+        }
+    }
+}
 
 /**
  * Run `body` inside a transaction that ALWAYS rolls back — the isolation primitive every mutating
@@ -992,14 +1056,24 @@ export function NewReviewMarker(now: Date = new Date()): string {
     return `${REVIEW_MARKER_PREFIX}${now.getTime().toString(36).toUpperCase()}`;
 }
 
-/** The order guards a purge of committed orders has to lift; both purges disable and re-enable them. */
+/**
+ * The order guards a purge of committed orders has to lift; both purges disable and re-enable them.
+ * review-purge.test.ts reads the guard triggers from the migrations and fails when one that refuses a
+ * DELETE these purges run is missing. trg_PaymentDetail_Immutable is not here: it fires on UPDATE
+ * only, and the one PaymentDetail column a purge updates, SourceCustomerPaymentMethodID, is not guarded.
+ */
 const ORDER_PURGE_TRIGGERS = [
     `${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+    // A confirmed reversal's ReversesOrderHeaderID is cleared before the delete (a committed credit order, D20).
+    `${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
     `${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
     `${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
-    `${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
+    // A Posted progress observation refuses deletion (51030); a progress-measured line has some.
+    `${ORDERS_SCHEMA}.trg_OrderLineProgressMeasurement_Immutable ON ${ORDERS_SCHEMA}.OrderLineProgressMeasurement`,
     // An Invoiced instalment refuses deletion; a renewal paid through the link has one (#950).
     `${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
+    // Billing rows refuse deletion; an issued instalment always leaves some.
+    `${ORDERS_SCHEMA}.trg_InstalmentLineBilling_Immutable ON ${ORDERS_SCHEMA}.InstalmentLineBilling`,
 ];
 
 /**
@@ -1100,7 +1174,7 @@ DELETE FROM ${O}.SubscriptionEvent
 DELETE FROM ${O}.ExternalPayment WHERE PaymentHeaderID IN (${ids('@payments')});
 DELETE FROM ${O}.PaymentLine WHERE OrderHeaderID IN (${ids('@orders')}) OR PaymentHeaderID IN (${ids('@payments')});
 UPDATE ${O}.OrderHeader SET InitialPaymentDetailID = NULL WHERE ID IN (${ids('@orders')});
-UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL WHERE ID IN (${ids('@payments')});
+UPDATE ${O}.PaymentHeader SET ReversesPaymentHeaderID = NULL, ReversalSource = NULL WHERE ID IN (${ids('@payments')});
 DELETE FROM ${O}.PaymentHeader WHERE ID IN (${ids('@payments')});
 DELETE FROM ${O}.CustomerPaymentMethod WHERE PaymentDetailID IN (${ids('@details')});
 DELETE FROM ${O}.PaymentDetail WHERE ID IN (${ids('@details')});

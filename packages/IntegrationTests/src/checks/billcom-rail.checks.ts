@@ -55,6 +55,7 @@ import {
   type OrdersPollExternalPaymentsInput,
   type OrdersPollExternalPaymentsOutput,
   type OrdersSendExternalInvoicesOutput,
+  Today,
 } from "@mj-biz-apps/orders-entities";
 // STATIC, per the repo rule — no dynamic import()/require() anywhere.
 import {
@@ -126,7 +127,8 @@ interface FakeCall {
 }
 
 const money = (n: number): number => Math.round((n + Number.EPSILON) * 100) / 100;
-const today = (): string => new Date().toISOString().slice(0, 10);
+/** The business calendar day, as the product stamps it; the UTC day is tomorrow every US evening (#811). */
+const today = (): string => Today();
 
 /**
  * Bill.com as far as the rail can see it: customers, invoices and receivable payments, each with the
@@ -1022,7 +1024,7 @@ export const BillComRailChecks: NamedCheck[] = [
         const ref = bill.ReceivePayment({ Status: "PAID", Applied: [{ InvoiceRef: legacy, Amount: 250 }] });
         const out = await poll(ctx, rail);
         AssertEqual(out.ResultCode, "ATTENTION", `a payment nobody here can place needs a person: ${out.Message}`);
-        Assert(!out.Success, "and the pass reports it as not clean, so a job that notifies on failure tells somebody");
+        Assert(out.Success, "and the pass still succeeds: the payment is announced once by notification, not by failing every run");
         AssertEqual(out.Unmatched, 1, "one payment unmatched");
         const ep = await externalPayment(ctx, rail, ref);
         AssertEqual(ep?.Disposition, "Unmatched", "recorded as Unmatched for the exceptions worklist");

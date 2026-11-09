@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-integration-tests",
   "type": "module",
-  "version": "5.38.0",
+  "version": "5.44.0",
   "private": true,
   "description": "Integration check bundles for BizApps Orders, dispatched by `mj test` via MJ's testing framework.",
   "main": "dist/index.js",
@@ -12,13 +12,13 @@
   },
   "scripts": {
     "build": "tsc && tsc-alias -f && node -e \"const fs=require('fs');const p=require('path');const s='src/world/data';const d='dist/world/data';fs.mkdirSync(d,{recursive:true});for (const f of fs.readdirSync(s)) fs.copyFileSync(p.join(s,f),p.join(d,f));\"",
-    "test": "vitest run"
+    "test": "vitest run --root ../.. packages/IntegrationTests/"
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "devDependencies": {
-    "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
-    "@mj-biz-apps/accounting-server": ">=0.21.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.24.0",
+    "@mj-biz-apps/accounting-server": ">=0.24.0",
     "@mj-biz-apps/common-entities": ">=5.56.0",
     "@types/node": "^22.10.2",
     "typescript": "^5.9.3",
@@ -26,16 +26,16 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "^5.38.0",
-    "@mj-biz-apps/orders-server": "^5.38.0",
-    "@mj-biz-apps/orders-core-entities-server": "^5.38.0"
+    "@mj-biz-apps/orders-entities": "^5.44.0",
+    "@mj-biz-apps/orders-server": "^5.44.0",
+    "@mj-biz-apps/orders-core-entities-server": "^5.44.0"
   },
   "peerDependencies": {
     "@memberjunction/core": "^6.1.6",
     "@memberjunction/global": "^6.1.6",
     "@memberjunction/testing-integration": "^6.1.6",
-    "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
-    "@mj-biz-apps/accounting-server": ">=0.21.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.24.0",
+    "@mj-biz-apps/accounting-server": ">=0.24.0",
     "@mj-biz-apps/common-entities": ">=5.56.0",
     "@memberjunction/actions": "^6.1.6",
     "@memberjunction/actions-base": "^6.1.6",

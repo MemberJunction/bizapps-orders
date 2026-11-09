@@ -94,3 +94,15 @@
     justify-content: flex-end;
     gap: var(--mj-space-2);
 }
+
+.mjo-sc__gateway {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mj-space-2);
+    margin: 0;
+    padding: var(--mj-space-2) var(--mj-space-3);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-bg-surface-sunken);
+    border: 1px solid var(--mj-border-default);
+    font-size: var(--mj-text-sm);
+}
