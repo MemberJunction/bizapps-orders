@@ -1,5 +1,49 @@
 # @mj-biz-apps/orders-entities
 
+## 5.45.0
+
+### Minor Changes
+
+- 38ecc01: The 5.45 Metadata_Sync ships the empty NoDealConfirmRoles application setting, so a host that upgrades by migration has the setting to fill in, the same as one that ran `mj sync push`. It has a Postgres counterpart.
+
+## 5.44.0
+
+### Minor Changes
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- a48a6e2: Percentage of Completion lines confirm without service dates: the revenue recognition type no longer requires a service period, since its revenue follows recorded progress. The order lines editor shows those dates as optional "Expected start" and "Expected end". The metadata change reaches hosts through the release's Metadata_Sync migration.
+- a17a7bf: `Product.IsSellableNew` gains its PostgreSQL migration (V202611061740). The field inherited on Event Products is placed in the Product Details section of its form.
+- fbf3ad4: The 5.44 Metadata_Sync ships the Explain Product GL Accounts remote operation, the Payment Needs Review notification and its email template, and the updated Poll External Payments, Preview Price and Record Progress type definitions, so a host that upgrades by migration gets the same metadata as one that ran `mj sync push`. It has a Postgres counterpart.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- 7b693a7: `Orders.PreviewPrice` takes `IgnoreSellability`, which prices a product whatever its Status and availability window. The product header's Activate check uses it, so a priced Draft product no longer reads as "could not be checked". Entering edit mode closes the readiness warning, and Activate refuses to save once the form is in edit mode.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+- de11edd: Progress attestation follows finance's books-closed-through date instead of posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` reads the line's company's `AccountingCompanyProfile.BooksClosedThroughDate` once per call and refuses a measurement date on or before it, on preview and post and on a supersede, with the message "This month has already been closed by finance. Please contact them to proceed." If that date cannot be read, the attestation is refused; a line with no company, no profile or no date has nothing closed. A supersede's reversal is dated on the replaced observation's own date, or on the first open day when finance has closed that month, and the message says why it moved. The replacement's catch-up always posts on the date entered, so `CatchUpDate` equals `MeasurementDate` whenever there is a catch-up. The supersede no longer reads journal entry batches. The attestation screen's supersede text matches. It needs accounting 0.24.0, the first release with `BooksClosedThroughDate` and the shared closed-books rule, so the accounting peer ranges and the `mj-app.json` dependency now start at 0.24.0.
+
+### Patch Changes
+
+- 3f9d524: A typed price on an order dated before the product's only price is in force now confirms, measured as a product with no price is; a line with no typed price is still refused. The add-price row on the product form shows Effective From, defaulting to today, so an earlier start can be chosen.
+
+## 5.43.0
+
+### Minor Changes
+
+- d45e6ae: Finance may type any unit price on an order line (MJ.BizApps.Orders.Price.OverrideAny), as Account Director can. Products with a single $0 price, such as the converted-pricing Betty products, had no way to set a price for anyone outside Account Director, so Finance users entering a new sale saw no price pencil. Metadata only; the release's Metadata_Sync migration carries the new authorization-role row.
+- 534b368: The 5.43 Metadata_Sync migration, with its Postgres counterpart, ships the Finance authorization role on MJ.BizApps.Orders.Price.OverrideAny.
+
+## 5.42.0
+
+### Minor Changes
+
+- 5529725: Bug sweep across checkout, payments, order entry, accounting, the Bill.com rail, access overrides and tooling. Adds four migrations (one open checkout session per widget and client key, a foreign key from OrderHeader.ApprovalTaskID to Tasks, an immutability guard on InstalmentLineBilling, and DiscountAmount/ChargeAmount in the confirmed-line freeze) and metadata changes (webhook delivery view filter, entity-permission pull filter, progress observation field descriptions, a revenue recognition type description).
+- 72787da: The 5.42 Metadata_Sync ships what metadata/ changed since 5.41: three progress-observation entity fields, the Record Progress remote operation's output type, the Percentage of Completion revenue recognition type, and the Payment Webhook Deliveries: Not Applied view, so a host that upgrades by migration gets the same metadata as one that ran `mj sync push`. It has a Postgres counterpart.
+
+## 5.41.0
+
+### Minor Changes
+
+- 0caaeb0: The 5.41 Metadata_Sync ships the Spawn Renewals remote operation's updated output type, so a host that upgrades by migration describes the operation's output the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+- 0045f58: Spawn Renewals prices the renewal of a line that bought several terms at a typed price (`PriceOverridden`) at one term's share of that price, so a 24-month line typed at 20,000 on a 12-month type renews at 10,000 rather than 20,000. An engine-priced line already carries one term's price whatever period it states, and renews at it unchanged. A line no longer than the type's term renews at its own price as before. Each renewal candidate, preview included, now reports the renewal term's start and end (`RenewalTermStart`, `RenewalTermEnd`).
+
 ## 5.40.0
 
 ### Minor Changes
@@ -828,8 +872,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                "FK_EntityFieldValue_EntityField"
+                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

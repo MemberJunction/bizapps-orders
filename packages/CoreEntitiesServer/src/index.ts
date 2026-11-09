@@ -6,7 +6,7 @@
  * these subclasses higher priority than the generated ones.
  */
 export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccountResolver.js';
-export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
+export type { GLRole, GLRoleExplanation, GLWalkLevel, GLWalkStep, ResolverEntityIDs } from './GLAccountResolver.js';
 
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 export {
@@ -133,7 +133,7 @@ export {
     UnattestedException,
 } from './DetectUnattestedProgressOperation.js';
 
-export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export { InstalmentsToCancel, RefuseCancellingPaidInstalments, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     BackDatedWarning,
@@ -186,6 +186,13 @@ export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from '
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
 export { ConfirmReadinessOperation, LoadConfirmReadinessOperation, ConcessionProblemSentence } from './ConfirmReadinessOperation.js';
+export {
+    ExplainProductGLAccountsOperation,
+    LoadExplainProductGLAccountsOperation,
+    PRODUCT_GL_ROLES,
+    RequireGLRoles,
+    ShapeRoleExplanation,
+} from './ExplainProductGLAccountsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
@@ -515,6 +522,7 @@ export type {
 export {
     ACCESS_OVERRIDE_AUTH,
     ACCESS_OVERRIDE_TASK_TYPE_CODE,
+    AccessOverrideNotAppliedNote,
     ApplyAccessOverrideDecision,
     RecordAccessOverrideDecision,
     RequestAccessOverride,
@@ -555,6 +563,7 @@ export {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
 } from './GiftCardBehavior.js';
 export type {
     GiftCardLineFacts,
@@ -1113,6 +1122,7 @@ export {
     type CheckoutAccountResult,
     type CheckoutAccountStatus,
     type CheckoutAccountResponse,
+    type CheckoutConfirmationView,
     type CheckoutPasswordResult,
 } from './CheckoutAccountStep.js';
 export {

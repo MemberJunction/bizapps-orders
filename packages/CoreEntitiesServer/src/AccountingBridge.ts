@@ -161,6 +161,8 @@ export async function BuildGLAccountResolver(
             // through.
             CompanyID: account?.CompanyID ?? '',
             AccountLabel: account?.Code ? `${account.Code}${account.Name ? ` ${account.Name}` : ''}` : glAccountID,
+            AccountCode: account?.Code,
+            AccountName: account?.Name,
             RequiredDimensions: requiredIDs.map((id) => ({
                 DimensionID: id,
                 Code: engine.Dimensions.find((d) => key(d.ID) === key(id))?.Code ?? id,
@@ -274,10 +276,10 @@ export interface CreateJournalEntriesOutcome {
  * SIDE EFFECT, DELIBERATELY NAMED: this writes journal entries. It joins the CALLER'S transaction
  * rather than opening one, so it commits or rolls back with whatever act produced the drafts.
  *
- * Resolved through MJ's class factory by key, so this package does not hard-depend on the
- * accounting server package at build time — the same indirection `OrderEntityServer` and
- * `PaymentLineEntityServer` each open-code today. Those two are older and phrase their failures in
- * their own domain's words; this exists for callers that have no reason to copy that a fourth time.
+ * Resolved through MJ's class factory by key ({@link ResolveAccountingOperation}), so this package
+ * does not hard-depend on the accounting server package at build time. Every journal-entry caller
+ * resolves the operation through that one function, so an unloaded accounting package reports
+ * itself by name rather than as a routing failure (#865).
  *
  * @param what names the act in the error message, e.g. 'the instalment reclass'
  * @throws when the operation is unregistered, the call fails, or accounting refuses the drafts
@@ -288,15 +290,10 @@ export async function SubmitJournalEntryDrafts(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<CreateJournalEntriesOutcome> {
-    const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-        BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesOutcome>
-    >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-    if (!op) {
-        throw new Error(
-            `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps Accounting ` +
-                `server package must be loaded before orders can book ${what}.`,
-        );
-    }
+    const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesOutcome>(
+        'Accounting.CreateJournalEntries',
+        `book ${what}`,
+    );
 
     // The envelope reports transport/authorization failure; the payload reports the
     // accounting-domain outcome. Both must be checked — a successful call can still carry a
@@ -445,4 +442,62 @@ export async function RaiseFinanceExceptions(
         throw new Error(`Raising ${what} failed. ${detail}`);
     }
     return payload;
+}
+
+// ─── Payment date correction (bc-aidp-next-golive#448) ──────────────────────────────────────────
+//
+// A captured payment's journal entries take its date. When finance corrects that date, accounting
+// moves the entries with it while none is batched, and refuses once one is. Resolved by key like the
+// other accounting operations, so this package builds against an accounting release that does not
+// have the operation yet; calling it there throws, naming the operation.
+
+/** What `Accounting.RedatePendingJournalEntries` answers with (the parts orders reads). */
+export interface RedatePendingJournalEntriesOutcome {
+    EffectiveDate: string;
+    Changed: Array<{ JournalEntryID: string; EntryNumber: string; PreviousEffectiveDate: string; EffectiveDate: string }>;
+    UnchangedJournalEntryIDs: string[];
+}
+
+interface RedatePendingJournalEntriesRequest {
+    EffectiveDate: string;
+    LinkedEntity: string;
+    LinkedRecordIDs: string[];
+}
+
+/** One group of a payment's entries: those booked against one source entity. */
+export interface PaymentEntrySource {
+    EntityName: string;
+    RecordIDs: string[];
+}
+
+/**
+ * Move every journal entry booked from `sources` to `day` (`YYYY-MM-DD`) and return what moved.
+ *
+ * SIDE EFFECT, DELIBERATELY NAMED: this changes journal entries. It joins the CALLER'S transaction,
+ * so the entries move only if the payment's own date change commits. Accounting checks the caller's
+ * authorization and refuses, with its own message, when any entry is batched or the day is closed.
+ *
+ * @throws when the operation is unregistered, the call fails, or accounting refuses the change
+ */
+export async function RedatePaymentJournalEntries(
+    sources: PaymentEntrySource[],
+    day: string,
+    paymentNumber: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<RedatePendingJournalEntriesOutcome[]> {
+    const key = 'Accounting.RedatePendingJournalEntries';
+    const op = ResolveAccountingOperation<RedatePendingJournalEntriesRequest, RedatePendingJournalEntriesOutcome>(
+        key,
+        `change the date of payment ${paymentNumber}`,
+    );
+    const outcomes: RedatePendingJournalEntriesOutcome[] = [];
+    for (const source of sources.filter((s) => s.RecordIDs.length > 0)) {
+        const result = await op.Execute({ EffectiveDate: day, LinkedEntity: source.EntityName, LinkedRecordIDs: source.RecordIDs }, { provider, user });
+        if (!result.Success || !result.Output) {
+            throw new Error(`Payment ${paymentNumber}'s date was not changed. ${result.ErrorMessage ?? result.ResultCode ?? `${key} returned no result.`}`);
+        }
+        outcomes.push(result.Output);
+    }
+    return outcomes;
 }

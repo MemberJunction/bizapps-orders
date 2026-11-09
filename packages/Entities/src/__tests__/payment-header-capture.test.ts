@@ -108,6 +108,21 @@ describe('PaymentHeaderEntity.SyncPaymentDetailFromHeader on a saved detail', ()
         expect((detail as unknown as { row: Record<string, unknown> }).row).toMatchObject({ CompanyID: 'co-a', PaymentTypeID: 'pt-wire', ReferenceNumber: '1001' });
     });
 
+    it('replaces a saved detail whose reference number was corrected, keeping the correction (#867)', () => {
+        const detail = savedDetail({ CompanyID: 'co-a', PaymentTypeID: 'pt-check', ReferenceNumber: '1001' });
+        (detail as unknown as { Dirty: boolean }).Dirty = true;
+        detail.Set('ReferenceNumber', '1010');
+        const { instance, calls } = savedHeader('co-a', 'pt-check', detail);
+        instance.SyncPaymentDetailFromHeader();
+        expect(calls).toEqual(['clear', 'ensure']);
+        expect((detail as unknown as { row: Record<string, unknown> }).row).toMatchObject({
+            ID: 'detail-2',
+            CompanyID: 'co-a',
+            PaymentTypeID: 'pt-check',
+            ReferenceNumber: '1010',
+        });
+    });
+
     it('keeps a saved detail whose company and tender already match', () => {
         const detail = savedDetail({ CompanyID: 'co-a', PaymentTypeID: 'pt-wire' });
         const { instance, calls } = savedHeader('co-a', 'pt-wire', detail);
@@ -135,5 +150,36 @@ describe('PaymentHeaderEntity.SaveStatus', () => {
         const payment = saving(true);
         expect(await payment.SaveStatus('Captured')).toBe(true);
         expect(payment.Status).toBe('Captured');
+    });
+});
+
+describe('PaymentHeaderEntity idempotency key (#847)', () => {
+    function payment(isSaved: boolean, key: string | null, message = ''): PaymentHeaderEntity {
+        const instance = Object.create(PaymentHeaderEntity.prototype) as PaymentHeaderEntity;
+        Object.defineProperty(instance, 'IsSaved', { value: isSaved });
+        Object.defineProperty(instance, 'IdempotencyKey', { value: key, writable: true });
+        Object.defineProperty(instance, 'LatestResult', { value: { Message: message, CompleteMessage: message } });
+        return instance;
+    }
+
+    it('stamps a key on a new payment once and keeps it across retries', () => {
+        const p = payment(false, null);
+        const first = p.EnsureIdempotencyKey('form');
+        expect(first).toMatch(/^form:.{8,}/);
+        expect(p.EnsureIdempotencyKey('form')).toBe(first);
+    });
+
+    it('keeps a key the caller already set, and leaves a saved payment alone', () => {
+        expect(payment(false, 'billcom:0rp1').EnsureIdempotencyKey()).toBe('billcom:0rp1');
+        const saved = payment(true, null);
+        expect(saved.EnsureIdempotencyKey()).toBeNull();
+        expect(saved.IdempotencyKey).toBeNull();
+    });
+
+    it('recognizes a refusal by the unique key, and only that refusal', () => {
+        const refusal = "Cannot insert duplicate key row in object 'PaymentHeader' with unique index 'UX_PaymentHeader_IdempotencyKey'.";
+        expect(payment(false, 'form:x', refusal).SaveRefusedAsDuplicateKey).toBe(true);
+        expect(payment(false, 'form:x', 'Receiving Company cannot be null.').SaveRefusedAsDuplicateKey).toBe(false);
+        expect(payment(false, null, refusal).SaveRefusedAsDuplicateKey).toBe(false);
     });
 });

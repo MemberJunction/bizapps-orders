@@ -155,8 +155,7 @@ makes one order line produce one booking entry and \`N\` forward-dated release e
     {
         key: 'pricing', title: 'What it costs — price, promotion and who may discount',
         tables: ['ProductPrice', 'PriceList', 'PriceListAssignment', 'PriceTier', 'Promotion', 'PromotionCode',
-            'PromotionTarget', 'PromotionType', 'ChargeType', 'SalesAuthority', 'SalesRule', 'OrderConcession',
-            'ReferralProgram'],
+            'PromotionTarget', 'PromotionType', 'ChargeType', 'SalesAuthority', 'SalesRule', 'OrderConcession', 'ReferralProgram'],
         blurb: () => `**Price is resolved, not stored on the product.** The price walk reads no price from \`Product\`; its
 \`StandaloneSellingPrice\` is used only by bundle expansion, to price \`SumOfParts\` components and to
 split a bundle's price across its \`Bundled\` ones. \`ProductPrice\` rows carry the money: each hangs on
@@ -238,8 +237,7 @@ mixed-company order puts each subscription on its own seller's books.`,
     {
         key: 'pay', title: 'Getting paid',
         tables: ['PaymentHeader', 'PaymentDetail', 'PaymentLine', 'PaymentIntent', 'PaymentProvider',
-            'PaymentProviderType', 'PaymentProviderPrice', 'PaymentType', 'PaymentSequence', 'CustomerPaymentMethod',
-            'PaymentWebhookDelivery'],
+            'PaymentProviderType', 'PaymentProviderPrice', 'PaymentType', 'PaymentSequence', 'CustomerPaymentMethod', 'PaymentWebhookDelivery'],
         blurb: () => `**The money that arrived and the money's application are separate tables, because a payment is
 not an allocation.** \`PaymentHeader\` is the receipt; \`PaymentLine\` hangs off it and records how that
 money was applied: against an order, and optionally a specific line or instalment. One cheque paying
@@ -657,6 +655,8 @@ p(`| table | trigger | what it guarantees |`);
 p(`|---|---|---|`);
 const TRIGGER_NOTE = {
     'trg_EntitlementAccessOverride_Record': "An update cannot rewrite the override's request or decision. What was requested (order, type, reason, last day, requester) never changes (51023); its status moves only from Requested to Approved, Rejected or Withdrawn, and from Approved to Expired (51024); and the approval task and the decision, once recorded, are not rewritten (51025). The trigger fires on UPDATE only, so a row can still be deleted. That the decision came through the approval task is checked in code (`EntitlementAccessOverrideEntityServer`).",
+    'trg_InstalmentLineBilling_Immutable': 'A billing row records what an issued instalment invoice billed a line, and later instalments are sliced against it, so a row cannot be updated or deleted (51032). A correction is an amount change or a reversal order. Purges of committed test orders disable it with the other order guards.',
+    'trg_OrderConcession_RollupTotals': "A concession that carries a `ScheduleReduction` or a `CreditMemoAmount` changes what the order still owes, so adding, changing or removing one recomputes the order's totals through `spRecalcOrderHeaderTotals`. Concessions with neither leave the totals alone.",
     'trg_OrderHeader_ImmutableAfterConfirm': "Every rule that freezes a confirmed order header. Its status cannot leave Confirmed (51014), and its date, selling company, order type, reversal link and set bill-to party are history (51013); an empty bill-to party may still be filled, which is what claiming a guest order relies on (claim minting is dormant: `CheckoutSessionService` calls the local stand-in in `identityClaimContracts.ts`, which throws). A set `BillToAddressID` / `ShipToAddressID` cannot be replaced or cleared, an empty one can be filled only together with its snapshot, and a written snapshot never changes on any order (51015); reporting and the invoice read `BillToAddressSnapshot` / `ShipToAddressSnapshot` on a confirmed order, because the Common `Address` row stays editable. Once `ConfirmedAt` is set, `ConfirmedByUserID` cannot change (51017). Its `PaymentTermsTypeID` changes only to match its latest approved `Terms` `OrderConcession`, prior terms to new (51018); matching the latest, not any, keeps an earlier approval from being replayed, and `DueDate` stays writable. The checks run in that order, so a write that breaks two rules is refused with the first.",
     'trg_OrderHeaderPaymentSchedule_Immutable': 'An instalment is frozen once it is past Scheduled. Only a Scheduled row may be deleted (51020); after that its order, company, number, due date, amount and invoice identity cannot change, and it cannot return to Scheduled (51021). `DocumentNumber` and `JournalEntryID` are set once and never cleared or replaced, on any status (51022). That the instalments add up to the lines is checked in code, at confirm and at invoicing, because editing a schedule one row at a time passes through states that do not add up.',
     'trg_OrderHeaderPaymentSchedule_RollupTotals': "Adding, re-amounting or removing an instalment recomputes the order's instalment rollups (`AmountPaid`, `Balance`, `Status` per row).",
@@ -664,7 +664,7 @@ const TRIGGER_NOTE = {
     'trg_OrderLine_RollupTotals': "The order's `TotalGross`, `Balance` and `FulfillmentStatus`, and its instalment rollups, are recomputed from the lines by the database, so a client cannot supply a total that disagrees with what was booked.",
     'trg_OrderLineProgressMeasurement_Immutable': 'A posted progress observation cannot be changed or deleted (51030), and nothing may promote a Draft one to Posted (51031): `Orders.RecordProgress` writes a row Posted in the same transaction as its journal entry. A correction is a new observation that supersedes the old one.',
     'trg_PaymentDetail_Immutable': "Once written, an instrument's company, payment type, provider customer and instrument references, brand, last four, expiry, bank name, routing and account tails, reference number and stored-value account cannot change (51009). Not covered: `HolderName`, `BankAccountType`, `InstrumentDate`, `PaymentProviderID`, `SourceCustomerPaymentMethodID`, `SourceOrderHeaderID` and `Notes`. The trigger fires on UPDATE only; the foreign keys from a payment, an order or a saved method keep a referenced detail from being deleted.",
-    'trg_PaymentHeader_ImmutableAfterCapture': 'Captured money is frozen. A captured payment cannot be deleted (51004), its amount, fees, type, date, receiving company and customer cannot change (51005), a set `JournalEntryID` is never cleared or replaced (51006), and its status cannot go back (51007).',
+    'trg_PaymentHeader_ImmutableAfterCapture': 'Captured money is frozen. A captured payment cannot be deleted (51004), its amount, fees, type, receiving company and customer cannot change (51005), its date changes only while none of its journal entries is batched or posted (51033, bc-aidp-next-golive#448), a set `JournalEntryID` is never cleared or replaced (51006), and its status cannot go back (51007).',
     'trg_PaymentHeader_RollupTotals': 'A payment status change (Pending to Captured, say) changes what counts as paid, so the orders its lines touch are recomputed.',
     'trg_PaymentLine_ImmutableAfterCapture': "Once its payment is captured, an applied payment line cannot be deleted (51010), and its amount, order and order line cannot change (51011); the instalment it names (`OrderHeaderPaymentScheduleID`) is not covered. A set `BookedAt` is never cleared or replaced (51012).",
     'trg_PaymentLine_RollupTotals': "The order's `AmountPaid` and `Balance`, and its instalments', are recomputed from the lines of its captured payments.",

@@ -1,114 +1,133 @@
 -- =============================================================================
--- V202611022100 — OrderHeader.EngagementLeadUserID and post-go-live metadata cleanup
+-- V202611062300 — A payment dated the day its money arrived (bc-aidp-next-golive#448)
 -- =============================================================================
--- What this file does, in order:
---   1. OrderHeader gains EngagementLeadUserID (nullable FK to User): the delivery
---      owner for attested-progress lines, distinct from SalesRepUserID (#807).
---   2. OutboundEvent drops duplicate index IX_OutboundEvent_OrderHeaderID (#849).
---   3. Column MS_Description extended properties are aligned with actual trigger
---      names and behavior on OrderHeader, OrderLine, OutboundEvent, SalesAuthority,
---      and Subscription (#848, #850, #854, #870).
---   4. JournalEntryType 'InstalmentInvoice' description is aligned with D92 (#800).
---   5. CodeGen output below the 50-blank-line banner registers the new EntityField
---      rows and relationship for EngagementLeadUserID, links OrderLine.ShipToAddressID
---      to Address and adds its virtual ShipToAddress field (#851), switches
---      OrderHeader's BillToAddress and ShipToAddress virtual fields from Line1 to
---      DisplayName (#979), sets Product.SubscriptionFamily's form category (#979),
---      normalizes EntityField.Sequence on External Invoices, External Customers,
---      and Outbound Events (#686), and rebuilds vwOrderHeadersGenerated,
---      vwOrderLines, spCreateOrderHeader, and spUpdateOrderHeader.
+-- A wire received on 30 October and entered on 2 November was dated the day it
+-- was entered, its cash entry took that date, and a batch posted 30 October left
+-- it out. Two corrections, one per place a payment is entered:
+--
+--   1. OrderHeader.InitialPaymentReceivedDate. The order's initial payment is
+--      dated from it when set, and from OrderDate when it is NULL (the day it
+--      was dated from before this column existed). OrderEntityServer reads it
+--      once, when it creates the payment at confirm.
+--
+--   2. A captured payment's PaymentDate may change while none of its journal
+--      entries is batched. trg_PaymentHeader_ImmutableAfterCapture (51005) froze
+--      PaymentDate with the rest of a captured payment's money. It is restated
+--      whole from V202610091200 with PaymentDate taken out of 51005, and a new
+--      check, 51033, refuses a PaymentDate change once any entry booked from the
+--      payment (its own, or one of its allocations') is Batched, GLPosted or in a
+--      batch. The application moves those entries to the new day in the same
+--      transaction through Accounting.RedatePendingJournalEntries, which applies
+--      the same rule and the closed-books dates; 51033 is the floor under it.
+--      Every other check is carried forward unchanged.
+--
+-- Entries are matched on LinkedRecordID, the ID of the payment or allocation
+-- that booked them. It is NVARCHAR, so the IDs are compared as text; SQL Server
+-- writes a UNIQUEIDENTIFIER in upper case, and the column's collation is case
+-- insensitive.
 --
 -- Hand-written DDL here is PLAIN: no existence guards. Migrations run once, in order.
 -- =============================================================================
 
--- -----------------------------------------------------------------------------
--- 1. OrderHeader.EngagementLeadUserID (#807)
--- -----------------------------------------------------------------------------
 ALTER TABLE [${flyway:defaultSchema}].[OrderHeader]
-    ADD [EngagementLeadUserID] UNIQUEIDENTIFIER NULL
-    CONSTRAINT [FK_OrderHeader_EngagementLead] FOREIGN KEY REFERENCES [${mjSchema}].[User]([ID]);
+    ADD [InitialPaymentReceivedDate] DATE NULL;
 GO
 
 EXEC sp_addextendedproperty
     @name = N'MS_Description',
-    @value = N'The user responsible for delivering the order''s work (the engagement lead), distinct from SalesRepUserID (who sold it). Optional. Pre-fills AttestedByUserID when progress is recorded and lets the progress worklist filter by delivery owner.',
+    @value = N'The day the initial payment''s money arrived, when it differs from the order''s date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.',
     @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
     @level1type = N'TABLE',  @level1name = N'OrderHeader',
-    @level2type = N'COLUMN', @level2name = N'EngagementLeadUserID';
+    @level2type = N'COLUMN', @level2name = N'InitialPaymentReceivedDate';
 GO
 
 -- -----------------------------------------------------------------------------
--- 2. Drop duplicate index IX_OutboundEvent_OrderHeaderID (#849)
+-- trg_PaymentHeader_ImmutableAfterCapture
 -- -----------------------------------------------------------------------------
-DROP INDEX [IX_OutboundEvent_OrderHeaderID] ON [${flyway:defaultSchema}].[OutboundEvent];
-GO
+CREATE OR ALTER TRIGGER [${flyway:defaultSchema}].[trg_PaymentHeader_ImmutableAfterCapture]
+ON [${flyway:defaultSchema}].[PaymentHeader]
+AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
 
--- -----------------------------------------------------------------------------
--- 3. Align column MS_Description extended properties (#848, #850, #854, #870)
--- -----------------------------------------------------------------------------
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'OrderHeader',
-    @level2type = N'COLUMN', @level2name = N'BillToAddressSnapshot';
-GO
+    -- DELETE: block once captured+ (Pending/Failed payments may be deleted)
+    IF NOT EXISTS (SELECT 1 FROM inserted)
+       AND EXISTS (SELECT 1 FROM deleted WHERE Status IN ('Captured','Refunded','Disputed'))
+    BEGIN
+        THROW 51004, 'Payment cannot be deleted once Captured. Use a reversal payment (Refund/Chargeback) instead.', 1;
+    END;
 
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'OrderHeader',
-    @level2type = N'COLUMN', @level2name = N'ShipToAddressSnapshot';
-GO
+    -- UPDATE: frozen financial fields once the PREVIOUS status was Captured+
+    -- (the capture transition itself may set them in the same statement).
+    -- PaymentDate is checked separately below (51033).
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE d.Status IN ('Captured','Refunded','Disputed')
+          AND (
+            i.Amount               <> d.Amount               OR
+            i.ProcessingFeeAmount  <> d.ProcessingFeeAmount  OR
+            ISNULL(i.NetAmount, 0) <> ISNULL(d.NetAmount, 0) OR
+            i.PaymentTypeID        <> d.PaymentTypeID        OR
+            i.ReceivingCompanyID   <> d.ReceivingCompanyID   OR
+            ISNULL(i.BillToOrganizationID, '00000000-0000-0000-0000-000000000000') <> ISNULL(d.BillToOrganizationID, '00000000-0000-0000-0000-000000000000')
+         OR ISNULL(i.BillToPersonID, '00000000-0000-0000-0000-000000000000') <> ISNULL(d.BillToPersonID, '00000000-0000-0000-0000-000000000000')
+          )
+    )
+    BEGIN
+        THROW 51005, 'Payment financial fields (Amount/Fees/PaymentType/ReceivingCompanyID/Customer) are frozen once Captured. Use a reversal payment.', 1;
+    END;
 
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'The user whose save first confirmed (booked) this order, stamped from that save''s context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ImmutableAfterConfirm, 51017).',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'OrderHeader',
-    @level2type = N'COLUMN', @level2name = N'ConfirmedByUserID';
-GO
+    -- PaymentDate: a captured payment's date moves only while every journal entry
+    -- booked from it or its allocations is still Pending and in no batch.
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE d.Status IN ('Captured','Refunded','Disputed')
+          AND i.PaymentDate <> d.PaymentDate
+          AND EXISTS (
+              SELECT 1
+              FROM [__mj_BizAppsAccounting].[JournalEntry] je
+              WHERE (je.Status <> 'Pending' OR je.JournalEntryBatchID IS NOT NULL)
+                AND (je.LinkedRecordID = CONVERT(NVARCHAR(36), d.ID)
+                     OR je.LinkedRecordID IN (
+                         SELECT CONVERT(NVARCHAR(36), pl.ID)
+                         FROM [${flyway:defaultSchema}].[PaymentLine] pl
+                         WHERE pl.PaymentHeaderID = d.ID))
+          )
+    )
+    BEGIN
+        THROW 51033, 'Payment.PaymentDate cannot change once any of the payment''s journal entries is batched or posted. Cancel the batch first, or use a reversal payment.', 1;
+    END;
 
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'The line''s own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_ImmutableAfterConfirm, 51016).',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'OrderLine',
-    @level2type = N'COLUMN', @level2name = N'ShipToAddressSnapshot';
-GO
+    -- JournalEntryID: never cleared or replaced once set (any status)
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE d.JournalEntryID IS NOT NULL
+          AND (i.JournalEntryID IS NULL OR i.JournalEntryID <> d.JournalEntryID)
+    )
+    BEGIN
+        THROW 51006, 'Payment.JournalEntryID cannot be cleared or replaced once set. Corrections happen via a reversal payment.', 1;
+    END;
 
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'The order the event is about. Set on every OrderConfirmed event, and on a GrantStatusChanged event when the grant has an order line, so deliveries can be read by order.',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'OutboundEvent',
-    @level2type = N'COLUMN', @level2name = N'OrderHeaderID';
-GO
-
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'Days a term''s start or end may move (extension, shortening or shift) before a concession needs approval; smaller moves this rep may grant unaided. NULL means no authority to move term dates, so every term-date concession goes to approval.',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'SalesAuthority',
-    @level2type = N'COLUMN', @level2name = N'MaxTermExtensionDays';
-GO
-
-EXEC sp_updateextendedproperty
-    @name = N'MS_Description',
-    @value = N'Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession. When the renewal moves to a successor product, the carried discount applies to the successor''s list price.',
-    @level0type = N'SCHEMA', @level0name = N'${flyway:defaultSchema}',
-    @level1type = N'TABLE',  @level1name = N'Subscription',
-    @level2type = N'COLUMN', @level2name = N'CarryDiscountOnRenewal';
-GO
-
--- -----------------------------------------------------------------------------
--- 4. JournalEntryType 'InstalmentInvoice' description (#800)
--- -----------------------------------------------------------------------------
-UPDATE [${mjSchema}_BizAppsAccounting].[JournalEntryType]
-SET [Description] = N'Written when one instalment of an order''s payment schedule is invoiced (orders D92): the value entry the order would have booked at confirm, raised instead for that instalment''s share - debiting the receivable and crediting deferred revenue (or the contract asset where revenue was recognised first), with tax, charges and any discount in proportion. Distinct from Order Booking so a report can tell a booking from a bill, which matters once confirmation stops booking the whole contract. Seeded by bizapps-orders because the EVENT is an orders concept - accounting seeds only the ledger-mechanics types it originates itself.',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = 'B2791781-FBBE-419F-9329-933E2223135B';
+    -- Status may not regress out of a terminal/locked state
+    IF EXISTS (
+        SELECT 1
+        FROM deleted d
+        JOIN inserted i ON i.ID = d.ID
+        WHERE (d.Status = 'Captured'  AND i.Status IN ('Pending','Failed'))
+           OR (d.Status = 'Refunded'  AND i.Status <> 'Refunded')
+           OR (d.Status = 'Disputed'  AND i.Status NOT IN ('Disputed','Refunded'))
+    )
+    BEGIN
+        THROW 51007, 'Payment.Status cannot regress (Captured may only advance to Refunded/Disputed; Refunded is terminal).', 1;
+    END;
+END;
 GO
 
 
@@ -161,12 +180,15 @@ GO
 
 
 -- =============================================================================
--- CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE. DO NOT EDIT BY HAND.
+--
+--   CODEGEN OUTPUT — GENERATED CODE BELOW THIS LINE (do not hand-edit)
+--
 -- =============================================================================
 
-/* SQL text to insert new entity field(s) */
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '32f0e917-9c14-4d4a-9d63-7410f302c941' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'EngagementLeadUserID')) BEGIN
+/* SQL text to insert 1 new entity field(s) */
+
+      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '853f1f38-bfbf-44ab-874c-14ea3b9c7fc7' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'InitialPaymentReceivedDate')) BEGIN
          INSERT INTO [${mjSchema}].[EntityField]
          (
             [ID],
@@ -199,84 +221,21 @@ GO
          )
          VALUES
          (
-            '32f0e917-9c14-4d4a-9d63-7410f302c941',
+            '853f1f38-bfbf-44ab-874c-14ea3b9c7fc7',
             'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
             (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
-            'EngagementLeadUserID',
-            'Engagement Lead',
-            'The user responsible for delivering the order''s work (the engagement lead), distinct from SalesRepUserID (who sold it). Optional. Pre-fills AttestedByUserID when progress is recorded and lets the progress worklist filter by delivery owner.',
-            'uniqueidentifier',
-            16,
-            0,
-            0,
-            1,
-            NULL,
-            0,
-            1,
-            0,
-            0,
-            'E1238F34-2837-EF11-86D4-6045BDEE16E6',
-            'ID',
-            0,
-            0,
-            1,
-            0,
-            0,
-            0,
-            'Search',
-            GETUTCDATE(),
-            GETUTCDATE()
-         )
-      END;
-
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = '82c81b92-450b-4489-9311-623930a54f12' OR (EntityID = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B' AND Name = 'EngagementLeadUser')) BEGIN
-         INSERT INTO [${mjSchema}].[EntityField]
-         (
-            [ID],
-            [EntityID],
-            [Sequence],
-            [Name],
-            [DisplayName],
-            [Description],
-            [Type],
-            [Length],
-            [Precision],
-            [Scale],
-            [AllowsNull],
-            [DefaultValue],
-            [AutoIncrement],
-            [AllowUpdateAPI],
-            [IsVirtual],
-            [IsComputed],
-            [RelatedEntityID],
-            [RelatedEntityFieldName],
-            [IsNameField],
-            [IncludeInUserSearchAPI],
-            [IncludeRelatedEntityNameFieldInBaseView],
-            [DefaultInView],
-            [IsPrimaryKey],
-            [IsUnique],
-            [RelatedEntityDisplayType],
-            [__mj_CreatedAt],
-            [__mj_UpdatedAt]
-         )
-         VALUES
-         (
-            '82c81b92-450b-4489-9311-623930a54f12',
-            'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Entity: MJ_BizApps_Orders: Order Headers
-            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = 'FC529BC8-FF09-44A9-B454-26EAFDAC791B'),
-            'EngagementLeadUser',
-            'Engagement Lead Name',
-            NULL,
-            'nvarchar',
-            200,
-            0,
+            'InitialPaymentReceivedDate',
+            'Initial Payment Received Date',
+            'The day the initial payment''s money arrived, when it differs from the order''s date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.',
+            'date',
+            3,
+            10,
             0,
             1,
             NULL,
             0,
-            0,
             1,
+            0,
             0,
             NULL,
             NULL,
@@ -292,191 +251,158 @@ GO
          )
       END;
 
-      IF NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityField] WHERE ID = 'd92a4c71-8812-437e-9b55-642718c34011' OR (EntityID = '66D82C24-9C9F-4CD6-B019-53C20274AB00' AND Name = 'ShipToAddress')) BEGIN
-         INSERT INTO [${mjSchema}].[EntityField]
-         (
-            [ID],
-            [EntityID],
-            [Sequence],
-            [Name],
-            [DisplayName],
-            [Description],
-            [Type],
-            [Length],
-            [Precision],
-            [Scale],
-            [AllowsNull],
-            [DefaultValue],
-            [AutoIncrement],
-            [AllowUpdateAPI],
-            [IsVirtual],
-            [IsComputed],
-            [RelatedEntityID],
-            [RelatedEntityFieldName],
-            [IsNameField],
-            [IncludeInUserSearchAPI],
-            [IncludeRelatedEntityNameFieldInBaseView],
-            [DefaultInView],
-            [IsPrimaryKey],
-            [IsUnique],
-            [RelatedEntityDisplayType],
-            [__mj_CreatedAt],
-            [__mj_UpdatedAt]
-         )
-         VALUES
-         (
-            'd92a4c71-8812-437e-9b55-642718c34011',
-            '66D82C24-9C9F-4CD6-B019-53C20274AB00', -- Entity: MJ_BizApps_Orders: Order Lines
-            (SELECT COALESCE(MAX([Sequence]), 0) + 1 FROM [${mjSchema}].[EntityField] WHERE [EntityID] = '66D82C24-9C9F-4CD6-B019-53C20274AB00'),
-            'ShipToAddress',
-            'Ship To Address Name',
-            NULL,
-            'nvarchar',
-            800,
-            0,
-            0,
-            1,
-            NULL,
-            0,
-            0,
-            1,
-            0,
-            NULL,
-            NULL,
-            0,
-            0,
-            0,
-            0,
-            0,
-            0,
-            'Search',
-            GETUTCDATE(),
-            GETUTCDATE()
-         )
-      END;
-
-/* Create Entity Relationship: MJ: Users -> MJ_BizApps_Orders: Order Headers (One To Many via EngagementLeadUserID) */
-   IF NOT EXISTS (
-      SELECT 1 FROM [${mjSchema}].[EntityRelationship] WHERE [ID] = '61f9a24c-779d-4c88-9015-994b5d1249a3'
-   )
-   BEGIN
-      INSERT INTO [${mjSchema}].[EntityRelationship] ([ID], [EntityID], [RelatedEntityID], [RelatedEntityJoinField], [Type], [BundleInAPI], [DisplayInForm], [Sequence], [__mj_CreatedAt], [__mj_UpdatedAt])
-                    VALUES ('61f9a24c-779d-4c88-9015-994b5d1249a3', 'E1238F34-2837-EF11-86D4-6045BDEE16E6', 'FC529BC8-FF09-44A9-B454-26EAFDAC791B', 'EngagementLeadUserID', 'One To Many', 1, 1, 122, GETUTCDATE(), GETUTCDATE())
-   END;
-
-/* Index for the EngagementLeadUserID foreign key */
+/* Index for Foreign Keys for OrderHeader */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: Index for Foreign Keys
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+-- Index for foreign key CompanyID in table OrderHeader
 IF NOT EXISTS (
     SELECT 1
     FROM sys.indexes
-    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_EngagementLeadUserID'
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_CompanyID' 
     AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
 )
-CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_EngagementLeadUserID ON [${flyway:defaultSchema}].[OrderHeader] ([EngagementLeadUserID]);
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_CompanyID ON [${flyway:defaultSchema}].[OrderHeader] ([CompanyID]);
 
-/* Update EntityField RelatedEntityNameFieldMap */
-EXEC [${mjSchema}].[spUpdateEntityFieldRelatedEntityNameFieldMap] @EntityFieldID='32F0E917-9C14-4D4A-9D63-7410F302C941', @RelatedEntityNameFieldMap='EngagementLeadUser';
-
-/* Link OrderLine.ShipToAddressID to MJ_BizApps_Common: Addresses (#851) */
-UPDATE [${mjSchema}].[EntityField]
-SET [RelatedEntityID] = '61B5C6FB-7317-46D1-8E05-F669B7BC6F3E',
-    [RelatedEntityFieldName] = 'ID',
-    [IncludeRelatedEntityNameFieldInBaseView] = 1,
-    [RelatedEntityNameFieldMap] = 'ShipToAddress',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = 'B81F4205-3E9D-49C5-B76D-6EB25B0EFA26';
-
-/* Update OrderHeader BillToAddress and ShipToAddress virtual field length to match Address.DisplayName (#979) */
-UPDATE [${mjSchema}].[EntityField]
-SET [Length] = 800,
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] IN ('A5A7DFCD-E18F-4D44-800D-52CE4339331E', 'A60F3EE4-CDFB-411D-84AA-821FDFC51138');
-
-/* Sync EntityField descriptions with column MS_Description updates (#848, #850, #854, #870) */
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'The bill-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = '4BEC4999-721D-423A-B88B-2076F475BB39';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'The ship-to address as it was when the order was first confirmed: JSON with AddressID, Line1, Line2, Line3, City, StateProvince, PostalCode and Country. NULL until the order is confirmed. Written once and never changed (trg_OrderHeader_ImmutableAfterConfirm, 51015). Reporting and invoicing read this on a confirmed order instead of the live Address row.',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = 'F9F37487-78B3-4E0C-8F74-046EFBA959A8';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'The user whose save first confirmed (booked) this order, stamped from that save''s context user in the same write as ConfirmedAt. A booking made by an unattended process, such as a renewal job, records the user that process runs as. NULL until the order is confirmed, and NULL on orders confirmed before this column existed, whose confirmer is not known. Never changes once ConfirmedAt is set (trg_OrderHeader_ImmutableAfterConfirm, 51017).',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = '75B6D86F-A9E6-4802-95E1-713CFB4951D2';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'The line''s own ship-to address as it was when the order was first confirmed, in the same JSON shape as OrderHeader.ShipToAddressSnapshot. NULL when the line has no ShipToAddressID of its own, or until the order is confirmed. Written once and never changed (trg_OrderLine_ImmutableAfterConfirm, 51016).',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = '0A8DE5AA-338D-4963-A8E5-B50D814364F8';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'The order the event is about. Set on every OrderConfirmed event, and on a GrantStatusChanged event when the grant has an order line, so deliveries can be read by order.',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [EntityID] = '154DCE03-C019-43B0-B293-1E6D93E303A2' AND [Name] = 'OrderHeaderID';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'Days a term''s start or end may move (extension, shortening or shift) before a concession needs approval; smaller moves this rep may grant unaided. NULL means no authority to move term dates, so every term-date concession goes to approval.',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = 'B7B46B1E-48DD-409E-8C4B-2549C02DB7EB';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Description] = N'Whether the discount on the term being renewed carries into the renewal. Off by default: a first-term discount lapses and the renewal starts from the undiscounted price. Set it for a discount agreed to continue, such as a multi-year concession. When the renewal moves to a successor product, the carried discount applies to the successor''s list price.',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = 'F2D0FF66-5730-4F55-987A-254FC1FC70FC';
-
-/* Set categories for new and uncategorized fields (#807, #851, #979) */
-UPDATE [${mjSchema}].[EntityField]
-SET [Category] = 'Customer Information',
-    [GeneratedFormSection] = 'Category',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] IN ('32F0E917-9C14-4D4A-9D63-7410F302C941', '82C81B92-450B-4489-9311-623930A54F12');
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Category] = 'Shipping Details',
-    [GeneratedFormSection] = 'Category',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = 'D92A4C71-8812-437E-9B55-642718C34011';
-
-UPDATE [${mjSchema}].[EntityField]
-SET [Category] = 'Subscription and Entitlements',
-    [GeneratedFormSection] = 'Category',
-    [__mj_UpdatedAt] = GETUTCDATE()
-WHERE [ID] = '19744BA4-2E43-4DA1-B2CB-5C40DD122969';
-
-/* Normalize EntityField.Sequence (1..N, non-virtual before virtual) (#686) */
-UPDATE [${mjSchema}].[EntityField]
-SET [Sequence] = [Sequence] + 200000
-WHERE [EntityID] IN (
-    '9915A9E7-6BC6-4518-BAEA-206B18C86622', -- External Invoices
-    '6F739DCD-46E0-44A1-9A94-51E4E6E849FF', -- External Customers
-    '154DCE03-C019-43B0-B293-1E6D93E303A2', -- Outbound Events
-    'FC529BC8-FF09-44A9-B454-26EAFDAC791B', -- Order Headers
-    '66D82C24-9C9F-4CD6-B019-53C20274AB00'  -- Order Lines
-);
-
-WITH RankedFields AS (
-    SELECT [ID],
-           ROW_NUMBER() OVER (
-               PARTITION BY [EntityID]
-               ORDER BY [IsVirtual] ASC, [Sequence] ASC, [ID] ASC
-           ) AS [NewSeq]
-    FROM [${mjSchema}].[EntityField]
-    WHERE [EntityID] IN (
-        '9915A9E7-6BC6-4518-BAEA-206B18C86622',
-        '6F739DCD-46E0-44A1-9A94-51E4E6E849FF',
-        '154DCE03-C019-43B0-B293-1E6D93E303A2',
-        'FC529BC8-FF09-44A9-B454-26EAFDAC791B',
-        '66D82C24-9C9F-4CD6-B019-53C20274AB00'
-    )
+-- Index for foreign key BillToPersonID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_BillToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
 )
-UPDATE ef
-SET ef.[Sequence] = rf.[NewSeq]
-FROM [${mjSchema}].[EntityField] ef
-INNER JOIN RankedFields rf ON rf.[ID] = ef.[ID];
-GO
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_BillToPersonID ON [${flyway:defaultSchema}].[OrderHeader] ([BillToPersonID]);
+
+-- Index for foreign key BillToOrganizationID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_BillToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_BillToOrganizationID ON [${flyway:defaultSchema}].[OrderHeader] ([BillToOrganizationID]);
+
+-- Index for foreign key SalesRepUserID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_SalesRepUserID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_SalesRepUserID ON [${flyway:defaultSchema}].[OrderHeader] ([SalesRepUserID]);
+
+-- Index for foreign key BillToAddressID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_BillToAddressID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_BillToAddressID ON [${flyway:defaultSchema}].[OrderHeader] ([BillToAddressID]);
+
+-- Index for foreign key ShipToAddressID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ShipToAddressID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ShipToAddressID ON [${flyway:defaultSchema}].[OrderHeader] ([ShipToAddressID]);
+
+-- Index for foreign key ShipToOrganizationID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ShipToOrganizationID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ShipToOrganizationID ON [${flyway:defaultSchema}].[OrderHeader] ([ShipToOrganizationID]);
+
+-- Index for foreign key ShipToPersonID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ShipToPersonID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ShipToPersonID ON [${flyway:defaultSchema}].[OrderHeader] ([ShipToPersonID]);
+
+-- Index for foreign key PaymentTermsTypeID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_PaymentTermsTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_PaymentTermsTypeID ON [${flyway:defaultSchema}].[OrderHeader] ([PaymentTermsTypeID]);
+
+-- Index for foreign key InitialPaymentTypeID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentTypeID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentTypeID ON [${flyway:defaultSchema}].[OrderHeader] ([InitialPaymentTypeID]);
+
+-- Index for foreign key InitialPaymentDetailID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentDetailID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_InitialPaymentDetailID ON [${flyway:defaultSchema}].[OrderHeader] ([InitialPaymentDetailID]);
+
+-- Index for foreign key PostedByUserID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_PostedByUserID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_PostedByUserID ON [${flyway:defaultSchema}].[OrderHeader] ([PostedByUserID]);
+
+-- Index for foreign key ReversesOrderHeaderID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ReversesOrderHeaderID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ReversesOrderHeaderID ON [${flyway:defaultSchema}].[OrderHeader] ([ReversesOrderHeaderID]);
+
+-- Index for foreign key ApprovalTaskID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ApprovalTaskID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ApprovalTaskID ON [${flyway:defaultSchema}].[OrderHeader] ([ApprovalTaskID]);
+
+-- Index for foreign key SourceCheckoutWidgetID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_SourceCheckoutWidgetID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_SourceCheckoutWidgetID ON [${flyway:defaultSchema}].[OrderHeader] ([SourceCheckoutWidgetID]);
+
+-- Index for foreign key ConfirmedByUserID in table OrderHeader
+IF NOT EXISTS (
+    SELECT 1
+    FROM sys.indexes
+    WHERE name = 'IDX_AUTO_MJ_FKEY_OrderHeader_ConfirmedByUserID' 
+    AND object_id = OBJECT_ID('[${flyway:defaultSchema}].[OrderHeader]')
+)
+CREATE INDEX IDX_AUTO_MJ_FKEY_OrderHeader_ConfirmedByUserID ON [${flyway:defaultSchema}].[OrderHeader] ([ConfirmedByUserID]);
 
 /* Base View SQL for MJ_BizApps_Orders: Order Headers */
 -----------------------------------------------------------------
@@ -520,8 +446,7 @@ SELECT
     ${mjSchema}_emb_BillToAddressID.[Latitude] AS [${mjSchema}_Latitude_BillToAddressID],
     ${mjSchema}_emb_BillToAddressID.[Longitude] AS [${mjSchema}_Longitude_BillToAddressID],
     ${mjSchema}_emb_ShipToAddressID.[Latitude] AS [${mjSchema}_Latitude_ShipToAddressID],
-    ${mjSchema}_emb_ShipToAddressID.[Longitude] AS [${mjSchema}_Longitude_ShipToAddressID],
-    MJUser_EngagementLeadUserID.[Name] AS [EngagementLeadUser]
+    ${mjSchema}_emb_ShipToAddressID.[Longitude] AS [${mjSchema}_Longitude_ShipToAddressID]
 FROM
     [${flyway:defaultSchema}].[OrderHeader] AS o
 INNER JOIN
@@ -592,12 +517,7 @@ LEFT OUTER JOIN
     [${mjSchema}_BizAppsCommon].[Address] AS ${mjSchema}_emb_ShipToAddressID
   ON
     [o].[ShipToAddressID] = ${mjSchema}_emb_ShipToAddressID.[ID]
-LEFT OUTER JOIN
-    [${mjSchema}].[User] AS MJUser_EngagementLeadUserID
-  ON
-    [o].[EngagementLeadUserID] = MJUser_EngagementLeadUserID.[ID]
 GO
-
 IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeaders]', 'V') IS NOT NULL
 BEGIN
     EXEC sp_executesql N'REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] FROM [cdp_Developer]
@@ -606,12 +526,23 @@ REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] FROM [cdp_UI]
 GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration]';
 END;
 
-EXEC sp_refreshview '${flyway:defaultSchema}.vwOrderHeadersGenerated';
+/* Base View Permissions SQL for MJ_BizApps_Orders: Order Headers */
+-----------------------------------------------------------------
+-- SQL Code Generation
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: Permissions for vwOrderHeaders
+--
+-- This was generated by the MemberJunction CodeGen tool.
+-- This file should NOT be edited by hand.
+-----------------------------------------------------------------
+
 IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeaders]', 'V') IS NOT NULL
 BEGIN
-    EXEC sp_executesql N'EXEC sp_refreshview ''${flyway:defaultSchema}.vwOrderHeaders'';';
+    EXEC sp_executesql N'REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] FROM [cdp_Developer]
+REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] FROM [cdp_Integration]
+REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] FROM [cdp_UI]
+GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderHeaders] TO [cdp_UI], [cdp_Developer], [cdp_Integration]';
 END;
-GO
 
 /* spCreate SQL for MJ_BizApps_Orders: Order Headers */
 -----------------------------------------------------------------
@@ -699,8 +630,8 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spCreateOrderHeader]
     @IPCountry char(2) = NULL,
     @CardIssuingCountry_Clear bit = 0,
     @CardIssuingCountry char(2) = NULL,
-    @EngagementLeadUserID_Clear bit = 0,
-    @EngagementLeadUserID uniqueidentifier = NULL
+    @InitialPaymentReceivedDate_Clear bit = 0,
+    @InitialPaymentReceivedDate date = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -750,7 +681,7 @@ BEGIN
                 [ConfirmedByUserID],
                 [IPCountry],
                 [CardIssuingCountry],
-                [EngagementLeadUserID]
+                [InitialPaymentReceivedDate]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
         VALUES
@@ -794,7 +725,7 @@ BEGIN
                 CASE WHEN @ConfirmedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@ConfirmedByUserID, NULL) END,
                 CASE WHEN @IPCountry_Clear = 1 THEN NULL ELSE ISNULL(@IPCountry, NULL) END,
                 CASE WHEN @CardIssuingCountry_Clear = 1 THEN NULL ELSE ISNULL(@CardIssuingCountry, NULL) END,
-                CASE WHEN @EngagementLeadUserID_Clear = 1 THEN NULL ELSE ISNULL(@EngagementLeadUserID, NULL) END
+                CASE WHEN @InitialPaymentReceivedDate_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentReceivedDate, NULL) END
             )
     END
     ELSE
@@ -840,7 +771,7 @@ BEGIN
                 [ConfirmedByUserID],
                 [IPCountry],
                 [CardIssuingCountry],
-                [EngagementLeadUserID]
+                [InitialPaymentReceivedDate]
             )
         OUTPUT INSERTED.[ID] INTO @InsertedRow
         VALUES
@@ -883,13 +814,19 @@ BEGIN
                 CASE WHEN @ConfirmedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@ConfirmedByUserID, NULL) END,
                 CASE WHEN @IPCountry_Clear = 1 THEN NULL ELSE ISNULL(@IPCountry, NULL) END,
                 CASE WHEN @CardIssuingCountry_Clear = 1 THEN NULL ELSE ISNULL(@CardIssuingCountry, NULL) END,
-                CASE WHEN @EngagementLeadUserID_Clear = 1 THEN NULL ELSE ISNULL(@EngagementLeadUserID, NULL) END
+                CASE WHEN @InitialPaymentReceivedDate_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentReceivedDate, NULL) END
             )
     END
     -- return the new record from the base view, which might have some calculated fields
     SELECT * FROM [${flyway:defaultSchema}].[vwOrderHeaders] WHERE [ID] = (SELECT [ID] FROM @InsertedRow)
 END
 GO
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] FROM [cdp_Developer]
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] FROM [cdp_Integration]
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spCreate Permissions for MJ_BizApps_Orders: Order Headers */
+
 REVOKE EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] FROM [cdp_Developer]
 REVOKE EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] FROM [cdp_Integration]
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spCreateOrderHeader] TO [cdp_Developer], [cdp_Integration];
@@ -980,8 +917,8 @@ CREATE PROCEDURE [${flyway:defaultSchema}].[spUpdateOrderHeader]
     @IPCountry char(2) = NULL,
     @CardIssuingCountry_Clear bit = 0,
     @CardIssuingCountry char(2) = NULL,
-    @EngagementLeadUserID_Clear bit = 0,
-    @EngagementLeadUserID uniqueidentifier = NULL
+    @InitialPaymentReceivedDate_Clear bit = 0,
+    @InitialPaymentReceivedDate date = NULL
 AS
 BEGIN
     SET NOCOUNT ON;
@@ -1026,7 +963,7 @@ BEGIN
         [ConfirmedByUserID] = CASE WHEN @ConfirmedByUserID_Clear = 1 THEN NULL ELSE ISNULL(@ConfirmedByUserID, [ConfirmedByUserID]) END,
         [IPCountry] = CASE WHEN @IPCountry_Clear = 1 THEN NULL ELSE ISNULL(@IPCountry, [IPCountry]) END,
         [CardIssuingCountry] = CASE WHEN @CardIssuingCountry_Clear = 1 THEN NULL ELSE ISNULL(@CardIssuingCountry, [CardIssuingCountry]) END,
-        [EngagementLeadUserID] = CASE WHEN @EngagementLeadUserID_Clear = 1 THEN NULL ELSE ISNULL(@EngagementLeadUserID, [EngagementLeadUserID]) END
+        [InitialPaymentReceivedDate] = CASE WHEN @InitialPaymentReceivedDate_Clear = 1 THEN NULL ELSE ISNULL(@InitialPaymentReceivedDate, [InitialPaymentReceivedDate]) END
     WHERE
         [ID] = @ID
 
@@ -1037,11 +974,12 @@ BEGIN
     ELSE
         -- Return the updated record so the caller can see the updated values and any calculated fields
         SELECT
-            *
-        FROM
-            [${flyway:defaultSchema}].[vwOrderHeaders]
-        WHERE
-            [ID] = @ID
+                                        *
+                                    FROM
+                                        [${flyway:defaultSchema}].[vwOrderHeaders]
+                                    WHERE
+                                        [ID] = @ID
+                                    
 END
 GO
 
@@ -1050,104 +988,96 @@ REVOKE EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] FROM [cdp_Inte
 GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] TO [cdp_Developer], [cdp_Integration]
 GO
 
-/* Base View SQL for MJ_BizApps_Orders: Order Lines */
+------------------------------------------------------------
+----- TRIGGER FOR __mj_UpdatedAt field for the OrderHeader table
+------------------------------------------------------------
+IF OBJECT_ID('[${flyway:defaultSchema}].[trgUpdateOrderHeader]', 'TR') IS NOT NULL
+    DROP TRIGGER [${flyway:defaultSchema}].[trgUpdateOrderHeader];
+GO
+CREATE TRIGGER [${flyway:defaultSchema}].trgUpdateOrderHeader
+ON [${flyway:defaultSchema}].[OrderHeader]
+AFTER UPDATE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    UPDATE
+        [${flyway:defaultSchema}].[OrderHeader]
+    SET
+        __mj_UpdatedAt = GETUTCDATE()
+    FROM
+        [${flyway:defaultSchema}].[OrderHeader] AS _organicTable
+    INNER JOIN
+        INSERTED AS I ON
+        _organicTable.[ID] = I.[ID];
+END;
+GO
+
+/* spUpdate Permissions for MJ_BizApps_Orders: Order Headers */
+
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] FROM [cdp_Developer]
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] FROM [cdp_Integration]
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spUpdateOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete SQL for MJ_BizApps_Orders: Order Headers */
 -----------------------------------------------------------------
 -- SQL Code Generation
--- Entity: MJ_BizApps_Orders: Order Lines
--- Item: vwOrderLines
+-- Entity: MJ_BizApps_Orders: Order Headers
+-- Item: spDeleteOrderHeader
 --
 -- This was generated by the MemberJunction CodeGen tool.
 -- This file should NOT be edited by hand.
 -----------------------------------------------------------------
 
 ------------------------------------------------------------
------ BASE VIEW FOR ENTITY:      MJ_BizApps_Orders: Order Lines
------               SCHEMA:      ${flyway:defaultSchema}
------               BASE TABLE:  OrderLine
------               PRIMARY KEY: ID
+----- DELETE PROCEDURE FOR OrderHeader
 ------------------------------------------------------------
-IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderLines]', 'V') IS NOT NULL
-    DROP VIEW [${flyway:defaultSchema}].[vwOrderLines];
+IF OBJECT_ID('[${flyway:defaultSchema}].[spDeleteOrderHeader]', 'P') IS NOT NULL
+    DROP PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderHeader];
 GO
 
-CREATE VIEW [${flyway:defaultSchema}].[vwOrderLines]
+CREATE PROCEDURE [${flyway:defaultSchema}].[spDeleteOrderHeader]
+    @ID uniqueidentifier
 AS
-SELECT
-    o.*,
-    mjBizAppsOrdersOrderHeader_OrderHeaderID.[OrderNumber] AS [OrderHeader],
-    mjBizAppsOrdersProduct_ProductID.[Name] AS [Product],
-    MJCompany_CompanyID.[Name] AS [Company],
-    mjBizAppsOrdersProductPrice_ProductPriceID.[Name] AS [ProductPrice],
-    mjBizAppsCommonOrganization_ShipToOrganizationID.[Name] AS [ShipToOrganization],
-    mjBizAppsCommonPerson_ShipToPersonID.[DisplayName] AS [ShipToPerson],
-    mjBizAppsOrdersProduct_SourceBundleProductID.[Name] AS [SourceBundleProduct],
-    mjBizAppsOrdersSubscription_SubscriptionID.[SubscriptionNumber] AS [Subscription],
-    mjBizAppsAccountingJournalEntry_JournalEntryID.[EntryNumber] AS [JournalEntry],
-    mjBizAppsAccountingDimension_DimensionID.[Name] AS [Dimension],
-    mjBizAppsAccountingDimensionValue_DimensionValueID.[Name] AS [DimensionValue],
-    hier_ParentOrderLineID.RootID AS [RootParentOrderLineID],
-    hier_ParentOrderLineID.Depth AS [ParentOrderLineIDDepth],
-    hier_ParentOrderLineID.Path AS [ParentOrderLineIDPath],
-    hier_ParentOrderLineID.IsLeaf AS [ParentOrderLineIDIsLeaf],
-    hier_ParentOrderLineID.ChildCount AS [ParentOrderLineIDChildCount],
-    mjBizAppsCommonAddress_ShipToAddressID.[DisplayName] AS [ShipToAddress]
-FROM
-    [${flyway:defaultSchema}].[OrderLine] AS o
-INNER JOIN
-    [${flyway:defaultSchema}].[OrderHeader] AS mjBizAppsOrdersOrderHeader_OrderHeaderID
-  ON
-    [o].[OrderHeaderID] = mjBizAppsOrdersOrderHeader_OrderHeaderID.[ID]
-INNER JOIN
-    [${flyway:defaultSchema}].[Product] AS mjBizAppsOrdersProduct_ProductID
-  ON
-    [o].[ProductID] = mjBizAppsOrdersProduct_ProductID.[ID]
-INNER JOIN
-    [${mjSchema}].[Company] AS MJCompany_CompanyID
-  ON
-    [o].[CompanyID] = MJCompany_CompanyID.[ID]
-LEFT OUTER JOIN
-    [${flyway:defaultSchema}].[ProductPrice] AS mjBizAppsOrdersProductPrice_ProductPriceID
-  ON
-    [o].[ProductPriceID] = mjBizAppsOrdersProductPrice_ProductPriceID.[ID]
-LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[Organization] AS mjBizAppsCommonOrganization_ShipToOrganizationID
-  ON
-    [o].[ShipToOrganizationID] = mjBizAppsCommonOrganization_ShipToOrganizationID.[ID]
-LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[Person] AS mjBizAppsCommonPerson_ShipToPersonID
-  ON
-    [o].[ShipToPersonID] = mjBizAppsCommonPerson_ShipToPersonID.[ID]
-LEFT OUTER JOIN
-    [${flyway:defaultSchema}].[Product] AS mjBizAppsOrdersProduct_SourceBundleProductID
-  ON
-    [o].[SourceBundleProductID] = mjBizAppsOrdersProduct_SourceBundleProductID.[ID]
-LEFT OUTER JOIN
-    [${flyway:defaultSchema}].[Subscription] AS mjBizAppsOrdersSubscription_SubscriptionID
-  ON
-    [o].[SubscriptionID] = mjBizAppsOrdersSubscription_SubscriptionID.[ID]
-LEFT OUTER JOIN
-    [${mjSchema}_BizAppsAccounting].[JournalEntry] AS mjBizAppsAccountingJournalEntry_JournalEntryID
-  ON
-    [o].[JournalEntryID] = mjBizAppsAccountingJournalEntry_JournalEntryID.[ID]
-LEFT OUTER JOIN
-    [${mjSchema}_BizAppsAccounting].[Dimension] AS mjBizAppsAccountingDimension_DimensionID
-  ON
-    [o].[DimensionID] = mjBizAppsAccountingDimension_DimensionID.[ID]
-LEFT OUTER JOIN
-    [${mjSchema}_BizAppsAccounting].[DimensionValue] AS mjBizAppsAccountingDimensionValue_DimensionValueID
-  ON
-    [o].[DimensionValueID] = mjBizAppsAccountingDimensionValue_DimensionValueID.[ID]
-OUTER APPLY
-    [${flyway:defaultSchema}].[fnOrderLineParentOrderLineID_GetHierarchyMeta]([o].[ID], [o].[ParentOrderLineID]) AS hier_ParentOrderLineID
-LEFT OUTER JOIN
-    [${mjSchema}_BizAppsCommon].[Address] AS mjBizAppsCommonAddress_ShipToAddressID
-  ON
-    [o].[ShipToAddressID] = mjBizAppsCommonAddress_ShipToAddressID.[ID]
-GO
-REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderLines] FROM [cdp_Developer]
-REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderLines] FROM [cdp_Integration]
-REVOKE SELECT ON [${flyway:defaultSchema}].[vwOrderLines] FROM [cdp_UI]
-GRANT SELECT ON [${flyway:defaultSchema}].[vwOrderLines] TO [cdp_UI], [cdp_Developer], [cdp_Integration];
+BEGIN
+    SET NOCOUNT ON;
 
-EXEC sp_refreshview '${flyway:defaultSchema}.vwOrderLines';
+    DELETE FROM
+        [${flyway:defaultSchema}].[OrderHeader]
+    WHERE
+        [ID] = @ID
+
+
+    -- Check if the delete was successful
+    IF @@ROWCOUNT = 0
+        SELECT NULL AS [ID] -- Return NULL for all primary key fields to indicate no record was deleted
+    ELSE
+        SELECT @ID AS [ID] -- Return the primary key values to indicate we successfully deleted the record
+END
 GO
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Developer]
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Integration]
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* spDelete Permissions for MJ_BizApps_Orders: Order Headers */
+
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Developer]
+REVOKE EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] FROM [cdp_Integration]
+GRANT EXECUTE ON [${flyway:defaultSchema}].[spDeleteOrderHeader] TO [cdp_Developer], [cdp_Integration];
+
+/* Set categories for 1 fields */
+
+-- UPDATE Entity Field Category Info MJ_BizApps_Orders: Order Headers.InitialPaymentReceivedDate 
+UPDATE [${mjSchema}].[EntityField]
+SET 
+   Category = 'Financial Summary',
+   GeneratedFormSection = 'Category'
+WHERE 
+   ID = '853F1F38-BFBF-44AB-874C-14EA3B9C7FC7';
+
+/* Refresh custom base views for modified entities so schema changes are picked up */
+EXEC sp_refreshview '${flyway:defaultSchema}.vwOrderHeadersGenerated';
+IF OBJECT_ID('[${flyway:defaultSchema}].[vwOrderHeaders]', 'V') IS NOT NULL
+BEGIN
+    EXEC sp_executesql N'EXEC sp_refreshview ''${flyway:defaultSchema}.vwOrderHeaders'';';
+END;
+

@@ -34,8 +34,21 @@
                 [Product]="Product"
                 [EditMode]="EditMode"
                 [FormContext]="FormContext"
-                (Navigate)="Navigate.emit($event)">
+                (Navigate)="Navigate.emit($event)"
+                (LinksChanged)="effective.Refresh()">
             </bizapps-product-gl-links>
+        </div>
+    </div>
+
+    <!--
+        golive#439 — which account each role ACTUALLY books to, and from where: the product, its
+        category and parents, its product type, or the company default. The panel above lists only the
+        product's own links; this one asks the server's walk, so it shows what confirm will use.
+    -->
+    <div class="mjo-acct-card">
+        <div class="mjo-card-body">
+            <bizapps-product-effective-gl-accounts #effective [Product]="Product">
+            </bizapps-product-effective-gl-accounts>
         </div>
     </div>
 

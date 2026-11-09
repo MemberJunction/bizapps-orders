@@ -105,28 +105,24 @@
                     </div>
                     <div class="mjo-card__body">
                         <div class="mjo-ph-fields-stack">
-                            <mj-form-field
+                            <bizapps-party-field
                                 [Record]="record"
                                 [ShowLabel]="true"
-                                DisplayNameOverride="Organization"
                                 FieldName="BillToOrganizationID"
-                                Type="textbox"
-                                LinkType="Record"
+                                Kind="Organization"
                                 [EditMode]="ComposeMode"
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()">
-                            </mj-form-field>
-                            <mj-form-field
+                            </bizapps-party-field>
+                            <bizapps-party-field
                                 [Record]="record"
                                 [ShowLabel]="true"
-                                DisplayNameOverride="Person"
                                 FieldName="BillToPersonID"
-                                Type="textbox"
-                                LinkType="Record"
+                                Kind="Person"
                                 [EditMode]="ComposeMode"
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event); OnPayerSelectionChanged()">
-                            </mj-form-field>
+                            </bizapps-party-field>
                         </div>
                         @if (hasPayer) {
                             <div class="mjo-payer-chip">
@@ -175,6 +171,10 @@
                                 [FormContext]="formContext"
                                 (Navigate)="OnFormNavigate($event)">
                             </mj-form-field>
+                            <!-- bc-aidp-next-golive#448: finance corrects a captured payment's date; its entries move with it. -->
+                            @if (!ComposeMode) {
+                                <mjo-change-payment-date [Payment]="record" (Changed)="OnPaymentDateChanged()"></mjo-change-payment-date>
+                            }
 
                             <div class="mjo-field">
                                 <label class="mjo-label">Payment Type <span class="mjo-required-mark" title="Required to capture and book">*</span></label>
@@ -203,7 +203,7 @@
                             </div>
 
                             <!-- TENDER-SPECIFIC INSTRUMENT CAPTURE (PaymentDetail) -->
-                            @if (PaymentTypeCode === 'check') {
+                            @if (InstrumentPanel === 'check') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-money-check"></i> Check details
@@ -223,7 +223,7 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (PaymentTypeCode === 'ach') {
+                            } @else if (InstrumentPanel === 'ach') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-building-columns"></i> Bank transfer / ACH details
@@ -255,7 +255,19 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (PaymentTypeCode === 'card' || RequiresInstrument) {
+                            } @else if (InstrumentPanel === 'giftcard') {
+                                <div class="mjo-instrument-box">
+                                    <div class="mjo-instrument-box__title">
+                                        <i class="fa-solid fa-gift"></i> Gift card details
+                                    </div>
+                                    <div class="mjo-instrument-box__grid">
+                                        <div class="mjo-field">
+                                            <label class="mjo-label">Card Number (last 4)</label>
+                                            <input type="text" class="mj-input font-mono" maxlength="4" [(ngModel)]="CardLast4" [disabled]="!ComposeMode" placeholder="1234" />
+                                        </div>
+                                    </div>
+                                </div>
+                            } @else if (InstrumentPanel === 'card') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-credit-card"></i> Card instrument details
@@ -293,7 +305,7 @@
                                         </div>
                                     </div>
                                 </div>
-                            } @else if (RequiresReference) {
+                            } @else if (InstrumentPanel === 'reference') {
                                 <div class="mjo-instrument-box">
                                     <div class="mjo-instrument-box__title">
                                         <i class="fa-solid fa-receipt"></i> Reference details

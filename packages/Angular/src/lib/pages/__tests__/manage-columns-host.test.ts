@@ -44,7 +44,8 @@ const sources = new Map(pageFiles().map((p) => [p, readFileSync(join(PAGES, p), 
  *
  * This list may only SHRINK. It is a register of dead controls, not an exemption: every entry is
  * a menu item a user can press that has no effect, and a new entry means the pattern spread. The
- * catalog pages came off it when they moved to `mj-view-workspace`; the rest follow the same way.
+ * catalog pages came off it when they moved to `mj-view-workspace`, and so did the payments list,
+ * payments dashboard and subscriptions pages (#785); the rest followed the same way.
  */
 const MANAGE_COLUMNS_DEAD: string[] = [];
 

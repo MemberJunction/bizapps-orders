@@ -6,11 +6,17 @@ import { BuildDayBars } from '../../panels/day-bars';
 
 import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { EntityViewerModule, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { GetPayments, RunOrdersPageLoad } from '../../data/orders-queries';
 import { ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
+
+/**
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`. The workspace declares it inline
+ * rather than exporting a named type, so it is restated here.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
 
 /**
  * `mjo-payments-dashboard-page` — what came in, and does it tie?
@@ -236,8 +242,9 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
-        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
+    /** The workspace hands back the opened row; Payment's key is `ID`, so the row carries it. */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) {
             const surrogate = { ID: id } as mjBizAppsOrdersPaymentHeaderEntity;
             this.PaymentOpened.emit(surrogate);

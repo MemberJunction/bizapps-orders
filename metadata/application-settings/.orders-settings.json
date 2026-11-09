@@ -183,6 +183,17 @@
   {
     "fields": {
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "NoDealConfirmRoles",
+      "Value": "",
+      "Comments": "Comma-separated NAMES of the MJ roles whose holders may confirm an order that no deal created (bc-aidp-next-golive#390), for example Finance,Senior Finance (AR),CFO. A user holding any one of them may confirm. Checkout, provider-payment, reversal and renewal-only orders are exempt, and so is every order on a host where no order-to-deal link is registered. Empty switches the check off, so orders confirm as before."
+    },
+    "primaryKey": {
+      "ID": "B3917D3A-4865-4B8D-992B-85E2CF2122C5"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "RefundApprovalThreshold",
       "Value": "",
       "Comments": "The amount at or below which a refund may be issued by a holder of the RefundApproverRole role (bc-aidp-next-golive#320). Above it, only the receiving company's approver (ApprovalCFOUserID on its Accounting Company Profile) may issue the refund. The amount compared is what the payment's refunds come to with the new one, so a refund cannot be split to pass. It is counted per payment, not per order: an order settled by three 400 payments under a 500 threshold can be fully refunded, 1200, by a role holder taking one payment at a time. The company approver may always refund; a deactivated approver counts as none. A refund the payment gateway already made, booked by the system user, is exempt. Empty, the default, switches the check off. A value that is not a number of 0 or more is read as 0, so every refund needs the company approver."

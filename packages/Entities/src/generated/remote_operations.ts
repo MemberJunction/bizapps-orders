@@ -1048,6 +1048,78 @@ export interface OrdersDetectUnattestedProgressOutput {
 }
 
 /**
+ * Input for `Orders.ExplainProductGLAccounts`.
+ *
+ * Which GL account each role books to for one product, and where in the walk (product, category
+ * and its parents, product type, company) each comes from (golive#439). Read-only.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface OrdersExplainProductGLAccountsInput {
+    ProductID: string;
+    /** The selling company. Defaults to the product's own company. */
+    CompanyID?: string | null;
+    /** The day the links are read for, `YYYY-MM-DD`. Defaults to today on the business calendar. */
+    AsOf?: string;
+    /**
+     * The roles to explain, by accounting's role name. Defaults to the five a product's lines book:
+     * Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances, Accounts Receivable.
+     */
+    Roles?: string[];
+}
+
+/**
+ * Output of `Orders.ExplainProductGLAccounts`.
+ *
+ * One entry per role, each listing every level the walk tried, in booking order. The step and role
+ * shapes carry the fields accounting's `mj-gl-resolution-preview` renders, so a role can be handed
+ * to it as it is.
+ *
+ * NO import statements — definitions are emitted verbatim.
+ */
+export interface ExplainedGLStep {
+    /** `Product`, `Category`, `ParentCategory`, `ProductType`, `Company` or `LegalEntity`. */
+    Level: string;
+    /** What was looked at, as a person reads it, e.g. "Category: Services". */
+    Scope: string;
+    /** The record whose links were read. */
+    RecordID: string;
+    /** The account linked at this level for the role, or null when there is none. */
+    GLAccountID: string | null;
+    AccountCode: string | null;
+    AccountName: string | null;
+    /** True for the step booking stops on: the first one with a link. */
+    Won: boolean;
+    /** Codes of the dimensions the link at this level requires on a journal entry line. */
+    Dimensions: string[];
+}
+
+export interface ExplainedGLRole {
+    Role: string;
+    Steps: ExplainedGLStep[];
+    /** The account booking would use. All three are null when booking would refuse. */
+    ResolvedGLAccountID: string | null;
+    ResolvedCode: string | null;
+    ResolvedName: string | null;
+    /** `NotLinked` (nothing in the walk) or `CrossCompany` (the winning account is on other books); null when it resolves. */
+    Failure: string | null;
+    /** Booking's refusal, word for word; null when it resolves. */
+    Message: string | null;
+}
+
+export interface OrdersExplainProductGLAccountsOutput {
+    Success: boolean;
+    /** Why nothing could be explained, when `Success` is false. */
+    Message?: string;
+    ProductID: string;
+    /** The company explained for: the one asked for, else the product's own. */
+    CompanyID: string;
+    /** The day the links were read for, `YYYY-MM-DD`. */
+    AsOf: string;
+    Roles: ExplainedGLRole[];
+}
+
+/**
  * Input for `Orders.FulfillOrderLines`.
  *
  * Flipping lines to Fulfilled and advancing the order when the last one is done are ONE decision,
@@ -1738,9 +1810,9 @@ export interface OrdersPollExternalPaymentsInput {
 /**
  * Output for `Orders.PollExternalPayments`.
  *
- * One outcome per payment considered. `ATTENTION` means the pass completed but left Unmatched or
- * ReversalNeeded rows a person must look at — reported as Success false so a job that notifies only
- * on failure tells somebody.
+ * One outcome per payment considered. `ATTENTION` means the pass completed but left Unmatched,
+ * Refused, Reapplied or ReversalNeeded rows a person must look at. It is reported as Success true:
+ * each such payment is announced once, by a notification on the pass that moved it into that state.
  *
  * NO import statements — definitions are emitted verbatim.
  */
@@ -1795,6 +1867,12 @@ export interface PreviewPriceInput {
     /** Force a specific list, ignoring the customer's assignment — for "what if" comparisons. */
     PriceListID?: string | null;
     FeeType?: string;
+    /**
+     * Price the product whatever its Status and availability window. For the product form's
+     * Activate check, which asks whether a Draft product has a price before it is sold. Order
+     * pricing never sets it, so a product that may not be sold still cannot be booked.
+     */
+    IgnoreSellability?: boolean;
 }
 
 /**
@@ -2115,7 +2193,10 @@ export interface AccessOverrideDecisionOutput {
 export interface OrdersRecordProgressInput {
     /** The order line being attested. Its product's revenue recognition type must be OnMeasurement. */
     OrderLineID: string;
-    /** The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date. */
+    /**
+     * The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date.
+     * Refused when on or before the line's company's books-closed-through date (a month finance has closed).
+     */
     MeasurementDate: string;
     /** Cumulative fraction complete, 0..1 (0.7 = 70%). */
     PercentComplete: number;
@@ -2131,9 +2212,8 @@ export interface OrdersRecordProgressInput {
     /**
      * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
      * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
-     * Nothing is edited: the replaced observation's recognition is reversed — on its own date while that
-     * month has no Posted batch for the line's company, else on day 1 of the first later month without
-     * one (`ReversalDate` on the output) — and this
+     * Nothing is edited: the replaced observation's recognition is reversed — on its own date, or on the
+     * first open day when finance has closed that month (`ReversalDate` on the output) — and this
      * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
      * must then be after the observation before the replaced one — not after the replaced one — which
      * is what makes a mistyped future date recoverable.
@@ -2160,11 +2240,14 @@ export interface OrdersRecordProgressOutput {
     LineNumber?: number;
     MeasurementDate?: string;
     PercentComplete?: number;
-    /** The line's LineTotalNet — the amount the percent applies to. */
+    /** The size of the line's LineTotalNet — the amount the percent applies to. */
     LineAmount?: number;
-    /** Revenue recognised on the line before this observation. */
+    /**
+     * Revenue recognised on the line before this observation, as a magnitude: positive on a
+     * reversal (negative-quantity) line too, whose own RecognizedToDate is negative.
+     */
     RecognizedToDateBefore?: number;
-    /** LineAmount × PercentComplete, to the cent. */
+    /** LineAmount × PercentComplete, to the cent. A magnitude, like RecognizedToDateBefore. */
     RecognizedToDateAfter?: number;
     /** After − Before. Negative on a backward slide; zero means no entry was written. */
     RecognitionAmount?: number;
@@ -2190,16 +2273,15 @@ export interface OrdersRecordProgressOutput {
     ReversalAmount?: number;
     /**
      * On a supersede that reverses anything: the date the reversal is booked on. The replaced
-     * observation's own date while that month has no Posted batch for the line's company; otherwise
-     * day 1 of the first later month with none, so a correction never books into a closed period.
-     * Null otherwise.
+     * observation's own date, or the first open day when that date is on or before the line's
+     * company's books-closed-through date, so a correction never books into a month finance has
+     * closed. Null otherwise.
      */
     ReversalDate?: string | null;
     /**
-     * The date this observation's catch-up entry is booked on. `MeasurementDate` itself, except on a
-     * supersede whose replaced observation's month has a Posted batch for the line's company: then the
-     * later of `MeasurementDate` and `ReversalDate`'s first open day, so nothing new posts into the
-     * closed month. The observation row keeps `MeasurementDate`. Null when there is no catch-up.
+     * The date this observation's catch-up entry is booked on: always `MeasurementDate`, which is
+     * refused when it is on or before the line's company's books-closed-through date. Null when there
+     * is no catch-up.
      */
     CatchUpDate?: string | null;
     /** On a supersede: the entry that reversed the replaced observation. Null on a preview, when nothing was superseded, and when the replaced observation posted nothing. */
@@ -2816,6 +2898,22 @@ export class OrdersDetectUnattestedProgressOperation extends BaseRemotableOperat
     public readonly OperationKey = "Orders.DetectUnattestedProgress";
     public readonly ExecutionMode = 'LongRunning' as const;
     public readonly RequiredScope = "orders:write";
+    public readonly RequiresSystemUser = false;
+}
+
+// ============================================================
+// Orders.ExplainProductGLAccounts — Explain Product GL Accounts
+// ============================================================
+/**
+ * Explain Product GL Accounts
+ * For one product, company and day: which GL account each role books to (Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances, Accounts Receivable by default) and every level the walk tried — the product, its category and the category's parents, its product type, and the company default — with the winning level marked. A role that resolves nowhere, or whose winning account belongs to other books, carries the refusal confirm would give. Read-only. Runs the same walk confirm books through, so the product screen cannot disagree with booking.
+ * GenerationType=Manual — the server body is supplied by a hand-authored subclass registered
+ * under 'Orders.ExplainProductGLAccounts'. This generated base provides the typed contract only (client-safe).
+ */
+export class OrdersExplainProductGLAccountsOperation extends BaseRemotableOperation<OrdersExplainProductGLAccountsInput, OrdersExplainProductGLAccountsOutput> {
+    public readonly OperationKey = "Orders.ExplainProductGLAccounts";
+    public readonly ExecutionMode = 'Sync' as const;
+    public readonly RequiredScope = "orders:read";
     public readonly RequiresSystemUser = false;
 }
 
