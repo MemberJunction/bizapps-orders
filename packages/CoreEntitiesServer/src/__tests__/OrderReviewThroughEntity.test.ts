@@ -9,11 +9,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../OrderReview.js', () => ({
     CheckOrderReviewOnChange: vi.fn(async () => null),
+    CheckNoDealConfirm: vi.fn(async () => null),
     CheckOrderReviewAtConfirm: vi.fn(async () => null),
 }));
 
 import { OrderEntityServer } from '../OrderEntityServer.js';
-import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange } from '../OrderReview.js';
+import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange } from '../OrderReview.js';
 import { OriginWriteRefusal, SetSystemOrderOrigin } from '../SystemOrderOrigin.js';
 import type { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 
@@ -85,7 +86,7 @@ function order(opts: {
         ReversesOrderHeaderID: null,
         ContextCurrentUser: opts.user === undefined ? { ID: 'user-1' } : opts.user,
         ProviderToUse: {},
-        Lines: { Items: opts.lines ?? [line()], Removed: opts.removed ?? [] },
+        Lines: { Items: opts.lines ?? [line()], Removed: opts.removed ?? [], IsLoaded: true },
         _renewalPricedLines: new Map(),
         failures,
     })) {
@@ -214,6 +215,31 @@ describe('Save (PR #912 review: the hooks are driven through Save, not only call
         expect(await o.Save()).toBe(false);
         expect(CheckOrderReviewAtConfirm).toHaveBeenCalledTimes(1);
         expect(failuresOf(o)).toEqual(['Order ORD-1 cannot be confirmed until its review is approved.']);
+    });
+
+    it('refuses a booking save on the no-deal gate\'s refusal, before the review is asked (golive #390)', async () => {
+        vi.mocked(CheckNoDealConfirm).mockResolvedValueOnce('Order ORD-1 was not confirmed. Only Finance can confirm an order that has no deal.');
+        const o = order({ savedStatus: 'Draft' });
+        savable(o, true);
+        expect(await o.Save()).toBe(false);
+        expect(CheckOrderReviewAtConfirm).not.toHaveBeenCalled();
+        expect(failuresOf(o)).toEqual(['Order ORD-1 was not confirmed. Only Finance can confirm an order that has no deal.']);
+    });
+
+    it('loads the lines of a header-only confirm before the gates, so a renewal-only order passes (golive #390 review)', async () => {
+        const o = order({ savedStatus: 'Draft' });
+        const lines = { Items: [] as FakeLine[], Removed: [], IsLoaded: false, Load: vi.fn(async () => { lines.Items.push(line({ RenewsSubscriptionID: 'sub-1' })); lines.IsLoaded = true; }) };
+        Object.defineProperty(o, 'Lines', { value: lines });
+        savable(o, true);
+        Object.assign(o, { resolveDueDate: () => { throw new Error('past the gates'); } });
+        // Each gate stands in for the renewal-only exemption: it passes only when every line it is shown renews.
+        const renewalOnly = async (input: { Lines: readonly { RenewsSubscriptionID?: string | null }[] }) =>
+            input.Lines.length > 0 && input.Lines.every((l) => l.RenewsSubscriptionID) ? null : 'refused: not renewal-only';
+        vi.mocked(CheckNoDealConfirm).mockImplementationOnce(renewalOnly);
+        vi.mocked(CheckOrderReviewAtConfirm).mockImplementationOnce(renewalOnly);
+        await expect(o.Save()).rejects.toThrow('past the gates');
+        expect(lines.Load).toHaveBeenCalledTimes(1);
+        expect(failuresOf(o)).toEqual([]);
     });
 
     it('refuses a save that writes Origin itself, before order review is asked anything (required 2)', async () => {
