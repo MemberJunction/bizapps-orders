@@ -15,7 +15,8 @@
  * through the active person record linked to their user (./person-user-link.ts: the user's People link,
  * else the deprecated `People.LinkedUserID`). A holder with no such record is skipped and
  * logged; when no holder is left, recording is refused, for the reason a missing rule is — nobody would be
- * told the concession is waiting.
+ * told the concession is waiting. Membership changes after that are picked up by `SyncApprovalTaskAssignees`,
+ * which the scheduled pass in ./ConcessionApprovalResync.ts runs over every open task (#844).
  *
  * A HOLDER'S OWN CONCESSION GOES UP (bc-aidp-next-golive#320). When the Orders setting
  * `ConcessionSelfApprovalEscalation` is set and the requester holds the rule's role, the task is assigned to
@@ -556,6 +557,66 @@ async function approverPersons(
         );
     }
     return { PersonIDs, EscalatedTo: escalation ? escalation.Target : null };
+}
+
+/** What a re-sync changed on one open approval task. */
+export interface ApprovalAssigneeSync {
+    Added: string[];
+    Removed: string[];
+}
+
+/**
+ * Bring an open approval task's assignees in line with the approving role as it is now (#844).
+ *
+ * The task is assigned to the role's holders when it is raised; a user added to the role later was never
+ * told, and one removed kept being told. This computes the assignees exactly as raising the task does
+ * (the role's active holders other than the requester, or the self-approval escalation, through their
+ * person records), adds whoever is missing and removes person assignments for anyone no longer among
+ * them. A removed holder could not decide the concession anyway: the decision checks the role. Both
+ * changes are noted on the task's activity feed.
+ *
+ * Throws when the role leaves nobody to assign, the same refusal raising gives; the caller logs it and
+ * leaves the task as it is.
+ */
+export async function SyncApprovalTaskAssignees(
+    taskID: string,
+    concession: ConcessionForApproval,
+    roleID: string,
+    ctx: ApprovalTaskContext,
+): Promise<ApprovalAssigneeSync> {
+    requireTasksApp(ctx);
+    const { PersonIDs: expected } = await approverPersons(roleID, concession, ctx);
+    const personEntityID = entityID(PERSON_ENTITY, ctx);
+    const current = await view<mjBizAppsTasksTaskAssignmentEntity>(ctx, {
+        EntityName: TASK_ASSIGNMENT_ENTITY,
+        ExtraFilter:
+            `TaskID = '${RequireUUID(taskID, 'TaskID')}' AND AssigneeEntityID = '${RequireUUID(personEntityID, 'EntityID')}'`,
+        ResultType: 'entity_object',
+    });
+
+    const added: string[] = [];
+    for (const personID of expected) {
+        if (current.some((a) => UUIDsEqual(a.AssigneeRecordID, personID))) continue;
+        await CreateTaskAssignment(taskID, personEntityID, personID, ctx);
+        added.push(personID);
+    }
+    const removed: string[] = [];
+    for (const assignment of current) {
+        if (expected.some((id) => UUIDsEqual(id, assignment.AssigneeRecordID))) continue;
+        if (!(await assignment.Delete())) {
+            throw new Error(`Approval task ${taskID} could not drop assignee ${assignment.AssigneeRecordID}: ${assignment.LatestResult?.CompleteMessage}`);
+        }
+        removed.push(assignment.AssigneeRecordID);
+    }
+    if (added.length || removed.length) {
+        await RecordTaskActivity(
+            taskID,
+            `The approving role's holders changed: ${added.length} approver(s) added to this task and ` +
+                `${removed.length} removed, so it is assigned to the people who can decide it now.`,
+            ctx,
+        );
+    }
+    return { Added: added, Removed: removed };
 }
 
 /** Every active user holding the role, by name order. The tasks app has no group assignee, so a role is expanded to these. */

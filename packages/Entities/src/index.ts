@@ -100,6 +100,7 @@ export * from './pricing/PromotionBehavior';
 export * from './pricing/ChargeEngine';
 export * from './pricing/PromotionEngine';
 export * from './sql-guards';
+export * from './receivables-company-scope';
 export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';

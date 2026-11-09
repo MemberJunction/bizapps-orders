@@ -8,7 +8,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
-import { loadApplicabilityContext } from './applicability.js';
+import { LoadApplicabilityProduct, loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
 import { isEnginePrice, isNamedListPick } from './priceOverride.js';
 import {
     ListApplicablePrices,
@@ -48,8 +48,35 @@ export async function BuildLinePriceContext(
     user: UserInfo,
 ): Promise<PriceResolutionContext | null> {
     await LoadOrdersEngine(provider, user);
-    const product = OrdersEngine.Instance.ProductByID(line.ProductID);
     const header = await loadHeader(line.OrderHeaderID, provider, user);
+    if (!(OrdersEngine.Instance.ProductByID(line.ProductID)?.CompanyID ?? header?.CompanyID)) return null;
+    const applicability = await loadApplicabilityContext(
+        { ...headerParties(header), OrderHeaderID: line.OrderHeaderID, ProductID: line.ProductID },
+        provider,
+        user,
+    );
+    return contextFor(line, header, applicability);
+}
+
+/** The header's parties, as the applicability loader takes them. */
+function headerParties(header: HeaderPricingFacts | null) {
+    return {
+        BillToPersonID: header?.BillToPersonID ?? null,
+        BillToOrganizationID: header?.BillToOrganizationID ?? null,
+        ShipToPersonID: header?.ShipToPersonID ?? null,
+        ShipToOrganizationID: header?.ShipToOrganizationID ?? null,
+        BillToAddressID: header?.BillToAddressID ?? null,
+        ShipToAddressID: header?.ShipToAddressID ?? null,
+    };
+}
+
+/** Assemble one line's context from reads already made. Null when no company resolves. */
+function contextFor(
+    line: PricedLineFacts,
+    header: HeaderPricingFacts | null,
+    applicability: FilterEvalContext,
+): PriceResolutionContext | null {
+    const product = OrdersEngine.Instance.ProductByID(line.ProductID);
     const companyID = product?.CompanyID ?? header?.CompanyID ?? '';
     if (!companyID) return null;
 
@@ -63,20 +90,7 @@ export async function BuildLinePriceContext(
         AsOf: AsDateValue(header?.OrderDate) ?? TodayAsDateValue(),
         OrganizationID: header?.BillToOrganizationID ?? null,
         PersonID: header?.BillToPersonID ?? null,
-        ApplicabilityContext: await loadApplicabilityContext(
-            {
-                OrderHeaderID: line.OrderHeaderID,
-                ProductID: line.ProductID,
-                BillToPersonID: header?.BillToPersonID ?? null,
-                BillToOrganizationID: header?.BillToOrganizationID ?? null,
-                ShipToPersonID: header?.ShipToPersonID ?? null,
-                ShipToOrganizationID: header?.ShipToOrganizationID ?? null,
-                BillToAddressID: header?.BillToAddressID ?? null,
-                ShipToAddressID: header?.ShipToAddressID ?? null,
-            },
-            provider,
-            user,
-        ),
+        ApplicabilityContext: applicability,
     };
 }
 
@@ -107,6 +121,63 @@ export async function ResolveLinePriceStanding(
 ): Promise<LinePriceStanding | null> {
     const ctx = await BuildLinePriceContext(line, provider, user);
     if (!ctx) return null;
+    return standingIn(line, ctx, provider, user);
+}
+
+/**
+ * {@link ResolveLinePriceStanding} for several lines at once, in input order (#1009).
+ *
+ * A caller showing every discounted line of an order would otherwise read the order header and its
+ * parties (bill-to and ship-to people, organizations, addresses and the organization's revenue) once
+ * per line. Here they are read once per order, and only the product changes from line to line. Each
+ * answer is the same one `ResolveLinePriceStanding` gives for that line alone.
+ */
+export async function ResolveLinePriceStandings(
+    lines: readonly PricedLineFacts[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<(LinePriceStanding | null)[]> {
+    if (lines.length === 0) return [];
+    await LoadOrdersEngine(provider, user);
+
+    const byOrder = new Map<string, { header: HeaderPricingFacts | null; applicability: FilterEvalContext }>();
+    const orderKey = (id: string | null): string => (id ?? '').toLowerCase();
+    for (const id of new Set(lines.map((l) => orderKey(l.OrderHeaderID)))) {
+        const orderHeaderID = lines.find((l) => orderKey(l.OrderHeaderID) === id)?.OrderHeaderID ?? null;
+        const header = await loadHeader(orderHeaderID, provider, user);
+        // No product here: it is the only part of the bag that differs between the order's lines.
+        const applicability = await loadApplicabilityContext(
+            { ...headerParties(header), OrderHeaderID: orderHeaderID, ProductID: null },
+            provider,
+            user,
+        );
+        byOrder.set(id, { header, applicability });
+    }
+
+    const products = new Map<string, Record<string, unknown> | null>();
+    const out: (LinePriceStanding | null)[] = [];
+    for (const line of lines) {
+        const shared = byOrder.get(orderKey(line.OrderHeaderID));
+        if (!shared) {
+            out.push(null);
+            continue;
+        }
+        const productKey = line.ProductID.toLowerCase();
+        if (!products.has(productKey)) {
+            products.set(productKey, await LoadApplicabilityProduct(line.ProductID, provider, user));
+        }
+        const ctx = contextFor(line, shared.header, { ...shared.applicability, Product: products.get(productKey) ?? null });
+        out.push(ctx ? await standingIn(line, ctx, provider, user) : null);
+    }
+    return out;
+}
+
+async function standingIn(
+    line: PricedLineFacts,
+    ctx: PriceResolutionContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<LinePriceStanding> {
     const engine = await resolveEngineForStatedPrice(ctx, provider, user);
     if (engine && isEnginePrice(line, engine)) {
         return { EngineUnitPrice: engine.UnitPrice, IsEnginePrice: true, IsNamedListPick: false };

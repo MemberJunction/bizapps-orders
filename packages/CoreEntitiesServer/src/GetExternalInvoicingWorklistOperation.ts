@@ -93,7 +93,7 @@ export function LoadGetExternalInvoicingWorklistOperation(): void {
 
 /** The worklist as rows, oldest-invoiceable first. Shared with the sweep. */
 export async function BuildExternalInvoicingWorklist(
-    opts: { CompanyIDs: string[] | null; IncludeFailed: boolean },
+    opts: { CompanyIDs: string[] | null; IncludeFailed: boolean; UnplacedUserSeesAll?: boolean },
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ExternalInvoicingWorklistRow[]> {
@@ -101,7 +101,9 @@ export async function BuildExternalInvoicingWorklist(
 
     // Companies with a rail, optionally narrowed (and scoped to the user's companies unless in a Finance role).
     const providers = await ListInvoiceRailProviderIDs(provider, user);
-    const scopedCompanyIDs = await CompanyScopeService.ResolveReceivablesCompanyIDs(opts.CompanyIDs, provider, user);
+    const scopedCompanyIDs = await CompanyScopeService.ResolveReceivablesCompanyIDs(opts.CompanyIDs, provider, user, {
+        UnplacedUserSeesAll: opts.UnplacedUserSeesAll,
+    });
     const wanted = scopedCompanyIDs?.map((c) => RequireUUID(c, 'CompanyIDs').toLowerCase()) ?? null;
     const railCompanies = new Map<string, string>(); // companyID → providerID
     for (const p of providers) {

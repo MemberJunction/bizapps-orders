@@ -100,6 +100,18 @@ async function loadRow(
 }
 
 /**
+ * The product's record bag, as {@link loadApplicabilityContext} puts it under `Product`. Lets a caller
+ * that shares one order's context across several lines swap in each line's product (#1009).
+ */
+export async function LoadApplicabilityProduct(
+    productID: string | null | undefined,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Record<string, unknown> | null> {
+    return loadRow('MJ_BizApps_Orders: Products', productID, provider, user);
+}
+
+/**
  * Load the record bag `EvaluateFilter` reads. Missing parties are `null`,
  * so a When on ship-to is false unless the operator is empty/null.
  *
