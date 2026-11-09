@@ -8,6 +8,7 @@
  * 3. Payment: Derived from TotalGross, AmountPaid, Balance
  */
 import { describe, expect, it } from 'vitest';
+import { EntityInfo, EntityLifecyclePolicyEngine } from '@memberjunction/core';
 import {
     CanOfferConfirm,
     CanTransition,
@@ -22,7 +23,9 @@ import {
     IsTerminal,
     NextStatuses,
     ORDER_FULFILLMENT_STATUSES,
+    ORDER_LIFECYCLE_POLICY,
     ORDER_STATUSES,
+    registerOrderLifecyclePolicy,
     type OrderStatus,
 } from '../OrderStatusBehavior.js';
 
@@ -198,5 +201,31 @@ describe('fulfillment and payment derivations', () => {
         expect(DerivePaymentStatus(100, 100, 0)).toBe('Paid');
         expect(DerivePaymentStatus(100, 120, -20)).toBe('Paid');
         expect(DerivePaymentStatus(0, 0, 0)).toBe('Unpaid');
+    });
+});
+
+describe('EntityLifecyclePolicyEngine registration for Orders', () => {
+    it('registers the state machine and terminal states on EntityLifecyclePolicyEngine', () => {
+        registerOrderLifecyclePolicy();
+        const ordersPolicy = EntityLifecyclePolicyEngine.Instance.ResolvePolicy(
+            new EntityInfo({ Name: 'MJ_BizApps_Orders: Orders' }),
+        );
+        const headersPolicy = EntityLifecyclePolicyEngine.Instance.ResolvePolicy(
+            new EntityInfo({ Name: 'MJ_BizApps_Orders: Order Headers' }),
+        );
+        expect(ordersPolicy).toEqual(ORDER_LIFECYCLE_POLICY);
+        expect(headersPolicy).toEqual(ORDER_LIFECYCLE_POLICY);
+        expect(ordersPolicy?.stateMachine?.terminalStates).toEqual(['Confirmed']);
+        expect(ordersPolicy?.stateMachine?.initialStates).toEqual(['Draft', 'Quoted', 'Confirmed', 'Voided']);
+        expect(ordersPolicy?.stateMachine?.transitions).toEqual([
+            { from: 'Draft', to: 'Quoted' },
+            { from: 'Draft', to: 'Confirmed' },
+            { from: 'Draft', to: 'Voided' },
+            { from: 'Quoted', to: 'Draft' },
+            { from: 'Quoted', to: 'Confirmed' },
+            { from: 'Quoted', to: 'Voided' },
+            { from: 'Voided', to: 'Draft' },
+            { from: 'Voided', to: 'Quoted' },
+        ]);
     });
 });

@@ -16,7 +16,19 @@
  * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's
  * resolver paths) and is unaffected by how this one is imported.
  */
-import { BaseRemotableOperation, IMetadataProvider, LogStatus, Metadata, UserInfo } from '@memberjunction/core';
+import {
+    AppCapabilityRegistry,
+    BaseRemotableOperation,
+    DefineCapabilityContract,
+    IMetadataProvider,
+    LogStatus,
+    Metadata,
+    RemoteOpInvokeOptions,
+    RemoteOpResult,
+    UserInfo,
+    type CapabilityContract,
+    type IAppCapabilityProvider,
+} from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { GLAccountResolver, type LinkedAccountHit, type ResolverEntityIDs } from './GLAccountResolver.js';
@@ -357,14 +369,113 @@ export interface RaiseFinanceExceptionsOutcome {
     Errors?: Array<{ Index?: number; Code: string; Message: string }>;
 }
 
+export interface CreateJournalEntriesCapabilityInput {
+    Drafts: ReadonlyArray<object>;
+}
+
+export interface GetFinanceExceptionTypesCapabilityInput {
+    Codes?: string[];
+}
+
+export interface GetFinanceExceptionTypesCapabilityOutput {
+    Success: boolean;
+    Types: FinanceExceptionTypeInfo[];
+    Errors?: Array<{ Code: string; Message: string }>;
+}
+
+export interface RaiseFinanceExceptionsCapabilityInput {
+    Exceptions: FinanceExceptionToRaise[];
+}
+
+export const ACCOUNTING_CREATE_JOURNAL_ENTRIES_CAPABILITY: CapabilityContract<
+    CreateJournalEntriesCapabilityInput,
+    CreateJournalEntriesOutcome
+> = DefineCapabilityContract<CreateJournalEntriesCapabilityInput, CreateJournalEntriesOutcome>(
+    'Accounting.CreateJournalEntries',
+    1,
+    'Create and optionally post accounting journal entries from order and payment drafts',
+);
+
+export const ACCOUNTING_GET_FINANCE_EXCEPTION_TYPES_CAPABILITY: CapabilityContract<
+    GetFinanceExceptionTypesCapabilityInput,
+    GetFinanceExceptionTypesCapabilityOutput
+> = DefineCapabilityContract<GetFinanceExceptionTypesCapabilityInput, GetFinanceExceptionTypesCapabilityOutput>(
+    'Accounting.GetFinanceExceptionTypes',
+    1,
+    'Read active finance exception type definitions and thresholds',
+);
+
+export const ACCOUNTING_RAISE_FINANCE_EXCEPTIONS_CAPABILITY: CapabilityContract<
+    RaiseFinanceExceptionsCapabilityInput,
+    RaiseFinanceExceptionsOutcome
+> = DefineCapabilityContract<RaiseFinanceExceptionsCapabilityInput, RaiseFinanceExceptionsOutcome>(
+    'Accounting.RaiseFinanceExceptions',
+    1,
+    'Raise finance exception rows into accounting review queue',
+);
+
+class CapabilityBackedAccountingOperation<TInput, TOutput> extends BaseRemotableOperation<TInput, TOutput> {
+    public readonly OperationKey: string;
+    private readonly _capabilityProvider: IAppCapabilityProvider<TInput, TOutput>;
+
+    public constructor(operationKey: string, capabilityProvider: IAppCapabilityProvider<TInput, TOutput>) {
+        super();
+        this.OperationKey = operationKey;
+        this._capabilityProvider = capabilityProvider;
+    }
+
+    public override async Execute(
+        input: TInput,
+        options: RemoteOpInvokeOptions = {},
+    ): Promise<RemoteOpResult<TOutput>> {
+        try {
+            let resolvedProvider = options.provider;
+            if (!resolvedProvider) {
+                try {
+                    resolvedProvider = Metadata.Provider;
+                } catch {
+                    resolvedProvider = undefined;
+                }
+            }
+            const output = await this._capabilityProvider.Execute(input, {
+                Provider: resolvedProvider as IMetadataProvider,
+                ContextUser: options.user ?? new UserInfo(),
+            });
+            return {
+                Success: true,
+                Output: output,
+            };
+        } catch (err) {
+            return {
+                Success: false,
+                ErrorMessage: err instanceof Error ? err.message : String(err),
+            };
+        }
+    }
+}
+
 /**
  * The accounting operation registered under `key`, or a throw naming `what` could not be done.
+ *
+ * Checks {@link AppCapabilityRegistry} first so cross-OpenApp capability providers registered via
+ * `@RegisterAppCapability` or `AppCapabilityRegistry.Instance.Register(...)` are resolved
+ * directly, then falls back to `MJGlobal.Instance.ClassFactory.TryCreateInstance`.
  *
  * `TryCreateInstance`, not `CreateInstance`: for an unregistered key `CreateInstance` hands back a
  * hollow `BaseRemotableOperation` rather than null, so a null check alone would never fire and the
  * call would route with no operation key.
  */
 export function ResolveAccountingOperation<I, O>(key: string, what: string): BaseRemotableOperation<I, O> {
+    const registry = AppCapabilityRegistry?.Instance;
+    if (registry && typeof DefineCapabilityContract === 'function') {
+        const contract = DefineCapabilityContract<I, O>(key, 1);
+        if (registry.IsRegistered(contract)) {
+            const capabilityProvider = registry.Resolve<I, O>(contract);
+            if (capabilityProvider) {
+                return new CapabilityBackedAccountingOperation<I, O>(key, capabilityProvider);
+            }
+        }
+    }
     const resolved = MJGlobal.Instance.ClassFactory.TryCreateInstance<BaseRemotableOperation<I, O>>(BaseRemotableOperation, key);
     const op = resolved.Resolved ? resolved.Instance : null;
     if (!op) {

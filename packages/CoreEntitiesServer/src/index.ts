@@ -302,9 +302,13 @@ export { StripeEventSubscriptionID, StripeInvoiceFacts, StripeSubscriptionDetail
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
 export {
+    ACCOUNTING_CREATE_JOURNAL_ENTRIES_CAPABILITY,
+    ACCOUNTING_GET_FINANCE_EXCEPTION_TYPES_CAPABILITY,
+    ACCOUNTING_RAISE_FINANCE_EXCEPTIONS_CAPABILITY,
     BuildGLAccountResolver,
     EntityIDFor,
     LoadAccountingEngine,
+    ResolveAccountingOperation,
     ResolverEntities,
     SubmitJournalEntryDrafts,
     GetActiveFinanceExceptionType,
@@ -312,9 +316,13 @@ export {
 } from './AccountingBridge.js';
 export type {
     AccountingEngineSurface,
+    CreateJournalEntriesCapabilityInput,
     CreateJournalEntriesOutcome,
     FinanceExceptionToRaise,
     FinanceExceptionTypeInfo,
+    GetFinanceExceptionTypesCapabilityInput,
+    GetFinanceExceptionTypesCapabilityOutput,
+    RaiseFinanceExceptionsCapabilityInput,
     RaiseFinanceExceptionsOutcome,
 } from './AccountingBridge.js';
 
@@ -1002,7 +1010,13 @@ export {
     type DispatchOutboundInput,
     type DispatchOutboundOutput,
 } from './OutboundEvents.js';
-export { OrderLineEntityServer, LoadOrderLineEntityServer } from './OrderLineEntityServer.js';
+export {
+    OrderLineEntityServer,
+    LoadOrderLineEntityServer,
+    ORDER_LINE_CROSS_ENTITY_POLICY,
+    registerOrderLineCrossEntityPolicy,
+    type OrderLineParentOrderFact,
+} from './OrderLineEntityServer.js';
 
 // Invoicing (D-INV): an invoice is a PRESENTATION of an order, never a record. The decisions are in
 // InvoiceBehavior, the reads in InvoiceBuilder, the strings in InvoiceDisplay, and the markup lives

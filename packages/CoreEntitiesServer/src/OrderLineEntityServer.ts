@@ -33,13 +33,21 @@
 import {
     BaseEntity,
     BaseEntityResult,
+    CrossEntityPolicyEngine,
     EntitySaveOptions,
+    IEntityDataProvider,
     IMetadataProvider,
     IRunViewProvider,
     RunView,
+    UserInfo,
     ValidationErrorInfo,
     ValidationErrorType,
     ValidationResult,
+    type CrossEntityBatchItem,
+    type CrossEntityEvaluationScope,
+    type CrossEntityPolicyItemContext,
+    type CrossEntityPolicyVerdict,
+    type ICrossEntityPolicy,
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -57,9 +65,170 @@ import {
     type OrderLineEditKind,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY } from './entity-names.js';
-import { RequireUUID } from './sql-guards.js';
+import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+
+export interface OrderLineParentOrderFact {
+    ID: string;
+    Status: string | null;
+}
+
+export const PARENT_ORDER_CACHE_NAMESPACE = `entity:${ORDER_HEADER_ENTITY.toLowerCase()}:status`;
+
+function asMetadataProvider(provider: IEntityDataProvider | IMetadataProvider): IMetadataProvider {
+    return provider as IMetadataProvider;
+}
+
+function asRunViewProvider(provider: IEntityDataProvider | IMetadataProvider | IRunViewProvider): IRunViewProvider {
+    return provider as IRunViewProvider;
+}
+
+function parentOrderPartitionKey(orderHeaderId: string): string {
+    return orderHeaderId.trim().toLowerCase();
+}
+
+async function loadMemoizedParentOrder(
+    scope: CrossEntityEvaluationScope,
+    provider: IRunViewProvider,
+    contextUser: UserInfo | undefined,
+    orderHeaderId: string,
+): Promise<OrderLineParentOrderFact | null> {
+    const safeId = RequireUUID(orderHeaderId, 'OrderHeaderID');
+    return scope.GetOrLoad<OrderLineParentOrderFact | null>(
+        PARENT_ORDER_CACHE_NAMESPACE,
+        parentOrderPartitionKey(safeId),
+        async () => {
+            const rv = new RunView(provider);
+            const lookup = await rv.RunView<{ ID: string; Status: string }>(
+                {
+                    EntityName: ORDER_HEADER_ENTITY,
+                    ExtraFilter: `ID='${safeId}'`,
+                    Fields: ['ID', 'Status'],
+                    ResultType: 'simple',
+                },
+                contextUser,
+            );
+            const row = lookup?.Results?.[0];
+            if (!row) {
+                return null;
+            }
+            return {
+                ID: row.ID,
+                Status: row.Status ?? null,
+            };
+        },
+    );
+}
+
+async function prefetchParentOrders(
+    scope: CrossEntityEvaluationScope,
+    provider: IRunViewProvider,
+    contextUser: UserInfo | undefined,
+    orderHeaderIds: ReadonlyArray<string>,
+): Promise<void> {
+    const uniqueIds = Array.from(
+        new Set(orderHeaderIds.map((id) => id.trim()).filter((id) => id.length > 0)),
+    );
+    if (uniqueIds.length === 0) {
+        return;
+    }
+    const safeIds = RequireUUIDs(uniqueIds, 'OrderHeaderID');
+    const inClause = safeIds.map((id) => `'${id}'`).join(', ');
+    const rv = new RunView(provider);
+    const lookup = await rv.RunView<{ ID: string; Status: string }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY,
+            ExtraFilter: `ID IN (${inClause})`,
+            Fields: ['ID', 'Status'],
+            ResultType: 'simple',
+        },
+        contextUser,
+    );
+    const byId = new Map<string, OrderLineParentOrderFact>();
+    for (const row of lookup?.Results ?? []) {
+        byId.set(row.ID.trim().toLowerCase(), {
+            ID: row.ID,
+            Status: row.Status ?? null,
+        });
+    }
+    for (const id of safeIds) {
+        const hit = byId.get(id.toLowerCase()) ?? null;
+        scope.Prime<OrderLineParentOrderFact | null>(
+            PARENT_ORDER_CACHE_NAMESPACE,
+            parentOrderPartitionKey(id),
+            hit,
+        );
+    }
+}
+
+async function evaluateOrderLineParentLock(
+    entity: OrderLineEntityServer,
+    scope: CrossEntityEvaluationScope,
+): Promise<CrossEntityPolicyVerdict> {
+    if (entity.IsSaved || entity.BypassBookedCheck) {
+        return { Allowed: true };
+    }
+    const orderHeaderId = entity.OrderHeaderID;
+    if (!orderHeaderId) {
+        return { Allowed: true };
+    }
+    const parent = await loadMemoizedParentOrder(
+        scope,
+        asRunViewProvider(scope.Provider),
+        scope.ContextUser,
+        orderHeaderId,
+    );
+    if (!parent?.Status || !IsBooked(parent.Status)) {
+        return { Allowed: true };
+    }
+    return {
+        Allowed: false,
+        FieldName: 'OrderHeaderID',
+        ErrorMessage:
+            'Order line cannot be added — the order is booked. Corrections to booked orders go through reversal orders.',
+    };
+}
+
+/**
+ * Transaction-memoized cross-entity policy for `MJ_BizApps_Orders: Order Lines` that caches
+ * parent `Order` (`MJ_BizApps_Orders: Order Headers`) status lookups across all lines in a save/batch.
+ */
+export const ORDER_LINE_CROSS_ENTITY_POLICY: ICrossEntityPolicy = {
+    PolicyKey: 'OrderLineParentOrderLockPolicy',
+    TargetEntityNames: [ORDER_LINE_ENTITY],
+    EvaluateBeforeSave: async (context: CrossEntityPolicyItemContext): Promise<CrossEntityPolicyVerdict> => {
+        return evaluateOrderLineParentLock(context.Entity as OrderLineEntityServer, context.Scope);
+    },
+    EvaluateBatch: async (
+        items: ReadonlyArray<CrossEntityBatchItem>,
+        scope: CrossEntityEvaluationScope,
+    ): Promise<Map<BaseEntity, CrossEntityPolicyVerdict>> => {
+        const out = new Map<BaseEntity, CrossEntityPolicyVerdict>();
+        if (items.length === 0) {
+            return out;
+        }
+        const parentIds = items
+            .map((item) => (item.Entity as OrderLineEntityServer).OrderHeaderID)
+            .filter((id): id is string => typeof id === 'string' && id.trim().length > 0);
+        await prefetchParentOrders(
+            scope,
+            asRunViewProvider(scope.Provider),
+            scope.ContextUser,
+            parentIds,
+        );
+        for (const item of items) {
+            out.set(item.Entity, await evaluateOrderLineParentLock(item.Entity as OrderLineEntityServer, scope));
+        }
+        return out;
+    },
+};
+
+export function registerOrderLineCrossEntityPolicy(): void {
+    CrossEntityPolicyEngine?.Instance?.RegisterPolicy(ORDER_LINE_CROSS_ENTITY_POLICY);
+}
+
+registerOrderLineCrossEntityPolicy();
 
 function money(value: number): number {
     return Math.round((value + Number.EPSILON) * 100) / 100;
@@ -429,17 +598,18 @@ export class OrderLineEntityServer extends OrderLineEntity {
      */
     private async storedOrderStatus(): Promise<string | null> {
         if (!this.OrderHeaderID) return null;
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const lookup = await rv.RunView<{ ID: string; Status: string }>(
-            {
-                EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
-                Fields: ['ID', 'Status'],
-                ResultType: 'simple',
-            },
+        const scope = CrossEntityPolicyEngine.Instance.ResolveScope(
+            asMetadataProvider(this.ProviderToUse),
             this.ContextCurrentUser,
+            this.TransactionGroup,
         );
-        return lookup?.Results?.[0]?.Status ?? null;
+        const parent = await loadMemoizedParentOrder(
+            scope,
+            asRunViewProvider(this.ProviderToUse),
+            this.ContextCurrentUser,
+            this.OrderHeaderID,
+        );
+        return parent?.Status ?? null;
     }
 
     /**
@@ -643,5 +813,5 @@ export function MarkAsOrdersOwnWrite(line: unknown): void {
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */
 export function LoadOrderLineEntityServer(): void {
-    // intentionally empty
+    registerOrderLineCrossEntityPolicy();
 }

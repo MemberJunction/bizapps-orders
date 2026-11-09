@@ -70,6 +70,7 @@ import {
     PaymentHeaderEntity,
     ToISODate,
     mjBizAppsOrdersPaymentLineEntity,
+    registerOrdersDocumentNumberingPolicies,
 } from '@mj-biz-apps/orders-entities';
 import {
     BuildGLAccountResolver,
@@ -1071,7 +1072,9 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
     }
 }
 
+registerOrdersDocumentNumberingPolicies();
+
 /** Tree-shaking anchor — booking lives in Save, which is only reachable via the registration. */
 export function LoadPaymentHeaderEntityServer(): void {
-    // intentionally empty
+    registerOrdersDocumentNumberingPolicies();
 }
