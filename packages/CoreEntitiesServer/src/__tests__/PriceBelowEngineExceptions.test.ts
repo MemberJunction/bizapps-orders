@@ -94,7 +94,11 @@ const bookedLine = {
 function database(concessions: Row[], lines: Row[]) {
     mockRunView.mockImplementation(async (params: { EntityName: string }) => ({
         Success: true,
-        Results: params.EntityName.endsWith('Order Concessions') ? concessions : lines,
+        Results: params.EntityName.endsWith('Order Concessions')
+            ? concessions
+            : params.EntityName.endsWith('Order Adjustments')
+              ? []
+              : lines,
     }));
 }
 

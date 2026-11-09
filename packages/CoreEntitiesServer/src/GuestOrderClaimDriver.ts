@@ -8,9 +8,8 @@
  * @module @mj-biz-apps/orders-core-entities-server/GuestOrderClaimDriver
  */
 
-import { RegisterClass } from '@memberjunction/global';
-// Local fallback — see sql-guards.ts. Restore to '@memberjunction/global' once published.
-import { EscapeSQLString, RequireUUID } from './sql-guards.js';
+import { EscapeSQLString, RegisterClass } from '@memberjunction/global';
+import { RequireUUID } from './sql-guards.js';
 import { LogError, Metadata, RunView, UserInfo, IRunViewProvider } from '@memberjunction/core';
 import {
     BaseIdentityClaimDriver,
@@ -83,7 +82,12 @@ export class GuestOrderClaimDriver extends BaseIdentityClaimDriver {
             };
         }
 
-        const personID = await resolvePersonID(User, provider);
+        let personID: string | null;
+        try {
+            personID = await resolvePersonID(User, provider);
+        } catch (e) {
+            return { Success: false, ErrorMessage: e instanceof Error ? e.message : String(e) };
+        }
         if (!personID) {
             return {
                 Success: false,

@@ -192,6 +192,55 @@
 
 .mjo-ldp__value.is-empty { color: var(--mj-text-muted); }
 
+/* What the line books, above the picker that sets one of them by hand. */
+.mjo-ldp__stamped { margin-bottom: var(--mj-space-4); }
+
+.mjo-ldp__stamped-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-sm);
+}
+
+.mjo-ldp__stamped-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) auto;
+    gap: var(--mj-space-2);
+    align-items: baseline;
+    padding: var(--mj-space-2) var(--mj-space-3);
+    font-size: var(--mj-text-xs);
+}
+
+.mjo-ldp__stamped-row + .mjo-ldp__stamped-row { border-top: 1px solid var(--mj-border-default); }
+
+.mjo-ldp__stamped-axis { color: var(--mj-text-secondary); }
+
+.mjo-ldp__stamped-value { color: var(--mj-text-primary); overflow-wrap: anywhere; }
+
+.mjo-ldp__stamped-source { color: var(--mj-text-muted); white-space: nowrap; }
+
+/* "Replace the default?" — held in the panel, not a separate dialog, so the default stays in view. */
+.mjo-ldp__confirm {
+    margin-top: var(--mj-space-2);
+    padding: var(--mj-space-2) var(--mj-space-3);
+    border-radius: var(--mj-radius-sm);
+    background: var(--mj-status-warning-bg);
+    color: var(--mj-status-warning-text);
+}
+
+.mjo-ldp__confirm-text {
+    margin: 0 0 var(--mj-space-2);
+    font-size: var(--mj-text-xs);
+    line-height: 1.5;
+}
+
+.mjo-ldp__confirm-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-3);
+}
+
 .mjo-ldp__foot {
     display: flex;
     align-items: center;

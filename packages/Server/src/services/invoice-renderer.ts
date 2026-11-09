@@ -23,7 +23,7 @@
  *   ACTIONS: ../custom/generate-invoice.action.ts · ../custom/send-document.action.ts
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { BuildInvoiceDocuments, CalendarDayOrToday, DecorateInvoice, RequireDate, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { BuildCreditMemoDocuments, BuildInvoiceDocuments, CalendarDayOrToday, DecorateInvoice, RequireDate, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
 import { ToISODate } from '@mj-biz-apps/orders-entities';
 import { TemplateEngineServer } from '@memberjunction/templates';
 
@@ -51,6 +51,11 @@ export interface RenderInvoiceOptions {
     CompanyID?: string | null;
     /** Render one instalment of the order's payment schedule; its company's document only. */
     PaymentScheduleID?: string | null;
+    /**
+     * Render the credit memo this approved amount change issued (#684), instead of the order. It must be one of
+     * the order's concessions.
+     */
+    OrderConcessionID?: string | null;
     AsOfDate?: string | null;
     TemplateName?: string | null;
     Locale?: string | null;
@@ -114,11 +119,13 @@ export async function RenderInvoiceDocuments(
         }
     }
 
-    const built = await BuildInvoiceDocuments(orderID, provider, user, {
-        AsOf: asOf,
-        OnlyCompanyID: options.CompanyID ?? null,
-        PaymentScheduleID: options.PaymentScheduleID ?? null,
-    });
+    const built = options.OrderConcessionID
+        ? await BuildCreditMemoDocuments(options.OrderConcessionID, provider, user, { AsOf: asOf, OrderHeaderID: orderID })
+        : await BuildInvoiceDocuments(orderID, provider, user, {
+              AsOf: asOf,
+              OnlyCompanyID: options.CompanyID ?? null,
+              PaymentScheduleID: options.PaymentScheduleID ?? null,
+          });
 
     if (!built.Success) {
         // A refusal is reported as a refusal, not as an empty success. Zero documents with Success=true

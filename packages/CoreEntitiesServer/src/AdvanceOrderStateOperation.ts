@@ -1,10 +1,10 @@
 /**
- * @fileoverview `Orders.AdvanceOrderState` — move a booked order up the status ladder.
+ * @fileoverview `Orders.AdvanceOrderState` — move a booked order's fulfilment to Fulfilled.
  *
  * WHAT THIS IS FOR. Back-office entry of something that has ALREADY happened: a sale taken at a
  * counter, a shipment that went out before anyone opened the system, a migration from whatever came
- * before. The order needs to land in its final state without a human clicking through
- * Confirmed → Posted → Fulfilled (D17).
+ * before. The order needs to land in its final state without a human fulfilling it line by line:
+ * `Status` stays Confirmed and `FulfillmentStatus` moves from Pending to Fulfilled (D17).
  *
  * WHAT IT REPLACED, AND WHY IT SHRANK. This was `Orders.CreateOrderInState`, which took an
  * `OrderDraft` — a hand-maintained mirror of the order entity — created the order by delegating to
@@ -12,8 +12,8 @@
  * booking an order is now `order.Save()` through MJ's entity graph, which runs the identical booking
  * walk on the server subclass. What is left is the part a save cannot do, and that part is this file.
  *
- * WHY THE LADDER STILL NEEDS AN OPERATION. Advancing to Posted is a plain save. Advancing to
- * Fulfilled is not: the fulfillable LINES have to be marked first, and whether the order may move at
+ * WHY THIS STILL NEEDS AN OPERATION. Reaching Confirmed is a plain save. Reaching Fulfilled is
+ * not: the fulfillable LINES have to be marked first, and whether the order may move at
  * all depends on how many could not be. That is a decision over a set of rows, taken on the server,
  * with a caller-supplied override — a save on one header has nowhere to put it.
  *

@@ -92,13 +92,22 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
-vi.mock('@mj-biz-apps/orders-entities', () => ({
-    mjBizAppsOrdersOrderHeaderEntity: MockOrderHeader,
-    mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant,
-    LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
-    OrdersEngine: { Instance: {} },
-    IsBooked: (status: string) => status === 'Confirmed',
-}));
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
+    // The UUID guards live in this package and `sql-guards.ts` re-exports them; keep them real.
+    const { InvalidOperationInputError, RequireOptionalUUID, RequireUUID, RequireUUIDs } =
+        await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
+    return {
+        InvalidOperationInputError,
+        RequireOptionalUUID,
+        RequireUUID,
+        RequireUUIDs,
+        mjBizAppsOrdersOrderHeaderEntity: MockOrderHeader,
+        mjBizAppsOrdersEntitlementGrantEntity: MockEntitlementGrant,
+        LoadOrdersEngine: vi.fn().mockResolvedValue(undefined),
+        OrdersEngine: { Instance: {} },
+        IsBooked: (status: string) => status === 'Confirmed',
+    };
+});
 
 import { GuestOrderClaimDriver } from '../GuestOrderClaimDriver.js';
 

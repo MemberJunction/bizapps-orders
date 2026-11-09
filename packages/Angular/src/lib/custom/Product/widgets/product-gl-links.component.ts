@@ -148,9 +148,10 @@ export interface ProductGLLinkRow {
  * ── WHAT IS DELIBERATELY NOT HERE ──
  *
  * No fallback chain. A product with no direct link still books, through category and company defaults,
- * and `GlResolutionPreviewComponent` in accounting-ng already renders that chain. Showing a resolved
- * account here without saying it came from a category would read as "this product is linked" when it is
- * not, which is the same confusion #112 caused one screen over.
+ * and showing a resolved account here without saying it came from a category would read as "this
+ * product is linked" when it is not, which is the same confusion #112 caused one screen over. The chain
+ * is shown separately, under this panel, by `BizAppsProductEffectiveGLAccountsComponent`
+ * (golive#439), which asks the server's walk and labels each level.
  */
 @Component({
     standalone: false,
@@ -164,6 +165,8 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
     @Input() public FormContext?: FormContext;
 
     @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
+    /** After a link is added, edited, retired or removed, so the Effective accounts block re-reads. */
+    @Output() public LinksChanged = new EventEmitter<void>();
 
     public Rows: ProductGLLinkRow[] = [];
     public Loading = true;
@@ -560,6 +563,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             }
             this.Editing = null;
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -642,6 +646,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             }
             this.Draft = null;
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -731,6 +736,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             // The row this form was bound to has just changed underneath it; see closeEditFor.
             this.closeEditFor(row.ID);
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -773,6 +779,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             // The row this form was bound to has just changed underneath it; see closeEditFor.
             this.closeEditFor(row.ID);
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {

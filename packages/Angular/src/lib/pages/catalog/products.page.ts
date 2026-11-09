@@ -338,7 +338,7 @@ export class MJOProductsPageComponent implements OnInit {
                                     <td class="small">{{ row['TaxJurisdiction'] ?? '—' }}</td>
                                     <td class="small">{{ row['NexusType'] ?? '—' }}</td>
                                     <td>
-                                        <span class="mj-chip" [class]="nexusClass(row)">
+                                        <span class="mjo-chip" [class]="nexusClass(row)">
                                             {{ row['Status'] ?? '—' }}
                                         </span>
                                     </td>
@@ -383,7 +383,7 @@ export class MJOProductsPageComponent implements OnInit {
                                 <td class="small mono">{{ row['CertificateRef'] ?? '—' }}</td>
                                 <td class="small">{{ dateOf(row['CertificateExpiresAt']) }}</td>
                                 <td>
-                                    <span class="mj-chip" [class]="exemptionClass(row)">
+                                    <span class="mjo-chip" [class]="exemptionClass(row)">
                                         {{ row['Status'] ?? '—' }}
                                     </span>
                                 </td>
@@ -555,7 +555,7 @@ export class MJOChargesTaxPageComponent implements OnInit {
     }
 
     protected nexusClass(row: Record<string, unknown>): string {
-        return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+        return row['Status'] === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline';
     }
 
     /** An expired certificate stops exempting on its own date. */
@@ -581,7 +581,7 @@ export class MJOChargesTaxPageComponent implements OnInit {
         // on the entity, and the bracket access here means the compiler never saw the mismatch. The
         // old form produced 'Mon Aug 10', which is never less than an ISO day, so an EXPIRED
         // certificate kept its ordinary chip and nobody was told to collect a new one.
-        if (IsBefore(row.CertificateExpiresAt, Today())) return 'mj-chip--warning';
-        return row['Status'] === 'Active' ? 'mj-chip--success' : 'mj-chip--outline';
+        if (IsBefore(row.CertificateExpiresAt, Today())) return 'mjo-chip--warning';
+        return row['Status'] === 'Active' ? 'mjo-chip--success' : 'mjo-chip--outline';
     }
 }

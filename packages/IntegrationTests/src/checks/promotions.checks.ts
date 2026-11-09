@@ -74,6 +74,8 @@ async function addPromotion(
     stackSequence?: number;
     maxRedemptions?: number | null;
     maxPerCustomer?: number | null;
+    /** The code's own limit, separate from the promotion's. */
+    codeMax?: number | null;
     minOrder?: number | null;
     minQty?: number | null;
     qualifierKey?: string | null;
@@ -106,6 +108,7 @@ async function addPromotion(
     PromotionID: promotionID,
     Code: code,
     Status: "Active",
+    MaxRedemptions: opts.codeMax ?? null,
   });
 
   if (opts.targetProductID || opts.targetCategoryID) {
@@ -313,6 +316,13 @@ export const PromotionChecks: NamedCheck[] = [
         Assert(order.Saved, `confirm failed: ${order.Message}`);
         const t = await totals(ctx, order.Order.ID as string);
         AssertEqual(Number(t.Discount), 200, "only the 20% applied — the customer gets the better one");
+
+        // The code that lost is told why, naming the offer that won (#686).
+        const unusable = order.Order.UnusablePromotionCodes;
+        Assert(
+          unusable.length === 1 && unusable[0].Code === small.Code && unusable[0].Reason.includes(`${big.Code} promotion`),
+          `expected one reason for ${small.Code} naming ${big.Code}'s promotion, got: ${JSON.stringify(unusable)}`,
+        );
       }),
   },
   {
@@ -414,10 +424,14 @@ export const PromotionChecks: NamedCheck[] = [
         const tooSmall = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 2 }], codes: [Code] });
         Assert(tooSmall.Saved, `confirm failed: ${tooSmall.Message}`);
         AssertEqual(Number((await totals(ctx, tooSmall.Order.ID as string)).Discount), 0, "100 does not reach the 500 minimum");
+        const unusable = tooSmall.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && /minimum of 500\.00/.test(unusable[0].Reason),
+          `expected a 'minimum of 500.00' reason, got: ${JSON.stringify(unusable)}`);
 
         const bigEnough = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 20 }], codes: [Code] });
         Assert(bigEnough.Saved, `confirm failed: ${bigEnough.Message}`);
         AssertEqual(Number((await totals(ctx, bigEnough.Order.ID as string)).Discount), 200, "1000 qualifies");
+        AssertEqual(bigEnough.Order.UnusablePromotionCodes.length, 0, "a code that applied is not reported");
       }),
   },
   {
@@ -952,6 +966,77 @@ export const PromotionChecks: NamedCheck[] = [
         AssertEqual(Number(t.Discount), 100, "the confirmed line keeps the discount");
         const trail = await adjustmentTrail(ctx, built.Order.ID as string);
         AssertEqual(trail.PromotionAmount, 100, "recorded once");
+      }),
+  },
+  {
+    Id: "promotions.PR30",
+    Name: "PR30: an order-level promotion on a two-line order spends one redemption",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 300);
+        await addPrice(ctx, f.Products.WidgetB, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1, appliesAt: "Order", maxRedemptions: 2 });
+
+        // Allocation writes one adjustment row per line. A redemption is the order, not the row.
+        const first = await confirmWith(ctx, {
+          lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 1 },
+            { ProductID: f.Products.WidgetB, Quantity: 1 },
+          ],
+          codes: [Code],
+        });
+        Assert(first.Saved, `first confirm failed: ${first.Message}`);
+        AssertEqual(Number((await totals(ctx, first.Order.ID as string)).Discount), 40, "the first order took the discount");
+
+        const second = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(second.Saved, `second confirm failed: ${second.Message}`);
+        AssertEqual(Number((await totals(ctx, second.Order.ID as string)).Discount), 30, "the second order is the second redemption");
+        AssertEqual(second.Order.UnusablePromotionCodes.length, 0, "and the code is not reported as used up");
+      }),
+  },
+  {
+    Id: "promotions.PR31",
+    Name: "PR31: a code stopped by its redemption limit says so",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const { Code } = await addPromotion(ctx, { value: 0.1, maxRedemptions: 1 });
+
+        const first = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(first.Saved, `first confirm failed: ${first.Message}`);
+
+        const second = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(second.Saved, `second confirm failed: ${second.Message}`);
+        const unusable = second.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && unusable[0].Code === Code && /redemption limit/i.test(unusable[0].Reason),
+          `expected one 'redemption limit' reason for ${Code}, got: ${JSON.stringify(unusable)}`);
+      }),
+  },
+  {
+    Id: "promotions.PR32",
+    Name: "PR32: a code's own redemption limit is enforced",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        // The promotion has no limit; the code does.
+        const { Code } = await addPromotion(ctx, { value: 0.1, codeMax: 1 });
+
+        const first = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(first.Saved, `first confirm failed: ${first.Message}`);
+        AssertEqual(Number((await totals(ctx, first.Order.ID as string)).Discount), 10, "the first use applied");
+
+        const second = await confirmWith(ctx, { lines: [{ ProductID: f.Products.WidgetA, Quantity: 1 }], codes: [Code] });
+        Assert(second.Saved, `second confirm failed: ${second.Message}`);
+        AssertEqual(Number((await totals(ctx, second.Order.ID as string)).Discount), 0, "the second use was refused");
+        const unusable = second.Order.UnusablePromotionCodes;
+        Assert(unusable.length === 1 && /redemption limit/i.test(unusable[0].Reason),
+          `expected a 'redemption limit' reason, got: ${JSON.stringify(unusable)}`);
       }),
   },
 ];

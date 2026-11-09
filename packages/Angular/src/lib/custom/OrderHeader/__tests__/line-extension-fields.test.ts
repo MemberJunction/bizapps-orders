@@ -6,6 +6,7 @@ import {
     FormTypeForField,
     LinkTypeForField,
     SelectSimpleExtensionFields,
+    DescribeSeatSplit,
     ShouldAutoExpandExtension,
     type ExtensionFieldSource,
 } from '../line-extension-fields';
@@ -120,5 +121,17 @@ describe('ShouldAutoExpandExtension', () => {
     it('opens only a newly added line', () => {
         expect(ShouldAutoExpandExtension(true)).toBe(true);
         expect(ShouldAutoExpandExtension(false)).toBe(false);
+    });
+});
+
+describe('DescribeSeatSplit', () => {
+    it('names the event and the seat count', () => {
+        expect(DescribeSeatSplit('Annual Gala', 3, false)).toBe(
+            'Annual Gala needs an attendee per seat, so it is now 3 lines at quantity 1. Enter an attendee on each.',
+        );
+    });
+
+    it('says where a manual discount went', () => {
+        expect(DescribeSeatSplit('Annual Gala', 2, true)).toMatch(/The discount stayed on the first line\.$/);
     });
 });

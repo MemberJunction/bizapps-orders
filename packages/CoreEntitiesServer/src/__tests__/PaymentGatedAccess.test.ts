@@ -118,6 +118,15 @@ describe('DecideGrantStatus — OnFirstPayment, renewal', () => {
         expect(DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 0, Balance: 0, AmountPaid: 1200 }), 14).Status).toBe('Active');
     });
 
+    it('a renewal suspended on the cutoff day while its capture was still booking comes back on the next nightly pass', () => {
+        // The access job runs at 03:30, the charge pass at 03:15. A capture of money already taken can
+        // book after the access job read the order and suspended it; the next pass reads it paid.
+        const suspended = DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 14 }), 14);
+        expect(suspended).toEqual({ Status: 'Suspended', Reason: 'PastDue' });
+        const nextNight = DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 0, Balance: 0, AmountPaid: 1200 }), 14);
+        expect(ReconcileGrantStatus({ Status: suspended.Status, SuspensionReason: suspended.Reason }, nextNight)).toEqual({ Status: 'Active', Reason: null });
+    });
+
     it('a cutoff of 0 suspends on the first day past due, but not before', () => {
         expect(DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 0 }), 0).Status).toBe('Active');
         expect(DecideGrantStatus('OnFirstPayment', true, order({ DaysPastDue: 1 }), 0).Status).toBe('Suspended');

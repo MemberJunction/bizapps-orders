@@ -36,7 +36,7 @@
 -- -----------------------------------------------------------------------------
 -- trg_OrderHeader_ImmutableAfterConfirm (AFTER UPDATE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderHeader_ImmutableAfterConfirm"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderHeader_ImmutableAfterConfirm"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -145,7 +145,7 @@ BEGIN
               SELECT 1
               FROM (
                   SELECT c."PriorPaymentTermsTypeID", c."NewPaymentTermsTypeID"
-                  FROM "${flyway:defaultSchema}"."OrderConcession" c
+                  FROM ${flyway:defaultSchema}."OrderConcession" c
                   WHERE c."OrderHeaderID" = d."ID"
                     AND c."DeliveryForm" = 'Terms'
                     AND c."Status" = 'Approved'
@@ -164,18 +164,18 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_OrderHeader_ImmutableAfterConfirm" ON "${flyway:defaultSchema}"."OrderHeader";
+DROP TRIGGER IF EXISTS "trg_OrderHeader_ImmutableAfterConfirm" ON ${flyway:defaultSchema}."OrderHeader";
 CREATE TRIGGER "trg_OrderHeader_ImmutableAfterConfirm"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."OrderHeader"
+    AFTER UPDATE ON ${flyway:defaultSchema}."OrderHeader"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderHeader_ImmutableAfterConfirm"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderHeader_ImmutableAfterConfirm"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_OrderLine_ImmutableAfterConfirm (AFTER UPDATE, DELETE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderLine_ImmutableAfterConfirm"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderLine_ImmutableAfterConfirm"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -185,7 +185,7 @@ BEGIN
         IF EXISTS (
             SELECT 1
             FROM deleted d
-            JOIN "${flyway:defaultSchema}"."OrderHeader" o ON o."ID" = d."OrderHeaderID"
+            JOIN ${flyway:defaultSchema}."OrderHeader" o ON o."ID" = d."OrderHeaderID"
             WHERE o."Status" = 'Confirmed'
         ) THEN
             RAISE EXCEPTION 'OrderLine cannot be deleted once its order is Confirmed (the line is booked under a journal entry). Use a reversal order.'
@@ -199,7 +199,7 @@ BEGIN
         SELECT 1
         FROM deleted d
         JOIN inserted i ON i."ID" = d."ID"
-        JOIN "${flyway:defaultSchema}"."OrderHeader" o ON o."ID" = d."OrderHeaderID"
+        JOIN ${flyway:defaultSchema}."OrderHeader" o ON o."ID" = d."OrderHeaderID"
         WHERE o."Status" = 'Confirmed'
           AND (
             i."ProductID"      <> d."ProductID"      OR
@@ -221,7 +221,7 @@ BEGIN
         SELECT 1
         FROM deleted d
         JOIN inserted i ON i."ID" = d."ID"
-        JOIN "${flyway:defaultSchema}"."OrderHeader" o ON o."ID" = d."OrderHeaderID"
+        JOIN ${flyway:defaultSchema}."OrderHeader" o ON o."ID" = d."OrderHeaderID"
         WHERE (
                 o."Status" = 'Confirmed'
                 AND (
@@ -256,25 +256,25 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_OrderLine_ImmutableAfterConfirm" ON "${flyway:defaultSchema}"."OrderLine";
+DROP TRIGGER IF EXISTS "trg_OrderLine_ImmutableAfterConfirm" ON ${flyway:defaultSchema}."OrderLine";
 CREATE TRIGGER "trg_OrderLine_ImmutableAfterConfirm"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."OrderLine"
+    AFTER UPDATE ON ${flyway:defaultSchema}."OrderLine"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderLine_ImmutableAfterConfirm"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderLine_ImmutableAfterConfirm"();
 
-DROP TRIGGER IF EXISTS "trg_OrderLine_ImmutableAfterConfirm_Delete" ON "${flyway:defaultSchema}"."OrderLine";
+DROP TRIGGER IF EXISTS "trg_OrderLine_ImmutableAfterConfirm_Delete" ON ${flyway:defaultSchema}."OrderLine";
 CREATE TRIGGER "trg_OrderLine_ImmutableAfterConfirm_Delete"
-    AFTER DELETE ON "${flyway:defaultSchema}"."OrderLine"
+    AFTER DELETE ON ${flyway:defaultSchema}."OrderLine"
     REFERENCING OLD TABLE AS deleted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderLine_ImmutableAfterConfirm"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderLine_ImmutableAfterConfirm"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_PaymentHeader_ImmutableAfterCapture (AFTER UPDATE, DELETE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentHeader_ImmutableAfterCapture"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentHeader_ImmutableAfterCapture"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -339,25 +339,25 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_PaymentHeader_ImmutableAfterCapture" ON "${flyway:defaultSchema}"."PaymentHeader";
+DROP TRIGGER IF EXISTS "trg_PaymentHeader_ImmutableAfterCapture" ON ${flyway:defaultSchema}."PaymentHeader";
 CREATE TRIGGER "trg_PaymentHeader_ImmutableAfterCapture"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."PaymentHeader"
+    AFTER UPDATE ON ${flyway:defaultSchema}."PaymentHeader"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentHeader_ImmutableAfterCapture"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentHeader_ImmutableAfterCapture"();
 
-DROP TRIGGER IF EXISTS "trg_PaymentHeader_ImmutableAfterCapture_Delete" ON "${flyway:defaultSchema}"."PaymentHeader";
+DROP TRIGGER IF EXISTS "trg_PaymentHeader_ImmutableAfterCapture_Delete" ON ${flyway:defaultSchema}."PaymentHeader";
 CREATE TRIGGER "trg_PaymentHeader_ImmutableAfterCapture_Delete"
-    AFTER DELETE ON "${flyway:defaultSchema}"."PaymentHeader"
+    AFTER DELETE ON ${flyway:defaultSchema}."PaymentHeader"
     REFERENCING OLD TABLE AS deleted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentHeader_ImmutableAfterCapture"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentHeader_ImmutableAfterCapture"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_PaymentLine_ImmutableAfterCapture (AFTER UPDATE, DELETE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentLine_ImmutableAfterCapture"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentLine_ImmutableAfterCapture"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -367,7 +367,7 @@ BEGIN
         IF EXISTS (
             SELECT 1
             FROM deleted d
-            JOIN "${flyway:defaultSchema}"."PaymentHeader" p ON p."ID" = d."PaymentHeaderID"
+            JOIN ${flyway:defaultSchema}."PaymentHeader" p ON p."ID" = d."PaymentHeaderID"
             WHERE p."Status" IN ('Captured','Refunded','Disputed')
         ) THEN
             RAISE EXCEPTION 'PaymentLine cannot be deleted once its payment is Captured (the allocation is booked under a journal entry). Use a reversal payment or an account-credit transfer.'
@@ -383,7 +383,7 @@ BEGIN
         SELECT 1
         FROM deleted d
         JOIN inserted i ON i."ID" = d."ID"
-        JOIN "${flyway:defaultSchema}"."PaymentHeader" p ON p."ID" = d."PaymentHeaderID"
+        JOIN ${flyway:defaultSchema}."PaymentHeader" p ON p."ID" = d."PaymentHeaderID"
         WHERE p."Status" IN ('Captured','Refunded','Disputed')
           AND (
             i."Amount"        <> d."Amount"        OR
@@ -414,25 +414,25 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_PaymentLine_ImmutableAfterCapture" ON "${flyway:defaultSchema}"."PaymentLine";
+DROP TRIGGER IF EXISTS "trg_PaymentLine_ImmutableAfterCapture" ON ${flyway:defaultSchema}."PaymentLine";
 CREATE TRIGGER "trg_PaymentLine_ImmutableAfterCapture"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."PaymentLine"
+    AFTER UPDATE ON ${flyway:defaultSchema}."PaymentLine"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentLine_ImmutableAfterCapture"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentLine_ImmutableAfterCapture"();
 
-DROP TRIGGER IF EXISTS "trg_PaymentLine_ImmutableAfterCapture_Delete" ON "${flyway:defaultSchema}"."PaymentLine";
+DROP TRIGGER IF EXISTS "trg_PaymentLine_ImmutableAfterCapture_Delete" ON ${flyway:defaultSchema}."PaymentLine";
 CREATE TRIGGER "trg_PaymentLine_ImmutableAfterCapture_Delete"
-    AFTER DELETE ON "${flyway:defaultSchema}"."PaymentLine"
+    AFTER DELETE ON ${flyway:defaultSchema}."PaymentLine"
     REFERENCING OLD TABLE AS deleted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentLine_ImmutableAfterCapture"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentLine_ImmutableAfterCapture"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_PaymentDetail_Immutable (AFTER UPDATE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentDetail_Immutable"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentDetail_Immutable"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -461,18 +461,18 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_PaymentDetail_Immutable" ON "${flyway:defaultSchema}"."PaymentDetail";
+DROP TRIGGER IF EXISTS "trg_PaymentDetail_Immutable" ON ${flyway:defaultSchema}."PaymentDetail";
 CREATE TRIGGER "trg_PaymentDetail_Immutable"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."PaymentDetail"
+    AFTER UPDATE ON ${flyway:defaultSchema}."PaymentDetail"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_PaymentDetail_Immutable"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_PaymentDetail_Immutable"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_OrderHeaderPaymentSchedule_Immutable (AFTER UPDATE, DELETE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderHeaderPaymentSchedule_Immutable"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderHeaderPaymentSchedule_Immutable"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -524,25 +524,25 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_OrderHeaderPaymentSchedule_Immutable" ON "${flyway:defaultSchema}"."OrderHeaderPaymentSchedule";
+DROP TRIGGER IF EXISTS "trg_OrderHeaderPaymentSchedule_Immutable" ON ${flyway:defaultSchema}."OrderHeaderPaymentSchedule";
 CREATE TRIGGER "trg_OrderHeaderPaymentSchedule_Immutable"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."OrderHeaderPaymentSchedule"
+    AFTER UPDATE ON ${flyway:defaultSchema}."OrderHeaderPaymentSchedule"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderHeaderPaymentSchedule_Immutable"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderHeaderPaymentSchedule_Immutable"();
 
-DROP TRIGGER IF EXISTS "trg_OrderHeaderPaymentSchedule_Immutable_Delete" ON "${flyway:defaultSchema}"."OrderHeaderPaymentSchedule";
+DROP TRIGGER IF EXISTS "trg_OrderHeaderPaymentSchedule_Immutable_Delete" ON ${flyway:defaultSchema}."OrderHeaderPaymentSchedule";
 CREATE TRIGGER "trg_OrderHeaderPaymentSchedule_Immutable_Delete"
-    AFTER DELETE ON "${flyway:defaultSchema}"."OrderHeaderPaymentSchedule"
+    AFTER DELETE ON ${flyway:defaultSchema}."OrderHeaderPaymentSchedule"
     REFERENCING OLD TABLE AS deleted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderHeaderPaymentSchedule_Immutable"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderHeaderPaymentSchedule_Immutable"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_OrderLineProgressMeasurement_Immutable (AFTER UPDATE, DELETE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderLineProgressMeasurement_Immutable"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderLineProgressMeasurement_Immutable"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -575,25 +575,25 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_OrderLineProgressMeasurement_Immutable" ON "${flyway:defaultSchema}"."OrderLineProgressMeasurement";
+DROP TRIGGER IF EXISTS "trg_OrderLineProgressMeasurement_Immutable" ON ${flyway:defaultSchema}."OrderLineProgressMeasurement";
 CREATE TRIGGER "trg_OrderLineProgressMeasurement_Immutable"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."OrderLineProgressMeasurement"
+    AFTER UPDATE ON ${flyway:defaultSchema}."OrderLineProgressMeasurement"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderLineProgressMeasurement_Immutable"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderLineProgressMeasurement_Immutable"();
 
-DROP TRIGGER IF EXISTS "trg_OrderLineProgressMeasurement_Immutable_Delete" ON "${flyway:defaultSchema}"."OrderLineProgressMeasurement";
+DROP TRIGGER IF EXISTS "trg_OrderLineProgressMeasurement_Immutable_Delete" ON ${flyway:defaultSchema}."OrderLineProgressMeasurement";
 CREATE TRIGGER "trg_OrderLineProgressMeasurement_Immutable_Delete"
-    AFTER DELETE ON "${flyway:defaultSchema}"."OrderLineProgressMeasurement"
+    AFTER DELETE ON ${flyway:defaultSchema}."OrderLineProgressMeasurement"
     REFERENCING OLD TABLE AS deleted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_OrderLineProgressMeasurement_Immutable"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_OrderLineProgressMeasurement_Immutable"();
 
 
 -- -----------------------------------------------------------------------------
 -- trg_EntitlementAccessOverride_Record (AFTER UPDATE)
 -- -----------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION "${flyway:defaultSchema}"."fn_trg_EntitlementAccessOverride_Record"()
+CREATE OR REPLACE FUNCTION ${flyway:defaultSchema}."fn_trg_EntitlementAccessOverride_Record"()
 RETURNS trigger
 LANGUAGE plpgsql
 AS $fn$
@@ -635,9 +635,9 @@ BEGIN
 END;
 $fn$;
 
-DROP TRIGGER IF EXISTS "trg_EntitlementAccessOverride_Record" ON "${flyway:defaultSchema}"."EntitlementAccessOverride";
+DROP TRIGGER IF EXISTS "trg_EntitlementAccessOverride_Record" ON ${flyway:defaultSchema}."EntitlementAccessOverride";
 CREATE TRIGGER "trg_EntitlementAccessOverride_Record"
-    AFTER UPDATE ON "${flyway:defaultSchema}"."EntitlementAccessOverride"
+    AFTER UPDATE ON ${flyway:defaultSchema}."EntitlementAccessOverride"
     REFERENCING OLD TABLE AS deleted NEW TABLE AS inserted
     FOR EACH STATEMENT
-    EXECUTE FUNCTION "${flyway:defaultSchema}"."fn_trg_EntitlementAccessOverride_Record"();
+    EXECUTE FUNCTION ${flyway:defaultSchema}."fn_trg_EntitlementAccessOverride_Record"();

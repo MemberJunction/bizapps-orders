@@ -124,11 +124,14 @@ export function DuePhrase(daysUntilDue: number | null): string | null {
     return `${overdue} day${overdue === 1 ? '' : 's'} overdue`;
 }
 
+/** `Oct 1, 2026 – Oct 31, 2026`, an em dash for a missing end. Null when neither date is set. */
+export function FormatServicePeriod(start: string | null, end: string | null, options?: DisplayOptions): string | null {
+    if (!start && !end) return null;
+    return `${FormatDate(start, options) ?? '—'} – ${FormatDate(end, options) ?? '—'}`;
+}
+
 function decorateRow(row: InvoiceRow, options: DisplayOptions): DisplayRow {
-    const period =
-        row.ServicePeriodStart || row.ServicePeriodEnd
-            ? `${FormatDate(row.ServicePeriodStart, options) ?? '—'} – ${FormatDate(row.ServicePeriodEnd, options) ?? '—'}`
-            : null;
+    const period = FormatServicePeriod(row.ServicePeriodStart, row.ServicePeriodEnd, options);
     return {
         ...row,
         QuantityText: FormatQuantity(row.Quantity, options),

@@ -44,7 +44,6 @@
 import {
     BaseEntity,
     BaseEntityResult,
-    BaseRemotableOperation,
     DatabaseProviderBase,
     EntitySaveOptions,
     IMetadataProvider,
@@ -56,14 +55,15 @@ import {
     ValidationErrorType,
     ValidationResult,
 } from '@memberjunction/core';
-import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
-import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor } from './AccountingBridge.js';
+import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
-import { DepositReleasedByCompany, PlanLineDeposits, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
+import { PlanLineDeposits, ReversalDepositWorking, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
+import { OrderCustomerName, type OrderCustomerFields } from './JournalEntryCustomer.js';
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
@@ -185,23 +185,24 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
                     `there is no basis for deciding whose revenue the cash settles.`,
             );
         }
-        const order = await this.loadOrderNumber();
+        const order = await this.loadOrderLabel();
 
         // The deposit part of each company's share (D91, #234 review). Taking cash back is sized from
         // what the rollup just took out of the rows' deposits — this row is saved by now — so the
         // entry says what the schedule says.
         const isReversal = payment.Status === 'Refunded' || (this.Amount ?? 0) < 0;
-        const released = isReversal && scheduleFacts.length
-            ? DepositReleasedByCompany(
+        const working = isReversal && scheduleFacts.length
+            ? ReversalDepositWorking(
                   scheduleFacts,
                   await LoadInstalmentCashFacts(provider as unknown as IRunViewProvider, user, this.OrderHeaderID),
+                  [this.OrderHeaderPaymentScheduleID],
               )
-            : new Map<string, number>();
+            : { Facts: scheduleFacts, Released: new Map<string, number>() };
         const plan = PlanLineDeposits(
             AllocateByCompany(Math.abs(this.Amount ?? 0), orderLines, this.OrderLineID ?? null),
             isReversal,
             this.OrderHeaderPaymentScheduleID ?? null,
-            { Facts: scheduleFacts, Released: released },
+            working,
         );
 
         // The intercompany lookup is accounting's (BA-D26), read from its cache — both builders
@@ -217,7 +218,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const { Drafts } = await factory.BuildAllocationDrafts({
             PaymentLineID: this.ID,
             PaymentNumber: payment.PaymentNumber,
-            OrderNumber: order,
+            OrderNumber: order.OrderNumber,
+            CustomerName: order.CustomerName,
             Amount: this.Amount ?? 0,
             ReceivingCompanyID: payment.ReceivingCompanyID,
             OrderLines: orderLines,
@@ -262,7 +264,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         }>(
             {
                 EntityName: PAYMENT_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.PaymentHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.PaymentHeaderID, 'PaymentHeaderID')}'`,
                 Fields: ['PaymentNumber', 'ReceivingCompanyID', 'Status', 'PaymentDate', 'PaymentDetailID'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -286,19 +288,21 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
     }
 
 
-    private async loadOrderNumber(): Promise<string> {
+    /** The order's number and customer, for the entry descriptions; the id stands in for a missing number. */
+    private async loadOrderLabel(): Promise<{ OrderNumber: string; CustomerName: string | null }> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ OrderNumber: string }>(
+        const res = await rv.RunView<{ OrderNumber: string } & OrderCustomerFields>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
-                Fields: ['OrderNumber'],
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['OrderNumber', 'BillToOrganization', 'BillToPerson'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        return res?.Results?.[0]?.OrderNumber ?? String(this.OrderHeaderID);
+        const row = res?.Results?.[0];
+        return { OrderNumber: row?.OrderNumber ?? String(this.OrderHeaderID), CustomerName: row ? OrderCustomerName(row) : null };
     }
 
     private async createJournalEntries(
@@ -306,16 +310,10 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CreateJournalEntriesResult> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-            BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>
-        >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-
-        if (!op) {
-            throw new Error(
-                `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps ` +
-                    `Accounting server package must be loaded before payments can book the cash leg.`,
-            );
-        }
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
+            'Accounting.CreateJournalEntries',
+            'book the cash leg of a payment',
+        );
 
         const result = await op.Execute({ Drafts: drafts }, { provider, user });
         if (!result.Success) {
@@ -381,11 +379,11 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
 
-        const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string }>(
+        const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string; Balance: number | null; AmountPaid: number | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
-                Fields: ['TotalGross', 'OrderNumber'],
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['ID', 'TotalGross', 'OrderNumber', 'Balance', 'AmountPaid'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
@@ -398,7 +396,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const siblings = await rv.RunView<{ ID: string; Amount: number }>(
             {
                 EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${this.OrderHeaderID}'`,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'Amount'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -420,11 +418,23 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // recorded for what actually arrived. Consistency between a payment and its own allocations is
         // enforced instead, on the payment side (PaymentHeaderEntityServer, D68).
 
-        if (proposed < -TOLERANCE) {
+        // THE FLOOR: an order's applied total may go below zero only by the credit the order ITSELF carries. An order
+        // worth less than nothing (a return or credit memo, worth -599) holds that credit without any cash, and spending
+        // it (Orders.ApplyAccountCredit: -599 here, +599 on the order it settles) takes its applied total to -599 and
+        // its balance to 0. Its value is Balance + AmountPaid (lines, less credit memos and reductions: everything but
+        // cash, as spRecalcOrderHeaderTotals computes them). An order worth zero or more carries no credit: its floor
+        // stays 0, so cash is never un-applied past what was applied (D20, 30 Oct).
+        // A part that is not a finite number counts as 0, so a malformed read can only RAISE the floor (fail closed):
+        // `proposed < NaN` is false, which would otherwise allow any application.
+        const finite = (v: unknown): number => (Number.isFinite(Number(v)) ? Number(v) : 0);
+        const value = Math.round((finite(order.Balance ?? 0) + finite(order.AmountPaid ?? 0)) * 100) / 100;
+        const floor = Math.min(0, value);
+        if (proposed < floor - TOLERANCE) {
             return (
                 `Applying ${this.Amount} would take the total applied against order ${order.OrderNumber} ` +
-                `to ${proposed}. Only ${existing} has ever been applied, so there is nothing more to ` +
-                `un-apply.`
+                `to ${proposed}. Only ${existing} has ever been applied` +
+                (floor < 0 ? ` and the order carries ${-floor} of credit` : '') +
+                `, so there is nothing more to un-apply.`
             );
         }
 

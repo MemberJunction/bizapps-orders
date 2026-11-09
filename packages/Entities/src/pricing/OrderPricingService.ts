@@ -41,20 +41,11 @@ import type { PriceResolutionContext, ResolvedPrice } from './PriceResolver.js';
 import type { ManualDiscountRequest, PromotionRunResult } from './PromotionEngine.js';
 import { RunView, type IRunViewProvider } from '@memberjunction/core';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
-import { RunCharges, SplitChargesByLine } from './ChargeEngine.js';
+import { RunCharges, SplitChargesByLine, StatesTaxCharge } from './ChargeEngine.js';
 import { PriceResolutionError, ResolvePrice } from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { loadApplicabilityContext, type FilterEvalContext } from './applicability.js';
-import { AllocateProRata, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
-/**
- * The one thing this walk needs from the SERVER line subclass: somewhere to record the extended
- * amount it resolved.
- *
- * Declared structurally rather than imported, because this file runs on both tiers now and the server
- * subclass exists on only one of them. A nominal import would drag the whole server package into the
- * browser's compile for a single optional property.
- */
-type CarriesResolvedExtendedAmount = { ResolvedExtendedAmount?: number | null };
+import { AllocateProRata, DropStaleExtendedAmount, LineGross, Money, NetAfterDiscount } from './PricingBehavior.js';
 import type { StackingMode } from './PromotionBehavior.js';
 import {
     AuthorizeManualDiscount,
@@ -109,6 +100,13 @@ export interface OrderPricingContext {
     Lines: mjBizAppsOrdersOrderLineEntity[];
     PromotionCodes: string[];
     ManualDiscounts: ManualDiscountRequest[];
+    /**
+     * True when this walk prices an order that books on the same save. A manual discount above the
+     * user's authority is held for approval (golive #328), and the confirm gate that would hold it
+     * has already run, so on a booking walk it is refused instead: save the order first, then confirm
+     * once a concession covering it is approved.
+     */
+    Booking?: boolean;
     Charges: RequestedCharge[];
     /**
      * Tax already settled for a line, which is used instead of resolving it from the ship-to address.
@@ -134,6 +132,12 @@ export interface OrderPricingContext {
     PriceListID?: string | null;
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
+    /**
+     * Skip the check that each product may be sold (Status Active, inside its availability window).
+     * PreviewPrice sets it for the product form's Activate check, which asks whether a Draft product
+     * has a price. Off for every walk that books or quotes an order.
+     */
+    IgnoreSellability?: boolean;
     /**
      * Also resolve what the rules WOULD say for a line whose price the caller stated.
      *
@@ -231,6 +235,10 @@ export class OrderPricingService {
         };
 
         for (const line of ctx.Lines) {
+            // Before anything reads a line's stored extended amount — the charge and promotion bases
+            // below read it for lines this walk does not re-price — drop one the line has been edited
+            // past. A line re-priced here gets a fresh figure from `applyResolvedPrice`.
+            DropStaleExtendedAmount(line);
             if (skipPricingFor?.has(line)) continue;
             // Not for negative quantities: a negative line with no origin is refused by the line's
             // own validation, which names ReversesOrderLineID and says what would make it legal.
@@ -271,7 +279,7 @@ export class OrderPricingService {
         for (let i = 0; i < this.ctx.Lines.length; i++) {
             const line = this.ctx.Lines[i];
             const product = await this.loadProductForPricing(line.ProductID);
-            const gross = Math.round(Number(line.Quantity ?? 0) * Number(line.UnitPrice ?? 0) * 100) / 100;
+            const gross = LineGross(Number(line.Quantity ?? 0), Number(line.UnitPrice ?? 0), this.resolvedExtendedFor(line));
             const net = Math.round(gross * (1 - Number(line.DiscountPct ?? 0)) * 100) / 100;
             lines.push({
                 // Positional key: the real ID does not exist yet, and the writer maps it back by index.
@@ -341,14 +349,24 @@ export class OrderPricingService {
             // zero, where the net silently floors and the discount stops being visible anywhere.
             // `PerLine` holds both what is already stored and what this loop has granted so far, so
             // the first discount on a fresh line sees exactly the base it always saw.
+            // The order-level base is the same remainder summed over the lines (#824): judging "10%
+            // off the order" against nets that ignore the lines' own discounts resolved to more money
+            // and checked the authority cap against an inflated base.
+            const remainders = lines.map((l) => Math.max(0, Money(l.Net - (run.PerLine.get(l.ID) ?? 0))));
             const base = target
                 ? Money(target.Net - (run.PerLine.get(target.ID) ?? 0))
-                : lines.reduce((sum, l) => sum + l.Net, 0);
+                : Money(remainders.reduce((sum, r) => sum + r, 0));
             // A rate becomes money against the SAME base the authorization judges it on, so "20%"
             // and "$240 off a $1,200 line" are one request expressed two ways rather than two paths.
             const amount = ManualDiscountAmount(md, base);
             const auth = await AuthorizeManualDiscount(md, base, user?.ID ?? null, provider, user);
             if (auth.Refusal) throw new Error(`Manual discount refused: ${auth.Refusal}`);
+            if (auth.Held && this.ctx.Booking) {
+                throw new Error(
+                    `Manual discount refused: ${auth.Held} Save the order without confirming it, record a ` +
+                        `concession for the line, and confirm once it is approved.`,
+                );
+            }
 
             if (target) {
                 run.Applications.push({
@@ -365,7 +383,8 @@ export class OrderPricingService {
             } else {
                 // An order-level manual discount allocates exactly like an order-level promotion —
                 // it must reach the lines or tax and GL see the wrong base.
-                const parts = AllocateProRata(amount, lines.map((l) => l.Net));
+                // Pro rata on what each line has left, so no line's share exceeds its remainder.
+                const parts = AllocateProRata(amount, remainders);
                 lines.forEach((l, i) => {
                     if (parts[i] <= 0) return;
                     run.Applications.push({
@@ -519,8 +538,9 @@ export class OrderPricingService {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<RequestedCharge[]> {
-        // A stated tax charge wins, exactly as a stated UnitPrice does.
-        if (this.ctx.Charges.some((c) => /tax/i.test(c.Code))) return [];
+        // A stated tax charge wins, exactly as a stated UnitPrice does. A tax is a charge type in the
+        // 'Tax' category, whatever its code: `VAT` is one too.
+        if (await StatesTaxCharge(this.ctx.Charges.map((c) => c.Code), provider, user)) return [];
 
         const out: RequestedCharge[] = [];
         const settled = this.ctx.SettledTax;
@@ -597,6 +617,14 @@ export class OrderPricingService {
      * for nothing looks exactly like a deliberate freebie.
      */
     private async applyResolvedPrice(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        // Whether the product may be sold at all comes first, ahead of the stated-price branch: a
+        // typed price settles WHAT the line costs, not WHETHER it may be sold. It also covers lines
+        // saved earlier, which reload with a UnitPrice and so read as stated on every later save — a
+        // draft whose product was retired since. Refusing here aborts the confirm before any line is
+        // written.
+        const product = await this.loadProductForPricing(line.ProductID);
+        if (product && !this.ctx.IgnoreSellability) this.assertProductSellable(line, product);
+
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price
         // for a free line and must not be mistaken for silence.
@@ -607,11 +635,6 @@ export class OrderPricingService {
             return;
         }
 
-        const product = await this.loadProductForPricing(line.ProductID);
-        // Before pricing it, establish that it may be sold at all — a retired or
-        // out-of-window product should not reach the ledger, and refusing here aborts
-        // the confirm before any line is written.
-        if (product) this.assertProductSellable(line, product);
         const resolved = await this.resolveRetryingStaleCatalog(await this.resolutionContextFor(line, product));
 
         if (!resolved) {
@@ -627,13 +650,11 @@ export class OrderPricingService {
 
         line.UnitPrice = resolved.UnitPrice;
         line.ProductPriceID = resolved.ProductPriceID;
-        // The line computes its own totals in a hook outside this class, so it needs the
-        // exact figure too — otherwise it would re-derive quantity × a rounded unit rate
-        // and disagree with the base computed here.
-        // Set through the structural type: on the server this lands on `OrderLineEntityServer` and is
-        // read back by its own arithmetic; in the browser it is an ordinary property nobody reads, and
-        // the pricing answer is identical either way.
-        (line as unknown as CarriesResolvedExtendedAmount).ResolvedExtendedAmount = resolved.ExtendedAmount;
+        // STORED, not just used. The line computes its own totals in a hook outside this class, and
+        // the invoice, the journal entry and any later save read the line back from the database;
+        // each of them would otherwise re-derive quantity × a rounded unit rate and disagree with
+        // the base computed here by a penny (#579).
+        line.ExtendedAmount = resolved.ExtendedAmount;
         this.out.PriceComponents.set(line, resolved);
         this.out.EngineDefaults.set(line, resolved);
     }
@@ -789,6 +810,9 @@ export class OrderPricingService {
      * Checked here because pricing already loads the product per line, so this costs
      * no extra query, and because refusing during pricing aborts the confirm BEFORE
      * any line is written — the same all-or-none point the subscription rules use.
+     * It runs for a line with a stated price as well as one the engine prices; only
+     * a reversal, settled from the line it reverses, skips it, so a retired product
+     * can still be returned.
      *
      * The order's own date is the test, not today: back-dating an order to when the
      * product WAS on sale is legitimate, and re-pricing an old order must not start
@@ -935,11 +959,13 @@ export class OrderPricingService {
     /**
      * The exact extended amount a price rule computed for this line, if one did.
      *
-     * `_priceComponents` is populated by the pricing pass in this same save, so this
-     * is the authority while the line is still in flight; the line itself carries the
-     * same figure for its own totals hook, which runs outside this class.
+     * `PriceComponents` is populated by the pricing pass in this same walk, so it is the
+     * authority for a line priced now. A line priced on an earlier save carries the figure
+     * it was priced with in `ExtendedAmount`, already cleared by `DropStaleExtendedAmount` if
+     * the line has since been edited past it. When promotions are decided
+     * outside a full walk there are no price components, and only the stored figure is there.
      */
     private resolvedExtendedFor(line: mjBizAppsOrdersOrderLineEntity): number | null {
-        return this.out.PriceComponents.get(line)?.ExtendedAmount ?? null;
+        return this.out?.PriceComponents?.get(line)?.ExtendedAmount ?? line.ExtendedAmount ?? null;
     }
 }

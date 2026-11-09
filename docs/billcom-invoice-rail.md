@@ -56,9 +56,16 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
   the rail of the row's company. A row is invoiceable once `Orders.IssueInstalmentInvoice` has frozen
   its document number (status `Invoiced`); its BILL invoice is one line for the instalment amount, or
   the order's lines when the schedule has a single row.
+- **Service period.** BILL's invoice has no field for it, so it rides in the line text in the format
+  our own invoice prints: `Product — description (Oct 1, 2026 – Oct 31, 2026)`. An instalment line
+  carries the span of the order's rows, earliest start to latest end.
 - **Re-issue.** A cancelled whole-order unit is sent again only on request (`AllowReissue`), as
   `ORD-1234-R1`, `-R2` and so on, since BILL would accept the archived number and the customer would
   hold two different `ORD-1234`s. An instalment is never re-issued; a new schedule row replaces it.
+- **A send refused before BILL created anything** is not a re-issue. A `Failed` row with no
+  `ExternalInvoiceRef` (no customer email, a number too long, BILL answering no) leaves nothing on the
+  rail, so the next send needs no `AllowReissue` and keeps the order's number. Once any row for the
+  unit holds a reference, sending again is a re-issue.
 - **Invoices sent per product company before 5.27.0** block the order's own invoice:
   `Orders.IssueExternalInvoice` names the one to cancel first. Schedule rows written per product company
   stay units on that company's rail.
@@ -66,7 +73,9 @@ One BILL invoice is one billing unit: an order, the company that bills it, and a
 ## The rail seam
 
 `BaseInvoiceRail` is the outbound counterpart of `BasePaymentProvider`, registered under
-`PaymentProviderType.Code`. It defines `CheckConfiguration`, `EnsureCustomer`, `IssueInvoice`,
+`PaymentProviderType.Code`. It defines `CheckConfiguration`, `CheckCustomer` (what the rail refuses
+about a new customer, decided without calling it: BILL needs an email; a preview reports it as
+`NO_CUSTOMER_EMAIL` and the order form disables Send), `EnsureCustomer`, `IssueInvoice`,
 `GetInvoice`, `CancelInvoice` and `FetchPaymentsSince`, plus `CustomerNameTargets` and
 `InvoiceNumberTargets`, the rail fields a customer name and a document number must fit
 (bc-aidp-next-golive#280); a refusal is a `RailResult` with a `Transient` flag for failures a retry
@@ -91,8 +100,11 @@ added to `INVOICE_RAIL_TYPE_CODES` and the two Angular copies (`RAIL_TYPE_CODES`
 | Native email refusal (`EXTERNALLY_INVOICED`) | [`DeliveryBehavior.ts`](../packages/CoreEntitiesServer/src/DeliveryBehavior.ts), `DeliveryRecipientResolver.ts`, `packages/Server/src/custom/send-document.action.ts` |
 | Order form panel, Invoicing queue, Send/Cancel rules, Billing worklist "Then sends via" column | [`external-invoices.panel.ts`](../packages/Angular/src/lib/form-panels/external-invoices.panel.ts), [`external-invoicing-queue.page.ts`](../packages/Angular/src/lib/pages/receivables/external-invoicing-queue.page.ts), `panels/external-invoice-view.ts`, `pages/receivables/billing.page.ts` |
 
-Screens take their labels from `PaymentProvider.Name`. Tests are unit tests only, in the `__tests__`
-folders beside this code; [`billcom-live.mjs`](../test-harnesses/billcom-live.mjs) probes a BILL sandbox by hand.
+Screens take their labels from `PaymentProvider.Name`. Unit tests sit in the `__tests__` folders beside
+this code. The `billcom-rail` integration bundle
+([`billcom-rail.checks.ts`](../packages/IntegrationTests/src/checks/billcom-rail.checks.ts)) runs the
+send, cancel, poll and webhook paths against a real database with Bill.com stubbed behind the gateway
+seam. [`billcom-live.mjs`](../test-harnesses/billcom-live.mjs) probes a BILL sandbox by hand.
 
 ## Remote operations
 
@@ -107,16 +119,21 @@ needs `orders:read`, the others `orders:write`.
 | `Orders.AdoptExternalInvoice` | Resolves a `Sending` row by recording the invoice BILL already holds, if it is not archived, carries the unit's number and ties. |
 | `Orders.GetExternalInvoicingWorklist` | Units invoiceable and not yet sent, computed per request; `IncludeFailed` adds failed and in-flight units. |
 | `Orders.SendExternalInvoices` | The sweep: sends worklist units up to `MaxCount` (default 25) and retries transient failures, never cancelled or in-flight units. |
-| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. |
+| `Orders.PollExternalPayments` | Reads payments BILL changed since the stored watermark less one day, records each in `ExternalPayment`, and captures the cleared ones. `MaxCount` (default 100) caps new or changed payments per provider. The watermark moves only after a pass with no fault. It also reads HubSpot Payments provider rows ([hubspot-payments.md](hubspot-payments.md)). |
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
-`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Capture
+`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Each pass
+also rebuilds every open `Unmatched` payment from its stored BILL record, and captures one whose invoices
+have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
-corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows fails with `ATTENTION`, so the
-job notifies.
+corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
+Each payment that pass moved into one of those states (or from one to another) gets one
+`Payment Needs Review` notification (in-app and email by default) to the poll job's notify user, else
+its owner, else the user running the poll; payments already waiting from earlier passes are not
+announced again.
 
 ## Actions, jobs and the webhook
 
@@ -197,8 +214,9 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The
   instalment stamp and `ExternalDocumentNumber` are best effort, so `ExternalInvoice` is the record to
   trust. `PAYPAL`, `WALLET` and `UNDEFINED` are recorded as ACH. A zero-value unit cannot be sent.
-- **BILL words in shared code.** `BILLCOM_PAYMENT_STATUS`, `TenderFor` and some messages name Bill.com
-  in provider-neutral files (design §13.8).
+- **BILL words in shared code.** `TenderFor`, the invoice allocation and the re-application messages
+  name Bill.com in provider-neutral files (design §13.8). Status tables are per rail
+  (`PaymentStatusVocabularyFor`).
 
 ## Open questions
 

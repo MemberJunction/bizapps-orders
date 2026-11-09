@@ -262,3 +262,116 @@ export function PlanQuantityRipple(
 export function RollupTotal(lines: Array<{ IsRollupParent: boolean; Amount: number }>): number {
     return Money(lines.filter((l) => !l.IsRollupParent).reduce((s, l) => s + Number(l.Amount ?? 0), 0));
 }
+
+/**
+ * The bundle line's fields a component takes from it: who the sale is for, when its coverage
+ * starts, how it answers an existing holding, and which subscription it renews.
+ *
+ * The rep states these once, on the line they entered — the bundle line. The component lines do
+ * not exist until expansion, and the subscription pass reads each component on its own: a
+ * component that was not given these would fall back to the order's party and booking date, and a
+ * renewal would start a new subscription instead.
+ */
+export interface InheritableLineFields {
+    ShipToOrganizationID: string | null;
+    ShipToPersonID: string | null;
+    ShipToAddressID: string | null;
+    ServicePeriodStart: Date | string | null;
+    SubscriptionAction: string | null;
+    RenewsSubscriptionID: string | null;
+}
+
+/** What expansion knows about one component when deciding what it inherits. */
+export interface InheritingComponent {
+    /** The component's product sells a subscription, so it has a term to start. */
+    IsSubscription: boolean;
+    /** This is the one component the bundle line's renewal target belongs to. */
+    IsRenewalTarget: boolean;
+}
+
+/**
+ * The values a component takes from its bundle line.
+ *
+ * The ship-to reaches every component: it says who the sale is for and where it goes, which is as
+ * true of a book as of a membership. The stated start and the subscription action reach only a
+ * subscription component — on any other line a lone start date is a half-stated service window,
+ * which revenue recognition reads as an input. The renewal target reaches only the component it
+ * renews: a subscription is for one product, so a bundle of two subscriptions cannot renew both
+ * from one target.
+ */
+export function InheritedFields(
+    parent: InheritableLineFields,
+    component: InheritingComponent,
+): InheritableLineFields {
+    return {
+        ShipToOrganizationID: parent.ShipToOrganizationID ?? null,
+        ShipToPersonID: parent.ShipToPersonID ?? null,
+        ShipToAddressID: parent.ShipToAddressID ?? null,
+        ServicePeriodStart: component.IsSubscription ? (parent.ServicePeriodStart ?? null) : null,
+        SubscriptionAction: component.IsSubscription ? (parent.SubscriptionAction ?? null) : null,
+        RenewsSubscriptionID: component.IsRenewalTarget ? (parent.RenewsSubscriptionID ?? null) : null,
+    };
+}
+
+const INHERITABLE_FIELDS: Array<keyof InheritableLineFields> = [
+    'ShipToOrganizationID',
+    'ShipToPersonID',
+    'ShipToAddressID',
+    'ServicePeriodStart',
+    'SubscriptionAction',
+    'RenewsSubscriptionID',
+];
+
+/** Two stored values are the same: dates by instant, IDs without regard to case. */
+function sameValue(a: Date | string | null | undefined, b: Date | string | null | undefined): boolean {
+    if (a == null || b == null) return a == null && b == null;
+    const instant = (v: Date | string) => (v instanceof Date ? v.getTime() : new Date(v).getTime());
+    if (a instanceof Date || b instanceof Date) return instant(a) === instant(b);
+    return a.toLowerCase() === b.toLowerCase();
+}
+
+/**
+ * Bring an existing component up to date with its bundle line, field by field.
+ *
+ * A field follows the bundle line only while the component still holds what the bundle line used
+ * to give it. A value someone set on the component itself differs from that, and stays — the same
+ * rule quantity and price follow, without needing an override flag per field.
+ *
+ * `before` and `after` are what the component would inherit from the bundle line as last saved and
+ * as it is now, each from `InheritedFields`. Returns only the fields to change.
+ */
+export function PlanInheritanceRefresh(
+    child: InheritableLineFields,
+    before: InheritableLineFields,
+    after: InheritableLineFields,
+): Partial<InheritableLineFields> {
+    const changes: Partial<InheritableLineFields> = {};
+    for (const field of INHERITABLE_FIELDS) {
+        if (sameValue(before[field], after[field])) continue;
+        if (!sameValue(child[field], before[field])) continue;
+        (changes as Record<string, unknown>)[field] = after[field];
+    }
+    return changes;
+}
+
+/**
+ * Which component a bundle line's renewal target belongs to: the one selling the target
+ * subscription's product.
+ *
+ * Returns the component's index, or a reason the renewal cannot be placed. No match means the
+ * target is a subscription to something this bundle does not sell; several mean the bundle sells
+ * that product twice and the renewal cannot say which. Both refuse rather than drop the renewal,
+ * because a dropped renewal starts a second subscription the customer is billed for.
+ */
+export function PickRenewalComponent(
+    targetProductID: string,
+    componentProductIDs: string[],
+): { Index: number } | { Refusal: 'NoComponentSellsTarget' | 'SeveralComponentsSellTarget' } {
+    const target = targetProductID.toLowerCase();
+    const matches = componentProductIDs
+        .map((id, i) => ({ id: (id ?? '').toLowerCase(), i }))
+        .filter((c) => c.id === target);
+    if (!matches.length) return { Refusal: 'NoComponentSellsTarget' };
+    if (matches.length > 1) return { Refusal: 'SeveralComponentsSellTarget' };
+    return { Index: matches[0].i };
+}

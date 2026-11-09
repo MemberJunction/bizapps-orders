@@ -23,7 +23,7 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     return { ...actual, LoadPollJobs: load };
 });
 vi.mock('../InvoiceRailResolver.js', () => ({
-    ListInvoiceRailProviderIDs: vi.fn(async () => mocks.providers),
+    ListPaymentSourceProviderIDs: vi.fn(async () => mocks.providers),
     ResolveInvoiceRail: vi.fn(),
 }));
 

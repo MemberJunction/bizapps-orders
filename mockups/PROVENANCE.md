@@ -35,7 +35,7 @@ mechanical rather than interpretive:
 | `[slot="meta"]` / `[slot="actions"]` / `[slot="toolbar"]` | the header's three real projection slots (`[meta]`, `[actions]`, `[toolbar]`) |
 | `.mj-panel` | `<mj-collapsible-panel>` (`@memberjunction/ng-base-forms`), the form-section panel the built forms use; outside a record form, `<mj-accordion-panel>` (`@memberjunction/ng-ui-components`) |
 | `.mj-modal` / `.mj-slide-in` | `<mj-form-dialog>` / `<mj-form-slide-in>` |
-| `.mj-btn` / `.mj-input` / `.mj-chip` / `.mj-stat` | `mjButton` / `<mj-form-field>` / chips / `<mj-stat-badge>` |
+| `.mj-btn` / `.mj-input` / `.mjo-chip` / `.mj-stat` | `mjButton` / `<mj-form-field>` / chips / `<mj-stat-badge>` |
 
 ## Colour that encodes something
 

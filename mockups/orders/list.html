@@ -24,11 +24,11 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip mj-chip--outline" id="lst-count">—</span></div>
+  <div slot="meta"><span class="mjo-chip mjo-chip--outline" id="lst-count">—</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline" data-open="#filters">
-      <i class="fa-solid fa-filter"></i> Filters <span class="mj-chip mj-chip--brand" id="lst-fcount">1</span>
+      <i class="fa-solid fa-filter"></i> Filters <span class="mjo-chip mjo-chip--brand" id="lst-fcount">1</span>
     </button>
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-arrow-rotate-right"></i></button>
     <button class="mj-btn mj-btn--outline"><i class="fa-solid fa-download"></i> Export</button>
@@ -238,7 +238,7 @@ function lstOpen(number) {
   document.getElementById('pv-body').innerHTML = `
     <div class="row wrap" style="gap:6px;margin-bottom:var(--mj-space-3)">
       ${H.orderStatus(o.status)} ${H.payStatus(o.paymentStatus)} ${H.origin(o.origin, o.originRef)}
-      ${o.type !== 'Sale' ? `<span class="mj-chip mj-chip--warning">${o.type}</span>` : ''}
+      ${o.type !== 'Sale' ? `<span class="mjo-chip mjo-chip--warning">${o.type}</span>` : ''}
     </div>
 
     <div class="mj-money-strip" style="grid-template-columns:1fr 1fr 1fr">

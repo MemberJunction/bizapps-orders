@@ -85,7 +85,7 @@
       "Name": "Cancel Subscription",
       "OperationKey": "Orders.CancelSubscription",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
-      "Description": "Cancel a subscription: policy in, reversal out. The subscription type's cancellation mode, refund mode and grace period decide when coverage ends, when access ends and what is refunded; the operation emits the reversal order, stamps the term and logs the lifecycle event in one transaction. Grace extends ACCESS, never revenue — storing one in place of the other silently revokes access early.",
+      "Description": "Cancel a subscription: policy in, reversal out. The subscription type's cancellation mode, refund mode and grace period decide when coverage ends, when access ends and what is refunded; the operation emits the reversal order, stamps the term and logs the lifecycle event in one transaction. Grace extends ACCESS, never revenue — storing one in place of the other silently revokes access early. When a payment gateway bills the subscription, the gateway is read first and cancelled first: the cancel is refused, with nothing changed, when the gateway cannot be read, has started a billing period Orders has not booked (its renewal on the term's last day), does not confirm, or an open gateway alert says another gateway subscription may be billing; a cancel the gateway already completed is recorded.",
       "InputTypeName": "CancelSubscriptionInput",
       "InputTypeDefinition": "@file:types/orders-cancel-subscription.input.ts",
       "InputTypeIsArray": false,
@@ -454,7 +454,7 @@
     "fields": {
       "Name": "Record Progress",
       "OperationKey": "Orders.RecordProgress",
-      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date after today, or two or more months before the current business month, warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on day 1 of the first later month with no Posted batch for the line's company when its month has one, and the new catch-up is computed as if it had never posted and booked no earlier than that reversal date, with no row edited.",
+      "Description": "Record one attested progress observation on a percentage-of-completion order line and post the cumulative catch-up (plan D90): LineTotalNet × percent complete minus what is already recognised, as a RevenueRecognition entry Dr Deferred Revenue / Cr Sales — mirrored when the delta is negative, so a backward slide reverses through the same subtraction. A zero delta writes nothing and succeeds. Preview computes without writing. Refuses a non-POC line, an unbooked line, a percent outside 0..1, and an observation dated on or before the last posted one; a posted observation is immutable. A date on or before the line's company's books-closed-through date (a month finance has closed) is refused, and so is any date when that date cannot be read. A date after today, or two or more months before the current business month, warns and still posts. SupersedesMeasurementID, for a user holding MJ.BizApps.Orders.Progress.Supersede, replaces the line's latest observation: its recognition is reversed on its own date, or on the first open day when finance has closed that month, and the new catch-up is computed as if it had never posted and booked on the date entered, with no row edited.",
       "InputTypeName": "OrdersRecordProgressInput",
       "InputTypeDefinition": "@file:types/orders-record-progress.input.ts",
       "OutputTypeName": "OrdersRecordProgressOutput",
@@ -473,8 +473,8 @@
       "ID": "A1D4E7B0-3C62-4F85-9A17-2B3C4D5E6F20"
     },
     "sync": {
-      "lastModified": "2026-10-04T00:20:31.000Z",
-      "checksum": "a383d539ce469797d9b1ef7ab0336ba058eab7c36fee33bb46b026e242bbe3a3"
+      "lastModified": "2026-10-12T01:22:27.000Z",
+      "checksum": "a7dc9590649d4a985279be9c65917c0adf1bbe1572e0ff13c3252c6e87126c6c"
     }
   },
   {
@@ -617,7 +617,7 @@
       "Name": "Amend Arrangement",
       "OperationKey": "Orders.AmendArrangement",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
-      "Description": "Extend a booked subscription term at no charge. Preview returns the value given away, the staged recognition entries it offsets and the new schedule, and writes nothing. Otherwise it records a Duration concession, routed for approval like any other; the extension applies when the concession is approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A change of amount is refused until its credit-memo path exists.",
+      "Description": "Extend a booked subscription term at no charge, or move its start and end together (a shift). Preview returns what the amendment would do and writes nothing. An extension records a Duration concession, routed for approval like any other; it applies when approved: the term's end, a prospective re-spread of recognition, access, and a task for accounting to confirm the re-cut. A shift records a Shift concession valued at zero, which goes through under the TermShiftReviewDays setting and otherwise waits for the finance acknowledgment role; it applies when approved: the term's dates, a re-spread from the new start with one catch-up or reversal in the current open period, access, instalments not yet invoiced, and the acknowledgment task. A holder of that role can escalate a shift awaiting review to the ConcessionLimit approver. A change of amount (NewAmount, optionally AppliesToInvoiceID) is previewed the same way: the catch-up on revenue already earned, the staged entries it offsets and the new schedule, the uninvoiced instalments it reduces and any credit memo. Otherwise it records a Price concession carrying NewAmount, routed for approval; when approved, the catch-up and re-cut are posted, the term's amount and the uninvoiced instalments are lowered, what they cannot absorb is credited on a credit memo the concession carries (crediting the named invoice, or left as the customer's credit), and accounting is asked to confirm. RefundRequested asks for a paid invoice's credit back; finance pays it with Orders.RefundPayment. A shortening is refused until that same credit-memo path exists.",
       "InputTypeName": "AmendArrangementInput",
       "InputTypeDefinition": "@file:types/orders-amend-arrangement.input.ts",
       "InputTypeIsArray": false,
@@ -635,8 +635,8 @@
       "ID": "6B24D4FD-3DD2-4E28-841C-3B64535DADDC"
     },
     "sync": {
-      "lastModified": "2026-10-08T18:14:06.268Z",
-      "checksum": "d880ee24e47812db4eea3a34823a98e70215e9518b31cbbbbbdbda0294c8706a"
+      "lastModified": "2026-10-12T22:46:05.837Z",
+      "checksum": "7ea3adcd326f291bd23405333702e80d55e3439798a98c7c89c9b0e44838dc57"
     }
   },
   {

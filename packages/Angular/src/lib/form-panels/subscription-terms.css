@@ -33,7 +33,8 @@
     color: var(--mj-text-primary);
 }
 
-.mjo-term-card__dates {
+.mjo-term-card__dates,
+.mjo-term-card__seats {
     color: var(--mj-text-secondary);
     font-size: var(--mj-text-sm);
 }

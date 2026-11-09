@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import type { GatewayCharge, GatewayWebhookEndpoint } from '../BasePaymentProvider.js';
-import { StripePaymentProvider, StripeChargeFromObject } from '../StripePaymentProvider.js';
+import { StripePaymentProvider, StripeChargeFromObject, StripeChargeItemFromLineItem } from '../StripePaymentProvider.js';
 import { CheckWebhookEndpointDrift, EndpointServesProvider } from '../PaymentWebhookEndpointCheck.js';
 import {
     ChargeMismatchDedupeKey,
@@ -215,6 +215,48 @@ describe('StripePaymentProvider reconciliation reads', () => {
         expect((await stub.ListCharges({})).Charges).toEqual([]);
         expect((await stub.ListWebhookEndpoints()).Success).toBe(false);
         expect(stub.ListsCharges).toBe(true);
+    });
+
+    it('reads the buyer from the billing details, else the receipt address', () => {
+        const billed = StripeChargeFromObject({ id: 'ch_x', amount: 500, currency: 'usd', status: 'succeeded', billing_details: { email: ' Pat@Example.com ', name: 'Pat Example' }, receipt_email: 'other@example.com' });
+        expect(billed).toMatchObject({ BuyerEmail: 'Pat@Example.com', BuyerName: 'Pat Example' });
+        const receiptOnly = StripeChargeFromObject({ id: 'ch_y', amount: 500, currency: 'usd', status: 'succeeded', billing_details: { email: null, name: '' }, receipt_email: 'pat@example.com' });
+        expect(receiptOnly).toMatchObject({ BuyerEmail: 'pat@example.com', BuyerName: null });
+    });
+
+    it('lists a charge\'s items from the checkout session on its intent', async () => {
+        const { driver, urls, restore } = live([
+            { body: { object: 'list', has_more: false, data: [{ id: 'cs_test_1', object: 'checkout.session', customer_details: { email: 'pat@example.com', name: 'Pat Example' } }] } },
+            { body: { object: 'list', has_more: false, data: [{ id: 'li_1', object: 'item', amount_total: 25000, currency: 'usd', quantity: 2, price: { id: 'price_test_1', product: 'prod_test_1' } }] } },
+        ]);
+        try {
+            const result = await driver.ListChargeItems({ ProviderIntentID: 'pi_test_1' });
+            expect(result).toEqual({
+                Success: true,
+                Items: [{ ProviderPriceID: 'price_test_1', ProviderProductID: 'prod_test_1', Quantity: 2, Amount: 250 }],
+                BuyerEmail: 'pat@example.com',
+                BuyerName: 'Pat Example',
+            });
+            expect(urls[0]).toContain('/checkout/sessions?');
+            expect(urls[0]).toContain('payment_intent=pi_test_1');
+            expect(urls[1]).toContain('/checkout/sessions/cs_test_1/line_items');
+        } finally {
+            restore();
+        }
+    });
+
+    it('answers no items for an intent with no checkout session', async () => {
+        const { driver, restore } = live([{ body: { object: 'list', has_more: false, data: [] } }]);
+        try {
+            expect(await driver.ListChargeItems({ ProviderIntentID: 'pi_dashboard' })).toEqual({ Success: true, Items: [] });
+        } finally {
+            restore();
+        }
+    });
+
+    it('skips a line item with no price', () => {
+        expect(StripeChargeItemFromLineItem({ id: 'li_x', amount_total: 100, currency: 'usd' })).toBeNull();
+        expect(StripeChargeItemFromLineItem({ id: 'li_y', amount_total: 100, currency: 'usd', price: 'price_y' })).toMatchObject({ ProviderPriceID: 'price_y', ProviderProductID: null, Quantity: 1 });
     });
 
     it('reads an expanded intent on a charge', () => {

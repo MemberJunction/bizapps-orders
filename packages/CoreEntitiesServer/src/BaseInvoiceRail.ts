@@ -30,6 +30,7 @@
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import type { ExternalFieldTarget } from '@mj-biz-apps/common-entities';
+import type { OrdersTenderCode } from '@mj-biz-apps/orders-entities';
 
 /** The bill-to party, flattened to what a rail's customer record needs. */
 export interface RailCustomerFacts {
@@ -105,6 +106,22 @@ export interface RailPaymentRecord {
     InvoicePayments: Array<{ ExternalInvoiceRef: string; Amount: number; PaymentDate: string | null }>;
     /** The record as received, for the audit trail. */
     Raw: Record<string, unknown>;
+    /**
+     * The Orders tender, when the rail decides it itself. Absent: the poller maps `ReceivablesType`
+     * through Bill.com's table (`TenderFor`).
+     */
+    TenderCode?: OrdersTenderCode;
+    /**
+     * Set when this rail must not book the payment at all, with the reason a person reads: money the
+     * rail only records, collected and booked through another path. The poller records it `Ignored`
+     * and never captures it.
+     */
+    SetAsideReason?: string | null;
+    /**
+     * Set when the rail can say, before any invoice lookup, that the payment matches no order here,
+     * with the reason a person reads. The poller records it `Unmatched` in place of the invoice match.
+     */
+    UnmatchedReason?: string | null;
 }
 
 /**
@@ -158,6 +175,15 @@ export class BaseInvoiceRail {
         return [];
     }
 
+    /**
+     * What this rail will refuse about a NEW customer, decided from the facts alone with no network
+     * call. Run before `EnsureCustomer` and by a preview, so a party the rail cannot take is named
+     * before anything is sent. Null when the facts are acceptable; the base accepts everything.
+     */
+    public CheckCustomer(_facts: RailCustomerFacts): { Code: 'NO_CUSTOMER_EMAIL' | 'RAIL_REFUSED'; Reason: string } | null {
+        return null;
+    }
+
     public async EnsureCustomer(_facts: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {
         return this.notImplemented('ensuring a customer');
     }
@@ -178,6 +204,19 @@ export class BaseInvoiceRail {
         _watermark: string | null,
     ): Promise<RailResult<{ Payments: RailPaymentRecord[]; NewWatermark: string | null }>> {
         return this.notImplemented('fetching payments');
+    }
+
+    /**
+     * The payment record this rail returned on an earlier pass, rebuilt from the payload the poller
+     * stored on its `ExternalPayment` row (#814). No network call.
+     *
+     * Used to re-check an open `Reapplied` exception the watermark no longer reaches: the stored
+     * payload is the rail's latest state of that payment, because any later change on the rail moves
+     * its updated time and the ordinary poll reads it again. Null when this rail cannot rebuild one
+     * (the base), which leaves such rows to be cleared by the next change on the rail.
+     */
+    public RestorePaymentRecord(_externalPaymentRef: string, _payload: Record<string, unknown>): RailPaymentRecord | null {
+        return null;
     }
 
     protected notImplemented<T>(what: string): RailResult<T> {

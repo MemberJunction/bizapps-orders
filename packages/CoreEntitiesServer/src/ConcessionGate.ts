@@ -14,10 +14,12 @@
  * `DiscountPct` counts because it is the same give-away written in another column. A deal's
  * Discount %, an API call or an import writes it straight onto the line, so a gate that read only
  * `UnitPrice` let any of them discount with no Sales Authority and no approval (golive #305). A
- * manual discount (`DiscountAmount`) is not counted: it is gated where it is applied, by
- * `AuthorizeManualDiscount`, and leaves its own adjustment row. Nor is the `DiscountPct` on a line
- * that renews a subscription, which carries the renewed line's discount forward; that discount was
- * settled when the subscription was sold.
+ * manual discount (`DiscountAmount`) is gated where it is applied, by `AuthorizeManualDiscount`, and
+ * leaves its own adjustment row. One within the rep's authority, or granted by a DiscountLimit
+ * approver, is not counted here; one above the rep's authority is saved HELD, with neither an
+ * authority nor an approver on its row, and is counted until an approved concession covers it
+ * (golive #328). Nor is the `DiscountPct` on a line that renews a subscription, which carries the
+ * renewed line's discount forward; that discount was settled when the subscription was sold.
  *
  * Every line with a stated price is re-priced here, not only those flagged `PriceOverridden`. The
  * flag is set by the order-lines editor; a line priced through the API, an import or an integration
@@ -40,6 +42,13 @@
  *      concession is withdrawn and recorded again, which measures it against the order as it is now
  *      and routes it for approval.
  *
+ *   4. on an order not yet confirmed, a line whose product always needs approval (golive #281) with no
+ *      Approved Price or Scope concession decided through the ConcessionLimit rule recorded for it. Such
+ *      products are priced per engagement: often nothing resolves an engine price for them, so (2) has
+ *      nothing to compare against, and the requester's own authority never approves them. The flag is
+ *      `RequiresSaleApproval`, inherited Product -> category -> ancestor categories -> Product Type. A
+ *      renewal line is left alone, as for (2): the sale was approved when the subscription was sold.
+ *
  * Confirmed orders are checked for (1) only. Their lines' prices were settled at booking, and lines
  * converted from the previous system carry overrides nobody recorded a concession for.
  *
@@ -50,19 +59,28 @@
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import {
     ConcessionShare,
+    ResolveRequiresSaleApproval,
     ConcessionValue,
     Money,
+    PickConcessionTier,
     ResolveLinePriceStanding,
     ShareBreach,
     type ConcessionAuthority,
+    type ConcessionTierChoice,
+    type ConcessionTierMeasure,
+    type ConcessionTierRule,
     type ConcessionValuation,
     type PricedLineFacts,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { IsUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+const ORDER_ADJUSTMENT_ENTITY = 'MJ_BizApps_Orders: Order Adjustments';
+const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
+const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
+const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 /** Pennies of tolerance when comparing an approved value with the value now on the line. */
 const MONEY_TOLERANCE = 0.005;
@@ -87,23 +105,42 @@ export async function LoadConcessionAuthority(
     return res?.Results?.[0] ?? null;
 }
 
-/** The active ConcessionLimit rule — the role that decides a concession outside a rep's authority. */
-export async function FindConcessionLimitRule(
-    provider: IMetadataProvider,
-    user: UserInfo,
-): Promise<{ ID: string; Name: string; ApprovalRequiredRoleID: string | null } | null> {
+/**
+ * The active ConcessionLimit rules, each an approval tier (#308). A single rule with no tier or
+ * thresholds is what every installation had before tiers, and it still takes every concession.
+ */
+export async function LoadConcessionTiers(provider: IMetadataProvider, user: UserInfo): Promise<ConcessionTierRule[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const res = await rv.RunView<{ ID: string; Name: string; ApprovalRequiredRoleID: string | null }>(
+    const res = await rv.RunView<ConcessionTierRule>(
         {
             EntityName: SALES_RULE_ENTITY,
             ExtraFilter: `RuleType = 'ConcessionLimit' AND IsActive = 1`,
-            Fields: ['ID', 'Name', 'ApprovalRequiredRoleID'],
+            Fields: [
+                'ID',
+                'Name',
+                'ApprovalRequiredRoleID',
+                'ConcessionTier',
+                'MinConcessionValue',
+                'MinConcessionPctOfContract',
+                'MinTermExtensionDays',
+                'RequiresDecisionWithinAuthority',
+            ],
             ResultType: 'simple',
             BypassCache: true,
         },
         user,
     );
-    return res?.Results?.[0] ?? null;
+    if (!res?.Success) throw new Error(`Could not read the ConcessionLimit rules: ${res?.ErrorMessage}`);
+    return res.Results.map((r) => ({ ...r, RequiresDecisionWithinAuthority: !!r.RequiresDecisionWithinAuthority }));
+}
+
+/** The tier that decides a concession: the highest-ranked active ConcessionLimit rule whose thresholds it meets. */
+export async function FindConcessionTier(
+    measure: ConcessionTierMeasure,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ConcessionTierChoice> {
+    return PickConcessionTier(await LoadConcessionTiers(provider, user), measure);
 }
 
 /** A line as the gate reads it. */
@@ -132,12 +169,18 @@ export interface LineConcessionFacts extends PricedLineFacts {
     RenewsSubscriptionID?: string | null;
     /** False for an unsaved line whose price the engine has yet to fill; it is charged the engine price. */
     PriceStated?: boolean;
+    /**
+     * Manual discounts on the line held for approval: above the rep's authority, with no approver
+     * (golive #328). See {@link HeldManualDiscounts}.
+     */
+    HeldDiscount?: number | null;
 }
 
 /** What a line's price and discount give away, when they give anything away. */
 export interface LinePriceConcession {
     Form: 'Price' | 'Scope';
-    EngineUnitPrice: number;
+    /** Null when nothing resolves an engine price; only the `DiscountPct` is then counted (#905). */
+    EngineUnitPrice: number | null;
     Valuation: ConcessionValuation;
     /** The part given away by a stated price below the engine's. */
     PriceValue: number;
@@ -145,49 +188,62 @@ export interface LinePriceConcession {
     DiscountValue: number;
     /** The `DiscountPct` counted, as a fraction; 0 when none is. */
     DiscountPct: number;
+    /** The part given away by manual discounts held for approval. */
+    HeldDiscount: number;
 }
 
 /**
- * The concession a line carries: a stated price below the engine's, plus what its `DiscountPct` takes
- * off the price it is charged. Null when neither gives anything away, or nothing resolves a price.
- * The engine's own price and a named list pick give nothing away by price, but a `DiscountPct` on
- * either still does. A line charged nothing is Scope — a product added at no charge — rather than Price.
+ * The concession a line carries: a stated price below the engine's, plus what its `DiscountPct` and its
+ * held manual discounts take off the price it is charged. Null when none of them gives anything away.
+ * The engine's own price and a named list pick give nothing away by price, but a discount on either
+ * still does. With no engine price, its `DiscountPct` and held manual discounts are counted against the
+ * stated price (#905).
  *
- * One figure for both, because one Approved Price concession covers the line: the rep records it once,
- * and the value an approver sees is everything the line gives away.
+ * A line charged nothing once its concession is taken off is Scope — a product given away — rather than
+ * Price: a typed price of zero, or a price kept with a 100% discount (golive #328). Its value is then
+ * the whole of what the line would have cost, list price times quantity.
+ *
+ * One figure for all of it, because one Approved Price or Scope concession covers the line: the rep
+ * records it once, and the value an approver sees is everything the line gives away.
  */
 export async function LinePriceConcessionFor(
     line: LineConcessionFacts,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<LinePriceConcession | null> {
+    const held = Money(Math.max(0, Number(line.HeldDiscount ?? 0)));
     const standing = await ResolveLinePriceStanding(line, provider, user);
-    if (!standing || standing.EngineUnitPrice == null) return null;
-    const engine = standing.EngineUnitPrice;
+    const engine = standing?.EngineUnitPrice ?? null;
     const quantity = Math.abs(Number(line.Quantity ?? 0));
-    const charged = line.PriceStated === false ? engine : Number(line.UnitPrice ?? 0);
+    const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
 
-    const priceConcession = !standing.IsEnginePrice && !standing.IsNamedListPick && charged < engine;
-    const form = priceConcession && charged <= 0 ? 'Scope' : 'Price';
+    const priceConcession = engine != null && !standing!.IsEnginePrice && !standing!.IsNamedListPick && charged < engine;
     const priceValue = priceConcession
-        ? ConcessionValue({ Form: form, ReferenceUnitPrice: engine, ChargedUnitPrice: charged, Quantity: quantity }).Value
+        ? ConcessionValue({ Form: 'Price', ReferenceUnitPrice: engine, ChargedUnitPrice: charged, Quantity: quantity }).Value
         : 0;
 
-    const discountPct = line.RenewsSubscriptionID ? 0 : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
+    // With no engine price the discount is counted against the stated price (#905); a line with no
+    // stated price either has nothing a discount can be valued against.
+    const discountPct =
+        line.RenewsSubscriptionID || (engine == null && line.PriceStated === false)
+            ? 0
+            : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
     const discountValue = Money(Math.max(0, charged) * quantity * discountPct);
 
-    const value = Money(priceValue + discountValue);
+    const value = Money(priceValue + discountValue + held);
     if (!(value > 0)) return null;
     // Measured against what the line would have cost before anything was given away: the engine
-    // price when the stated price is the concession, the stated price when only the discount is.
+    // price when the stated price is the concession, the stated price when only a discount is.
     const base = (priceConcession ? engine : Math.max(0, charged)) * quantity;
+    const chargedNothing = (priceConcession && charged <= 0) || (base > 0 && value + MONEY_TOLERANCE >= base);
     return {
-        Form: form,
+        Form: chargedNothing ? 'Scope' : 'Price',
         EngineUnitPrice: engine,
         Valuation: { Value: value, Percent: base > 0 ? value / base : null },
         PriceValue: priceValue,
         DiscountValue: discountValue,
         DiscountPct: discountPct,
+        HeldDiscount: held,
     };
 }
 
@@ -200,11 +256,14 @@ export function LineConcessionTerms(line: PricedLineFacts, concession: LinePrice
     if (concession.PriceValue > 0) {
         parts.push(
             `priced at ${Number(line.UnitPrice ?? 0).toFixed(2)} against an engine price of ` +
-                `${concession.EngineUnitPrice.toFixed(2)}`,
+                `${(concession.EngineUnitPrice ?? 0).toFixed(2)}`,
         );
     }
     if (concession.DiscountValue > 0) {
         parts.push(`discounted ${formatPct(concession.DiscountPct)}`);
+    }
+    if (concession.HeldDiscount > 0) {
+        parts.push(`given a manual discount of ${concession.HeldDiscount.toFixed(2)} that needs approval`);
     }
     return parts.join(' and ');
 }
@@ -252,11 +311,14 @@ export async function FindUnapprovedConcessions(
         if (shareProblem) problems.push(shareProblem);
     }
 
-    for (const standing of await assessLinePrices(orderHeaderID, inMemoryLines, rows, provider, user)) {
+    const candidates = await candidateLines(orderHeaderID, inMemoryLines, provider, user);
+    const reported = new Set<ConcessionLineFacts>();
+    for (const standing of await assessLinePrices(candidates.filter(hasStatedPriceOrDiscount), rows, provider, user)) {
         const { Line: line, Concession: concession } = standing;
         // A concession is recorded against a saved line, so a line not yet saved cannot have one —
         // tell the rep how to get one rather than that none is recorded.
         if (!orderHeaderID || !line.ID) {
+            reported.add(line);
             problems.push(
                 `${describeLineConcession(line, concession)}. Save the order without confirming it first, then record ` +
                     `the ${concession.Form} concession against the line and confirm once it is approved`,
@@ -264,11 +326,120 @@ export async function FindUnapprovedConcessions(
             continue;
         }
         if (standing.Covered) continue;
+        reported.add(line);
         problems.push(
             `${describeLineConcession(line, concession)} with no approved ${concession.Form} concession recorded for it`,
         );
     }
+
+    problems.push(...(await saleApprovalProblems(orderHeaderID, candidates, rows, reported, provider, user)));
     return problems;
+}
+
+/**
+ * Check (4) in the header: each line whose product always needs approval and that no Price or Scope
+ * concession decided through the ConcessionLimit rule covers. A line already reported by (2) is not
+ * reported twice; recording and approving its concession clears both.
+ */
+async function saleApprovalProblems(
+    orderHeaderID: string | null,
+    lines: readonly ConcessionLineFacts[],
+    rows: readonly ConcessionRow[],
+    reported: ReadonlySet<ConcessionLineFacts>,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<string[]> {
+    const eligible = lines.filter((l) => !l.RenewsSubscriptionID && !reported.has(l));
+    if (eligible.length === 0) return [];
+    const required = await ProductsRequiringSaleApproval(
+        eligible.map((l) => String(l.ProductID)),
+        provider,
+        user,
+    );
+    const problems: string[] = [];
+    for (const line of eligible) {
+        if (!required.has(String(line.ProductID).toLowerCase())) continue;
+        const label = `line ${line.LineNumber ?? '?'} is for a product that always needs approval`;
+        if (!orderHeaderID || !line.ID) {
+            problems.push(
+                `${label}. Save the order without confirming it first, then record a Price concession against the ` +
+                    `line and confirm once it is approved`,
+            );
+            continue;
+        }
+        const approved = rows.some(
+            (r) =>
+                r.Status === 'Approved' &&
+                !!r.SalesRuleID &&
+                sameID(r.OrderLineID, line.ID) &&
+                (r.DeliveryForm === 'Price' || r.DeliveryForm === 'Scope'),
+        );
+        if (!approved) {
+            problems.push(`${label}, and no Price or Scope concession approved by the ConcessionLimit approver is recorded for it`);
+        }
+    }
+    return problems;
+}
+
+/**
+ * The IDs, lowercased, of the given products that always need approval (golive #281): each product's own
+ * `RequiresSaleApproval`, else its category's, else the nearest ancestor's, else its product type's.
+ */
+export async function ProductsRequiringSaleApproval(
+    productIDs: readonly string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Set<string>> {
+    // A product's ID is a UUID; anything else names no product, so it cannot require approval.
+    const ids = [...new Set(productIDs.filter(IsUUID).map((id) => id.toLowerCase()))];
+    if (ids.length === 0) return new Set();
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const read = async <T>(params: Parameters<RunView['RunView']>[0]): Promise<T[]> => {
+        const res = await rv.RunView<T>({ ...params, ResultType: 'simple', BypassCache: true }, user);
+        if (!res?.Success) throw new Error(`Reading ${params.EntityName} for sale approval failed: ${res?.ErrorMessage}`);
+        return res.Results ?? [];
+    };
+    const products = await read<{
+        ID: string;
+        ProductTypeID: string | null;
+        ProductCategoryID: string | null;
+        RequiresSaleApproval: boolean | null;
+    }>({
+        EntityName: PRODUCT_ENTITY,
+        ExtraFilter: `ID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+        Fields: ['ID', 'ProductTypeID', 'ProductCategoryID', 'RequiresSaleApproval'],
+    });
+    if (products.length === 0) return new Set();
+    const categories = await read<{ ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null }>({
+        EntityName: PRODUCT_CATEGORY_ENTITY,
+        Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
+    });
+    const types = await read<{ ID: string; RequiresSaleApproval: boolean | null }>({
+        EntityName: PRODUCT_TYPE_ENTITY,
+        Fields: ['ID', 'RequiresSaleApproval'],
+    });
+    const category = new Map(categories.map((c) => [c.ID.toLowerCase(), c]));
+    const type = new Map(types.map((t) => [t.ID.toLowerCase(), t]));
+    const required = new Set<string>();
+    for (const p of products) {
+        const chain: (boolean | null)[] = [];
+        const seen = new Set<string>();
+        let current = p.ProductCategoryID?.toLowerCase() ?? null;
+        while (current && !seen.has(current)) {
+            seen.add(current);
+            const c = category.get(current);
+            if (!c) break;
+            chain.push(c.RequiresSaleApproval);
+            current = c.ParentProductCategoryID?.toLowerCase() ?? null;
+        }
+        const facts = {
+            Product: p.RequiresSaleApproval,
+            Categories: chain,
+            Type: p.ProductTypeID ? type.get(p.ProductTypeID.toLowerCase())?.RequiresSaleApproval : null,
+        };
+        if (ResolveRequiresSaleApproval(facts)) required.add(p.ID.toLowerCase());
+    }
+    return required;
 }
 
 /**
@@ -398,7 +569,8 @@ export async function FindUncoveredLinePrices(
 ): Promise<UncoveredLinePrice[]> {
     const rows = await loadConcessions(orderHeaderID, provider, user);
     const uncovered: UncoveredLinePrice[] = [];
-    for (const standing of await assessLinePrices(orderHeaderID, inMemoryLines, rows, provider, user)) {
+    const lines = (await candidateLines(orderHeaderID, inMemoryLines, provider, user)).filter(hasStatedPriceOrDiscount);
+    for (const standing of await assessLinePrices(lines, rows, provider, user)) {
         if (standing.Covered || !standing.Line.ID) continue;
         const shortfall = Money(standing.Concession.Valuation.Value - standing.ApprovedValue);
         if (!(shortfall > 0)) continue;
@@ -423,14 +595,13 @@ interface LinePriceStandingOnOrder {
 
 /** Every line whose price or discount is a concession, judged against the order's concession rows. */
 async function assessLinePrices(
-    orderHeaderID: string | null,
-    inMemoryLines: readonly ConcessionLineFacts[],
+    lines: readonly ConcessionLineFacts[],
     rows: readonly ConcessionRow[],
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<LinePriceStandingOnOrder[]> {
     const standings: LinePriceStandingOnOrder[] = [];
-    for (const line of await statedPriceLines(orderHeaderID, inMemoryLines, provider, user)) {
+    for (const line of lines) {
         const concession = await LinePriceConcessionFor(line, provider, user);
         if (!concession) continue;
         const approvedValue = rows
@@ -488,21 +659,59 @@ async function loadConcessions(
     return res?.Results ?? [];
 }
 
+/** A line whose price or discount could be a concession: a stated price, a `DiscountPct` or a held discount. */
+function hasStatedPriceOrDiscount(line: ConcessionLineFacts): boolean {
+    return !!line.PriceStated || Number(line.DiscountPct ?? 0) > 0 || Number(line.HeldDiscount ?? 0) > 0;
+}
+
 /**
- * Lines with a stated price or a `DiscountPct`: the caller's, plus persisted ones the caller does not
- * hold. Bundle components and reversals are left out.
+ * Per saved line of the order, lowercased ID to amount: the manual discounts held for approval. A held
+ * row names no promotion, no authority and no approver (`AuthorizeManualDiscount`, golive #328). Each
+ * row names its line: an order-level discount is written as one row per line's share.
  */
-async function statedPriceLines(
+export async function HeldManualDiscounts(
+    orderHeaderID: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, number>> {
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const res = await rv.RunView<{ OrderLineID: string; Amount: number }>(
+        {
+            EntityName: ORDER_ADJUSTMENT_ENTITY,
+            ExtraFilter:
+                `OrderHeaderID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}' AND OrderLineID IS NOT NULL ` +
+                `AND PromotionID IS NULL AND AuthorizedBySalesAuthorityID IS NULL AND ApprovedByUserID IS NULL`,
+            Fields: ['OrderLineID', 'Amount'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    if (!res?.Success) throw new Error(`Could not read the order's manual discounts: ${res?.ErrorMessage}`);
+    const held = new Map<string, number>();
+    for (const row of res.Results ?? []) {
+        const key = row.OrderLineID.toLowerCase();
+        held.set(key, Money((held.get(key) ?? 0) + Number(row.Amount ?? 0)));
+    }
+    return held;
+}
+
+/**
+ * The order's lines the gate judges: the caller's, plus persisted ones the caller does not hold. Bundle
+ * components, reversals and lines with no product are left out. A persisted line has a stated price.
+ */
+async function candidateLines(
     orderHeaderID: string | null,
     inMemoryLines: readonly ConcessionLineFacts[],
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<ConcessionLineFacts[]> {
-    const lines = inMemoryLines.filter(
-        (l) => (l.PriceStated || Number(l.DiscountPct ?? 0) > 0) && !!l.ProductID && !isComponentOrReversal(l),
-    );
-    if (!orderHeaderID) return lines;
+    const inMemory = inMemoryLines.filter((l) => !!l.ProductID && !isComponentOrReversal(l));
+    if (!orderHeaderID) return inMemory;
 
+    const heldDiscounts = await HeldManualDiscounts(orderHeaderID, provider, user);
+    const heldFor = (id: string | null) => heldDiscounts.get((id ?? '').toLowerCase()) ?? 0;
+    const lines = inMemory.map((l) => (l.ID ? { ...l, HeldDiscount: heldFor(l.ID) } : l));
     const held = new Set(inMemoryLines.map((l) => (l.ID ?? '').toLowerCase()).filter(Boolean));
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const res = await rv.RunView<ConcessionLineFacts>(
@@ -529,8 +738,8 @@ async function statedPriceLines(
     );
     for (const row of res?.Results ?? []) {
         const key = (row.ID ?? '').toLowerCase();
-        if (held.has(key) || isComponentOrReversal(row)) continue;
-        lines.push({ ...row, PriceStated: true });
+        if (held.has(key) || !row.ProductID || isComponentOrReversal(row)) continue;
+        lines.push({ ...row, PriceStated: true, HeldDiscount: heldFor(row.ID) });
     }
     return lines;
 }

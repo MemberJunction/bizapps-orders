@@ -32,6 +32,7 @@ import {
     type GrantAccessEvaluation,
     type SuspensionReason,
 } from './EntitlementBehavior.js';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import { LoadReadTimePaymentAccess, type ReadTimePaymentAccess } from './PaymentGatedAccess.js';
 import { EscapeText, InvalidOperationInputError, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
 import { ResolvePersonByEmail } from './PersonByEmail.js';
@@ -378,6 +379,12 @@ async function loadPaymentAccess(
     }
 }
 
+/** The business time zone, read once per call: a term's days and a cancel's access-through day are business days. */
+async function businessZone(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+    await BusinessTimeZoneEngine.Instance.Config(false, user, provider);
+    return BusinessTimeZoneEngine.Instance.Zone;
+}
+
 function evaluateGrant(
     grant: GrantRow,
     asOf: Date,
@@ -385,6 +392,7 @@ function evaluateGrant(
     subs: Map<string, SubRow>,
     terms: Map<string, TermRow>,
     payment: ReadTimePaymentAccess,
+    zone: string,
 ): EvaluatedNamedGrant {
     const sub = grant.SubscriptionID ? subs.get(grant.SubscriptionID.toLowerCase()) : undefined;
     const term = grant.SubscriptionTermID ? terms.get(grant.SubscriptionTermID.toLowerCase()) : undefined;
@@ -413,6 +421,7 @@ function evaluateGrant(
             : grant.SubscriptionTermID
               ? null
               : undefined,
+        zone,
     );
     return {
         ...evaluation,
@@ -487,6 +496,7 @@ export async function CheckPersonEntitlement(
         if (!ctx.ok) return closed('context-lookup-failed');
         const paymentAccess = await loadPaymentAccess(grants.rows, evaluatedAt, provider, user);
         if (!paymentAccess) return closed('payment-lookup-failed');
+        const zone = await businessZone(provider, user);
 
         const codeByTemplate = new Map(matching.map((t) => [t.ID.toLowerCase(), t.Code]));
         const evaluated = grants.rows.map((g) =>
@@ -497,6 +507,7 @@ export async function CheckPersonEntitlement(
                 ctx.subs,
                 ctx.terms,
                 paymentAccess,
+                zone,
             ),
         );
         const picked = PickWinningAccess(evaluated);
@@ -581,11 +592,12 @@ export async function ListPersonEntitlements(
         const ctx = await loadContext(rv, user, inScope);
         if (!ctx.ok) return empty();
         const paymentAccess = await loadPaymentAccess(inScope, evaluatedAt, provider, user);
+        const zone = await businessZone(provider, user);
         if (!paymentAccess) return empty();
 
         const evaluated = inScope.map((g) => {
             const template = templateByID.get(g.ProductEntitlementID.toLowerCase())!;
-            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, paymentAccess);
+            return evaluateGrant(g, evaluatedAt, template.Code, ctx.subs, ctx.terms, paymentAccess, zone);
         });
 
         const byCode = new Map<string, EvaluatedNamedGrant[]>();
