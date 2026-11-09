@@ -8,15 +8,16 @@
  * recognition is reversed, and the new catch-up is computed as if it had never posted. No row is
  * edited. A row is superseded because another row points at it.
  *
- * WHERE THE REVERSAL LANDS ({@link ReversalDate}). On the replaced observation's own date while that
- * month is open, so a mistyped future date nets to zero on the day it names. When that month is
- * closed, on the first day of the first later month that is open: finance's ruling is that a closed
- * period is not reopened by a correction. "Closed" is a month with a Posted batch for the line's
- * company, until finance's books-closed-through date replaces that test.
+ * NOTHING IS DATED INTO A MONTH FINANCE HAS CLOSED ({@link ClosedBooksRefusal}). The company's
+ * books-closed-through date (accounting's `AccountingCompanyProfile.BooksClosedThroughDate`) is the
+ * last day of the latest month finance has closed. A measurement date on or before it is refused,
+ * the date entered on a supersede included, so the replacement's catch-up always posts on the date
+ * entered (golive #316).
  *
- * THE REPLACEMENT'S CATCH-UP FOLLOWS IT ({@link CatchUpDate}). When the reversal moves, the catch-up
- * books no earlier than the reversal's date, so nothing new posts into the closed month. The
- * observation keeps the date the supervisor chose; only its entry moves.
+ * WHERE THE REVERSAL LANDS ({@link ReversalDate}). On the replaced observation's own date while that
+ * day is after the books-closed-through date, so a mistyped future date nets to zero on the day it
+ * names. When finance has closed that month, on the first open day: finance's ruling is that a
+ * closed period is not reopened by a correction.
  *
  * ONLY THE LATEST OBSERVATION CAN BE SUPERSEDED. Recognition is cumulative, so reversing the latest
  * observation's delta restores exactly the total the one before it left. Reversing an older one
@@ -27,6 +28,7 @@
  *   RecordProgressOperation (the transaction) · GetProgressWorklistOperation (what "last" means)
  */
 import type { AuthorizationInfo, UserInfo } from '@memberjunction/core';
+import { FirstOpenDay, IsInClosedBooks } from '@mj-biz-apps/accounting-engine-base';
 import { UserHasAuthorization } from '@mj-biz-apps/orders-entities';
 import { ComputeCatchUp, type CatchUp } from './RevenueRecognition.js';
 
@@ -96,43 +98,24 @@ export function MonthEnd(isoDate: string): string {
     return `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(last).padStart(2, '0')}`;
 }
 
+/** The refusal for a measurement date in a month finance has closed (golive #316). */
+export const CLOSED_BOOKS_REFUSAL = 'This month has already been closed by finance. Please contact them to proceed.';
+
 /**
- * The date the reversal of `replacedDate` is booked on.
- *
- * `replacedDate` itself while its month is not in `postedMonths`; otherwise day 1 of the first later
- * month that is not. `postedMonths` holds `YYYY-MM` keys: the months with a Posted batch for the
- * line's company. Months are stepped on the date's own parts, never through a local-time `Date`.
+ * {@link CLOSED_BOOKS_REFUSAL} when `measurementDate` is on or before `closedThrough`, else null.
+ * A null `closedThrough` closes nothing.
  */
-export function ReversalDate(replacedDate: string, postedMonths: Iterable<string>): string {
-    const closed = new Set(postedMonths);
-    const day = replacedDate.slice(0, 10);
-    let [y, m] = day.split('-').map(Number);
-    let key = day.slice(0, 7);
-    if (!closed.has(key)) return day;
-    // Finite: every step leaves one more key of a finite set behind.
-    while (closed.has(key)) {
-        m += 1;
-        if (m > 12) {
-            m = 1;
-            y += 1;
-        }
-        key = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}`;
-    }
-    return `${key}-01`;
+export function ClosedBooksRefusal(measurementDate: string, closedThrough: string | null): string | null {
+    return IsInClosedBooks(measurementDate.slice(0, 10), closedThrough) ? CLOSED_BOOKS_REFUSAL : null;
 }
 
 /**
- * The date a supersede's catch-up is booked on.
- *
- * `measurementDate` itself while the replaced observation's month is open — `firstOpenDate`, from
- * {@link ReversalDate}, is then the replaced date. When that month is closed, the later of
- * `measurementDate` and `firstOpenDate`: a replacement dated into the closed month books on the
- * first open day, and one dated after it keeps its own date.
+ * The date the reversal of `replacedDate` is booked on: `replacedDate` itself while it is after
+ * `closedThrough` (or nothing is closed), otherwise the day after `closedThrough`.
  */
-export function CatchUpDate(measurementDate: string, replacedDate: string, firstOpenDate: string): string {
-    const day = measurementDate.slice(0, 10);
-    if (firstOpenDate === replacedDate.slice(0, 10)) return day;
-    return day < firstOpenDate ? firstOpenDate : day;
+export function ReversalDate(replacedDate: string, closedThrough: string | null): string {
+    const day = replacedDate.slice(0, 10);
+    return closedThrough && IsInClosedBooks(day, closedThrough) ? FirstOpenDay(closedThrough) : day;
 }
 
 /**
@@ -158,7 +141,7 @@ export function FutureDateWarning(measurementDate: string, today: string): strin
  * Warns, never blocks. The prior month and anything earlier in the current month are ordinary (a
  * month's progress is attested after it ends; a project can finish mid-month), so neither warns.
  * Whether a month is CLOSED is not decided here: that is finance's books-closed-through date, a
- * refusal rather than a warning. `today` is the BUSINESS calendar day.
+ * refusal rather than a warning ({@link ClosedBooksRefusal}). `today` is the BUSINESS calendar day.
  */
 export function BackDatedWarning(measurementDate: string, today: string): string | null {
     const day = measurementDate.slice(0, 10);

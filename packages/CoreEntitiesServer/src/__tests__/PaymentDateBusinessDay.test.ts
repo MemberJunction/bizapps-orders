@@ -623,7 +623,8 @@ describe('PaymentDate is the business calendar day, not the clock instant (#209)
      */
     describe('the sites that are held by source rather than driven', () => {
         it.each([
-            ['OrderEntityServer.ts', /payment\.PaymentDate = await CalendarDayOrToday\(this\.OrderDate, provider, user\)/, 'the initial payment on order confirm'],
+            // The received day when finance gave one, else the order's day (bc-aidp-next-golive#448).
+            ['OrderEntityServer.ts', /payment\.PaymentDate = await CalendarDayOrToday\(InitialPaymentDay\(this\.OrderDate, this\.InitialPaymentReceivedDate\), provider, user\)/, 'the initial payment on order confirm'],
             ['OrderEntityServer.ts', /OrderDate: await CalendarDayOrToday\(this\.OrderDate, provider, user\)/, "the entitlement grant's validity start"],
             ['PaymentHeaderEntityServer.ts', /PaymentDate: await CalendarDayOrToday\(this\.PaymentDate, provider, user\)/, 'the allocation and fee journal entries'],
             ['PaymentLineEntityServer.ts', /CalendarDayOrToday\(\s*row\.PaymentDate,/, "the allocation entry's effective date"],

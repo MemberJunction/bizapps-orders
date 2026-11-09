@@ -332,7 +332,7 @@ describe('checkout account step', () => {
             expect(host.setPassword).not.toHaveBeenCalled();
         });
 
-        it.each([['empty', ''], ['not a string', 42], ['too long', 'p'.repeat(257)]])('refuses a password that is %s', async (_name, pw) => {
+        it.each([['empty', ''], ['not a string', 42], ['too long', 'p'.repeat(257)], ['too short', 'seven77']])('refuses a password that is %s', async (_name, pw) => {
             await EnsureCheckoutAccount(SID, KEY);
             const res = await SetCheckoutAccountPassword(SID, KEY, pw);
             expect(res.Success).toBe(false);
@@ -344,7 +344,8 @@ describe('checkout account step', () => {
             await EnsureCheckoutAccount(SID, KEY);
             host.setPassword.mockResolvedValue({ Success: false, Message: 'Use at least 10 characters.' });
             for (let i = 1; i <= MAX_CHECKOUT_PASSWORD_ATTEMPTS; i++) {
-                const res = await SetCheckoutAccountPassword(SID, KEY, 'short');
+                // Nine characters: past OUR floor of 8, refused by the host's own 10-character policy.
+                const res = await SetCheckoutAccountPassword(SID, KEY, 'ninechars');
                 expect(res.ErrorMessage).toBe('Use at least 10 characters.');
                 expect(res.Account?.CanSetPassword).toBe(i < MAX_CHECKOUT_PASSWORD_ATTEMPTS);
             }
@@ -356,7 +357,7 @@ describe('checkout account step', () => {
         it('treats a host that throws as a refused attempt', async () => {
             await EnsureCheckoutAccount(SID, KEY);
             host.setPassword.mockRejectedValue(new Error('boom'));
-            const res = await SetCheckoutAccountPassword(SID, KEY, 'pw');
+            const res = await SetCheckoutAccountPassword(SID, KEY, 'longenough');
             expect(res.Success).toBe(false);
             expect(res.ErrorMessage).toContain('could not be set');
             expect(stored().PasswordAttempts).toBe(1);

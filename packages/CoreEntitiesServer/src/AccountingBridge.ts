@@ -160,6 +160,8 @@ export async function BuildGLAccountResolver(
             // through.
             CompanyID: account?.CompanyID ?? '',
             AccountLabel: account?.Code ? `${account.Code}${account.Name ? ` ${account.Name}` : ''}` : glAccountID,
+            AccountCode: account?.Code,
+            AccountName: account?.Name,
             RequiredDimensions: requiredIDs.map((id) => ({
                 DimensionID: id,
                 Code: engine.Dimensions.find((d) => key(d.ID) === key(id))?.Code ?? id,
@@ -439,4 +441,62 @@ export async function RaiseFinanceExceptions(
         throw new Error(`Raising ${what} failed. ${detail}`);
     }
     return payload;
+}
+
+// ─── Payment date correction (bc-aidp-next-golive#448) ──────────────────────────────────────────
+//
+// A captured payment's journal entries take its date. When finance corrects that date, accounting
+// moves the entries with it while none is batched, and refuses once one is. Resolved by key like the
+// other accounting operations, so this package builds against an accounting release that does not
+// have the operation yet; calling it there throws, naming the operation.
+
+/** What `Accounting.RedatePendingJournalEntries` answers with (the parts orders reads). */
+export interface RedatePendingJournalEntriesOutcome {
+    EffectiveDate: string;
+    Changed: Array<{ JournalEntryID: string; EntryNumber: string; PreviousEffectiveDate: string; EffectiveDate: string }>;
+    UnchangedJournalEntryIDs: string[];
+}
+
+interface RedatePendingJournalEntriesRequest {
+    EffectiveDate: string;
+    LinkedEntity: string;
+    LinkedRecordIDs: string[];
+}
+
+/** One group of a payment's entries: those booked against one source entity. */
+export interface PaymentEntrySource {
+    EntityName: string;
+    RecordIDs: string[];
+}
+
+/**
+ * Move every journal entry booked from `sources` to `day` (`YYYY-MM-DD`) and return what moved.
+ *
+ * SIDE EFFECT, DELIBERATELY NAMED: this changes journal entries. It joins the CALLER'S transaction,
+ * so the entries move only if the payment's own date change commits. Accounting checks the caller's
+ * authorization and refuses, with its own message, when any entry is batched or the day is closed.
+ *
+ * @throws when the operation is unregistered, the call fails, or accounting refuses the change
+ */
+export async function RedatePaymentJournalEntries(
+    sources: PaymentEntrySource[],
+    day: string,
+    paymentNumber: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<RedatePendingJournalEntriesOutcome[]> {
+    const key = 'Accounting.RedatePendingJournalEntries';
+    const op = ResolveAccountingOperation<RedatePendingJournalEntriesRequest, RedatePendingJournalEntriesOutcome>(
+        key,
+        `change the date of payment ${paymentNumber}`,
+    );
+    const outcomes: RedatePendingJournalEntriesOutcome[] = [];
+    for (const source of sources.filter((s) => s.RecordIDs.length > 0)) {
+        const result = await op.Execute({ EffectiveDate: day, LinkedEntity: source.EntityName, LinkedRecordIDs: source.RecordIDs }, { provider, user });
+        if (!result.Success || !result.Output) {
+            throw new Error(`Payment ${paymentNumber}'s date was not changed. ${result.ErrorMessage ?? result.ResultCode ?? `${key} returned no result.`}`);
+        }
+        outcomes.push(result.Output);
+    }
+    return outcomes;
 }

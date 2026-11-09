@@ -344,6 +344,16 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         return 'Line';
     }
 
+    /**
+     * True when the product's recognition type is percentage of completion (`ScheduleBasis =
+     * 'OnMeasurement'`): revenue follows attested progress, so a line's service dates are an expected
+     * window, not something recognition reads (bc-aidp-next-golive#455).
+     */
+    public IsProgressMeasured(productID: string | null | undefined): boolean {
+        const revRec = this.RevenueRecognitionTypeByID(this.ResolveRevenueRecognitionTypeID(productID));
+        return revRec?.ScheduleBasis === 'OnMeasurement';
+    }
+
     /** Active base-channel (no list) prices on a product, highest priority first. */
     public BaseProductPrices(productID: string | null | undefined): mjBizAppsOrdersProductPriceEntity[] {
         const id = uuidKey(productID);

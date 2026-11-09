@@ -63,6 +63,7 @@ import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from '
 import { PlanLineDeposits, ReversalDepositWorking, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
+import { OrderCustomerName, type OrderCustomerFields } from './JournalEntryCustomer.js';
 
 const PAYMENT_LINE_ENTITY = 'MJ_BizApps_Orders: Payment Lines';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
@@ -184,7 +185,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
                     `there is no basis for deciding whose revenue the cash settles.`,
             );
         }
-        const order = await this.loadOrderNumber();
+        const order = await this.loadOrderLabel();
 
         // The deposit part of each company's share (D91, #234 review). Taking cash back is sized from
         // what the rollup just took out of the rows' deposits — this row is saved by now — so the
@@ -217,7 +218,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const { Drafts } = await factory.BuildAllocationDrafts({
             PaymentLineID: this.ID,
             PaymentNumber: payment.PaymentNumber,
-            OrderNumber: order,
+            OrderNumber: order.OrderNumber,
+            CustomerName: order.CustomerName,
             Amount: this.Amount ?? 0,
             ReceivingCompanyID: payment.ReceivingCompanyID,
             OrderLines: orderLines,
@@ -262,7 +264,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         }>(
             {
                 EntityName: PAYMENT_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.PaymentHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.PaymentHeaderID, 'PaymentHeaderID')}'`,
                 Fields: ['PaymentNumber', 'ReceivingCompanyID', 'Status', 'PaymentDate', 'PaymentDetailID'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -286,19 +288,21 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
     }
 
 
-    private async loadOrderNumber(): Promise<string> {
+    /** The order's number and customer, for the entry descriptions; the id stands in for a missing number. */
+    private async loadOrderLabel(): Promise<{ OrderNumber: string; CustomerName: string | null }> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const res = await rv.RunView<{ OrderNumber: string }>(
+        const res = await rv.RunView<{ OrderNumber: string } & OrderCustomerFields>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
-                Fields: ['OrderNumber'],
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['OrderNumber', 'BillToOrganization', 'BillToPerson'],
                 ResultType: 'simple',
                 BypassCache: true,
             },
             this.ContextCurrentUser,
         );
-        return res?.Results?.[0]?.OrderNumber ?? String(this.OrderHeaderID);
+        const row = res?.Results?.[0];
+        return { OrderNumber: row?.OrderNumber ?? String(this.OrderHeaderID), CustomerName: row ? OrderCustomerName(row) : null };
     }
 
     private async createJournalEntries(
@@ -378,7 +382,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const orders = await rv.RunView<{ TotalGross: number; OrderNumber: string; Balance: number | null; AmountPaid: number | null }>(
             {
                 EntityName: ORDER_HEADER_ENTITY,
-                ExtraFilter: `ID='${this.OrderHeaderID}'`,
+                ExtraFilter: `ID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'TotalGross', 'OrderNumber', 'Balance', 'AmountPaid'],
                 ResultType: 'simple',
                 BypassCache: true,
@@ -392,7 +396,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const siblings = await rv.RunView<{ ID: string; Amount: number }>(
             {
                 EntityName: PAYMENT_LINE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${this.OrderHeaderID}'`,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.OrderHeaderID, 'OrderHeaderID')}'`,
                 Fields: ['ID', 'Amount'],
                 ResultType: 'simple',
                 BypassCache: true,

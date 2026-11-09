@@ -233,7 +233,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         if (this.pickerCache?.Key !== key) {
             this.pickerCache = {
                 Key: key,
-                Results: RankCatalogMatches(this.Catalog, query, companyID || null).slice(
+                Results: RankCatalogMatches(
+                    this.Catalog.filter((p) => !p.NotSellableNew),
+                    query,
+                    companyID || null,
+                ).slice(
                     0,
                     PICKER_RESULT_LIMIT,
                 ),
@@ -771,6 +775,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     /** True when this line's service period has to be typed in. */
     public NeedsStatedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
         return OrdersEngine.Instance.ServicePeriodSource(line.ProductID) === 'Line';
+    }
+
+    /**
+     * A percentage-of-completion line: its dates are optional and only say when the work is expected
+     * to run, since recognition follows attested progress (bc-aidp-next-golive#455). Shown when they
+     * can be typed, or when a booked line carries them.
+     */
+    public ShowsExpectedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (this.NeedsStatedServicePeriod(line) || !OrdersEngine.Instance.IsProgressMeasured(line.ProductID)) return false;
+        return this.CanEditServicePeriod() || !!line.ServicePeriodStart || !!line.ServicePeriodEnd;
     }
 
     /** The order is booked, so its lines' dates are the settled ones. */
@@ -1630,7 +1644,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
 
     private async loadCatalog(): Promise<void> {
         try {
-            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser);
+            // Keeps products not sold new: lines already on the order still need their name, subscription
+            // flag and quantity cap from here (`ProductFor`). `PickerResults` leaves them out.
+            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser, true);
             this.CatalogError = null;
         } catch (error) {
             this.Catalog = [];

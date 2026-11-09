@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-core-entities-server",
   "type": "module",
-  "version": "5.42.0",
+  "version": "5.45.0",
   "description": "Server-side entity subclasses for BizApps Orders — order booking (one JE per line), line computation, and lifecycle hooks.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -39,9 +39,10 @@
     "@memberjunction/global": "^6.1.6",
     "@memberjunction/integration-engine": "^6.1.6",
     "@memberjunction/integration-engine-base": "^6.1.6",
+    "@memberjunction/notifications": "^6.1.6",
     "@memberjunction/sqlserver-dataprovider": "^6.1.6",
-    "@mj-biz-apps/accounting-core-entities-server": "0.21.2",
-    "@mj-biz-apps/accounting-engine-base": "0.21.2",
+    "@mj-biz-apps/accounting-core-entities-server": "0.24.0",
+    "@mj-biz-apps/accounting-engine-base": "0.24.0",
     "@mj-biz-apps/common-entities": "5.56.0",
     "@mj-biz-apps/tasks-core": "1.4.1",
     "@mj-biz-apps/tasks-entities": "1.4.1",
@@ -50,7 +51,7 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "^5.42.0"
+    "@mj-biz-apps/orders-entities": "^5.45.0"
   },
   "peerDependencies": {
     "@memberjunction/communication-engine": "^6.1.6",
@@ -62,9 +63,10 @@
     "@memberjunction/global": "^6.1.6",
     "@memberjunction/integration-engine": "^6.1.6",
     "@memberjunction/integration-engine-base": "^6.1.6",
+    "@memberjunction/notifications": "^6.1.6",
     "@memberjunction/sqlserver-dataprovider": "^6.1.6",
-    "@mj-biz-apps/accounting-core-entities-server": ">=0.21.0",
-    "@mj-biz-apps/accounting-engine-base": ">=0.21.0",
+    "@mj-biz-apps/accounting-core-entities-server": ">=0.24.0",
+    "@mj-biz-apps/accounting-engine-base": ">=0.24.0",
     "@mj-biz-apps/common-entities": "^5.56.0",
     "@mj-biz-apps/tasks-core": ">=1.4.1",
     "@mj-biz-apps/tasks-entities": ">=1.4.1 <2.0.0"
