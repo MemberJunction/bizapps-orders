@@ -274,13 +274,15 @@
   },
   {
     "_comments": [
-      "Products use generated form + header and domain widgets as contributions."
+      "Products use generated form + header and domain widgets as contributions.",
+      "AutoEnsureOnSave ensures saving a Product whose ProductType names a ProductExtensionEntity",
+      "(e.g. Event -> EventProduct) automatically creates and validates its disjoint IS-A child."
     ],
     "primaryKey": {
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
     },
     "fields": {
-      "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\"}",
+      "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\", \"AutoEnsureOnSave\": true}",
       "AllowUserSearchAPI": true,
       "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {
@@ -347,7 +349,10 @@
   },
   {
     "_comments": [
-      "Order Lines declarative SubtypeSelector routes extension to ProductType.OrderLineExtensionEntity via ProductID."
+      "Order Lines declarative SubtypeSelector routes extension to ProductType.OrderLineExtensionEntity via ProductID.",
+      "AutoEnsureOnSave is intentionally omitted here: general-admission event lines (EventProduct.RequiresAttendeeInfo = false)",
+      "sell seats without an EventOrderLine row, whereas EventOrderLine.PersonID is NOT NULL. Callers that record",
+      "attendee data invoke line.EnsureISAChild() with zero arguments so SubtypeSelector resolves the extension entity."
     ],
     "primaryKey": {
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines"
