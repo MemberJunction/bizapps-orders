@@ -178,7 +178,7 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
             .mjo-xq__tabs {
                 display: flex;
                 gap: var(--mj-space-2);
-                border-bottom: 1px solid var(--mj-color-border);
+                border-bottom: 1px solid var(--mj-border-default);
                 margin-bottom: var(--mj-space-4);
             }
             .mjo-xq__tabs button {
@@ -189,11 +189,11 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 padding: var(--mj-space-3) var(--mj-space-4);
                 cursor: pointer;
                 font: inherit;
-                color: var(--mj-color-text-muted);
+                color: var(--mj-text-muted);
             }
             .mjo-xq__tabs button.is-active {
-                color: var(--mj-color-text);
-                border-bottom-color: var(--mj-color-primary, #2563eb);
+                color: var(--mj-text-primary);
+                border-bottom-color: var(--mj-brand-primary);
                 font-weight: 600;
             }
             .mjo-xq__count {
@@ -201,7 +201,7 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 margin-left: var(--mj-space-2);
                 padding: 0 var(--mj-space-2);
                 border-radius: 999px;
-                background: var(--mj-color-surface-subtle, rgba(0, 0, 0, 0.06));
+                background: var(--mj-bg-surface-card);
                 font-size: 0.8em;
             }
             @media (max-width: 760px) {
@@ -241,7 +241,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     public PollJobsMixed = false;
 
     public readonly InvoiceColumns: MJOColumn<ExternalInvoicingWorklistRow>[] = [
-        { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `instalment ${r.InstallmentNumber}` : 'whole order') },
+        { Key: 'DocumentNumber', Label: 'Document', Kind: 'mono', Width: '150px', Secondary: (r) => (r.InstallmentNumber ? `installment ${r.InstallmentNumber}` : 'whole order') },
         { Key: 'CustomerName', Label: 'Customer' },
         { Key: 'CompanyName', Label: 'Billed by', HideBelow: 1000 },
         { Key: 'Amount', Label: 'Amount', Kind: 'money', Width: '120px', Format: (r) => FormatMoney(r.Amount) },
@@ -251,7 +251,7 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             Label: 'State',
             Kind: 'chip',
             Width: '120px',
-            ChipClass: (r) => (r.State === 'Failed' ? 'mj-chip--danger' : r.State === 'InFlight' ? 'mj-chip--info' : 'mj-chip--outline'),
+            ChipClass: (r) => (r.State === 'Failed' ? 'mjo-chip--error' : r.State === 'InFlight' ? 'mjo-chip--info' : 'mjo-chip--outline'),
             Format: (r) => (r.State === 'InFlight' ? 'In flight' : r.State),
             Secondary: (r) => r.LastError ?? null,
         },
@@ -424,7 +424,8 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             if (preview && out.Success) {
                 return { Tone: 'success' as const, Text: `Preview only, nothing was recorded. ${out.Message ?? ''}`.trim() };
             }
-            return { Tone: out.Success ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
+            const clean = out.Success && out.ResultCode !== 'ATTENTION';
+            return { Tone: clean ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
         });
     }
 

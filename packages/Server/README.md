@@ -55,7 +55,9 @@ its anchor in `LoadBizAppsOrdersServer()` and its `Action` row in `metadata/acti
 - `GET /checkout/:slug` — public HTML host for a distribution; POSTs stay on the same edge.
   Pre-auth. Host `serverExtensions[]` can set `Enabled: false` to suppress. Settings:
   `TrustedProxyHops` (default 0 — ignore `X-Forwarded-For`; set to the number of reverse
-  proxies that append to it), `RateLimitMax` / `RateLimitMaxGlobal`.
+  proxies that append to it), `RateLimitMax` / `RateLimitMaxGlobal`, `IPCountryHeader` (default
+  unset — record no IP country; set to the header the proxy or CDN in front of MJAPI fills with
+  the buyer's two-letter IP country, such as `CF-IPCountry`, and overwrites on every request).
 
 ## Verifying registration
 

@@ -12,16 +12,8 @@ import { join, relative } from 'node:path';
 const ROOT = join(import.meta.dirname, '..', '..', '..', '..');
 const PATTERN = /\.replace\(\/'\/g/;
 
-/**
- * Files allowed to keep the pattern. `sql-guards.ts` is the guard itself. The other three are
- * fixed by an open server-side security PR; remove each entry once that fix is on `next` (#665).
- */
-const ALLOWED = new Set([
-    'packages/CoreEntitiesServer/src/sql-guards.ts',
-    'packages/CoreEntitiesServer/src/CapturePaymentOperation.ts',
-    'packages/CoreEntitiesServer/src/OrderEntityServer.ts',
-    'packages/CoreEntitiesServer/src/PaymentIntentService.ts',
-]);
+/** Files allowed to keep the pattern: only `sql-guards.ts`, the guard itself. */
+const ALLOWED = new Set(['packages/CoreEntitiesServer/src/sql-guards.ts']);
 
 function sourceFiles(dir: string): string[] {
     return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {

@@ -13,8 +13,8 @@
 <template id="page">
 
   <div slot="meta">
-    <span class="mj-chip mj-chip--outline">All 3 companies</span>
-    <span class="mj-chip mj-chip--success"><i class="fa-solid fa-equals"></i> reconciled</span>
+    <span class="mjo-chip mjo-chip--outline">All 3 companies</span>
+    <span class="mjo-chip mjo-chip--success"><i class="fa-solid fa-equals"></i> reconciled</span>
   </div>
 
   <div slot="actions">
@@ -158,13 +158,13 @@ function render() {
     .map(p => {
       const party = p.partyOrgID ? DB.orgs[p.partyOrgID].name
         : p.partyPersonID ? DB.people[p.partyPersonID].name : p.partyName;
-      const st = { Captured: 'mj-chip--success', Pending: 'mj-chip--warning',
-                   Refunded: 'mj-chip--violet' }[p.status] || '';
+      const st = { Captured: 'mjo-chip--success', Pending: 'mjo-chip--warning',
+                   Refunded: 'mjo-chip--violet' }[p.status] || '';
       return `<tr>
         <td><a class="mono" href="list.html">${p.number}</a></td>
         <td>${party} ${p.origin === 'LXP' ? H.origin('LXP') : ''}</td>
         <td class="small">${DB.paymentTypes.find(t => t.code === p.typeCode)?.name || p.typeCode}</td>
-        <td><span class="mj-chip ${st}">${p.status}</span></td>
+        <td><span class="mjo-chip ${st}">${p.status}</span></td>
         <td class="num ${p.typeCode === 'Refund' ? 'mj-money--neg' : ''}">
           ${p.typeCode === 'Refund' ? '−' : ''}${F.money(p.amount)}</td></tr>`;
     }).join('');

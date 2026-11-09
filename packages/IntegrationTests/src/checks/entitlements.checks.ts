@@ -29,6 +29,8 @@
  *         its other holders
  *   EN31  the requester's decision is refused and the request stays open; the assignee's approval lands
  *   EN32  past the last day an approval is refused and a rejection is accepted
+ *   EN33  in Chicago a subscription grant covers its term's last day to 00:00 Central after it (not 00:00 UTC
+ *         on it), and CheckEntitlement agrees a minute either side
  *
  * CONNECTS TO:
  *   PURE:   packages/CoreEntitiesServer/src/EntitlementBehavior.ts (38 unit tests on the rules)
@@ -59,6 +61,7 @@ import {
   TxOne,
   TxQuery,
   upsertViaEntity,
+  WithBusinessZone,
 } from "../fixture.js";
 import { ConfirmOrder } from "../order-builder.js";
 import { PERSON_ENTITY } from "../entity-names.js";
@@ -66,7 +69,13 @@ import { BaseRemotableOperation, UserInfo, UserRoleInfo } from "@memberjunction/
 import { MJGlobal } from "@memberjunction/global";
 import { BusinessTimeZoneEngine } from "@mj-biz-apps/common-entities";
 import { OrdersEngine } from "@mj-biz-apps/orders-entities";
-import { EnforcePaymentGatedAccess, ORDERS_SETTING, OrdersSettings } from "@mj-biz-apps/orders-core-entities-server";
+import {
+  EnforcePaymentGatedAccess,
+  ORDERS_SETTING,
+  OrdersSettings,
+  TermDayEnd,
+  TermDayStart,
+} from "@mj-biz-apps/orders-core-entities-server";
 
 /**
  * Price a product ONCE, however many times a check asks.
@@ -154,7 +163,7 @@ interface GateRow {
 }
 
 /** The access columns of every grant an order produced. */
-const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
+export const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
   TxQuery<GateRow>(
     ctx,
     `SELECT g.ID, g.Status, g.GrantTimingApplied, g.SuspensionReason, g.SuspendedAt
@@ -171,7 +180,7 @@ const gatesFor = (ctx: IntegrationCheckContext, orderID: string) =>
  * so a row changed behind its back keeps its old timing. The timing is put back the same way before
  * the transaction rolls back, or the cache would carry this check's policy into the next one.
  */
-async function withGrantTiming(
+export async function withGrantTiming(
   ctx: IntegrationCheckContext,
   productID: string,
   timing: string,
@@ -188,7 +197,7 @@ async function withGrantTiming(
 }
 
 /** Capture cash against one order through `Orders.CapturePayment` — the path a finance user takes. */
-async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number): Promise<void> {
+export async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: number): Promise<void> {
   const f = Fx();
   Assert(f.PaymentTypeIDs.get("Cash") != null, "PaymentType 'Cash' missing — push the orders app metadata");
   const op = MJGlobal.Instance.ClassFactory.CreateInstance<
@@ -209,7 +218,7 @@ async function payOrder(ctx: IntegrationCheckContext, orderID: string, amount: n
 }
 
 /** Place the renewal of one subscription through `Orders.SpawnRenewals`, and return its order. */
-async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf: string): Promise<string> {
+export async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf: string): Promise<string> {
   const op = MJGlobal.Instance.ClassFactory.CreateInstance<
     BaseRemotableOperation<Record<string, unknown>, { Placed: number; Message?: string; Candidates: Array<{ OrderID?: string }> }>
   >(BaseRemotableOperation, "Orders.SpawnRenewals");
@@ -219,7 +228,7 @@ async function renew(ctx: IntegrationCheckContext, subscriptionID: string, asOf:
   return result.Output!.Candidates[0].OrderID!;
 }
 
-const addDays = (iso: string, n: number): string => {
+export const addDays = (iso: string, n: number): string => {
   const d = new Date(`${iso.slice(0, 10)}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
@@ -514,18 +523,20 @@ export const EntitlementsChecks: NamedCheck[] = [
         Assert(seats!.TermID != null, "and the grant POINTS at that term — one grant per term (D76)");
 
         // The window must be the term's own, not the order date's. Compared against the row rather
-        // than a computed guess, because the term may be anchored or prorated.
+        // than a computed guess, because the term may be anchored or prorated. Each of the term's days is
+        // covered in full in the business zone: from 00:00 on the first to 00:00 on the day after the last.
         const term = await TxOne<{ StartDate: Date; EndDate: Date }>(ctx,
           `SELECT StartDate, EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID='${seats!.TermID}'`);
+        const zone = BusinessTimeZoneEngine.Instance.Zone;
         AssertEqual(
-          new Date(seats!.ValidFrom!).toISOString().slice(0, 10),
-          new Date(term.StartDate).toISOString().slice(0, 10),
-          "the grant starts when the term starts",
+          new Date(seats!.ValidFrom!).toISOString(),
+          TermDayStart(new Date(term.StartDate), zone).toISOString(),
+          "the grant starts when the term's first day starts",
         );
         AssertEqual(
-          new Date(seats!.ValidTo!).toISOString().slice(0, 10),
-          new Date(term.EndDate).toISOString().slice(0, 10),
-          "and ends when it ends",
+          new Date(seats!.ValidTo!).toISOString(),
+          TermDayEnd(new Date(term.EndDate), zone).toISOString(),
+          "and ends when the term's last day ends, not at its start",
         );
       }),
   },
@@ -796,49 +807,35 @@ export const EntitlementsChecks: NamedCheck[] = [
   },
   {
     Id: "entitlements.EN15",
-    Name: "EN15: a PRORATED line rounds its seat count UP, never down",
+    Name: "EN15: a PRORATED subscription line grants its seats from the term, not the prorated quantity",
     RequiresMutation: true,
     Fn: async (ctx) =>
       InRolledBackTransaction(ctx, async () => {
         const f = Fx();
         await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubCalendar, { EntitlementQuantityMode: 'PerUnit' });
         // SubCalendar is Jan-1 anchored WITH proration, so buying it mid-year scales the line
-        // quantity to a fraction — and the seat count is computed from that fraction. This is the
-        // only place a fractional quantity arises naturally, which is why the unit test alone was
-        // not enough: rounding DOWN survived the whole bundle until this check existed, because
-        // every other check buys whole units and ceil and floor agree.
+        // quantity to a fraction to price the short period. The grant used to be computed from that
+        // fraction: 3 subscriptions x 4 seats over half a year granted 6. A shorter period covers
+        // fewer days, not fewer people, so the grant reads the seats the term records (#589).
         const order = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           BillToOrganizationID: f.Customers.OrganizationID,
           OrderDate: new Date("2026-07-01"),
-          Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 1, UnitPrice: 1200 }],
+          Lines: [{ ProductID: f.Products.SubCalendar, Quantity: 3, UnitPrice: 1200 }],
         });
         Assert(order.Saved, `confirm failed: ${order.Message}`);
 
         const line = await TxOne<{ Q: number }>(ctx,
           `SELECT Quantity AS Q FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID='${order.Order.ID}'`);
         Assert(
-          Number(line.Q) > 0 && Number(line.Q) < 1,
+          Number(line.Q) > 0 && Number(line.Q) < 3,
           `the line must actually be prorated for this check to mean anything (quantity ${line.Q})`,
         );
 
         const g = byCode(await grantsFor(ctx, order.Order.ID as string));
         const seats = g.get("PRORATED-SEATS");
         Assert(seats != null, "the prorated subscription granted its seats");
-
-        // 4 seats x a fraction, rounded UP. Asserted against the stored quantity rather than a
-        // hard-coded number, because the proration factor depends on the anchor and the order date.
-        const expected = Math.ceil(4 * Number(line.Q));
-        AssertEqual(
-          Number(seats!.Quantity),
-          expected,
-          `4 seats x ${line.Q} rounds UP to ${expected} — under-granting is the expensive direction, ` +
-            `exactly as under-collecting is with tax`,
-        );
-        Assert(
-          Number(seats!.Quantity) > 4 * Number(line.Q),
-          "and it is strictly MORE than the exact fraction, which is what 'up' means",
-        );
+        AssertEqual(Number(seats!.Quantity), 12, `4 seats x 3 bought, whatever the proration (line quantity ${line.Q})`);
       }),
   },
   {
@@ -1178,7 +1175,8 @@ export const EntitlementsChecks: NamedCheck[] = [
           // CheckEntitlement refuses a future AsOf, so the dates are placed behind today instead: the
           // first annual term ended a few days ago, so its renewal is in force now. The renewal is
           // placed in time, so confirm grants it Active (EN25 covers one confirmed past its cutoff).
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const firstStart = new Date(`${addDays(today, -3)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {
@@ -1272,7 +1270,8 @@ export const EntitlementsChecks: NamedCheck[] = [
 
           // The first annual term ended a few days ago and its renewal, placed five days before that,
           // is in force now: due, unpaid, and not yet at the cutoff.
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const firstStart = new Date(`${addDays(today, -3)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {
@@ -1401,7 +1400,8 @@ export const EntitlementsChecks: NamedCheck[] = [
 
           // The waiver's last day is two days back, a day's margin for the business zone. The pass run
           // on that day lifts the hold, as it did while the waiver was in force.
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const lastDay = addDays(today, -2);
           await TxQuery(ctx,
             `INSERT INTO ${ORDERS_SCHEMA}.EntitlementAccessOverride
@@ -1455,7 +1455,8 @@ export const EntitlementsChecks: NamedCheck[] = [
 
           // Confirm decides from today's payment facts, the same rule the nightly job applies: the
           // first annual term ended 90 days ago, so its renewal is placed already long past due.
-          const today = new Date().toISOString().slice(0, 10);
+          await BusinessTimeZoneEngine.Instance.Config(false, ctx.User, ctx.Provider);
+          const today = BusinessTimeZoneEngine.Instance.Today();
           const firstStart = new Date(`${addDays(today, -90)}T00:00:00Z`);
           firstStart.setUTCFullYear(firstStart.getUTCFullYear() - 1);
           const first = await ConfirmOrder(ctx.User, {
@@ -1660,6 +1661,43 @@ export const EntitlementsChecks: NamedCheck[] = [
             "and the grants stay held for payment",
           );
         });
+      }),
+  },
+  {
+    Id: "entitlements.EN33",
+    Name: "EN33: in Chicago, a subscription grant covers its last day to midnight Central, and CheckEntitlement agrees at 23:59 and 00:01",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      WithBusinessZone(ctx, "America/Chicago", "Central Standard Time", async () => {
+        const f = Fx();
+        // Held by a person (Jordan), as a checkout sale is, so the person read path can be asked too; on a
+        // term that has already ended, because the read refuses an as-of in the future.
+        const order = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: new Date("2025-01-15"),
+          BillToPersonID: f.Customers.PersonID,
+          ShipToPersonID: f.Customers.PersonID,
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        });
+        Assert(order.Saved, `confirm failed: ${order.Message}`);
+        const seats = byCode(await grantsFor(ctx, order.Order.ID as string)).get("SUB-SEATS");
+        Assert(seats != null && seats.TermID != null, "the subscription granted its seats, on its term");
+        const term = await TxOne<{ StartDate: Date; EndDate: Date }>(ctx,
+          `SELECT StartDate, EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE ID='${seats!.TermID}'`);
+        const lastDay = new Date(term.EndDate).toISOString().slice(0, 10);
+        const end = new Date(seats!.ValidTo!);
+        AssertEqual(end.toISOString(), TermDayEnd(lastDay, "America/Chicago").toISOString(), "the grant ends at 00:00 Central after the last day");
+        Assert(
+          end.getTime() > new Date(`${lastDay}T00:00:00Z`).getTime() + 5 * 3600 * 1000,
+          `not at 00:00 UTC on the last day (6 or 7 pm Central the evening before): ${end.toISOString()}`,
+        );
+        AssertEqual(seats!.Person?.toLowerCase(), f.Customers.PersonID.toLowerCase(), "precondition: the grant is Jordan's");
+        AssertEqual(seats!.Status, "Active", "precondition: the grant is in force, so the read answers on its dates");
+        // Orders.CheckEntitlement agrees with the stored grant, a minute either side of its end.
+        const check = async (asOf: Date) =>
+          (await readAccess<{ HasAccess: boolean }>(ctx, "Orders.CheckEntitlement", { PersonID: f.Customers.PersonID, Code: "SUB-SEATS", AsOf: asOf.toISOString() })).HasAccess;
+        Assert(await check(new Date(end.getTime() - 60_000)), "23:59 Central on the last day: access");
+        Assert(!(await check(new Date(end.getTime() + 60_000))), "00:01 Central the next day: no access");
       }),
   },
 ];

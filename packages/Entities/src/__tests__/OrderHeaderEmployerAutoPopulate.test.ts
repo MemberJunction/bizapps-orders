@@ -2,6 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import type { IRunViewProvider } from '@memberjunction/core';
 import { ResolveSingularActiveEmployerOrganization } from '../PartyAffiliationBehavior';
 
+// A real UUID: a non-UUID personID is refused (RequireUUID) before the read.
+const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
 describe('ResolveSingularActiveEmployerOrganization', () => {
     function createMockProvider(results: Array<{ ToOrganizationID: string; StartDate?: string | null; EndDate?: string | null }> = []) {
         return {
@@ -16,7 +19,7 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
 
     it('resolves organization ID when person has exactly one active employer', async () => {
         const mockProvider = createMockProvider([{ ToOrganizationID: 'org-abc-123' }]);
-        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
+        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, PERSON);
 
         expect(orgId).toBe('org-abc-123');
         expect(mockProvider.RunView).toHaveBeenCalledTimes(1);
@@ -27,14 +30,14 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
             { ToOrganizationID: 'org-short', StartDate: '2026-01-01', EndDate: null },
             { ToOrganizationID: 'org-long', StartDate: '2018-01-01', EndDate: null },
         ]);
-        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
+        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, PERSON);
 
         expect(orgId).toBe('org-long');
     });
 
     it('returns null if person has zero active employers', async () => {
         const mockProvider = createMockProvider([]);
-        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
+        const orgId = await ResolveSingularActiveEmployerOrganization(mockProvider, PERSON);
 
         expect(orgId).toBeNull();
     });
@@ -43,5 +46,11 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
         const mockProvider = createMockProvider([{ ToOrganizationID: 'org-1' }]);
         expect(await ResolveSingularActiveEmployerOrganization(mockProvider, '')).toBeNull();
         expect(await ResolveSingularActiveEmployerOrganization(null as unknown as IRunViewProvider, 'person-1')).toBeNull();
+    });
+
+    it('refuses a non-UUID personID without querying', async () => {
+        const mockProvider = createMockProvider([{ ToOrganizationID: 'org-1' }]);
+        await expect(ResolveSingularActiveEmployerOrganization(mockProvider, "x' OR '1'='1")).rejects.toThrow(/personID must be a UUID/);
+        expect(mockProvider.RunView).not.toHaveBeenCalled();
     });
 });

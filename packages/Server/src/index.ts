@@ -19,6 +19,7 @@ import { LoadOpenPaymentIntentAction } from './custom/open-payment-intent.action
 import { LoadSendDocumentAction } from './custom/send-document.action.js';
 import { LoadSpawnRenewalsAction } from './custom/spawn-renewals.action.js';
 import { LoadEnforcePaymentGatedAccessAction } from './custom/enforce-payment-gated-access.action.js';
+import { LoadChargeRenewalsAction } from './custom/charge-renewals.action.js';
 import { LoadDispatchOutboundEventsAction } from './custom/dispatch-outbound-events.action.js';
 import { LoadSendExternalInvoicesAction } from './custom/send-external-invoices.action.js';
 import { LoadPollExternalPaymentsAction } from './custom/poll-external-payments.action.js';
@@ -27,6 +28,9 @@ import { LoadDetectOverlappingSubscriptionsAction } from './custom/detect-overla
 import { LoadDetectUnattestedProgressAction } from './custom/detect-unattested-progress.action.js';
 import { LoadReconcilePaymentProviderChargesAction } from './custom/reconcile-payment-provider-charges.action.js';
 import { LoadCheckPaymentWebhookEndpointsAction } from './custom/check-payment-webhook-endpoints.action.js';
+import { LoadCreateProviderSubscriptionsAction } from './custom/create-provider-subscriptions.action.js';
+import { LoadSyncProviderSubscriptionsAction } from './custom/sync-provider-subscriptions.action.js';
+import { LoadLinkProviderSubscriptionAction } from './custom/link-provider-subscription.action.js';
 
 // Server-side entity subclasses — MUST come after orders-entities so @RegisterClass
 // auto-increment gives these higher priority than the generated classes.
@@ -35,6 +39,7 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadSubscriptionEntityServer,
     LoadProductPriceEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
@@ -50,6 +55,7 @@ import {
     LoadGetOverdueWorklistOperation,
     LoadGetBillingWorklistOperation,
     LoadIssueInstalmentInvoiceOperation,
+    LoadReplacePaymentScheduleOperation,
     LoadRecordProgressOperation,
     LoadGetProgressWorklistOperation,
     LoadReplayCheckoutStepOperation,
@@ -57,10 +63,13 @@ import {
     LoadOrderHeaderPaymentScheduleEntityServer,
     LoadOrderLineProgressMeasurementEntityServer,
     LoadOrderConcessionEntityServer,
+    LoadOrderAdjustmentEntityServer,
     InitConcessionApprovalListener,
     LoadGetFulfillmentQueueOperation,
     LoadGetPriorReturnsOperation,
     LoadCheckCoverageOverlapOperation,
+    LoadConfirmReadinessOperation,
+    LoadExplainProductGLAccountsOperation,
     LoadSubscriptionFamilyRules,
     LoadFulfillOrderLinesOperation,
     LoadCapturePaymentOperation,
@@ -72,10 +81,14 @@ import {
     LoadSpawnRenewalsOperation,
     LoadDetectOverlappingSubscriptionsOperation,
     LoadReconcilePaymentProviderChargesOperation,
+    LoadCreateOrderFromProviderPaymentOperation,
+    LoadResolveChargeExceptionOperation,
     LoadEmailDeliveryChannel,
     LoadStoredValuePaymentProvider,
     LoadBillComPaymentProvider,
     LoadBillComInvoiceRail,
+    LoadHubSpotPaymentsProvider,
+    LoadHubSpotPaymentsRail,
     LoadIssueExternalInvoiceOperation,
     LoadAdoptExternalInvoiceOperation,
     LoadCancelExternalInvoiceOperation,
@@ -91,7 +104,9 @@ import {
     LoadListEntitlementsOperation,
     LoadAccessOverrideOperations,
     LoadEntitlementAccessOverrideEntityServer,
+    ConfigureRenewalPaymentLinks,
 } from '@mj-biz-apps/orders-core-entities-server';
+import { RENEWAL_LINK_SECRET_ENV_VAR } from './services/renewal-payment-link.js';
 
 // The unauthenticated webhook route. Registered as a server EXTENSION rather than mounted here,
 // because it must be installed before MJServer's auth middleware — see the file for why.
@@ -134,6 +149,9 @@ export const RESOLVER_PATHS = [
  * startupExport entry point.
  */
 export function LoadBizAppsOrdersServer(): void {
+    // The update-card link's signing secret (#289), from the environment and never from the
+    // database or the repo. Unset or shorter than 32 characters, no link is signed or accepted.
+    ConfigureRenewalPaymentLinks({ Secret: process.env[RENEWAL_LINK_SECRET_ENV_VAR] });
     // Static imports above ensure all classes are registered; these anchor the server-only
     // subclasses against tree-shaking (booking lives in OrderEntityServer.Save).
     LoadOrderEntityServer();
@@ -148,6 +166,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadGetOverdueWorklistOperation(); // 'Orders.GetOverdueWorklist' — overdue is computed, not stored
     LoadGetBillingWorklistOperation(); // 'Orders.GetBillingWorklist' — instalments due with no invoice behind them (AIDP-24)
     LoadIssueInstalmentInvoiceOperation(); // 'Orders.IssueInstalmentInvoice' — freeze the number, stamp InvoicedAt, advance the row
+    LoadReplacePaymentScheduleOperation(); // 'Orders.ReplacePaymentSchedule' — set the schedule from a list; invoiced rows kept, tie enforced (golive #290)
     LoadRecordProgressOperation(); // 'Orders.RecordProgress' — one attested POC observation and its catch-up entry (AIDP-26)
     LoadGetProgressWorklistOperation(); // 'Orders.GetProgressWorklist' — open POC lines with their last observation
     LoadReplayCheckoutStepOperation(); // 'Orders.ReplayCheckoutStep' — an operator re-drives one failed post-payment checkout step (#326)
@@ -155,12 +174,16 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderHeaderPaymentScheduleEntityServer(); // stamps CompanyID; keeps the rollups the database's
     LoadOrderLineProgressMeasurementEntityServer(); // refuses a Posted observation the operation did not write
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
+    LoadOrderAdjustmentEntityServer();     // a recorded discount is neither re-authorized nor deleted by hand (golive #328)
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadSubscriptionEntityServer();        // a gateway-billed subscription changes only where the gateway is told
     LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with
     LoadCheckCoverageOverlapOperation(); // 'Orders.CheckCoverageOverlap' — the band-overlap notice, from the rule confirm refuses with
+    LoadConfirmReadinessOperation();     // 'Orders.ConfirmReadiness' — the order form's concession blockers, from the gate confirm refuses with
+    LoadExplainProductGLAccountsOperation(); // 'Orders.ExplainProductGLAccounts' — a product's GL accounts per role, from the walk confirm books through (golive#439)
     LoadSubscriptionFamilyRules();       // a product's subscription family must be in the product's company
     LoadFulfillOrderLinesOperation(); // 'Orders.FulfillOrderLines' — flip lines AND close the order, one act
     LoadCapturePaymentOperation(); // 'Orders.CapturePayment' — header + allocations in ONE transaction
@@ -181,6 +204,8 @@ export function LoadBizAppsOrdersServer(): void {
     LoadPollExternalPaymentsOperation();        // 'Orders.PollExternalPayments' — cleared Bill.com payments, captured once (golive #148)
     LoadDetectOverlappingSubscriptionsOperation(); // 'Orders.DetectOverlappingSubscriptions' — finance exception type 5 (golive #279)
     LoadReconcilePaymentProviderChargesOperation(); // 'Orders.ReconcilePaymentProviderCharges' — gateway charges vs payments (#477)
+    LoadCreateOrderFromProviderPaymentOperation(); // 'Orders.CreateOrderFromProviderPayment' — order from an unmatched provider payment (#481)
+    LoadResolveChargeExceptionOperation(); // 'Orders.ResolveChargeException' — book a charge-without-payment exception as an order and clear it (#567)
     LoadCheckEntitlementOperation();   // 'Orders.CheckEntitlement' — LXP ask/answer (read contract)
     LoadListEntitlementsOperation();   // 'Orders.ListEntitlements' — the person's library, same evaluator
     LoadAccessOverrideOperations();    // 'Orders.RequestAccessOverride' / 'Orders.RecordAccessOverrideDecision' (#268)
@@ -195,6 +220,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadManualPaymentProvider();       // cheque, wire, cash — no gateway to call
     LoadStoredValuePaymentProvider();  // gift cards and account credit, one driver (D38/D68)
     LoadBillComPaymentProvider();      // Bill.com — the AR rail; refuses every checkout verb (golive #146/#148)
+    LoadHubSpotPaymentsProvider();     // HubSpot Payments — read, never charged; refuses every checkout verb (#482)
     LoadEnvironmentSecretResolver();   // the default CredentialsRef -> env lookup; replaceable
 
     // Actions. Same tree-shaking hazard as the operations above: without the anchor the action row
@@ -204,6 +230,7 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOpenPaymentIntentAction();     // 'Orders.OpenPaymentIntent' — the FIRST half of a gateway capture (D80)
     LoadSpawnRenewalsAction();         // 'Orders.SpawnRenewals' — the scheduler's way in to the renewal operation
     LoadEnforcePaymentGatedAccessAction(); // 'Orders.EnforcePaymentGatedAccess' — nightly renewal cutoff and restore (#223)
+    LoadChargeRenewalsAction();        // 'Orders.ChargeRenewals' — daily charge of renewal cards, with retries (#289)
     LoadDispatchOutboundEventsAction(); // 'Orders.DispatchOutboundEvents' — sends recorded outbound events (#293)
     LoadSendExternalInvoicesAction();  // 'Orders.SendExternalInvoices' — the scheduler's way in to the Bill.com sweep
     LoadPollExternalPaymentsAction();  // 'Orders.PollExternalPayments' — the scheduler's way in to the Bill.com payment poll
@@ -212,12 +239,16 @@ export function LoadBizAppsOrdersServer(): void {
     LoadDetectUnattestedProgressAction(); // 'Orders.DetectUnattestedProgress' — nightly unattested-progress exceptions (golive #279)
     LoadReconcilePaymentProviderChargesAction(); // 'Orders.ReconcilePaymentProviderCharges' — nightly charge reconciliation (#477)
     LoadCheckPaymentWebhookEndpointsAction(); // 'Orders.CheckPaymentWebhookEndpoints' — webhook endpoint drift check (#477)
+    LoadCreateProviderSubscriptionsAction(); // 'Orders.CreateProviderSubscriptions' — retry/backfill of gateway-billed subscriptions (option E)
+    LoadSyncProviderSubscriptionsAction(); // 'Orders.SyncProviderSubscriptions' — nightly sync of gateway-billed subscriptions (E3/E4/E6)
+    LoadLinkProviderSubscriptionAction(); // 'Orders.LinkProviderSubscription' — the checked link of an existing subscription (E3)
 
     // Delivery channels (§4.4). Same tree-shaking hazard as the payment drivers, and the same
     // deliberately unhelpful failure without the anchor: `DeliveryResolver` refuses the base-class
     // fallback rather than letting "nobody registered a channel" read as "the channel refused to send".
     LoadEmailDeliveryChannel();        // 'Email' — over MJ's communication framework
     LoadBillComInvoiceRail();          // 'BillCom' — the outbound invoice rail over the published connector (golive #146)
+    LoadHubSpotPaymentsRail();         // 'HubSpotPayments' — payments a HubSpot portal collected, read by the poll (#482)
 
     // Identity-claim drivers (guest checkout → account linking). Without these anchors the
     // @RegisterClass decorators are tree-shaken and MJ core's IdentityClaimEngine finds no

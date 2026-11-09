@@ -31,6 +31,8 @@
  *   MIRROR: ./TaxResolver.ts — the same walk, for the same reason
  *   DOC:    plans/archive/bizapps-orders-master.md D27, D76
  */
+import { TermDayEnd, TermDayStart, TermGrantWindow } from './TermGrantWindow.js';
+
 
 /** When access begins. See {@link DecideGrantStatus} for what each one means. */
 export type GrantTiming = 'OnConfirm' | 'OnPaidInFull' | 'OnFirstPayment' | 'OnActivation';
@@ -138,11 +140,12 @@ export function ResolveEntitlementPolicy(
  * three packs expects. `Flat` ignores the line quantity entirely, for entitlements that are not
  * countable: "access to the member portal" does not become three portals.
  *
- * ROUNDED UP, and only ever up. A prorated subscription line carries a fractional quantity (0.5833
- * for a short first period), and 0.5833 × 5 seats is 2.9165. Rounding down hands the customer two
- * seats for a five-seat product and generates a support ticket; rounding up hands them three and
- * generates nothing. Under-granting is the expensive direction, exactly as under-collecting is with
- * tax, and for the same reason: the customer notices.
+ * ROUNDED UP, and only ever up: a fractional quantity × 5 seats can land between two whole seats.
+ * Rounding down under-grants and generates a support ticket; rounding up generates nothing.
+ * Under-granting is the expensive direction, exactly as under-collecting is with tax, and for the
+ * same reason: the customer notices. A SUBSCRIPTION line is not passed its own quantity, which a
+ * prorated first period scales (0.5833 for a short period, so 5 seats read 2.9165): the caller
+ * passes the term's seat count, because a shorter period covers fewer days, not fewer people (#589).
  *
  * A null template quantity means the entitlement is not a countable thing (a Feature or AccessLevel
  * rather than a ResourceQuantity), and stays null rather than becoming zero — zero would read as
@@ -195,6 +198,12 @@ export interface ValidityContext {
     /** SubscriptionTerm only. */
     TermStartDate?: Date | null;
     TermEndDate?: Date | null;
+    /**
+     * The business time zone (`BusinessTimeZoneEngine.Zone`). A term-following grant covers each of its
+     * term's days in full in this zone (`TermGrantWindow`). Required, so no caller can build a term grant
+     * from the bare `date` values, which read as 00:00 UTC and cut the last day short.
+     */
+    BusinessZone: string;
 }
 
 export interface ResolvedValidity {
@@ -262,7 +271,10 @@ export function ResolveValidityWindow(mode: ValidityMode, ctx: ValidityContext):
                 // as though it were one. Perpetual is the safe read: the customer bought something.
                 return { ValidFrom: ctx.GrantedOn, ValidTo: null, ModeApplied: 'Perpetual' };
             }
-            return clamp(ctx.TermStartDate, ctx.TermEndDate);
+            // The term's days, each covered in full in the business zone: through 00:00 business time on
+            // the day after the last one, not 00:00 UTC on it.
+            const window = TermGrantWindow(ctx.TermStartDate, ctx.TermEndDate, ctx.BusinessZone);
+            return clamp(window.ValidFrom, window.ValidTo);
         }
     }
 }
@@ -747,11 +759,13 @@ export interface SubscriptionAccessFacts {
     Status: string;
     /**
      * When the subscription is `Canceled`, this is access-through (`EndDate` stamped from
-     * `CancellationDecision.AccessThroughDate`). Ignored while the sub is Active/Trialing.
+     * `CancellationDecision.AccessThroughDate`): a business DAY, covered in full in the business zone.
+     * Ignored while the sub is Active/Trialing.
      */
     EndDate: Date | null;
 }
 
+/** A term's first and last business days (`date` columns), each covered in full in the business zone. */
 export interface TermAccessFacts {
     Status: string;
     StartDate: Date;
@@ -785,12 +799,19 @@ const ACCESSING_SUB_STATUS = new Set(['Active', 'Trialing']);
  * end, which is a LIE after an immediate cancel: access-through is `subscription.EndDate`
  * (grace included). Grace can also EXTEND past `ValidTo`. Either way, `EndDate` is the bound
  * once the sub is `Canceled`. Paused/Migrated refuse immediately — they have no grace story.
+ *
+ * DAYS ARE BUSINESS DAYS, COVERED IN FULL. A term's dates and a cancelled subscription's `EndDate` are
+ * `date` columns: read as instants they are 00:00 UTC, which ends the last day at 6 pm the evening
+ * before in Chicago. So they are compared as the business day they name, through 00:00 business time on
+ * the next day (`TermDayEnd`), the same instant a term grant's `ValidTo` now holds (`TermGrantWindow`).
+ * `zone` is required so every caller states it.
  */
 export function EvaluateGrantAccess(
     grant: GrantAccessFacts,
     asOf: Date,
-    subscription?: SubscriptionAccessFacts | null,
-    term?: TermAccessFacts | null,
+    subscription: SubscriptionAccessFacts | null | undefined,
+    term: TermAccessFacts | null | undefined,
+    zone: string,
 ): GrantAccessEvaluation {
     const denied = (Decision: EntitlementDecision): GrantAccessEvaluation => ({
         HasAccess: false,
@@ -826,12 +847,13 @@ export function EvaluateGrantAccess(
 
     if (subscription && !ACCESSING_SUB_STATUS.has(subscription.Status)) {
         if (subscription.Status === 'Canceled') {
-            if (!subscription.EndDate || asOf.getTime() > subscription.EndDate.getTime()) {
+            const accessEnds = subscription.EndDate ? TermDayEnd(subscription.EndDate, zone) : null;
+            if (!accessEnds || asOf.getTime() > accessEnds.getTime()) {
                 return {
                     HasAccess: false,
                     Decision: 'SubscriptionInactive',
                     ValidFrom: grant.ValidFrom,
-                    ValidTo: subscription.EndDate,
+                    ValidTo: accessEnds,
                 };
             }
             // Inside access-through: EndDate is the operative bound — it can cut the original
@@ -841,7 +863,7 @@ export function EvaluateGrantAccess(
                 HasAccess: true,
                 Decision: 'Granted',
                 ValidFrom: grant.ValidFrom,
-                ValidTo: subscription.EndDate,
+                ValidTo: accessEnds,
             };
         }
         return denied('SubscriptionInactive');
@@ -852,8 +874,12 @@ export function EvaluateGrantAccess(
     }
 
     if (term) {
-        if (asOf.getTime() < term.StartDate.getTime()) return denied('NotYetValid');
-        if (asOf.getTime() > term.EndDate.getTime()) return denied('SubscriptionInactive');
+        // The earlier of 00:00 business time and 00:00 UTC on the first day. A grant written by this release
+        // starts at the first (its own ValidFrom gates it, above); one written before starts at 00:00 UTC, and
+        // a later business-time bound would open it hours later than it did (no backfill, D14).
+        const opens = Math.min(TermDayStart(term.StartDate, zone).getTime(), TermDayStart(term.StartDate, 'UTC').getTime());
+        if (asOf.getTime() < opens) return denied('NotYetValid');
+        if (asOf.getTime() > TermDayEnd(term.EndDate, zone).getTime()) return denied('SubscriptionInactive');
     }
 
     return granted();
@@ -916,9 +942,11 @@ export function CacheUntilFor(
 
 /**
  * After `Orders.CancelSubscription`, stored grant Status is a lie unless we revoke when
- * access has already ended. Grace (`AccessThroughDate` in the future) leaves the rows
- * standing — the evaluator honours `subscription.EndDate`.
+ * access has already ended. `accessEndsAt` is the INSTANT access ends (`TermDayEnd` of the access-through
+ * day), not the day: compared with the day read as 00:00 UTC, an end-of-term cancel made on the last day
+ * (from 6 pm Central the evening before) revoked at once a customer who was owed the rest of it. An
+ * `Immediate` cancel with no grace does not ask: it ends access at once (`CancelAccessEnd.EndsNow`).
  */
-export function ShouldRevokeGrantsOnCancel(accessThroughDate: Date, now: Date): boolean {
-    return now.getTime() > accessThroughDate.getTime();
+export function ShouldRevokeGrantsOnCancel(accessEndsAt: Date, now: Date): boolean {
+    return now.getTime() > accessEndsAt.getTime();
 }

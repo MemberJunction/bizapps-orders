@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, DoCheck, Input, OnDestroy, Output, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -10,6 +10,7 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
+import { MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import {
     BaseFormComponent,
     BaseFormsModule,
@@ -21,14 +22,21 @@ import {
     OrderLineEntity,
     OrdersCheckCoverageOverlapOperation,
     ClampLineQuantity,
+    CoverageOverlapReasonMissing,
+    ExtraSeatLinesNeeded,
     CanRestoreLineDefault,
+    DefaultTermEnd,
+    DefaultTermStart,
+    KeptStatedEnd,
     IsLinePriceOverridden,
     LineNeedsOverrideReason,
     LinePriceOverrideReason,
     ListApplicablePrices,
+    ProductHasRevenueBands,
     LoadOrdersEngine,
     OrdersEngine,
     RestoreLineDefault,
+    UserCanRunAlongside,
     loadApplicabilityContext,
     priceOverrideCatalogInstalled,
     userPriceOverrideKind,
@@ -46,6 +54,8 @@ import {
     ContinuationStartFrom,
     GetCatalogOptions,
     GetDimensionOptions,
+    GetLineDimensionsForOrder,
+    GetCompanyDimensionValueIDs,
     GetDiscountAuthority,
     GetExistingHolding,
     GetSubscriptionContinuation,
@@ -56,14 +66,26 @@ import {
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
+import { BuildStampedTags, type MJOStampedTag } from './line-stamped-tags';
+import { ScrollPickerCursorIntoView } from './picker-scroll';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 
 import {
     ExtensionCollapsedHint,
     ExtensionToggleLabel,
+    DescribeSeatSplit,
 } from './line-extension-fields';
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
-import { AsDateValue, HoldingSubscriberFor, RequireUUIDs, TodayAsDateValue } from '@mj-biz-apps/orders-entities';
+import {
+    AsDateValue,
+    DescendantLines,
+    ExtendChoiceTextFor,
+    ExtendOutcomeFor,
+    HoldingSubscriberFor,
+    RequireUUIDs,
+    TodayAsDateValue,
+    type ExtendChoiceText,
+} from '@mj-biz-apps/orders-entities';
 
 /**
  * Just enough of an RxJS subscription to release one.
@@ -134,16 +156,19 @@ type CoverageOverlapLine = CheckCoverageOverlapOutput['Lines'][number];
         MJOLinePricePickerComponent,
         MJOMoneyPipe,
         MJOOrderLineDetailsPanelComponent,
+        MJEmptyStateComponent,
     ],
     templateUrl: './order-lines-editor.component.html',
     styleUrls: ['./order-lines-editor.component.css'],
 })
-export class MJOOrderLinesEditorComponent implements OnDestroy {
+export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     private readonly pricing = inject(MJOPricingScheduler);
     private readonly cdr = inject(ChangeDetectorRef);
 
     private _order: OrderHeaderEntity | null = null;
     private readonly expandedLineIds = new Set<string>();
+    /** What the last per-seat split did, shown above the lines until the order is rebound. */
+    public SeatSplitNotice: string | null = null;
 
     @Input() public Provider: IMetadataProvider | null = null;
     @Input() public EditMode = true;
@@ -175,6 +200,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     @ViewChild('pickerHost') private pickerHost?: ElementRef<HTMLElement>;
     /** 'none' hides the picker; 'list' is named prices only; 'any' also types an amount. */
     public OverrideKind: PriceOverrideKind = 'none';
+    /** The user holds the run-alongside grant (bizapps-orders#511); confirm checks it again. */
+    public CanRunAlongside = false;
     private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
     private readonly overrideEditorLineIds = new Set<string>();
     private readonly defaultUnitByLine = new Map<string, number | null>();
@@ -207,7 +234,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (this.pickerCache?.Key !== key) {
             this.pickerCache = {
                 Key: key,
-                Results: RankCatalogMatches(this.Catalog, query, companyID || null).slice(
+                Results: RankCatalogMatches(
+                    this.Catalog.filter((p) => !p.NotSellableNew),
+                    query,
+                    companyID || null,
+                ).slice(
                     0,
                     PICKER_RESULT_LIMIT,
                 ),
@@ -244,10 +275,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             case 'ArrowDown':
                 this.PickerCursor = Math.min(this.PickerCursor + 1, Math.max(results.length - 1, 0));
                 event.preventDefault();
+                this.revealPickerCursor();
                 break;
             case 'ArrowUp':
                 this.PickerCursor = Math.max(this.PickerCursor - 1, 0);
                 event.preventDefault();
+                this.revealPickerCursor();
                 break;
             case 'Enter':
                 if (results[this.PickerCursor]) {
@@ -261,6 +294,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             default:
                 break;
         }
+    }
+
+    /** Render the moved `.is-cursor` class now, then scroll that row into the list's view (#796). */
+    private revealPickerCursor(): void {
+        this.cdr.detectChanges();
+        ScrollPickerCursorIntoView(this.pickerHost?.nativeElement);
     }
 
     public async AddProduct(product: MJOProductOption): Promise<void> {
@@ -281,8 +320,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public Bump(line: mjBizAppsOrdersOrderLineEntity, delta: number): void {
         if (!this.EditMode) return;
         line.Quantity = this.clampQuantity(line, Number(line.Quantity ?? 0) + delta);
-        void this.refreshApplicable(line);
-        this.schedulePricing();
+        this.onQuantityChanged(line);
     }
 
     public SetQuantity(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
@@ -290,8 +328,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
         line.Quantity = this.clampQuantity(line, Number.parseFloat(target.value));
-        void this.refreshApplicable(line);
-        this.schedulePricing();
+        this.onQuantityChanged(line);
     }
 
     public QuantityAtMax(line: mjBizAppsOrdersOrderLineEntity): boolean {
@@ -316,6 +353,21 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public IsSubscriptionLine(line: mjBizAppsOrdersOrderLineEntity): boolean {
         return !!this.ProductFor(line)?.SubscriptionTypeID;
+    }
+
+    /**
+     * A bundle line whose bundle contains a subscription product (u623.1). Its term start reaches
+     * those components when the bundle expands (`InheritedFields`), so the field is offered here too.
+     * Nothing else about a term is: the end, the renewal start and the extend-or-new question belong
+     * to the component lines.
+     */
+    public IsSubscriptionBundleLine(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !this.IsSubscriptionLine(line) && !!this.ProductFor(line)?.ContainsSubscription;
+    }
+
+    /** The term start field shows on a subscription line and on a bundle line that carries one. */
+    public ShowsTermStart(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.IsSubscriptionLine(line) || this.IsSubscriptionBundleLine(line);
     }
 
     /**
@@ -362,6 +414,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * real answer and is NOT retried; only an unseen id starts a read.
      */
     public ContinuationStartFor(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        // A renewal's dictated start is a direct subscription line's; a bundle line's start reaches its
+        // components, and the renewal target is one of them.
+        if (!this.IsSubscriptionLine(line)) return null;
         const subscriptionID = line.RenewsSubscriptionID;
         // A line that chose to extend what the customer already holds is a continuation too.
         if (!subscriptionID) {
@@ -438,21 +493,41 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     /**
-     * True while confirm would refuse this line. Read from the checkbox as it stands, not the
-     * server's last answer, so ticking it clears the warning before the next save.
+     * True while confirm would refuse this line. Read from the checkbox and reason as they stand,
+     * not the server's last answer, so ticking it and giving a reason clears the warning before the
+     * next save. A tick also needs the run-alongside grant (bizapps-orders#511).
      */
     public OverlapBlocksConfirm(line: mjBizAppsOrdersOrderLineEntity): boolean {
         const found = this.CoverageOverlapFor(line);
         if (!found) return false;
         if (found.Outcome === 'Refused') return true;
-        return this.CanAcknowledgeOverlap(line) && !line.AcknowledgesCoverageOverlap;
+        if (!this.CanAcknowledgeOverlap(line)) return false;
+        return !line.AcknowledgesCoverageOverlap || !this.CanRunAlongside || this.OverlapReasonMissing(line);
+    }
+
+    /** The line is ticked to run alongside and gives no reason, which confirm refuses. */
+    public OverlapReasonMissing(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return CoverageOverlapReasonMissing(line);
     }
 
     public SetOverlapAcknowledged(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         if (!this.EditMode) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
+        if (target.checked && !this.CanRunAlongside) {
+            target.checked = false;
+            return;
+        }
         line.AcknowledgesCoverageOverlap = target.checked;
+        // A reason left on an unticked line would read as an overlap someone approved.
+        if (!target.checked) line.CoverageOverlapReason = null;
+    }
+
+    public SetOverlapReason(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+        if (!this.EditMode) return;
+        const target = event.target;
+        if (!(target instanceof HTMLTextAreaElement)) return;
+        line.CoverageOverlapReason = target.value;
     }
 
     private async refreshCoverage(): Promise<void> {
@@ -547,6 +622,32 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return this.dateInputValue(ContinuationStartFrom(holding));
     }
 
+    /**
+     * The "extend" choice's label and hint, saying what confirm will do with it: a next term for an
+     * active holding, or the type's reactivation rule for a paused one (golive #339). Judged on the
+     * order date, as the server's reactivation window is.
+     */
+    public HoldingExtendText(holding: MJOExistingHolding): ExtendChoiceText {
+        return ExtendChoiceTextFor(holding, AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue());
+    }
+
+    /**
+     * The extend choice's text for one line: {@link HoldingExtendText}, plus the end an "Add as next
+     * term" choice would give this line (golive #338). Only the next-term outcome takes the line's
+     * dates; a reactivation or a new subscription runs on the line's own dates.
+     */
+    public HoldingExtendLineText(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): ExtendChoiceText {
+        const text = this.HoldingExtendText(holding);
+        const purchaseDay = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
+        if (ExtendOutcomeFor(holding, purchaseDay).Kind !== 'NextTerm') return text;
+        const end = this.HoldingContinuationEnd(line, holding);
+        if (!end) return text;
+        return {
+            Choice: text.Choice.endsWith(')') ? `${text.Choice.slice(0, -1)}, ends ${end})` : `${text.Choice} (ends ${end})`,
+            Hint: text.Hint.replace(/\.$/, ` and ending ${end}.`),
+        };
+    }
+
     /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */
     public SetSubscriptionAction(line: mjBizAppsOrdersOrderLineEntity, action: 'ExtendExisting' | 'CreateNew'): void {
         if (!this.EditMode || this._order?.MoneyLocked) return;
@@ -580,6 +681,90 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         line.ServicePeriodStart = null;
     }
 
+    /* ── Term end (golive #338) ──────────────────────────────────────────────
+     *
+     * Confirm honors a stated end: the coverage runs to it, as one term or as one term per type term
+     * length. NULL means "the type's term", which confirm computes, so the line shows that end. The
+     * stored value is `OrderLine.ServicePeriodEnd`, read at confirm as `RequestedEndDate`.
+     *
+     * Shown, not edited. A typed end changes the coverage without changing the price, and no gate
+     * or approval looks at duration yet, so the editor offers no way to set one.
+     */
+
+    /** The line's subscription type, as confirm resolves it. Undefined before the catalog loads. */
+    private termRules(line: mjBizAppsOrdersOrderLineEntity) {
+        return OrdersEngine.Instance.SubscriptionTypeForProduct(line.ProductID);
+    }
+
+    /** Where the line meant coverage to begin: its stated start, or the start the type derives. */
+    private intendedTermStart(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        if (line.ServicePeriodStart) return new Date(line.ServicePeriodStart);
+        const orderDate = this._order?.OrderDate ? new Date(this._order.OrderDate) : null;
+        const rules = this.termRules(line);
+        if (!orderDate) return null;
+        return rules ? DefaultTermStart(rules, this.utcDay(orderDate)) : this.utcDay(orderDate);
+    }
+
+    /**
+     * The end confirm computes when the line states none: one type term from the start, or a
+     * calendar-anchored first term's end. A continuation is a whole term from the day after current
+     * coverage ends. Null before the catalog loads.
+     */
+    public ComputedTermEnd(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        const rules = this.termRules(line);
+        if (!rules) return null;
+        const continuation = this.ContinuationStartFor(line);
+        if (continuation) return DefaultTermEnd(rules, continuation, true);
+        const start = this.intendedTermStart(line);
+        return start ? DefaultTermEnd(rules, start, false) : null;
+    }
+
+    /** What the line shows: the stated end, or the computed one as a default. */
+    public TermEndValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        return this.dateInputValue(line.ServicePeriodEnd ?? this.ComputedTermEnd(line));
+    }
+
+    /** True while the field is only showing the type's end. */
+    public TermEndFollowsType(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !line.ServicePeriodEnd;
+    }
+
+    /** The stated end is before the start it is measured from, which the line's validation refuses. */
+    public TermEndBeforeStart(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (!line.ServicePeriodEnd) return false;
+        const start = this.intendedTermStart(line);
+        return !!start && new Date(line.ServicePeriodEnd).getTime() < start.getTime();
+    }
+
+    /**
+     * Where a stated period ends when existing coverage moves its start: confirm keeps the stated
+     * length from the continuation date. Empty when nothing moves the start or nothing is stated.
+     */
+    public KeptTermEndValue(line: mjBizAppsOrdersOrderLineEntity): string {
+        const continuation = this.ContinuationStartFor(line);
+        const start = this.intendedTermStart(line);
+        if (!continuation || !start || !line.ServicePeriodEnd) return '';
+        return this.dateInputValue(KeptStatedEnd(start, new Date(line.ServicePeriodEnd), continuation));
+    }
+
+    /**
+     * The end an "Add as next term" choice would give this line: its stated length kept from the
+     * continuation date, or one type term from it.
+     */
+    public HoldingContinuationEnd(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): string {
+        const continuation = ContinuationStartFrom(holding);
+        const rules = this.termRules(line);
+        if (!continuation) return '';
+        const start = this.intendedTermStart(line);
+        const kept = line.ServicePeriodEnd && start ? KeptStatedEnd(start, new Date(line.ServicePeriodEnd), continuation) : null;
+        if (kept) return this.dateInputValue(kept);
+        return rules ? this.dateInputValue(DefaultTermEnd(rules, continuation, true)) : '';
+    }
+
+    private utcDay(d: Date): Date {
+        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+    }
+
     /* ── Service period: deferred lines that nothing else dates ──
      *
      * A recognition type with `RequiresServicePeriod` earns against a window — evenly across it, or
@@ -591,6 +776,21 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** True when this line's service period has to be typed in. */
     public NeedsStatedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
         return OrdersEngine.Instance.ServicePeriodSource(line.ProductID) === 'Line';
+    }
+
+    /**
+     * A percentage-of-completion line: its dates are optional and only say when the work is expected
+     * to run, since recognition follows attested progress (bc-aidp-next-golive#455). Shown when they
+     * can be typed, or when a booked line carries them.
+     */
+    public ShowsExpectedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (this.NeedsStatedServicePeriod(line) || !OrdersEngine.Instance.IsProgressMeasured(line.ProductID)) return false;
+        return this.CanEditServicePeriod() || !!line.ServicePeriodStart || !!line.ServicePeriodEnd;
+    }
+
+    /** The order is booked, so its lines' dates are the settled ones. */
+    public get IsMoneyLocked(): boolean {
+        return !!this._order?.MoneyLocked;
     }
 
     /** Editable until the order is booked; a booked line's window is part of what was booked. */
@@ -645,9 +845,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
-        this.expandedLineIds.delete(line.ID);
-        this.overrideEditorLineIds.delete(line.ID);
-        this._order?.Lines.Remove(line);
+        const order = this._order;
+        if (!order) return;
+        // A bundle goes with its components (#793), so their panels close with it.
+        for (const removed of [line, ...DescendantLines(line, order.Lines.Items)]) {
+            this.expandedLineIds.delete(removed.ID);
+            this.overrideEditorLineIds.delete(removed.ID);
+        }
+        order.RemoveLine(line);
         this.schedulePricing();
     }
 
@@ -687,7 +892,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     public ApplicableFor(line: mjBizAppsOrdersOrderLineEntity): ApplicablePrice[] {
-        return this.applicableByLine.get(line.ID) ?? [];
+        return this.applicableByLine?.get(line.ID) ?? [];
+    }
+
+    /**
+     * The line's product is priced by revenue band and the buyer's revenue is unknown, so the rep
+     * picks the band. Open to every user who can edit the order: it is choosing the rules' price,
+     * not overriding it.
+     */
+    public CanPickBand(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.EditMode && this.ApplicableFor(line).some((p) => p.BandUndecided);
     }
 
     public DisplayUnit(line: mjBizAppsOrdersOrderLineEntity): number | null {
@@ -701,7 +915,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * editor another way does not get around it.
      */
     public NeedsOverrideReason(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return LineNeedsOverrideReason(line, this.EngineDefault(line));
+        return LineNeedsOverrideReason(line, this.EngineDefault(line), this.ApplicableFor(line));
     }
 
     /**
@@ -736,7 +950,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     public ToggleOverrideEditor(line: mjBizAppsOrdersOrderLineEntity): void {
         // Either authority opens the panel. Gating it on price-override rights alone is what kept
         // the discount control out of reach of a user who may discount but may not re-price.
-        if (!this.CanOverride && !this.CanDiscount) return;
+        if (!this.CanOverride && !this.CanDiscount && !this.CanPickBand(line)) return;
         if (this.overrideEditorLineIds.has(line.ID)) {
             this.overrideEditorLineIds.delete(line.ID);
             return;
@@ -777,7 +991,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     /** Whether the line's price is a deviation from the rules — see `IsLinePriceOverridden`. */
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return IsLinePriceOverridden(line, this.EngineDefault(line));
+        return IsLinePriceOverridden(line, this.EngineDefault(line), this.ApplicableFor(line));
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {
@@ -880,6 +1094,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      * Checking them on screen too is not duplication for its own sake: an invalid request staged
      * against the pricing pass takes the whole line strip down with a refusal, so the number the
      * user is composing would blank the prices they are composing it against.
+     *
+     * A discount above the user's cap is not an error: it is staged and saved held for approval
+     * (golive #328) — see {@link DiscountApprovalNote}.
      */
     public DiscountError(line: mjBizAppsOrdersOrderLineEntity): string | null {
         const amount = this.DraftDiscountAmount(line);
@@ -889,14 +1106,39 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (amount > base + 0.005) {
             return `That is more than the ${FormatMoney(base)} left to discount on this line.`;
         }
-        const cap = this.DiscountAuthority?.MaxDiscountPct;
-        if (cap != null && base > 0 && amount / base > cap + 1e-9) {
-            return (
-                `${round((amount / base) * 100)}% is above the ${round(cap * 100)}% on your Sales Authority. ` +
-                `Lower it, or have an approver apply it.`
-            );
-        }
         return null;
+    }
+
+    /**
+     * Why the draft needs approval, or null when the user's Sales Authority covers it.
+     *
+     * The server decides (`AuthorizeManualDiscount`, which also weighs the authority's value limit).
+     * This says up front what a percentage above the cap means: the order saves with the discount,
+     * and the confirm waits for an approved concession on the line (golive #328).
+     */
+    public DiscountApprovalNote(line: mjBizAppsOrdersOrderLineEntity): string | null {
+        const amount = this.DraftDiscountAmount(line);
+        if (amount == null || this.DiscountError(line) !== null) return null;
+        const base = this.DiscountBase(line);
+        const cap = this.DiscountAuthority?.MaxDiscountPct;
+        if (cap == null || !(base > 0) || amount / base <= cap + 1e-9) return null;
+        return (
+            `${round((amount / base) * 100)}% is above the ${round(cap * 100)}% on your Sales Authority, so it ` +
+            `needs approval. The order saves with it; record a concession for this line, and the order ` +
+            `confirms once it is approved.`
+        );
+    }
+
+    /**
+     * The hint beside a price typed as zero: a giveaway keeps the price and takes a 100% discount, so
+     * the value given away is on record and goes through approval (golive #328). A zero price on an
+     * order a person entered is refused at confirm. Bundle components and return lines are priced by
+     * what they belong to, so they get no hint.
+     */
+    public GiveawayHint(line: mjBizAppsOrdersOrderLineEntity): string | null {
+        if (!this.EditMode || line.UnitPrice == null || Number(line.UnitPrice) !== 0) return null;
+        if (line.ParentOrderLineID || line.ReversesOrderLineID) return null;
+        return 'To give this away, keep the price and set a 100% discount.';
     }
 
     /** True once an amount is valid but no reason has been given — the last thing still missing. */
@@ -1026,6 +1268,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     private onOrderSaved(): void {
         void this.refreshCoverage();
+        void this.loadStampedTags();
         if (!this.stagedDiscounts.size) return;
         this.stagedDiscounts.clear();
         this.discountDrafts.clear();
@@ -1124,6 +1367,37 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     /** Every dimension a line may be tagged with, read once per bound order. */
     public DimensionCatalog: MJODimensionOption[] = [];
 
+    /**
+     * The tags each saved line books, keyed by line id, as of the last load or save. The server
+     * writes them on save, so they are re-read after every save rather than edited here.
+     */
+    private stampedTagsByLine = new Map<string, MJOStampedTag[]>();
+
+    /** The dimension values the order's company books under, for narrowing the panel's value list. */
+    public CompanyDimensionValueIDs: ReadonlySet<string> | null = null;
+    /**
+     * The company `CompanyDimensionValueIDs` was read for, or undefined before the first read. The
+     * order's company can change on an open draft, and the list must follow it (#878).
+     */
+    private companyValuesReadFor: string | undefined = undefined;
+
+    /**
+     * Re-read the company's dimension values when the bound order's company changed since they were
+     * read (#878). The catalog itself is read once per order; only this list depends on the company.
+     */
+    public ngDoCheck(): void {
+        if (this.companyValuesReadFor === undefined || !this._order) return;
+        const companyID = String(this._order.CompanyID ?? '');
+        if (companyID.toLowerCase() === this.companyValuesReadFor) return;
+        void this.loadCompanyDimensionValues().then(() => this.cdr.detectChanges());
+    }
+
+    /** The stamped tags for the open line, or null for a line the server has not stamped yet. */
+    public StampedTagsFor(line: mjBizAppsOrdersOrderLineEntity | null): MJOStampedTag[] | null {
+        if (!line?.IsSaved) return null;
+        return this.stampedTagsByLine.get(line.ID.toLowerCase()) ?? [];
+    }
+
     public OpenDetails(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
         event.preventDefault();
         event.stopPropagation();
@@ -1147,7 +1421,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     public DimensionSummary(line: mjBizAppsOrdersOrderLineEntity): string {
         if (!this.DimensionCatalog.length) return 'Details';
-        if (!line.DimensionID) return 'No dimension';
+        if (!line.DimensionID) {
+            // A line with no hand-set tag can still book stamped defaults; "No dimension" would
+            // say the opposite of what the ledger will get.
+            const stamped = this.StampedTagsFor(line)?.length ?? 0;
+            if (stamped === 0) return 'No dimension';
+            return stamped === 1 ? '1 default tag' : `${stamped} default tags`;
+        }
         const dimension = this.DimensionCatalog.find((d) => UUIDsEqual(d.ID, line.DimensionID ?? ''));
         const value = dimension?.Values.find((v) => UUIDsEqual(v.ID, line.DimensionValueID ?? ''));
         if (!dimension) return 'Tagged';
@@ -1167,6 +1447,54 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // `new Date()` is an instant the viewer's evening reads back as tomorrow.
         const asOf = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         this.DimensionCatalog = await GetDimensionOptions(asOf);
+        await this.loadCompanyDimensionValues();
+    }
+
+    /**
+     * Read which values the order's company uses. A failure or an order with no company leaves it
+     * null, which the panel reads as "offer every value" rather than an empty list.
+     */
+    private async loadCompanyDimensionValues(): Promise<void> {
+        const companyID = String(this._order?.CompanyID ?? '');
+        // Recorded before the read, so a change detection pass during it does not start another.
+        this.companyValuesReadFor = companyID.toLowerCase();
+        if (!companyID) {
+            this.CompanyDimensionValueIDs = null;
+            return;
+        }
+        try {
+            const ids = await GetCompanyDimensionValueIDs(companyID);
+            // A newer read for another company owns the list now.
+            if (this.companyValuesReadFor !== companyID.toLowerCase()) return;
+            this.CompanyDimensionValueIDs = ids;
+        } catch (err) {
+            console.warn("[order-lines-editor] could not read the company's dimension values", err);
+            this.CompanyDimensionValueIDs = null;
+        }
+    }
+
+    /**
+     * Read the tags the server stamped on this order's saved lines.
+     *
+     * Each line's hand-set axis is read off the line NOW, while it matches what was saved: the stored
+     * rows already include that tag, and this is the only point at which it can be told apart from
+     * a derived one. A failed read leaves the map empty, which the panel shows as "no tags yet"
+     * rather than failing the editor.
+     */
+    private async loadStampedTags(): Promise<void> {
+        const lines = (this._order?.Lines.Items ?? []).filter((l) => l.IsSaved);
+        const next = new Map<string, MJOStampedTag[]>();
+        try {
+            const rows = await GetLineDimensionsForOrder(lines.map((l) => l.ID));
+            for (const line of lines) {
+                const mine = rows.filter((r) => UUIDsEqual(r.OrderLineID, line.ID));
+                next.set(line.ID.toLowerCase(), BuildStampedTags(mine, line.DimensionID, this.DimensionCatalog));
+            }
+        } catch (err) {
+            console.warn('[order-lines-editor] could not read the lines\' stamped tags', err);
+        }
+        this.stampedTagsByLine = next;
+        this.cdr.detectChanges();
     }
 
     public ngOnDestroy(): void {
@@ -1185,7 +1513,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             await this._order.Lines.Load();
         }
         await this.hydrateExtensions();
+        await this.loadStampedTags();
         await this.resolveOverrideKind();
+        this.CanRunAlongside = UserCanRunAlongside(this.metadata.CurrentUser as UserInfo | null, this.metadata);
         if (!this.DiscountAuthorityLoaded) await this.loadDiscountAuthority();
         // The staged rows are consumed by the SERVER's copy of the order, so the browser has to be
         // told the save happened or it would hand the same concessions over again on the next one.
@@ -1212,7 +1542,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         // effective-dated and this list was filtered against the PREVIOUS order's date, so reusing
         // it would offer one order the values that were live for another.
         this.DimensionCatalog = [];
+        this.stampedTagsByLine = new Map();
+        this.CompanyDimensionValueIDs = null;
+        this.companyValuesReadFor = undefined;
         this.expandedLineIds.clear();
+        this.SeatSplitNotice = null;
         this.hydratingLineIds.clear();
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
@@ -1269,6 +1603,34 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         }
     }
 
+    /**
+     * A line of an event that requires attendee information books only as one quantity-1 line per
+     * seat, so a quantity above 1 on such a line becomes that many lines, each opening on its own
+     * attendee block. Any other line just reprices.
+     */
+    private onQuantityChanged(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (ExtraSeatLinesNeeded(line) > 0) {
+            void this.splitIntoSeats(line);
+            return;
+        }
+        void this.refreshApplicable(line);
+        this.schedulePricing();
+    }
+
+    private async splitIntoSeats(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
+        if (!this._order) return;
+        const seats = Number(line.Quantity);
+        const keptDiscount = this.HasStagedDiscount(line) || this.discountDrafts.has(line.ID);
+        const added = await this._order.SplitLineIntoSeats(line);
+        if (added.length === 0) return;
+        this.expandedLineIds.add(line.ID);
+        for (const seat of added) this.expandedLineIds.add(seat.ID);
+        this.SeatSplitNotice = DescribeSeatSplit(this.ProductFor(line)?.Name ?? 'This event', seats, keptDiscount);
+        this.schedulePricing();
+        void this.refreshAllApplicable();
+        this.cdr.detectChanges();
+    }
+
     private clampQuantity(line: mjBizAppsOrdersOrderLineEntity, quantity: number): number {
         return ClampLineQuantity(quantity, this.ProductFor(line)?.MaxQuantityPerLine);
     }
@@ -1283,7 +1645,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private async loadCatalog(): Promise<void> {
         try {
-            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser);
+            // Keeps products not sold new: lines already on the order still need their name, subscription
+            // flag and quantity cap from here (`ProductFor`). `PickerResults` leaves them out.
+            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser, true);
             this.CatalogError = null;
         } catch (error) {
             this.Catalog = [];
@@ -1355,17 +1719,19 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
     }
 
     private async refreshAllApplicable(): Promise<void> {
-        if (!this.CanOverride) return;
+        if (!this.EditMode) return;
         await Promise.all(this.Lines.map((line) => this.refreshApplicable(line)));
         this.cdr.detectChanges();
     }
 
     private async refreshApplicable(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
-        if (!this.CanOverride || !this._order || !line.ProductID) return;
+        if (!this._order || !line.ProductID) return;
         const user = this.metadata.CurrentUser as UserInfo | null;
         if (!user) return;
         try {
             await LoadOrdersEngine(this.metadata, user);
+            // Without an override grant the only reason to list prices is a revenue band to pick.
+            if (!this.CanOverride && !(this.EditMode && ProductHasRevenueBands(line.ProductID))) return;
             const product = OrdersEngine.Instance.ProductByID(line.ProductID);
             const companyID = product?.CompanyID ?? this._order.CompanyID;
             if (!companyID) return;

@@ -16,6 +16,13 @@ describe('escapeHtml / escapeAttr', () => {
 });
 
 describe('renderCheckoutHostPage', () => {
+    it('keeps the full-width field rule off checkboxes and radios', () => {
+        const html = renderCheckoutHostPage({ slug: 'summit-2027', apiRoot: '/checkout', cspNonce: 'nOnce+/1' });
+        const css = html.slice(html.indexOf('<style'), html.indexOf('</style>'));
+        expect(css).toContain('.mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {');
+        expect(css).not.toMatch(/\.mj-co input\s*[,{]/);
+    });
+
     it('hosts the Angular Element when elementSrc is provided', () => {
         const html = renderCheckoutHostPage({
             slug: 'summit-2027',
@@ -106,6 +113,18 @@ describe('the fallback host page redirect (#295)', () => {
 });
 });
 
+describe('per-unit details on the fallback page (#876)', () => {
+    it('draws one set of fields per unit and sends them as the line’s unit payloads', () => {
+        const html = renderCheckoutHostPage({ slug: 'summit', apiRoot: '/checkout', cspNonce: 'n' });
+        expect(html).toContain("config.unitMode === 'perUnit' || config.isEvent === true");
+        expect(html).toContain("set.className = 'mj-co__unit'");
+        expect(html).toContain("qtyInput.addEventListener('input', renderUnits)");
+        expect(html).toContain('Fields: units[0] || {}, Units: units');
+        // The buyer's e-mail is read by id, since a unit can carry a field named email too.
+        expect(html).toContain("document.getElementById('mj-co-email')");
+    });
+});
+
 describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
     it('lets the Turnstile script and challenge frame load', () => {
         const csp = checkoutHostSecurityHeaders('n')['Content-Security-Policy'];
@@ -124,3 +143,36 @@ describe('Turnstile on the fallback page and the host page CSP (#592)', () => {
         expect(html).not.toContain("post('/complete'");
     });
 });
+
+describe('the fallback page when /complete outlasts the gateway', () => {
+    const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+    const script = html.slice(html.lastIndexOf('<script'), html.lastIndexOf('</script>'));
+
+    it('reads only JSON replies, so a gateway error page never becomes a parser error', () => {
+        expect(script).toContain('}, function () { throw transportError(res.status); });');
+        expect(script).toContain("'Checkout could not reach the server. Please try again.'");
+    });
+
+    it('asks /complete again while the server may still be finishing, and never shows a paid buyer a failure', () => {
+        expect(script).toContain("reply.Status === 'Processing' ? null : reply");
+        expect(script).toContain('if (err && err.transport) return null;');
+        expect(script.match(/completeCheckout\(\{ sessionId: sessionId, clientSessionKey: sessionKey \}, finishing\)/g)).toHaveLength(2);
+        expect(script).toContain('Please do not pay again.');
+    });
+
+    it('is a script that parses', () => {
+        const body = script.slice(script.indexOf('>') + 1);
+        expect(() => new Function(body)).not.toThrow();
+    });
+});
+
+describe('the pay-renewal page (#289)', () => {
+    it('passes the update-card token to the element as an escaped attribute, and only when given', async () => {
+        const { renderCheckoutHostPage } = await import('../checkout-host-page.js');
+        const page = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n', elementSrc: '/checkout/element/main.js', renewalToken: 'a"b.c' });
+        expect(page).toContain('renewal-token="a&quot;b.c"');
+        const plain = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n', elementSrc: '/checkout/element/main.js' });
+        expect(plain).not.toContain('renewal-token');
+    });
+});
+

@@ -32,15 +32,24 @@
 import { BaseEntity, EmbeddedRecord, ValidationErrorInfo, ValidationErrorType, ValidationResult, RunView, type FieldValueCollection, type IRunViewProvider } from '@memberjunction/core';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import type { mjBizAppsCommonAddressEntity } from '@mj-biz-apps/common-entities';
-import { mjBizAppsOrdersOrderHeaderEntity, mjBizAppsOrdersPaymentDetailEntity } from './generated/entity_subclasses';
+import {
+    mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersPaymentDetailEntity,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
+} from './generated/entity_subclasses';
 import { CanOfferConfirm, CanTransition, IsBooked, type TransitionVerdict } from './OrderStatusBehavior';
 import { ResolveActiveEmployerOrganization } from './PartyAffiliationBehavior';
 import { PromotionCodesCompanion } from './PromotionCodesCompanion';
 import { InitialPaymentIntentCompanion } from './InitialPaymentIntentCompanion';
+import { KeptPartyOrganizationsCompanion } from './KeptPartyOrganizationsCompanion';
 import { IsSavePopulatedFieldError } from './save-populated-fields';
 import { ParseDisplacedTermStart, type DisplacedTermStart } from './displaced-term-start';
+import { DescendantLines } from './bundle-lines';
+import { DescribeStatedTermLength, StatedTermLengthOf } from './subscription-term-length';
+import { RequireUUID } from './sql-guards';
 
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
+const PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order Header Payment Schedules';
 
 /** What {@link OrderHeaderEntity.Confirm} reports beyond success. */
 export interface OrderConfirmOutcome {
@@ -48,7 +57,9 @@ export interface OrderConfirmOutcome {
     DisplacedTermStarts: DisplacedTermStart[];
 }
 import { OrdersEngine } from './pricing/OrdersEngine';
+import { SplitIntoSeatLines } from './attendee-seats';
 import { anyFieldIsDirty } from './field-dirty';
+import { IsHandEnteredOrigin } from './order-origin';
 import { AsDateValue, TodayAsDateValue } from './date-cell';
 import { ParseAddressSnapshot, type OrderAddressSnapshot } from './order-address-snapshot';
 import {
@@ -66,6 +77,8 @@ import {
 export interface PartyOrganizationClear {
     Field: 'BillToOrganizationID' | 'ShipToOrganizationID';
     OrganizationID: string;
+    /** The cleared person whose employer it is. */
+    FromPersonID: string;
 }
 
 /**
@@ -116,6 +129,12 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * and `OrderEntityServer.createInitialPayment` turns it into a `PaymentDetail`.
      */
     public readonly InitialPaymentIntent = this.RegisterCompanion(new InitialPaymentIntentCompanion(this));
+
+    /**
+     * Party organizations to keep through this save's replacement of that side's person. See
+     * {@link KeepPartyOrganization}.
+     */
+    public readonly KeptPartyOrganizations = this.RegisterCompanion(new KeptPartyOrganizationsCompanion(this));
 
     public ClearInitialPaymentDetail(): void {
         this.InitialPaymentIntent.Reference = null;
@@ -333,6 +352,23 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                         'Status',
                         `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would ` +
                             `be nothing to book.`,
+                        this.Status,
+                        ValidationErrorType.Failure,
+                    ),
+                );
+            }
+
+            // NO LINE CONFIRMS AT A PRICE OF ZERO on an order a person entered. Checked here so the
+            // server refuses it before anything books, with the checklist's message, rather than
+            // accounting refusing every recognition period of the line one by one. The server's
+            // booking save loads and prices the lines before this runs.
+            const unpriced = this.UnpricedLinesRefusal();
+            if (unpriced) {
+                result.Success = false;
+                result.Errors.push(
+                    new ValidationErrorInfo(
+                        'Status',
+                        `Order ${this.OrderNumber ?? ''} cannot be confirmed: ${unpriced}`,
                         this.Status,
                         ValidationErrorType.Failure,
                     ),
@@ -568,6 +604,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             case 'InitialPaymentAmount':
             case 'InitialPaymentReference':
             case 'InitialPaymentDetailID':
+            case 'InitialPaymentReceivedDate':
                 return 'payment';
             default:
                 return 'header';
@@ -639,7 +676,86 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 Reason: `${which} needs a service period (start and end date) before this can be confirmed.`,
             };
         }
+        const unpriced = this.UnpricedLinesRefusal();
+        if (unpriced) return { Allowed: false, Reason: unpriced };
         return { Allowed: true };
+    }
+
+    /**
+     * Lines that would confirm at a price of zero on an order a person entered.
+     *
+     * Products sold at a negotiated price sit in the catalog at zero on purpose, so the person
+     * entering the order has to type the price. A line left at zero would otherwise book nothing to
+     * revenue, and a deferred one fails at journal booking with one refusal per recognition period.
+     * A line given away carries its price and a 100% discount, which goes through concession approval
+     * like any other discount; only a line whose price itself is zero is caught here.
+     *
+     * Checkout orders are left out: their prices come from the catalog with no one to type one, and a
+     * free checkout product is decided by the catalog and the promotion code. Bundle components are
+     * left out because the bundle price is allocated down to them, and return lines because they
+     * mirror the line they reverse. A line with no price yet is left to the server's pricing. The
+     * server's order also leaves out lines the renewal pass priced (`OrderEntityServer.UnpricedLines`).
+     */
+    public UnpricedLines(): OrderHeaderEntity['Lines']['Items'] {
+        if (!IsHandEnteredOrigin(this.Origin)) return [];
+        return this.Lines.Items.filter(
+            (line) =>
+                line.UnitPrice != null &&
+                Number(line.UnitPrice) === 0 &&
+                !line.ParentOrderLineID &&
+                !line.ReversesOrderLineID,
+        );
+    }
+
+    /**
+     * The one message for {@link UnpricedLines}, naming each line once, or null when there are none.
+     * Shared by the confirm checklist and the save, so both say the same thing.
+     */
+    public UnpricedLinesRefusal(): string | null {
+        const unpriced = this.UnpricedLines();
+        if (unpriced.length === 0) return null;
+        const engine = OrdersEngine.Instance;
+        const named = unpriced.map((line) => {
+            const product = line.Product ?? engine.ProductByID(line.ProductID)?.Name ?? null;
+            const number = line.LineNumber != null ? `Line ${line.LineNumber}` : 'A line';
+            return product ? `${number} (${product})` : number;
+        });
+        const verb = unpriced.length === 1 ? 'has' : 'have';
+        return (
+            `${named.join(', ')} ${verb} a price of 0. Enter the negotiated price, or to give it away, ` +
+            `enter its price with a 100% discount.`
+        );
+    }
+
+    /**
+     * Subscription lines whose stated end gives them a length other than their subscription type's
+     * term, each as one sentence for the confirm checklist (golive #338). Confirm honors the stated
+     * dates, so this does not block confirm; it says beforehand what will happen. The
+     * `SUBSCRIPTION_TERM_LENGTH` finance exception confirm raises for such a line is recorded only
+     * where accounting has seeded that type, so the note does not promise a review.
+     *
+     * Draft orders only: a booked line's dates are the settled term. Reads `OrdersEngine`; the caller
+     * loads it. With the cache empty nothing is reported, which leaves the question to confirm.
+     */
+    public StatedTermLengthNotes(): string[] {
+        if (this.IsBookedOrder || !this.OrderDate) return [];
+        const engine = OrdersEngine.Instance;
+        const notes: string[] = [];
+        for (const line of this.Lines.Items) {
+            if (!line.ServicePeriodEnd || line.ReversesOrderLineID) continue;
+            const type = engine.SubscriptionTypeForProduct(line.ProductID);
+            if (!type) continue;
+            const length = StatedTermLengthOf(
+                type,
+                line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null,
+                new Date(line.ServicePeriodEnd),
+                new Date(this.OrderDate),
+            );
+            if (!length) continue;
+            const product = line.Product ?? engine.ProductByID(line.ProductID)?.Name ?? null;
+            notes.push(DescribeStatedTermLength({ LineNumber: line.LineNumber ?? null, Product: product }, length));
+        }
+        return notes;
     }
 
     /**
@@ -661,6 +777,37 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 !(line.ServicePeriodStart && line.ServicePeriodEnd) &&
                 engine.ServicePeriodSource(line.ProductID) === 'Line',
         );
+    }
+
+    /**
+     * Removes a line from the order, with every line expanded beneath it when it is a bundle (#793).
+     *
+     * A bundle's components name it through `ParentOrderLineID`, and that foreign key does not
+     * cascade. Removing the bundle alone left its components in the collection pointing at a row
+     * the save then tried to delete, and the save failed on the parent foreign key.
+     */
+    public RemoveLine(line: OrderHeaderEntity['Lines']['Items'][number]): void {
+        const descendants = DescendantLines(line, this.Lines.Items);
+        this.Lines.Remove(line);
+        for (const child of descendants) this.Lines.Remove(child);
+    }
+
+    /**
+     * Splits a line of an event that requires attendee information into one quantity-1 line per
+     * seat, each with its own attendee record, and returns the added lines. Returns none when the
+     * line needs no split. See {@link SplitIntoSeatLines}.
+     *
+     * Reads `OrdersEngine`; the caller loads it.
+     */
+    public async SplitLineIntoSeats(line: OrderHeaderEntity['Lines']['Items'][number]): Promise<OrderHeaderEntity['Lines']['Items']> {
+        const engine = OrdersEngine.Instance;
+        const product = engine.ProductByID(line.ProductID);
+        const extensionEntity = engine.ProductTypeByID(product?.ProductTypeID)?.OrderLineExtensionEntity ?? null;
+        return SplitIntoSeatLines(line, async () => {
+            const seat = await this.Lines.Create();
+            if (extensionEntity) await seat.EnsureISAChild(extensionEntity);
+            return seat;
+        });
     }
 
     /**
@@ -721,6 +868,35 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return (result.Results ?? [])
             .map((row) => ParseDisplacedTermStart(row.EventData, lines))
             .filter((d): d is DisplacedTermStart => d !== null);
+    }
+
+    /**
+     * This order's payment schedule, in instalment order. Empty for an unsaved order or one with no
+     * schedule.
+     *
+     * The schedule is what dates the order's receivable: an order with rows raises AR one instalment
+     * at a time, when each is invoiced, and an order without rows raises all of it at confirm. Each
+     * row carries its own due date, status, invoice number and the journal entry its invoice posted,
+     * so a screen can show when AR rises without working anything out.
+     */
+    public async LoadPaymentSchedule(): Promise<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity[]> {
+        if (!this.IsSaved) return [];
+        const provider = this.ProviderToUse as unknown as IRunViewProvider;
+        if (!provider) return [];
+
+        const result = await new RunView(provider).RunView<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity>(
+            {
+                EntityName: PAYMENT_SCHEDULE_ENTITY,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'OrderHeaderID')}'`,
+                OrderBy: 'InstallmentNumber',
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result?.Success) {
+            throw new Error(`Could not read this order's payment schedule: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        return result.Results ?? [];
     }
 
     /**
@@ -803,7 +979,11 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * 1. Copy the bill-to person into an empty ship-to when the bill-to person changed in this
      *    save. Never the other way: an empty ship-to already means "same as bill to", while
      *    filling an empty bill-to would change who pays.
-     * 2. Stamp the employer organization only on a side whose person changed in this save.
+     * 2. On a side whose person this save replaces with another, clear the organization when it
+     *    is the previous person's employer, by the rule {@link ClearPersonParty} applies on the
+     *    form (#542). Not when this save also sets that organization, and not when the writer
+     *    kept it ({@link KeepPartyOrganization}).
+     * 3. Stamp the employer organization only on a side whose person changed in this save.
      *
      * Skips booked/voided orders.
      */
@@ -812,9 +992,44 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
         if (this.isChangedThisSave('BillToPersonID')) this.copyPersonAcross('BillTo', 'ShipTo');
 
+        for (const side of ['BillTo', 'ShipTo'] as const) await this.clearReplacedPersonsEmployer(side);
+
         for (const side of ['BillTo', 'ShipTo'] as const) {
             if (this.isChangedThisSave(`${side}PersonID`)) await this.AutoPopulateEmployerOrganization(side);
         }
+    }
+
+    /**
+     * Keep `field`'s organization through this save's replacement of that side's person, so the
+     * server save does not clear it as the previous person's employer. For writers that replace a
+     * person and mean the organization to stay; an organization set in the same save needs no call.
+     */
+    public KeepPartyOrganization(field: PartyOrganizationClear['Field']): void {
+        const previous = this.GetFieldByName(field === 'BillToOrganizationID' ? 'BillToPersonID' : 'ShipToPersonID')?.OldValue as string | null;
+        if (previous) this.KeptPartyOrganizations.Keep(field, previous);
+    }
+
+    /**
+     * When this save replaces `side`'s person with another, clear that side's organization if it is
+     * the previous person's employer, so the stamp that follows brings the new person's. Leaves an
+     * organization this save sets, one the writer kept, and a side whose person is only cleared:
+     * an order may bill an organization with no person.
+     */
+    private async clearReplacedPersonsEmployer(side: 'BillTo' | 'ShipTo'): Promise<void> {
+        const person = this.GetFieldByName(`${side}PersonID`);
+        const previous = person?.OldValue as string | null | undefined;
+        if (!person?.Dirty || !person.Value || !previous || UUIDsEqual(person.Value as string, previous)) return;
+
+        const orgField = `${side}OrganizationID` as PartyOrganizationClear['Field'];
+        const org = this.GetFieldByName(orgField);
+        if (!org || org.Dirty || !org.Value) return;
+        if (this.KeptPartyOrganizations.IsKept(orgField, previous)) return;
+
+        const employer = await this.employerOf(previous);
+        if (!employer || !UUIDsEqual(org.Value as string, employer)) return;
+        this.clearPartyField(orgField);
+        // A copy taken away, not the writer's empty: the new person's employer may fill it.
+        this.partyCopiesCleared.add(orgField);
     }
 
     /** Copy `from`'s person into `to` when `to` has none and the user did not empty it in this save. */
@@ -882,7 +1097,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
             if (employer && UUIDsEqual(org, employer)) {
                 this.clearPartyField(orgField);
                 this.partyCopiesCleared.add(orgField);
-                cleared.push({ Field: orgField, OrganizationID: org });
+                cleared.push({ Field: orgField, OrganizationID: org, FromPersonID: clearedPersonID });
             }
         }
         return cleared;
@@ -890,13 +1105,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
 
     /**
      * Put back organizations {@link ClearPersonParty} cleared by the employer rule, replacing any
-     * employer a new person brought since. They then count as the user's.
+     * employer a new person brought since. They then count as the user's, and the server save
+     * keeps them through the replacement ({@link KeptPartyOrganizations}).
      */
     public RestorePartyOrganizations(cleared: readonly PartyOrganizationClear[]): void {
         for (const c of cleared) {
             this.Set(c.Field, c.OrganizationID);
             this.partyFills.delete(c.Field);
             this.partyCopiesCleared.delete(c.Field);
+            this.KeptPartyOrganizations.Keep(c.Field, c.FromPersonID);
         }
     }
 
@@ -930,10 +1147,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return !!f && f.Dirty && f.Value == null && f.OldValue != null;
     }
 
-    /** True when this save sets `field` to a value it did not have on disk. */
+    /**
+     * True when this save sets `field` to a value it did not have on disk. On a new record every
+     * value counts: MemberJunction records the first value set on a fresh field as its old value,
+     * so `Dirty` is false for a field set once before the first save.
+     */
     private isChangedThisSave(field: string): boolean {
         const f = this.GetFieldByName(field);
-        return !!f && f.Dirty && f.Value != null;
+        if (!f || f.Value == null) return false;
+        return f.Dirty || !this.IsSaved;
     }
 
     /**

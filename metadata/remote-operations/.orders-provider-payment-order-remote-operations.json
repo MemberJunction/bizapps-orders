@@ -1,0 +1,34 @@
+[
+  {
+    "_comments": [
+      "ORDER FROM AN UNMATCHED PROVIDER PAYMENT (#481). Its own dot-json so it conflicts with no other change to",
+      "`.orders-remote-operations.json`. A person resolving a charge-without-payment exception names the product",
+      "and the buyer; the rules that would choose them without a person are open on the issue."
+    ],
+    "fields": {
+      "Name": "Create Order From Provider Payment",
+      "OperationKey": "Orders.CreateOrderFromProviderPayment",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Payments and Credits",
+      "Description": "Create a paid order from a payment gateway charge that matched no order or invoice. Reads the charge from the gateway, creates and confirms an order in the payment provider's company with one line of the named product at the charge's gross amount, records the gateway intent, and captures the charge against the order, so the gateway's fee is booked and the bank deposit that follows matches. Refuses a charge that has not succeeded, has any refund, has no gateway intent, is in another currency, or belongs to an intent Orders opened. One order per charge: a repeat call returns the order already created and finishes its capture if that had failed.",
+      "InputTypeName": "OrdersCreateOrderFromProviderPaymentInput",
+      "InputTypeDefinition": "@file:types/orders-create-order-from-provider-payment.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersCreateOrderFromProviderPaymentOutput",
+      "OutputTypeDefinition": "@file:types/orders-create-order-from-provider-payment.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "4B20F561-CD67-471D-88FB-2772E74992FE"
+    },
+    "sync": {
+      "lastModified": "2026-10-09T22:08:25.402Z",
+      "checksum": "33a237b5ab348bdf38351647495b124d9e35e1a8cb1b63f525df430fb568e442"
+    }
+  }
+]

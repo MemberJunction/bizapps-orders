@@ -553,6 +553,29 @@ export const TaxChecks: NamedCheck[] = [
         );
       }),
   },
+  {
+    Id: "tax.TX18",
+    Name: "TX18: a stated VAT wins over resolution as a stated SalesTax does",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        await addPrice(ctx, f.Products.WidgetA, 100);
+        const result = await ConfirmOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          BillToOrganizationID: f.Customers.OrganizationID,
+          ShipToAddressID: f.Tax.AddressIDs.get("Maryland"),
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 10 }],
+          Charges: [{ Code: "VAT", Rate: 0.02 }],
+        });
+        Assert(result.Saved, `confirm failed: ${result.Message}`);
+        // A tax is a charge type in the Tax category, whatever its code. Matching the code
+        // against "tax" missed VAT and added Maryland's 6% on top of it.
+        const orderID = result.Order.ID as string;
+        AssertEqual(Number((await taxOf(ctx, orderID)).Tax), 20, "the stated 2%, not 2% plus the resolved 6%");
+        AssertEqual(Number((await layerCount(ctx, orderID)).N), 1, "one tax charge, not the stated one beside a resolved one");
+      }),
+  },
 ];
 
 /** A draft shipping to Maryland (6%) with the tax charges the caller states, saved. Returns its ID. */

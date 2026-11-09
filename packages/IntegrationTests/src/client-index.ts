@@ -10,5 +10,6 @@ LoadOrders();
 import './checks/wire-crud.checks.js';
 import './checks/wire-volume.checks.js';
 import './checks/wire-entitlements.checks.js';
+import './checks/wire-party-keep.checks.js';
 
 export function LoadOrdersClientIntegrationTests(): void {}

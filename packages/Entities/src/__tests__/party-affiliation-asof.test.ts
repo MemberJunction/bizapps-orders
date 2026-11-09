@@ -9,6 +9,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { ResolveActiveEmployerOrganization } from '../PartyAffiliationBehavior';
 
+// A real UUID: a non-UUID personID is refused (RequireUUID) before the read.
+const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+
 describe('ResolveActiveEmployerOrganization default asOf', () => {
     const engine = BusinessTimeZoneEngine.Instance as unknown as { _configurations: InstanceConfigurationRow[]; _loaded: boolean };
     const original = { rows: engine._configurations, loaded: engine._loaded };
@@ -33,14 +36,14 @@ describe('ResolveActiveEmployerOrganization default asOf', () => {
 
     it('filters on the business day when no asOf is given', async () => {
         const c = capture();
-        await ResolveActiveEmployerOrganization(c.provider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302');
+        await ResolveActiveEmployerOrganization(c.provider, PERSON);
         expect(c.filter()).toContain(`StartDate <= '2026-10-01'`);
         expect(c.filter()).toContain(`EndDate >= '2026-10-01'`);
     });
 
     it('reads a passed day (midnight UTC) as that day', async () => {
         const c = capture();
-        await ResolveActiveEmployerOrganization(c.provider, '3f2504e0-4f89-41d3-9a0c-0305e82c3302', new Date('2026-09-15T00:00:00.000Z'));
+        await ResolveActiveEmployerOrganization(c.provider, PERSON, new Date('2026-09-15T00:00:00.000Z'));
         expect(c.filter()).toContain(`StartDate <= '2026-09-15'`);
     });
 

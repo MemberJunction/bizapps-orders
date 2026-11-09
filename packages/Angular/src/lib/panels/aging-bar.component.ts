@@ -1,6 +1,7 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormatMoney } from './money-format';
+import { type DateCell } from '@mj-biz-apps/orders-entities';
+import { DaysSince, FormatMoney } from './money-format';
 
 /** Open balance split by how late it is. */
 export interface MJOAgingBuckets {
@@ -8,6 +9,34 @@ export interface MJOAgingBuckets {
     Days1To30: number;
     Days31To60: number;
     Days61Plus: number;
+}
+
+/** A zeroed set of buckets, so no caller has to remember the four keys. */
+export function EmptyAgingBuckets(): MJOAgingBuckets {
+    return { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 };
+}
+
+/**
+ * Which bucket a balance belongs in, as of a business day (bc-aidp-next-golive#361).
+ *
+ * THE AGE RULE, STATED ONCE. It was stated twice: the Customer A/R page bucketed inline, and the
+ * Orders dashboard had four getters of its own whose first one swept everything up to thirty days
+ * PAST DUE into a tile labelled "Current". The two screens then disagreed by the whole 1-30 band --
+ * six and a half million of overdue money reported as current on one page and as late on the other.
+ *
+ * `Current` means NOT YET DUE, which is also why the bar's first segment is achromatic: not late is
+ * not a severity. An order with no due date has no age and counts as current -- it is a question for
+ * someone, but it is not a debt that has passed a date.
+ *
+ * @param dueDate - The day the balance is due; an entity's `Date` or an ISO string both read.
+ * @param today - The business day as `YYYY-MM-DD`, normally `Today()`.
+ */
+export function AgingBucketOf(dueDate: DateCell, today: Date | string): keyof MJOAgingBuckets {
+    const late = dueDate ? DaysSince(dueDate, today) : 0;
+    if (late <= 0) return 'Current';
+    if (late <= 30) return 'Days1To30';
+    if (late <= 60) return 'Days31To60';
+    return 'Days61Plus';
 }
 
 interface AgingSegment {

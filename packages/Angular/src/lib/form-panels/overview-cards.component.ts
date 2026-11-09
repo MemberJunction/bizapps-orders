@@ -52,7 +52,7 @@ export interface MJOOverviewCard {
                         }
                         @if (card.Headers?.length && card.Rows) {
                             @if (card.Rows.length === 0) {
-                                <div class="mjo-ov-empty">None yet</div>
+                                <mj-empty-state Size="inline" Message="None yet" />
                             } @else {
                                 <table class="mjo-ov-table">
                                     <thead>
@@ -76,7 +76,7 @@ export interface MJOOverviewCard {
                         }
                         @if (card.Items) {
                             @if (card.Items.length === 0) {
-                                <div class="mjo-ov-empty">None yet</div>
+                                <mj-empty-state Size="inline" Message="None yet" />
                             } @else {
                                 @for (item of card.Items; track item.Title + item.Detail) {
                                     <div class="mjo-ov-row">

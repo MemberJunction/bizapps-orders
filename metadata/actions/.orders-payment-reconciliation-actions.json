@@ -8,7 +8,7 @@
     "fields": {
       "Name": "Reconcile Payment Provider Charges",
       "CategoryID": "@lookup:MJ: Action Categories.Name=Orders",
-      "Description": "Match the payment gateway's charges and refunds to Orders' payments for a window of business days and report the mismatches. Runs the Orders.ReconcilePaymentProviderCharges operation; this Action only reads parameters and reports the result. With Preview false, mismatches are raised as finance exceptions. A provider that could not be read fails the run.",
+      "Description": "Match the payment gateway's charges and refunds to Orders' payments for a window of business days and report the mismatches. Runs the Orders.ReconcilePaymentProviderCharges operation; this Action only reads parameters and reports the result. With Preview false, a charge without a payment whose gateway price is mapped to a product becomes a paid order, and the remaining mismatches are raised as finance exceptions. A provider that could not be read fails the run.",
       "Type": "Custom",
       "DriverClass": "Orders.ReconcilePaymentProviderCharges",
       "IconClass": "fa-solid fa-scale-balanced",
@@ -103,6 +103,20 @@
           },
           "primaryKey": {
             "ID": "D54E88E4-64DA-4332-A0F9-9FD6B74F6478"
+          }
+        },
+        {
+          "fields": {
+            "ActionID": "@parent:ID",
+            "Name": "OrdersCreated",
+            "Type": "Output",
+            "ValueType": "Scalar",
+            "IsArray": true,
+            "IsRequired": false,
+            "Description": "Paid orders created from charges without a payment, with the charge, order and payment. Empty in preview."
+          },
+          "primaryKey": {
+            "ID": "9D91FE88-16C6-4D17-AD98-8D303C0F7C3E"
           }
         },
         {

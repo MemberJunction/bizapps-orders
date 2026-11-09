@@ -52,16 +52,16 @@ Accounting is a mandatory `peerDependency`, so the host installs one copy, with 
 `devDependency` that anchors local builds and tests. That is the dependency model in
 [`CLAUDE.md`](../CLAUDE.md). Each package's `package.json` is the source of truth; today:
 
-| Package | Accounting peers (`>=0.21.0`) | devDependencies |
+| Package | Accounting peers (`>=0.24.0`) | devDependencies |
 |---|---|---|
-| `packages/CoreEntitiesServer` | `accounting-core-entities-server`, `accounting-engine-base` | the same, exact `0.21.2` |
-| `packages/Server` | `accounting-engine-base`, `accounting-entities`, `accounting-server` | the same, exact `0.21.2` |
-| `packages/Angular` | `accounting-engine-base`, `accounting-ng` | the same, exact `0.21.2`; plus `accounting-entities` `>=0.21.0` for type-only imports |
-| `packages/IntegrationTests` (private) | `accounting-engine-base`, `accounting-server` | the same, as `>=0.21.0` |
+| `packages/CoreEntitiesServer` | `accounting-core-entities-server`, `accounting-engine-base` | the same, exact `0.24.0` |
+| `packages/Server` | `accounting-engine-base`, `accounting-entities`, `accounting-server` | the same, exact `0.24.0` |
+| `packages/Angular` | `accounting-engine-base`, `accounting-ng` | the same, exact `0.24.0`; plus `accounting-entities` `>=0.24.0` for type-only imports |
+| `packages/IntegrationTests` (private) | `accounting-engine-base`, `accounting-server` | the same, as `>=0.24.0` |
 
 `packages/Entities` and `packages/Actions` import no accounting package (the Entities tax resolver
 reads accounting's tax entities by name, so it needs accounting's schema, not its packages).
-`mj-app.json` declares the app dependency `mj-bizapps-accounting` at `>=0.21.0 <1.0.0`.
+`mj-app.json` declares the app dependency `mj-bizapps-accounting` at `>=0.24.0 <1.0.0`.
 
 ## What is left of the publish to-do
 
@@ -72,7 +72,7 @@ where each item stands:
    2), the root harnesses resolve accounting through `packages/IntegrationTests`, which declares it.
 2. **Delete `test-harnesses/resolve-app-packages.mjs`** and return its callers to bare imports. Not
    doing, by decision (#583): the helper stays, and `integration.mjs`, `booking-live.mjs`,
-   `invoice-live.mjs`, `seed-demo-data.mjs` and `seed-review-data.mjs` keep importing accounting
+   `invoice-live.mjs`, `stripe-live.mjs`, `seed-demo-data.mjs` and `seed-review-data.mjs` keep importing accounting
    through it.
 3. **Set `auto-install-peers=true` in `.npmrc`**, the common/accounting family baseline. Done.
 4. **Confirm a bare checkout installs from the registry.** Done in practice: the lockfile resolves

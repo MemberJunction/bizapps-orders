@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { LineGross, NetAfterDiscount } from '../pricing/PricingBehavior';
+import { DropStaleExtendedAmount, LineGross, NetAfterDiscount } from '../pricing/PricingBehavior';
 
 /**
  * `quantity × unitPrice` is correct ONLY for PerUnit pricing.
@@ -51,5 +51,49 @@ describe('LineGross', () => {
     it('composes with NetAfterDiscount to the same net a discount would give', () => {
         expect(NetAfterDiscount(LineGross(3, 33.33, 100), 0.1, 0)).toBe(90);
         expect(NetAfterDiscount(LineGross(7, 14.29, 100), 0, 25)).toBe(75);
+    });
+});
+
+/**
+ * The stored figure (#579) belongs to the quantity and unit price it was priced with. A line
+ * saved again untouched keeps it; a line edited past it goes back to quantity × unit price.
+ */
+describe('DropStaleExtendedAmount', () => {
+    const lineWith = (extended: number | null, dirty: string[]) => {
+        const line = {
+            ExtendedAmount: extended,
+            GetFieldByName: (name: string) => ({ Dirty: dirty.includes(name) }),
+        };
+        return line;
+    };
+
+    it('keeps the figure on a line saved again without changes', () => {
+        const line = lineWith(100, []);
+        DropStaleExtendedAmount(line);
+        expect(line.ExtendedAmount).toBe(100);
+    });
+
+    it('keeps the figure when pricing wrote it together with the unit price', () => {
+        const line = lineWith(100, ['Quantity', 'UnitPrice', 'ExtendedAmount']);
+        DropStaleExtendedAmount(line);
+        expect(line.ExtendedAmount).toBe(100);
+    });
+
+    it('drops the figure when the user states a different unit price', () => {
+        const line = lineWith(100, ['UnitPrice']);
+        DropStaleExtendedAmount(line);
+        expect(line.ExtendedAmount).toBeNull();
+    });
+
+    it('drops the figure when the quantity changes without re-pricing', () => {
+        const line = lineWith(100, ['Quantity']);
+        DropStaleExtendedAmount(line);
+        expect(line.ExtendedAmount).toBeNull();
+    });
+
+    it('leaves a line with no figure alone', () => {
+        const line = lineWith(null, ['Quantity']);
+        DropStaleExtendedAmount(line);
+        expect(line.ExtendedAmount).toBeNull();
     });
 });

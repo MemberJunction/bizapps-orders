@@ -23,8 +23,10 @@ The files in this folder describe the system as it is built. Plans for work not 
 | [ERD.md](ERD.md) | Every table, column, relationship, value list and trigger, generated from a database built by the migrations. |
 | [orders-api-and-ui-architecture.md](orders-api-and-ui-architecture.md) | How the browser composes an order, every remote operation, and the section rails and tabs. |
 | [checkout-widget-and-session-architecture.md](checkout-widget-and-session-architecture.md) | The embeddable checkout: widgets, distributions, sessions, the public endpoints and configuration keys. |
+| [workflows.md](workflows.md) | For business users and administrators: the moments in Orders worth automating, the conditions that catch them, the invoice-on-confirmation automation Orders ships, and the rules Orders adds. Builds on MemberJunction's workflow guides. |
 | [outbound-events.md](outbound-events.md) | Events Orders sends to registered consumers when a sale confirms or a grant changes. |
 | [billcom-invoice-rail.md](billcom-invoice-rail.md) | Sending invoices to Bill.com and recording the payments made there. |
+| [hubspot-payments.md](hubspot-payments.md) | Reading the payments a company's HubSpot portal collects, before the payout. |
 | [overdue-and-layered-base-views.md](overdue-and-layered-base-views.md) | How overdue is decided, and the CodeGen steps for the layered `vwOrderHeaders` view. |
 | [dependency-on-accounting.md](dependency-on-accounting.md) | Why Orders cannot book without BizApps Accounting, and how each package declares it. |
 | [../plans/entitlement-read-contract.md](../plans/entitlement-read-contract.md) | The design that `Orders.CheckEntitlement` and `Orders.ListEntitlements` implement; its status line says which parts were not built. It is in `plans/` because code and a released migration cite that path. |

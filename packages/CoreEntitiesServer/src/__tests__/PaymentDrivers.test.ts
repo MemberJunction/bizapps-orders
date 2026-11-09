@@ -14,7 +14,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { BasePaymentProvider, type PaymentProviderConfig } from '../BasePaymentProvider.js';
-import { StripePaymentProvider, StripeInstrumentFromIntent, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
+import { StripePaymentProvider, StripeChargeRefusal, StripeInstrumentFromIntent, StubDigest, ToFormBody, stripeCaptureAlreadyCollected } from '../StripePaymentProvider.js';
 import { ManualPaymentProvider } from '../ManualPaymentProvider.js';
 import { StoredValuePaymentProvider } from '../StoredValuePaymentProvider.js';
 import { MoveGiftCardBalance } from '../GiftCardEngine.js';
@@ -694,6 +694,131 @@ describe('StripePaymentProvider — keeping a card for later charges', () => {
     });
 });
 
+describe('StripePaymentProvider — charging a saved card off-session (#289)', () => {
+    /** A live driver whose every call answers `status` with `reply`. */
+    function live(status: number, reply: Record<string, unknown>) {
+        const driver = stripe({ IsLiveMode: true });
+        driver.Credentials = { ApiKey: 'sk_test_x' };
+        const orig = globalThis.fetch;
+        globalThis.fetch = (async () =>
+            new Response(JSON.stringify(reply), { status, headers: { 'Content-Type': 'application/json' } })) as typeof fetch;
+        return { driver, restore: () => (globalThis.fetch = orig) };
+    }
+    const charge = { Amount: 1200, CurrencyCode: 'USD', ProviderCustomerRef: 'cus_1', ProviderInstrumentRef: 'pm_1', IdempotencyKey: 'k-1' };
+
+    it('a decline keeps the intent Stripe opened, its reason and its code', async () => {
+        const { driver, restore } = live(402, {
+            error: {
+                type: 'card_error',
+                code: 'card_declined',
+                decline_code: 'insufficient_funds',
+                message: 'Your card has insufficient funds.',
+                payment_intent: { id: 'pi_declined', status: 'requires_payment_method' },
+            },
+        });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({
+                Success: false,
+                Reason: 'Your card has insufficient funds.',
+                ProviderIntentID: 'pi_declined',
+                Status: 'Failed',
+                FailureCode: 'insufficient_funds',
+            });
+            expect(result.RequiresAuthentication).toBeUndefined();
+        } finally {
+            restore();
+        }
+    });
+
+    it('authentication_required on an off-session confirm is an SCA demand', async () => {
+        const { driver, restore } = live(402, {
+            error: {
+                code: 'authentication_required',
+                message: 'This payment requires authentication.',
+                payment_intent: { id: 'pi_sca', status: 'requires_payment_method' },
+            },
+        });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({ Success: false, ProviderIntentID: 'pi_sca', Status: 'Failed', FailureCode: 'authentication_required', RequiresAuthentication: true });
+        } finally {
+            restore();
+        }
+    });
+
+    it('an intent answered with requires_action is an SCA demand too', async () => {
+        const { driver, restore } = live(200, { id: 'pi_action', status: 'requires_action' });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({ Success: true, ProviderIntentID: 'pi_action', Status: 'RequiresPayment', RequiresAuthentication: true });
+        } finally {
+            restore();
+        }
+    });
+
+    it('a success reports when the money was taken, from the intent created in the same request', async () => {
+        const { driver, restore } = live(200, { id: 'pi_ok', status: 'succeeded', created: 1798761600 });
+        try {
+            const result = await driver.CreateIntent(charge);
+            expect(result).toMatchObject({ Success: true, ProviderIntentID: 'pi_ok', Status: 'Succeeded' });
+            expect(result.CapturedAt?.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+            expect(result.RequiresAuthentication).toBeUndefined();
+        } finally {
+            restore();
+        }
+    });
+
+    it('a refusal of a checkout intent (no saved card) is unchanged: just the reason', async () => {
+        const { driver, restore } = live(400, { error: { message: 'Invalid amount', payment_intent: { id: 'pi_x' } } });
+        try {
+            expect(await driver.CreateIntent({ Amount: 5, CurrencyCode: 'USD' })).toEqual({ Success: false, Reason: 'Invalid amount' });
+        } finally {
+            restore();
+        }
+    });
+
+    it('StripeChargeRefusal without an intent in the error records nothing', () => {
+        expect(StripeChargeRefusal({ error: { code: 'card_declined' } }, 'declined')).toMatchObject({
+            Success: false,
+            Reason: 'declined',
+            ProviderIntentID: undefined,
+            Status: undefined,
+            FailureCode: 'card_declined',
+        });
+    });
+
+    it('the stub succeeds with Stripe\'s ordinary test card and dates the charge', async () => {
+        const result = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa' });
+        expect(result).toMatchObject({ Success: true, Status: 'Succeeded' });
+        expect(result.ProviderIntentID).toMatch(/^pi_stub_[0-9a-f]{24}$/);
+        expect(result.CapturedAt).toBeInstanceOf(Date);
+    });
+
+    it('the stub declines Stripe\'s declining test card and demands authentication for its SCA card', async () => {
+        expect(await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_chargeDeclined' })).toMatchObject({
+            Success: false,
+            Status: 'Failed',
+            FailureCode: 'card_declined',
+        });
+        expect(await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_authenticationRequired' })).toMatchObject({
+            Success: false,
+            Status: 'Failed',
+            FailureCode: 'authentication_required',
+            RequiresAuthentication: true,
+        });
+    });
+
+    it('the stub gives a repeated key the same intent and a new key a new one, as Stripe does', async () => {
+        const first = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa', IdempotencyKey: 'renewal-charge-o-2027-01-01' });
+        const again = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa', IdempotencyKey: 'renewal-charge-o-2027-01-01' });
+        const retry = await stripe().CreateIntent({ ...charge, ProviderInstrumentRef: 'pm_card_visa', IdempotencyKey: 'renewal-charge-o-2027-01-04' });
+        expect(again.ProviderIntentID).toBe(first.ProviderIntentID);
+        expect(retry.ProviderIntentID).not.toBe(first.ProviderIntentID);
+        expect(StubDigest('a')).not.toBe(StubDigest('b'));
+    });
+});
+
 describe('StripeInstrumentFromIntent', () => {
     it('reads unexpanded ids', () => {
         expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: 'pm_1' })).toEqual({
@@ -708,6 +833,16 @@ describe('StripeInstrumentFromIntent', () => {
 
     it('is undefined before a payment method exists', () => {
         expect(StripeInstrumentFromIntent({ customer: 'cus_1', payment_method: null })).toBeUndefined();
+    });
+
+    it("reads the card's issuing country as VAT location evidence (#480)", () => {
+        const instrument = StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', card: { brand: 'visa', country: 'ie' } } });
+        expect(instrument?.IssuingCountry).toBe('IE');
+    });
+
+    it('leaves the issuing country out when the method is not a card or the country is not a code', () => {
+        expect(StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', us_bank_account: { last4: '6789' } } })).not.toHaveProperty('IssuingCountry');
+        expect(StripeInstrumentFromIntent({ payment_method: { id: 'pm_1', card: { country: 'Ireland' } } })).not.toHaveProperty('IssuingCountry');
     });
 });
 

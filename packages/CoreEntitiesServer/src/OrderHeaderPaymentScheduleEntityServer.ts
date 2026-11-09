@@ -18,6 +18,10 @@
  *    route other than `Orders.IssueInstalmentInvoice`. Half-issuing a row by hand froze it with no
  *    journal entry behind it and nothing to show that anything was missing.
  *
+ * 4. ONLY A CREDIT MEMO CREDITS (#662). `AmountCredited` lowers what the customer owes on an invoice they hold,
+ *    and an approved amount change's credit memo is the only act that posts the entry behind it. So a change to
+ *    it is refused unless that application sanctioned this object (`SanctionInstalmentCredit`).
+ *
  * Everything else — immutability past Scheduled, identity set-once — is a trigger, where a bypassed
  * class cannot reach it. This one cannot be: the trigger sees the same UPDATE either way and has no
  * idea which code path sent it.
@@ -29,10 +33,12 @@ import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './ent
 import { IsInstalmentIssueInProgress } from './instalmentIssueGuard.js';
 import { RequireUUID } from './sql-guards.js';
 
+const CREDIT_SANCTIONED = new WeakSet<object>();
+
 @RegisterClass(BaseEntity, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY)
 export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrderHeaderPaymentScheduleEntity {
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
-        const problem = this.checkIssuedOnlyByOperation() ?? (await this.stampCompany());
+        const problem = this.checkIssuedOnlyByOperation() ?? this.checkCreditedOnlyByMemo() ?? (await this.stampCompany());
         if (problem) {
             // Registered rather than thrown: a refusal is a business outcome the caller reads off
             // LatestResult, the same contract every other save failure in this package uses.
@@ -89,6 +95,17 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         return null;
     }
 
+    /** Refuse a change to `AmountCredited` that an amount change's credit memo did not sanction. */
+    private checkCreditedOnlyByMemo(): string | null {
+        const field = this.GetFieldByName('AmountCredited');
+        const stored = this.IsSaved ? Number(field?.OldValue ?? 0) : 0;
+        if (Number(this.AmountCredited ?? 0) === stored || CREDIT_SANCTIONED.has(this)) return null;
+        return (
+            `Instalment ${this.InstallmentNumber}'s credited amount is set only by a credit memo, which an approved amount ` +
+            `change issues. Lower the term's amount with Orders.AmendArrangement instead.`
+        );
+    }
+
     /** Copy the trigger-maintained rollups back onto this object so the update cannot erase them. */
     private async adoptRollupsFromRow(): Promise<void> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
@@ -119,6 +136,17 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         result.EndedAt = new Date();
         return result;
     }
+}
+
+/**
+ * Let this instalment's next save change `AmountCredited`. Called only by an amount change applying its credit memo,
+ * where the row is loaded. Refuses an object the server subclass did not produce.
+ */
+export function SanctionInstalmentCredit(row: BaseEntity): void {
+    if (!(row instanceof OrderHeaderPaymentScheduleEntityServer)) {
+        throw new Error("The instalment was not loaded through the orders server's entity subclass, so it cannot be credited.");
+    }
+    CREDIT_SANCTIONED.add(row);
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

@@ -13,6 +13,7 @@
 export const ORDER_LINE_MONEY_FIELDS = [
     'Quantity',
     'UnitPrice',
+    'ExtendedAmount',
     'DiscountPct',
     'DiscountAmount',
     'LineTax',

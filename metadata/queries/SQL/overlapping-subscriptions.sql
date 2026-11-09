@@ -28,6 +28,7 @@
 -- subscription's order line AcknowledgesCoverageOverlap: the person who confirmed it was told both
 -- would be billed and chose to run them alongside. It is still billed twice, so the pair stays on the
 -- review list; the nightly exception check leaves acknowledged SameFamily pairs out.
+-- LaterOverlapReason is the reason that line gives for running alongside.
 --
 -- WHAT COUNTS AS THE SAME HOLDER: the same HolderOrganizationID when both have one, and then either
 -- the same BeneficiaryPersonID or no named person on one side; when neither has an organization, the
@@ -146,6 +147,7 @@ SELECT
     lo.OrderNumber                AS LaterOrderNumber,
     lo.ConfirmedAt                AS LaterOrderConfirmedAt,
     CAST(COALESCE(lol.AcknowledgesCoverageOverlap, 0) AS BIT) AS LaterOverlapAcknowledged,
+    lol.CoverageOverlapReason     AS LaterOverlapReason,
     amt.LaterOverlappingTermsAmount
 FROM overlaps ov
 INNER JOIN live e ON e.ID = ov.EarlierID

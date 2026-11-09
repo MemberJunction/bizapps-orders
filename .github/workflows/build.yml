@@ -69,8 +69,13 @@ jobs:
       # the failure it exists to prevent, and exactly what happened: it could not detect a mis-cased
       # path at all. These fixtures drive the real script against throwaway repos, including the
       # mis-cased cases that fail without the fix.
+      # check-bump-level.sh is the `rr: minor bump` gate. With no `v*` tag it exits at its first
+      # line, and a repo that never publishes never has one, so these fixtures are the only run its
+      # comparison logic gets here — and they cover branches a real repo reaches once in years.
       - name: CI guard script tests
-        run: ./.github/scripts/__tests__/validate-package-lock-case.test.sh
+        run: |
+          ./.github/scripts/__tests__/validate-package-lock-case.test.sh
+          ./.github/scripts/__tests__/check-bump-level.test.sh
 
       # Specs for the migration guards (and any repo-specific *.spec.mjs placed next to them).
       # Plain node:test, no dependencies, so it runs before the install.

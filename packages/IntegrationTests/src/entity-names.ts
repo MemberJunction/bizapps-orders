@@ -40,6 +40,7 @@ export const PROMOTION_TARGET_ENTITY = 'MJ_BizApps_Orders: Promotion Targets';
 export const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 export const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 export const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
+export const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
 export const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
 export const ENTITLEMENT_GRANT_ENTITY = 'MJ_BizApps_Orders: Entitlement Grants';
 export const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
@@ -51,6 +52,7 @@ export const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assig
 
 export const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
 export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
+export const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
 
 export const CUSTOMER_TAX_EXEMPTION_ENTITY = 'MJ_BizApps_Orders: Customer Tax Exemptions';
@@ -64,9 +66,18 @@ export const ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY = 'MJ_BizApps_Orders: Order He
 export const ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY = 'MJ_BizApps_Orders: Order Line Progress Measurements';
 export const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 export const PAYMENT_PROVIDER_ENTITY = 'MJ_BizApps_Orders: Payment Providers';
+export const PAYMENT_PROVIDER_PRICE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Prices';
 export const PAYMENT_PROVIDER_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Types';
 export const PAYMENT_INTENT_ENTITY = 'MJ_BizApps_Orders: Payment Intents';
 export const ORDER_LINE_DIMENSION_ENTITY = 'MJ_BizApps_Orders: Order Line Dimensions';
+export const CHECKOUT_WIDGET_ENTITY = 'MJ_BizApps_Orders: Checkout Widgets';
+export const CHECKOUT_WIDGET_DISTRIBUTION_ENTITY = 'MJ_BizApps_Orders: Checkout Widget Distributions';
+
+// ── Orders: external invoice rails (Bill.com) ─────────────────────────────────────────────────────
+export const EXTERNAL_INVOICE_ENTITY = 'MJ_BizApps_Orders: External Invoices';
+export const EXTERNAL_CUSTOMER_ENTITY = 'MJ_BizApps_Orders: External Customers';
+export const EXTERNAL_PAYMENT_ENTITY = 'MJ_BizApps_Orders: External Payments';
+export const PAYMENT_PROVIDER_SYNC_STATE_ENTITY = 'MJ_BizApps_Orders: Payment Provider Sync States';
 
 // ── Tasks (peer app; a Pending concession is routed to its approvers as a task) ─────────────────────
 export const TASK_ENTITY = 'MJ_BizApps_Tasks: Tasks';
@@ -76,6 +87,7 @@ export const TASK_DECISION_ENTITY = 'MJ_BizApps_Tasks: Task Decisions';
 export const GL_ACCOUNT_ENTITY = 'MJ_BizApps_Accounting: GL Accounts';
 export const GL_ACCOUNT_ROLE_ENTITY = 'MJ_BizApps_Accounting: GL Account Roles';
 export const GL_ACCOUNT_LINK_ENTITY = 'MJ_BizApps_Accounting: GL Account Links';
+export const FINANCE_EXCEPTION_TYPE_ENTITY = 'MJ_BizApps_Accounting: Finance Exception Types';
 export const INTERCOMPANY_ACCOUNT_MATCH_ENTITY = 'MJ_BizApps_Accounting: Intercompany Account Matches';
 export const INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY =
     'MJ_BizApps_Accounting: Intercompany Account Match Dimensions';
@@ -97,6 +109,13 @@ export const ADDRESS_ENTITY = 'MJ_BizApps_Common: Addresses';
 
 export const COMPANY_ENTITY = 'MJ: Companies';
 
+// ── MJ core: the connector configuration a Bill.com provider row points at ───────────────────────
+export const INTEGRATION_ENTITY = 'MJ: Integrations';
+export const INTEGRATION_OBJECT_ENTITY = 'MJ: Integration Objects';
+export const INTEGRATION_OBJECT_FIELD_ENTITY = 'MJ: Integration Object Fields';
+export const COMPANY_INTEGRATION_ENTITY = 'MJ: Company Integrations';
+export const SCHEDULED_JOB_ENTITY = 'MJ: Scheduled Jobs';
+
 /**
  * Every name above, for the parity check that asserts each one resolves against live metadata.
  * A name that no longer exists is a silent empty-result bug in waiting, so the suite proves the
@@ -117,6 +136,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     ORDER_HEADER_ENTITY,
     ORDER_LINE_ENTITY,
     SUBSCRIPTION_ENTITY,
+    SUBSCRIPTION_TYPE_ENTITY,
     SUBSCRIPTION_TERM_ENTITY,
     ENTITLEMENT_GRANT_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,
@@ -126,6 +146,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRICE_LIST_ASSIGNMENT_ENTITY,
     SALES_AUTHORITY_ENTITY,
     SALES_RULE_ENTITY,
+    REFERRAL_PROGRAM_ENTITY,
     ORDER_CONCESSION_ENTITY,
     CUSTOMER_TAX_EXEMPTION_ENTITY,
     CUSTOMER_PAYMENT_TERMS_ENTITY,
@@ -137,12 +158,20 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY,
     PAYMENT_DETAIL_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
+    PAYMENT_PROVIDER_PRICE_ENTITY,
     PAYMENT_PROVIDER_TYPE_ENTITY,
     PAYMENT_INTENT_ENTITY,
     ORDER_LINE_DIMENSION_ENTITY,
+    EXTERNAL_INVOICE_ENTITY,
+    EXTERNAL_CUSTOMER_ENTITY,
+    EXTERNAL_PAYMENT_ENTITY,
+    PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
+    CHECKOUT_WIDGET_ENTITY,
+    CHECKOUT_WIDGET_DISTRIBUTION_ENTITY,
     GL_ACCOUNT_ENTITY,
     GL_ACCOUNT_ROLE_ENTITY,
     GL_ACCOUNT_LINK_ENTITY,
+    FINANCE_EXCEPTION_TYPE_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_ENTITY,
     INTERCOMPANY_ACCOUNT_MATCH_DIMENSION_ENTITY,
     COMPANY_TAX_NEXUS_ENTITY,
@@ -159,6 +188,11 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     RELATIONSHIP_TYPE_ENTITY,
     ADDRESS_ENTITY,
     COMPANY_ENTITY,
+    INTEGRATION_ENTITY,
+    INTEGRATION_OBJECT_ENTITY,
+    INTEGRATION_OBJECT_FIELD_ENTITY,
+    COMPANY_INTEGRATION_ENTITY,
+    SCHEDULED_JOB_ENTITY,
     TASK_ENTITY,
     TASK_DECISION_ENTITY,
 ];

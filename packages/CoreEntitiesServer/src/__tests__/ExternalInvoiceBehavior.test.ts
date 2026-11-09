@@ -44,7 +44,7 @@ const whole = (over: Partial<ExternalInvoiceUnitFacts> = {}): ExternalInvoiceUni
  */
 describe('DecideInvoiceable — an interrupted send', () => {
     const sending = (allowReissue: boolean) =>
-        DecideInvoiceable({ OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: 'Sending', AllowReissue: allowReissue });
+        DecideInvoiceable({ OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: 'Sending', UnitReachedRail: false, AllowReissue: allowReissue });
 
     it('refuses an automatic retry and says how to check', () => {
         const d = sending(false);
@@ -72,6 +72,7 @@ describe('DecideInvoiceable — a cancelled unit', () => {
             ScheduleRowStatus: null,
             ScheduleRowNamed: false,
             ExistingStatus: 'Canceled',
+            UnitReachedRail: true,
             AllowReissue: false,
             ...over,
         });
@@ -87,6 +88,44 @@ describe('DecideInvoiceable — a cancelled unit', () => {
     it('still lets a whole-order unit be re-issued deliberately — no ruling there yet', () => {
         expect(decide({ AllowReissue: true }).Verdict).toBe('Issue');
         expect(decide({ AllowReissue: false }).Verdict).toBe('Refuse');
+    });
+});
+
+/**
+ * A send the rail refused before creating anything — the customer had no email, the number was too
+ * long, Bill.com answered no — leaves a Failed row with no rail reference. There is nothing on the
+ * rail to bill twice, so the next send is an ordinary send, not a re-issue a person must vouch for.
+ */
+describe('DecideInvoiceable — a send that never reached the rail', () => {
+    const decide = (over: Partial<Parameters<typeof DecideInvoiceable>[0]> = {}) =>
+        DecideInvoiceable({
+            OrderStatus: 'Confirmed',
+            HasSchedule: false,
+            ScheduleRowStatus: null,
+            ScheduleRowNamed: false,
+            ExistingStatus: 'Failed',
+            UnitReachedRail: false,
+            AllowReissue: false,
+            ...over,
+        });
+
+    it('sends again without AllowReissue', () => {
+        expect(decide().Verdict).toBe('Issue');
+    });
+
+    it('still checks the order: a voided order is refused', () => {
+        expect(decide({ OrderStatus: 'Voided' }).Code).toBe('NOT_CONFIRMED');
+    });
+
+    it('asks for AllowReissue once anything for the unit reached the rail', () => {
+        const d = decide({ UnitReachedRail: true });
+        expect(d.Verdict).toBe('Refuse');
+        expect(d.Code).toBe('HAS_HISTORY');
+        expect(decide({ UnitReachedRail: true, AllowReissue: true }).Verdict).toBe('Issue');
+    });
+
+    it('leaves an unconfirmed send blocked whatever the reference says', () => {
+        expect(decide({ ExistingStatus: 'Sending' }).Code).toBe('IN_FLIGHT');
     });
 });
 
@@ -191,7 +230,7 @@ describe('BuildExternalInvoicePayload', () => {
 });
 
 describe('DecideInvoiceable', () => {
-    const base = { OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: null, AllowReissue: false } as const;
+    const base = { OrderStatus: 'Confirmed', HasSchedule: false, ScheduleRowStatus: null, ScheduleRowNamed: false, ExistingStatus: null, UnitReachedRail: true, AllowReissue: false } as const;
     it('a confirmed schedule-less order with no history issues', () => expect(DecideInvoiceable(base).Code).toBe('OK'));
     it('a draft refuses', () => expect(DecideInvoiceable({ ...base, OrderStatus: 'Draft' }).Code).toBe('NOT_CONFIRMED'));
     it('a voided order refuses', () => expect(DecideInvoiceable({ ...base, OrderStatus: 'Voided' }).Code).toBe('NOT_CONFIRMED'));
@@ -333,5 +372,45 @@ describe('ReissueDocumentNumber', () => {
         const longest = ReissueDocumentNumber(`${'O'.repeat(30)}-A`, 9);
         expect(longest.length).toBeLessThanOrEqual(MAX_DOCUMENT_NUMBER_LENGTH);
         expect(ReissueDocumentNumber('ORD-1234-A', 1).length).toBe(13);
+    });
+});
+
+/**
+ * Bill.com's invoice has no service-period field, so a customer reading it saw a product and a price
+ * with no dates. The period now rides in the line text, formatted as our own document prints it.
+ */
+describe('BuildExternalInvoicePayload — service period in the line text', () => {
+    const one = (r: InvoiceRow) => doc({ Rows: [r], ListSubtotal: r.Amount, NetTotal: r.Amount, ChargeTotal: 0, TaxTotal: 0, Gross: r.Amount, AmountDue: r.Amount });
+
+    it('appends a row\'s period after its name and description', () => {
+        const r = BuildExternalInvoicePayload(
+            one(row(1, 120, 1, { Description: 'Annual seat', ServicePeriodStart: '2026-10-01', ServicePeriodEnd: '2027-09-30' })),
+            whole({ Amount: 120 }),
+            '2026-09-22',
+        );
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'P1 — Annual seat (Oct 1, 2026 – Sep 30, 2027)', Quantity: 1, UnitPrice: 120 }]);
+    });
+
+    it('keeps the period when the quantity collapses to one unit', () => {
+        const r = BuildExternalInvoicePayload(
+            one(row(1, 10, 3, { ServicePeriodStart: '2026-10-01', ServicePeriodEnd: '2026-10-31' })),
+            whole({ Amount: 10 }),
+            '2026-09-22',
+        );
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'P1 (×3) (Oct 1, 2026 – Oct 31, 2026)', Quantity: 1, UnitPrice: 10 }]);
+    });
+
+    it('prints a dash for an open end, as the document does', () => {
+        const r = BuildExternalInvoicePayload(one(row(1, 50, 1, { ServicePeriodStart: '2026-10-01' })), whole({ Amount: 50 }), '2026-09-22');
+        expect(r.OK && r.Payload.Lines[0].Description).toBe('P1 (Oct 1, 2026 – —)');
+    });
+
+    it('an instalment line carries the span of the order\'s rows, children included', () => {
+        const rows = [
+            row(1, 100, 1, { ServicePeriodStart: '2026-11-01', ServicePeriodEnd: '2027-10-31' }),
+            row(2, 50, 1, { Children: [row(3, 0, 1, { IncludedInParent: true, ServicePeriodStart: '2026-10-15', ServicePeriodEnd: '2027-01-14' })] }),
+        ];
+        const r = BuildExternalInvoicePayload(doc({ Rows: rows }), whole({ InstallmentNumber: 1, InstallmentCount: 2, Amount: 75, DocumentNumber: 'ORD-1-1' }), '2026-09-22');
+        expect(r.OK && r.Payload.Lines).toEqual([{ Description: 'Instalment 1 of 2 — order ORD-1 (Oct 15, 2026 – Oct 31, 2027)', Quantity: 1, UnitPrice: 75 }]);
     });
 });

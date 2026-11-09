@@ -1244,7 +1244,7 @@ and a sweeper for expired holds.
 saved draft holding seats for a day) or die with it? Does an oversold event fail the
 confirm outright, or waitlist? Is capacity per event, or per ticket type within an event?
 
-## 21c. A subscription records no quantity (KNOWN GAP, not fixed)
+## 21c. A subscription records no quantity (FIXED, #589)
 
 Found 2026-08-04 by adversarial testing; recorded rather than fixed because the fix is
 a schema change and the right shape is a business decision.
@@ -1266,6 +1266,13 @@ per-seat entitlement, and renewal at a different seat count.
 multiplier on one subscription, (b) N distinct subscriptions, or (c) one subscription with
 a recorded seat count? Only (c) needs a new column; (b) changes the concurrency rules
 materially, since ten seats for one subscriber currently collide as duplicates.
+
+**Resolved 2026-10-12 (#589): (c), on the term.** `SubscriptionTerm.Quantity` records the
+seats bought, taken before proration scales the line's quantity, so a renewal at a different
+count is a new term with its own. Entitlement grants and renewals read it. Whole seats only,
+for every benefit model; ten people can still be ten lines, each naming its person.
+Whether quantity on a `Holder` or `Organization` type should also limit anything beyond the
+grants is still open for the business.
 
 ## 21d. TODO — promote accounting's workspace tab card into ng-ui-components
 
