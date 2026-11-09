@@ -23,6 +23,7 @@ import { MJOProductRevRecFieldComponent } from './product-rev-rec-field.componen
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductSubscriptionsPanel,
@@ -83,6 +84,7 @@ const PANELS = [
     ProductPromosPanel,
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductLifecyclePanel,
     ProductSubscriptionsPanel,
     PriceListHeaderPanel,
     PriceListSimulatorPanel,
