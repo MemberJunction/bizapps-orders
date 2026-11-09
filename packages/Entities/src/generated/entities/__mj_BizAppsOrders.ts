@@ -2290,7 +2290,7 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Cumulative Share
         * * SQL Data Type: decimal(9, 4)
         * * Description: Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.`),
-    Status: z.union([z.literal('Approved'), z.literal('Pending'), z.literal('Rejected')]).describe(`
+    Status: z.union([z.literal('Approved'), z.literal('Pending'), z.literal('Rejected'), z.literal('Withdrawn')]).describe(`
         * * Field Name: Status
         * * Display Name: Status
         * * SQL Data Type: nvarchar(20)
@@ -2300,7 +2300,8 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     *   * Approved
     *   * Pending
     *   * Rejected
-        * * Description: Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`),
+    *   * Withdrawn
+        * * Description: Pending | Approved | Rejected | Withdrawn. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role. Withdrawn: taken back by its requester (or a user who may update concessions) while Pending, or while Approved on an order not yet confirmed and not tied to a booked term; it stays on the order as a record and counts toward nothing.`),
     RequestedByUserID: z.string().describe(`
         * * Field Name: RequestedByUserID
         * * Display Name: Requested By User ID
@@ -2420,6 +2421,17 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: bit
         * * Default Value: 0
         * * Description: For an amount change about a paid invoice: the customer asked for the credit back rather than off the next instalment. The approval records the credit; finance refunds it from the order's payments.`),
+    WithdrawnByUserID: z.string().nullable().describe(`
+        * * Field Name: WithdrawnByUserID
+        * * Display Name: Withdrawn By User
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+        * * Description: The user who withdrew the concession. Set only when Status is Withdrawn.`),
+    WithdrawnAt: z.date().nullable().describe(`
+        * * Field Name: WithdrawnAt
+        * * Display Name: Withdrawn At
+        * * SQL Data Type: datetimeoffset
+        * * Description: When the concession was withdrawn. Set only when Status is Withdrawn.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -2448,6 +2460,10 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Field Name: ReferralProgram
         * * Display Name: Referral Program
         * * SQL Data Type: nvarchar(200)`),
+    WithdrawnByUser: z.string().nullable().describe(`
+        * * Field Name: WithdrawnByUser
+        * * Display Name: Withdrawn By User Name
+        * * SQL Data Type: nvarchar(100)`),
 });
 
 export type mjBizAppsOrdersOrderConcessionEntityType = z.infer<typeof mjBizAppsOrdersOrderConcessionSchema>;
@@ -13608,16 +13624,19 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     * Validate() method override for MJ_BizApps_Orders: Order Concessions entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
     * * ComputedValue: Computed value must be greater than or equal to zero.
     * * CumulativeShare: Cumulative share must be greater than or equal to zero to ensure positive or zero accumulation.
-    * * Table-Level: When a record's status is updated past 'Pending', both the deciding user and the decision timestamp must be recorded.
-    * * Table-Level: Ensures that orders with a 'Shorten' or 'Shift' delivery form include valid subscription terms and date ranges adhering to shift or shorten rules, while requiring date and payment term fields to remain empty for other delivery forms.
-    * * Table-Level: When the delivery form is set to 'Seats', an order line must be specified and the added quantity must be greater than zero.
-    * * Table-Level: When the delivery form is set to 'Terms', valid new payment terms and added days must be specified (with new payment terms differing from prior terms), while order line, subscription term, and added quantity fields must be empty.
-    * * Table-Level: If a new amount is not provided, both the payment schedule ID and schedule reduction must be left blank.
-    * * Table-Level: If a new amount is specified, the delivery form must be set to 'Price', both a subscription term and order line must be associated, and the new amount must be greater than zero.
-    * * Table-Level: An order line must be specified when the delivery form is set to 'Scope' or 'Price'.
-    * * Table-Level: Payment terms (prior and new) can only be specified when the delivery form is set to 'Terms'. For all other delivery forms, payment terms fields must be left empty.
-    * * Table-Level: If a schedule reduction is specified, it must be greater than zero and can only be applied when the status is set to Approved.
-    * * Table-Level: When the delivery form is set to Duration, a subscription term must be specified and added days must be greater than zero.
+    * * Table-Level: Credit memo details (amount and number) must either both be blank, or if a credit memo is issued, the amount must be greater than zero, a memo number and new amount must be provided, and the status must be Approved.
+    * * Table-Level: If a record's status is neither 'Withdrawn' nor 'Pending', it must include both the user who made the decision and the date/time when the decision was made.
+    * * Table-Level: Validates date rules and field restrictions based on the delivery form. When the delivery form is 'Shift' or 'Shorten', prior and new start and end dates are required alongside a subscription term, while restricting quantity and payment terms changes. Shift requires equal movement of start and end dates to a new date, while Shorten requires reducing the date range within original boundaries.
+    * * Table-Level: When the delivery form is set to 'Duration', a valid subscription term must be selected and the number of added days must be greater than zero.
+    * * Table-Level: Ensures that if a payment schedule or schedule reduction is specified, a new amount must also be provided.
+    * * Table-Level: If a new amount is specified, the delivery form must be set to 'Price', and both a subscription term and order line must be associated with the record along with the new amount being greater than zero.
+    * * Table-Level: If a refund is requested, a new amount must be specified.
+    * * Table-Level: If the delivery form is set to Scope or Price, an order line must be specified.
+    * * Table-Level: Payment terms types (prior or new) can only be specified when the delivery form is set to 'Terms'.
+    * * Table-Level: If a schedule reduction is specified, it must be greater than zero and the record status must be set to 'Approved'.
+    * * Table-Level: When the delivery form is 'Seats', an associated order line must be provided and the added quantity must be greater than zero.
+    * * Table-Level: When the delivery form is set to 'Terms', a new payment terms type and added days are required (and new terms must differ from prior terms), while order line, subscription term, and added quantity must be empty.
+    * * Table-Level: If an item's status is Withdrawn, it must include both the user who withdrew it and the withdrawal timestamp; for any other status, both withdrawal fields must be empty.
     * @public
     * @method
     * @override
@@ -13626,16 +13645,19 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
         const result = super.Validate();
         this.ValidateComputedValueGreaterThanOrEqualToZero(result);
         this.ValidateCumulativeShareNonNegative(result);
-        this.ValidateDecisionInfoWhenNotPending(result);
-        this.ValidateDeliveryFormDateAndTermConstraints(result);
-        this.ValidateDeliveryFormSeatsRequirements(result);
-        this.ValidateDeliveryFormTerms(result);
-        this.ValidateNewAmountOrPaymentScheduleFields(result);
+        this.ValidateCreditMemoDetails(result);
+        this.ValidateDecisionFieldsForStatus(result);
+        this.ValidateDeliveryFormAndDates(result);
+        this.ValidateDeliveryFormDurationRequirements(result);
+        this.ValidateNewAmountAndScheduleReductionDetails(result);
         this.ValidateNewAmountRequirements(result);
-        this.ValidateOrderLineIDForDeliveryForm(result);
-        this.ValidatePaymentTermsFieldsForDeliveryForm(result);
-        this.ValidateScheduleReductionAndStatus(result);
-        this.ValidateSubscriptionTermAndAddedDaysForDurationDeliveryForm(result);
+        this.ValidateNewAmountWhenRefundRequested(result);
+        this.ValidateOrderLineIDRequiredForDeliveryForm(result);
+        this.ValidatePaymentTermsTypesForDeliveryForm(result);
+        this.ValidateScheduleReductionStatus(result);
+        this.ValidateSeatsDeliveryFormRequirements(result);
+        this.ValidateTermsDeliveryFormFields(result);
+        this.ValidateWithdrawalDetailsByStatus(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -13676,38 +13698,63 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
-    * When a record's status is updated past 'Pending', both the deciding user and the decision timestamp must be recorded.
+    * Credit memo details (amount and number) must either both be blank, or if a credit memo is issued, the amount must be greater than zero, a memo number and new amount must be provided, and the status must be Approved.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateDecisionInfoWhenNotPending(result: ValidationResult) {
-    	if (this.Status !== 'Pending' && (this.DecidedByUserID == null || this.DecidedAt == null)) {
+    public ValidateCreditMemoDetails(result: ValidationResult) {
+    	const hasNoCreditMemo = this.CreditMemoAmount == null && this.CreditMemoNumber == null;
+    	const hasValidCreditMemo = this.CreditMemoAmount != null && this.CreditMemoAmount > 0 && 
+    		this.CreditMemoNumber != null && this.CreditMemoNumber.trim() !== "" && 
+    		this.NewAmount != null && this.Status === "Approved";
+    
+    	if (!hasNoCreditMemo && !hasValidCreditMemo) {
     		result.Errors.push(new ValidationErrorInfo(
-    			"DecidedByUserID",
-    			"Both the deciding user and decision timestamp must be provided when status is not Pending.",
-    			this.DecidedByUserID,
+    			"CreditMemoAmount",
+    			"Credit memo amount and number must both be empty, or if specifying a credit memo, the amount must be greater than zero, credit memo number and new amount must be provided, and status must be Approved.",
+    			this.CreditMemoAmount,
     			ValidationErrorType.Failure
     		));
     	}
     }
 
     /**
-    * Ensures that orders with a 'Shorten' or 'Shift' delivery form include valid subscription terms and date ranges adhering to shift or shorten rules, while requiring date and payment term fields to remain empty for other delivery forms.
+    * If a record's status is neither 'Withdrawn' nor 'Pending', it must include both the user who made the decision and the date/time when the decision was made.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateDeliveryFormDateAndTermConstraints(result: ValidationResult): void {
-    	const isShorten = this.DeliveryForm === "Shorten";
-    	const isShift = this.DeliveryForm === "Shift";
+    public ValidateDecisionFieldsForStatus(result: ValidationResult) {
+    	if (this.Status !== "Withdrawn" && this.Status !== "Pending") {
+    		if (this.DecidedByUserID == null || this.DecidedAt == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"Status",
+    				"DecidedByUserID and DecidedAt are required when Status is not Withdrawn or Pending.",
+    				this.Status,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
+    * Validates date rules and field restrictions based on the delivery form. When the delivery form is 'Shift' or 'Shorten', prior and new start and end dates are required alongside a subscription term, while restricting quantity and payment terms changes. Shift requires equal movement of start and end dates to a new date, while Shorten requires reducing the date range within original boundaries.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateDeliveryFormAndDates(result: ValidationResult) {
+    	const deliveryForm = this.DeliveryForm;
+    	const isShift = deliveryForm === "Shift";
+    	const isShorten = deliveryForm === "Shorten";
     
-    	if (!isShorten && !isShift) {
+    	if (!isShift && !isShorten) {
     		if (this.PriorStartDate != null || this.PriorEndDate != null || this.NewStartDate != null || this.NewEndDate != null) {
     			result.Errors.push(new ValidationErrorInfo(
     				"DeliveryForm",
-    				"Prior and New Start/End dates must be empty when Delivery Form is not 'Shorten' or 'Shift'.",
-    				this.DeliveryForm,
+    				"Start and end dates must not be specified when DeliveryForm is not 'Shift' or 'Shorten'.",
+    				deliveryForm,
     				ValidationErrorType.Failure
     			));
     		}
@@ -13715,73 +13762,95 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     		if (this.SubscriptionTermID == null) {
     			result.Errors.push(new ValidationErrorInfo(
     				"SubscriptionTermID",
-    				"Subscription Term ID is required when Delivery Form is 'Shorten' or 'Shift'.",
+    				"SubscriptionTermID is required when DeliveryForm is 'Shift' or 'Shorten'.",
     				this.SubscriptionTermID,
     				ValidationErrorType.Failure
     			));
     		}
-    
     		if (this.PriorStartDate == null || this.PriorEndDate == null || this.NewStartDate == null || this.NewEndDate == null) {
     			result.Errors.push(new ValidationErrorInfo(
     				"DeliveryForm",
-    				"Prior and New Start and End dates are required when Delivery Form is 'Shorten' or 'Shift'.",
-    				this.DeliveryForm,
+    				"Prior and new start and end dates are required when DeliveryForm is 'Shift' or 'Shorten'.",
+    				deliveryForm,
     				ValidationErrorType.Failure
     			));
     		}
-    
-    		if (this.AddedQuantity != null || this.PriorPaymentTermsTypeID != null || this.NewPaymentTermsTypeID != null) {
+    		if (this.AddedQuantity != null) {
     			result.Errors.push(new ValidationErrorInfo(
-    				"DeliveryForm",
-    				"Added Quantity and Payment Terms fields must be empty when Delivery Form is 'Shorten' or 'Shift'.",
-    				this.DeliveryForm,
+    				"AddedQuantity",
+    				"AddedQuantity must be null when DeliveryForm is 'Shift' or 'Shorten'.",
+    				this.AddedQuantity,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    		if (this.PriorPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"PriorPaymentTermsTypeID",
+    				"PriorPaymentTermsTypeID must be null when DeliveryForm is 'Shift' or 'Shorten'.",
+    				this.PriorPaymentTermsTypeID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    		if (this.NewPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"NewPaymentTermsTypeID",
+    				"NewPaymentTermsTypeID must be null when DeliveryForm is 'Shift' or 'Shorten'.",
+    				this.NewPaymentTermsTypeID,
     				ValidationErrorType.Failure
     			));
     		}
     
-    		if (this.NewStartDate != null && this.NewEndDate != null) {
-    			const newStart = new Date(this.NewStartDate).getTime();
-    			const newEnd = new Date(this.NewEndDate).getTime();
-    
-    			if (newEnd < newStart) {
-    				result.Errors.push(new ValidationErrorInfo(
-    					"NewEndDate",
-    					"New End Date must be greater than or equal to New Start Date.",
-    					this.NewEndDate,
-    					ValidationErrorType.Failure
-    				));
-    			}
+    		if (this.NewStartDate != null && this.NewEndDate != null && new Date(this.NewEndDate).getTime() < new Date(this.NewStartDate).getTime()) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"NewEndDate",
+    				"NewEndDate must be greater than or equal to NewStartDate.",
+    				this.NewEndDate,
+    				ValidationErrorType.Failure
+    			));
     		}
     
     		if (this.PriorStartDate != null && this.PriorEndDate != null && this.NewStartDate != null && this.NewEndDate != null) {
-    			const priorStart = new Date(this.PriorStartDate).getTime();
-    			const priorEnd = new Date(this.PriorEndDate).getTime();
-    			const newStart = new Date(this.NewStartDate).getTime();
-    			const newEnd = new Date(this.NewEndDate).getTime();
+    			const pStart = new Date(this.PriorStartDate).getTime();
+    			const pEnd = new Date(this.PriorEndDate).getTime();
+    			const nStart = new Date(this.NewStartDate).getTime();
+    			const nEnd = new Date(this.NewEndDate).getTime();
+    			const msPerDay = 1000 * 60 * 60 * 24;
     
     			if (isShift) {
-    				const startDiffDays = Math.round((newStart - priorStart) / (1000 * 60 * 60 * 24));
-    				const endDiffDays = Math.round((newEnd - priorEnd) / (1000 * 60 * 60 * 24));
-    
-    				if (startDiffDays !== endDiffDays || priorStart === newStart) {
+    				const startDays = Math.round((nStart - pStart) / msPerDay);
+    				const endDays = Math.round((nEnd - pEnd) / msPerDay);
+    				if (startDays !== endDays) {
     					result.Errors.push(new ValidationErrorInfo(
-    						"DeliveryForm",
-    						"For 'Shift' delivery forms, the start and end dates must shift by the exact same duration and cannot equal the prior start date.",
-    						this.DeliveryForm,
+    						"NewStartDate",
+    						"For a 'Shift' delivery form, start date and end date must shift by the exact same number of days.",
+    						this.NewStartDate,
+    						ValidationErrorType.Failure
+    					));
+    				}
+    				if (nStart === pStart) {
+    					result.Errors.push(new ValidationErrorInfo(
+    						"NewStartDate",
+    						"For a 'Shift' delivery form, NewStartDate must differ from PriorStartDate.",
+    						this.NewStartDate,
     						ValidationErrorType.Failure
     					));
     				}
     			}
     
     			if (isShorten) {
-    				const isValidRange = newStart >= priorStart && newEnd <= priorEnd;
-    				const hasChanged = newStart !== priorStart || newEnd !== priorEnd;
-    
-    				if (!isValidRange || !hasChanged) {
+    				if (nStart < pStart || nEnd > pEnd) {
     					result.Errors.push(new ValidationErrorInfo(
     						"DeliveryForm",
-    						"For 'Shorten' delivery forms, the new date range must fall within the prior date range and at least one boundary date must change.",
-    						this.DeliveryForm,
+    						"For a 'Shorten' delivery form, the new date range must be within the prior date range.",
+    						deliveryForm,
+    						ValidationErrorType.Failure
+    					));
+    				}
+    				if (nStart === pStart && nEnd === pEnd) {
+    					result.Errors.push(new ValidationErrorInfo(
+    						"DeliveryForm",
+    						"For a 'Shorten' delivery form, at least one of the start or end dates must change.",
+    						deliveryForm,
     						ValidationErrorType.Failure
     					));
     				}
@@ -13791,61 +13860,33 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
-    * When the delivery form is set to 'Seats', an order line must be specified and the added quantity must be greater than zero.
+    * When the delivery form is set to 'Duration', a valid subscription term must be selected and the number of added days must be greater than zero.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateDeliveryFormSeatsRequirements(result: ValidationResult) {
-    	if (this.DeliveryForm === 'Seats') {
-    		if (this.OrderLineID == null || this.AddedQuantity == null || this.AddedQuantity <= 0) {
-    			result.Errors.push(new ValidationErrorInfo(
-    				"DeliveryForm",
-    				"When Delivery Form is set to 'Seats', an Order Line ID must be provided and Added Quantity must be greater than 0.",
-    				this.DeliveryForm,
-    				ValidationErrorType.Failure
-    			));
-    		}
+    public ValidateDeliveryFormDurationRequirements(result: ValidationResult) {
+    	if (this.DeliveryForm === 'Duration' && (this.SubscriptionTermID == null || this.AddedDays == null || this.AddedDays <= 0)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"DeliveryForm",
+    			"When the delivery form is 'Duration', a subscription term must be specified and the added days must be greater than zero.",
+    			this.DeliveryForm,
+    			ValidationErrorType.Failure
+    		));
     	}
     }
 
     /**
-    * When the delivery form is set to 'Terms', valid new payment terms and added days must be specified (with new payment terms differing from prior terms), while order line, subscription term, and added quantity fields must be empty.
+    * Ensures that if a payment schedule or schedule reduction is specified, a new amount must also be provided.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateDeliveryFormTerms(result: ValidationResult) {
-    	if (this.DeliveryForm === 'Terms') {
-    		const isNewPaymentTermsMissing = this.NewPaymentTermsTypeID == null;
-    		const isPaymentTermsUnchanged = this.PriorPaymentTermsTypeID != null && this.PriorPaymentTermsTypeID === this.NewPaymentTermsTypeID;
-    		const isAddedDaysMissing = this.AddedDays == null;
-    		const hasOrderLineID = this.OrderLineID != null;
-    		const hasSubscriptionTermID = this.SubscriptionTermID != null;
-    		const hasAddedQuantity = this.AddedQuantity != null;
-    
-    		if (isNewPaymentTermsMissing || isPaymentTermsUnchanged || isAddedDaysMissing || hasOrderLineID || hasSubscriptionTermID || hasAddedQuantity) {
-    			result.Errors.push(new ValidationErrorInfo(
-    				"DeliveryForm",
-    				"When DeliveryForm is set to 'Terms', new payment terms and added days are required, payment terms must change, and OrderLineID, SubscriptionTermID, and AddedQuantity must be empty.",
-    				this.DeliveryForm,
-    				ValidationErrorType.Failure
-    			));
-    		}
-    	}
-    }
-
-    /**
-    * If a new amount is not provided, both the payment schedule ID and schedule reduction must be left blank.
-    * @param result - the ValidationResult object to add any errors or warnings to
-    * @public
-    * @method
-    */
-    public ValidateNewAmountOrPaymentScheduleFields(result: ValidationResult) {
+    public ValidateNewAmountAndScheduleReductionDetails(result: ValidationResult) {
     	if (this.NewAmount == null && (this.AppliesToPaymentScheduleID != null || this.ScheduleReduction != null)) {
     		result.Errors.push(new ValidationErrorInfo(
     			"NewAmount",
-    			"If a new amount is not provided, AppliesToPaymentScheduleID and ScheduleReduction must both be null.",
+    			"A new amount must be provided when specifying a payment schedule or schedule reduction.",
     			this.NewAmount,
     			ValidationErrorType.Failure
     		));
@@ -13853,7 +13894,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
-    * If a new amount is specified, the delivery form must be set to 'Price', both a subscription term and order line must be associated, and the new amount must be greater than zero.
+    * If a new amount is specified, the delivery form must be set to 'Price', and both a subscription term and order line must be associated with the record along with the new amount being greater than zero.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
@@ -13863,7 +13904,7 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     		if (this.DeliveryForm !== 'Price' || this.SubscriptionTermID == null || this.OrderLineID == null || this.NewAmount <= 0) {
     			result.Errors.push(new ValidationErrorInfo(
     				"NewAmount",
-    				"When a new amount is specified, the delivery form must be 'Price', subscription term and order line must be provided, and the amount must be greater than zero.",
+    				"When a New Amount is specified, the Delivery Form must be 'Price', a Subscription Term and Order Line must be assigned, and the amount must be greater than zero.",
     				this.NewAmount,
     				ValidationErrorType.Failure
     			));
@@ -13872,16 +13913,33 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
-    * An order line must be specified when the delivery form is set to 'Scope' or 'Price'.
+    * If a refund is requested, a new amount must be specified.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateOrderLineIDForDeliveryForm(result: ValidationResult) {
-    	if ((this.DeliveryForm === "Scope" || this.DeliveryForm === "Price") && this.OrderLineID == null) {
+    public ValidateNewAmountWhenRefundRequested(result: ValidationResult) {
+    	if (this.RefundRequested && this.NewAmount == null) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"NewAmount",
+    			"A new amount must be provided when a refund is requested.",
+    			this.NewAmount,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * If the delivery form is set to Scope or Price, an order line must be specified.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateOrderLineIDRequiredForDeliveryForm(result: ValidationResult) {
+    	if ((this.DeliveryForm === 'Scope' || this.DeliveryForm === 'Price') && this.OrderLineID == null) {
     		result.Errors.push(new ValidationErrorInfo(
     			"OrderLineID",
-    			"An Order Line is required when the Delivery Form is set to Scope or Price.",
+    			"An Order Line is required when Delivery Form is set to Scope or Price.",
     			this.OrderLineID,
     			ValidationErrorType.Failure
     		));
@@ -13889,33 +13947,35 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
-    * Payment terms (prior and new) can only be specified when the delivery form is set to 'Terms'. For all other delivery forms, payment terms fields must be left empty.
+    * Payment terms types (prior or new) can only be specified when the delivery form is set to 'Terms'.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidatePaymentTermsFieldsForDeliveryForm(result: ValidationResult) {
-    	if (this.DeliveryForm !== 'Terms' && (this.PriorPaymentTermsTypeID != null || this.NewPaymentTermsTypeID != null)) {
-    		result.Errors.push(new ValidationErrorInfo(
-    			"DeliveryForm",
-    			"Prior and New Payment Terms Types can only be specified when Delivery Form is set to 'Terms'.",
-    			this.DeliveryForm,
-    			ValidationErrorType.Failure
-    		));
+    public ValidatePaymentTermsTypesForDeliveryForm(result: ValidationResult) {
+    	if (this.DeliveryForm !== 'Terms') {
+    		if (this.PriorPaymentTermsTypeID != null || this.NewPaymentTermsTypeID != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"DeliveryForm",
+    				"Prior and new payment terms types can only be provided when DeliveryForm is 'Terms'.",
+    				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		}
     	}
     }
 
     /**
-    * If a schedule reduction is specified, it must be greater than zero and can only be applied when the status is set to Approved.
+    * If a schedule reduction is specified, it must be greater than zero and the record status must be set to 'Approved'.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateScheduleReductionAndStatus(result: ValidationResult) {
+    public ValidateScheduleReductionStatus(result: ValidationResult) {
     	if (this.ScheduleReduction != null && (this.ScheduleReduction <= 0 || this.Status !== 'Approved')) {
     		result.Errors.push(new ValidationErrorInfo(
     			"ScheduleReduction",
-    			"Schedule reduction must be greater than zero and requires the status to be Approved.",
+    			"Schedule reduction must be greater than 0 and can only be applied when the status is Approved.",
     			this.ScheduleReduction,
     			ValidationErrorType.Failure
     		));
@@ -13923,18 +13983,72 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
-    * When the delivery form is set to Duration, a subscription term must be specified and added days must be greater than zero.
+    * When the delivery form is 'Seats', an associated order line must be provided and the added quantity must be greater than zero.
     * @param result - the ValidationResult object to add any errors or warnings to
     * @public
     * @method
     */
-    public ValidateSubscriptionTermAndAddedDaysForDurationDeliveryForm(result: ValidationResult) {
-    	if (this.DeliveryForm === 'Duration') {
-    		if (this.SubscriptionTermID == null || this.AddedDays == null || this.AddedDays <= 0) {
+    public ValidateSeatsDeliveryFormRequirements(result: ValidationResult) {
+    	if (this.DeliveryForm === 'Seats') {
+    		if (this.OrderLineID == null || this.AddedQuantity == null || this.AddedQuantity <= 0) {
     			result.Errors.push(new ValidationErrorInfo(
     				"DeliveryForm",
-    				"When Delivery Form is set to 'Duration', a Subscription Term must be assigned and Added Days must be greater than 0.",
+    				"When DeliveryForm is set to 'Seats', an Order Line must be specified and Added Quantity must be greater than 0.",
     				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
+    * When the delivery form is set to 'Terms', a new payment terms type and added days are required (and new terms must differ from prior terms), while order line, subscription term, and added quantity must be empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateTermsDeliveryFormFields(result: ValidationResult) {
+    	if (this.DeliveryForm === 'Terms') {
+    		if (
+    			this.NewPaymentTermsTypeID == null ||
+    			(this.PriorPaymentTermsTypeID != null && this.PriorPaymentTermsTypeID === this.NewPaymentTermsTypeID) ||
+    			this.AddedDays == null ||
+    			this.OrderLineID != null ||
+    			this.SubscriptionTermID != null ||
+    			this.AddedQuantity != null
+    		) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"DeliveryForm",
+    				"When DeliveryForm is 'Terms', a new payment terms type and added days are required (with new terms differing from prior terms), while order line, subscription term, and added quantity must be empty.",
+    				this.DeliveryForm,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	}
+    }
+
+    /**
+    * If an item's status is Withdrawn, it must include both the user who withdrew it and the withdrawal timestamp; for any other status, both withdrawal fields must be empty.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateWithdrawalDetailsByStatus(result: ValidationResult) {
+    	if (this.Status === "Withdrawn") {
+    		if (this.WithdrawnByUserID == null || this.WithdrawnAt == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"WithdrawnByUserID",
+    				"When Status is 'Withdrawn', both the user who withdrew it and the withdrawal timestamp must be provided.",
+    				this.WithdrawnByUserID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    	} else {
+    		if (this.WithdrawnByUserID != null || this.WithdrawnAt != null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"WithdrawnByUserID",
+    				"Withdrawal details can only be specified when Status is 'Withdrawn'.",
+    				this.WithdrawnByUserID,
     				ValidationErrorType.Failure
     			));
     		}
@@ -14125,12 +14239,13 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     *   * Approved
     *   * Pending
     *   * Rejected
-    * * Description: Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.
+    *   * Withdrawn
+    * * Description: Pending | Approved | Rejected | Withdrawn. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role. Withdrawn: taken back by its requester (or a user who may update concessions) while Pending, or while Approved on an order not yet confirmed and not tied to a booked term; it stays on the order as a record and counts toward nothing.
     */
-    get Status(): 'Approved' | 'Pending' | 'Rejected' {
+    get Status(): 'Approved' | 'Pending' | 'Rejected' | 'Withdrawn' {
         return this.Get('Status');
     }
-    set Status(value: 'Approved' | 'Pending' | 'Rejected') {
+    set Status(value: 'Approved' | 'Pending' | 'Rejected' | 'Withdrawn') {
         this.Set('Status', value);
     }
 
@@ -14424,6 +14539,33 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
 
     /**
+    * * Field Name: WithdrawnByUserID
+    * * Display Name: Withdrawn By User
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ: Users (vwUsers.ID)
+    * * Description: The user who withdrew the concession. Set only when Status is Withdrawn.
+    */
+    get WithdrawnByUserID(): string | null {
+        return this.Get('WithdrawnByUserID');
+    }
+    set WithdrawnByUserID(value: string | null) {
+        this.Set('WithdrawnByUserID', value);
+    }
+
+    /**
+    * * Field Name: WithdrawnAt
+    * * Display Name: Withdrawn At
+    * * SQL Data Type: datetimeoffset
+    * * Description: When the concession was withdrawn. Set only when Status is Withdrawn.
+    */
+    get WithdrawnAt(): Date | null {
+        return this.Get('WithdrawnAt');
+    }
+    set WithdrawnAt(value: Date | null) {
+        this.Set('WithdrawnAt', value);
+    }
+
+    /**
     * * Field Name: OrderHeader
     * * Display Name: Order Header
     * * SQL Data Type: nvarchar(40)
@@ -14484,6 +14626,15 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     */
     get ReferralProgram(): string | null {
         return this.Get('ReferralProgram');
+    }
+
+    /**
+    * * Field Name: WithdrawnByUser
+    * * Display Name: Withdrawn By User Name
+    * * SQL Data Type: nvarchar(100)
+    */
+    get WithdrawnByUser(): string | null {
+        return this.Get('WithdrawnByUser');
     }
 }
 

@@ -478,7 +478,7 @@ export async function OrderNetTotal(
     return Math.round(total * 100) / 100;
 }
 
-/** What every concession on the order that is not Rejected comes to, in currency. */
+/** What every concession on the order still standing (Pending or Approved) comes to, in currency. */
 export async function OrderConcessionTotal(
     orderHeaderID: string,
     provider: IMetadataProvider,
@@ -536,7 +536,8 @@ async function loadShareLimits(authorityIDs: string[], provider: IMetadataProvid
 }
 
 function concessionTotal(rows: readonly ConcessionRow[]): number {
-    return rows.filter((r) => r.Status !== 'Rejected').reduce((sum, r) => sum + Number(r.ComputedValue ?? 0), 0);
+    // Rejected and Withdrawn concessions give nothing away (golive #403).
+    return rows.filter((r) => r.Status === 'Pending' || r.Status === 'Approved').reduce((sum, r) => sum + Number(r.ComputedValue ?? 0), 0);
 }
 
 /** A line that gives away more, by price or `DiscountPct`, than any approved concession covers. */

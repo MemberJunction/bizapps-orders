@@ -6038,7 +6038,7 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Float, {nullable: true, description: `Every concession on the order that is not Rejected, this one included, as a fraction of OrderNetTotal: measured when it was recorded and again when it is decided. This is what SalesAuthority.MaxConcessionPctOfContract is checked against, and on a decided concession it is the share its approver decided at. NULL when OrderNetTotal is zero. Computed on save; never authored.`}) 
     CumulativeShare?: number;
         
-    @Field({nullable: true, description: `Pending | Approved | Rejected. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role.`}) 
+    @Field({nullable: true, description: "Pending | Approved | Rejected | Withdrawn. Set to Approved on save when the requester's SalesAuthority covers the concession; otherwise decided by a holder of the ConcessionLimit rule's role. Withdrawn: taken back by its requester (or a user who may update concessions) while Pending, or while Approved on an order not yet confirmed and not tied to a booked term; it stays on the order as a record and counts toward nothing."}) 
     @MaxLength(20)
     Status?: string;
         
@@ -6118,6 +6118,13 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field(() => Boolean, {nullable: true, description: `For an amount change about a paid invoice: the customer asked for the credit back rather than off the next instalment. The approval records the credit; finance refunds it from the order's payments.`}) 
     RefundRequested?: boolean;
         
+    @Field({nullable: true, description: "The user who withdrew the concession. Set only when Status is Withdrawn."}) 
+    @MaxLength(36)
+    WithdrawnByUserID?: string;
+        
+    @Field({nullable: true, description: "When the concession was withdrawn. Set only when Status is Withdrawn."}) 
+    WithdrawnAt?: Date;
+        
     @Field({nullable: true}) 
     @MaxLength(40)
     OrderHeader?: string;
@@ -6145,6 +6152,10 @@ export class mjBizAppsOrdersOrderConcession_ {
     @Field({nullable: true}) 
     @MaxLength(200)
     ReferralProgram?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(100)
+    WithdrawnByUser?: string;
         
     @Field(() => [String], { nullable: true, description: `Field-level security: when non-null, the fields on this entity the calling user may read. Any other field arriving as null was withheld by the server rather than genuinely empty. Null for callers with no field restrictions.` })
     ReadableFields___?: string[];
@@ -6255,6 +6266,12 @@ export class CreatemjBizAppsOrdersOrderConcessionInput {
     @Field(() => Boolean, { nullable: true })
     RefundRequested?: boolean;
 
+    @Field({ nullable: true })
+    WithdrawnByUserID: string | null;
+
+    @Field({ nullable: true })
+    WithdrawnAt: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -6363,6 +6380,12 @@ export class UpdatemjBizAppsOrdersOrderConcessionInput {
 
     @Field(() => Boolean, { nullable: true })
     RefundRequested?: boolean;
+
+    @Field({ nullable: true })
+    WithdrawnByUserID?: string | null;
+
+    @Field({ nullable: true })
+    WithdrawnAt?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];
