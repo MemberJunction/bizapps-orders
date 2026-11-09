@@ -1,0 +1,26 @@
+[
+  {
+    "_comments": [
+      "Sent by Orders.PollExternalPayments once per payment, on the pass that moves it into a state",
+      "waiting for a person, or from one such state to another (#1033). Payments already waiting are not",
+      "announced again, so the hourly poll no longer reports them as a failed run. Recipient: the poll",
+      "job's NotifyUserID, else its OwnerUserID, else the user running the poll."
+    ],
+    "fields": {
+      "Name": "Payment Needs Review",
+      "Description": "Sent when the external payment poll leaves a payment waiting for a person: unmatched to invoices Orders issued, refused, re-applied to different invoices on the rail, or needing reversal. One notice per payment when it starts waiting or its reason changes. Act on it under Orders → Receivables → Invoicing queue → Payment exceptions.",
+      "DefaultInApp": true,
+      "DefaultEmail": true,
+      "DefaultSMS": false,
+      "AllowUserPreference": true,
+      "EmailTemplateID": "@lookup:MJ: Templates.Name=Orders: Payment Needs Review - Email",
+      "Icon": "fa-money-check-dollar",
+      "Color": "#B45309",
+      "AutoExpireDays": 30,
+      "Priority": 10
+    },
+    "primaryKey": {
+      "ID": "83DCA89D-9D61-4FB4-B2A6-E0940E690D0D"
+    }
+  }
+]

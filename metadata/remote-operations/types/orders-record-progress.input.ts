@@ -10,7 +10,10 @@
 export interface OrdersRecordProgressInput {
     /** The order line being attested. Its product's revenue recognition type must be OnMeasurement. */
     OrderLineID: string;
-    /** The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date. */
+    /**
+     * The period this observation governs, `YYYY-MM-DD`. Becomes the entry's EffectiveDate. One per line per date.
+     * Refused when on or before the line's company's books-closed-through date (a month finance has closed).
+     */
     MeasurementDate: string;
     /** Cumulative fraction complete, 0..1 (0.7 = 70%). */
     PercentComplete: number;
@@ -26,9 +29,8 @@ export interface OrdersRecordProgressInput {
     /**
      * SUPERSEDE: the posted observation this one replaces. It must be the line's latest observation
      * that is not already superseded, and the caller must hold `MJ.BizApps.Orders.Progress.Supersede`.
-     * Nothing is edited: the replaced observation's recognition is reversed — on its own date while that
-     * month has no Posted batch for the line's company, else on day 1 of the first later month without
-     * one (`ReversalDate` on the output) — and this
+     * Nothing is edited: the replaced observation's recognition is reversed — on its own date, or on the
+     * first open day when finance has closed that month (`ReversalDate` on the output) — and this
      * observation's catch-up is computed as if the replaced one had never posted. `MeasurementDate`
      * must then be after the observation before the replaced one — not after the replaced one — which
      * is what makes a mistyped future date recoverable.

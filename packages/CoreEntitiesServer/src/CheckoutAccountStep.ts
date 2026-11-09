@@ -35,6 +35,8 @@ const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 export const MAX_CHECKOUT_PASSWORD_ATTEMPTS = 5;
 /** Longest password passed to the host. The host's own policy decides what is acceptable. */
 export const MAX_CHECKOUT_PASSWORD_LENGTH = 256;
+/** Shortest password passed to the host — a floor, not a policy; the host may still demand more. */
+export const MIN_CHECKOUT_PASSWORD_LENGTH = 8;
 /** Default minutes after the account is created during which the buyer may set its password here. */
 export const DEFAULT_CHECKOUT_PASSWORD_WINDOW_MINUTES = 5;
 /** Default seconds Orders waits for the host before treating a call as unanswered. */
@@ -523,6 +525,15 @@ async function setPassword(
     }
     if (typeof password !== 'string' || password.length === 0 || password.length > MAX_CHECKOUT_PASSWORD_LENGTH) {
         return { Success: false, ErrorMessage: 'Please enter a password.', Account: toStatus(state, step) };
+    }
+    // Refused BEFORE the attempt is recorded: a too-short password never reaches the host, so it
+    // does not spend one of the buyer's attempts.
+    if (password.length < MIN_CHECKOUT_PASSWORD_LENGTH) {
+        return {
+            Success: false,
+            ErrorMessage: `Please choose a password of at least ${MIN_CHECKOUT_PASSWORD_LENGTH} characters.`,
+            Account: toStatus(state, step),
+        };
     }
 
     const pending: StoredAccountState & { Outcome: CheckoutAccountOutcome } = {

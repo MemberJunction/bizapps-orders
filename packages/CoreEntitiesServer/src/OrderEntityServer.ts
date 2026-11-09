@@ -71,6 +71,7 @@ import {
     HostOrderLineEditVeto,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
+    InitialPaymentDay,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -91,7 +92,7 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
@@ -2304,7 +2305,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ ID: string; Code: string }>(
             {
                 EntityName: CHARGE_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`,
+                ExtraFilter: `ID IN (${unique.map((id) => `'${EscapeSQLString(id)}'`).join(',')})`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser as UserInfo,
@@ -4472,7 +4473,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (types.length === 0) return null;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const quoted = types.map((t) => `'${EscapeSQLString(t)}'`).join(',');
         const date = asOf.toISOString().slice(0, 10);
 
         const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(
@@ -5212,12 +5213,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
-        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
-        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
-        // next caller to reach this method with no order date should not discover that. Keeping the
-        // stated day matters just as much: a backdated order's payment must carry the same date.
-        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
+        // The day the money arrived when finance gave one (bc-aidp-next-golive#448), else the order's
+        // own day, else today's business day (#209). `OrderDate` is defaulted at `NewRecord()` since
+        // #168, so the last fallback is very likely unreachable — but a `DATE` column fed `new Date()`
+        // is dated tomorrow for the whole American evening, and the next caller to reach this method
+        // with no order date should not discover that. Keeping the stated day matters just as much:
+        // a backdated order's payment must carry the same date, and so must its cash entry.
+        payment.PaymentDate = await CalendarDayOrToday(InitialPaymentDay(this.OrderDate, this.InitialPaymentReceivedDate), provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;
