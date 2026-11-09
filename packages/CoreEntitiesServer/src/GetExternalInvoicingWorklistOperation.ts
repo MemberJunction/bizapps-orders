@@ -25,6 +25,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { EXTERNAL_INVOICE_ENTITY, ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
+import { CompanyScopeService } from './CompanyScopeService.js';
 import { money } from './ExternalInvoiceBehavior.js';
 import { ListInvoiceRailProviderIDs } from './InvoiceRailResolver.js';
 import { ScheduleSupported, type ExternalInvoiceRow } from './IssueExternalInvoiceOperation.js';
@@ -98,9 +99,10 @@ export async function BuildExternalInvoicingWorklist(
 ): Promise<ExternalInvoicingWorklistRow[]> {
     const rv = new RunView(provider as unknown as IRunViewProvider);
 
-    // Companies with a rail, optionally narrowed.
+    // Companies with a rail, optionally narrowed (and scoped to the user's companies unless in a Finance role).
     const providers = await ListInvoiceRailProviderIDs(provider, user);
-    const wanted = opts.CompanyIDs?.map((c) => RequireUUID(c, 'CompanyIDs').toLowerCase()) ?? null;
+    const scopedCompanyIDs = await CompanyScopeService.ResolveReceivablesCompanyIDs(opts.CompanyIDs, provider, user);
+    const wanted = scopedCompanyIDs?.map((c) => RequireUUID(c, 'CompanyIDs').toLowerCase()) ?? null;
     const railCompanies = new Map<string, string>(); // companyID → providerID
     for (const p of providers) {
         const c = String(p.CompanyID).toLowerCase();

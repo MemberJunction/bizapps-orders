@@ -1,5 +1,5 @@
 /**
- * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB39).
+ * subscriptions.checks.ts — the `subscriptions` bundle (SB1–SB40).
  *
  * D45/D46: subscription rules are DATA. `SubscriptionType`'s columns decide when a term starts, how
  * long it runs, whether a partial period is prorated, what a repeat purchase does, and how the
@@ -47,6 +47,8 @@
  *   SB37  a stated 24-month period is two 12-month terms, and the line keeps the stated end
  *   SB38  a stated 6-month line for a held product extends it by 6 months from the continuation date
  *   SB39  a length other than the type's term is raised for finance review; the type's own length is not
+ *   SB40  the Overlapping Subscriptions query pairs SameProduct, SameFamily and SameCategory, flags
+ *         LaterOverlapAcknowledged, and never pairs two different subscription families (#868)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -74,8 +76,8 @@ import {
     TxQuery,
 } from '../fixture.js';
 import { randomUUID } from 'node:crypto';
-import { BaseRemotableOperation, Metadata } from '@memberjunction/core';
-import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
+import { BaseRemotableOperation, Metadata, RunQuery, type IRunQueryProvider } from '@memberjunction/core';
+import { OrdersEngine, type mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 import { MJGlobal } from '@memberjunction/global';
 import { BuildOrder, ConfirmOrder, type OrderSpec } from '../order-builder.js';
 
@@ -1546,6 +1548,196 @@ export const SubscriptionChecks: NamedCheck[] = [
                 AssertEqual((await exceptionsFor(twelve.result.Order.ID as string)).length, 0, '12 months raises nothing');
             }),
     },
+    {
+        Id: 'subscriptions.SB40',
+        Name: 'SB40: Overlapping Subscriptions query pairs SameProduct, SameFamily and SameCategory, flags LaterOverlapAcknowledged, and excludes two different families',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const holderSameProduct = await makeContact(ctx, 'OverlapSameProduct');
+                const holderSameFamilyAck = await makeContact(ctx, 'OverlapSameFamilyAck');
+                const holderSameFamilyUnack = await makeContact(ctx, 'OverlapSameFamilyUnack');
+                const holderSameCategory = await makeContact(ctx, 'OverlapSameCategory');
+                const holderTwoFamilies = await makeContact(ctx, 'OverlapTwoFamilies');
+
+                // 1. SameProduct: two concurrent subscriptions to SubRolling for the same person.
+                const sp1 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameProduct,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                });
+                Assert(sp1.Saved, `SameProduct first confirm failed: ${sp1.Message}`);
+                const sp2 = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameProduct,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                });
+                sp2.Lines[0].SubscriptionAction = 'CreateNew';
+                sp2.Order.Status = 'Confirmed';
+                Assert(await sp2.Order.Save(), `SameProduct second confirm failed: ${sp2.Order.LatestResult?.CompleteMessage}`);
+
+                // 2. SameFamily with AcknowledgesCoverageOverlap: SubTierStandard + SubTierPremium.
+                const sfAck1 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameFamilyAck,
+                    Lines: [{ ProductID: f.Products.SubTierStandard, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(sfAck1.Saved, `SameFamily ack first confirm failed: ${sfAck1.Message}`);
+                const sfAck2 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameFamilyAck,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubTierPremium,
+                            Quantity: 1,
+                            UnitPrice: 500,
+                            AcknowledgesCoverageOverlap: true,
+                            CoverageOverlapReason: RUN_ALONGSIDE_REASON,
+                        },
+                    ],
+                });
+                Assert(sfAck2.Saved, `SameFamily ack second confirm failed: ${sfAck2.Message}`);
+
+                // 3. SameFamily unacknowledged: an overlap where the later line does not carry AcknowledgesCoverageOverlap.
+                const sfUnack1 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameFamilyUnack,
+                    Lines: [{ ProductID: f.Products.SubTierStandard, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(sfUnack1.Saved, `SameFamily unack first confirm failed: ${sfUnack1.Message}`);
+                const sfUnack2 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameFamilyUnack,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubTierPremium,
+                            Quantity: 1,
+                            UnitPrice: 500,
+                            AcknowledgesCoverageOverlap: true,
+                            CoverageOverlapReason: RUN_ALONGSIDE_REASON,
+                        },
+                    ],
+                });
+                Assert(sfUnack2.Saved, `SameFamily unack second confirm failed: ${sfUnack2.Message}`);
+                await TxQuery(
+                    ctx,
+                    `UPDATE ${ORDERS_SCHEMA}.OrderLine SET AcknowledgesCoverageOverlap = 0, CoverageOverlapReason = NULL WHERE OrderHeaderID = '${sfUnack2.Order.ID}'`,
+                );
+
+                // 4. SameCategory: SubRolling (no family) + SubTierStandard (MEM-TIER family), both in MEM-INDIV on AnnualRolling.
+                const sc1 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameCategory,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                });
+                Assert(sc1.Saved, `SameCategory first confirm failed: ${sc1.Message}`);
+                const sc2 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderSameCategory,
+                    Lines: [{ ProductID: f.Products.SubTierStandard, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(sc2.Saved, `SameCategory second confirm failed: ${sc2.Message}`);
+
+                // 5. Two different families in the same category and subscription type: must NOT pair.
+                const stdShape = await TxOne<{
+                    ProductCategoryID: string;
+                    ProductTypeID: string;
+                    RevenueRecognitionTypeID: string;
+                    SubscriptionTypeID: string;
+                }>(
+                    ctx,
+                    `SELECT ProductCategoryID, ProductTypeID, RevenueRecognitionTypeID, SubscriptionTypeID
+                       FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.SubTierStandard}'`,
+                );
+                const altFamilyID = await createViaEntity(ctx, SUBSCRIPTION_FAMILY_ENTITY, {
+                    CompanyID: f.CoA.ID,
+                    Code: 'IT-ALT-FAM',
+                    Name: 'IT Alternate Family',
+                });
+                const altProductID = await createViaEntity(ctx, PRODUCT_ENTITY, {
+                    CompanyID: f.CoA.ID,
+                    ProductCategoryID: stdShape.ProductCategoryID,
+                    ProductTypeID: stdShape.ProductTypeID,
+                    RevenueRecognitionTypeID: stdShape.RevenueRecognitionTypeID,
+                    SubscriptionTypeID: stdShape.SubscriptionTypeID,
+                    SubscriptionFamilyID: altFamilyID,
+                    Name: 'IT Alternate Family Band',
+                    SKU: `IT-ALT-${randomUUID().slice(0, 8)}`,
+                    Status: 'Active',
+                });
+                await CreateProductPrice(ctx, altProductID, 300);
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+
+                const tf1 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderTwoFamilies,
+                    Lines: [{ ProductID: f.Products.SubTierStandard, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(tf1.Saved, `TwoFamilies first confirm failed: ${tf1.Message}`);
+                const tf2 = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderDate: JULY_1,
+                    BillToPersonID: holderTwoFamilies,
+                    Lines: [{ ProductID: altProductID, Quantity: 1, UnitPrice: 300 }],
+                });
+                Assert(tf2.Saved, `TwoFamilies second confirm failed: ${tf2.Message}`);
+
+                // Run the saved "Overlapping Subscriptions" query against the transaction's rows.
+                const runner = new RunQuery(ctx.Provider as unknown as IRunQueryProvider);
+                const queryResult = await runner.RunQuery(
+                    {
+                        QueryName: 'Overlapping Subscriptions',
+                        CategoryPath: 'Orders',
+                        Parameters: { CompanyID: f.CoA.ID },
+                    },
+                    ctx.User,
+                );
+                Assert(queryResult.Success, `Overlapping Subscriptions query failed: ${queryResult.ErrorMessage ?? 'unknown'}`);
+
+                interface OverlapQueryRow {
+                    BeneficiaryPersonID: string | null;
+                    MatchBasis: string;
+                    LaterOverlapAcknowledged: boolean | number | null;
+                    LaterOverlapReason: string | null;
+                }
+                const rows = (queryResult.Results ?? []) as OverlapQueryRow[];
+                const forHolder = (personID: string) => rows.filter((r) => SameID(r.BeneficiaryPersonID, personID));
+
+                const sameProductRows = forHolder(holderSameProduct);
+                AssertEqual(sameProductRows.length, 1, 'SameProduct holder produces one overlapping pair');
+                AssertEqual(sameProductRows[0].MatchBasis, 'SameProduct', 'MatchBasis for identical products');
+                Assert(!sameProductRows[0].LaterOverlapAcknowledged, 'SameProduct pair is not flagged as acknowledged');
+
+                const sameFamilyAckRows = forHolder(holderSameFamilyAck);
+                AssertEqual(sameFamilyAckRows.length, 1, 'acknowledged SameFamily holder produces one overlapping pair');
+                AssertEqual(sameFamilyAckRows[0].MatchBasis, 'SameFamily', 'MatchBasis for two bands of one family');
+                Assert(Boolean(sameFamilyAckRows[0].LaterOverlapAcknowledged), 'LaterOverlapAcknowledged is true when the later line acknowledged');
+                AssertEqual(sameFamilyAckRows[0].LaterOverlapReason, RUN_ALONGSIDE_REASON, 'LaterOverlapReason carries the line reason');
+
+                const sameFamilyUnackRows = forHolder(holderSameFamilyUnack);
+                AssertEqual(sameFamilyUnackRows.length, 1, 'unacknowledged SameFamily holder produces one overlapping pair');
+                AssertEqual(sameFamilyUnackRows[0].MatchBasis, 'SameFamily', 'MatchBasis is SameFamily');
+                Assert(!sameFamilyUnackRows[0].LaterOverlapAcknowledged, 'LaterOverlapAcknowledged is false when not acknowledged');
+
+                const sameCategoryRows = forHolder(holderSameCategory);
+                AssertEqual(sameCategoryRows.length, 1, 'SameCategory holder produces one overlapping pair');
+                AssertEqual(sameCategoryRows[0].MatchBasis, 'SameCategory', 'MatchBasis when one product in the category has no family');
+                Assert(!sameCategoryRows[0].LaterOverlapAcknowledged, 'SameCategory pair is not flagged as acknowledged');
+
+                const twoFamiliesRows = forHolder(holderTwoFamilies);
+                AssertEqual(twoFamiliesRows.length, 0, 'products in two different subscription families never pair');
+            }),
+    },
 ];
 
 for (const check of SubscriptionChecks) {
@@ -1561,6 +1753,7 @@ IntegrationCheckRegistry.Instance.RegisterLifecycle('subscriptions', {
 import {
   ORDER_LINE_ENTITY,
   PRODUCT_ENTITY,
+  SUBSCRIPTION_FAMILY_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
   FINANCE_EXCEPTION_TYPE_ENTITY,
 } from "../entity-names.js";

@@ -58,6 +58,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { PlanLineDeposits, ReversalDepositWorking, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
@@ -324,8 +325,10 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const payload = result.Output;
         if (!payload) throw new Error('Accounting.CreateJournalEntries returned no payload.');
         if (!payload.Success) {
-            const detail = (payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ');
-            throw new Error(`Journal entry booking failed for the payment allocation. ${detail}`);
+            LogError(
+                `Journal entry booking failed for the payment allocation: ${BookingErrorLogText(payload.Errors)}`,
+            );
+            throw new Error(`Journal entry booking failed for the payment allocation. ${DescribeBookingErrors(payload.Errors)}`);
         }
         return payload;
     }

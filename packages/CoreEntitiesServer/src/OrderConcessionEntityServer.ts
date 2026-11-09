@@ -407,6 +407,8 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private termDateChange: TermDateChange | null = null;
     /** Set when a Price or Scope concession is valued on a line whose product always needs approval (golive #281). */
     private saleApprovalRequired = false;
+    /** The line's extended amount on a sale-approval product with no engine price, used for tier routing (#714). */
+    private saleApprovalTierValue: number | null = null;
     /** The line that bought the term a Duration concession extends, set when it is valued. */
     private extendedLine: LineRow | null = null;
     /** That term's first day and today's business day, as the extension check read them; set with `extendedLine`. */
@@ -498,6 +500,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
 
         this.termDateChange = null;
         this.saleApprovalRequired = false;
+        this.saleApprovalTierValue = null;
         this.extendedLine = null;
         this.extendedTerm = null;
         const valued = await this.valueByForm(user);
@@ -519,7 +522,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.approvingRole = null;
 
         const measure: ConcessionTierMeasure = {
-            Value: valued.Value,
+            Value: this.saleApprovalTierValue ?? valued.Value,
             CumulativeShare: share,
             TermLengthChangeDays: this.termDateChange ? TermLengthChangeDays(this.termDateChange) : null,
         };
@@ -877,8 +880,12 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         this.saleApprovalRequired = await this.lineRequiresSaleApproval(line, user);
         if (!concession && this.saleApprovalRequired) {
             // Nothing given away against an engine price, often because the product has none: the approval is
-            // of the sale itself, so it is recorded at no value.
+            // of the sale itself, so it is recorded at no value, while tier selection measures the line's amount (#714).
             this.OrderHeaderID = line.OrderHeaderID;
+            const unit = Number(line.UnitPrice ?? 0);
+            const qty = Number(line.Quantity ?? 1);
+            const disc = Number(line.DiscountPct ?? 0);
+            this.saleApprovalTierValue = Math.max(0, Math.round(unit * qty * (1 - disc) * 100) / 100);
             return { Value: 0, Percent: null };
         }
         if (!concession) {

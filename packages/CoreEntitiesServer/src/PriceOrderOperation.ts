@@ -47,6 +47,8 @@ interface PriceOrderInput {
         DiscountPct?: number | null;
         ServicePeriodStart?: string | null;
         ServicePeriodEnd?: string | null;
+        RenewsSubscriptionID?: string | null;
+        ShipToAddressID?: string | null;
     }>;
     PromotionCodes?: string[];
     ManualDiscounts?: Array<{ LineIndex: number; Amount?: number | null; Percent?: number | null; Reason: string }>;
@@ -96,7 +98,11 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
         RequireOptionalUUID(input.BillToPersonID, 'BillToPersonID');
         RequireOptionalUUID(input.BillToOrganizationID, 'BillToOrganizationID');
         RequireOptionalUUID(input.ShipToAddressID, 'ShipToAddressID');
-        input.Lines.forEach((l, i) => RequireUUID(l.ProductID, `Lines[${i}].ProductID`));
+        input.Lines.forEach((l, i) => {
+            RequireUUID(l.ProductID, `Lines[${i}].ProductID`);
+            RequireOptionalUUID(l.RenewsSubscriptionID, `Lines[${i}].RenewsSubscriptionID`);
+            RequireOptionalUUID(l.ShipToAddressID, `Lines[${i}].ShipToAddressID`);
+        });
 
         // REAL LINE ENTITIES, NEVER SAVED.
         //
@@ -119,6 +125,8 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
             line.DiscountPct = spec.DiscountPct ?? 0;
             if (spec.ServicePeriodStart) line.ServicePeriodStart = new Date(spec.ServicePeriodStart);
             if (spec.ServicePeriodEnd) line.ServicePeriodEnd = new Date(spec.ServicePeriodEnd);
+            if (spec.RenewsSubscriptionID) line.RenewsSubscriptionID = spec.RenewsSubscriptionID;
+            if (spec.ShipToAddressID) line.ShipToAddressID = spec.ShipToAddressID;
             lines.push(line);
         }
 

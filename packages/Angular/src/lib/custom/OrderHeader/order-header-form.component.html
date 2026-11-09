@@ -315,6 +315,7 @@
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="FulfillmentStatus" Type="select" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Status" Type="select" [EditMode]="false" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="SalesRepUserID" Type="textbox" [EditMode]="EditMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="EngagementLeadUserID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Description" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="Notes" Type="textarea" [EditMode]="EditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                 </div>
@@ -380,10 +381,10 @@
                     <div class="mjo-oh-acct__controls">
                         <label class="mjo-oh-asof">
                             <span>As of</span>
-                            <input
-                                type="date"
-                                [value]="AccountingAsOf ?? ''"
-                                (change)="OnAccountingAsOfChanged($any($event.target).value)"
+                            <mj-datepicker
+                                [ngModel]="AccountingAsOfDate"
+                                (ValueChange)="OnAccountingAsOfChanged($event)"
+                                Placeholder="Lifetime"
                                 aria-label="Include entries dated on or before" />
                         </label>
                         @if (AccountingAsOf) {

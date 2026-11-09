@@ -184,6 +184,22 @@ describe('GrossLines', () => {
         expect(card.TotalDebit).toBe(1790);
         expect(card.TotalCredit).toBe(1790);
     });
+
+    it('sorts accounts within each side by account code rather than GL account UUID', () => {
+        const accounts = {
+            'zzzz-11200': { Code: '11200', Name: 'Accounts Receivable' },
+            'aaaa-23100': { Code: '23100', Name: 'Deferred Revenue' },
+        };
+        const groups = GrossLines(
+            [
+                line({ companyId: 'co-a', glAccountId: 'aaaa-23100', debit: 100 }),
+                line({ companyId: 'co-a', glAccountId: 'zzzz-11200', debit: 100 }),
+            ],
+            accounts,
+        );
+        expect(groups.map((g) => g.glAccountId)).toEqual(['zzzz-11200', 'aaaa-23100']);
+        expect(groups.map((g) => g.accountCode)).toEqual(['11200', '23100']);
+    });
 });
 
 describe('GroupOrderJournalByCompany', () => {

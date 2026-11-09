@@ -16,8 +16,9 @@
  * any dated one). These checks assert the panel's answer IS the picker's answer — including one that
  * compares them directly, so the two cannot drift apart later.
  */
-import { describe, expect, it } from 'vitest';
-import { pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
+import { describe, expect, it, vi } from 'vitest';
+import { Metadata } from '@memberjunction/core';
+import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
 import { Today } from '@mj-biz-apps/orders-entities';
 
 import {
@@ -827,29 +828,105 @@ describe('#113 — the direct read refuses an id it cannot vouch for', () => {
     });
 });
 
-/**
- * NOT ASSERTED HERE: `Refresh(reloadEngine)` reconfiguring the engine.
- *
- * The round-2 audit fixed a refresh that re-rendered from `AccountingEngineBase`'s cached config, so
- * a link added on another screen stayed invisible. The fix is real — `Refresh(true)` calls
- * `Config(true, ...)` — and it has no check, deliberately rather than by oversight.
- *
- * It cannot be reached from this tier. The call is
- * `Config(true, new Metadata().CurrentUser)`, and the argument is evaluated BEFORE the call, so with
- * no provider configured `new Metadata().CurrentUser` throws and `Config` is never reached at all —
- * measured: `LoadError = "Cannot read properties of undefined (reading 'CurrentUser')"`, with the
- * spy recording zero calls.
- *
- * Two ways to force it, both rejected. Adding a user-resolution seam to the component would be
- * restructuring product code to suit a test, and inconsistent with the seven other `new Metadata()`
- * call sites in the same file. Asserting instead that `Refresh(true)` sets `LoadError` while
- * `Refresh(false)` does not would pass today for a reason unrelated to the rule, and would flip the
- * day a provider exists in this tier — a check that passes for the wrong reason is worse than no
- * check, because it reads as coverage.
- *
- * It belongs in the integration tier, where a provider exists. Left named here so the gap is visible
- * rather than merely absent.
- */
+describe('Refresh(reloadEngine) reloads AccountingEngineBase when adding a second GL link', () => {
+    it('re-reads AccountingEngineBase on Refresh(true) so a second GL link on an already-linked product appears', async () => {
+        const prevProvider = Metadata.Provider;
+        const productEntityID = '00000000-0000-4000-8000-000000000001';
+        const linkEntityID = '00000000-0000-4000-8000-000000000002';
+        const productID = '00000000-0000-4000-8000-000000000010';
+        const companyID = '00000000-0000-4000-8000-000000000020';
+
+        const link1 = {
+            ID: 'link-1',
+            EntityID: productEntityID,
+            RecordID: productID,
+            GLAccountID: 'acct-1',
+            GLAccountRoleID: 'role-rev',
+            Status: 'Active',
+            StartedAt: new Date('2025-01-01T00:00:00.000Z'),
+            EndedAt: null,
+        };
+        const link2 = {
+            ID: 'link-2',
+            EntityID: productEntityID,
+            RecordID: productID,
+            GLAccountID: 'acct-2',
+            GLAccountRoleID: 'role-def',
+            Status: 'Active',
+            StartedAt: new Date('2026-01-01T00:00:00.000Z'),
+            EndedAt: null,
+        };
+
+        let currentLinks = [link1];
+        let dbLinks = [link1];
+        const configCalls: boolean[] = [];
+
+        const configSpy = vi
+            .spyOn(AccountingEngineBase.Instance, 'Config')
+            .mockImplementation(async (forceRefresh?: boolean) => {
+                configCalls.push(Boolean(forceRefresh));
+                if (forceRefresh) {
+                    currentLinks = [...dbLinks];
+                }
+            });
+        const rolesSpy = vi.spyOn(AccountingEngineBase.Instance, 'GLAccountRoles', 'get').mockReturnValue([
+            { ID: 'role-rev', Name: 'Sales Revenue' } as never,
+            { ID: 'role-def', Name: 'Deferred Revenue' } as never,
+        ]);
+        const accounts = [
+            { ID: 'acct-1', Code: '4000', Name: 'Sales', CompanyID: companyID, IsActive: true },
+            { ID: 'acct-2', Code: '2400', Name: 'Deferred Revenue', CompanyID: companyID, IsActive: true },
+        ];
+        const accountsSpy = vi
+            .spyOn(AccountingEngineBase.Instance, 'GLAccounts', 'get')
+            .mockReturnValue(accounts as never);
+        const linksSpy = vi
+            .spyOn(AccountingEngineBase.Instance, 'GLAccountLinks', 'get')
+            .mockImplementation(() => currentLinks as never);
+        const byIdSpy = vi
+            .spyOn(AccountingEngineBase.Instance, 'GLAccountByID')
+            .mockImplementation((id: string) => accounts.find((a) => a.ID === id) as never);
+
+        try {
+            Metadata.Provider = {
+                Entities: [
+                    { ID: productEntityID, Name: 'MJ_BizApps_Orders: Products' },
+                    { ID: linkEntityID, Name: 'MJ_BizApps_Accounting: GL Account Links' },
+                ],
+                CurrentUser: { ID: 'user-1', Email: 'test@example.com' },
+            } as never;
+
+            const c = panel();
+            (c as unknown as { Product: unknown }).Product = {
+                ID: productID,
+                CompanyID: companyID,
+                IsSaved: true,
+            };
+
+            // Initial mount uses Refresh(false) and sees 1 cached link
+            await c.Refresh(false);
+            expect(c.Rows).toHaveLength(1);
+
+            // A second link is written to the database; Refresh(false) would still see 1 from the cache,
+            // whereas Refresh(true) forces Config(true) and surfaces both links.
+            dbLinks = [link1, link2];
+            await c.Refresh(false);
+            expect(c.Rows, 'without reloadEngine, cache still holds 1 link').toHaveLength(1);
+
+            await c.Refresh(true);
+            expect(configCalls).toContain(true);
+            expect(c.Rows, 'with reloadEngine=true, both links are returned').toHaveLength(2);
+            expect(c.Rows.map((r) => r.ID).sort()).toEqual(['link-1', 'link-2']);
+        } finally {
+            configSpy.mockRestore();
+            rolesSpy.mockRestore();
+            accountsSpy.mockRestore();
+            linksSpy.mockRestore();
+            byIdSpy.mockRestore();
+            Metadata.Provider = prevProvider;
+        }
+    });
+});
 
 describe('#113 — what the status chip says', () => {
     const row = (over: Partial<ProductGLLinkRow>): ProductGLLinkRow => ({

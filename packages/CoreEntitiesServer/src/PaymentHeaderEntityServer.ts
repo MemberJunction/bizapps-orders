@@ -80,6 +80,7 @@ import {
     ResolveAccountingOperation,
     type PaymentEntrySource,
 } from './AccountingBridge.js';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
@@ -1025,10 +1026,10 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             throw new Error('Accounting.CreateJournalEntries returned no payload.');
         }
         if (!payload.Success) {
-            const detail = (payload.Errors ?? [])
-                .map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`)
-                .join('; ');
-            throw new Error(`Journal entry booking failed for payment ${this.PaymentNumber}. ${detail}`);
+            LogError(
+                `Journal entry booking failed for payment ${this.PaymentNumber}: ${BookingErrorLogText(payload.Errors)}`,
+            );
+            throw new Error(`Journal entry booking failed for payment ${this.PaymentNumber}. ${DescribeBookingErrors(payload.Errors)}`);
         }
         return payload;
     }

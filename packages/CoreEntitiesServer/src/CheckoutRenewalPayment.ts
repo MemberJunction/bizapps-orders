@@ -212,13 +212,15 @@ export interface RenewalPaymentOrder {
 }
 
 /**
- * Who pays a renewal through the link: the person who owns the renewal card, else the order's
- * bill-to person, else its bill-to organization. See the header.
+ * Who pays a renewal through the link: the person who owns the renewal card, else the organization
+ * that owns the renewal card (#695), else the order's bill-to person, else its bill-to organization.
  */
 export function RenewalPayer(
-    order: Pick<RenewalPaymentOrder, 'BillToPersonID' | 'BillToOrganizationID' | 'RenewalCardOwnerPersonID'>,
+    order: Pick<RenewalPaymentOrder, 'BillToPersonID' | 'BillToOrganizationID' | 'RenewalCardOwnerPersonID' | 'RenewalCardOwnerOrganizationID'>,
 ): { PersonID: string | null; OrganizationID: string | null } {
-    const person = order.RenewalCardOwnerPersonID ?? order.BillToPersonID;
+    if (order.RenewalCardOwnerPersonID) return { PersonID: order.RenewalCardOwnerPersonID, OrganizationID: null };
+    if (order.RenewalCardOwnerOrganizationID) return { PersonID: null, OrganizationID: order.RenewalCardOwnerOrganizationID };
+    const person = order.BillToPersonID;
     return { PersonID: person, OrganizationID: person ? null : order.BillToOrganizationID };
 }
 

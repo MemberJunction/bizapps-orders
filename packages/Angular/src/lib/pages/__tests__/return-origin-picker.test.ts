@@ -16,11 +16,10 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
  *
  * ── WHY NOT FIX IT IN THE SHELL ────────────────────────────────────────────────────────────────
  *
- * Because that half is dead. `orders-sections.component.ts` hands a page its pending record by name
- * — `setInput('OrderID', …)` else `setInput('RecordID', …)` — and the issue's own lead suggested
- * adding a case for `OriginOrderID` there. But `PendingRecordID`'s ONLY writer is `openRecord()`,
- * which has zero callers: orders now open as Explorer record tabs through `openEntity`. A case added
- * there would never execute, and would read as a fix in review.
+ * Because orders open as Explorer record tabs through `openEntity`, not through section-level
+ * pending-record handoff (the dead `openRecord` / `PendingRecordID` path in
+ * `orders-sections.component.ts` has been removed). The returns page owns its origin selection
+ * directly.
  *
  * ── THESE CHECKS WERE MUTATION-TESTED AND FOUR OF THEM HELD NOTHING ────────────────────────────
  *
@@ -49,7 +48,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-import { MJOReturnPageComponent } from '../orders/return.page';
+import {
+    DEFAULT_RETURN_REASONS,
+    MJOReturnPageComponent,
+    OrderPickerLabel,
+    ParseReturnReasons,
+} from '../orders/return.page';
 
 /** The component's own source, for the binding check at the end of this file. */
 function returnPageSource(): string {
@@ -395,6 +399,57 @@ describe('the returns page can be reached', () => {
             unwired.map((d) => /name="([^"]+)"/.exec(d)?.[1] ?? '(unnamed)'),
             'each order picker must query the server; one filtering its cached rows is the capped-list bug',
         ).toEqual([]);
+    });
+
+    it('labels picker orders with their customer name so client-side dropdown filtering matches by customer (#836)', async () => {
+        mockGetOrders.mockResolvedValue(ORDERS);
+        const c = page();
+
+        await c.ngOnInit();
+
+        expect(OrderPickerLabel({ OrderNumber: 'ORD-000010', BillToOrganization: 'Acme Corp' })).toBe(
+            'ORD-000010 · Acme Corp',
+        );
+        expect(OrderPickerLabel({ OrderNumber: 'ORD-000011', BillToPerson: 'Alex Rivera' })).toBe(
+            'ORD-000011 · Alex Rivera',
+        );
+        expect(OrderPickerLabel({ OrderNumber: 'ORD-000012' })).toBe('ORD-000012');
+        expect((c.PickerOrders[0] as { DisplayLabel?: string }).DisplayLabel).toContain('ORD-000010');
+
+        const source = returnPageSource();
+        const orderDropdowns = (source.match(/<mj-dropdown[\s\S]*?\/>/g) ?? []).filter((d) =>
+            d.includes('[Data]="PickerOrders"'),
+        );
+        for (const dropdown of orderDropdowns) {
+            expect(dropdown).toContain('TextField="DisplayLabel"');
+        }
+    });
+
+    it('includes Booked in error and Customer terminated in default return reasons and parses custom settings (golive#380)', () => {
+        expect(DEFAULT_RETURN_REASONS).toContain('Booked in error');
+        expect(DEFAULT_RETURN_REASONS).toContain('Customer terminated');
+        expect(ParseReturnReasons('')).toEqual([...DEFAULT_RETURN_REASONS]);
+        expect(ParseReturnReasons('Booked in error, Custom reason ')).toEqual([
+            'Booked in error',
+            'Custom reason',
+        ]);
+    });
+
+    it('emits OrderOpened when OpenBookedReturn is called for a newly booked return (#834)', () => {
+        const c = page() as ReturnType<typeof page> & {
+            BookedReturnID: string | null;
+            BookedReturnOrderNumber: string | null;
+            OrderOpened: { emit: ReturnType<typeof vi.fn> };
+            OpenBookedReturn(): void;
+        };
+        const emit = vi.fn();
+        c.OrderOpened = { emit };
+        c.BookedReturnID = 'ret-order-1';
+        c.BookedReturnOrderNumber = 'ORD-000099';
+
+        c.OpenBookedReturn();
+
+        expect(emit).toHaveBeenCalledWith('ret-order-1');
     });
 });
 

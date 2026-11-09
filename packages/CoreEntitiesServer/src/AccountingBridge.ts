@@ -16,9 +16,10 @@
  * resolves by key — but that is a different package (`accounting-server`, wired up by the host app's
  * resolver paths) and is unaffected by how this one is imported.
  */
-import { BaseRemotableOperation, IMetadataProvider, LogStatus, Metadata, UserInfo } from '@memberjunction/core';
+import { BaseRemotableOperation, IMetadataProvider, LogError, LogStatus, Metadata, UserInfo } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
 import { AccountingEngineBase, pickActiveLinkIndex } from '@mj-biz-apps/accounting-engine-base';
+import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { GLAccountResolver, type LinkedAccountHit, type ResolverEntityIDs } from './GLAccountResolver.js';
 import type { IntercompanyLookup, LegalEntityLookup } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
@@ -307,8 +308,8 @@ export async function SubmitJournalEntryDrafts(
     const payload = result.Output;
     if (!payload) throw new Error(`Accounting.CreateJournalEntries returned no payload for ${what}.`);
     if (!payload.Success) {
-        const detail = (payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ');
-        throw new Error(`Journal entry booking failed for ${what}. ${detail}`);
+        LogError(`Journal entry booking failed for ${what}: ${BookingErrorLogText(payload.Errors)}`);
+        throw new Error(`Journal entry booking failed for ${what}. ${DescribeBookingErrors(payload.Errors)}`);
     }
     return payload;
 }

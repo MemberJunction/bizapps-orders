@@ -21,7 +21,7 @@ import {
     type ProgressWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
-import { EffectiveObservations, SupersedeRefusal } from './ProgressSupersede.js';
+import { EffectiveObservations, SupersedeRefusal, WorklistVisibleToUser } from './ProgressSupersede.js';
 import { RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
@@ -54,6 +54,13 @@ interface OrderShape extends Record<string, unknown> {
     ConfirmedAt?: unknown;
     BillToOrganization?: string | null;
     BillToPerson?: string | null;
+    EngagementLeadUserID?: string | null;
+    EngagementLeadUser?: string | null;
+}
+
+export interface ProgressWorklistBuildOptions {
+    /** When true, do not filter out orders assigned to another Engagement Lead (used by the nightly unattested-progress detector). */
+    IncludeAllEngagementLeads?: boolean;
 }
 
 interface MeasurementShape extends Record<string, unknown> {
@@ -86,6 +93,7 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         input: OrdersGetProgressWorklistInput,
         provider: IMetadataProvider,
         user: UserInfo,
+        options?: ProgressWorklistBuildOptions,
     ): Promise<OrdersGetProgressWorklistOutput> {
         const maxCount = Math.max(1, Math.floor(Number(input?.MaxCount ?? 500)));
         // Said so the screen can offer the action; `Orders.RecordProgress` checks again, so a stale
@@ -132,7 +140,12 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
         const orderIDs = [...new Set(lineRows.map((l) => `'${RequireUUID(l.OrderHeaderID, 'OrderHeaderID')}'`))].join(',');
         const [orders, measurements] = await Promise.all([
             rv.RunView<OrderShape>(
-                { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${orderIDs})`, Fields: ['ID', 'OrderNumber', 'Status', 'ConfirmedAt', 'BillToOrganization', 'BillToPerson'], ResultType: 'simple' },
+                {
+                    EntityName: ORDER_HEADER_ENTITY,
+                    ExtraFilter: `ID IN (${orderIDs})`,
+                    Fields: ['ID', 'OrderNumber', 'Status', 'ConfirmedAt', 'BillToOrganization', 'BillToPerson', 'EngagementLeadUserID', 'EngagementLeadUser'],
+                    ResultType: 'simple',
+                },
                 user,
             ),
             rv.RunView<MeasurementShape>(
@@ -171,11 +184,19 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
             if (last) lastByLine.set(key, last);
         }
 
-        const all: ProgressWorklistRow[] = lineRows.map((l) => {
+        const includeAllLeads = canSupersede || !!options?.IncludeAllEngagementLeads;
+        const visibleLines = lineRows.filter((l) => {
+            const order = orderByID.get(String(l.OrderHeaderID).toLowerCase());
+            return WorklistVisibleToUser(order?.EngagementLeadUserID, user?.ID, includeAllLeads);
+        });
+        const all: ProgressWorklistRow[] = visibleLines.map((l) => {
             const key = String(l.ID).toLowerCase();
             const order = orderByID.get(String(l.OrderHeaderID).toLowerCase());
             const last = lastByLine.get(key);
-            return {
+            const row: ProgressWorklistRow & {
+                EngagementLeadUserID?: string | null;
+                EngagementLeadName?: string | null;
+            } = {
                 OrderLineID: l.ID,
                 OrderHeaderID: l.OrderHeaderID,
                 OrderNumber: order?.OrderNumber ?? '—',
@@ -195,7 +216,10 @@ export class GetProgressWorklistOperation extends OrdersGetProgressWorklistOpera
                 LastAttestedByUserID: last?.AttestedByUserID ?? null,
                 OrderStatus: order?.Status ?? '—',
                 ConfirmedAt: isoInstant(order?.ConfirmedAt),
+                EngagementLeadUserID: order?.EngagementLeadUserID ?? null,
+                EngagementLeadName: order?.EngagementLeadUser ?? null,
             };
+            return row;
         });
         const open = input?.IncludeComplete ? all : all.filter((r) => r.LastPercentComplete < 1);
         const truncated = open.length > maxCount;

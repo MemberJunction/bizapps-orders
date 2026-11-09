@@ -19,6 +19,7 @@ import {
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
+import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 
@@ -28,6 +29,50 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 
 /** The reason a return opens with, and the one it returns to when the origin changes. */
 const DEFAULT_RETURN_REASON = 'Damaged in transit';
+
+/** Default return reasons when the `ReturnReasons` setting in `__mj_BizAppsOrders` is unset or empty (golive#380). */
+export const DEFAULT_RETURN_REASONS: readonly string[] = [
+    'Booked in error',
+    'Customer terminated',
+    'Damaged in transit',
+    'Wrong item shipped',
+    'Customer changed mind',
+    'Duplicate order',
+    'Pricing error',
+];
+
+/** Parse comma-separated return reasons from the `ReturnReasons` application setting, falling back to {@link DEFAULT_RETURN_REASONS}. */
+export function ParseReturnReasons(raw: string | null | undefined): string[] {
+    if (!raw?.trim()) return [...DEFAULT_RETURN_REASONS];
+    const reasons = raw
+        .split(',')
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+    return reasons.length > 0 ? reasons : [...DEFAULT_RETURN_REASONS];
+}
+
+/** Label each returnable order with both its order number and bill-to customer so the picker can find and distinguish orders by customer name (#836). */
+export function OrderPickerLabel(order: {
+    OrderNumber?: string | null;
+    BillToOrganization?: string | null;
+    BillToPerson?: string | null;
+}): string {
+    const number = order.OrderNumber?.trim() || '—';
+    const customer = order.BillToOrganization?.trim() || order.BillToPerson?.trim() || '';
+    return customer ? `${number} · ${customer}` : number;
+}
+
+function configuredReturnReasons(): string[] {
+    try {
+        const apps = new Metadata().Applications;
+        const appID = apps?.find(
+            (a) => a.Name === '__mj_BizAppsOrders' || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders',
+        )?.ID;
+        return ParseReturnReasons(ApplicationSettingEngine.Instance.GetSetting('ReturnReasons', appID));
+    } catch {
+        return [...DEFAULT_RETURN_REASONS];
+    }
+}
 
 /** A line being returned, with the cap the origin imposes. */
 interface MJOReturnLine {
@@ -89,11 +134,18 @@ interface MJOReturnLine {
             </mj-alert>
         }
 
-        <!-- Work this page discarded on the user's behalf, said out loud rather than done quietly. -->
+        <!-- Work this page discarded on the user's behalf, or confirmation of the return it just booked (#834). -->
         @if (Notice) {
             <mj-alert Variant="warning" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
                       data-testid="return-notice">
                 {{ Notice }}
+                @if (BookedReturnID) {
+                    <button type="button" mjButton variant="flat" size="sm"
+                            data-testid="open-booked-return"
+                            (click)="OpenBookedReturn()">
+                        Open {{ BookedReturnOrderNumber || 'return order' }}
+                    </button>
+                }
             </mj-alert>
         }
 
@@ -118,7 +170,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="OrderNumber"
+                            TextField="DisplayLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -273,7 +325,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="OrderNumber"
+                            TextField="DisplayLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -426,24 +478,24 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
     /** Emitted AFTER the return is booked, carrying the new order's id. */
     @Output() ReturnCreated = new EventEmitter<string | null>();
 
+    /** Wired by `MJOSectionBaseComponent.wirePage` so the operator can open the newly booked return order (#834). */
+    @Output() OrderOpened = new EventEmitter<string>();
+
     public Busy = false;
     public Error: string | null = null;
 
     public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
-    /** The reasons the select used to hard-code, as data. */
-    public readonly ReturnReasons: readonly string[] = [
-        'Damaged in transit',
-        'Wrong item shipped',
-        'Customer changed mind',
-        'Duplicate order',
-        'Pricing error',
-    ];
+    /** Return reasons loaded from the `ReturnReasons` setting in `__mj_BizAppsOrders`, falling back to `DEFAULT_RETURN_REASONS` (golive#380). */
+    public ReturnReasons: readonly string[] = configuredReturnReasons();
 
     public Reason = DEFAULT_RETURN_REASON;
 
-    /** A non-blocking note about something the page did on the user's behalf, such as clearing work. */
+    /** A non-blocking note about something the page did on the user's behalf, such as clearing work or confirming the booked return (#834). */
     public Notice: string | null = null;
+    /** The newly booked return order's ID and number, shown in the confirmation notice after `ConfirmReturn` succeeds (#834). */
+    public BookedReturnID: string | null = null;
+    public BookedReturnOrderNumber: string | null = null;
 
     public async ngOnInit(): Promise<void> {
         // The input is copied in, never written back — see `selectedOriginID`.
@@ -469,7 +521,22 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        this.PickerOrders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
+        this.ReturnReasons = configuredReturnReasons();
+        try {
+            const orders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
+            for (const order of orders) {
+                if (order && typeof order === 'object') {
+                    Object.defineProperty(order, 'DisplayLabel', {
+                        get: () => OrderPickerLabel(order),
+                        configurable: true,
+                    });
+                }
+            }
+            this.PickerOrders = orders;
+        } catch (e) {
+            this.Error = `Orders could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.PickerOrders = [];
+        }
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -507,6 +574,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         // work is discarded rather than doing it quietly.
         const discarding = this.Lines.some((l) => l.Returning > 0);
         this.Reason = DEFAULT_RETURN_REASON;
+        this.BookedReturnID = null;
+        this.BookedReturnOrderNumber = null;
         this.Notice = discarding
             ? 'Quantities from the previous order were cleared — they belong to its lines, not this one.'
             : null;
@@ -566,7 +635,15 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             return;
         }
 
-        const lines = await GetOrderLines(this.Origin.ID);
+        let lines: Awaited<ReturnType<typeof GetOrderLines>>;
+        try {
+            lines = await GetOrderLines(this.Origin.ID);
+        } catch (e) {
+            if (!current()) return;
+            this.Error = `Order lines could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.cdr.detectChanges();
+            return;
+        }
         if (!current()) return;
         // WHAT HAS ALREADY GONE BACK, from the server. The cap counts reversals across every order
         // and ignores Draft and Voided ones — the rule `ReversalResolver` refuses with at confirm
@@ -695,12 +772,24 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             // live after a success — and the second attempt exceeds the server's already-returned
             // cap and is refused, which before this PR went into an `Error` nobody rendered.
             this.Lines = this.Lines.map((l) => ({ ...l, AlreadyReturned: l.AlreadyReturned + l.Returning, Returning: 0 }));
+            this.BookedReturnID = draft.ID ?? null;
+            this.BookedReturnOrderNumber = draft.OrderNumber?.trim() || null;
+            this.Notice = this.BookedReturnOrderNumber
+                ? `Return ${this.BookedReturnOrderNumber} booked.`
+                : 'Return booked.';
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
         } finally {
             this.Busy = false;
             this.cdr.detectChanges();
+        }
+    }
+
+    /** Open the newly booked return order in Explorer through the section shell's `OrderOpened` wiring (#834). */
+    public OpenBookedReturn(): void {
+        if (this.BookedReturnID) {
+            this.OrderOpened.emit(this.BookedReturnID);
         }
     }
 

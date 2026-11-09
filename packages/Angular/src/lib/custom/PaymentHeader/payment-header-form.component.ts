@@ -448,21 +448,35 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         }
     }
 
-    public get InstrumentDateInput(): string {
+    public get InstrumentDateValue(): Date | null {
         const d = this.record?.PaymentDetailID_Object?.InstrumentDate;
-        if (!d) return '';
-        return new Date(d).toISOString().split('T')[0];
+        if (!d) return null;
+        const parsed = d instanceof Date ? d : new Date(d);
+        if (Number.isNaN(parsed.getTime())) return null;
+        return new Date(parsed.getUTCFullYear(), parsed.getUTCMonth(), parsed.getUTCDate());
     }
-    public set InstrumentDateInput(val: string) {
-        if (val) {
+    public set InstrumentDateValue(val: Date | string | null) {
+        if (val instanceof Date && !Number.isNaN(val.getTime())) {
             const detail = this.EnsurePaymentDetail();
-            if (detail) detail.InstrumentDate = new Date(val);
+            if (detail) detail.InstrumentDate = new Date(Date.UTC(val.getFullYear(), val.getMonth(), val.getDate()));
+        } else if (typeof val === 'string' && val) {
+            const detail = this.EnsurePaymentDetail();
+            if (detail) detail.InstrumentDate = AsDateValue(val) ?? new Date(val);
         } else if (this.record?.PaymentDetailID_Object) {
             this.record.PaymentDetailID_Object.InstrumentDate = null;
             if (this.isPaymentDetailEmpty(this.record.PaymentDetailID_Object)) {
                 this.record.ClearPaymentDetail();
             }
         }
+    }
+
+    public get InstrumentDateInput(): string {
+        const d = this.record?.PaymentDetailID_Object?.InstrumentDate;
+        if (!d) return '';
+        return new Date(d).toISOString().split('T')[0];
+    }
+    public set InstrumentDateInput(val: string) {
+        this.InstrumentDateValue = val || null;
     }
 
     public get CardBrand(): string {

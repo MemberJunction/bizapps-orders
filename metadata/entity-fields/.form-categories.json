@@ -3904,5 +3904,41 @@
       "lastModified": "2026-10-13T05:50:52.364Z",
       "checksum": "b613dc35c115e0292ee1d6aa1c986e587c853a63f707d3947428ecb93fcc52c6"
     }
+  },
+  {
+    "fields": {
+      "Category": "Subscription and Entitlements",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products&Name=SubscriptionFamily"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=EngagementLeadUserID"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Customer Information",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Headers&Name=EngagementLeadUser"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Shipping Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Lines&Name=ShipToAddress"
+    }
   }
 ]

@@ -54,7 +54,30 @@ export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/wi
 export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
 export { BizAppsProductSubscriptionWidgetComponent } from './lib/custom/Product/widgets/product-subscription-widget.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
+export {
+    MJOOrderLinesEditorComponent,
+    type MJODiscountDraft,
+    type MJODiscountMode,
+} from './lib/custom/OrderHeader/order-lines-editor.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
+export {
+    BizAppsCheckoutSessionStepFormComponent,
+    CHECKOUT_REPLAY_AUTH,
+    STALE_RUNNING_MINUTES,
+    IsStepReplayEligible,
+} from './lib/custom/CheckoutSessionStep/checkout-session-step-form.component';
+export {
+    BizAppsDimensionDefaultsComponent,
+    LoadDimensionDefaultsComponent,
+    normalizeDimensionId,
+    type DimensionDefaultStatus,
+    type DimensionDefaultRow,
+    type DimensionPickerOption,
+    type DimensionValuePickerOption,
+    type DimensionDefaultTargetRecord,
+} from './lib/custom/DimensionDefaults/dimension-defaults.component';
+export { ProductCategoryDimensionDefaultsPanel } from './lib/custom/ProductCategory/product-category-dimension-defaults.panel';
+export { ProductTypeDimensionDefaultsPanel } from './lib/custom/ProductType/product-type-dimension-defaults.panel';
 
 export { OrdersPartyHeadersModule } from './lib/form-panels/party-headers.module';
 export { OrdersStaffContributor, BuildStaffOrderContribution, QuotedStaffIDs, type StaffOrderRow, type StaffSubscriptionRow } from './lib/form-panels/organization-staff-orders.contributor';
@@ -97,6 +120,7 @@ export * from './lib/panels/allocation-math';
 
 /** The seam between a draft and the engine. */
 export * from './lib/services/pricing-scheduler.service';
+export * from './lib/services/company-scope.service';
 export * from './lib/data/entity-names';
 export * from './lib/data/orders-queries';
 

@@ -75,6 +75,7 @@ import { ToIsoCountryCode } from './VatLocationEvidence.js';
 import {
     FromMinorUnits,
     MapStripeIntentStatus,
+    StripeKeyModeOf,
     ToMinorUnits,
     VerifyWebhookSignature,
     type IntentStatus,
@@ -151,9 +152,30 @@ export class StripePaymentProvider extends BasePaymentProvider {
         return HANDLED_SUBSCRIPTION;
     }
 
-    /** The stub stands in whenever the configured account is not live. */
+    /**
+     * The in-memory stub stands in only when the configured account is neither live (`IsLiveMode = 1`)
+     * nor pointed at a secret store (`CredentialsRef`). When `IsLiveMode` is false and `CredentialsRef`
+     * is set, the driver calls the real Stripe API using the test secret key from the store (#386).
+     */
     protected get useStub(): boolean {
-        return !this.Config?.IsLiveMode;
+        return !this.Config?.IsLiveMode && !this.Config?.CredentialsRef?.trim();
+    }
+
+    /**
+     * Refuse to create an intent when the configured provider row's declared mode (`IsLiveMode`) and
+     * the resolved secret key's prefix (`sk_test_` / `sk_live_` / `rk_test_` / `rk_live_`) disagree (#386).
+     */
+    protected refuseKeyModeDisagreement(): string | null {
+        const keyMode = StripeKeyModeOf(this.Credentials?.ApiKey);
+        if (!keyMode || !this.Config) return null;
+        const declaredMode = this.Config.IsLiveMode ? 'live' : 'test';
+        if (keyMode === declaredMode) return null;
+        const name = this.Config.Name || this.Config.ID || 'Stripe';
+        return (
+            `Payment provider '${name}' has IsLiveMode ${this.Config.IsLiveMode ? 'on' : 'off'} (${declaredMode} mode), ` +
+            `but its secret key is a ${keyMode} key (sk_${keyMode}_). Refusing to open a payment intent until ` +
+            `IsLiveMode and the secret key agree.`
+        );
     }
 
     // ─── Extension points ──────────────────────────────────────────────────────
@@ -212,6 +234,9 @@ export class StripePaymentProvider extends BasePaymentProvider {
                 ClientSecret: `pi_stub_${seed.slice(0, 8)}_secret_stub`,
             };
         }
+
+        const modeRefusal = this.refuseKeyModeDisagreement();
+        if (modeRefusal) return { Success: false, Reason: modeRefusal };
 
         const body: Record<string, string> = {
             amount: String(ToMinorUnits(request.Amount, request.CurrencyCode)),

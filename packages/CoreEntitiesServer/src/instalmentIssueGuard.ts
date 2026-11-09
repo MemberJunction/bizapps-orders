@@ -19,19 +19,21 @@
  * in the trigger, not a bigger registry here.
  */
 
-const issuing = new Set<string>();
+import { CreateOperationWriteSignal } from './OperationWriteSignal.js';
+
+const issuing = CreateOperationWriteSignal('__MJ_BizAppsOrders_InstalmentIssueSignal__');
 
 /** Called by the operation immediately before it stamps the row. */
 export function BeginInstalmentIssue(scheduleID: string): void {
-    issuing.add(scheduleID.toLowerCase());
+    issuing.Begin(scheduleID);
 }
 
 /** Called by the operation in a `finally`, whether the save succeeded or threw. */
 export function EndInstalmentIssue(scheduleID: string): void {
-    issuing.delete(scheduleID.toLowerCase());
+    issuing.End(scheduleID);
 }
 
 /** True while the operation is mid-issue on this row. */
 export function IsInstalmentIssueInProgress(scheduleID: string | null | undefined): boolean {
-    return !!scheduleID && issuing.has(scheduleID.toLowerCase());
+    return issuing.Has(scheduleID);
 }

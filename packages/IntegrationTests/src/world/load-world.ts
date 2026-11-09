@@ -16,6 +16,8 @@ import { FindId, FindRows, Quote, Upsert } from './entity-io.js';
 import type { WorldState } from './world.js';
 import {
     ADDRESS_ENTITY,
+    ADDRESS_LINK_ENTITY,
+    ADDRESS_TYPE_ENTITY,
     COMPANY_ENTITY,
     COMPANY_PROFILE_ENTITY,
     ORDER_HEADER_ENTITY,
@@ -38,6 +40,7 @@ import {
     PRODUCT_PRICE_ENTITY,
     PRODUCT_TYPE_ENTITY,
     SUBSCRIPTION_FAMILY_ENTITY,
+    SUBSCRIPTION_TYPE_ENTITY,
     RELATIONSHIP_ENTITY,
     RELATIONSHIP_TYPE_ENTITY,
     TAX_AUTHORITY_ENTITY,
@@ -59,14 +62,16 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
     const productCategoryEntity = md.EntityByName(PRODUCT_CATEGORY_ENTITY);
     const productEntity = md.EntityByName(PRODUCT_ENTITY);
 
-    const currency = await FindRows<{ ID: string; Code: string }>(
+    await ensureFixtureSubscriptionTypes(ctx);
+
+    const acctCurrency = await FindRows<{ ID: string; Code: string }>(
         ctx,
         'MJ_BizApps_Accounting: Currencies',
         '',
         ['ID', 'Code'],
     );
-    Assert(currency.length > 0, 'no currencies — push accounting metadata first');
-    const currencyCode = currency[0].Code;
+    Assert(acctCurrency.length > 0, 'no currencies — push accounting metadata first');
+    const currencyCode = acctCurrency[0].Code;
 
     const world: WorldState = {
         CurrencyCode: currencyCode,
@@ -125,6 +130,32 @@ export async function LoadWorld(ctx: IntegrationCheckContext): Promise<WorldStat
     return world;
 }
 
+async function ensureFixtureSubscriptionTypes(ctx: IntegrationCheckContext): Promise<void> {
+    // A subscription type that both refunds on cancel and recognizes quarterly (#810): the metadata-seeded
+    // Quarterly type (FiscalYearJul) is NoRefund, so it never emits a reversal order on cancel.
+    await Upsert(ctx, SUBSCRIPTION_TYPE_ENTITY, `Code = 'QuarterlyRefundable'`, {
+        Code: 'QuarterlyRefundable',
+        Name: 'Annual — Quarterly Recognition, Refundable',
+        Description: WORLD_TAG,
+        SubscriberScope: 'Organization',
+        BenefitModel: 'Organization',
+        StartMode: 'Immediate',
+        DefaultTermMonths: 12,
+        BillingCadence: 'Annual',
+        RecognitionCadence: 'Quarterly',
+        ConcurrencyMode: 'ExtendExisting',
+        ReactivationMode: 'ReactivateWithinWindow',
+        ReactivationWindowDays: 90,
+        AutoRenewDefault: true,
+        RenewalLeadDays: 90,
+        CancellationMode: 'Immediate',
+        CancellationRefundMode: 'ProrateUnused',
+        GracePeriodDays: 30,
+        Sequence: 50,
+        IsActive: true,
+    });
+}
+
 async function codeMap(ctx: IntegrationCheckContext, entityName: string): Promise<Map<string, string>> {
     const rows = await FindRows<{ ID: string; Code: string }>(ctx, entityName, `Code IS NOT NULL`, ['ID', 'Code']);
     return new Map(rows.map((r) => [r.Code, r.ID]));
@@ -157,21 +188,60 @@ async function resolveCFOUserID(ctx: IntegrationCheckContext): Promise<string> {
 }
 
 async function loadCompanies(ctx: IntegrationCheckContext, world: WorldState, currencyCode: string, cfoUserId: string): Promise<void> {
+    const addressTypes = await FindRows<{ ID: string; Name: string }>(
+        ctx,
+        ADDRESS_TYPE_ENTITY,
+        'IsActive = 1',
+        ['ID', 'Name'],
+    );
+    const defaultAddressType =
+        addressTypes.find((t) => t.Name === 'Business' || t.Name === 'Headquarters' || t.Name === 'Billing') ??
+        addressTypes[0];
+    Assert(!!defaultAddressType?.ID, 'no active Address Type — push common metadata');
+
     for (const row of ReadCsv(join(DATA, 'companies.csv'))) {
         const id = await Upsert(
             ctx,
             COMPANY_PROFILE_ENTITY,
-            `Name = '${Quote(row.Name)}'`,
+            `CompanyCode = '${Quote(row.Code)}' OR Name = '${Quote(row.Name)}'`,
             {
                 Name: row.Name,
                 Description: WORLD_TAG,
                 CompanyCode: row.Code,
                 FunctionalCurrencyCode: currencyCode,
                 EntityType: row.EntityType,
+                FederalTaxID: row.FederalTaxID || null,
                 IsActive: true,
                 ApprovalCFOUserID: cfoUserId,
             },
         );
+        if (row.Line1) {
+            const addressID = await Upsert(
+                ctx,
+                ADDRESS_ENTITY,
+                `Line1 = '${Quote(row.Line1)}' AND PostalCode = '${Quote(row.PostalCode)}'`,
+                {
+                    Line1: row.Line1,
+                    City: row.City,
+                    StateProvince: row.StateProvince,
+                    PostalCode: row.PostalCode,
+                    Country: row.Country,
+                },
+            );
+            await Upsert(
+                ctx,
+                ADDRESS_LINK_ENTITY,
+                `EntityID = '${world.CompanyEntityID}' AND RecordID = '${id}' AND AddressID = '${addressID}'`,
+                {
+                    EntityID: world.CompanyEntityID,
+                    RecordID: id,
+                    AddressID: addressID,
+                    AddressTypeID: defaultAddressType.ID,
+                    IsPrimary: true,
+                    Rank: 1,
+                },
+            );
+        }
         world.Companies[row.Code] = { ID: id, Name: row.Name, Linked: row.Linked === '1', Accounts: {} };
     }
 }

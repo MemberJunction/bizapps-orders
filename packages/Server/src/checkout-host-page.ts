@@ -470,6 +470,10 @@ const BOOT_SCRIPT = `
     }
 
     addField('email', 'Email', 'text', true, 'you@example.com');
+    var countryInput = addField('country', 'Country', 'text', true, 'US');
+    countryInput.value = 'US';
+    var stateInput = addField('stateProvince', 'State / Province', 'text', false, 'NY');
+    var postalInput = addField('postalCode', 'Postal / ZIP code', 'text', false, '10001');
     var qtyInput = null;
     if (config.allowQuantity !== false) {
       qtyInput = addField('quantity', 'Quantity', 'number', true, '1');
@@ -482,7 +486,13 @@ const BOOT_SCRIPT = `
     // A per-unit product books one line per unit, and the server refuses a line whose number of
     // detail sets differs from its quantity (#876). So it gets one set of fields per unit, redrawn
     // as the quantity changes, as the Angular element does.
+    // Each unit's set carries every extension field. Without per-unit sets, email and the address
+    // fields are already drawn above for the buyer, so a same-named extension field is left out.
+    function isBuyerField(name) {
+      return name === 'email' || name === 'country' || name === 'stateProvince' || name === 'postalCode';
+    }
     var perUnit = (config.unitMode === 'perUnit' || config.isEvent === true) && extFields.length > 0;
+    var unitFields = extFields.filter(function (f) { return f && f.name && (perUnit || !isBuyerField(f.name)); });
     var unitsBox = null;
     function unitCount() {
       var n = qtyInput ? parseInt(qtyInput.value, 10) || 1 : 1;
@@ -491,8 +501,7 @@ const BOOT_SCRIPT = `
     }
     function readUnit(scope) {
       var values = {};
-      extFields.forEach(function (f) {
-        if (!f || !f.name) return;
+      unitFields.forEach(function (f) {
         var el = scope.elements.namedItem(f.name);
         if (el && 'type' in el) values[f.name] = fieldValue(el);
       });
@@ -512,8 +521,7 @@ const BOOT_SCRIPT = `
         legend.textContent = 'Item ' + (i + 1);
         set.appendChild(legend);
         unitsBox.appendChild(set);
-        extFields.forEach(function (f) {
-          if (!f || !f.name) return;
+        unitFields.forEach(function (f) {
           var input = addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options, set, '-' + (i + 1));
           var prior = kept[i] ? kept[i][f.name] : undefined;
           if (prior === undefined || prior === '') return;
@@ -531,8 +539,7 @@ const BOOT_SCRIPT = `
         qtyInput.addEventListener('change', renderUnits);
       }
     } else {
-      extFields.forEach(function (f) {
-        if (!f || !f.name || f.name === 'email') return;
+      unitFields.forEach(function (f) {
         addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options);
       });
     }
@@ -563,6 +570,11 @@ const BOOT_SCRIPT = `
       // By id: a per-unit form can hold an attendee field also named email.
       var emailEl = document.getElementById('mj-co-email');
       var email = emailEl && 'value' in emailEl ? String(emailEl.value || '').trim() : '';
+      var billingAddress = {
+        Country: countryInput ? String(countryInput.value || '').trim().toUpperCase() : '',
+        StateProvince: stateInput ? String(stateInput.value || '').trim().toUpperCase() : '',
+        PostalCode: postalInput ? String(postalInput.value || '').trim() : ''
+      };
       var qty = qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
       var line = { ProductID: productId, Quantity: qty };
       if (perUnit) {
@@ -579,7 +591,8 @@ const BOOT_SCRIPT = `
         sessionId: sessionId,
         clientSessionKey: sessionKey,
         email: email,
-        lines: [line]
+        lines: [line],
+        billingAddress: billingAddress
       }).then(function (draft) {
         if (!draft || !draft.Success) {
           throw new Error((draft && draft.ErrorMessage) || 'Could not price this checkout.');
@@ -614,7 +627,17 @@ const BOOT_SCRIPT = `
             }
             status.textContent = 'Confirming payment…';
             return stripe.confirmCardPayment(intent.ClientSecret, {
-              payment_method: { card: cardElement, billing_details: { email: email } }
+              payment_method: {
+                card: cardElement,
+                billing_details: {
+                  email: email,
+                  address: {
+                    country: billingAddress.Country,
+                    state: billingAddress.StateProvince,
+                    postal_code: billingAddress.PostalCode
+                  }
+                }
+              }
             }).then(function (result) {
               if (result.error) throw new Error(result.error.message || 'Payment failed.');
               status.textContent = 'Completing…';

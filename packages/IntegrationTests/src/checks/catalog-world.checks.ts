@@ -11,7 +11,19 @@ import {
     type IntegrationCheckContext,
     type NamedCheck,
 } from '@memberjunction/testing-integration';
-import { ORDER_HEADER_ENTITY, PRICE_LIST_ENTITY, PRODUCT_CATEGORY_ENTITY, PRODUCT_ENTITY } from '../entity-names.js';
+import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
+import {
+    ADDRESS_ENTITY,
+    ADDRESS_LINK_ENTITY,
+    COMPANY_PROFILE_ENTITY,
+    GL_ACCOUNT_LINK_ENTITY,
+    GL_ACCOUNT_ROLE_ENTITY,
+    ORDER_HEADER_ENTITY,
+    PRICE_LIST_ENTITY,
+    PRODUCT_CATEGORY_ENTITY,
+    PRODUCT_ENTITY,
+} from '../entity-names.js';
+import { createViaEntity, InRolledBackTransaction, ORDERS_SCHEMA, TxQuery } from '../fixture.js';
 import { FindId, FindRows } from '../world/entity-io.js';
 import { LoadWorld } from '../world/load-world.js';
 import { SetWorld, World, type WorldState } from '../world/world.js';
@@ -36,6 +48,38 @@ const checks: NamedCheck[] = [
             Assert(!!world.Companies.BCP.Accounts.Cash, 'BCP has no Cash account');
             Assert(!!world.Companies.ORPHAN.Accounts.AR, 'Orphan Ledger should still have accounts');
             Assert(!!world.Companies.UNPAIRED?.Accounts.AR, 'Unpaired Press (IC5\'s unpaired company) missing');
+
+            // Verify selling companies carry FederalTaxID and remit-to AddressLink for invoicing
+            for (const [code, expectedTaxId, expectedLine1] of [
+                ['BCP', '52-1847201', '100 Cypress Way'],
+                ['HH', '52-1847202', '250 Harbor Blvd'],
+            ] as const) {
+                const companyID = world.Companies[code].ID;
+                const profiles = await FindRows<{ ID: string; FederalTaxID: string | null }>(
+                    ctx,
+                    COMPANY_PROFILE_ENTITY,
+                    `ID = '${companyID}'`,
+                    ['ID', 'FederalTaxID'],
+                );
+                Assert(profiles.length === 1, `${code} company profile missing`);
+                AssertEqual(profiles[0].FederalTaxID, expectedTaxId, `${code} FederalTaxID`);
+
+                const links = await FindRows<{ ID: string; AddressID: string; IsPrimary: boolean }>(
+                    ctx,
+                    ADDRESS_LINK_ENTITY,
+                    `EntityID = '${world.CompanyEntityID}' AND RecordID = '${companyID}' AND IsPrimary = 1`,
+                    ['ID', 'AddressID', 'IsPrimary'],
+                );
+                Assert(links.length >= 1, `${code} primary AddressLink missing`);
+                const addresses = await FindRows<{ ID: string; Line1: string }>(
+                    ctx,
+                    ADDRESS_ENTITY,
+                    `ID = '${links[0].AddressID}'`,
+                    ['ID', 'Line1'],
+                );
+                Assert(addresses.length === 1, `${code} linked Address row missing`);
+                AssertEqual(addresses[0].Line1, expectedLine1, `${code} remit-to Line1`);
+            }
 
             AssertEqual(Object.keys(world.Organizations).length, 8, 'eight customer organizations');
             Assert(Object.keys(world.People).length >= 30, `expected ≥30 people, got ${Object.keys(world.People).length}`);
@@ -71,6 +115,112 @@ const checks: NamedCheck[] = [
 
             // Capture so later bundles in the same process can Fx() without reloading.
             World();
+        },
+    },
+    {
+        Id: 'catalog-world.CW2',
+        Name: 'CW2 — Every orders entity BaseView selects TOP 0 * and exposes every non-virtual EntityField column',
+        RequiresMutation: true,
+        Fn: async (ctx: IntegrationCheckContext) => {
+            const ordersEntities = ctx.Provider.Entities.filter((e) => e.SchemaName === ORDERS_SCHEMA);
+            Assert(
+                ordersEntities.length > 0,
+                `no entities found in metadata for schema ${ORDERS_SCHEMA}`,
+            );
+
+            const missingColumns: string[] = [];
+            for (const entity of ordersEntities) {
+                Assert(!!entity.BaseView, `entity ${entity.Name} has no BaseView`);
+                // Execute SELECT TOP 0 * against the base view so broken view definitions fail immediately.
+                await TxQuery(ctx, `SELECT TOP 0 * FROM [${ORDERS_SCHEMA}].[${entity.BaseView}]`);
+
+                const colRows = await TxQuery<{ ColumnName: string }>(
+                    ctx,
+                    `SELECT c.name AS ColumnName
+                       FROM sys.columns c
+                       JOIN sys.views v ON v.object_id = c.object_id
+                       JOIN sys.schemas s ON s.schema_id = v.schema_id
+                      WHERE s.name = '${ORDERS_SCHEMA}' AND v.name = '${entity.BaseView.replace(/'/g, "''")}'`,
+                );
+                const viewCols = new Set(colRows.map((r) => r.ColumnName.toLowerCase()));
+                Assert(
+                    viewCols.size > 0,
+                    `view [${ORDERS_SCHEMA}].[${entity.BaseView}] returned zero columns in sys.columns`,
+                );
+
+                for (const field of entity.Fields) {
+                    if (field.IsVirtual) continue;
+                    if (!viewCols.has(field.Name.toLowerCase())) {
+                        missingColumns.push(`${entity.Name}.${field.Name} (view ${entity.BaseView})`);
+                    }
+                }
+            }
+
+            AssertEqual(
+                missingColumns.length,
+                0,
+                `non-virtual EntityFields missing from BaseView: ${missingColumns.join(', ')}`,
+            );
+        },
+    },
+    {
+        Id: 'catalog-world.CW3',
+        Name: 'CW3 — Reloading AccountingEngineBase after adding a second product GL link surfaces both links',
+        RequiresMutation: true,
+        Fn: async (ctx: IntegrationCheckContext) => {
+            const world = World();
+            const productEntity = ctx.Provider.Entities.find((e) => e.Name === PRODUCT_ENTITY);
+            Assert(!!productEntity?.ID, 'Products entity missing from metadata');
+
+            const discountedProductID = world.ProductMnemonics.DiscountedA;
+            Assert(!!discountedProductID, 'DiscountedA product missing from world');
+
+            const engine = AccountingEngineBase.Instance;
+            await engine.Config(false, ctx.User, ctx.Provider);
+
+            const linksForProduct = () =>
+                engine.GLAccountLinks.filter(
+                    (l) =>
+                        sameId(l.EntityID, productEntity.ID) &&
+                        sameId(l.RecordID, discountedProductID),
+                );
+
+            const beforeCount = linksForProduct().length;
+            Assert(
+                beforeCount >= 1,
+                `expected DiscountedA to start with at least 1 cached GL link, got ${beforeCount}`,
+            );
+
+            try {
+                await InRolledBackTransaction(ctx, async () => {
+                    const roles = await FindRows<{ ID: string; Name: string }>(
+                        ctx,
+                        GL_ACCOUNT_ROLE_ENTITY,
+                        `Name = 'Sales'`,
+                        ['ID', 'Name'],
+                    );
+                    Assert(roles.length === 1, 'Sales GL role missing');
+
+                    await createViaEntity(ctx, GL_ACCOUNT_LINK_ENTITY, {
+                        EntityID: productEntity.ID,
+                        RecordID: discountedProductID,
+                        GLAccountRoleID: roles[0].ID,
+                        GLAccountID: world.Companies.BCP.Accounts.Sales,
+                        Status: 'Active',
+                        StartedAt: new Date('2026-01-01T00:00:00.000Z'),
+                    });
+
+                    await engine.Config(true, ctx.User, ctx.Provider);
+                    const afterCount = linksForProduct().length;
+                    AssertEqual(
+                        afterCount,
+                        beforeCount + 1,
+                        'reloading AccountingEngineBase after adding a second GL link must surface both links',
+                    );
+                });
+            } finally {
+                await engine.Config(true, ctx.User, ctx.Provider);
+            }
         },
     },
 ];

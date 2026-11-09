@@ -10,13 +10,14 @@ import {
     type UserInfo,
 } from '@memberjunction/core';
 import { UUIDsEqual } from '@memberjunction/global';
-import { MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
+import { MJDatepickerComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import {
     BaseFormComponent,
     BaseFormsModule,
     type EntityFormConfig,
     type FormNavigationEvent,
 } from '@memberjunction/ng-base-forms';
+import { PartyFieldComponent } from '@mj-biz-apps/common-ng';
 import {
     OrderHeaderEntity,
     OrderLineEntity,
@@ -35,6 +36,7 @@ import {
     ProductHasRevenueBands,
     LoadOrdersEngine,
     OrdersEngine,
+    ParseAddressSnapshot,
     RestoreLineDefault,
     UserCanRunAlongside,
     loadApplicabilityContext,
@@ -66,6 +68,8 @@ import {
     type MJOProductOption,
 } from '../../data/orders-queries';
 import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.component';
+import { MJOPartyAddressPickerComponent } from './party-address-picker.component';
+import { FormatSoldAddress } from './order-header-prefs';
 import { BuildStampedTags, type MJOStampedTag } from './line-stamped-tags';
 import { ScrollPickerCursorIntoView } from './picker-scroll';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
@@ -150,6 +154,9 @@ type CoverageOverlapLine = CheckCoverageOverlapOutput['Lines'][number];
         CommonModule,
         FormsModule,
         BaseFormsModule,
+        MJDatepickerComponent,
+        PartyFieldComponent,
+        MJOPartyAddressPickerComponent,
         MJOConsequenceChipComponent,
         MJOPriceSourceBadgeComponent,
         MJOLinePricePickerComponent,
@@ -203,6 +210,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     public CanRunAlongside = false;
     private readonly applicableByLine = new Map<string, ApplicablePrice[]>();
     private readonly overrideEditorLineIds = new Set<string>();
+    private readonly shipToEditorLineIds = new Set<string>();
     private readonly defaultUnitByLine = new Map<string, number | null>();
     /** The authority the signed-in user discounts under; null once looked up and none was found. */
     public DiscountAuthority: MJODiscountAuthority | null = null;
@@ -378,6 +386,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         return this.dateInputValue(line.ServicePeriodStart ?? this._order?.OrderDate ?? null);
     }
 
+    public TermStartDate(line: mjBizAppsOrdersOrderLineEntity): Date | null {
+        return this.parseDateInput(this.TermStartValue(line));
+    }
+
     /** True while the field is only showing the default, which is what the hint explains. */
     public TermStartFollowsOrderDate(line: mjBizAppsOrdersOrderLineEntity): boolean {
         return !line.ServicePeriodStart;
@@ -419,7 +431,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         const subscriptionID = line.RenewsSubscriptionID;
         // A line that chose to extend what the customer already holds is a continuation too.
         if (!subscriptionID) {
-            return line.SubscriptionAction === 'ExtendExisting' ? ContinuationStartFrom(this.ExistingHoldingFor(line)) : null;
+            const holding = this.ExistingHoldingFor(line);
+            return line.SubscriptionAction === 'ExtendExisting' ? ContinuationStartFrom(holding) : null;
         }
 
         if (this.continuationStarts.has(subscriptionID)) {
@@ -566,6 +579,20 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     /** Holdings by `product|org|person`. A present key with `null` means "holds none". */
     private readonly holdings = new Map<string, MJOExistingHolding | null>();
     private readonly loadingHoldings = new Set<string>();
+    /** Last product seen per line id, so a product change clears a stale `SubscriptionAction`. */
+    private holdingProductByLine = new Map<string, string>();
+
+    private syncLineHoldingProduct(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (!line.ID || this._order?.MoneyLocked) return;
+        const map = (this.holdingProductByLine ??= new Map<string, string>());
+        const current = line.ProductID ?? '';
+        const previous = map.get(line.ID);
+        if (previous !== undefined && !UUIDsEqual(previous, current)) {
+            line.SubscriptionAction = null;
+        }
+        if (current) map.set(line.ID, current);
+        else map.delete(line.ID);
+    }
 
     /** Who this line is for, resolved the way the server does: the line's ship-to, then the order's. */
     private holdingKey(line: mjBizAppsOrdersOrderLineEntity): { key: string; org: string | null; person: string | null } | null {
@@ -584,6 +611,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
      * unseen key starts one read, and a cached `null` is a real answer that is not retried.
      */
     public ExistingHoldingFor(line: mjBizAppsOrdersOrderLineEntity): MJOExistingHolding | null {
+        this.syncLineHoldingProduct(line);
         // Draft lines only. Once booked, the subscriber "holds" the subscription this very line created.
         if (this._order?.MoneyLocked || line.RenewsSubscriptionID || !this.IsSubscriptionLine(line)) return null;
         const who = this.holdingKey(line);
@@ -653,19 +681,24 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         line.SubscriptionAction = action;
     }
 
-    public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
+    public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, value: Date | Event | string | null): void {
         if (!this.EditMode) return;
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) return;
+        const str = value instanceof Date
+            ? this.dateInputValue(value)
+            : typeof value === 'string'
+                ? value
+                : value && typeof value === 'object' && 'target' in value && value.target && typeof (value.target as HTMLInputElement).value === 'string'
+                    ? (value.target as HTMLInputElement).value
+                    : '';
 
         // An emptied field is a RESET, not a date of zero — the same rule the button applies, so
         // clearing by keyboard and clearing by button agree.
-        if (!target.value) {
+        if (!str) {
             this.ResetTermStart(line);
             return;
         }
 
-        const start = this.parseDateInput(target.value);
+        const start = this.parseDateInput(str);
         if (!start) return;
         line.ServicePeriodStart = start;
 
@@ -801,6 +834,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         return this.dateInputValue(end === 'Start' ? line.ServicePeriodStart : line.ServicePeriodEnd);
     }
 
+    public ServicePeriodDate(line: mjBizAppsOrdersOrderLineEntity, end: 'Start' | 'End'): Date | null {
+        return this.parseDateInput(this.ServicePeriodValue(line, end));
+    }
+
     /** Shown on the line as it is typed; the line's own validation refuses it at save. */
     public ServicePeriodBackwards(line: mjBizAppsOrdersOrderLineEntity): boolean {
         const start = line.ServicePeriodStart;
@@ -813,14 +850,19 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     }
 
     /** An emptied field clears that end of the window. */
-    public SetServicePeriod(line: mjBizAppsOrdersOrderLineEntity, end: 'Start' | 'End', event: Event): void {
+    public SetServicePeriod(line: mjBizAppsOrdersOrderLineEntity, end: 'Start' | 'End', value: Date | Event | string | null): void {
         if (!this.CanEditServicePeriod()) return;
-        const target = event.target;
-        if (!(target instanceof HTMLInputElement)) return;
-        const value = target.value ? this.parseDateInput(target.value) : null;
-        if (target.value && !value) return;
-        if (end === 'Start') line.ServicePeriodStart = value;
-        else line.ServicePeriodEnd = value;
+        const str = value instanceof Date
+            ? this.dateInputValue(value)
+            : typeof value === 'string'
+                ? value
+                : value && typeof value === 'object' && 'target' in value && value.target && typeof (value.target as HTMLInputElement).value === 'string'
+                    ? (value.target as HTMLInputElement).value
+                    : '';
+        const parsed = str ? this.parseDateInput(str) : null;
+        if (str && !parsed) return;
+        if (end === 'Start') line.ServicePeriodStart = parsed;
+        else line.ServicePeriodEnd = parsed;
         this.cdr.detectChanges();
     }
 
@@ -850,9 +892,57 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         for (const removed of [line, ...DescendantLines(line, order.Lines.Items)]) {
             this.expandedLineIds.delete(removed.ID);
             this.overrideEditorLineIds.delete(removed.ID);
+            this.shipToEditorLineIds.delete(removed.ID);
         }
         order.RemoveLine(line);
         this.schedulePricing();
+    }
+
+    /* ── Per-line Ship To ────────────────────────────────────────────────────
+     *
+     * Every line ships to the order's recipient by default (`ShipTo*` NULL on the line).
+     * When a line has a distinct recipient or destination address, tax, price applicability,
+     * subscription ownership and fulfillment resolve the line's ShipTo ahead of the header's.
+     */
+
+    public IsShipToOpen(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return this.shipToEditorLineIds.has(line.ID);
+    }
+
+    public ToggleShipTo(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (this.IsMoneyLocked || !this.EditMode) return;
+        if (this.shipToEditorLineIds.has(line.ID)) this.shipToEditorLineIds.delete(line.ID);
+        else this.shipToEditorLineIds.add(line.ID);
+    }
+
+    public HasLineShipTo(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !!(line.ShipToOrganizationID || line.ShipToPersonID || line.ShipToAddressID || line.ShipToAddressSnapshot);
+    }
+
+    public LineShipToSummary(line: mjBizAppsOrdersOrderLineEntity): string {
+        if (!this.HasLineShipTo(line)) return 'Same as order';
+        const parts: string[] = [];
+        if (line.ShipToOrganizationID && line.ShipToOrganization) parts.push(line.ShipToOrganization);
+        if (line.ShipToPersonID && line.ShipToPerson) parts.push(line.ShipToPerson);
+        const sold = FormatSoldAddress(() => ParseAddressSnapshot(line.ShipToAddressSnapshot));
+        const addr = sold || (line.ShipToAddressID ? line.ShipToAddress : '') || '';
+        if (addr) parts.push(addr);
+        return parts.length ? parts.join(' · ') : 'Custom recipient';
+    }
+
+    public OnLineShipToChanged(line: mjBizAppsOrdersOrderLineEntity): void {
+        void this.refreshApplicable(line);
+        this.schedulePricing();
+        this.cdr.detectChanges();
+    }
+
+    public ClearLineShipTo(line: mjBizAppsOrdersOrderLineEntity): void {
+        if (this.IsMoneyLocked || !this.EditMode) return;
+        line.ShipToOrganizationID = null;
+        line.ShipToPersonID = null;
+        line.ShipToAddressID = null;
+        this.shipToEditorLineIds.delete(line.ID);
+        this.OnLineShipToChanged(line);
     }
 
     public ProductFor(line: mjBizAppsOrdersOrderLineEntity): MJOProductOption | undefined {
@@ -1078,6 +1168,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         return this.stagedDiscounts.has(line.ID);
     }
 
+    /** True when the line already carries a saved discount on disk and no staged request is replacing it. */
+    public HasSavedDiscount(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        return !this.HasStagedDiscount(line) && (Number(line.DiscountAmount ?? 0) > 0 || Number(line.DiscountPct ?? 0) > 0);
+    }
+
     /** The draft as money, whichever way it was expressed. Null when nothing usable was typed. */
     public DraftDiscountAmount(line: mjBizAppsOrdersOrderLineEntity): number | null {
         const draft = this.discountDrafts.get(line.ID);
@@ -1175,10 +1270,18 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         this.syncStagedDiscount(line);
     }
 
-    /** Drop the request. Only a STAGED one — a discount already booked is reversed, not deleted. */
+    /** Drop the discount on this line — a staged request or a discount saved on an unbooked draft line. */
     public ClearDiscount(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.CanDiscountLine(line)) return;
+        const hadSaved = !this.HasStagedDiscount(line) && (Number(line.DiscountAmount ?? 0) > 0 || Number(line.DiscountPct ?? 0) > 0);
         this.discountDrafts.delete(line.ID);
+        if (hadSaved) {
+            line.DiscountAmount = 0;
+            line.DiscountPct = 0;
+            this.schedulePricing();
+            this.cdr.detectChanges();
+            return;
+        }
         this.syncStagedDiscount(line);
     }
 
@@ -1550,10 +1653,14 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         // Dropped on rebind rather than kept: coverage moves when any renewal confirms anywhere, so
         // a cached continuation date is only trustworthy for as long as one order is open.
         this.continuationStarts.clear();
+        this.holdings.clear();
+        this.loadingHoldings.clear();
+        this.holdingProductByLine?.clear();
         this.coverageByLine.clear();
         this.CoverageCheckError = null;
         this.applicableByLine.clear();
         this.overrideEditorLineIds.clear();
+        this.shipToEditorLineIds.clear();
         this.defaultUnitByLine.clear();
         this.OverrideKind = 'none';
     }
@@ -1750,10 +1857,10 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
                         ProductID: line.ProductID,
                         BillToPersonID: this._order.BillToPersonID ?? null,
                         BillToOrganizationID: this._order.BillToOrganizationID ?? null,
-                        ShipToPersonID: this._order.ShipToPersonID ?? null,
-                        ShipToOrganizationID: this._order.ShipToOrganizationID ?? null,
+                        ShipToPersonID: line.ShipToPersonID ?? this._order.ShipToPersonID ?? null,
+                        ShipToOrganizationID: line.ShipToOrganizationID ?? this._order.ShipToOrganizationID ?? null,
                         BillToAddressID: this._order.BillToAddressID ?? null,
-                        ShipToAddressID: this._order.ShipToAddressID ?? null,
+                        ShipToAddressID: line.ShipToAddressID ?? this._order.ShipToAddressID ?? null,
                     },
                     this.metadata,
                     user,

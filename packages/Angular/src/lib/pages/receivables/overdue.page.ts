@@ -16,6 +16,7 @@ import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
+import { CompanyScopeService } from '../../services/company-scope.service';
 
 /** What to do next with a row. */
 interface MJONextAction {
@@ -111,12 +112,12 @@ interface MJONextAction {
 
         <div class="mjo-ov__viewer-host">
             @if (OrderEntityInfo) {
-                <mj-entity-viewer
+                <mj-view-workspace
                     [Entity]="OrderEntityInfo"
-                    [ViewEntity]="OverdueView"
-                    [GridState]="OrderGridState"
-                    (RecordOpened)="OnRecordOpened($event)">
-                </mj-entity-viewer>
+                    [SelectedView]="OverdueView"
+                    [AutoSaveView]="true"
+                    (OpenRecordRequested)="OnRecordOpened($event)">
+                </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading overdue orders...</div>
             }
@@ -145,7 +146,7 @@ interface MJONextAction {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -167,6 +168,7 @@ export class MJOOverduePageComponent implements OnInit {
      * the DOM write, and freezes the view on its pre-load values permanently.
      */
     private readonly cdr = inject(ChangeDetectorRef);
+    private readonly companyScope = inject(CompanyScopeService);
 
     /** Non-null when the worklist could not be read. Rendered instead of the aging bar. */
     public LoadError: string | null = null;
@@ -188,12 +190,16 @@ export class MJOOverduePageComponent implements OnInit {
     public get OverdueView(): MJUserViewEntityExtended | null {
         if (!this.OrderEntityInfo) return null;
         const today = Today();
-        // Keyed on the DAY as well as the entity: the filter moves at midnight and the grid must follow.
-        return this.overdueView.For(`${this.OrderEntityInfo.ID}|${today}`, () => ({
+        const scopeFilter = this.companyScope?.FilterFor('CompanyID') ?? null;
+        const baseClause = OverdueFilter(today);
+        const whereClause = this.companyScope ? this.companyScope.ComposeFilter(baseClause, 'CompanyID') : baseClause;
+        // Keyed on the DAY as well as the entity and company scope: the filter moves at midnight and the grid must follow.
+        return this.overdueView.For(`${this.OrderEntityInfo.ID}|${today}|${scopeFilter ?? ''}`, () => ({
             EntityID: this.OrderEntityInfo!.ID,
             Entity: this.OrderEntityInfo!.Name,
             // ONE definition of overdue (overdue.ts), the same one the worklist operation filters by.
-            WhereClause: OverdueFilter(today),
+            WhereClause: whereClause,
+            GridState: JSON.stringify(MJO_ORDER_HEADER_GRID_STATE),
             ID: 'preset-overdue-worklist',
             Name: 'Overdue Collections'
         } as unknown as MJUserViewEntityExtended));
@@ -206,8 +212,8 @@ export class MJOOverduePageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
+        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
         if (id) {
             const surrogate = { OrderHeaderID: id } as OverdueWorklistRow;
             this.OrderOpened.emit(surrogate);
@@ -283,10 +289,11 @@ export class MJOOverduePageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
+        await this.companyScope.Load();
         // The worklist is assembled server-side: overdue is computed from the
         // clock, so there is no column a client could filter on.
         const op = new OrdersGetOverdueWorklistOperation();
-        const result = await op.Execute({});
+        const result = await op.Execute({ CompanyIDs: this.companyScope.EffectiveCompanyIDs });
         if (!result.Success || !result.Output) {
             // SAY SO. An empty worklist and a failed one look identical — both
             // render "Nothing overdue", which is the single most reassuring

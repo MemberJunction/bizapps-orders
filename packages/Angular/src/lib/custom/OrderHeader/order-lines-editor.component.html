@@ -180,6 +180,11 @@
                                         <span>Applies when this order is saved.</span>
                                         <button type="button" class="mjo-ol-discount__clear" (click)="ClearDiscount(line)">Remove</button>
                                     </div>
+                                } @else if (HasSavedDiscount(line)) {
+                                    <div class="mjo-ol-discount__staged">
+                                        <span>Saved on this line ({{ AppliedDiscount(line) | mjoMoney }}).</span>
+                                        <button type="button" class="mjo-ol-discount__clear" (click)="ClearDiscount(line)">Remove</button>
+                                    </div>
                                 }
                             } @else {
                                 <div class="mjo-ol-discount__note">
@@ -245,13 +250,14 @@
                     @if (TermStartIsDictated(line)) {
                         <span class="mjo-ol-term__value is-dictated">{{ ContinuationStartValue(line) }}</span>
                     } @else if (EditMode) {
-                        <input
-                            type="date"
+                        <mj-datepicker
                             class="mjo-ol-term__input"
                             [class.is-default]="TermStartFollowsOrderDate(line)"
                             [id]="'mjo-ol-term-' + line.ID"
-                            [value]="TermStartValue(line)"
-                            (change)="SetTermStart(line, $event)">
+                            [ngModel]="TermStartDate(line)"
+                            (ValueChange)="SetTermStart(line, $event)"
+                            Placeholder="Select date"
+                            Size="sm" />
                         <!-- Offered only when there is something to reset. A button that clears a
                              value the line never stated does nothing and invites the reader to
                              wonder what it did. -->
@@ -366,20 +372,22 @@
                         Service period
                     </label>
                     @if (CanEditServicePeriod()) {
-                        <input
-                            type="date"
+                        <mj-datepicker
                             class="mjo-ol-term__input"
                             aria-label="Service period start"
                             [id]="'mjo-ol-sp-start-' + line.ID"
-                            [value]="ServicePeriodValue(line, 'Start')"
-                            (change)="SetServicePeriod(line, 'Start', $event)">
+                            [ngModel]="ServicePeriodDate(line, 'Start')"
+                            (ValueChange)="SetServicePeriod(line, 'Start', $event)"
+                            Placeholder="Start date"
+                            Size="sm" />
                         <span class="mjo-ol-term__label" aria-hidden="true">to</span>
-                        <input
-                            type="date"
+                        <mj-datepicker
                             class="mjo-ol-term__input"
                             aria-label="Service period end"
-                            [value]="ServicePeriodValue(line, 'End')"
-                            (change)="SetServicePeriod(line, 'End', $event)">
+                            [ngModel]="ServicePeriodDate(line, 'End')"
+                            (ValueChange)="SetServicePeriod(line, 'End', $event)"
+                            Placeholder="End date"
+                            Size="sm" />
                     } @else {
                         <span class="mjo-ol-term__value">
                             {{ ServicePeriodValue(line, 'Start') || '—' }} to {{ ServicePeriodValue(line, 'End') || '—' }}
@@ -476,6 +484,66 @@
                     </div>
                 </div>
             }
+
+            <div class="mjo-ol-shipto" [class.is-open]="IsShipToOpen(line)">
+                <div class="mjo-ol-shipto__bar">
+                    @if (EditMode && !IsMoneyLocked) {
+                        <button
+                            type="button"
+                            class="mjo-ol-shipto__toggle"
+                            (click)="ToggleShipTo(line)"
+                            [attr.aria-expanded]="IsShipToOpen(line)"
+                            [attr.aria-controls]="'mjo-ol-shipto-' + line.ID">
+                            <i class="fa-solid fa-chevron-right mjo-ol-ext__chev" aria-hidden="true"></i>
+                            <span class="mjo-ol-shipto__label">Ship to</span>
+                            <span class="mjo-ol-shipto__summary" [class.is-custom]="HasLineShipTo(line)">{{ LineShipToSummary(line) }}</span>
+                        </button>
+                        @if (HasLineShipTo(line)) {
+                            <button
+                                type="button"
+                                class="mjo-ol-term__reset"
+                                (click)="ClearLineShipTo(line)">
+                                Same as order
+                            </button>
+                        }
+                    } @else {
+                        <span class="mjo-ol-shipto__label">Ship to</span>
+                        <span class="mjo-ol-shipto__summary" [class.is-custom]="HasLineShipTo(line)">{{ LineShipToSummary(line) }}</span>
+                    }
+                </div>
+                @if (IsShipToOpen(line) && EditMode && !IsMoneyLocked) {
+                    <div class="mjo-ol-shipto__body" [id]="'mjo-ol-shipto-' + line.ID">
+                        <div class="mjo-ol-shipto__parties">
+                            <bizapps-party-field
+                                [Record]="line"
+                                [ShowLabel]="true"
+                                [EditMode]="true"
+                                Kind="Organization"
+                                FieldName="ShipToOrganizationID"
+                                (ValueChange)="OnLineShipToChanged(line)"
+                                (Navigate)="OnExtensionNavigate($event)">
+                            </bizapps-party-field>
+                            <bizapps-party-field
+                                [Record]="line"
+                                [ShowLabel]="true"
+                                [EditMode]="true"
+                                Kind="Person"
+                                FieldName="ShipToPersonID"
+                                (ValueChange)="OnLineShipToChanged(line)"
+                                (Navigate)="OnExtensionNavigate($event)">
+                            </bizapps-party-field>
+                        </div>
+                        <mjo-party-address-picker
+                            [Line]="line"
+                            Side="ship"
+                            [EditMode]="true"
+                            [PersonName]="line.ShipToPerson"
+                            [OrganizationName]="line.ShipToOrganization"
+                            (AddressChanged)="OnLineShipToChanged(line)">
+                        </mjo-party-address-picker>
+                    </div>
+                }
+            </div>
 
             @if (ExtensionFor(line); as ext) {
                 <div class="mjo-ol-ext" [class.is-open]="IsExtensionOpen(line)">

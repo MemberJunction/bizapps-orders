@@ -15,10 +15,12 @@ vi.mock('../ConcessionApprovalTask.js', () => approval);
 
 const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
+    HeldManualDiscounts: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
+    ProductsRequiringSaleApproval: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
 
@@ -205,6 +207,48 @@ describe('recording a concession under tiers', () => {
         const { row } = seatsConcession({ value: 500 });
 
         expect(await row.prepareNew()).toContain('whose thresholds it meets');
+    });
+
+    it('evaluates tier thresholds against the line extended amount when a sale-approval product has no engine price (#714)', async () => {
+        gate.OrderNetTotal.mockResolvedValue(50000);
+        gate.OrderConcessionTotal.mockResolvedValue(0);
+        gate.HeldManualDiscounts.mockResolvedValue(new Map());
+        gate.LinePriceConcessionFor.mockResolvedValue(null);
+        gate.ProductsRequiringSaleApproval.mockResolvedValue(new Set(['prod-custom']));
+        const director = tier({
+            ID: 'rule-director',
+            Name: 'Director',
+            ApprovalRequiredRoleID: 'role-director',
+            ConcessionTier: 2,
+            MinConcessionValue: 10000,
+        });
+        gate.FindConcessionTier.mockResolvedValue({ Rule: director, Conflict: null });
+        approval.ActiveRoleHolderIDs.mockResolvedValue([REQUESTER.ID, APPROVER.ID]);
+
+        const { row, values } = seatsConcession({ value: 0 });
+        values.DeliveryForm = 'Price';
+        Object.defineProperty(row, 'NewAmount', { get: () => null });
+        delete (row as Record<string, unknown>).valueByForm;
+        (row as Record<string, unknown>).loadLine = async () => ({
+            ID: 'line-1',
+            OrderHeaderID: 'order-1',
+            LineNumber: 1,
+            ProductID: 'prod-custom',
+            Quantity: 2,
+            UnitPrice: 25000,
+            ProductPriceID: null,
+            DiscountPct: 0,
+            RenewsSubscriptionID: null,
+        });
+
+        expect(await row.prepareNew()).toBeNull();
+        expect(values.ComputedValue).toBe(0);
+        expect(gate.FindConcessionTier).toHaveBeenCalledWith(
+            expect.objectContaining({ Value: 50000 }),
+            expect.anything(),
+            REQUESTER,
+        );
+        expect(values.SalesRuleID).toBe('rule-director');
     });
 });
 

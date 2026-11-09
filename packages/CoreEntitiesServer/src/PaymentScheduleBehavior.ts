@@ -173,8 +173,16 @@ export interface ScheduleRowFacts {
 
 /** An order line as the tie check reads it. */
 export interface ScheduleLineFacts {
+    ID?: string;
     CompanyID: string;
     LineTotalGross: number;
+}
+
+/** One line's recorded share of an already-invoiced instalment (`InstalmentLineBilling`). */
+export interface RecordedInstalmentCompanyPart {
+    OrderHeaderPaymentScheduleID: string;
+    OrderLineID: string;
+    Amount: number;
 }
 
 /** One covering company whose schedule does not match the lines it covers. */
@@ -271,7 +279,12 @@ export interface SliceableScheduleRow extends ScheduleRowFacts {
  * company stamped and the amounts unchanged. Cancelled rows and a product company's own rows pass
  * through as they are. `AmountPaid` and `AmountCredited` are divided in proportion to the row's pieces.
  */
-export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: ScheduleLineFacts[], orderCompanyID: string): T[] {
+export function CompanySlices<T extends SliceableScheduleRow>(
+    rows: T[],
+    lines: ScheduleLineFacts[],
+    orderCompanyID: string,
+    recorded?: ReadonlyArray<RecordedInstalmentCompanyPart>,
+): T[] {
     const live = rows.filter((r) => LIVE_STATUSES.has(r.Status));
     const coverage = ScheduleCoverage(live, lines.map((l) => l.CompanyID), orderCompanyID);
 
@@ -279,9 +292,11 @@ export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: 
     // pieces carry each company's id as the lines spell it, since GL lookups key on it.
     const spelling = new Map<string, string>();
     const grossByOwner = new Map<string, Map<string, number>>();
+    const lineCompany = new Map<string, string>();
     for (const l of lines) {
         const company = lower(l.CompanyID);
         if (!spelling.has(company)) spelling.set(company, String(l.CompanyID));
+        if (l.ID) lineCompany.set(lower(l.ID), company);
         const owner = coverage.get(company) as string;
         const bucket = grossByOwner.get(owner) ?? new Map<string, number>();
         bucket.set(company, Money((bucket.get(company) ?? 0) + Number(l.LineTotalGross ?? 0)));
@@ -297,7 +312,11 @@ export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: 
         if (!ownerRows.length) continue;
         const totals = companies.map((c) => gross.get(c) as number);
         const amounts = ownerRows.map((r) => Money(Number(r.Amount)));
-        const pieces = companies.length === 1 ? amounts.map((a) => [a]) : splitRows(totals, amounts);
+        const recordedRows =
+            companies.length > 1 && recorded?.length
+                ? ownerRows.map((r) => recordedCompanyRow(r, companies, recorded, lineCompany))
+                : undefined;
+        const pieces = companies.length === 1 ? amounts.map((a) => [a]) : splitRows(totals, amounts, recordedRows);
         ownerRows.forEach((r, i) =>
             sliced.set(lower(r.ID), companies.map((c, j) => ({ CompanyID: spelling.get(c) as string, Amount: pieces[i][j] }))),
         );
@@ -331,22 +350,66 @@ export function CompanySlices<T extends SliceableScheduleRow>(rows: T[], lines: 
 }
 
 /**
+ * The per-company amounts an already-invoiced row recorded in `InstalmentLineBilling`, in `companies`
+ * order, when its recorded parts sum to the row's amount; null when the row has no recorded parts.
+ */
+function recordedCompanyRow(
+    row: SliceableScheduleRow,
+    companies: string[],
+    recorded: ReadonlyArray<RecordedInstalmentCompanyPart>,
+    lineCompany: ReadonlyMap<string, string>,
+): number[] | null {
+    const rowID = lower(row.ID);
+    const mine = recorded.filter((b) => lower(b.OrderHeaderPaymentScheduleID) === rowID && lineCompany.has(lower(b.OrderLineID)));
+    if (!mine.length) return null;
+    const byCompany = new Map<string, number>();
+    for (const part of mine) {
+        const company = lineCompany.get(lower(part.OrderLineID)) as string;
+        byCompany.set(company, Money((byCompany.get(company) ?? 0) + Number(part.Amount)));
+    }
+    const amounts = companies.map((c) => byCompany.get(c) ?? 0);
+    const cents = (n: number): number => Math.round(Number(n) * 100);
+    if (amounts.reduce((s, a) => s + cents(a), 0) !== cents(row.Amount)) return null;
+    return amounts;
+}
+
+/**
  * Split each row across companies so the pieces tie both ways, or by gross when the rows do not sum
  * to the totals. `pieces[i][j]` is row `i`'s share for company `j`.
+ *
+ * When an already-invoiced row has recorded parts in `InstalmentLineBilling` (`recordedRows[i]`),
+ * its company split comes from those recorded parts rather than replaying against post-reduction
+ * company totals (#695 item 1), and its recorded company amounts are subtracted from `remaining`
+ * before splitting the unrecorded rows.
  */
-function splitRows(totals: number[], rows: number[]): number[][] {
+function splitRows(totals: number[], rows: number[], recordedRows?: Array<number[] | null>): number[][] {
     const cents = (n: number): number => Math.round(Number(n) * 100);
     const weights = totals.map((t) => Math.max(0, t));
     const ties =
         totals.every((t) => t >= 0) && rows.reduce((s, r) => s + cents(r), 0) === totals.reduce((s, t) => s + cents(t), 0);
-    if (!ties) return rows.map((r) => SplitExactly(r, weights));
+    if (!ties) {
+        return rows.map((r, i) => recordedRows?.[i] ?? SplitExactly(r, weights));
+    }
 
     let remaining = totals.map(cents);
+    let lastUnrecorded = -1;
+    for (let i = 0; i < rows.length; i++) {
+        const rec = recordedRows?.[i];
+        if (rec) {
+            const recCents = rec.map(cents);
+            remaining = remaining.map((r, j) => r - recCents[j]);
+        } else {
+            lastUnrecorded = i;
+        }
+    }
+
     return rows.map((row, i) => {
+        const rec = recordedRows?.[i];
+        if (rec) return rec;
         const mine =
-            i === rows.length - 1
+            i === lastUnrecorded
                 ? remaining
-                : SplitExactly(row, remaining.map((r) => r / 100)).map(cents);
+                : SplitExactly(row, remaining.map((r) => Math.max(0, r) / 100)).map(cents);
         remaining = remaining.map((r, j) => r - mine[j]);
         return mine.map((c) => c / 100);
     });

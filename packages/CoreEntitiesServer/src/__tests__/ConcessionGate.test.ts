@@ -22,7 +22,8 @@ vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     return { ...actual, ResolveLinePriceStanding: (...args: unknown[]) => mockStanding(...args) };
 });
 
-const { FindUnapprovedConcessions } = await import('../ConcessionGate.js');
+const { FindUnapprovedConcessions, ProductsRequiringSaleApproval } = await import('../ConcessionGate.js');
+const { OrdersEngine } = await import('@mj-biz-apps/orders-entities');
 
 const ORDER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const LINE_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3302';
@@ -471,5 +472,27 @@ describe('FindUnapprovedConcessions — products that always need approval (goli
     it('does not check a confirmed order', async () => {
         catalog({ product: true });
         expect(await FindUnapprovedConcessions(ORDER_ID, [], false, provider, user)).toEqual([]);
+    });
+
+    it('reads ProductCategories and ProductTypes from OrdersEngine when loaded instead of querying RunView each time (#871)', async () => {
+        const loadedSpy = vi.spyOn(OrdersEngine.Instance, 'Loaded', 'get').mockReturnValue(true);
+        const catSpy = vi.spyOn(OrdersEngine.Instance, 'ProductCategories', 'get').mockReturnValue([
+            { ID: CATEGORY_ID, ParentProductCategoryID: PARENT_ID, RequiresSaleApproval: null } as never,
+            { ID: PARENT_ID, ParentProductCategoryID: null, RequiresSaleApproval: true } as never,
+        ]);
+        const typeSpy = vi.spyOn(OrdersEngine.Instance, 'ProductTypes', 'get').mockReturnValue([
+            { ID: TYPE_ID, RequiresSaleApproval: false } as never,
+        ]);
+        try {
+            catalog({ product: null, category: null, parent: true, type: false });
+            const result = await ProductsRequiringSaleApproval([PRODUCT_ID], provider, user);
+            expect(result.has(PRODUCT_ID.toLowerCase())).toBe(true);
+            const queriedEntities = mockRunView.mock.calls.map((c) => (c[0] as { EntityName: string }).EntityName);
+            expect(queriedEntities).toEqual(['MJ_BizApps_Orders: Products']);
+        } finally {
+            loadedSpy.mockRestore();
+            catSpy.mockRestore();
+            typeSpy.mockRestore();
+        }
     });
 });

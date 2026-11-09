@@ -888,8 +888,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         try {
             const user = this.ProviderToUse?.CurrentUser;
             const origins = await GetOrderJournalOrigins(String(this.record.ID ?? ''), this.lineIDs, user);
-            this.journalData = await LoadOrderJournalData(origins, user);
-            this.RevRecJournalEntries = await LoadRevRecJournalEntries(origins.LineAndTermIDs, user);
+            const [journalData, revRecEntries] = await Promise.all([
+                LoadOrderJournalData(origins, user),
+                LoadRevRecJournalEntries(origins.LineAndTermIDs, user),
+            ]);
+            this.journalData = journalData;
+            this.RevRecJournalEntries = revRecEntries;
         } catch (error) {
             this.journalData = null;
             this.RevRecJournalEntries = [];
@@ -919,6 +923,13 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         this.RollupExcludedLabel = ExcludedEntriesLabel(rollup, this.AccountingAsOf);
         this.RollupSharedNotes = rollup.SharedPaymentNotes;
         this.JournalRows = BuildOrderJournalEntryRows(data, options);
+    }
+
+    /** The As-of date as a local Date for `mj-datepicker`, or null for lifetime. */
+    public get AccountingAsOfDate(): Date | null {
+        if (!this.AccountingAsOf) return null;
+        const [y, m, d] = this.AccountingAsOf.split('-').map(Number);
+        return y && m && d ? new Date(y, m - 1, d) : null;
     }
 
     /** Whether the current view has anything to export. */
@@ -959,8 +970,21 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     /** The As-of box. Blank means lifetime, which is the default and the point of item 1. */
-    public OnAccountingAsOfChanged(value: string): void {
-        this.AccountingAsOf = value || null;
+    public OnAccountingAsOfChanged(value: Date | string | null): void {
+        if (!value) {
+            this.AccountingAsOf = null;
+        } else if (value instanceof Date) {
+            if (Number.isNaN(value.getTime())) {
+                this.AccountingAsOf = null;
+            } else {
+                const y = value.getFullYear();
+                const m = String(value.getMonth() + 1).padStart(2, '0');
+                const d = String(value.getDate()).padStart(2, '0');
+                this.AccountingAsOf = `${y}-${m}-${d}`;
+            }
+        } else {
+            this.AccountingAsOf = value || null;
+        }
         this.applyAccountingView();
     }
 

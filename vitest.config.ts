@@ -14,6 +14,22 @@ import { defineConfig } from 'vitest/config';
  * stub threw on every call rather than no-oping, so nothing was ever quietly running against it.
  */
 export default defineConfig({
+    resolve: {
+        alias: {
+            '@mj-biz-apps/orders-entities/billing-location': new URL(
+                './packages/Entities/src/billing-location.ts',
+                import.meta.url,
+            ).pathname,
+            '@mj-biz-apps/orders-entities/checkout-questions': new URL(
+                './packages/Entities/src/checkout-questions.ts',
+                import.meta.url,
+            ).pathname,
+            '@mj-biz-apps/orders-entities/checkout-choices': new URL(
+                './packages/Entities/src/checkout-choices.ts',
+                import.meta.url,
+            ).pathname,
+        },
+    },
     test: {
         // Relative to the repo root, so a package's own `test` script passes `--root ../..` and a
         // `packages/<Name>/` filter; a bare `vitest run` from a package directory finds nothing (#892).

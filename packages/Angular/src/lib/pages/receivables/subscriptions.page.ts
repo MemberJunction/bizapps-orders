@@ -13,6 +13,7 @@ import {
     GetSubscriptionTerms,
     GetSubscriptionTypeRenewalLeadDays,
     LoadSubscriptionRevRec,
+    RunOrdersPageLoad,
     type SubscriptionTermLookup,
 } from '../../data/orders-queries';
 import {
@@ -79,6 +80,9 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
     standalone: true,
     imports: [CommonModule, EntityViewerModule, DeferredRevenueWaterfallModule, MJOStatedValueComponent, MJAlertComponent, MJButtonDirective],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ LoadError }}</mj-alert>
+        }
         <div class="mjo-sub__split">
             <div class="mjo-sub__left">
                 <p class="mjo-note mjo-sub__note">
@@ -288,6 +292,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
 export class MJOSubscriptionsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public LoadError: string | null = null;
     public SubscriptionEntityInfo: EntityInfo | null = null;
     public AllRows: MJOSubscriptionRow[] = [];
     public Rows: MJOSubscriptionRow[] = [];
@@ -308,6 +313,11 @@ export class MJOSubscriptionsPageComponent implements OnInit {
             },
             md.CurrentUser,
         );
+        if (!result.Success) {
+            this.LoadError = result.ErrorMessage?.trim() || 'Subscriptions could not be loaded.';
+        } else {
+            this.LoadError = null;
+        }
         this.AllRows = result.Success ? (result.Results ?? []) : [];
         this.applyPreset();
         if (this.Rows.length) {
@@ -364,24 +374,42 @@ export class MJOSubscriptionsPageComponent implements OnInit {
      */
     private async loadDetail(subscriptionID: string): Promise<void> {
         const row = this.AllRows.find((r) => r.ID === subscriptionID);
-        const termsAndRecognition = (async () => {
-            const terms = await GetSubscriptionTerms(subscriptionID);
-            const recognition = await LoadSubscriptionRevRec(
-                { ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null },
-                Metadata.Provider,
-                terms,
-            );
-            return { terms, recognition };
-        })();
-        const typeLeadDays = row?.RenewalLeadDays == null && row?.SubscriptionTypeID
-            ? GetSubscriptionTypeRenewalLeadDays(row.SubscriptionTypeID)
-            : Promise.resolve(null);
-        const [{ terms, recognition }, events, leadDays] = await Promise.all([
-            termsAndRecognition,
-            GetSubscriptionEvents(subscriptionID),
-            typeLeadDays,
-        ]);
+        let terms: mjBizAppsOrdersSubscriptionTermEntity[] = [];
+        let events: mjBizAppsOrdersSubscriptionEventEntity[] = [];
+        let recognition: Awaited<ReturnType<typeof LoadSubscriptionRevRec>> = {
+            Entries: [],
+            TermLookup: {},
+            TermIDs: [],
+            CanRead: true,
+        };
+        let leadDays: number | null = null;
+        const err = await RunOrdersPageLoad(async () => {
+            const termsAndRecognition = (async () => {
+                const loadedTerms = await GetSubscriptionTerms(subscriptionID);
+                const loadedRecog = await LoadSubscriptionRevRec(
+                    { ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null },
+                    Metadata.Provider,
+                    loadedTerms,
+                );
+                return { terms: loadedTerms, recognition: loadedRecog };
+            })();
+            const typeLeadDays = row?.RenewalLeadDays == null && row?.SubscriptionTypeID
+                ? GetSubscriptionTypeRenewalLeadDays(row.SubscriptionTypeID)
+                : Promise.resolve(null);
+            const [tr, ev, ld] = await Promise.all([
+                termsAndRecognition,
+                GetSubscriptionEvents(subscriptionID),
+                typeLeadDays,
+            ]);
+            terms = tr.terms;
+            recognition = tr.recognition;
+            events = ev;
+            leadDays = ld;
+        });
         if (this.SelectedID !== subscriptionID) return;
+        if (err) {
+            this.LoadError = err;
+        }
         this.Terms = terms;
         this.Events = events;
         this.RecognitionEntries = recognition.Entries;

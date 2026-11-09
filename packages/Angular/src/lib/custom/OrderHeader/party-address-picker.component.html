@@ -17,7 +17,9 @@
             @for (opt of Options; track opt.ID) {
                 <option [value]="opt.ID">{{ opt.Label }}</option>
             }
-            <option [value]="'__custom__'">Custom address for this order</option>
+            @if (CanCustomAddress) {
+                <option [value]="'__custom__'">Custom address for this order</option>
+            }
         </select>
     } @else if (ShowSelected) {
         <div class="mjo-addr__bar">

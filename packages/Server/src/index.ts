@@ -39,8 +39,10 @@ import {
     LoadCancelSubscriptionOperation,
     LoadAmendArrangementOperation,
     LoadSubscriptionTermEntityServer,
+    LoadSubscriptionTypeEntityServer,
     LoadSubscriptionEntityServer,
     LoadProductPriceEntityServer,
+    LoadCheckoutWidgetEntityServer,
     LoadEnvironmentSecretResolver,
     LoadManualPaymentProvider,
     LoadOrderEntityServer,
@@ -176,8 +178,10 @@ export function LoadBizAppsOrdersServer(): void {
     LoadOrderConcessionEntityServer();     // values a concession; only a rule-role holder decides one
     LoadOrderAdjustmentEntityServer();     // a recorded discount is neither re-authorized nor deleted by hand (golive #328)
     LoadSubscriptionTermEntityServer();    // a booked term's dates change only through an approved extension
+    LoadSubscriptionTypeEntityServer();    // refuses a RecognitionCadence change once terms are booked (#809)
     LoadSubscriptionEntityServer();        // a gateway-billed subscription changes only where the gateway is told
     LoadProductPriceEntityServer();        // refuses a price rule that ties an existing one at write time (D69)
+    LoadCheckoutWidgetEntityServer();      // refuses a widget Configuration currency that is not USD (#818)
     InitConcessionApprovalListener();      // a decision on a concession's approval task decides that concession (#274)
     LoadGetFulfillmentQueueOperation(); // 'Orders.GetFulfillmentQueue' — so is the shipping backlog
     LoadGetPriorReturnsOperation();   // 'Orders.GetPriorReturns' — the return cap, from the rule the server refuses with

@@ -32,7 +32,7 @@ import type {
     CustomUIThemeConfiguration,
     CheckoutWidgetConfiguration
 } from '@mj-biz-apps/orders-entities';
-// Deep import on purpose: this module has no dependencies, while the package root would pull every
+// Subpath import: this module has no dependencies, while the package root would pull every
 // entity class into the public checkout bundle. The server checks the same lists.
 import {
     BILLING_COUNTRIES,
@@ -40,7 +40,7 @@ import {
     BillingSubdivisionsFor,
     CheckBillingLocation,
     type LocationOption
-} from '@mj-biz-apps/orders-entities/dist/billing-location.js';
+} from '@mj-biz-apps/orders-entities/billing-location';
 // Same reason: a dependency-free module the server also runs.
 import {
     CheckAnswersAgainstQuestions,
@@ -51,7 +51,7 @@ import {
     type CheckoutAnswerInput,
     type CheckoutAnswersInput,
     type CheckoutQuestion
-} from '@mj-biz-apps/orders-entities/dist/checkout-questions.js';
+} from '@mj-biz-apps/orders-entities/checkout-questions';
 // Same reason: a dependency-free module the server also runs.
 import {
     CheckChoicesAgainstGroups,
@@ -61,7 +61,7 @@ import {
     ReadCheckoutChoiceGroups,
     type CheckoutChoiceGroup,
     type CheckoutChoicesInput
-} from '@mj-biz-apps/orders-entities/dist/checkout-choices.js';
+} from '@mj-biz-apps/orders-entities/checkout-choices';
 
 export interface CheckoutWidgetTheme extends CustomUIThemeConfiguration {
     primaryColor?: string;

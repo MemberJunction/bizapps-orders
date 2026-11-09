@@ -15,7 +15,7 @@ import { ExportServiceModule } from '@memberjunction/ng-export-service';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 
-import { MJButtonDirective, MJEmptyStateComponent, MJTabNavComponent } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective, MJDatepickerComponent, MJEmptyStateComponent, MJTabNavComponent } from '@memberjunction/ng-ui-components';
 import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
 import { DeferredRevenueWaterfallModule, GlResolutionPreviewComponent } from '@mj-biz-apps/accounting-ng';
@@ -37,6 +37,10 @@ import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } fro
 import { MJOChangePaymentDateComponent } from './PaymentHeader/change-payment-date.component';
 import { MJOOrderPaymentDatesComponent } from './PaymentHeader/order-payment-dates.component';
 import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } from './EventOrderLine/event-order-line-form.component';
+import { BizAppsCheckoutSessionStepFormComponent, LoadCheckoutSessionStepFormComponent } from './CheckoutSessionStep/checkout-session-step-form.component';
+import { BizAppsDimensionDefaultsComponent, LoadDimensionDefaultsComponent } from './DimensionDefaults/dimension-defaults.component';
+import { ProductCategoryDimensionDefaultsPanel } from './ProductCategory/product-category-dimension-defaults.panel';
+import { ProductTypeDimensionDefaultsPanel } from './ProductType/product-type-dimension-defaults.panel';
 
 @NgModule({
     declarations: [
@@ -51,6 +55,10 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         BizAppsOrderHeaderFormComponent,
         BizAppsPaymentHeaderFormComponent,
         BizAppsEventOrderLineFormComponent,
+        BizAppsCheckoutSessionStepFormComponent,
+        BizAppsDimensionDefaultsComponent,
+        ProductCategoryDimensionDefaultsPanel,
+        ProductTypeDimensionDefaultsPanel,
     ],
     imports: [
         CommonModule,
@@ -61,6 +69,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         ExportServiceModule,
         LinkDirectivesModule,
         MJButtonDirective,
+        MJDatepickerComponent,
         MJTabNavComponent,
         MJEmptyStateComponent,
         SharedGenericModule,
@@ -86,6 +95,10 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         BizAppsOrderHeaderFormComponent,
         BizAppsPaymentHeaderFormComponent,
         BizAppsEventOrderLineFormComponent,
+        BizAppsCheckoutSessionStepFormComponent,
+        BizAppsDimensionDefaultsComponent,
+        ProductCategoryDimensionDefaultsPanel,
+        ProductTypeDimensionDefaultsPanel,
     ],
 })
 export class CustomFormsModule {}
@@ -96,4 +109,8 @@ export function LoadCustomForms(): void {
     LoadOrderHeaderFormComponent();
     LoadPaymentHeaderFormComponent();
     LoadEventOrderLineFormComponent();
+    LoadCheckoutSessionStepFormComponent();
+    LoadDimensionDefaultsComponent();
+    void ProductCategoryDimensionDefaultsPanel;
+    void ProductTypeDimensionDefaultsPanel;
 }

@@ -28,6 +28,7 @@
  *   RecordProgressOperation (the transaction) · GetProgressWorklistOperation (what "last" means)
  */
 import type { AuthorizationInfo, UserInfo } from '@memberjunction/core';
+import { UUIDsEqual } from '@memberjunction/global';
 import { FirstOpenDay, IsInClosedBooks } from '@mj-biz-apps/accounting-engine-base';
 import { UserHasAuthorization } from '@mj-biz-apps/orders-entities';
 import { ComputeCatchUp, type CatchUp } from './RevenueRecognition.js';
@@ -165,16 +166,65 @@ function PriorMonthStart(isoDate: string): string {
 }
 
 /**
+ * Why `user` may not attest ordinary progress on an order whose `EngagementLeadUserID` is set (#807),
+ * or null when they may.
+ *
+ * When `engagementLeadUserID` is null, any holder of `MJ.BizApps.Orders.Progress.Attest` may attest
+ * (the go-live behavior). Once an order names an Engagement Lead, only that user or a holder of
+ * {@link PROGRESS_SUPERSEDE_AUTH} (Orders Revenue Supervisor) may attest its lines.
+ */
+export function EngagementLeadAttestRefusal(
+    user: UserInfo,
+    engagementLeadUserID: string | null | undefined,
+    authorizations: AuthorizationInfo[],
+    orderNumber?: string | null,
+): string | null {
+    if (!engagementLeadUserID) return null;
+    if (UUIDsEqual(user?.ID ?? '', engagementLeadUserID)) return null;
+    if (UserHasAuthorization(PROGRESS_SUPERSEDE_AUTH, user, { Authorizations: authorizations })) return null;
+    const label = orderNumber ? `Order ${orderNumber}` : 'This order';
+    return (
+        `${label} is assigned to a different Engagement Lead. Only that Engagement Lead or a holder of ` +
+        `the ${PROGRESS_SUPERSEDE_AUTH} authorization (the Orders Revenue Supervisor role) may attest its progress.`
+    );
+}
+
+/**
+ * Whether a worklist order is visible to `userID` (#807).
+ *
+ * Orders with no `EngagementLeadUserID` remain visible to every Engagement Lead. Orders that name an
+ * Engagement Lead are visible to that lead and to holders of the Revenue Supervisor authorization
+ * (`canSupersede`), who must be able to view and supersede observations on orders led by others.
+ */
+export function WorklistVisibleToUser(
+    engagementLeadUserID: string | null | undefined,
+    userID: string | null | undefined,
+    canSupersede: boolean,
+): boolean {
+    if (!engagementLeadUserID) return true;
+    if (canSupersede) return true;
+    return UUIDsEqual(engagementLeadUserID, userID ?? '');
+}
+
+/**
  * Why `user` may not supersede, or null when they may.
  *
  * FAILS CLOSED, as {@link UserHasAuthorization} does. A supersede reverses posted revenue, and a
  * missing row means the grant was never installed, not that nobody needs one — so that case gets its
  * own message rather than reading as "you lack the role".
  *
+ * When `engagementLeadUserID` is set on the order, the order's own Engagement Lead may not supersede
+ * its observations even if they also hold the supervisor authorization (golive #397): Engagement Lead
+ * and Revenue Supervisor must differ on one order.
+ *
  * Checked on top of `MJ.BizApps.Orders.Progress.Attest`, which `Orders.RecordProgress` requires of
  * every observation first: a supersede is itself an attestation.
  */
-export function SupersedeRefusal(user: UserInfo, authorizations: AuthorizationInfo[]): string | null {
+export function SupersedeRefusal(
+    user: UserInfo,
+    authorizations: AuthorizationInfo[],
+    engagementLeadUserID?: string | null,
+): string | null {
     if (!authorizations.some((a) => a.Name === PROGRESS_SUPERSEDE_AUTH)) {
         return (
             `The ${PROGRESS_SUPERSEDE_AUTH} authorization is not installed, so no one can supersede a ` +
@@ -185,6 +235,12 @@ export function SupersedeRefusal(user: UserInfo, authorizations: AuthorizationIn
         return (
             `Superseding a posted progress observation needs the ${PROGRESS_SUPERSEDE_AUTH} ` +
             `authorization, held by the Orders Revenue Supervisor role.`
+        );
+    }
+    if (engagementLeadUserID && UUIDsEqual(user?.ID ?? '', engagementLeadUserID)) {
+        return (
+            `The Engagement Lead assigned to this order cannot supersede its progress observations; ` +
+            `a different user holding the ${PROGRESS_SUPERSEDE_AUTH} authorization (the Orders Revenue Supervisor role) must supersede it.`
         );
     }
     return null;

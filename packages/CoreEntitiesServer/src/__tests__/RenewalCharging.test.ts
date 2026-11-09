@@ -16,7 +16,9 @@ import {
     RenewalCaptureIdempotencyKey,
     RenewalChargeDays,
     RenewalChargeIdempotencyKey,
+    ResolveCaptureInstrument,
     type RenewalChargeFacts,
+    type RenewalChargeInstrument,
 } from '../RenewalCharging.js';
 import { OrdersSettings } from '../OrdersSettings.js';
 import { DaysBetween } from '../InvoiceBehavior.js';
@@ -274,5 +276,26 @@ describe('DecideRenewalCharge — an order selected only for money already taken
             Action: 'Skip',
             Reason: 'outside the charge window, or automatic renewal is off or the card inactive; only money already taken is booked',
         });
+    });
+
+    it('books a CaptureOnly charge with the instrument that paid even if the renewal card was replaced afterwards (#695)', () => {
+        const replacedOnSubscription: RenewalChargeInstrument = {
+            CustomerPaymentMethodID: 'cpm-new',
+            OwnerPersonID: null,
+            OwnerOrganizationID: 'org-new',
+            PaymentProviderID: 'prov-new',
+            ProviderInstrumentRef: 'pm_new',
+            TenderCode: 'CreditCard',
+        };
+        const recordedAtCharge: RenewalChargeInstrument = {
+            CustomerPaymentMethodID: 'cpm-paid',
+            OwnerPersonID: 'person-paid',
+            OwnerOrganizationID: null,
+            PaymentProviderID: 'prov-paid',
+            ProviderInstrumentRef: 'pm_paid',
+            TenderCode: 'ACH',
+        };
+        expect(ResolveCaptureInstrument(replacedOnSubscription, recordedAtCharge)).toEqual(recordedAtCharge);
+        expect(ResolveCaptureInstrument(replacedOnSubscription, null)).toEqual(replacedOnSubscription);
     });
 });
