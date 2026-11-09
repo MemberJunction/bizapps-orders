@@ -1,5 +1,16 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.45.0
+
+### Minor Changes
+
+- 90b45a9: Add the Orders setting `NoDealConfirmRoles` (golive #390): comma-separated role names whose holders may confirm an order that no deal created. Anyone else's confirm of such an order is refused with a message naming the roles. Checkout, provider-payment, reversal and renewal-only orders are exempt. Empty (the default) switches the check off, and so does a host with no order-to-deal link registered, which logs one warning.
+
+### Patch Changes
+
+- Updated dependencies [38ecc01]
+  - @mj-biz-apps/orders-entities@5.45.0
+
 ## 5.44.0
 
 ### Minor Changes
@@ -1239,8 +1250,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                        "FK_EntityFieldValue_EntityField"
+                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
