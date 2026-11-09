@@ -63,6 +63,28 @@ function windowsOverlap(aFrom: Date, aTo: Date | null, bFrom: Date, bTo: Date | 
     return s1 <= e2 && s2 <= e1;
 }
 
+/**
+ * EXTENDS THE SHARED CLASS, NOT THE GENERATED ONE.
+ *
+ * `ProductPriceEntity` registers for this same key. Both extending the generated class made them
+ * SIBLINGS rather than a chain, and `@RegisterClass` resolves last-registered-wins -- so on the
+ * server this class did not inherit the shared one, it replaced it, and MJAPI said so at every boot.
+ *
+ * Nothing was lost by it TODAY, which is worth stating plainly rather than overselling the fix: the
+ * shared class carries only `Name`, `ProductCategoryID` and `Applicability` accessors, added as a
+ * stopgap for columns CodeGen had not yet emitted (V202609031400). CodeGen has since run and the
+ * generated class defines all three, so the two supply the same members either way.
+ *
+ * It is fixed because the next member added to the shared class WOULD be lost, silently and on the
+ * server only -- which is exactly how the equivalent collision in bizapps-contracts went unnoticed
+ * long enough to drop a value-list validation. The sibling pattern is the bug; that it costs nothing
+ * yet is luck, not design.
+ *
+ * The redundancy is worth collapsing eventually: the shared subclass has outlived the stopgap its own
+ * docblock describes. Not done here because `ProductPriceEntity` is the type name the Angular pricing
+ * widget uses in a dozen places, and retiring it is a rename in another package rather than part of
+ * this fix.
+ */
 @RegisterClass(BaseEntity, PRODUCT_PRICE_ENTITY)
 export class ProductPriceEntityServer extends ProductPriceEntity {
     /** BaseEntity skips ValidateAsync by default; without this the check never runs. */
