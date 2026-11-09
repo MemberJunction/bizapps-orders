@@ -32,6 +32,7 @@ import {
     CompositeKey,
     DatabaseProviderBase,
     EntityDeleteOptions,
+    EntityPermissionType,
     EntitySaveOptions,
     IMetadataProvider,
     IRunViewProvider,
@@ -45,6 +46,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
@@ -695,6 +697,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         // A REMOVAL ANOTHER APP REFUSES FAILS THE SAVE, before anything is written (#799).
         if (!booking && !(await this.passesRemovalVeto())) return false;
+        // AND ONE THE PERSON MAY NOT MAKE, before the cleanup runs as the system user (golive #461).
+        if (!this.passesCleanupRight('remove lines from', EntityPermissionType.Update)) return false;
 
         // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
         // reviewer sees the order as it will book. Off until a host switches a trigger on.
@@ -1829,6 +1833,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return false;
         }
         if (!this.IsSaved) return super.Delete(options);
+        if (!this.passesCleanupRight('delete', EntityPermissionType.Delete)) return false;
 
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         try {
@@ -1867,7 +1872,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const lines = await this.loadRowsForDelete<mjBizAppsOrdersOrderLineEntity>('MJ_BizApps_Orders: Order Lines', byOrder);
         for (const line of ChildLinesFirst(lines)) {
             await this.deleteLineDependents(line);
-            if (!(await line.Delete())) {
+            if (!(await this.deleteAsCleanupUser(line))) {
                 throw new Error(`Failed to delete order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`);
             }
         }
@@ -1899,7 +1904,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const result = await rv.RunView<T>(
             { EntityName: entityName, ExtraFilter: filter, ResultType: 'entity_object', MaxRows: DEPENDENT_ROW_CAP },
-            this.ContextCurrentUser,
+            this.cleanupUser(),
         );
         if (!result?.Success) {
             throw new Error(`Failed to read ${entityName} for order ${this.OrderNumber ?? ''}: ${result?.ErrorMessage ?? 'unknown error'}`);
@@ -1929,6 +1934,52 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
         }
+    }
+
+    /**
+     * The user a draft's cleanup reads and deletes as, once {@link passesCleanupRight} has passed.
+     *
+     * The rows a removed draft line or a deleted draft order leaves behind — the line itself, its
+     * price components, dimensions, concessions, adjustments and allocations — are written by
+     * Orders' own saves and never edited by hand, so the business roles hold Create and Update on
+     * them and not Delete. Deleting them as the signed-in user refused every line removal for those
+     * roles (golive #461). The person's right is checked once, at the order, and the deletes that
+     * follow are Orders' own. The change log names the system user as the deleter; the order's own
+     * save names the person.
+     */
+    private cleanupUser(): UserInfo {
+        const system = UserCache.Instance.GetSystemUser();
+        if (!system) throw new Error('Deleting a draft order line needs the MJ system user, and the user cache does not hold it.');
+        return system;
+    }
+
+    /** Delete `row` as {@link cleanupUser}, then give it back its own user. */
+    private async deleteAsCleanupUser(row: BaseEntity): Promise<boolean> {
+        const own = row.ContextCurrentUser;
+        row.ContextCurrentUser = this.cleanupUser();
+        try {
+            return await row.Delete();
+        } finally {
+            row.ContextCurrentUser = own;
+        }
+    }
+
+    /**
+     * Whether the signed-in user may make this change at all, asked before the cleanup runs as the
+     * system user. Removing a line needs Update on the order and on its lines; deleting a draft
+     * order needs Delete on the order. A save with no saved line removed asks nothing.
+     */
+    private passesCleanupRight(verb: string, onOrder: EntityPermissionType): boolean {
+        const removing = onOrder === EntityPermissionType.Update;
+        if (removing && !this.Lines.Removed.some((line) => line.IsSaved)) return true;
+        const user = this.ContextCurrentUser;
+        const lineRight = () =>
+            !!(this.ProviderToUse as unknown as IMetadataProvider).EntityByName(ORDER_LINE_ENTITY)?.GetUserPermisions(user!).CanUpdate;
+        const allowed = !!user && this.CheckPermissions(onOrder, false) && (!removing || lineRight());
+        if (allowed) return true;
+        const message = `You do not have permission to ${verb} order ${this.OrderNumber ?? ''}. Nothing was changed.`;
+        this.RegisterResultHistoryEntry(removing ? this.buildFailureResult(new Error(message)) : this.buildDeleteFailure(message));
+        return false;
     }
 
     /**
@@ -1971,7 +2022,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
              */
             const serverLine = line as unknown as { BypassExternalEditVeto?: boolean };
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
-            if (!(await line.Delete())) {
+            if (!(await this.deleteAsCleanupUser(line))) {
                 throw new Error(
                     `Failed to delete removed order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
                 );
@@ -1993,8 +2044,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * `EventOrderLine` is an IS-A child rather than a dependent row, and `BaseEntity.Delete()`
      * already walks that chain itself.
      *
-     * Deletes go through the entity so row-level security and the change log see them; the repo has
-     * no raw-DELETE precedent and this is not the place to start one.
+     * Deletes go through the entity so the change log sees them; the repo has no raw-DELETE
+     * precedent and this is not the place to start one. They run as the system user — see
+     * {@link cleanupUser}.
      */
     private async deleteLineDependents(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
@@ -2008,7 +2060,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     ResultType: 'entity_object',
                     MaxRows: DEPENDENT_ROW_CAP,
                 },
-                this.ContextCurrentUser,
+                this.cleanupUser(),
             );
             const rows = result?.Results ?? [];
             // The cap is a guard, not a page size: silently deleting the first thousand and leaving
