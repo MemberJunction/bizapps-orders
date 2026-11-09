@@ -394,10 +394,17 @@ BEGIN
     END IF;
 END $$;
 
+-- Status value list: Withdrawn. Keyed on the field's entity and name, not the authoring database's EntityField ID.
 INSERT INTO ${mjSchema}."EntityFieldValue"
-                                       ("ID", "EntityFieldID", "Sequence", "Value", "Code", "__mj_CreatedAt", "__mj_UpdatedAt")
-                                    VALUES
-                                       ('cb4ec4f9-6295-4403-be07-7c5a38504b1e', '3C5F69B5-EAD0-4B19-8B1B-DC59C4917F88', 4, 'Withdrawn', 'Withdrawn', NOW(), NOW());
+       ("ID", "EntityFieldID", "Sequence", "Value", "Code", "__mj_CreatedAt", "__mj_UpdatedAt")
+SELECT 'cb4ec4f9-6295-4403-be07-7c5a38504b1e', f."ID",
+       (SELECT COALESCE(MAX(x."Sequence"), 0) + 1 FROM ${mjSchema}."EntityFieldValue" x WHERE x."EntityFieldID" = f."ID"),
+       'Withdrawn', 'Withdrawn', NOW(), NOW()
+  FROM ${mjSchema}."EntityField" f
+  JOIN ${mjSchema}."Entity" e ON e."ID" = f."EntityID"
+ WHERE LOWER(e."SchemaName") = LOWER('${flyway:defaultSchema}')
+   AND e."BaseTable" = 'OrderConcession'
+   AND f."Name" = 'Status';
 
 
 /* Create Entity Relationship: MJ: Users -> MJ_BizApps_Orders: Order Concessions (One To Many via WithdrawnByUserID) */

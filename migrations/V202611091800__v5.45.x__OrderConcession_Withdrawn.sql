@@ -264,11 +264,23 @@ GO
          )
       END;
 
-/* SQL text to insert entity field value with ID cb4ec4f9-6295-4403-be07-7c5a38504b1e */
+/* Status value list: Withdrawn. Keyed on the field's entity and name, not this database's EntityField ID */
+DECLARE @OrderConcessionStatusFieldID UNIQUEIDENTIFIER = (
+    SELECT f.[ID]
+      FROM [${mjSchema}].[EntityField] f
+      JOIN [${mjSchema}].[Entity]      e ON e.[ID] = f.[EntityID]
+     WHERE e.[SchemaName] = '${flyway:defaultSchema}'
+       AND e.[BaseTable]  = 'OrderConcession'
+       AND f.[Name]       = 'Status');
+
+IF @OrderConcessionStatusFieldID IS NULL
+    THROW 50000, 'OrderConcession.Status EntityField not found - CodeGen must run before this migration.', 1;
+
 INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('cb4ec4f9-6295-4403-be07-7c5a38504b1e', '3C5F69B5-EAD0-4B19-8B1B-DC59C4917F88', 4, 'Withdrawn', 'Withdrawn', GETUTCDATE(), GETUTCDATE());
+       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+SELECT 'cb4ec4f9-6295-4403-be07-7c5a38504b1e', @OrderConcessionStatusFieldID,
+       (SELECT COALESCE(MAX(x.[Sequence]), 0) + 1 FROM [${mjSchema}].[EntityFieldValue] x WHERE x.[EntityFieldID] = @OrderConcessionStatusFieldID),
+       'Withdrawn', 'Withdrawn', GETUTCDATE(), GETUTCDATE();
 
 
 /* Create Entity Relationship: MJ: Users -> MJ_BizApps_Orders: Order Concessions (One To Many via WithdrawnByUserID) */
