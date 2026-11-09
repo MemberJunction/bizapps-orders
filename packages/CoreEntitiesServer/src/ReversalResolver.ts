@@ -91,8 +91,7 @@ export async function LoadReversalContext(
     // and it means the filter below cannot be built from arbitrary text. Raised by Marcelo on PR #17.
     if (!UUID_PATTERN.test(reversesOrderLineID)) {
         throw new Error(
-            `'${reversesOrderLineID}' is not a valid order line identifier, so the line it claims to ` +
-                `reverse cannot be looked up.`,
+            `'${reversesOrderLineID}' is not a valid order line ID, so the line being returned cannot be found.`,
         );
     }
 
@@ -258,7 +257,7 @@ export async function LoadOriginTaxCharges(
     user: UserInfo,
 ): Promise<OriginTaxCharge[]> {
     if (!UUID_PATTERN.test(originLineID)) {
-        throw new Error(`'${originLineID}' is not a valid order line identifier, so its tax cannot be looked up.`);
+        throw new Error(`'${originLineID}' is not a valid order line ID, so the tax charged on it cannot be found.`);
     }
     const rv = new RunView(provider as unknown as IRunViewProvider);
     const read = async <T>(entity: string, filter: string, fields: string[]): Promise<T[]> => {
@@ -366,7 +365,7 @@ export async function IsWholeOrderReversed(
     }
     for (const sale of sales.Results) {
         const context = await LoadReversalContext(String(sale.ID), provider, user);
-        if (!context) throw new Error(`Order line ${sale.ID} vanished while its order was being reversed.`);
+        if (!context) throw new Error(`Order line ${sale.ID} could not be read while its order was being reversed. It may have been deleted; try again.`);
         if (context.AlreadyReversed < context.Origin.Quantity) return false;
     }
     return sales.Results.length > 0;

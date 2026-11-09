@@ -104,11 +104,11 @@ export function BuildPaymentSchedule(input: {
     Weights?: number[];
 }): ScheduleRowDraft[] {
     const count = Math.floor(Number(input.Count));
-    if (!(count >= 1)) throw new Error(`A payment schedule needs at least one instalment; got ${input.Count}.`);
-    if (!(Money(input.Total) > 0)) throw new Error(`A payment schedule needs a positive total; got ${input.Total}.`);
+    if (!(count >= 1)) throw new Error(`A payment schedule needs at least one instalment (${input.Count} was entered).`);
+    if (!(Money(input.Total) > 0)) throw new Error(`A payment schedule needs a total greater than zero (${input.Total} was entered).`);
     const weights = input.Weights ?? new Array<number>(count).fill(1);
     if (weights.length !== count) {
-        throw new Error(`${weights.length} weights were given for ${count} instalments.`);
+        throw new Error(`${weights.length} instalment shares were given for ${count} instalments. Give one share per instalment.`);
     }
     const amounts = SplitExactly(input.Total, weights);
     const step = MONTHS_PER_STEP[input.Cadence];
@@ -156,11 +156,12 @@ export function RenewalDueDate(invoiceDay: string, orderDate: DateCell, orderDue
     const termsDue = ToISODate(orderDueDate);
     if (hasRenewalCard && orderDay) return orderDay;
     if (!orderDay || !termsDue) {
-        throw new Error(`A renewal needs its order date and resolved due date to date its instalment (got ${orderDay}, ${termsDue}).`);
+        throw new Error(`The renewal instalment cannot be dated because the order date or the payment terms due date is missing ` +
+            `(order date ${orderDay}, due date ${termsDue}). Check the order's date and payment terms.`);
     }
     const netDays = Math.round((Date.parse(termsDue) - Date.parse(orderDay)) / 86_400_000);
     const due = AddDays(invoiceDay, netDays);
-    if (!due) throw new Error(`The renewal invoice day '${invoiceDay}' is not a date.`);
+    if (!due) throw new Error(`The renewal invoice date '${invoiceDay}' is not a valid date.`);
     return due < orderDay ? due : orderDay;
 }
 

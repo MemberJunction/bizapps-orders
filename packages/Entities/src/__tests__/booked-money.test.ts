@@ -26,8 +26,8 @@ describe('BookedMoneyEditMessage', () => {
             ...clean,
             DirtyLineMoneyFields: ['Quantity', 'UnitPrice'],
         });
-        expect(message).toContain('Quantity');
-        expect(message).toContain('UnitPrice');
+        expect(message).toContain('quantity');
+        expect(message).toContain('unit price');
     });
 
     it('refuses charges and the initial tender together', () => {
@@ -37,6 +37,6 @@ describe('BookedMoneyEditMessage', () => {
             DirtyHeaderMoneyFields: ['InitialPaymentAmount'],
         });
         expect(message).toContain('charges');
-        expect(message).toContain('InitialPaymentAmount');
+        expect(message).toContain('initial payment amount');
     });
 });

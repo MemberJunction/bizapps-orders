@@ -99,7 +99,7 @@ const UUID_SHAPE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 export function QuotedStaffIDs(staff: OrganizationStaffMember[]): string {
     return staff.map(s => {
         if (!UUID_SHAPE.test(s.PersonID)) {
-            throw new Error(`Staff PersonID is not a UUID: ${s.PersonID}`);
+            throw new Error(`A staff member's person ID is not valid: ${s.PersonID}`);
         }
         return `'${s.PersonID}'`;
     }).join(',');

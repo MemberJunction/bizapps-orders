@@ -114,11 +114,11 @@ describe('RenewalPaymentRefusal — single use in effect', () => {
 
     it('refuses a missing order, or one that renews another subscription', () => {
         expect(RenewalPaymentRefusal(null, SUB, false)).toBe('This renewal could not be found.');
-        expect(RenewalPaymentRefusal({ ...open, SubscriptionIDs: [] }, SUB, false)).toBe('This link does not match the renewal it names.');
+        expect(RenewalPaymentRefusal({ ...open, SubscriptionIDs: [] }, SUB, false)).toBe('This payment link does not match its renewal. Use the link from your latest renewal notice, or contact us to renew.');
     });
 
     it('refuses a voided order', () => {
-        expect(RenewalPaymentRefusal({ ...open, Status: 'Voided' }, SUB, false)).toBe('This renewal can no longer be paid here.');
+        expect(RenewalPaymentRefusal({ ...open, Status: 'Voided' }, SUB, false)).toBe('This renewal can no longer be paid here. Contact us to renew.');
     });
 
     it('refuses once the order is paid', () => {

@@ -128,13 +128,13 @@ export class SendDocumentAction extends BaseAction {
     private async send(params: RunActionParams): Promise<ActionResultSimple> {
         const orderID = strParam(params, 'OrderID');
         if (!orderID) {
-            return { Success: false, ResultCode: 'MISSING_ORDER_ID', Message: 'OrderID is required.' };
+            return { Success: false, ResultCode: 'MISSING_ORDER_ID', Message: 'An order ID is required. Pass the ID of the order to send in OrderID.' };
         }
         if (!UUID.test(orderID)) {
             return {
                 Success: false,
                 ResultCode: 'INVALID_ORDER_ID',
-                Message: `'${orderID}' is not an order ID. This action takes the OrderHeader's ID, not its order number.`,
+                Message: `'${orderID}' is not an order ID. Pass the order's record ID, not its order number.`,
             };
         }
 
@@ -161,7 +161,7 @@ export class SendDocumentAction extends BaseAction {
             return {
                 Success: false,
                 ResultCode: 'MISSING_USER',
-                Message: 'ContextUser is required: the order is read through the metadata layer, which resolves permissions per user.',
+                Message: 'This action needs a user to run as, because the order is read with that user\'s permissions. Run it from a scheduled job that has a run-as user, or as a signed-in user.',
             };
         }
 
@@ -170,7 +170,7 @@ export class SendDocumentAction extends BaseAction {
         // the first read.
         const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;
         if (!provider) {
-            return { Success: false, ResultCode: 'NO_PROVIDER', Message: 'No metadata provider is configured.' };
+            return { Success: false, ResultCode: 'NO_PROVIDER', Message: 'The server\'s data connection is not set up, so the order cannot be read. Ask an administrator to check the server configuration.' };
         }
 
         // ── 1. Render ──────────────────────────────────────────────────────

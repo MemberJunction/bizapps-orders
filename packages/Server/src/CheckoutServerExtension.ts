@@ -320,7 +320,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             : {
                   Healthy: false,
                   Name: 'OrdersCheckoutEdge',
-                  Details: { Reason: 'Neither the configured service user nor the system user resolves; every checkout call will be refused.' },
+                  Details: { Reason: 'Checkout cannot find the user it runs as (neither the configured checkout service user nor the system user exists), so every checkout call will be refused. Ask an administrator to check the checkout service user setting.' },
               };
     }
 
@@ -336,7 +336,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             // so that polling cannot use up the per-slug allowance the buyer's password step needs.
             const bucket = req.path?.endsWith('/access-status') ? `${ip}|access-status|${slug}` : `${ip}|${slug}`;
             if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(bucket)) {
-                res.status(429).json({ Success: false, ErrorMessage: 'Too many requests — slow down and try again shortly.' });
+                res.status(429).json({ Success: false, ErrorMessage: 'Too many requests. Wait a minute and try again.' });
                 return;
             }
 
@@ -456,7 +456,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             return true;
         }
         if (!this.originAllowed(origin, policy, req)) {
-            res.status(403).json({ Success: false, ErrorMessage: 'This origin is not allowed to use this checkout.' });
+            res.status(403).json({ Success: false, ErrorMessage: 'This website is not allowed to use this checkout. Ask the site operator to add it to the checkout\'s allowed sites.' });
             return false;
         }
         this.setCorsHeaders(res, origin);
@@ -539,7 +539,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const ip = this.clientIp(req);
             const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
             if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|get|${slug}`)) {
-                this.sendHostError(res, 429, 'Too many requests — slow down and try again shortly.');
+                this.sendHostError(res, 429, 'Too many requests. Wait a minute and try again.');
                 return;
             }
             const user = this.resolveActingUser();
@@ -587,7 +587,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
             const ip = this.clientIp(req);
             const globalMax = this.settings.RateLimitMaxGlobal ?? DEFAULT_RATE_MAX_GLOBAL;
             if (this.rateLimitExceeded(`${ip}|*`, globalMax) || this.rateLimitExceeded(`${ip}|get|renew`)) {
-                this.sendHostError(res, 429, 'Too many requests — slow down and try again shortly.');
+                this.sendHostError(res, 429, 'Too many requests. Wait a minute and try again.');
                 return;
             }
             const user = this.resolveActingUser();
@@ -699,7 +699,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handleInitialize(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const slug = typeof req.body?.slug === 'string' ? req.body.slug : '';
@@ -717,7 +717,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handleDraft(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
@@ -747,7 +747,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handlePaymentIntent(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
@@ -761,7 +761,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handleComplete(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
@@ -790,7 +790,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handleAccount(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
@@ -803,7 +803,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handleAccountPassword(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';
@@ -816,7 +816,7 @@ export class CheckoutServerExtension extends BaseServerExtension {
     private async handleAccessStatus(req: Request, res: Response): Promise<void> {
         const user = this.resolveActingUser();
         if (!user) {
-            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not ready — the service principal is unavailable.' });
+            res.status(500).json({ Success: false, ErrorMessage: 'Checkout is not available right now. Please try again later. If this keeps happening, contact the site operator.' });
             return;
         }
         const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : '';

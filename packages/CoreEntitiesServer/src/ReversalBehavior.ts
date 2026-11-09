@@ -144,11 +144,9 @@ export function ValidateReversal(
     // the same UUID twice, which reads as a system fault rather than as a comparison bug.
     if (request.ProductID.toLowerCase() !== origin.ProductID.toLowerCase()) {
         return (
-            `This reversal line is for a different product than the line it reverses. The origin ` +
-            `line${origin.OrderNumber ? ` on order ${origin.OrderNumber}` : ''} sold product ` +
-            `${origin.ProductID}; this line names ${request.ProductID}. Point the reversal at the ` +
-            `line that actually sold this product — crediting a different product books the refund ` +
-            `against the wrong revenue account, and it still balances.`
+            `This return line is for a different product than the line it returns` +
+            `${origin.OrderNumber ? ` on order ${origin.OrderNumber}` : ''}. Point the return at the line ` +
+            `that sold this product, so the refund is booked against the right revenue account.`
         );
     }
 
@@ -166,9 +164,7 @@ export function ValidateReversal(
         return (
             `Cannot return ${wanted} against a line that sold ${origin.Quantity}` +
             `${alreadyReversed ? ` and has already had ${Math.abs(alreadyReversed)} reversed` : ''}. ` +
-            `At most ${remaining} remains returnable. Returning more than was bought refunds money ` +
-            `that was never collected, and the resulting journal entry balances, so nothing further ` +
-            `downstream would notice.`
+            `At most ${remaining} can still be returned. Lower the quantity.`
         );
     }
 

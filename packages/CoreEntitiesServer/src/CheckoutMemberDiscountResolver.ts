@@ -155,9 +155,9 @@ export function ResolveCheckoutMemberDiscountResolver(key: string): BaseCheckout
     // `CreateInstance` falls back to the base class when no key matches; the base implements nothing.
     if (!resolver || resolver.constructor === BaseCheckoutMemberDiscountResolver) {
         throw new CheckoutMemberDiscountNotConfiguredError(
-            `No member discount resolver is registered for '${key}'. Register one with ` +
-                `@RegisterClass(BaseCheckoutMemberDiscountResolver, '${key}') and reference it from the ` +
-                `server bootstrap so the decorator is not tree-shaken away.`,
+            `Member discounts are not set up: no member discount resolver is registered for '${key}'. For developers: ` +
+                `register one with @RegisterClass(BaseCheckoutMemberDiscountResolver, '${key}') and reference it ` +
+                `from the server bootstrap, or the build drops the class.`,
         );
     }
     return resolver;

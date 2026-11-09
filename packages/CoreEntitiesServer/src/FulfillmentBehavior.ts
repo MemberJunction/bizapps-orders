@@ -117,29 +117,29 @@ export function RefuseFlip(
 export function ExplainRefusal(reason: FlipRefusal, lineID: string): string {
     switch (reason) {
         case 'LineNotFound':
-            return `Order line ${lineID} does not exist.`;
+            return `Order line ${lineID} was not found. It may have been removed; refresh and try again.`;
         case 'OrderNotPosted':
             return (
-                `Order line ${lineID} cannot be fulfilled because its order is not Confirmed. ` +
-                `Nothing is owed until an order is confirmed, so nothing can ship.`
+                `Order line ${lineID} cannot be fulfilled because its order is not confirmed yet. ` +
+                `Confirm the order first.`
             );
         case 'DoesNotRequireFulfillment':
             return (
-                `Order line ${lineID} is for a product type that requires no fulfilment — a subscription, ` +
-                `a download, a donation. There is nothing to ship, so there is nothing to mark.`
+                `Order line ${lineID} is for a product that needs no shipping, such as a subscription, ` +
+                `download or donation, so there is nothing to mark as fulfilled.`
             );
         case 'IsReversal':
             return (
-                `Order line ${lineID} is a reversal. Goods coming BACK are tracked on the line they ` +
-                `reverse, not by fulfilling the credit.`
+                `Order line ${lineID} is a return or reversal. Returned goods are tracked on the original ` +
+                `line, not by fulfilling this one.`
             );
         case 'IsRollupParent':
             return (
-                `Order line ${lineID} is a bundle's parent row, which carries no goods of its own. ` +
-                `Fulfil its component lines instead.`
+                `Order line ${lineID} is the header row of a bundle and has no goods of its own. ` +
+                `Fulfil the bundle's item lines instead.`
             );
         case 'AlreadyFulfilled':
-            return `Order line ${lineID} has already been fulfilled or returned.`;
+            return `Order line ${lineID} has already been fulfilled or returned, so there is nothing left to mark.`;
     }
 }
 

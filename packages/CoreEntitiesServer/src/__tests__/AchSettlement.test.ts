@@ -287,7 +287,7 @@ describe('StripeACHPaymentProvider — Capture is a READ', () => {
         const driver = liveAch({ status: 'requires_payment_method', currency: 'usd' });
         const result = await driver.Capture({ ProviderIntentID: 'pi_1', CurrencyCode: 'USD' });
         expect(result.Success).toBe(false);
-        expect(result.Reason).toMatch(/no money moved/);
+        expect(result.Reason).toMatch(/no money was collected/);
     });
 
     it('reports the bank-debit fee from the stub, not the card rate', async () => {

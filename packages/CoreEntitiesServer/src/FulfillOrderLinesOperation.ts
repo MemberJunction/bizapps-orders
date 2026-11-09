@@ -68,7 +68,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
     ): Promise<OrdersFulfillOrderLinesOutput> {
         const requested = [...new Set((input?.OrderLineIDs ?? []).filter(Boolean))];
         if (!requested.length) {
-            return this.refuseAll('No order lines were given to fulfil.');
+            return this.refuseAll('Pick at least one order line to fulfil.');
         }
 
         const rv = new RunView(provider as unknown as IRunViewProvider);
@@ -145,8 +145,8 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
             return {
                 Success: false,
                 Message:
-                    `Refused: ${refused.length} of ${requested.length} line(s) cannot be fulfilled, and ` +
-                    `AllOrNothing was set, so nothing was changed. First reason: ${refused[0].RefusalReason}`,
+                    `${refused.length} of ${requested.length} line(s) cannot be fulfilled, so none were changed ` +
+                    `(all-or-nothing was requested). First reason: ${refused[0].RefusalReason}`,
                 Lines: decisions.map((d) => ({ ...d, Fulfilled: false })),
                 Orders: [],
                 FulfilledCount: 0,
@@ -179,7 +179,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
                 decision.Fulfilled = false;
                 decision.Refusal = 'SaveFailed';
                 decision.RefusalReason =
-                    `Order line ${decision.OrderLineID} could not be marked Fulfilled: ` +
+                    `Order line ${decision.OrderLineID} could not be marked as fulfilled: ` +
                     `${entity.LatestResult?.CompleteMessage ?? 'no reason given'}`;
                 continue;
             }
@@ -235,7 +235,7 @@ export class FulfillOrderLinesOperation extends OrdersFulfillOrderLinesOperation
             Success: true,
             Message:
                 refusedCount > 0
-                    ? `${fulfilledCount} line(s) fulfilled, ${refusedCount} refused. See Lines for reasons.`
+                    ? `${fulfilledCount} line(s) fulfilled, ${refusedCount} could not be. See each line for the reason.`
                     : undefined,
             Lines: decisions,
             Orders: advanced,

@@ -51,7 +51,7 @@ export function stripeConfirmAlreadyCollected(error: { code?: string; message?: 
  * The error code is for support, and the host logs the full error to the console.
  */
 export function formatStripeError(error: { message?: string } | null | undefined): string {
-    return error?.message?.trim() || 'Payment failed.';
+    return error?.message?.trim() || 'The payment did not go through. Check your card details and try again.';
 }
 
 /**

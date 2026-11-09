@@ -66,14 +66,14 @@ export function CheckChargeForOrder(charge: GatewayCharge, functionalCurrency: s
     if (!charge.ProviderIntentID) {
         return {
             Code: 'ChargeHasNoIntent',
-            Message: `Charge ${charge.ProviderChargeID} has no gateway payment intent, which the capture reads the charge and its fee through.`,
+            Message: `Charge ${charge.ProviderChargeID} has no payment intent at the payment provider, so its amount and fee cannot be read and it cannot be turned into an order.`,
         };
     }
     const want = functionalCurrency.trim().toUpperCase();
     if (charge.CurrencyCode.trim().toUpperCase() !== want) {
         return {
             Code: 'CurrencyMismatch',
-            Message: `Charge ${charge.ProviderChargeID} is in ${charge.CurrencyCode}; the receiving company books in ${want}.`,
+            Message: `Charge ${charge.ProviderChargeID} is in ${charge.CurrencyCode}, but the receiving company books in ${want}, so it cannot be turned into an order.`,
         };
     }
     return null;

@@ -162,7 +162,7 @@ describe('PlanTermShift — refusals and edge cases', () => {
     });
 
     it('refuses staged entries when the recognition type defers nothing', () => {
-        expect(PlanTermShift(input({ Driver: null }))).toMatch(/defers nothing/);
+        expect(PlanTermShift(input({ Driver: null }))).toMatch(/does not spread revenue over time/);
     });
 
     it('nets a term amended before: an earlier offset and re-spread count once', () => {

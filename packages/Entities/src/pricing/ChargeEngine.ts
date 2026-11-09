@@ -109,7 +109,7 @@ export async function RunCharges(
         const type = byCode.get(r.Code.toLowerCase());
         if (!type) {
             throw new ChargeError(
-                `There is no charge type '${r.Code}'. Charge types are seeded metadata — add one before charging it.`,
+                `There is no charge type '${r.Code}'. Ask an administrator to add this charge type before using it.`,
             );
         }
         if (!type.IsActive) {
@@ -117,14 +117,14 @@ export async function RunCharges(
         }
         if (r.OverrideAmount != null) {
             if (!type.AllowsOverride) {
-                throw new ChargeError(`Charge type '${r.Code}' does not permit an override.`);
+                throw new ChargeError(`Charge type '${r.Code}' does not allow its amount to be changed.`);
             }
             if (!r.OverrideReason?.trim()) {
                 // Mirrors the DB CHECK. Caught here so the message names the charge rather than a
                 // constraint number.
                 throw new ChargeError(
-                    `Overriding charge '${r.Code}' requires a reason. 'Waived' and 'free' must stay ` +
-                        `distinguishable in the record.`,
+                    `Changing the amount of charge '${r.Code}' needs a reason. Enter why, so a waived charge ` +
+                        `can be told apart from one that is free.`,
                 );
             }
         }

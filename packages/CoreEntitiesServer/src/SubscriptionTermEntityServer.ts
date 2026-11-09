@@ -30,7 +30,7 @@ export class SubscriptionTermEntityServer extends SubscriptionTermEntity {
 export function SanctionTermAmendment(term: BaseEntity): void {
     if (!(term instanceof SubscriptionTermEntityServer)) {
         throw new Error(
-            "The subscription term was not loaded through the orders server's entity subclass, so its booked dates cannot be amended.",
+            "The subscription term could not be loaded with the Orders server logic, so its booked dates cannot be changed. Report this to the development team.",
         );
     }
     SANCTIONED.add(term);

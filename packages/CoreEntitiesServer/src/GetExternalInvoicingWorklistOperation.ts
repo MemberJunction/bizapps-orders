@@ -80,7 +80,7 @@ export class GetExternalInvoicingWorklistOperation extends OrdersGetExternalInvo
             return { Success: true, Rows: kept, RowCount: kept.length, Truncated: truncated };
         } catch (err) {
             LogError(`Orders.GetExternalInvoicingWorklist failed: ${err}`);
-            return { Success: false, Message: err instanceof Error ? err.message : String(err), Rows: [], RowCount: 0, Truncated: false };
+            return { Success: false, Message: `The external invoicing worklist could not be loaded. Try again; if it keeps failing, ask an administrator. Details: ${err instanceof Error ? err.message : String(err)}`, Rows: [], RowCount: 0, Truncated: false };
         }
     }
 }

@@ -36,16 +36,16 @@ export function ResolveDeliveryChannel(code: DeliveryChannelCode): BaseDeliveryC
 
     if (!channel) {
         throw new DeliveryChannelNotConfiguredError(
-            `No delivery channel is registered for '${code}'. Register one with ` +
-                `@RegisterClass(BaseDeliveryChannel, '${code}') and call its Load* anchor from the server ` +
-                `bootstrap — without the anchor the decorator is tree-shaken away and the class is silently absent.`,
+            `Documents cannot be sent by '${code}' because no delivery channel is set up for it. A developer ` +
+                `needs to register one with @RegisterClass(BaseDeliveryChannel, '${code}') and call its Load* ` +
+                `function from the server startup; without that call the channel is left out of the build.`,
         );
     }
 
     if (channel.constructor === BaseDeliveryChannel) {
         throw new DeliveryChannelNotConfiguredError(
-            `Delivery channel '${code}' resolved to the BASE channel, which sends nothing. Its Load* anchor ` +
-                `is almost certainly missing from the server bootstrap.`,
+            `Documents cannot be sent by '${code}' because only the placeholder channel, which sends nothing, ` +
+                `is set up for it. A developer needs to call the channel's Load* function from the server startup.`,
         );
     }
 

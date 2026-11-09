@@ -198,7 +198,7 @@ export async function CopyPaymentDetail(
     copy.CopyFrom(source);
     if (!(await copy.Save())) {
         throw new Error(
-            `Failed to copy the payment instrument: ${copy.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+            `Could not copy the payment method onto the refund: ${copy.LatestResult?.CompleteMessage ?? 'unknown error'}`,
         );
     }
     return copy.ID;
@@ -222,7 +222,7 @@ export async function NextPaymentNumber(provider: IMetadataProvider): Promise<st
 
     const seq = rows?.[0]?.Seq;
     if (!seq) {
-        throw new Error('Could not obtain the next payment number — PaymentSequence (ID=1) is missing.');
+        throw new Error('Could not assign the next payment number because the payment number counter (PaymentSequence, ID 1) is missing. Ask an administrator to restore it.');
     }
     return `PAY-${String(seq).padStart(6, '0')}`;
 }
@@ -282,7 +282,7 @@ export async function CreateReversingPayment(
 
     if (!(await reversal.Save())) {
         throw new Error(
-            `Failed to create the reversal of ${original.PaymentNumber}: ` +
+            `Could not create the refund for payment ${original.PaymentNumber}: ` +
                 `${reversal.LatestResult?.CompleteMessage ?? 'unknown error'}`,
         );
     }

@@ -68,8 +68,8 @@ describe('stripe confirm retry helpers', () => {
         expect(formatStripeError({ message: 'Your card has been declined.', code: 'card_declined' })).toBe('Your card has been declined.');
         expect(formatStripeError({ message: 'We are unable to authenticate your payment method.', code: 'payment_intent_authentication_failure' }))
             .not.toContain('payment_intent_authentication_failure');
-        expect(formatStripeError({ message: '  ', code: 'card_declined' })).toBe('Payment failed.');
-        expect(formatStripeError(null)).toBe('Payment failed.');
+        expect(formatStripeError({ message: '  ', code: 'card_declined' })).toBe('The payment did not go through. Check your card details and try again.');
+        expect(formatStripeError(null)).toBe('The payment did not go through. Check your card details and try again.');
     });
 });
 

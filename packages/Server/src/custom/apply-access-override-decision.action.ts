@@ -26,7 +26,7 @@ export class ApplyAccessOverrideDecisionAction extends BaseAction {
     protected async InternalRunAction(params: RunActionParams): Promise<ActionResultSimple> {
         try {
             const user = params.ContextUser;
-            if (!user) return refuse('NO_CONTEXT_USER', 'ContextUser is required: an access override decision is attributed to whoever made it.');
+            if (!user) return refuse('NO_CONTEXT_USER', 'This action needs a user to run as, because an access override decision is recorded against the person who made it. Run it from a scheduled job that has a run-as user, or as a signed-in user.');
             const raw = params.Params?.find((p) => p.Name?.toLowerCase() === 'taskid')?.Value;
             const taskID = raw == null ? '' : String(raw).trim();
             if (!taskID) return refuse('NO_TASK_ID', 'TaskID is required.');

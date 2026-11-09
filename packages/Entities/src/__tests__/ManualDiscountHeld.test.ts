@@ -53,7 +53,7 @@ describe('AuthorizeManualDiscount — above the rep\'s authority', () => {
         expect(auth.NeedsApproval).toBe(true);
         expect(auth.AuthorityID).toBeNull();
         expect(auth.ApprovedByUserID).toBeNull();
-        expect(auth.Held).toMatch(/outside this user's SalesAuthority.*needs approval/);
+        expect(auth.Held).toMatch(/over your discount limit.*needs approval/);
     });
 
     it('holds it when the rep lacks the DiscountLimit rule\'s role', async () => {

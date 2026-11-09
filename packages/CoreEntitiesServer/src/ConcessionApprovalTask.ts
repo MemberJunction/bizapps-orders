@@ -428,7 +428,7 @@ export async function ReleaseOrderFromTasks(orderHeaderID: string, taskIDs: read
     if (!open[0]) return;
     order.ApprovalTaskID = open[0].ID;
     if (!(await order.Save())) {
-        throw new Error(`Order ${order.OrderNumber} could not be pointed at its open approval task: ${order.LatestResult?.CompleteMessage}`);
+        throw new Error(`Order ${order.OrderNumber} could not be linked to its open approval task: ${order.LatestResult?.CompleteMessage}`);
     }
 }
 
@@ -464,15 +464,15 @@ export async function LinkedConcessionIDs(taskID: string, ctx: ApprovalTaskConte
 function requireTasksApp(ctx: ApprovalTaskContext): void {
     if (!ctx.Provider.EntityByName(TASK_ENTITY)) {
         throw new Error(
-            'A concession awaiting approval is routed to its approvers through the tasks app, and the tasks app ' +
-                'is not installed, so no one would be told it is waiting.',
+            'This concession needs approval, but the tasks app is not installed, so its approvers cannot be told. ' +
+                'Ask an administrator to install the tasks app.',
         );
     }
 }
 
 function entityID(name: string, ctx: ApprovalTaskContext): string {
     const entity = ctx.Provider.EntityByName(name);
-    if (!entity) throw new Error(`Entity '${name}' is not in metadata.`);
+    if (!entity) throw new Error(`Concession approval tasks cannot be raised because '${name}' is not installed. Ask an administrator to check the tasks app install.`);
     return entity.ID;
 }
 
@@ -498,7 +498,7 @@ async function raiseTask(
 
     order.ApprovalTaskID = task.ID;
     if (!(await order.Save())) {
-        throw new Error(`Order ${order.OrderNumber} could not be pointed at its approval task: ${order.LatestResult?.CompleteMessage}`);
+        throw new Error(`Order ${order.OrderNumber} could not be linked to its approval task: ${order.LatestResult?.CompleteMessage}`);
     }
     return task.ID;
 }
@@ -525,8 +525,9 @@ async function approverPersons(
     const others = holderIDs.filter((id) => !UUIDsEqual(id, requesterUserID));
     if (others.length === 0) {
         throw new Error(
-            'This concession is outside the requester\'s authority, and no active user other than the requester ' +
-                'holds the role the ConcessionLimit rule names, so no one could approve it. Assign that role to an approver.',
+            'This concession is above the requester\'s sales authority, and no active user other than the requester ' +
+                'holds the approver role set on its concession limit rule, so no one can approve it. Ask an administrator ' +
+                'to give that role to an approver.',
         );
     }
 
@@ -543,10 +544,10 @@ async function approverPersons(
                       'no approver there has an active person record linked to their user. The tasks app tells and lists ' +
                       'an approver through that person record, so no one would be told the concession is waiting. Link a ' +
                       "person record to the approver's user."
-                : 'This concession is outside the requester\'s authority, and none of the active holders of the role the ' +
-                      'ConcessionLimit rule names has an active person record linked to their user. The tasks app tells ' +
-                      'and lists an approver through that person record, so no one would be told the concession is ' +
-                      'waiting. Link a person record to an approver\'s user.',
+                : 'This concession is above the requester\'s sales authority, but none of the active users with its approver ' +
+                      'role has an active person record linked to their user. Approvers are notified through that person ' +
+                      'record, so no one would be told the concession is waiting. Ask an administrator to link a person ' +
+                      'record to an approver\'s user.',
         );
     }
     if (WithoutPerson.length > 0) {
@@ -610,7 +611,7 @@ async function createTask(
         MaxRows: 1,
     });
     const typeID = types[0]?.ID;
-    if (!typeID) throw new Error(`The tasks app has no '${APPROVAL_TASK_TYPE_CODE}' task type, so no approval task can be raised.`);
+    if (!typeID) throw new Error(`This concession needs approval, but the tasks app has no '${APPROVAL_TASK_TYPE_CODE}' task type to raise the approval task with. Ask an administrator to add that task type.`);
 
     const task = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASK_ENTITY, ctx.User);
     requireSubclass(task, TASK_ENTITY);
@@ -749,7 +750,7 @@ async function loadOrder(id: string, ctx: ApprovalTaskContext): Promise<mjBizApp
  */
 export function requireSubclass(entity: BaseEntity, name: string): void {
     if (Object.getPrototypeOf(entity) === BaseEntity.prototype) {
-        throw new Error(`'${name}' has no registered entity subclass; @mj-biz-apps/tasks-entities is not loaded.`);
+        throw new Error(`'${name}' records cannot be written because the tasks app's entity classes (@mj-biz-apps/tasks-entities) are not loaded on the server. A developer needs to load that package.`);
     }
 }
 

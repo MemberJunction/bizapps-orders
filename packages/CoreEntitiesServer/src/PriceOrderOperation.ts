@@ -86,8 +86,8 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
     ): Promise<PriceOrderOutput> {
         const empty = { Lines: [], Totals: { Net: 0, Discount: 0, Charges: 0, Tax: 0, Gross: 0 }, UnusableCodes: [] };
 
-        if (!input?.CompanyID) return { Success: false, Message: 'CompanyID is required.', ...empty };
-        if (!input.Lines?.length) return { Success: false, Message: 'At least one line is required.', ...empty };
+        if (!input?.CompanyID) return { Success: false, Message: 'Pick a company before pricing the order.', ...empty };
+        if (!input.Lines?.length) return { Success: false, Message: 'Add at least one line before pricing the order.', ...empty };
 
         // Caller-supplied ids reach SQL filter text downstream. Validated at the boundary so every
         // frame below can trust them.

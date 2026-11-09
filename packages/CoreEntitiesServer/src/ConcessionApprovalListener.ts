@@ -115,9 +115,9 @@ export async function ApplyTaskDecisionToConcessions(
                 results.push({ ConcessionID: id, Applied: true });
                 continue;
             }
-            refusal = concession.LatestResult?.CompleteMessage ?? 'the concession refused the decision';
+            refusal = concession.LatestResult?.CompleteMessage ?? 'The concession could not be saved with this decision.';
         } else {
-            refusal = `'${outcome.Code}' is not an outcome orders can apply to a concession.`;
+            refusal = `A concession can only be approved or rejected, so the outcome '${outcome.Code}' cannot be applied to it.`;
         }
         results.push(await routeAgain(concession, decision.TaskID, refusal, ctx));
     }

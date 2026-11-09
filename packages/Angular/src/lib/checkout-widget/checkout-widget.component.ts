@@ -650,7 +650,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             runner({ component: this, config: this.config, hooks });
         } catch (err) {
             console.warn('[MJCheckoutWidget] CustomJS evaluation notice:', err);
-            this.internalErrorMessage.set('Notice: Custom widget scripts could not be evaluated under current security policy.');
+            this.internalErrorMessage.set('This checkout\'s custom script could not run, because the page\'s security settings block it. Contact the site operator.');
         } finally {
             const after = window.MJCheckoutHooks;
             if (after && (after !== pageHooks || !this.sameHooks(after, pageHookEntries))) {
@@ -694,7 +694,7 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
             console.warn(`[MJCheckoutWidget] Hook error in ${hookName}:`, err);
             if (hookName === 'onValidate') {
                 // Fail closed on validation errors
-                return 'Validation hook encountered an internal error.';
+                return 'This checkout\'s custom check could not run, so the order was not submitted. Contact the site operator.';
             }
         }
         return undefined;
@@ -905,11 +905,11 @@ export class MJCheckoutWidgetComponent implements OnInit, OnChanges, OnDestroy {
         try {
             const customValidationResult = this.executeLifecycleHook('onValidate', submission);
             if (customValidationResult === false || typeof customValidationResult === 'string') {
-                this.internalErrorMessage.set(typeof customValidationResult === 'string' ? customValidationResult : 'Submission validation rejected.');
+                this.internalErrorMessage.set(typeof customValidationResult === 'string' ? customValidationResult : 'Your details did not pass this checkout\'s checks. Review them and try again.');
                 return;
             }
         } catch (hookErr) {
-            this.internalErrorMessage.set('Validation failed: ' + (hookErr instanceof Error ? hookErr.message : String(hookErr)));
+            this.internalErrorMessage.set('This checkout\'s custom check failed: ' + (hookErr instanceof Error ? hookErr.message : String(hookErr)));
             return;
         }
 

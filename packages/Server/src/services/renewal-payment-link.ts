@@ -122,9 +122,9 @@ export async function renderLinkEmail(
     if (!bodyContent || !subjectContent) return { Error: 'a renewal link template has no content' };
 
     const html = await engine.RenderTemplate(body, bodyContent, data, true, true);
-    if (!html.Success) return { Error: `the e-mail body did not render: ${html.Message ?? 'unknown template error'}` };
+    if (!html.Success) return { Error: `the e-mail body did not render: ${html.Message ?? 'the template failed without saying why'}` };
     const line = await engine.RenderTemplate(subject, subjectContent, data, true, true);
-    if (!line.Success) return { Error: `the e-mail subject did not render: ${line.Message ?? 'unknown template error'}` };
+    if (!line.Success) return { Error: `the e-mail subject did not render: ${line.Message ?? 'the template failed without saying why'}` };
     return { Subject: (line.Output ?? '').replace(/\s+/g, ' ').trim(), Html: html.Output ?? '' };
 }
 

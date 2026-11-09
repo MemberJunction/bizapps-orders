@@ -265,20 +265,21 @@ export interface SliceBilledSoFar {
 export function TiedSlice(totals: number[], rows: number[], index: number, billed?: SliceBilledSoFar): number[] {
     const toCents = (n: number): number => Math.round(Number(n) * 100);
     const rowCents = rows.map(toCents);
-    if (!(index >= 0 && index < rowCents.length)) throw new Error(`TiedSlice: instalment index ${index} is outside ${rowCents.length} rows.`);
-    if (rowCents.some((r) => r < 0)) throw new Error('TiedSlice: a schedule row is negative.');
+    if (!(index >= 0 && index < rowCents.length)) throw new Error(`Cannot bill instalment ${index + 1}: the payment schedule has only ${rowCents.length}.`);
+    if (rowCents.some((r) => r < 0)) throw new Error('Cannot bill this instalment: a payment schedule row has a negative amount.');
     const invoiced = billed?.Invoiced ?? rows.map(() => false);
     if (invoiced.length !== rows.length || (billed && billed.Amounts.length !== totals.length)) {
-        throw new Error('TiedSlice: what was billed does not line up with the rows and amounts it describes.');
+        throw new Error('Cannot bill this instalment: the record of what was already billed does not match the payment schedule and order lines.');
     }
-    if (invoiced[index]) throw new Error(`TiedSlice: instalment index ${index} is already invoiced, so it has nothing left to slice.`);
+    if (invoiced[index]) throw new Error(`Instalment ${index + 1} is already invoiced, so there is nothing left to bill on it.`);
     const original = totals.map(toCents);
     let remaining = original.map((t, j) => t - toCents(billed?.Amounts[j] ?? 0));
     remaining.forEach((r, j) => {
         if (r * original[j] < 0 || Math.abs(r) > Math.abs(original[j])) {
             throw new Error(
-                `An amount of ${original[j] / 100} has already been invoiced ${(original[j] - r) / 100}, more than it now ` +
-                    `holds, so what is left cannot be sliced across the remaining instalments. Nothing was posted.`,
+                `A line amount of ${original[j] / 100} has already been invoiced ${(original[j] - r) / 100}, more than it now ` +
+                    `holds, so what is left cannot be split across the remaining instalments. Nothing was posted. Ask an ` +
+                    `administrator to check the payment schedule.`,
             );
         }
     });
@@ -287,8 +288,9 @@ export function TiedSlice(totals: number[], rows: number[], index: number, bille
     const held = remaining.reduce((t, r) => t + r, 0);
     if (owed !== held) {
         throw new Error(
-            `The schedule rows not yet invoiced total ${owed / 100} but the lines have ${held / 100} left to bill, so the ` +
-                `instalments cannot be sliced to tie to their rows. Nothing was posted.`,
+            `The instalments not yet invoiced total ${owed / 100}, but the order lines have ${held / 100} left to bill, so the ` +
+                `bill cannot be split to match the instalments. Nothing was posted. Correct the payment schedule so it adds up ` +
+                `to what is left to bill.`,
         );
     }
     const splitRow = (row: number, left: number[]): number[] =>
@@ -301,7 +303,7 @@ export function TiedSlice(totals: number[], rows: number[], index: number, bille
     const mine = index === open[open.length - 1] ? remaining : splitRow(rowCents[index], remaining);
     mine.forEach((p, j) => {
         if (p * original[j] < 0 || Math.abs(p) > Math.abs(original[j])) {
-            throw new Error(`TiedSlice: piece ${p / 100} of amount ${original[j] / 100} is out of range.`);
+            throw new Error(`Cannot bill this instalment: its share of ${p / 100} of a line amount of ${original[j] / 100} is out of range.`);
         }
     });
     return mine.map((c) => c / 100);
@@ -368,8 +370,8 @@ export async function EmitInstalmentInvoiceEntry(
     const index = rowIndex(context);
     if (index < 0) {
         throw new Error(
-            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} was not found ` +
-                `among the live rows passed for its company. The billing entry cannot be sliced.`,
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber} was not found among the ` +
+                `order's active instalments for its company, so its billing entry cannot be built.`,
         );
     }
 
@@ -555,8 +557,8 @@ export async function EmitInstalmentInvoiceEntry(
     const journalEntryID = outcome.Results?.[0]?.JournalEntryID;
     if (!journalEntryID) {
         throw new Error(
-            `Accounting reported success but returned no journal entry for the billing entry of ` +
-                `instalment ${context.InstallmentNumber} of order ${context.OrderNumber}.`,
+            `Accounting accepted the billing entry for instalment ${context.InstallmentNumber} of order ` +
+                `${context.OrderNumber} but returned no journal entry, so the instalment was not invoiced. Ask an administrator to check the accounting connection.`,
         );
     }
     return { JournalEntryID: journalEntryID, BilledByLine: billedByLine, BilledParts: billedParts };
@@ -591,9 +593,9 @@ async function depositApplicationLines(
     const billed = money(receivables.reduce((t, r) => t + r.ARDebit, 0));
     if (applied > billed) {
         throw new Error(
-            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber}: ${applied} of deposits ` +
-                `would settle a bill of ${billed}. A deposit cannot settle more than the instalment bills; ` +
-                `nothing was posted.`,
+            `Instalment ${context.InstallmentNumber} of order ${context.OrderNumber}: the customer's deposits of ` +
+                `${applied} are more than the ${billed} this instalment bills, and a deposit cannot settle more than ` +
+                `the instalment. Nothing was posted.`,
         );
     }
 
@@ -640,8 +642,8 @@ function assertBalanced(lines: JELineDraft[], context: InstalmentInvoiceContext)
     if (debits !== credits) {
         throw new Error(
             `The billing entry for instalment ${context.InstallmentNumber} of order ` +
-                `${context.OrderNumber} does not balance: debits ${debits} vs credits ${credits}. ` +
-                `Nothing was booked.`,
+                `${context.OrderNumber} does not balance: debits total ${debits} and credits total ${credits}. ` +
+                `Nothing was posted. This is a bug in instalment billing.`,
         );
     }
 }

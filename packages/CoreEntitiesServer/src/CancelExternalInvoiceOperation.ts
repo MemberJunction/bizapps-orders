@@ -44,7 +44,7 @@ export class CancelExternalInvoiceOperation extends OrdersCancelExternalInvoiceO
         try {
             const id = RequireUUID(input?.ExternalInvoiceID, 'ExternalInvoiceID');
             const reason = String(input?.Reason ?? '').trim();
-            if (!reason) return { Success: false, ResultCode: 'ERROR', Message: 'A reason is required; it is recorded on the invoice row.' };
+            if (!reason) return { Success: false, ResultCode: 'ERROR', Message: 'Enter a reason for canceling; it is kept on the invoice.' };
 
             const rv = new RunView(provider as unknown as IRunViewProvider);
             const rows = await rv.RunView<ExternalInvoiceRow>({ EntityName: EXTERNAL_INVOICE_ENTITY, ExtraFilter: `ID = '${id}'`, ResultType: 'simple' }, user);
@@ -94,8 +94,8 @@ export class CancelExternalInvoiceOperation extends OrdersCancelExternalInvoiceO
                 Success: true,
                 ResultCode: 'CANCELED',
                 Message: instalment
-                    ? `${row.DocumentNumber} was archived on ${rail.Config.Name}. The instalment keeps this number as history — instalments are never re-issued; cancel the instalment to raise a credit memo and a replacement row with the next number.`
-                    : `${row.DocumentNumber} was archived on ${rail.Config.Name}. The unit reads as unsent.`,
+                    ? `${row.DocumentNumber} was archived in ${rail.Config.Name}. The instalment keeps this number as history, because instalment numbers are never reused. To bill it again, cancel the instalment: that raises a credit memo and a replacement instalment with the next number.`
+                    : `${row.DocumentNumber} was archived in ${rail.Config.Name}. The order now reads as not yet sent.`,
                 ExternalInvoiceID: row.ID,
                 CanceledAt: canceledAt.toISOString(),
             };

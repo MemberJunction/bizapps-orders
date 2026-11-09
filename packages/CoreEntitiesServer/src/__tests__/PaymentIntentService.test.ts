@@ -122,7 +122,7 @@ describe('OpenPaymentIntent — refusing before it asks', () => {
         for (const amount of [0, -5, Number.NaN]) {
             const result = await open(state, { Amount: amount });
             expect(result.Success).toBe(false);
-            expect(result.Reason).toMatch(/Cannot open a payment intent/);
+            expect(result.Reason).toMatch(/cannot be started/);
         }
         expect(driverResponse.LastRequest).toBeNull();
         expect(state.Saved).toHaveLength(0);
@@ -132,7 +132,7 @@ describe('OpenPaymentIntent — refusing before it asks', () => {
         const state = fresh();
         const result = await open(state, { PaymentProviderID: '' });
         expect(result.Success).toBe(false);
-        expect(result.Reason).toMatch(/PaymentProviderID/);
+        expect(result.Reason).toMatch(/payment provider/);
         expect(state.Saved).toHaveLength(0);
     });
 
@@ -287,7 +287,7 @@ describe('OpenPaymentIntent — when we cannot record what the gateway opened', 
         // Real money is in flight against an intent this application cannot recognise. A refusal the
         // caller might swallow would lose that; a throw puts it in front of somebody.
         const state = fresh({ SaveSucceeds: false });
-        await expect(open(state)).rejects.toThrow(/Could not record payment intent pi_1/);
+        await expect(open(state)).rejects.toThrow(/reference pi_1/);
     });
 });
 

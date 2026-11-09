@@ -229,7 +229,7 @@ async function prepareTemplate(
                 true,
                 true,
             );
-            if (!result.Success) return { html: null, error: result.Message ?? 'unknown template error' };
+            if (!result.Success) return { html: null, error: result.Message ?? 'the document template failed without saying why' };
             return { html: result.Output ?? '' };
         },
     };

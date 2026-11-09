@@ -148,7 +148,7 @@ export class PaymentWebhookExtension extends BaseServerExtension {
                   Healthy: false,
                   Name: 'OrdersPaymentWebhook',
                   Details: {
-                      Reason: 'MJ\'s system user does not resolve, so every webhook delivery will be refused.',
+                      Reason: 'The server\'s system user cannot be found, so every payment provider notification will be refused. Ask an administrator to check the system user setup.',
                   },
               };
     }

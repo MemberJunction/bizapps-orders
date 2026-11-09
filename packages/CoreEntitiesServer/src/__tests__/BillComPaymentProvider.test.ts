@@ -32,7 +32,7 @@ describe('BillComPaymentProvider', () => {
     it('refuses to open an intent, naming the rail', async () => {
         const r = await driver().CreateIntent({ Amount: 10, CurrencyCode: 'USD' });
         expect(r.Success).toBe(false);
-        expect(r.Reason).toMatch(/not a checkout rail/i);
+        expect(r.Reason).toMatch(/cannot take payments at checkout/i);
     });
 
     it('refuses capture and refund the same way', async () => {
@@ -40,9 +40,9 @@ describe('BillComPaymentProvider', () => {
         const capture = await d.Capture({ ProviderIntentID: 'pi', Amount: 10, CurrencyCode: 'USD' });
         const refund = await d.Refund({ ProviderChargeID: 'ch', Amount: 1, CurrencyCode: 'USD' });
         expect(capture.Success).toBe(false);
-        expect(capture.Reason).toMatch(/not a checkout rail/i);
+        expect(capture.Reason).toMatch(/cannot take payments at checkout/i);
         expect(refund.Success).toBe(false);
-        expect(refund.Reason).toMatch(/not a checkout rail/i);
+        expect(refund.Reason).toMatch(/cannot take payments at checkout/i);
     });
 
     it('verifies a Bill.com signature with the configured security key, and refuses without one', async () => {

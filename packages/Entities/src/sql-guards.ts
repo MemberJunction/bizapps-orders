@@ -37,7 +37,7 @@ export function IsUUID(value: unknown): value is string {
  */
 export function RequireUUID(value: string, field: string): string {
     if (typeof value !== 'string' || !UUID.test(value)) {
-        throw new InvalidOperationInputError(`${field} must be a UUID.`);
+        throw new InvalidOperationInputError(`${field} must be a valid ID (a UUID).`);
     }
     return value;
 }

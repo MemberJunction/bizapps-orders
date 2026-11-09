@@ -144,7 +144,7 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
     return {
         async loadCompanyIntegration(id, p, user) {
             const ci = await p.GetEntityObject<MJCompanyIntegrationEntity>('MJ: Company Integrations', user);
-            if (!(await ci.Load(id))) throw new Error(`Company Integration ${id} does not exist.`);
+            if (!(await ci.Load(id))) throw new Error(`The company integration ${id} named by the payment provider does not exist. Ask an administrator to check the provider's CompanyIntegrationID.`);
             return ci;
         },
         async loadCredentialEnvironment(ci, p, user) {
@@ -160,7 +160,7 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
                 return environmentFrom(cred.Values, 'the credential');
             }
             if (ci.Configuration) return environmentFrom(ci.Configuration, "the Company Integration's Configuration");
-            return { Known: false, Reason: 'the Company Integration names neither a credential nor a Configuration' };
+            return { Known: false, Reason: 'the connection has neither a credential nor a configuration' };
         },
         async createRecord(ci, object, attrs, user) {
             const c = await ConnectorForCompanyIntegration(ci, provider, user);
@@ -185,8 +185,8 @@ export function DefaultBillComGateway(provider: IMetadataProvider): BillComGatew
                     Success: false,
                     StatusCode: 0,
                     ErrorMessage:
-                        'This build of @memberjunction/connector-bill-com has no ArchiveInvoice verb. Upgrade to 0.3.2 or later; ' +
-                        'cancelling an invoice is not possible without it.',
+                        'Invoices cannot be canceled in Bill.com because the installed Bill.com connector (@memberjunction/connector-bill-com) ' +
+                        'is older than 0.3.2. Ask an administrator to upgrade it.',
                 };
             }
             return c.ArchiveInvoice({ CompanyIntegration: ci, ExternalID: externalID, ContextUser: user });

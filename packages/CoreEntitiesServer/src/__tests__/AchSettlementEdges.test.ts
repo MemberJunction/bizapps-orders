@@ -318,10 +318,10 @@ describe('ParseWebhookEvent — payloads Stripe could plausibly send', () => {
 describe('Capture — refusing, and the difference between a refusal and a fault', () => {
     it.each([
         ['processing', 'Processing', /has not cleared yet/],
-        ['requires_payment_method', 'Failed', /no money moved/],
-        ['requires_action', 'Failed', /no money moved/],
-        ['canceled', 'Failed', /no money moved/],
-        ['', 'Failed', /no money moved/],
+        ['requires_payment_method', 'Failed', /no money was collected/],
+        ['requires_action', 'Failed', /no money was collected/],
+        ['canceled', 'Failed', /no money was collected/],
+        ['', 'Failed', /no money was collected/],
     ])('refuses an intent reading %s', async (status, expectedStatus, message) => {
         const driver = liveAch({ Ok: true, Body: { status, currency: 'usd' } });
         const result = await driver.Capture({ ProviderIntentID: 'pi_1', CurrencyCode: 'USD' });

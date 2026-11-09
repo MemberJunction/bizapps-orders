@@ -36,14 +36,14 @@ export class SendExternalInvoicesAction extends BaseAction {
     private async send(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
         if (!user) {
-            return { Success: false, ResultCode: 'NO_CONTEXT_USER', Message: 'ContextUser is required: a rail invoice has to be attributable to somebody.' };
+            return { Success: false, ResultCode: 'NO_CONTEXT_USER', Message: 'This action needs a user to run as, because every invoice sent to the billing service is recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.' };
         }
         const input: OrdersSendExternalInvoicesInput = {};
 
         const companies = listParam(params, 'CompanyIDs');
         if (companies !== null) {
             const bad = companies.filter((c) => !UUID.test(c));
-            if (bad.length) return { Success: false, ResultCode: 'INVALID_COMPANY_IDS', Message: `CompanyIDs must be company IDs, comma-separated — got '${bad.join(', ')}'.` };
+            if (bad.length) return { Success: false, ResultCode: 'INVALID_COMPANY_IDS', Message: `CompanyIDs must be a comma-separated list of company IDs. These are not IDs: '${bad.join(', ')}'.` };
             input.CompanyIDs = companies;
         }
 
@@ -66,7 +66,7 @@ export class SendExternalInvoicesAction extends BaseAction {
         const provider: IMetadataProvider = params.Provider ?? Metadata.Provider;
         const result = await new OrdersSendExternalInvoicesOperation().Execute(input, { provider, user });
         if (!result.Success || !result.Output) {
-            return { Success: false, ResultCode: result.ResultCode ?? 'OPERATION_FAILED', Params: params.Params, Message: result.ErrorMessage ?? 'Orders.SendExternalInvoices returned no result.' };
+            return { Success: false, ResultCode: result.ResultCode ?? 'OPERATION_FAILED', Params: params.Params, Message: result.ErrorMessage ?? 'The external invoice sweep returned no result. Check the server log for the cause.' };
         }
         const out = result.Output;
         setOutput(params, 'Sent', out.Sent);

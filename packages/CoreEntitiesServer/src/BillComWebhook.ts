@@ -47,13 +47,13 @@ export async function VerifyBillComSignature(
     securityKey: string | null | undefined,
 ): Promise<{ Valid: boolean; Reason?: string }> {
     if (!securityKey) {
-        return { Valid: false, Reason: 'No Bill.com webhook security key is configured for this provider (CredentialsRef → <REF>_WEBHOOK_SECRET).' };
+        return { Valid: false, Reason: 'No Bill.com webhook security key is set for this provider. Ask an administrator to add it as the <REF>_WEBHOOK_SECRET credential, where <REF> is the provider\'s CredentialsRef.' };
     }
     const presented = headers[BILLCOM_SIGNATURE_HEADER] ?? headers[BILLCOM_SIGNATURE_HEADER.toUpperCase()];
-    if (!presented) return { Valid: false, Reason: `Missing ${BILLCOM_SIGNATURE_HEADER} header.` };
+    if (!presented) return { Valid: false, Reason: `The webhook was refused: it has no ${BILLCOM_SIGNATURE_HEADER} signature header.` };
     const expected = await SignBillComPayload(rawBody, securityKey);
     if (!constantTimeEqual(expected, presented.trim())) {
-        return { Valid: false, Reason: 'Signature does not match the raw body under the configured security key.' };
+        return { Valid: false, Reason: 'The webhook was refused: its signature does not match the configured security key.' };
     }
     return { Valid: true };
 }

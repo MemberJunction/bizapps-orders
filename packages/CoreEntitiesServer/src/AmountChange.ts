@@ -308,7 +308,7 @@ export async function CheckAmountChange(request: AmountChangeRequest, ctx: Appro
         return (
             `Line ${line.LineNumber} has already billed ${billed.toFixed(2)} before tax, and after this change's credit memo ` +
             `of ${creditMemo.Net.toFixed(2)} it would still be billed for more than the ${lineNetAfter.toFixed(2)} it comes to. ` +
-            `Name the invoice to credit in AppliesToInvoiceID, or correct it with a correcting order.`
+            `Pick the invoice to credit, or correct the line with a correcting order.`
         );
     }
 
@@ -320,7 +320,7 @@ export async function CheckAmountChange(request: AmountChangeRequest, ctx: Appro
         if (row && change.NewAmount < paid) {
             return (
                 `Instalment ${change.InstallmentNumber} has ${paid.toFixed(2)} paid on it and would go down to ` +
-                `${change.NewAmount.toFixed(2)}. Lower the amount by less, or name a paid invoice in AppliesToInvoiceID ` +
+                `${change.NewAmount.toFixed(2)}. Lower the amount by less, or pick the paid invoice to credit ` +
                 `and ask for a refund.`
             );
         }
@@ -517,10 +517,10 @@ async function creditInvoices(checked: CheckedAmountChange, concession: Approved
 async function unbillLine(checked: CheckedAmountChange, ctx: ApprovalTaskContext): Promise<void> {
     if (!(checked.CreditMemo.Net > 0)) return;
     const line = await ctx.Provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
-    if (!(await line.Load(checked.OrderLineID))) throw new Error(`Order line ${checked.OrderLineID} could not be loaded to lower its BilledToDate.`);
+    if (!(await line.Load(checked.OrderLineID))) throw new Error(`Order line ${checked.OrderLineID} could not be loaded to lower its billed-to-date amount.`);
     line.BilledToDate = money(Number(line.BilledToDate ?? 0) - checked.CreditMemo.Net);
     if (!(await line.Save())) {
-        throw new Error(`Order line ${checked.OrderLineID}'s BilledToDate could not be lowered: ${line.LatestResult?.CompleteMessage}`);
+        throw new Error(`The billed-to-date amount of order line ${checked.OrderLineID} could not be lowered: ${line.LatestResult?.CompleteMessage}`);
     }
 }
 

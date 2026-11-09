@@ -34,9 +34,9 @@ import {
 import { ParseBillComWebhookEvent, VerifyBillComSignature } from './BillComWebhook.js';
 
 const NOT_A_CHECKOUT_RAIL =
-    'Bill.com is not a checkout rail. Invoices are created in Bill.com by the invoice rail, and payments ' +
-    'are captured by Orders.PollExternalPayments when Bill.com reports them cleared; nothing is charged ' +
-    'from Orders.';
+    'Bill.com cannot take payments at checkout. Invoices are sent through Bill.com, and their payments are ' +
+    'recorded when Bill.com reports them cleared (Orders.PollExternalPayments); Orders never charges a ' +
+    'customer through Bill.com.';
 
 @RegisterClass(BasePaymentProvider, 'BillCom')
 export class BillComPaymentProvider extends BasePaymentProvider {

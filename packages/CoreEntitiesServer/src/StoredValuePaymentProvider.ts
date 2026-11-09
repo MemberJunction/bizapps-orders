@@ -79,7 +79,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
      */
     public override async CreateIntent(request: CreateIntentRequest & StoredValueTarget): Promise<CreateIntentResult> {
         if (request.Amount <= 0) {
-            return { Success: false, Reason: `Cannot draw ${request.Amount} from an internal balance.` };
+            return { Success: false, Reason: `A gift card or account credit payment must be for more than zero (${request.Amount} was entered).` };
         }
 
         const available = await this.available(request);
@@ -88,9 +88,8 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
             return {
                 Success: false,
                 Reason:
-                    `${available.Label} holds ${available.Balance.toFixed(2)}, which does not cover ` +
-                    `${request.Amount.toFixed(2)}. Apply what is there and settle the remainder with ` +
-                    `another tender rather than over-drawing it.`,
+                    `${available.Label} has ${available.Balance.toFixed(2)} available, which does not cover ` +
+                    `${request.Amount.toFixed(2)}. Apply the ${available.Balance.toFixed(2)} and pay the rest another way.`,
             };
         }
 
@@ -112,7 +111,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
     public override async Capture(request: CaptureRequest & StoredValueTarget): Promise<CaptureResult> {
         const amount = request.Amount ?? 0;
         if (amount <= 0) {
-            return { Success: false, Reason: 'An internal-tender capture needs the amount being drawn.' };
+            return { Success: false, Reason: 'Enter the amount to take from the gift card or account credit.' };
         }
 
         const available = await this.available(request);
@@ -121,8 +120,9 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
             return {
                 Success: false,
                 Reason:
-                    `${available.Label} now holds only ${available.Balance.toFixed(2)} against a ` +
-                    `${amount.toFixed(2)} draw — it changed after the intent was opened. Nothing was spent.`,
+                    `${available.Label} now has only ${available.Balance.toFixed(2)} available, less than the ` +
+                    `${amount.toFixed(2)} being charged, because its balance changed after the payment was started. ` +
+                    `Nothing was spent; start the payment again.`,
             };
         }
 
@@ -145,7 +145,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
     public override async Refund(request: RefundRequest): Promise<RefundResult> {
         const amount = request.Amount;
         if (amount == null || amount <= 0) {
-            return { Success: false, Reason: 'An internal-tender refund needs the amount being restored.' };
+            return { Success: false, Reason: 'Enter the amount to put back on the gift card or account credit.' };
         }
         return { Success: true, Amount: amount, ProviderRefundID: `sv_refund_${crypto.randomUUID()}` };
     }
@@ -163,7 +163,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
         const none = { Found: false, Balance: 0, Label: '' };
 
         if (!this.Provider || !this.User) {
-            return { ...none, Reason: 'The stored-value driver was not given a provider to read balances with.' };
+            return { ...none, Reason: 'Gift card and account credit balances cannot be read because the server did not set up the stored-value driver correctly. Report this to the development team.' };
         }
         const rv = new RunView(this.Provider as unknown as IRunViewProvider);
 
@@ -184,7 +184,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
             );
             const account = result?.Results?.[0];
             if (!account) {
-                return { ...none, Reason: `No stored-value account ${target.StoredValueAccountID} exists.` };
+                return { ...none, Reason: `Gift card ${target.StoredValueAccountID} was not found.` };
             }
             const label = `Gift card ${account.Code}`;
             if (account.Status !== 'Active') {
@@ -212,7 +212,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
             );
             const order = result?.Results?.[0];
             if (!order) {
-                return { ...none, Reason: `No order ${target.SourceOrderHeaderID} exists to draw credit from.` };
+                return { ...none, Reason: `Order ${target.SourceOrderHeaderID} was not found, so its credit cannot be used.` };
             }
             const balance = Number(order.Balance ?? 0);
             const label = `Order ${order.OrderNumber}`;
@@ -223,8 +223,8 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
                 return {
                     ...none,
                     Reason:
-                        `${label} has a balance of ${balance.toFixed(2)}, so it holds no credit. ` +
-                        `Account credit is an OVER-payment — a negative balance.`,
+                        `${label} has a balance of ${balance.toFixed(2)}, so it has no credit to spend. ` +
+                        `An order has credit only when it has been paid more than it is worth.`,
                 };
             }
             return { Found: true, Balance: Math.abs(balance), Label: `${label}'s credit` };
@@ -233,8 +233,7 @@ export class StoredValuePaymentProvider extends BasePaymentProvider {
         return {
             ...none,
             Reason:
-                'An internal-tender payment must name either a stored-value account or the over-paid ' +
-                'order whose credit is being spent.',
+                'Pick a gift card, or the overpaid order whose credit is being spent.',
         };
     }
 }

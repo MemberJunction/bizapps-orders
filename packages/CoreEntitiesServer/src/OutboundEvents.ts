@@ -323,7 +323,7 @@ async function dispatchDue(
             }
         }
     }
-    if (!out.Success) out.Message = 'Some delivery results could not be recorded; those rows are retried when their lease runs out.';
+    if (!out.Success) out.Message = 'Some delivery results could not be saved. Those deliveries are retried automatically once their lock expires.';
     return out;
 }
 

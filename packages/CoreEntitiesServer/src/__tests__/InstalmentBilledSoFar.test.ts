@@ -108,7 +108,7 @@ describe('BilledSoFar', () => {
         const recorded: RecordedBilledPart[] = [
             { OrderHeaderPaymentScheduleID: 'r1', OrderLineID: A, Part: 'Charge', ChargeTypeID: TAX_TYPE, Amount: 30 },
         ];
-        expect(() => BilledSoFar(lines, lines, rows, recorded)).toThrow(/no longer carries/);
+        expect(() => BilledSoFar(lines, lines, rows, recorded)).toThrow(/no longer has/);
     });
 });
 

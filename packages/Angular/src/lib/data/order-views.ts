@@ -38,8 +38,8 @@ export async function LoadOrdersWorkingView(): Promise<MJUserViewEntityExtended>
     const loaded = await view.Load(MJO_ORDERS_WORKING_VIEW_ID);
     if (!loaded) {
         throw new Error(
-            `The shared "Orders: Working" view (${MJO_ORDERS_WORKING_VIEW_ID}) could not be loaded. ` +
-                `It ships in the app's metadata; the grids cannot show their columns without it.`,
+            `The shared "Orders: Working" view (${MJO_ORDERS_WORKING_VIEW_ID}) could not be loaded, so the order lists cannot show their columns. ` +
+                `It is installed with the app; ask an administrator to check that the app's metadata is installed.`,
         );
     }
     return view;

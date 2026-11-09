@@ -181,8 +181,8 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         );
         if (orderLines.length === 0) {
             throw new Error(
-                `Cannot allocate ${this.Amount} to order ${this.OrderHeaderID}: the order has no lines, so ` +
-                    `there is no basis for deciding whose revenue the cash settles.`,
+                `Cannot apply ${this.Amount} to order ${this.OrderHeaderID}: the order has no lines, so there is ` +
+                    `nothing for the payment to pay for. Add lines to the order first, or apply the payment to another order.`,
             );
         }
         const order = await this.loadOrderLabel();
@@ -238,15 +238,15 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const result = await this.createJournalEntries(Drafts, provider, user);
         if ((result.Results?.length ?? 0) !== Drafts.length) {
             throw new Error(
-                `Accounting returned ${result.Results?.length ?? 0} journal entries for an allocation that ` +
-                    `produced ${Drafts.length} drafts. The cash leg is incomplete; refusing to commit.`,
+                `Accounting created ${result.Results?.length ?? 0} journal entries for this payment allocation but ` +
+                    `${Drafts.length} were needed, so nothing was saved. Ask an administrator to check the accounting setup.`,
             );
         }
 
         this.BookedAt = new Date();
         if (!(await super.Save(options))) {
             throw new Error(
-                `Failed to stamp BookedAt on the allocation: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                `Could not mark the payment allocation as booked: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
             );
         }
     }
@@ -318,14 +318,14 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         const result = await op.Execute({ Drafts: drafts }, { provider, user });
         if (!result.Success) {
             throw new Error(
-                `Accounting.CreateJournalEntries did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
+                `Accounting could not create the journal entries: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
             );
         }
         const payload = result.Output;
-        if (!payload) throw new Error('Accounting.CreateJournalEntries returned no payload.');
+        if (!payload) throw new Error('Accounting returned no result when creating the journal entries. Ask an administrator to check the server logs.');
         if (!payload.Success) {
             const detail = (payload.Errors ?? []).map((e) => `${e.Code ?? 'ERROR'}: ${e.Message ?? ''}`).join('; ');
-            throw new Error(`Journal entry booking failed for the payment allocation. ${detail}`);
+            throw new Error(`Accounting could not book the journal entries for this payment allocation. ${detail}`);
         }
         return payload;
     }
@@ -337,7 +337,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
             result.Errors.push(
                 new ValidationErrorInfo(
                     'OrderHeaderID',
-                    'A payment line must name the order it settles.',
+                    'Pick the order this payment is applied to.',
                     this.OrderHeaderID,
                     ValidationErrorType.Failure,
                 ),
@@ -368,7 +368,7 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
         // An instalment we cannot read is the FK's problem to report.
         if (!row) return null;
         if (String(row.OrderHeaderID).toLowerCase() !== String(this.OrderHeaderID ?? '').toLowerCase()) {
-            return `Instalment ${row.InstallmentNumber} belongs to a different order than this payment line settles.`;
+            return `Instalment ${row.InstallmentNumber} belongs to a different order. Pick an instalment of the order this payment is applied to.`;
         }
         return null;
     }

@@ -262,7 +262,7 @@ describe('GuestOrderClaimDriver', () => {
 
             const result = await driver.OnClaim(context);
             expect(result.Success).toBe(false);
-            expect(result.ErrorMessage).toContain('does not reference an OrderHeader RecordID');
+            expect(result.ErrorMessage).toContain('does not point to any order');
         });
 
         it('fails if order load returns false', async () => {
@@ -278,7 +278,7 @@ describe('GuestOrderClaimDriver', () => {
 
             const result = await driver.OnClaim(context);
             expect(result.Success).toBe(false);
-            expect(result.ErrorMessage).toContain('Order with ID order-missing not found');
+            expect(result.ErrorMessage).toContain('(ID order-missing) no longer exists');
         });
     });
 

@@ -144,7 +144,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         );
 
         if (!overdue.Success) {
-            return this.empty(`Could not read overdue orders: ${overdue.ErrorMessage ?? 'unknown error'}`);
+            return this.empty(`Could not load the overdue worklist because the overdue orders could not be read. Refresh to try again; if it keeps failing, ask an administrator to check the server. Details: ${overdue.ErrorMessage ?? 'none given'}`);
         }
 
         let rows = overdue.Results ?? [];

@@ -68,7 +68,7 @@ export class DetectUnattestedProgressAction extends BaseAction {
     private async detect(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
         if (!user) {
-            return { Success: false, ResultCode: 'NO_CONTEXT_USER', Message: 'ContextUser is required: raising a finance exception has to be attributable to somebody.' };
+            return { Success: false, ResultCode: 'NO_CONTEXT_USER', Message: 'This action needs a user to run as, because the finance exceptions it raises are recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.' };
         }
 
         const input: OrdersDetectUnattestedProgressInput = {};
@@ -91,7 +91,7 @@ export class DetectUnattestedProgressAction extends BaseAction {
                 Success: false,
                 ResultCode: result.ResultCode ?? 'OPERATION_FAILED',
                 Params: params.Params,
-                Message: result.ErrorMessage ?? 'Orders.DetectUnattestedProgress returned no result.',
+                Message: result.ErrorMessage ?? 'The unattested-progress check returned no result. Check the server log for the cause.',
             };
         }
 
@@ -106,7 +106,7 @@ export class DetectUnattestedProgressAction extends BaseAction {
                 Success: false,
                 ResultCode: 'RAISE_FAILED',
                 Params: params.Params,
-                Message: output.Message ?? 'The unattested-progress pass reported a failure with no message.',
+                Message: output.Message ?? 'The unattested-progress check failed without saying why. Check the server log for the cause.',
             };
         }
         return {

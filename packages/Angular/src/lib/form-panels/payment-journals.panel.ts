@@ -102,7 +102,7 @@ export class PaymentJournalsPanel extends BaseFormPanel<mjBizAppsOrdersPaymentHe
         } catch (error) {
             this.RollupCards = [];
             this.RollupJournalCount = 0;
-            this.RollupError = error instanceof Error ? error.message : 'Could not roll up the journals.';
+            this.RollupError = error instanceof Error ? error.message : 'The journal entries could not be loaded.';
         } finally {
             this.RollupLoading = false;
             this.cdr.detectChanges();

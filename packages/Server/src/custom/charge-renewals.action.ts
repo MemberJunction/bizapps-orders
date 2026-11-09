@@ -68,7 +68,7 @@ export class ChargeRenewalsAction extends BaseAction {
 
     private async charge(params: RunActionParams): Promise<ActionResultSimple> {
         const user = params.ContextUser;
-        if (!user) return refuse('NO_CONTEXT_USER', 'ContextUser is required: charging a card has to be attributable to somebody.');
+        if (!user) return refuse('NO_CONTEXT_USER', 'This action needs a user to run as, because every card charge is recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.');
 
         const input: ChargeRenewalsInput = {};
 
@@ -82,7 +82,7 @@ export class ChargeRenewalsAction extends BaseAction {
 
         const subscriptionID = param(params, 'SubscriptionID');
         if (subscriptionID !== null) {
-            if (!UUID.test(subscriptionID)) return refuse('INVALID_SUBSCRIPTION_ID', `'${subscriptionID}' is not a subscription id.`);
+            if (!UUID.test(subscriptionID)) return refuse('INVALID_SUBSCRIPTION_ID', `'${subscriptionID}' is not a subscription ID.`);
             input.SubscriptionID = subscriptionID;
         }
 

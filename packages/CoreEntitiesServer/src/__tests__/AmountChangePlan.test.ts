@@ -248,9 +248,9 @@ describe('PlanReduction — applies to an invoice', () => {
 
     it('refuses what it cannot apply', () => {
         expect(PlanReduction({ GrossReduction: 330, Instalments: quarters(), OrderBalance: 0, AppliesToInvoiceID: ID(3) })).toMatch(/has not been invoiced/);
-        expect(PlanReduction({ GrossReduction: 330, Instalments: quarters(), OrderBalance: 0, AppliesToInvoiceID: ID(9) })).toMatch(/is not one of this term's order's instalments/);
+        expect(PlanReduction({ GrossReduction: 330, Instalments: quarters(), OrderBalance: 0, AppliesToInvoiceID: ID(9) })).toMatch(/is not one of the instalments on this term's order/);
         expect(PlanReduction({ GrossReduction: 330, Instalments: quarters(), OrderBalance: 0, AppliesToInvoiceID: ID(2), RefundRequested: true })).toMatch(/still has 300\.00 open/);
-        expect(PlanReduction({ GrossReduction: 330, Instalments: quarters(), OrderBalance: 0, RefundRequested: true })).toMatch(/name it in AppliesToInvoiceID/);
+        expect(PlanReduction({ GrossReduction: 330, Instalments: quarters(), OrderBalance: 0, RefundRequested: true })).toMatch(/Pick that invoice to credit/);
     });
 });
 

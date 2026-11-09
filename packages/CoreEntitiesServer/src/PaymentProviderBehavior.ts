@@ -59,7 +59,7 @@ export function CurrencyExponent(currencyCode: string): number {
  */
 export function ToMinorUnits(amount: number, currencyCode: string): number {
     if (!Number.isFinite(amount)) {
-        throw new Error(`Cannot convert ${amount} to minor units — it is not a finite amount.`);
+        throw new Error(`The amount ${amount} is not a valid number, so it cannot be sent to the payment provider.`);
     }
     const factor = 10 ** CurrencyExponent(currencyCode);
     // `Number.EPSILON` nudge for the same reason `Money()` uses one: 1.005 * 100 is 100.49999… in
@@ -70,7 +70,7 @@ export function ToMinorUnits(amount: number, currencyCode: string): number {
 /** And back, for reading what the gateway reported. */
 export function FromMinorUnits(minor: number, currencyCode: string): number {
     if (!Number.isFinite(minor)) {
-        throw new Error(`Cannot convert ${minor} from minor units — it is not a finite amount.`);
+        throw new Error(`The payment provider returned an amount (${minor}) that is not a valid number.`);
     }
     const factor = 10 ** CurrencyExponent(currencyCode);
     return Math.round((minor / factor) * 100) / 100;
@@ -355,8 +355,8 @@ export function SplitCapturedAmount(
     const fee = Math.round(Math.abs(feeAmount ?? 0) * 100) / 100;
     if (fee > gross) {
         throw new Error(
-            `A processing fee of ${fee} cannot exceed the ${gross} captured. Booking this would credit ` +
-                `receivables less than the cash and fee together, and the entry would not balance.`,
+            `A processing fee of ${fee} cannot be more than the ${gross} collected, because the journal entry ` +
+                `would not balance. Check the fee the payment provider reported.`,
         );
     }
     return { Gross: gross, Fee: fee, Net: Math.round((gross - fee) * 100) / 100 };

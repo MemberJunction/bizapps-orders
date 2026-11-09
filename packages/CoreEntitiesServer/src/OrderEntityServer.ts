@@ -519,7 +519,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             result.Errors.push(
                 new ValidationErrorInfo(
                     'Status',
-                    `Order ${this.OrderNumber ?? ''} cannot be confirmed with no lines — there would be nothing to book.`,
+                    `Order ${this.OrderNumber ?? ''} has no lines, so it cannot be confirmed. Add at least one line first.`,
                     this.Status,
                     ValidationErrorType.Failure,
                 ),
@@ -890,7 +890,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const savedHeader = await super.Save({ ...options, SkipRelatedCollections: true });
             if (!savedHeader) {
                 throw new Error(
-                    `Failed to save order header: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    `Could not save the order: ${this.LatestResult?.CompleteMessage ?? 'unknown error'}`,
                 );
             }
 
@@ -2015,8 +2015,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // the rest would fail the line's own delete with an opaque FK error a row later.
             if (rows.length >= DEPENDENT_ROW_CAP) {
                 throw new Error(
-                    `Order line ${line.LineNumber} has ${DEPENDENT_ROW_CAP} or more ${entityName} rows; ` +
-                        `refusing to delete it rather than clearing only part of them.`,
+                    `Order line ${line.LineNumber} was not removed: it has ${DEPENDENT_ROW_CAP} or more related ` +
+                        `${entityName} records, more than can be cleared at once. Ask an administrator for help.`,
                 );
             }
             for (const row of rows) {
@@ -2166,7 +2166,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const asOf = await BusinessDay(provider, user);
         const payment = (await LoadOrderPaymentFacts([this.ID], provider, user, asOf)).get(this.ID.toLowerCase());
         if (!payment) {
-            throw new Error(`Order ${this.OrderNumber ?? this.ID} could not be re-read to decide its entitlement grants.`);
+            throw new Error(`Order ${this.OrderNumber ?? this.ID} could not be reloaded to decide which access grants it creates. Try again; if it keeps failing, report it to support.`);
         }
 
         await CreateEntitlementGrants(
@@ -2273,7 +2273,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     // the customer will not be billed for, and silently ignoring it is how an order
                     // ships without its freight.
                     throw new Error(
-                        `Charge type '${row.ChargeTypeID}' does not exist, so the charge cannot be applied.`,
+                        `A charge on this order uses a charge type (ID ${row.ChargeTypeID}) that does not exist, so it cannot be applied. Remove the charge, or ask an administrator to restore the charge type.`,
                     );
                 }
                 requests.push({
@@ -2294,8 +2294,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // output being handed back to it, which would double the discount.
             if (row.PromotionID || row.PromotionCodeID) {
                 throw new Error(
-                    'A promotion adjustment cannot be supplied on an order — present the code and let ' +
-                        'the engine decide whether it applies, to whom, and for how much.',
+                    'A promotion discount cannot be entered directly on an order. Enter the promotion code ' +
+                        'instead; the system decides whether it applies, to whom, and for how much.',
                 );
             }
             this._manualDiscounts = [
@@ -2657,7 +2657,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const context = await LoadReversalContext(line.ReversesOrderLineID, provider, user, ownLineIDs);
             if (!context) {
                 // applyReversalOrigin refuses this at line save, so reaching here is a bug, not data.
-                throw new Error(`Order line ${line.LineNumber} reverses ${line.ReversesOrderLineID}, which no longer exists.`);
+                throw new Error(`Order line ${line.LineNumber} returns order line ${line.ReversesOrderLineID}, which no longer exists. Pick the original line again.`);
             }
             out.set(uuidKey(line.ID), context);
         }
@@ -2830,7 +2830,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         ]);
         const origin = order.Results?.[0];
         if (!order.Success || !rows.Success || !origin) {
-            throw new Error(`The order a return takes back from (${originOrder}) could not be read to lower its instalments.`);
+            throw new Error(`Order ${originOrder}, which this return comes from, could not be read, so its instalments cannot be lowered. Try again.`);
         }
         const schedule = rows.Results ?? [];
         const coverage = ScheduleCoverage(
@@ -3023,8 +3023,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Refusing here keeps the message that names what would make the line legal.
             if (Number(line.Quantity ?? 0) < 0) {
                 throw new Error(
-                    `Order line ${line.LineNumber}: a negative quantity is only valid on a reversal line. ` +
-                        `Set ReversesOrderLineID to the line being reversed, or use a positive quantity.`,
+                    `Order line ${line.LineNumber}: a negative quantity is only allowed on a return line that points ` +
+                        `at the line it reverses (ReversesOrderLineID). Pick the original line, or enter a positive quantity.`,
                 );
             }
             return false;
@@ -3038,9 +3038,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const context = await LoadReversalContext(reverses, provider, user, line.ID ? [line.ID] : []);
         if (!context) {
             throw new Error(
-                `Order line ${line.LineNumber} reverses order line ${reverses}, which does not exist. ` +
-                    `A reversal pointing at nothing cannot be validated against anything — the quantity ` +
-                    `and price it claims to unwind have no source.`,
+                `Order line ${line.LineNumber} returns order line ${reverses}, which does not exist, so there is ` +
+                    `nothing to check its quantity and price against. Pick the original line again.`,
             );
         }
 
@@ -3743,7 +3742,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // Not on this order: a reversal's credit memo un-bills the ORIGIN line (D92 §6).
             if (!line) MarkAsOrdersOwnWrite(target);
             if (!line && !(await target.Load(orderLineID))) {
-                throw new Error(`Order line ${orderLineID} could not be loaded to advance its RecognizedToDate.`);
+                throw new Error(`Order line ${orderLineID} could not be loaded to update its recognized and billed totals.`);
             }
             target.BilledToDate = Number(target.BilledToDate ?? 0) + billed;
             target.RecognizedToDate = Number(target.RecognizedToDate ?? 0) + recognized;
@@ -3777,11 +3776,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // a failed booking.
         if (!result.Success) {
             throw new Error(
-                `Accounting.CreateJournalEntries did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
+                `Accounting could not create the journal entries: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown error'}`,
             );
         }
         if (!result.Output) {
-            throw new Error(`Accounting.CreateJournalEntries returned no payload.`);
+            throw new Error('Accounting returned no result when creating the journal entries. Ask an administrator to check the server logs.');
         }
         return result.Output;
     }
@@ -3827,7 +3826,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
             if (!line) {
                 throw new Error(
-                    `Order line with ID ${drafts[i].OrderLineID} could not be loaded to stamp JournalEntryID.`,
+                    `Order line ${drafts[i].OrderLineID} could not be loaded to record its journal entry.`,
                 );
             }
 
@@ -3861,7 +3860,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             const saved = await stampTarget.Save(saveOptions);
             if (!saved) {
                 throw new Error(
-                    `Failed to stamp JournalEntryID on order line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`,
+                    `Could not record the journal entry on order line ${stampTarget.LineNumber}: ${ExtractEntityErrorMessage(stampTarget)}`,
                 );
             }
         }
@@ -4563,7 +4562,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             product.SubscriptionTypeID = subscriptionTypeID;
             const cached = OrdersEngine.Instance.SubscriptionTypeByID(subscriptionTypeID);
             if (!cached) {
-                throw new Error(`Product '${product.Name}' names a subscription type that was not found.`);
+                throw new Error(`Product '${product.Name}' is set to a subscription type that no longer exists. Ask an administrator to fix the product's subscription type.`);
             }
             out.push({ line, product, rules: SubscriptionTypeRulesFrom(cached) });
         }
@@ -4807,7 +4806,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
             const type = OrdersEngine.Instance.SubscriptionTypeByID(sub.SubscriptionTypeID);
             if (!type) {
-                throw new Error(`Subscription ${sub.SubscriptionNumber} names a subscription type that was not found.`);
+                throw new Error(`Subscription ${sub.SubscriptionNumber} is set to a subscription type that no longer exists. Ask an administrator to fix it.`);
             }
             const rules = SubscriptionTypeRulesFrom(type);
             out.push({
@@ -5141,8 +5140,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const seq = rows?.[0]?.Seq;
         if (!seq) {
             throw new Error(
-                `Could not obtain the next number from ${table} — its singleton row (ID=1) is missing. ` +
-                    `It is seeded by the baseline migration.`,
+                `Could not get the next number from ${table}: its counter row (ID=1) is missing. Ask an ` +
+                    `administrator to restore it; the baseline migration normally creates it.`,
             );
         }
         return seq;

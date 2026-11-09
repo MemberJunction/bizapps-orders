@@ -218,7 +218,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
                 if (this.Capturing) return 'Capturing & booking…';
                 if (!this.record?.Amount || this.record.Amount <= 0) return 'Payment amount must be greater than zero.';
                 if (!this.hasPayer) return 'Choose who is paying (Bill-To customer).';
-                if (!this.IsAllocationBalanced) return `Allocations do not tie: $${Math.abs(this.UnallocatedRemainder).toFixed(2)} ${this.UnallocatedRemainder > 0 ? 'unallocated remaining' : 'over-allocated'}.`;
+                if (!this.IsAllocationBalanced) return `The allocations do not match the payment: $${Math.abs(this.UnallocatedRemainder).toFixed(2)} ${this.UnallocatedRemainder > 0 ? 'still to allocate' : 'allocated more than received'}.`;
                 return false;
             },
             OnClick: async () => this.CapturePayment(),
@@ -750,7 +750,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
                 this.OrderLinesMap.clear();
             }
         } catch (err) {
-            this.AllocationError = err instanceof Error ? err.message : 'Failed to load open orders';
+            this.AllocationError = err instanceof Error ? err.message : 'The open orders could not be loaded.';
         } finally {
             this.LoadingOpenOrders = false;
             this.cdr?.detectChanges?.();
@@ -1167,7 +1167,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
                 // An earlier attempt was saved but its response never arrived (#847): show that payment
                 // instead of reporting the refusal, and never insert a second one.
                 if (!(await this.reloadAfterDuplicateSave())) {
-                    throw new Error(uniqueErrorLines(this.record.LatestResult?.Message) || 'Failed to capture and book payment.');
+                    throw new Error(uniqueErrorLines(this.record.LatestResult?.Message) || 'The payment could not be captured and booked.');
                 }
                 if (this.record.Status !== 'Captured') {
                     throw new Error(
@@ -1326,7 +1326,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
         } catch (error) {
             this.RollupCards = [];
             this.RollupJournalCount = 0;
-            this.RollupError = error instanceof Error ? error.message : 'Could not roll up the journals.';
+            this.RollupError = error instanceof Error ? error.message : 'The journal entries could not be loaded.';
         } finally {
             this.RollupLoading = false;
             this.cdr?.detectChanges?.();

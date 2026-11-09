@@ -107,7 +107,7 @@ export function CanTransition(from: string | null | undefined, to: string | null
     if (IsBooked(from) && to === 'Voided') {
         return {
             Allowed: false,
-            Reason: `A booked order (${from}) cannot be voided in-place. Create a reversal order to cancel or refund lines (D53).`,
+            Reason: `A booked order (${from}) cannot be voided in-place. Create a reversal order to cancel or refund lines.`,
         };
     }
 

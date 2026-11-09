@@ -93,7 +93,7 @@ describe('OrderLine GL dimension pair', () => {
         expect(result.Errors[0].Source).toBe('DimensionValueID');
         // The message has to be actionable on its own: it is what an operator sees instead of
         // "conflicted with the CHECK constraint".
-        expect(result.Errors[0].Message).toMatch(/both halves/i);
+        expect(result.Errors[0].Message).toMatch(/both a dimension and a value/i);
         expect(result.Errors[0].Message).toMatch(/clear both/i);
     });
 

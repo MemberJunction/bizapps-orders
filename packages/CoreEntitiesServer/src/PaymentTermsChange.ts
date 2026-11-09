@@ -92,7 +92,7 @@ export async function CheckTermsChange(request: TermsChangeRequest, ctx: Approva
     )[0];
     if (!order) return `Order ${orderID} was not found.`;
     if (order.Status !== 'Confirmed') {
-        return `Order ${order.OrderNumber} is ${order.Status}, not Confirmed; its payment terms are edited on the order itself.`;
+        return `Order ${order.OrderNumber} is ${order.Status}, not Confirmed. Change its payment terms on the order itself.`;
     }
     if (UUIDsEqual(order.PaymentTermsTypeID, newTermsID)) {
         return `Order ${order.OrderNumber} already has these payment terms.`;
@@ -101,7 +101,7 @@ export async function CheckTermsChange(request: TermsChangeRequest, ctx: Approva
     const terms = await termsByID([newTermsID, order.PaymentTermsTypeID], ctx);
     const next = terms.get(newTermsID.toLowerCase());
     if (!next) return `Payment terms ${newTermsID} were not found.`;
-    if (!next.IsActive) return `Payment terms ${next.Name} are inactive.`;
+    if (!next.IsActive) return `Payment terms ${next.Name} are inactive. Pick active payment terms.`;
     const prior = order.PaymentTermsTypeID ? terms.get(order.PaymentTermsTypeID.toLowerCase()) ?? null : null;
 
     const pending = await view<{ ID: string }>(ctx, {
@@ -139,7 +139,7 @@ export async function CheckTermsChange(request: TermsChangeRequest, ctx: Approva
 export async function ApplyTermsChange(concession: ApprovedTermsConcession, ctx: ApprovalTaskContext): Promise<void> {
     const order = await ctx.Provider.GetEntityObject<OrderEntityServer>(ORDER_HEADER_ENTITY, ctx.User);
     if (!(order instanceof OrderEntityServer)) {
-        throw new Error("The order was not loaded through the orders server's entity subclass, so its payment terms cannot be changed.");
+        throw new Error("The order could not be loaded with the Orders server logic, so its payment terms cannot be changed. Report this to the development team.");
     }
     if (!(await order.Load(RequireUUID(concession.OrderHeaderID, 'OrderHeaderID')))) {
         throw new Error(`Order ${concession.OrderHeaderID} was not found.`);

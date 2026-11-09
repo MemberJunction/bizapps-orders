@@ -113,7 +113,7 @@ export function StillToBillByLine(
 export function ReturnScheduleReduction(stillToBill: LineStillToBill, returned: number, remaining: number): number {
     const quantity = Math.abs(Number(returned));
     if (!(remaining > 0) || quantity > remaining + 1e-9) {
-        throw new Error(`Returning ${quantity} of an origin line with ${remaining} left to take back; the return should have been refused.`);
+        throw new Error(`Cannot return ${quantity} from a line with only ${remaining} left to return. This return should have been refused earlier; report it to the development team.`);
     }
     return money(((stillToBill.Net + stillToBill.Tax) * quantity) / remaining);
 }
@@ -152,7 +152,7 @@ export async function AppliedReturnReductions(orderHeaderID: string, ctx: Approv
     });
     return returns.map((r) => {
         const line = lines.find((l) => l.ID.toLowerCase() === String(r.ReversesOrderLineID).toLowerCase());
-        if (!line) throw new Error(`The line a return reduced (${r.ReversesOrderLineID}) is not on order ${orderID}.`);
+        if (!line) throw new Error(`The line this return reduces (${r.ReversesOrderLineID}) is not on order ${orderID}. Report this to the development team.`);
         const gross = money(Number(r.ScheduleReduction));
         const split = SplitReturnReduction(gross, { Net: Number(line.LineTotalNet ?? 0), Tax: Number(line.LineTax ?? 0) });
         return { OrderLineID: line.ID, CompanyID: line.CompanyID, Net: split.Net, Tax: split.Tax, Gross: gross };

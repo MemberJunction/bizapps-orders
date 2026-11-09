@@ -49,6 +49,6 @@ describe('SubscriptionTermEntityServer — the sanctioned amendment write', () =
 
     it('refuses to sanction an object the server subclass did not produce', () => {
         const plain = Object.create(SubscriptionTermEntity.prototype) as BaseEntity;
-        expect(() => SanctionTermAmendment(plain)).toThrow(/entity subclass/);
+        expect(() => SanctionTermAmendment(plain)).toThrow(/Orders server logic/);
     });
 });

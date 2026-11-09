@@ -69,7 +69,7 @@ describe('GetCheckoutAccessStatus', () => {
 
     it('refuses a session id that is not a UUID, a wrong key, and an unconfirmed checkout', async () => {
         expect((await GetCheckoutAccessStatus("x' OR 1=1", KEY)).Success).toBe(false);
-        expect((await GetCheckoutAccessStatus(SID, 'x'.repeat(36))).ErrorMessage).toBe('Checkout session key does not match');
+        expect((await GetCheckoutAccessStatus(SID, 'x'.repeat(36))).ErrorMessage).toBe('This checkout was started in a different browser session. Return to the browser you used, or start the checkout again.');
         mocks.session.Status = 'Open';
         expect((await GetCheckoutAccessStatus(SID, KEY)).ErrorMessage).toBe('This checkout has not completed yet.');
         expect(mocks.lastFilter).toBe('');
@@ -77,6 +77,6 @@ describe('GetCheckoutAccessStatus', () => {
 
     it('reports a failed read as unavailable, not as a state', async () => {
         mocks.success = false;
-        expect(await GetCheckoutAccessStatus(SID, KEY)).toEqual({ Success: false, ErrorMessage: 'Access status is not available right now.' });
+        expect(await GetCheckoutAccessStatus(SID, KEY)).toEqual({ Success: false, ErrorMessage: 'Your access status is not available right now. Please try again in a moment.' });
     });
 });

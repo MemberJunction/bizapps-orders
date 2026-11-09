@@ -69,7 +69,7 @@ describe('BuildStaffOrderContribution with the shapes the providers really send'
 describe('QuotedStaffIDs', () => {
     it('quotes UUIDs for an IN list and refuses anything else', () => {
         expect(QuotedStaffIDs(staff.slice(0, 2))).toBe(`'${A}','${B}'`);
-        expect(() => QuotedStaffIDs([{ PersonID: "x' OR 1=1 --", Name: 'x', Title: null, StartDate: null }])).toThrow('not a UUID');
+        expect(() => QuotedStaffIDs([{ PersonID: "x' OR 1=1 --", Name: 'x', Title: null, StartDate: null }])).toThrow('is not valid');
     });
 });
 

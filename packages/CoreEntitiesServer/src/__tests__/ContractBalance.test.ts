@@ -149,7 +149,7 @@ describe('the recognition accumulator cannot be silently forgotten', () => {
         (factory as unknown as { _recognizedByLine: Map<string, number> })._recognizedByLine.set('line-1', 100);
         await expect(
             factory.BuildDrafts({ OrderNumber: 'ORD-1' } as never, [{} as never]),
-        ).rejects.toThrow(/without draining/);
+        ).rejects.toThrow(/reused before the previous booking/);
     });
 
     it('DrainRecognized empties the map, so the same build cannot be applied twice', () => {

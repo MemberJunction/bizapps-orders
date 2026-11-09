@@ -221,7 +221,7 @@ describe('StripePaymentProvider — the stub', () => {
         expect((await stripe().Refund({ ProviderChargeID: 'ch_1', Amount: 10, CurrencyCode: 'USD' })).Success).toBe(true);
         const noTarget = await stripe().Refund({ Amount: 10, CurrencyCode: 'USD' });
         expect(noTarget.Success).toBe(false);
-        expect(noTarget.Reason).toMatch(/charge id or an intent id/);
+        expect(noTarget.Reason).toMatch(/no Stripe charge or payment intent ID/);
     });
 
     it('the LIVE path refuses cleanly when no API key resolved', async () => {
@@ -230,7 +230,7 @@ describe('StripePaymentProvider — the stub', () => {
         const live = stripe({ IsLiveMode: true });
         const result = await live.CreateIntent({ Amount: 100, CurrencyCode: 'USD' });
         expect(result.Success).toBe(false);
-        expect(result.Reason).toMatch(/CredentialsRef/);
+        expect(result.Reason).toMatch(/credentials reference/);
     });
 });
 
@@ -507,14 +507,14 @@ describe('StoredValuePaymentProvider', () => {
         driver.User = {} as never;
         const result = await driver.CreateIntent({ Amount: 10, CurrencyCode: 'USD' });
         expect(result.Success).toBe(false);
-        expect(result.Reason).toMatch(/stored-value account or the over-paid/);
+        expect(result.Reason).toMatch(/gift card, or the overpaid order/);
     });
 
     it('refuses without a provider to read balances with', async () => {
         // Rather than throwing a null-reference somewhere deeper.
         const result = await sv().CreateIntent({ Amount: 10, CurrencyCode: 'USD', StoredValueAccountID: 'x' });
         expect(result.Success).toBe(false);
-        expect(result.Reason).toMatch(/not given a provider/);
+        expect(result.Reason).toMatch(/did not set up the stored-value driver/);
     });
 
     it('refuses a non-positive draw', async () => {
@@ -900,7 +900,7 @@ describe('MoveGiftCardBalance — the capture/refund write behind a gift-card pa
     it('refuses an overdraw and writes nothing', async () => {
         const { card, txns, provider } = fakeCard(30);
         await expect(MoveGiftCardBalance(provider, {} as never, CARD, 'Redeem', -50, PAY, null)).rejects.toThrow(
-            /holds 30\.00, which does not cover 50\.00/,
+            /has 30\.00 available, which does not cover 50\.00/,
         );
         expect(card.Saves).toBe(0);
         expect(txns).toHaveLength(0);

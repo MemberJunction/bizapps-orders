@@ -71,11 +71,11 @@ const money = (n: number): string => (Math.round((n + Number.EPSILON) * 100) / 1
 @RegisterClass(BaseInvoiceRail, 'HubSpotPayments')
 export class HubSpotPaymentsRail extends BaseInvoiceRail {
     private async companyIntegration(): Promise<MJCompanyIntegrationEntity> {
-        if (!this.Provider || !this.User) throw new Error('HubSpotPaymentsRail needs Provider and User; resolve it through ResolveInvoiceRail.');
+        if (!this.Provider || !this.User) throw new Error('The HubSpot Payments rail was created without a provider or user. It must be created through ResolveInvoiceRail.');
         if (!this.Config.CompanyIntegrationID) {
             throw new Error(
-                `Payment provider '${this.Config.Name}' has no CompanyIntegrationID. HubSpot cannot be reached without the ` +
-                    `MJ Company Integration for the company's portal; set it on the provider row.`,
+                `Payment provider '${this.Config.Name}' is not connected to a HubSpot account: no company integration is set. ` +
+                    `Ask an administrator to set the provider's company integration to the company's HubSpot portal.`,
             );
         }
         return HubSpotPaymentsGateway(this.Provider).loadCompanyIntegration(this.Config.CompanyIntegrationID, this.Provider, this.User);
@@ -116,13 +116,13 @@ export function HubSpotSetAsideReason(paymentID: string, processorType: string |
     if (processor === 'hs_payments') return null;
     if (processor === 'byo_stripe') {
         return (
-            `HubSpot payment ${paymentID} was collected through the company's own Stripe account. Orders sees that charge ` +
-            `in Stripe, so it is booked there (charge reconciliation), not read here, or it would count twice.`
+            `HubSpot payment ${paymentID} was collected through the company's own Stripe account. It is recorded from ` +
+            `Stripe instead, so it is skipped here to avoid counting it twice. No action is needed.`
         );
     }
     return (
         `HubSpot payment ${paymentID} is a record of money collected elsewhere (processor '${processorType ?? 'not reported'}'). ` +
-        `It is booked where the money arrived, not read here.`
+        `It is recorded where the money was received, so it is skipped here. No action is needed.`
     );
 }
 
@@ -157,8 +157,8 @@ export function NormalizeHubSpotPayment(externalID: string, x: Record<string, un
             ? null
             : `HubSpot payment ${externalID}: ${money(gross)}${cur} gross, ${money(fee)}${cur} fee, ${money(gross - fee)}${cur} net` +
               `${email ? `, paid by ${email}` : ''}${paymentDate ? ` on ${paymentDate}` : ''}. ` +
-              `Orders cannot yet match a HubSpot payment to its order (the payment's deal is not readable through the HubSpot connector), ` +
-              `so nothing is captured. Record it against its order by hand, or create the order from it.`,
+              `Orders cannot match HubSpot payments to their orders yet, so nothing was recorded. ` +
+              `Record it against its order by hand, or create an order from it.`,
     };
     if (tender) record.TenderCode = tender;
     return record;

@@ -76,9 +76,9 @@ describe('minor units', () => {
 
     it('THROWS rather than sending NaN to a gateway', () => {
         // Some gateways read a non-numeric amount as zero, which succeeds and collects nothing.
-        expect(() => ToMinorUnits(Number.NaN, 'USD')).toThrow(/not a finite amount/);
-        expect(() => ToMinorUnits(Number.POSITIVE_INFINITY, 'USD')).toThrow(/not a finite amount/);
-        expect(() => FromMinorUnits(Number.NaN, 'USD')).toThrow(/not a finite amount/);
+        expect(() => ToMinorUnits(Number.NaN, 'USD')).toThrow(/not a valid number/);
+        expect(() => ToMinorUnits(Number.POSITIVE_INFINITY, 'USD')).toThrow(/not a valid number/);
+        expect(() => FromMinorUnits(Number.NaN, 'USD')).toThrow(/not a valid number/);
     });
 
     it('defaults an unknown currency to two decimals rather than throwing', () => {
@@ -424,6 +424,6 @@ describe('SplitCapturedAmount', () => {
     it('THROWS when the fee exceeds the capture', () => {
         // Booking it would credit receivables less than cash and fee together, and the entry would not
         // balance — a failure that surfaces far from its cause.
-        expect(() => SplitCapturedAmount(10, 20)).toThrow(/cannot exceed/);
+        expect(() => SplitCapturedAmount(10, 20)).toThrow(/cannot be more than/);
     });
 });

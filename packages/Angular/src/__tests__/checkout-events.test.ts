@@ -125,10 +125,10 @@ describe('CheckoutPublicHostComponent events', () => {
         const c = create();
         c.slug = '';
         await c.ngOnInit();
-        expect(c.loadError).toBe('This checkout link is missing its reference.');
+        expect(c.loadError).toBe('This checkout link is incomplete. Check the link and try again.');
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout link is missing its reference.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout link is incomplete. Check the link and try again.' } },
         ]);
     });
 
@@ -138,7 +138,7 @@ describe('CheckoutPublicHostComponent events', () => {
         await c.ngOnInit();
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { stage: 'initialize', message: 'Checkout requires a secure random source. Open this page over HTTPS.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout needs a secure connection. Open the page with an https:// address.' } },
         ]);
     });
 

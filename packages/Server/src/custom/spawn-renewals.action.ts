@@ -119,7 +119,7 @@ export class SpawnRenewalsAction extends BaseAction {
                 Success: false,
                 ResultCode: 'NO_CONTEXT_USER',
                 Message:
-                    'ContextUser is required: a renewal places a confirmed order, and the order has to be attributable to somebody.',
+                    'This action needs a user to run as, because each renewal places a confirmed order that is recorded against that user. Run it from a scheduled job that has a run-as user, or as a signed-in user.',
             };
         }
 
@@ -152,7 +152,7 @@ export class SpawnRenewalsAction extends BaseAction {
                 return {
                     Success: false,
                     ResultCode: 'INVALID_SUBSCRIPTION_ID',
-                    Message: `'${subscriptionID}' is not a subscription ID. This takes the Subscription row's ID, not its SubscriptionNumber.`,
+                    Message: `'${subscriptionID}' is not a subscription ID. Pass the subscription's record ID, not its subscription number.`,
                 };
             }
             input.SubscriptionID = subscriptionID;
@@ -193,7 +193,7 @@ export class SpawnRenewalsAction extends BaseAction {
                 Success: false,
                 ResultCode: result.ResultCode ?? 'OPERATION_FAILED',
                 Params: params.Params,
-                Message: result.ErrorMessage ?? 'Orders.SpawnRenewals returned no result.',
+                Message: result.ErrorMessage ?? 'The renewal pass returned no result. Check the server log for the cause.',
             };
         }
 
@@ -230,7 +230,7 @@ export class SpawnRenewalsAction extends BaseAction {
                 Params: params.Params,
                 Message:
                     `${output.Placed} renewal order(s) placed; ${unplaced.length} due subscription(s) were NOT renewed ` +
-                    `(every reason is on Candidates)${detail ? `: ${detail}` : ''}` +
+                    `(each reason is in the Candidates output)${detail ? `: ${detail}` : ''}` +
                     `${unplaced.length > 3 ? `, and ${unplaced.length - 3} more` : ''}.`,
             };
         }

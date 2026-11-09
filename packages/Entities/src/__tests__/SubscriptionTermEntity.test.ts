@@ -37,7 +37,7 @@ describe('SubscriptionTermEntity — a booked term is fixed', () => {
 
     it('names every booked field being changed', () => {
         const result = validate(true, ['StartDate', 'Amount']);
-        expect(result.Errors[0].Message).toMatch(/StartDate, Amount/);
+        expect(result.Errors[0].Message).toMatch(/start date or amount/);
     });
 
     it('lets a saved term change what is not booked, such as its status', () => {

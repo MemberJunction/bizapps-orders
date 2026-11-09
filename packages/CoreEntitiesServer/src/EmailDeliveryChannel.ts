@@ -80,7 +80,7 @@ export class EmailDeliveryChannel extends BaseDeliveryChannel {
         if (!recipients.length) {
             // A REFUSAL, not a throw: nothing is broken, there is simply nobody to send to. The caller
             // should have asked `DecideDelivery` first, and this is the backstop for the one who did not.
-            return { Success: false, Delivered: [], Reason: 'no recipient address was supplied' };
+            return { Success: false, Delivered: [], Reason: 'There is no e-mail address to send this document to. Add an e-mail address for the recipient and send again.' };
         }
 
         const engine = CommunicationEngine.Instance;
@@ -107,7 +107,7 @@ export class EmailDeliveryChannel extends BaseDeliveryChannel {
                     delivered.push(address);
                     providerMessageID ??= result.Message?.MessageType?.ID;
                 } else {
-                    failures.push(`${address}: ${result?.Error || 'the provider reported a failure with no reason'}`);
+                    failures.push(`${address}: ${result?.Error || 'the e-mail service gave no reason'}`);
                 }
             } catch (err) {
                 // A FAULT — the provider was unreachable or threw. It is caught rather than propagated
@@ -128,8 +128,8 @@ export class EmailDeliveryChannel extends BaseDeliveryChannel {
                 Delivered: delivered,
                 ProviderMessageID: providerMessageID,
                 Reason:
-                    `${document.DocumentNumber} reached ${delivered.length} of ${recipients.length} recipients. ` +
-                    `Failures: ${failures.join('; ')}`,
+                    `${document.DocumentNumber} was sent to ${delivered.length} of ${recipients.length} recipients. ` +
+                    `Not delivered: ${failures.join('; ')}. Check those addresses and send again.`,
             };
         }
 

@@ -92,13 +92,34 @@ export function BookedMoneyEditMessage(facts: BookedMoneyEditFacts): string | nu
     }
     if (parts.length === 0) return null;
     return (
-        `This order is booked — it cannot ${joinList(parts)}. ` +
-        `Voiding (and a reversal order) is how booked money is undone, not an edit of the original.`
+        `This order is booked, so you cannot ${joinList(parts)}. ` +
+        `To undo booked amounts, create a reversal order instead of editing this one.`
     );
 }
 
+const FIELD_LABELS: Record<string, string> = {
+    DiscountPct: 'discount percent',
+    LineTotalNet: 'net line total',
+    LineTotalGross: 'gross line total',
+    InitialPaymentDetailID: 'initial payment details',
+    ReversesOrderHeaderID: 'reversed order',
+    ConfirmedByUserID: 'confirmed-by user',
+    BillToPersonID: 'bill-to person',
+    BillToOrganizationID: 'bill-to organization',
+};
+
+/** A field name as a reader says it: `UnitPrice` -> "unit price", `CompanyID` -> "company". */
+export function FieldLabel(name: string): string {
+    return FIELD_LABELS[name] ?? name.replace(/ID$/, '').replace(/([a-z])([A-Z])/g, '$1 $2').toLowerCase();
+}
+
+/** Field names as a reader-facing list: "quantity, unit price, or line tax". */
+export function FieldLabelList(names: readonly string[]): string {
+    return joinList([...new Set(names.map(FieldLabel))]);
+}
+
 function uniqueJoin(names: string[]): string {
-    return joinList([...new Set(names)]);
+    return FieldLabelList(names);
 }
 
 function joinList(parts: string[]): string {

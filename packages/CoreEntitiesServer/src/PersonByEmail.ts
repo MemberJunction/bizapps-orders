@@ -86,7 +86,7 @@ export async function ResolvePersonByEmail(email: unknown, rv: RunView, user: Us
         user
     );
     if (!people?.Success) {
-        return { Success: false, PersonID: null, MatchCount: 0, ErrorMessage: people?.ErrorMessage ?? 'Person lookup failed' };
+        return { Success: false, PersonID: null, MatchCount: 0, ErrorMessage: people?.ErrorMessage ?? 'Could not look up people by email.' };
     }
     const rows = people.Results ?? [];
     if (rows.length <= 1) return { Success: true, PersonID: rows[0]?.ID ?? null, MatchCount: rows.length };
@@ -102,7 +102,7 @@ export async function ResolvePersonByEmail(email: unknown, rv: RunView, user: Us
     );
     if (!orders?.Success || !subscriptions?.Success || !grants?.Success) {
         const failed = [orders, subscriptions, grants].find((r) => !r?.Success);
-        return { Success: false, PersonID: null, MatchCount: rows.length, ErrorMessage: failed?.ErrorMessage ?? 'Orders activity lookup failed' };
+        return { Success: false, PersonID: null, MatchCount: rows.length, ErrorMessage: failed?.ErrorMessage ?? "Could not check these people's orders, subscriptions and entitlements." };
     }
     const active = new Set<string>();
     for (const r of (orders.Results ?? []) as Array<{ BillToPersonID?: string | null }>) if (r.BillToPersonID) active.add(r.BillToPersonID.toLowerCase());

@@ -37,7 +37,7 @@ export async function raiseCheckoutCaptureTerminalAlert(
     );
     await raiseAlertTask(
         `${ORDERS_ALERT_TASK_PREFIX.CheckoutCaptureNotBooked}${orderID}`,
-        `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
+        `A Stripe payment settled and the checkout order is Confirmed, but recording the payment in Orders was refused and will not succeed on retry. Record the payment on the order by hand, or refund it.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
         contextUser,
     );
 }

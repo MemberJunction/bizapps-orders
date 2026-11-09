@@ -129,7 +129,7 @@ export function PlanTermExtension(input: TermExtensionInput): TermExtensionPlan 
         return { Targets: targets, Offsets: offsets, Respread: [], Remaining: 0, RespreadStart: null };
     }
 
-    if (!input.Driver) return 'This term has staged recognition entries but its recognition type defers nothing.';
+    if (!input.Driver) return 'This term has staged recognition entries, but its revenue recognition type does not spread revenue over time, so the term cannot be extended. Ask an administrator to check the revenue recognition type.';
     const start = targets[0].EffectiveDate;
     const schedule = input.Driver.BuildSchedule({
         Amount: release.Amount,
@@ -153,7 +153,7 @@ export function PlanTermExtension(input: TermExtensionInput): TermExtensionPlan 
 
     const scheduled = money(respread.reduce((sum, d) => sum + (d.Lines[0].DebitAmount ?? 0), 0));
     if (scheduled !== release.Amount) {
-        return `The new schedule sums to ${scheduled}, not the ${release.Amount} it replaces; nothing was written.`;
+        return `The new recognition schedule adds up to ${scheduled}, not the ${release.Amount} it replaces, so nothing was written. Report this to the development team.`;
     }
     return { Targets: targets, Offsets: offsets, Respread: respread, Remaining: release.Amount, RespreadStart: start };
 }

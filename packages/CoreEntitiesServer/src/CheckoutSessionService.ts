@@ -111,6 +111,14 @@ const ADDRESS_LINK_ENTITY = 'MJ_BizApps_Common: Address Links';
 const ADDRESS_TYPE_ENTITY = 'MJ_BizApps_Common: Address Types';
 const BILLING_ADDRESS_TYPE = 'Billing';
 
+const INVALID_WIDGET_CONFIGURATION =
+    'This checkout cannot continue because its settings are invalid. The checkout\'s administrator needs to fix its configuration.';
+
+const SESSION_KEY_MISMATCH =
+    'This checkout was started in a different browser session (the session key does not match). Reload the page to start again.';
+
+const SESSION_EXPIRED = 'This checkout has expired. Reload the page to start again.';
+
 const MISSING_LOCATION_MESSAGE =
     'A billing country is required before payment — and, for the United States, Canada and Australia, a state or province and a postal code.';
 
@@ -433,10 +441,10 @@ export class CheckoutSessionService {
         contextUser?: UserInfo
     ): Promise<InitSessionResult> {
         if (!slug) {
-            return { Success: false, ErrorMessage: 'Widget distribution slug is required' };
+            return { Success: false, ErrorMessage: 'This checkout link does not name a checkout (the distribution slug is missing), so it cannot open.' };
         }
         if (!clientSessionKey) {
-            return { Success: false, ErrorMessage: 'ClientSessionKey is required' };
+            return { Success: false, ErrorMessage: 'The checkout could not start because the page did not send its session key. Reload the page and try again.' };
         }
 
         const rv = new RunView();
@@ -448,7 +456,7 @@ export class CheckoutSessionService {
         }, contextUser);
 
         if (!distRes.Success || !distRes.Results || distRes.Results.length === 0) {
-            return { Success: false, ErrorMessage: `Active checkout distribution not found for slug '${slug}'` };
+            return { Success: false, ErrorMessage: 'This checkout is not available. The link may be out of date, or the checkout may have been turned off.' };
         }
 
         const distribution = distRes.Results[0];
@@ -456,7 +464,7 @@ export class CheckoutSessionService {
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         const loadedWidget = await widget.Load(distribution.CheckoutWidgetID);
         if (!loadedWidget || widget.Status !== 'Active') {
-            return { Success: false, ErrorMessage: 'The requested checkout widget is currently unavailable' };
+            return { Success: false, ErrorMessage: 'This checkout is not available right now.' };
         }
 
         // One open sale session per widget and client key: a unique index holds it (#782), so an
@@ -496,13 +504,13 @@ export class CheckoutSessionService {
             try {
                 const parsed = JSON.parse(widget.Configuration);
                 if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-                    throw new Error('Widget Configuration must be a JSON object');
+                    throw new Error('the settings must be a JSON object');
                 }
                 configObj = parsed as CheckoutWidgetConfiguration;
             } catch (err) {
                 return {
                     Success: false,
-                    ErrorMessage: `Invalid widget configuration: ${err instanceof Error ? err.message : String(err)}`
+                    ErrorMessage: `This checkout cannot open because its settings are invalid (${err instanceof Error ? err.message : String(err)}). The checkout's administrator needs to fix its configuration.`
                 };
             }
         }
@@ -575,7 +583,7 @@ export class CheckoutSessionService {
         contextUser?: UserInfo
     ): Promise<InitSessionResult> {
         if (!clientSessionKey) {
-            return { Success: false, ErrorMessage: 'ClientSessionKey is required' };
+            return { Success: false, ErrorMessage: 'The checkout could not start because the page did not send its session key. Reload the page and try again.' };
         }
         const provider = Metadata.Provider as IMetadataProvider | undefined;
         if (!contextUser || !provider) {
@@ -602,7 +610,7 @@ export class CheckoutSessionService {
         const md = new Metadata();
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         if (!(await widget.Load(order.SourceCheckoutWidgetID)) || widget.Status !== 'Active') {
-            return { Success: false, ErrorMessage: 'The checkout for this renewal is currently unavailable' };
+            return { Success: false, ErrorMessage: 'The checkout for this renewal is not available right now. Contact us to renew.' };
         }
 
         const rv = new RunView();
@@ -639,7 +647,7 @@ export class CheckoutSessionService {
             expires.setHours(expires.getHours() + 2);
             session.ExpiresAt = expires.getTime() < check.ExpiresAt.getTime() ? expires : check.ExpiresAt;
             if (!(await session.Save())) {
-                return { Success: false, ErrorMessage: 'Failed to initialize checkout session record' };
+                return { Success: false, ErrorMessage: 'The checkout could not be started. Please try again in a moment.' };
             }
         }
 
@@ -1221,7 +1229,7 @@ export class CheckoutSessionService {
             try {
                 questions = (JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration).questions;
             } catch {
-                return { Answers: [], Error: 'Invalid widget configuration' };
+                return { Answers: [], Error: INVALID_WIDGET_CONFIGURATION };
             }
         }
         let stored: unknown;
@@ -1254,7 +1262,7 @@ export class CheckoutSessionService {
             try {
                 groups = (JSON.parse(widget.Configuration) as CheckoutWidgetConfiguration).choiceGroups;
             } catch {
-                return { Choices: [], Error: 'Invalid widget configuration' };
+                return { Choices: [], Error: INVALID_WIDGET_CONFIGURATION };
             }
         }
         let stored: unknown;
@@ -1292,7 +1300,7 @@ export class CheckoutSessionService {
         }
         const key = typeof widgetConfig.memberDiscountResolver === 'string' ? widgetConfig.memberDiscountResolver.trim() : '';
         if (!key) {
-            return { PromotionCode: null, Refusal: 'This checkout is not configured to verify member tokens.' };
+            return { PromotionCode: null, Refusal: 'Member pricing cannot be applied because this checkout is not configured to verify member tokens. Contact the site owner.' };
         }
 
         let resolver;
@@ -1301,7 +1309,7 @@ export class CheckoutSessionService {
         } catch (err) {
             if (err instanceof CheckoutMemberDiscountNotConfiguredError) {
                 LogError(`[CheckoutSessionService] ${err.message}`);
-                return { PromotionCode: null, Refusal: 'This checkout is not configured to verify member tokens.' };
+                return { PromotionCode: null, Refusal: 'Member pricing cannot be applied because this checkout is not configured to verify member tokens. Contact the site owner.' };
             }
             throw err;
         }
@@ -1538,23 +1546,23 @@ export class CheckoutSessionService {
         });
 
         if (!sessionID) {
-            return failed('Session ID is required.');
+            return failed('The checkout could not continue because the page did not send its session. Reload the page and try again.');
         }
         if (!Array.isArray(lines) || lines.length > MAX_LINES_PER_CHECKOUT) {
-            return failed(`A checkout may carry at most ${MAX_LINES_PER_CHECKOUT} lines.`);
+            return failed(`A checkout can hold at most ${MAX_LINES_PER_CHECKOUT} different items.`);
         }
 
         const md = new Metadata();
         const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
         const sessionLoaded = await session.Load(sessionID);
         if (!sessionLoaded || session.Status !== 'Open') {
-            return failed('Checkout session is not valid or has expired.');
+            return failed('This checkout has expired or is no longer open. Reload the page to start again.');
         }
         if (!this.verifyClientSessionKey(session, clientSessionKey)) {
-            return failed('Checkout session key does not match.');
+            return failed(SESSION_KEY_MISMATCH);
         }
         if (!(await this.enforceSessionExpiry(session))) {
-            return failed('Checkout session has expired.');
+            return failed(SESSION_EXPIRED);
         }
         // A session that pays an existing renewal order has nothing to draft: the order is already
         // priced and booked, and paying it must not re-price it (#289).
@@ -1579,7 +1587,7 @@ export class CheckoutSessionService {
                     widgetConfig = parsed as CheckoutWidgetConfiguration;
                 }
             } catch {
-                return failed('Invalid widget configuration');
+                return failed(INVALID_WIDGET_CONFIGURATION);
             }
         }
 
@@ -1631,20 +1639,20 @@ export class CheckoutSessionService {
                 contextUser
             );
             if (isMemberCode) {
-                return failed(`The code ${code} cannot be entered at this checkout.`);
+                return failed(`The code ${code} cannot be entered at this checkout. Member discounts are applied automatically.`);
             }
         }
 
         const allowedProductIds = await this.resolveAllowedProductIds(widgetConfig, contextUser);
         const allowAnyProduct = widgetConfig.allowAnyProduct === true;
         if (!allowAnyProduct && allowedProductIds.size === 0) {
-            return failed('This checkout is not configured with a product');
+            return failed('This checkout is not available because it is not configured with a product. The checkout\'s administrator needs to add one.');
         }
         // Open catalog is company-scoped. A widget with no CompanyID must not accept an
         // arbitrary ProductID from an anonymous caller (the remaining company check used
         // to skip when CompanyID was unset).
         if (allowAnyProduct && !widget.CompanyID) {
-            return failed('This checkout is not configured for open-catalog sale');
+            return failed('This checkout cannot sell this item because it is not configured for open-catalog sale (it has no company set). The checkout\'s administrator needs to set its company.');
         }
 
         // Build in-memory Order graph for accurate pricing calculation without DB pollution
@@ -1689,7 +1697,7 @@ export class CheckoutSessionService {
         for (const inputLine of lines) {
             // Validate quantity: must be positive integer >= 1
             if (!Number.isInteger(inputLine.Quantity) || inputLine.Quantity < 1) {
-                return failed(`Invalid quantity: quantity must be a positive integer (received ${inputLine.Quantity})`);
+                return failed(`Enter a whole number of 1 or more for the quantity (${inputLine.Quantity} was entered).`);
             }
 
             let targetExtensionEntity: string | null = null;
@@ -1697,7 +1705,7 @@ export class CheckoutSessionService {
             let unitMode: 'perUnit' | 'perLine' = 'perLine';
 
             if (!inputLine.ProductID) {
-                return failed('ProductID is required on every checkout line');
+                return failed('Every item in the checkout must name a product. Reload the page and try again.');
             }
             if (!allowAnyProduct && ![...allowedProductIds].some((id) => this.idsEqual(id, inputLine.ProductID))) {
                 return failed('This checkout does not sell that product');
@@ -1739,12 +1747,12 @@ export class CheckoutSessionService {
 
             const effectiveMax = maxQuantityPerLine ?? DEFAULT_MAX_QUANTITY_PER_LINE;
             if (inputLine.Quantity > effectiveMax) {
-                return failed(`Quantity ${inputLine.Quantity} exceeds maximum allowed quantity of ${effectiveMax} for this item`);
+                return failed(`You can buy at most ${effectiveMax} of this item (you chose ${inputLine.Quantity}).`);
             }
 
             const unitPayloads = this.extractUnitPayloads(inputLine);
             if (unitPayloads.length > effectiveMax) {
-                return failed(`Unit payload count ${unitPayloads.length} exceeds maximum allowed quantity of ${effectiveMax} for this item`);
+                return failed(`Details were sent for ${unitPayloads.length} of this item, but at most ${effectiveMax} can be bought.`);
             }
             const unitMismatch = this.unitDetailsMismatch(unitMode, inputLine.Quantity, unitPayloads);
             if (unitMismatch) {
@@ -1949,7 +1957,7 @@ export class CheckoutSessionService {
         session.MetadataJSON = JSON.stringify(snapshot);
         const sessionSaved = await session.Save();
         if (!sessionSaved) {
-            return failed(`Failed to persist checkout state: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            return failed(`The checkout could not be saved. Please try again. Details: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
 
         const tax = this.sumLineTax(order.Lines.Items);
@@ -1995,23 +2003,23 @@ export class CheckoutSessionService {
         });
 
         if (!sessionID) {
-            return failed('Session ID is required.');
+            return failed('The checkout could not continue because the page did not send its session. Reload the page and try again.');
         }
         if (!contextUser) {
-            return failed('A context user is required to open a payment intent.');
+            return failed('Payment cannot start because the server has no user to run the checkout as. A developer needs to check the checkout server setup.');
         }
 
         const md = new Metadata();
         const session = await md.GetEntityObject<mjBizAppsOrdersCheckoutSessionEntity>(CHECKOUT_SESSION_ENTITY, contextUser);
         const loaded = await session.Load(sessionID);
         if (!loaded || session.Status !== 'Open') {
-            return failed('Checkout session is not valid or has expired.');
+            return failed('This checkout has expired or is no longer open. Reload the page to start again.');
         }
         if (!this.verifyClientSessionKey(session, clientSessionKey)) {
-            return failed('Checkout session key does not match.');
+            return failed(SESSION_KEY_MISMATCH);
         }
         if (!(await this.enforceSessionExpiry(session))) {
-            return failed('Checkout session has expired.');
+            return failed(SESSION_EXPIRED);
         }
         if (session.DraftOrderID) {
             return this.openRenewalPaymentIntent(session, contextUser);
@@ -2028,7 +2036,7 @@ export class CheckoutSessionService {
             }
         }
         if (!(snapshotTotal > 0)) {
-            return failed('This checkout has no balance due — complete it directly without a payment intent.');
+            return failed('This checkout has no balance due, so it is completed without a payment step. The page should complete it directly.');
         }
         if (!this.snapshotBillingLocation(session)) {
             return failed(MISSING_LOCATION_MESSAGE);
@@ -2037,7 +2045,7 @@ export class CheckoutSessionService {
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         const widgetLoaded = await widget.Load(session.CheckoutWidgetID);
         if (!widgetLoaded) {
-            return failed('The checkout widget for this session could not be loaded.');
+            return failed('This checkout could not be loaded. Reload the page and try again.');
         }
 
         const answersCheck = this.checkSessionAnswers(widget, session);
@@ -2074,7 +2082,7 @@ export class CheckoutSessionService {
                 : undefined;
         const sendReceipt = widgetConfig.sendReceipt === true;
         if (!paymentProviderId) {
-            return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
+            return failed(`Payment cannot be taken because checkout '${widget.Name}' has no payment provider set (paymentProviderId). The checkout's administrator needs to choose one.`);
         }
 
         // The automatic-renewal agreement. The buyer's tick is the only client input; the wording
@@ -2090,7 +2098,7 @@ export class CheckoutSessionService {
 
         const mdProvider = Metadata.Provider;
         if (!mdProvider) {
-            return failed('No metadata provider is available to open a payment intent.');
+            return failed('Payment cannot start because the server is not ready (no metadata provider). Please try again in a moment.');
         }
 
         // Products only: the order, and so its number, does not exist until completion.
@@ -2128,13 +2136,13 @@ export class CheckoutSessionService {
         }, mdProvider, contextUser);
 
         if (!openResult.Success || !openResult.PaymentIntentID) {
-            return failed(openResult.Reason ?? 'The payment provider refused to open an intent.');
+            return failed(openResult.Reason ?? 'The payment could not be started. Please try again, or use a different payment method.');
         }
 
         session.PaymentIntentID = openResult.PaymentIntentID;
         const saved = await session.Save();
         if (!saved) {
-            return failed(`Failed to attach the payment intent to the session: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            return failed(`The payment could not be linked to this checkout. Please try again. Details: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
 
         return {
@@ -2204,7 +2212,7 @@ export class CheckoutSessionService {
         const failed = (message: string): OpenSessionPaymentIntentResult => ({ Success: false, ErrorMessage: message, SessionID: session.ID });
         const mdProvider = Metadata.Provider as IMetadataProvider | undefined;
         if (!mdProvider) {
-            return failed('No metadata provider is available to open a payment intent.');
+            return failed('Payment cannot start because the server is not ready (no metadata provider). Please try again in a moment.');
         }
         const order = await this.renewalOrderFor(session, contextUser);
         const refusal = RenewalPaymentRefusal(
@@ -2219,7 +2227,7 @@ export class CheckoutSessionService {
         const md = new Metadata();
         const widget = await md.GetEntityObject<mjBizAppsOrdersCheckoutWidgetEntity>(CHECKOUT_WIDGET_ENTITY, contextUser);
         if (!(await widget.Load(session.CheckoutWidgetID))) {
-            return failed('The checkout widget for this session could not be loaded.');
+            return failed('This checkout could not be loaded. Reload the page and try again.');
         }
         let paymentProviderId: string | undefined;
         let currencyCode: string | undefined;
@@ -2231,7 +2239,7 @@ export class CheckoutSessionService {
             paymentProviderId = undefined;
         }
         if (!paymentProviderId) {
-            return failed(`Checkout widget '${widget.Name}' has no paymentProviderId configured — a paid checkout requires one.`);
+            return failed(`Payment cannot be taken because checkout '${widget.Name}' has no payment provider set (paymentProviderId). The checkout's administrator needs to choose one.`);
         }
 
         const amount = Math.round(order.Balance * 100) / 100;
@@ -2250,12 +2258,12 @@ export class CheckoutSessionService {
             Metadata: { CheckoutSessionID: session.ID, Purpose: 'RenewalPayment' },
         }, mdProvider, contextUser);
         if (!openResult.Success || !openResult.PaymentIntentID) {
-            return failed(openResult.Reason ?? 'The payment provider refused to open an intent.');
+            return failed(openResult.Reason ?? 'The payment could not be started. Please try again, or use a different payment method.');
         }
 
         session.PaymentIntentID = openResult.PaymentIntentID;
         if (!(await session.Save())) {
-            return failed(`Failed to attach the payment intent to the session: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
+            return failed(`The payment could not be linked to this checkout. Please try again. Details: ${session.LatestResult?.CompleteMessage ?? 'unknown error'}`);
         }
         return {
             Success: true,
@@ -2426,7 +2434,7 @@ export class CheckoutSessionService {
         if (!loaded) {
             return {
                 Success: false,
-                ErrorMessage: 'Checkout session not found',
+                ErrorMessage: 'This checkout could not be found. Reload the page to start again.',
                 SessionID: sessionID,
                 Status: 'Unknown'
             };
@@ -2434,7 +2442,7 @@ export class CheckoutSessionService {
         if (!this.verifyClientSessionKey(session, clientSessionKey)) {
             return {
                 Success: false,
-                ErrorMessage: 'Checkout session key does not match',
+                ErrorMessage: SESSION_KEY_MISMATCH,
                 SessionID: sessionID,
                 Status: session.Status
             };
@@ -2453,7 +2461,7 @@ export class CheckoutSessionService {
         if (session.Status !== 'Open') {
             return {
                 Success: false,
-                ErrorMessage: 'Session is not in an Open status',
+                ErrorMessage: `This checkout is no longer open (it is ${session.Status.toLowerCase()}). Reload the page to start again.`,
                 SessionID: sessionID,
                 Status: session.Status
             };
@@ -2461,7 +2469,7 @@ export class CheckoutSessionService {
         if (!(await this.enforceSessionExpiry(session))) {
             return {
                 Success: false,
-                ErrorMessage: 'Checkout session has expired',
+                ErrorMessage: SESSION_EXPIRED,
                 SessionID: sessionID,
                 Status: 'Expired'
             };
@@ -2557,7 +2565,7 @@ export class CheckoutSessionService {
             trigger.Report.Retryable = true;
             return {
                 Success: false,
-                ErrorMessage: 'Session is not in an Open status or was concurrently processed',
+                ErrorMessage: 'This checkout is already being completed, or is no longer open. Wait a moment, then reload the page to see the result.',
                 SessionID: sessionID,
                 Status: session?.Status ?? 'Unknown'
             };
@@ -2643,7 +2651,7 @@ export class CheckoutSessionService {
                 session.Status = 'Open';
                 return {
                     Success: false,
-                    ErrorMessage: 'A buyer email (and name for a new customer) is required to complete checkout',
+                    ErrorMessage: 'Enter your email address, and your name if you are a new customer, to complete checkout.',
                     SessionID: sessionID,
                     Status: 'Open'
                 };
@@ -2677,7 +2685,7 @@ export class CheckoutSessionService {
                     session.Status = 'Open';
                     return {
                         Success: false,
-                        ErrorMessage: `Invalid quantity: quantity must be a positive integer (received ${inputLine.Quantity})`,
+                        ErrorMessage: `Enter a whole number of 1 or more for the quantity (${inputLine.Quantity} was entered).`,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
@@ -2719,7 +2727,7 @@ export class CheckoutSessionService {
                     session.Status = 'Open';
                     return {
                         Success: false,
-                        ErrorMessage: `Quantity ${inputLine.Quantity} exceeds maximum allowed quantity of ${effectiveMax} for this item`,
+                        ErrorMessage: `You can buy at most ${effectiveMax} of this item (you chose ${inputLine.Quantity}).`,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
@@ -2731,7 +2739,7 @@ export class CheckoutSessionService {
                     session.Status = 'Open';
                     return {
                         Success: false,
-                        ErrorMessage: `Unit payload count ${unitPayloads.length} exceeds maximum allowed quantity of ${effectiveMax} for this item`,
+                        ErrorMessage: `Details were sent for ${unitPayloads.length} of this item, but at most ${effectiveMax} can be bought.`,
                         SessionID: sessionID,
                         Status: 'Open'
                     };
@@ -2873,9 +2881,9 @@ export class CheckoutSessionService {
                     // covers a declined member code and any other re-price that raised the total.
                     if (paymentFailure.SettledButShort) {
                         const reason = memberCodeDeclined
-                            ? `Member promotion code ${memberPromotionCode} was declined on re-price (${memberCodeDeclined.Reason}). ${paymentFailure.Message}`
+                            ? `Member promotion code ${memberPromotionCode} no longer applied when the order was priced again at completion (${memberCodeDeclined.Reason}). ${paymentFailure.Message}`
                             : typedCodeDeclined
-                              ? `Promotion code ${typedCodeDeclined.Code} was declined on re-price (${typedCodeDeclined.Reason}). ${paymentFailure.Message}`
+                              ? `Promotion code ${typedCodeDeclined.Code} no longer applied when the order was priced again at completion (${typedCodeDeclined.Reason}). ${paymentFailure.Message}`
                               : paymentFailure.Message;
                         void raiseCheckoutSettledNotBookedAlert(sessionID, session.PaymentIntentID, reason, contextUser);
                         trigger.Report.Alerted = true;
@@ -2901,7 +2909,7 @@ export class CheckoutSessionService {
             if (newPayerFields) {
                 const payerPersonID = await this.resolveOrEnsurePerson(newPayerFields, contextUser, true);
                 if (!payerPersonID) {
-                    throw new Error(`Could not create the buyer's Person record for ${session.Email}`);
+                    throw new Error(`Could not create a customer record for ${session.Email}.`);
                 }
                 session.PersonID = payerPersonID;
                 order.BillToPersonID = payerPersonID;
@@ -3004,7 +3012,7 @@ export class CheckoutSessionService {
             LogError(`[CheckoutSessionService] CompleteCheckout failed for session ${sessionID}: ${msg}`);
             return {
                 Success: false,
-                ErrorMessage: `Failed to complete checkout: ${msg}`,
+                ErrorMessage: `The checkout could not be completed: ${msg}`,
                 SessionID: sessionID,
                 Status: 'Open'
             };
@@ -3249,12 +3257,12 @@ export class CheckoutSessionService {
             CardIssuingCountry: null,
         });
         if (!session.PaymentIntentID) {
-            return refused('Cannot confirm paid order (TotalGross > 0) without a payment intent for this session');
+            return refused('Your order was not placed because no payment was started for this checkout. Go back to the payment step and pay first.');
         }
         const intent = await md.GetEntityObject<mjBizAppsOrdersPaymentIntentEntity>(PAYMENT_INTENT_ENTITY, contextUser);
         const intentLoaded = await intent.Load(session.PaymentIntentID);
         if (!intentLoaded) {
-            return refused('The payment intent attached to this session could not be found');
+            return refused('Your order was not placed because the payment for this checkout could not be found. Reload the page and try again.');
         }
         let retrieved: RetrieveIntentResult | null = null;
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
@@ -3265,7 +3273,7 @@ export class CheckoutSessionService {
             retrieved = await this.refreshIntentFromGateway(intent, contextUser);
         }
         if (!SETTLED_INTENT_STATUSES.includes(intent.Status)) {
-            return refused(`Payment has not settled (intent status: ${intent.Status}). Complete payment and try again.`);
+            return refused(`Your payment has not settled yet (status: ${intent.Status}), so the order was not placed. Finish paying, then try again.`);
         }
         // Half-cent tolerance absorbs decimal rounding between the priced total and the
         // cents-rounded intent amount.

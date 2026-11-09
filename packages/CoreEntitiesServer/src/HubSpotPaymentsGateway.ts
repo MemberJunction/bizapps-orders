@@ -47,7 +47,7 @@ export function DefaultHubSpotPaymentsGateway(provider: IMetadataProvider): HubS
     return {
         async loadCompanyIntegration(id, p, user) {
             const ci = await p.GetEntityObject<MJCompanyIntegrationEntity>('MJ: Company Integrations', user);
-            if (!(await ci.Load(id))) throw new Error(`Company Integration ${id} does not exist.`);
+            if (!(await ci.Load(id))) throw new Error(`The company integration ${id} set on this payment provider does not exist. Ask an administrator to fix the provider's company integration.`);
             return ci;
         },
         async fetchChanges(ci, object, watermark, properties, user) {
@@ -75,7 +75,7 @@ export function DefaultHubSpotPaymentsGateway(provider: IMetadataProvider): HubS
             }
             if (more) {
                 throw new Error(
-                    `HubSpot '${object}' fetch exceeded ${MAX_PAGES} pages without draining; the watermark is probably wrong. Refusing rather than reading forever.`,
+                    `Reading HubSpot '${object}' records went past ${MAX_PAGES} pages without finishing, which usually means the poll's starting point (watermark) is wrong. Reading stopped. Ask an administrator to check the poll's watermark.`,
                 );
             }
             return { Records: all, HasMore: false, NewWatermarkValue: last?.NewWatermarkValue };

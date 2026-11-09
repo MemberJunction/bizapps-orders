@@ -114,9 +114,9 @@ export class BaseDeliveryChannel {
             Success: false,
             Delivered: [],
             Reason:
-                `The '${this.Code ?? 'unknown'}' delivery channel has no implementation. This is a channel ` +
-                `that was never registered, not a message that was rejected — check the @RegisterClass key ` +
-                `against the channel code.`,
+                `Nothing was sent: the '${this.Code ?? 'unknown'}' delivery channel is not set up on the server. ` +
+                `The message was not rejected; no channel class is registered for this code. Ask an administrator ` +
+                `to check that the channel's @RegisterClass key matches the channel code.`,
         };
     }
 }

@@ -95,15 +95,15 @@ export function CheckChargeExceptionForOrder(row: ChargeExceptionRow, typeCode: 
     if (key.Kind !== 'ChargeWithoutPayment') {
         return {
             Code: 'WrongKind',
-            Message: `Finance exception ${row.ID} is a ${key.Kind} mismatch. Only a charge with no payment can be booked as an order.`,
+            Message: `Only a gateway charge with no payment can be booked as an order. Finance exception ${row.ID} is a different mismatch (${key.Kind}).`,
         };
     }
     if (row.SourceEntity !== PAYMENT_PROVIDER_ENTITY) {
         return {
             Code: 'OpenedByOrders',
             Message:
-                `Orders opened the charge on finance exception ${row.ID} (its source is a ${row.SourceEntity} record). ` +
-                `Book it through that record's own payment path, not as an unmatched payment.`,
+                `The charge on finance exception ${row.ID} was started by Orders itself, so it belongs to an existing payment. ` +
+                `Resolve it through that payment, not by booking it as a new order.`,
         };
     }
     if (!key.Reference) {

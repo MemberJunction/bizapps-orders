@@ -71,11 +71,11 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         if (IsInstalmentIssueInProgress(this.ID)) return null;
 
         return (
-            `An instalment is invoiced through Orders.IssueInstalmentInvoice, which freezes the document ` +
-            `number and posts the billing entry in one transaction. Setting ` +
+            `An instalment must be invoiced through Orders.IssueInstalmentInvoice, which numbers the document ` +
+            `and posts the billing entry together. Setting ` +
             `${[advancing ? 'Status to Invoiced' : null, numbering ? 'DocumentNumber' : null, stamping ? 'InvoicedAt' : null]
                 .filter(Boolean)
-                .join(', ')} directly would leave the row frozen with no entry behind it.`
+                .join(', ')} directly would lock the instalment with no billing entry behind it.`
         );
     }
 
@@ -88,9 +88,9 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
             { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID='${orderID}'`, Fields: ['CompanyID'], ResultType: 'simple' },
             this.ContextCurrentUser,
         );
-        if (!header.Success) return `Could not read the order to place the instalment: ${header.ErrorMessage ?? 'unknown error'}`;
+        if (!header.Success) return `Could not read the order to add this instalment: ${header.ErrorMessage ?? 'unknown error'}. Try again; if it keeps failing, ask an administrator.`;
         const companyID = header.Results?.[0]?.CompanyID;
-        if (!companyID) return `Order ${orderID} was not found, so the instalment has no company to bill from.`;
+        if (!companyID) return `The order for this instalment was not found (ID ${orderID}), so the instalment cannot be saved.`;
         this.CompanyID = companyID;
         return null;
     }
@@ -101,8 +101,8 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
         const stored = this.IsSaved ? Number(field?.OldValue ?? 0) : 0;
         if (Number(this.AmountCredited ?? 0) === stored || CREDIT_SANCTIONED.has(this)) return null;
         return (
-            `Instalment ${this.InstallmentNumber}'s credited amount is set only by a credit memo, which an approved amount ` +
-            `change issues. Lower the term's amount with Orders.AmendArrangement instead.`
+            `Instalment ${this.InstallmentNumber}'s credited amount can only change through a credit memo. To credit the ` +
+            `customer, lower the subscription term's amount with an amendment instead.`
         );
     }
 
@@ -144,7 +144,7 @@ export class OrderHeaderPaymentScheduleEntityServer extends mjBizAppsOrdersOrder
  */
 export function SanctionInstalmentCredit(row: BaseEntity): void {
     if (!(row instanceof OrderHeaderPaymentScheduleEntityServer)) {
-        throw new Error("The instalment was not loaded through the orders server's entity subclass, so it cannot be credited.");
+        throw new Error("The instalment was not loaded through the Orders server's instalment class, so it cannot be credited. This is a bug in the caller.");
     }
     CREDIT_SANCTIONED.add(row);
 }

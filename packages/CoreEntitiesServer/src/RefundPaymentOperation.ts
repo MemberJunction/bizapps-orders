@@ -127,7 +127,7 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
 
         const requested = money(input.Amount ?? refundable);
         if (requested <= 0) {
-            return { Success: false, Message: `A refund must be greater than zero, got ${requested}.` };
+            return { Success: false, Message: `Enter a refund amount greater than zero (${requested} was entered).` };
         }
         if (requested > refundable) {
             return {
@@ -161,8 +161,8 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
             return {
                 Success: false,
                 Message:
-                    `Payment ${payment.PaymentNumber} is not applied to any order, so there is nothing ` +
-                    `to un-apply. Refund it at the provider instead.`,
+                    `Payment ${payment.PaymentNumber} is not applied to any order, so there is nothing to take back ` +
+                    `from an order. Refund it at the payment provider instead.`,
             };
         }
 

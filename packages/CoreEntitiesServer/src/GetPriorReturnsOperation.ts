@@ -51,8 +51,8 @@ export class GetPriorReturnsOperation extends OrdersGetPriorReturnsOperationBase
         if (!requested.length) return { Lines: [] };
         if (requested.length > MAX_LINES) {
             throw new Error(
-                `GetPriorReturns was asked about ${requested.length} lines; the limit is ${MAX_LINES}. ` +
-                    `Ask about the lines of one order at a time.`,
+                `Returned quantities can be looked up for at most ${MAX_LINES} lines at a time, but ${requested.length} were asked for. ` +
+                    `Look up the lines of one order at a time.`,
             );
         }
 
@@ -65,8 +65,8 @@ export class GetPriorReturnsOperation extends OrdersGetPriorReturnsOperationBase
             // returned yet", which is the one wrong answer that invites an over-return.
             if (!context) {
                 throw new Error(
-                    `Order line ${orderLineID} does not exist, so how much of it has been returned ` +
-                        `cannot be answered.`,
+                    `Order line ${orderLineID} was not found, so its returned quantity cannot be shown. ` +
+                        `Refresh the order and try again.`,
                 );
             }
             out.Lines.push({

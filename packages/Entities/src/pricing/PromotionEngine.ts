@@ -478,7 +478,7 @@ export async function RunPromotions(
         if (!plugin) {
             // A promotion naming a qualifier nobody registered must NOT quietly apply to everyone —
             // that is the opposite of what its author intended.
-            unusable.push({ Code: p.Code, Reason: `its qualifier '${p.QualifierKey}' is not registered` });
+            unusable.push({ Code: p.Code, Reason: `its eligibility check '${p.QualifierKey}' is not installed on the server` });
             continue;
         }
         const ok = await plugin.Qualifies(
@@ -721,7 +721,7 @@ export async function AuthorizeManualDiscount(
         return {
             AuthorityID: null,
             NeedsApproval: false,
-            Refusal: 'A manual discount must be attributable to a user, and no user was supplied.',
+            Refusal: 'A manual discount must be recorded against a user, and none was given.',
         };
     }
 
@@ -769,8 +769,8 @@ export async function AuthorizeManualDiscount(
             AuthorityID: null,
             NeedsApproval: false,
             Refusal:
-                `Manual discounts require a SalesAuthority, and this user has none. Grant one with a ` +
-                `MaxDiscountPct before discounting — absence of an authority is not permission to discount.`,
+                `You have no sales authority, so you cannot apply manual discounts. Ask an administrator to give ` +
+                `you a sales authority with a maximum discount percent.`,
         };
     }
 
@@ -799,7 +799,7 @@ export async function AuthorizeManualDiscount(
     // rep to find someone to re-type it. Held, it goes through the concession approval every other
     // give-away uses: the rep records a concession on the line, the ConcessionLimit approver decides
     // it, and the order confirms once it is approved.
-    const breaches = `This discount of ${amount} on ${baseAmount} is outside this user's SalesAuthority: ` +
+    const breaches = `This discount of ${amount} on ${baseAmount} is over your discount limit: ` +
         `${assessment.Breaches.join('; ')}.`;
     const rule = await findDiscountLimitRule(provider, user);
     if (!rule?.ApprovalRequiredRoleID || !(await UserHoldsRole(rule.ApprovalRequiredRoleID, provider, user, userID))) {

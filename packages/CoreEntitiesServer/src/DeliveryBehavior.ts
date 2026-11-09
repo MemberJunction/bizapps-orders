@@ -117,7 +117,7 @@ export function DecideDelivery(input: {
     UnapprovedConcessions?: readonly string[];
 }): DeliveryDecision {
     if (!input.Document) {
-        return { Verdict: 'Refuse', Code: 'NO_DOCUMENT', Reason: 'there is no document to deliver' };
+        return { Verdict: 'Refuse', Code: 'NO_DOCUMENT', Reason: 'There is no document to send.' };
     }
 
     const status = (input.Document.SourceStatus ?? '').trim();
@@ -126,8 +126,8 @@ export function DecideDelivery(input: {
             Verdict: 'Refuse',
             Code: 'NOT_DELIVERABLE',
             Reason:
-                `${input.Document.DocumentNumber} comes from a ${status.toLowerCase()} order, so it is not a bill. ` +
-                `Sending it would put a document that looks exactly like a real invoice in a customer's inbox.`,
+                `${input.Document.DocumentNumber} was not sent because its order is ${status.toLowerCase()}, so it is not a bill. ` +
+                `Only documents from confirmed orders can be sent; to the customer it would look like a real invoice.`,
         };
     }
 
@@ -136,8 +136,8 @@ export function DecideDelivery(input: {
             Verdict: 'Refuse',
             Code: 'CONCESSION_PENDING',
             Reason:
-                `${input.Document.DocumentNumber} cannot be sent yet: ${input.UnapprovedConcessions.join('; ')}. ` +
-                `Once the customer has been told about a concession it cannot be withdrawn, so it is approved first.`,
+                `${input.Document.DocumentNumber} was not sent: ${input.UnapprovedConcessions.join('; ')}. ` +
+                `A concession cannot be withdrawn once the customer sees it, so send the document after it is approved.`,
         };
     }
 
@@ -146,8 +146,8 @@ export function DecideDelivery(input: {
             Verdict: 'Refuse',
             Code: 'EXTERNALLY_INVOICED',
             Reason:
-                `${input.Document.DocumentNumber} is invoiced through Bill.com (or its company invoices through that rail). ` +
-                `Sending the native document as well would put two invoices for the same money in front of the customer.`,
+                `${input.Document.DocumentNumber} was not sent because it is invoiced through Bill.com. ` +
+                `Sending it from here as well would give the customer two invoices for the same amount.`,
         };
     }
     if (!ResolveRecipients(input.Recipients).length) {
@@ -155,8 +155,8 @@ export function DecideDelivery(input: {
             Verdict: 'Refuse',
             Code: 'NO_RECIPIENT',
             Reason:
-                `${input.Document.DocumentNumber} has nobody to go to — no billing contact is recorded for this ` +
-                `customer. Record one rather than sending to whichever address happens to be on file.`,
+                `${input.Document.DocumentNumber} was not sent because the customer has no billing contact. ` +
+                `Add a billing contact for the customer, then send it again.`,
         };
     }
 

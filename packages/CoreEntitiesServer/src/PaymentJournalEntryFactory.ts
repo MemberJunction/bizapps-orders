@@ -135,8 +135,8 @@ export class PaymentJournalEntryFactory {
         const gross = money(Math.abs(ctx.Amount));
         if (gross <= 0) {
             throw new Error(
-                `Payment ${ctx.PaymentNumber} has an amount of ${ctx.Amount}, so there is nothing to book. ` +
-                    `A zero-amount payment should not reach capture.`,
+                `Payment ${ctx.PaymentNumber} cannot be booked because its amount is ${ctx.Amount}. ` +
+                    `Enter an amount greater than zero.`,
             );
         }
 
@@ -204,8 +204,8 @@ export class PaymentJournalEntryFactory {
         const credits = money(lines.reduce((s, l) => s + (l.CreditAmount ?? 0), 0));
         if (debits !== credits) {
             throw new Error(
-                `The capture entry for payment ${ctx.PaymentNumber} does not balance: ` +
-                    `debits ${debits} vs credits ${credits}. Gross ${ctx.Amount}, fee ${ctx.ProcessingFeeAmount}.`,
+                `The journal entry for payment ${ctx.PaymentNumber} does not balance (debits ${debits}, credits ${credits}; ` +
+                    `amount ${ctx.Amount}, fee ${ctx.ProcessingFeeAmount}). Nothing was booked. Report this to the development team.`,
             );
         }
     }

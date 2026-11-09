@@ -77,7 +77,7 @@ describe('ReturnScheduleReduction', () => {
     });
 
     it('refuses to return more than is left', () => {
-        expect(() => ReturnScheduleReduction({ Net: 450, Tax: 0 }, 3, 2)).toThrow(/left to take back/);
+        expect(() => ReturnScheduleReduction({ Net: 450, Tax: 0 }, 3, 2)).toThrow(/left to return/);
     });
 });
 
@@ -145,6 +145,6 @@ describe('a partial return on an order billed in four instalments', () => {
     it('does not tie when nothing is taken off the lines, which is the refusal the issue reports', () => {
         const layout = lines.map(SliceLayout).flat();
         const unreduced = { Amounts: BilledSoFar(lines, lines, loweredRows, []), Invoiced: billed.Invoiced };
-        expect(() => TiedSlice(layout, lowered, 1, unreduced)).toThrow(/cannot be sliced/);
+        expect(() => TiedSlice(layout, lowered, 1, unreduced)).toThrow(/cannot be split/);
     });
 });

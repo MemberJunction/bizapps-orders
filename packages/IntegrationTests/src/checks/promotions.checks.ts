@@ -468,7 +468,7 @@ export const PromotionChecks: NamedCheck[] = [
         });
         Assert(!order.Saved, "a manual discount without authority must be refused");
         Assert(
-          /SalesAuthority|not permission/i.test(order.Message),
+          /SalesAuthority|sales authority|not permission/i.test(order.Message),
           `the refusal should name the missing authority, got: ${order.Message}`,
         );
       }),

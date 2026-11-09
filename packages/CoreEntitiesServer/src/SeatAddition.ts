@@ -72,7 +72,7 @@ export async function CheckSeatAddition(request: SeatAdditionRequest, ctx: Appro
  */
 export async function ApplySeatAddition(request: SeatAdditionRequest, ctx: ApprovalTaskContext): Promise<number | null> {
     const added = Number(request.AddedQuantity);
-    if (!Number.isInteger(added) || added <= 0) throw new Error('A Seats concession must add a whole, positive number of seats.');
+    if (!Number.isInteger(added) || added <= 0) throw new Error('Enter a whole number of seats greater than zero.');
 
     const row = await termForLine(request.OrderLineID, ctx);
     if (!row) return null;
@@ -84,7 +84,7 @@ export async function ApplySeatAddition(request: SeatAdditionRequest, ctx: Appro
     const seats = Number(term.Quantity) + added;
     term.Quantity = seats;
     if (!(await term.Save())) {
-        throw new Error(`Term ${row.TermNumber} could not take the added seats: ${term.LatestResult?.CompleteMessage}`);
+        throw new Error(`The added seats could not be saved on term ${row.TermNumber}: ${term.LatestResult?.CompleteMessage}`);
     }
 
     const subscription = (

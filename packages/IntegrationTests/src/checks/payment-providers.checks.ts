@@ -526,7 +526,7 @@ export const PaymentProvidersChecks: NamedCheck[] = [
         const paymentID = result.ID!;
         Assert(!result.Saved, "a provider-backed capture with no intent must be refused");
         Assert(
-          /intent/i.test(result.Message),
+          /no payment was started/i.test(result.Message),
           `the refusal must name the missing intent rather than failing obscurely. Got: ${result.Message}`,
         );
       }),
