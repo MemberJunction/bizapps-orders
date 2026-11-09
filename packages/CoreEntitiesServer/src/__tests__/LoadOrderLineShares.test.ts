@@ -5,12 +5,13 @@ import type { IRunViewProvider, UserInfo } from '@memberjunction/core';
  * WHICH TAGS A PAYMENT ALLOCATION CARRIES FOR EACH ORDER LINE.
  *
  * `LoadOrderLineShares` feeds both payment booking paths. Each share's dimensions come from three
- * places, nearest first: the line's own `DimensionID`/`DimensionValueID` columns, its stored
- * `OrderLineDimension` rows, then the product/category/type/company `DimensionDefault` mapping for
- * any axis the line has nothing stored for (golive#383).
+ * places, nearest first: the line's own `DimensionID`/`DimensionValueID` columns, then its stored
+ * `OrderLineDimension` rows. That is what booking tags the AR debit with, so the AR credit matches.
+ * The `DimensionDefault` mapping is NOT consulted: a default the line has no row for was never on
+ * the debit, and tagging the credit with it would stop AR netting by that dimension (golive#383).
  *
- * These drive the real loader against a provider that answers the three reads from fixtures, with
- * the accounting engine, the orders engine and the default resolver stubbed.
+ * These drive the real loader against a provider that answers the reads from fixtures, with the
+ * orders engine stubbed and the default resolver stubbed to always offer a default.
  */
 
 const ORDER = 'a0000000-0000-4000-8000-000000000001';
@@ -112,7 +113,7 @@ describe('LoadOrderLineShares dimension tags', () => {
         );
     });
 
-    it('keeps the stored value over the mapping default on the same axis', async () => {
+    it('keeps the stored value when a mapping default names the same axis', async () => {
         mocks.defaults = [{ DimensionID: VENTURE_AXIS, DimensionValueID: VENTURE_DEFAULT, Source: 'Product' }];
         const shares = await LoadOrderLineShares(
             providerFor({
@@ -126,7 +127,7 @@ describe('LoadOrderLineShares dimension tags', () => {
         expect(tagsOf(shares, LINE_WITH_ROWS)).toEqual([`${VENTURE_AXIS}=${VENTURE_STORED}`]);
     });
 
-    it('fills an axis the line has no stored row for from the mapping default (golive#383)', async () => {
+    it('adds no mapping default for an axis the line has no stored row for (golive#383)', async () => {
         mocks.defaults = [{ DimensionID: VENTURE_AXIS, DimensionValueID: VENTURE_DEFAULT, Source: 'Product' }];
         const shares = await LoadOrderLineShares(
             providerFor({ lines: [{ ID: LINE_WITHOUT_ROWS }], stored: [] }),
@@ -134,6 +135,6 @@ describe('LoadOrderLineShares dimension tags', () => {
             ORDER,
         );
 
-        expect(tagsOf(shares, LINE_WITHOUT_ROWS)).toEqual([`${VENTURE_AXIS}=${VENTURE_DEFAULT}`]);
+        expect(tagsOf(shares, LINE_WITHOUT_ROWS)).toEqual([]);
     });
 });

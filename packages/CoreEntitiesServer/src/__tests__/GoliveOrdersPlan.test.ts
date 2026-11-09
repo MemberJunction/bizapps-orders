@@ -17,7 +17,7 @@ import { PreviewPriceOperation } from '../PreviewPriceOperation.js';
 import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
 import { DetectOverlappingSubscriptionsOperation } from '../DetectOverlappingSubscriptionsOperation.js';
 import { ReconcilePaymentProviderChargesOperation } from '../ReconcilePaymentProviderChargesOperation.js';
-import { MergeDerivedTags, MergeLineDimensions } from '../LineDimensionMerge.js';
+import { MergeLineDimensions } from '../LineDimensionMerge.js';
 import { SubscriptionViewParams } from '../../../Angular/src/lib/data/orders-queries.js';
 
 const USER = { ID: '11111111-2222-4333-8444-555555555555', Name: 'Test User' } as unknown as UserInfo;
@@ -245,23 +245,19 @@ describe('Group 05 — Subscription placement & Order Subscriptions tab (#384)',
 });
 
 describe('Group 06 — Payment allocation line dimension merging (#383)', () => {
-    it('merges OrderLine.DimensionID/DimensionValueID, OrderLineDimension rows, and default dimensions without duplicating axes (#383)', () => {
+    it('merges OrderLine.DimensionID/DimensionValueID with OrderLineDimension rows without duplicating axes (#383)', () => {
         const ventureDim = '11111111-aaaa-4bbb-8ccc-111111111111';
         const ventureVal = '22222222-aaaa-4bbb-8ccc-222222222222';
         const productDim = '33333333-aaaa-4bbb-8ccc-333333333333';
-        const productValDefault = '44444444-aaaa-4bbb-8ccc-444444444444';
+        const ventureValStored = '44444444-aaaa-4bbb-8ccc-444444444444';
         const productValStored = '55555555-aaaa-4bbb-8ccc-555555555555';
 
-        const defaultDims = [
-            { DimensionID: ventureDim, DimensionValueID: ventureVal },
-            { DimensionID: productDim, DimensionValueID: productValDefault },
+        const storedDims = [
+            { DimensionID: ventureDim, DimensionValueID: ventureValStored },
+            { DimensionID: productDim, DimensionValueID: productValStored },
         ];
-        const storedDims = [{ DimensionID: productDim, DimensionValueID: productValStored }];
 
-        const merged = MergeLineDimensions(
-            { DimensionID: ventureDim, DimensionValueID: ventureVal },
-            MergeDerivedTags(defaultDims, storedDims),
-        );
+        const merged = MergeLineDimensions({ DimensionID: ventureDim, DimensionValueID: ventureVal }, storedDims);
 
         expect(merged).toEqual([
             { DimensionID: productDim, DimensionValueID: productValStored },

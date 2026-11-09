@@ -14,13 +14,9 @@
  *   CONSUMER: PaymentAllocationFactory (./PaymentAllocationFactory.ts)
  *   SIBLING:  BuildIntercompanyLookup (./AccountingBridge.ts)
  */
-import { IMetadataProvider, IRunViewProvider, Metadata, RunView, UserInfo } from '@memberjunction/core';
+import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
-import { LoadAccountingEngine } from './AccountingBridge.js';
-import { CalendarDayOrToday } from './calendar-day.js';
-import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
-import type { ResolverEntityIDs } from './GLAccountResolver.js';
-import { MergeDerivedTags, MergeLineDimensions } from './LineDimensionMerge.js';
+import { MergeLineDimensions } from './LineDimensionMerge.js';
 import type { GiftCardSaleLine, OrderLineShare } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 import { CompanySlices, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
@@ -30,9 +26,6 @@ import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const STORED_VALUE_ACCOUNT_ENTITY = 'MJ_BizApps_Orders: Stored Value Accounts';
 const PRODUCT_ENTITY = 'MJ_BizApps_Orders: Products';
-const PRODUCT_CATEGORY_ENTITY = 'MJ_BizApps_Orders: Product Categories';
-const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
-const COMPANY_ENTITY = 'MJ: Companies';
 
 interface OrderLineRow {
     ID: string;
@@ -57,9 +50,13 @@ interface OrderLineDimensionRow {
  * clear a different amount than was ever receivable.
  *
  * The tags are read from the same `OrderLineDimension` rows `OrderJournalEntryFactory` stamps onto
- * the booking entry (D31), merged with the line's own `DimensionID`/`DimensionValueID` columns and
- * any product/category/type/company `DimensionDefault` mappings for axes not yet stamped on the
- * line (#383), so the credit that clears a receivable carries what the debit that raised it carried.
+ * the booking entry (D31), merged with the line's own `DimensionID`/`DimensionValueID` columns the
+ * same way booking merges them, so the credit that clears a receivable carries what the debit that
+ * raised it carried. An order with no tags simply comes back with none.
+ *
+ * NO `DimensionDefault` LOOKUP HERE. Booking does not consult the mapping; it books the rows that
+ * `stampLineDimensions` already wrote from it on save. Adding a default here would put an axis on
+ * the AR credit that the AR debit never had, and AR by that dimension would stop netting.
  */
 export async function LoadOrderLineShares(
     provider: IRunViewProvider,
@@ -94,20 +91,11 @@ export async function LoadOrderLineShares(
     // The product's place in the role walk, so a deposit resolves Customer Deposits the way the
     // invoice entry resolves every role: product, category tree, product type, then company.
     await LoadOrdersEngine(provider as unknown as IMetadataProvider, user);
-    const defaultsByLine = await resolveDefaultLineDimensions(
-        provider as unknown as IMetadataProvider,
-        user,
-        rows,
-        orderID,
-    );
 
     return rows.map((l) => {
-        const key = String(l.ID).toLowerCase();
-        const storedDims = tags.get(key) ?? [];
-        const defaultDims = defaultsByLine.get(key) ?? [];
         const dims = MergeLineDimensions(
             { DimensionID: l.DimensionID, DimensionValueID: l.DimensionValueID },
-            MergeDerivedTags(defaultDims, storedDims),
+            tags.get(String(l.ID).toLowerCase()) ?? [],
         );
         const product = OrdersEngine.Instance.ProductByID(l.ProductID);
         if (!product) {
@@ -125,74 +113,6 @@ export async function LoadOrderLineShares(
             ...(dims.length ? { Dimensions: dims } : {}),
         };
     });
-}
-
-async function resolveDefaultLineDimensions(
-    provider: IMetadataProvider,
-    user: UserInfo,
-    rows: OrderLineRow[],
-    orderHeaderID: string,
-): Promise<Map<string, PaymentJELineDimension[]>> {
-    const out = new Map<string, PaymentJELineDimension[]>();
-    if (rows.length === 0) return out;
-
-    const engine = await LoadAccountingEngine(provider, user);
-    if (!engine?.Dimensions?.length) return out;
-
-    const entityIDs = tryResolveEntityIDs(provider);
-    if (!entityIDs) return out;
-
-    const rv = new RunView(provider as unknown as IRunViewProvider);
-    const headerRes = await rv.RunView<{ OrderDate: Date | string | null }>(
-        {
-            EntityName: ORDER_HEADER_ENTITY,
-            ExtraFilter: `ID='${orderHeaderID}'`,
-            Fields: ['OrderDate'],
-            ResultType: 'simple',
-            BypassCache: true,
-        },
-        user,
-    );
-    const rawOrderDate = headerRes?.Results?.[0]?.OrderDate;
-    const orderDate = rawOrderDate ? new Date(rawOrderDate) : null;
-    const asOf = await CalendarDayOrToday(orderDate, provider, user);
-    const resolver = new DimensionDefaultResolver(entityIDs, provider, user);
-
-    for (const row of rows) {
-        const product = OrdersEngine.Instance.ProductByID(row.ProductID);
-        const resolved = await resolver.Resolve(
-            row.ProductID,
-            product?.ProductCategoryID ?? null,
-            product?.ProductTypeID ?? null,
-            row.CompanyID ?? product?.CompanyID ?? '',
-            asOf,
-        );
-        if (resolved.length > 0) {
-            out.set(
-                String(row.ID).toLowerCase(),
-                resolved.map(({ DimensionID, DimensionValueID }) => ({ DimensionID, DimensionValueID })),
-            );
-        }
-    }
-    return out;
-}
-
-function tryResolveEntityIDs(provider: IMetadataProvider): ResolverEntityIDs | null {
-    const entityByName = (name: string): string | undefined => {
-        const fromProvider = (provider as { EntityByName?: (n: string) => { ID: string } | undefined }).EntityByName?.(name)?.ID;
-        if (fromProvider) return fromProvider;
-        try {
-            return new Metadata().EntityByName(name)?.ID;
-        } catch {
-            return undefined;
-        }
-    };
-    const Product = entityByName(PRODUCT_ENTITY);
-    const ProductCategory = entityByName(PRODUCT_CATEGORY_ENTITY);
-    const ProductType = entityByName(PRODUCT_TYPE_ENTITY);
-    const Company = entityByName(COMPANY_ENTITY);
-    if (!Product || !ProductCategory || !ProductType || !Company) return null;
-    return { Product, ProductCategory, ProductType, Company };
 }
 
 /** The dimension tags of the given order lines, keyed by lower-cased line id. */
