@@ -1,6 +1,6 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule, type RecordSelectedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { FormatDate, FormatInstantDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
@@ -23,6 +23,12 @@ import {
     type mjBizAppsOrdersSubscriptionEventEntity,
     type mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
+
+/**
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`. The workspace declares it inline
+ * rather than exporting a named type, so it is restated here.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
@@ -329,9 +335,12 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         }
     }
 
-    /** Double-click opens the form; the single click before it has already filled the side panel. */
-    public OnRecordOpened(event: RecordOpenedEvent | { entity?: EntityInfo; record?: Record<string, unknown> }): void {
-        const id = (('compositeKey' in event ? event.compositeKey?.GetValueByFieldName('ID') : undefined) ?? event.record?.['ID']) as string | undefined;
+    /**
+     * Double-click opens the form; the single click before it has already filled the side panel.
+     * The workspace hands back the opened row; Subscription's key is `ID`, so the row carries it.
+     */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) this.SubscriptionOpened.emit({ ID: id });
     }
 

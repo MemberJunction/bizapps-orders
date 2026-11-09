@@ -1,243 +1,305 @@
 #!/usr/bin/env node
 /**
- * check-migration-entityfieldvalue-ids.mjs (#815)
+ * check-migration-entityfieldvalue-ids.mjs
  *
- * A migration must not INSERT an EntityFieldValue row whose EntityFieldID is a literal that no
- * migration up to and including that file creates.
+ * A versioned migration must not insert an `EntityFieldValue` row keyed on a literal EntityFieldID
+ * that the same file does not create.
  *
  * ── WHY ─────────────────────────────────────────────────────────────────────────
- * CodeGen output folded into a migration copies the authoring database's EntityField IDs. When the
- * field was created by an earlier migration (an EntityField INSERT carrying that literal ID), every
- * database built from migrations has the same ID and the value insert is sound. When the field was
- * created some other way on the authoring database (a CodeGen run never captured, a hand fix), the
- * ID exists only there: on a host whose field has another ID the insert fails on
- * FK_EntityFieldValue_EntityField, and on one that happens to have it the values can be inserted a
- * second time. The sound alternative for such a field is to look it up by natural key (entity and
- * field name) at apply time, as V202609061900 and V202609221500 do, so nothing literal is involved.
+ * CodeGen output folded into a migration copies the authoring database's EntityField IDs. Where the
+ * same file also inserts that EntityField with that ID, the pair is consistent on every host built
+ * from migrations. Where it does not, the ID belongs to some other database's history: on a host
+ * whose field has a different ID the insert fails on FK_EntityFieldValue_EntityField and aborts the
+ * migration, and on a host where the ID does exist the values can land a second time under new row
+ * IDs (#815). A value list for a field created elsewhere is seeded by NATURAL KEY instead: look the
+ * field up by entity and name into a variable, as V202609061900 does for OrderLine.FulfillmentStatus.
  *
- * ── THE RULE ────────────────────────────────────────────────────────────────────
- * For each `INSERT INTO [...].[EntityFieldValue] (...) VALUES (...)` whose EntityFieldID position
- * holds a quoted UUID, that UUID must appear as the ID of an `INSERT INTO [...].[EntityField] (...)
- * VALUES (...)` in this file or in a migration that sorts before it. `INSERT ... SELECT` and a
- * variable or subquery in the EntityFieldID position are not literals and pass.
+ * Only the literal form is refused. `@SomeFieldID` (a variable resolved by natural key) and a
+ * subquery are what the fix looks like, so they pass.
  *
  * ── SCOPE ───────────────────────────────────────────────────────────────────────
- * CI form (`<base> <head>`): versioned migrations (`V<12 digits>__*.sql`) added or modified between
- * the two commits are checked; every migration is read to learn which field IDs exist. Merged
- * migrations that break the rule are left alone: they are locked, and rewriting them would change
- * Flyway checksums on every existing database. `--all` reports every migration and exits 0.
+ * CI form (`<base> <head>`): migration files added, modified, copied or renamed between the two
+ * commits; only inserts that START on a line the PR adds are reported. Local form (no arguments):
+ * the working tree plus untracked files against merge-base(BASE_REF or origin/next, HEAD). Only
+ * Flyway versioned files (`V<12 digits>__*.sql`) are scanned; fixture SQL under `tests/` is not.
+ * Merged migrations that carry the literal form are locked and stay as they are; `--all` lists them
+ * (informational, exit 0).
  *
  * Usage (from any directory inside the repository):
+ *   node check-migration-entityfieldvalue-ids.mjs                 # local form
  *   node check-migration-entityfieldvalue-ids.mjs <base> <head>   # CI form
- *   node check-migration-entityfieldvalue-ids.mjs                 # working tree against merge-base(origin/next)
  *   node check-migration-entityfieldvalue-ids.mjs --all           # every migration, informational
- *   node check-migration-entityfieldvalue-ids.mjs --self-test     # the detector's own fixtures
+ *   node check-migration-entityfieldvalue-ids.mjs --self-test     # test fixtures
  */
 import { execFileSync } from 'node:child_process';
-import { readFileSync, readdirSync, existsSync, realpathSync } from 'node:fs';
+import { readFileSync, existsSync, realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
-import { stripSqlComments } from './strip-sql-comments.mjs';
-import { parseParenList } from './check-migration-entityfield-sequence.mjs';
+import { addedLinesFromDiff } from './check-migration-no-prune.mjs';
 
-const RED = '\x1b[0;31m', YELLOW = '\x1b[0;33m', GREEN = '\x1b[0;32m', NC = '\x1b[0m';
-const VERSIONED_RE = /^V\d{12}__[^/]*\.sql$/;
-const UUID_LITERAL_RE = /^N?'([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})'$/;
+const RED = '\x1b[0;31m', YELLOW = '\x1b[0;33m', GREEN = '\x1b[0;32m', DIM = '\x1b[2m', NC = '\x1b[0m';
+const GIT_MAX_BUFFER = Number(process.env.MJ_GIT_MAX_BUFFER) || 256 * 1024 * 1024;
+const VERSIONED_MIGRATION_RE = /(^|\/)V\d{12}__[^/]*\.sql$/;
+const FIXTURE_DIR_RE = /(^|\/)tests?\//;
+export const inScope = (f) => VERSIONED_MIGRATION_RE.test(f) && !FIXTURE_DIR_RE.test(f);
 
-const insertRe = (table) =>
-    new RegExp(String.raw`INSERT\s+INTO\s+(?:[^\s(]*?[.\]"\x60])?(?:\[${table}\]|"${table}"|${table})\s*\(`, 'gi');
-
-const bare = (s) => s.replace(/^[\[\]"\x60\s]+|[\[\]"\x60\s]+$/g, '').toLowerCase();
-
-function lineOf(text, offset) {
-    let n = 1;
-    for (let i = 0; i < offset; i++) if (text.charCodeAt(i) === 10) n++;
-    return n;
-}
+const UUID_LITERAL_RE = /^N?'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})'$/i;
 
 /**
- * The items of the tuple `(...)` spanning [open, end) as SOURCE text. Commas are found in the masked
- * text, where string contents are blanked, so a comma inside a literal never splits an item.
+ * `INSERT INTO <schema>.<table> (<columns>) VALUES (` — the table captured unquoted. The schema is
+ * anything (`[${mjSchema}]`, `[__mj]`, `__mj`); the values tuple is read by `readTuple`, because a
+ * string value may contain a parenthesis.
  */
-function splitTuple(masked, source, open, end) {
-    const parts = [];
-    let depth = 0, inBracket = false, start = open + 1;
-    for (let i = open + 1; i < end - 1; i++) {
-        const ch = masked[i];
-        if (inBracket) { if (ch === ']') inBracket = false; continue; }
-        if (ch === '[') inBracket = true;
-        else if (ch === '(') depth++;
-        else if (ch === ')') depth--;
-        else if (ch === ',' && depth === 0) {
-            parts.push({ value: source.slice(start, i).trim(), offset: start });
-            start = i + 1;
-        }
-    }
-    parts.push({ value: source.slice(start, end - 1).trim(), offset: start });
-    return parts;
-}
+const INSERT_RE = /INSERT\s+INTO\s+(?:\[[^\]]+\]|"[^"]+"|[\w${}]+)\s*\.\s*(?:\[(\w+)\]|"(\w+)"|(\w+))\s*\(([^)]*)\)\s*VALUES\s*\(/gi;
 
-/**
- * Every literal value in column `column` of each VALUES tuple of each INSERT into `table`.
- * Structure is read from the masked text (comments and string contents blanked, offsets kept);
- * values are read from the source at the same offsets.
- * @returns {{ value: string, offset: number }[]}
- */
-export function literalColumnValues(source, table, column) {
-    const masked = stripSqlComments(source);
-    const out = [];
-    const re = insertRe(table);
-    let m;
-    while ((m = re.exec(masked)) !== null) {
-        const cols = parseParenList(masked, m.index + m[0].length - 1);
-        if (!cols) continue;
-        const idx = cols.items.findIndex((c) => bare(c) === column.toLowerCase());
-        let cursor = cols.end;
-        const after = masked.slice(cursor).search(/\S/);
-        const at = after === -1 ? masked.length : cursor + after;
-        if (idx !== -1 && /^VALUES\b/i.test(masked.slice(at, at + 6))) {
-            cursor = at + 6;
-            for (;;) {
-                const lead = masked.slice(cursor).search(/\S/);
-                const open = lead === -1 ? -1 : cursor + lead;
-                if (open === -1 || masked[open] !== '(') break;
-                const tuple = parseParenList(masked, open);
-                if (!tuple) break;
-                const parts = splitTuple(masked, source, open, tuple.end);
-                if (parts[idx]) out.push(parts[idx]);
-                cursor = tuple.end;
-                const sepLead = masked.slice(cursor).search(/\S/);
-                const sep = sepLead === -1 ? -1 : cursor + sepLead;
-                if (sep === -1 || masked[sep] !== ',') break;
-                cursor = sep + 1;
+/** Read a parenthesised, comma-separated tuple starting just after its `(`; quote- and nesting-aware. */
+function readTuple(sql, start) {
+    const values = [];
+    let depth = 0, cur = '', i = start;
+    for (; i < sql.length; i++) {
+        const c = sql[i];
+        if (c === "'") {
+            let j = i + 1;
+            for (; j < sql.length; j++) {
+                if (sql[j] === "'" && sql[j + 1] === "'") { j++; continue; }
+                if (sql[j] === "'") break;
             }
+            cur += sql.slice(i, j + 1);
+            i = j;
+            continue;
         }
-        re.lastIndex = cursor;
+        if (c === '(') depth++;
+        if (c === ')') {
+            if (depth === 0) break;
+            depth--;
+        }
+        if (c === ',' && depth === 0) {
+            values.push(cur.trim());
+            cur = '';
+            continue;
+        }
+        cur += c;
+    }
+    values.push(cur.trim());
+    return values;
+}
+
+/** Blank `--` and `/* *\/` comments, keeping string literals and line numbers intact. */
+function blankComments(sql) {
+    let out = '';
+    for (let i = 0; i < sql.length; i++) {
+        const c = sql[i];
+        if (c === "'") {
+            let j = i + 1;
+            for (; j < sql.length; j++) {
+                if (sql[j] === "'" && sql[j + 1] === "'") { j++; continue; }
+                if (sql[j] === "'") break;
+            }
+            out += sql.slice(i, j + 1);
+            i = j;
+        } else if (c === '-' && sql[i + 1] === '-') {
+            while (i < sql.length && sql[i] !== '\n') { out += ' '; i++; }
+            if (i < sql.length) out += '\n';
+        } else if (c === '/' && sql[i + 1] === '*') {
+            const end = sql.indexOf('*/', i + 2);
+            const stop = end === -1 ? sql.length : end + 2;
+            out += sql.slice(i, stop).replace(/[^\n]/g, ' ');
+            i = stop - 1;
+        } else {
+            out += c;
+        }
     }
     return out;
 }
 
-/** IDs of EntityField rows a file inserts with a literal ID. */
-export function createdFieldIDs(source) {
-    const ids = new Set();
-    for (const { value } of literalColumnValues(source, 'EntityField', 'ID')) {
-        const m = UUID_LITERAL_RE.exec(value);
-        if (m) ids.add(m[1].toLowerCase());
-    }
-    return ids;
-}
-
-/**
- * EntityFieldValue inserts in `source` whose literal EntityFieldID is not in `known`.
- * @returns {{ line: number, id: string }[]}
- */
-export function unknownValueFieldIDs(source, known) {
-    const hits = [];
-    for (const { value, offset } of literalColumnValues(source, 'EntityFieldValue', 'EntityFieldID')) {
-        const m = UUID_LITERAL_RE.exec(value);
-        if (m && !known.has(m[1].toLowerCase())) hits.push({ line: lineOf(source, offset), id: m[1] });
-    }
-    return hits;
-}
-
-/**
- * Check `files` (names in `migrations/`, sorted by version) in order, learning field IDs as it goes.
- * @param {(name: string) => string} read
- * @param {Set<string>} report names whose hits are reported
- */
-export function checkMigrations(files, read, report) {
-    const known = new Set();
+/** Every INSERT … VALUES in `sql`, as { table, columns, values, line }. */
+function inserts(sql) {
+    const masked = blankComments(sql);
     const found = [];
-    for (const name of [...files].sort()) {
-        const source = read(name);
-        for (const id of createdFieldIDs(source)) known.add(id);
-        if (!report.has(name)) continue;
-        for (const hit of unknownValueFieldIDs(source, known)) found.push({ file: name, ...hit });
+    for (const m of masked.matchAll(INSERT_RE)) {
+        const table = m[1] ?? m[2] ?? m[3];
+        const columns = m[4].split(',').map((c) => c.trim().replace(/^\[|\]$|^"|"$/g, '').toLowerCase());
+        const values = readTuple(masked, m.index + m[0].length);
+        const line = masked.slice(0, m.index).split('\n').length;
+        found.push({ table, columns, values, line });
     }
     return found;
 }
 
-function selfTest() {
-    const FIELD = 'AAAAAAAA-0000-4000-8000-000000000001';
-    const OTHER = 'BBBBBBBB-0000-4000-8000-000000000002';
-    const efInsert = (id) => `INSERT INTO [\${mjSchema}].[EntityField] ([ID], [EntityID], [Name], [Sequence])
-        VALUES ('${id}', 'CCCCCCCC-0000-4000-8000-000000000003', 'Status', (SELECT 1));`;
-    const efvInsert = (id) => `INSERT INTO [\${mjSchema}].[EntityFieldValue]
-        ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-        VALUES ('DDDDDDDD-0000-4000-8000-000000000004', '${id}', 1, 'Open', 'Open', GETUTCDATE(), GETUTCDATE());`;
-    const cases = [
-        ['value for a field created in the same file passes', { V202601010000__a: efInsert(FIELD) + efvInsert(FIELD) }, 0],
-        ['value for a field created by an earlier file passes', { V202601010000__a: efInsert(FIELD), V202601020000__b: efvInsert(FIELD) }, 0],
-        ['value for a field no migration creates is refused', { V202601010000__a: efInsert(FIELD), V202601020000__b: efvInsert(OTHER) }, 1],
-        ['value for a field created only by a LATER file is refused', { V202601010000__a: efvInsert(FIELD), V202601020000__b: efInsert(FIELD) }, 1],
-        ['a commented-out insert is ignored', { V202601010000__a: `/* ${efvInsert(OTHER)} */` }, 0],
-        [
-            'a variable or SELECT form passes',
-            {
-                V202601010000__a: `DECLARE @f UNIQUEIDENTIFIER;
-INSERT INTO [\${mjSchema}].[EntityFieldValue] ([ID], [EntityFieldID], [Value]) VALUES ('DDDDDDDD-0000-4000-8000-000000000004', @f, 'Open');
-INSERT INTO [\${mjSchema}].[EntityFieldValue] ([ID], [EntityFieldID], [Value]) SELECT NEWID(), ID, 'Open' FROM [\${mjSchema}].[EntityField];`,
-            },
-            0,
-        ],
-    ];
+/**
+ * The value inserts in `sql` whose EntityFieldID is a literal the same file does not create.
+ * Returns [{ line, entityFieldID, value }] (1-indexed lines).
+ */
+export function scanContent(sql) {
+    const all = inserts(sql);
+    const created = new Set();
+    for (const ins of all) {
+        if (ins.table.toLowerCase() !== 'entityfield') continue;
+        const id = ins.values[ins.columns.indexOf('id')]?.match(UUID_LITERAL_RE)?.[1];
+        if (id) created.add(id.toLowerCase());
+    }
+    const hits = [];
+    for (const ins of all) {
+        if (ins.table.toLowerCase() !== 'entityfieldvalue') continue;
+        const fieldID = ins.values[ins.columns.indexOf('entityfieldid')]?.match(UUID_LITERAL_RE)?.[1];
+        if (!fieldID || created.has(fieldID.toLowerCase())) continue;
+        hits.push({ line: ins.line, entityFieldID: fieldID, value: ins.values[ins.columns.indexOf('value')] ?? '' });
+    }
+    return hits;
+}
+
+const FIELD = '11111111-1111-4111-8111-111111111111';
+const OTHER = '22222222-2222-4222-8222-222222222222';
+const valueInsert = (fieldRef, value = "'Pending'") =>
+    `INSERT INTO [\${mjSchema}].[EntityFieldValue]\n    ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])\n  VALUES\n    ('33333333-3333-4333-8333-333333333333', ${fieldRef}, 1, ${value}, ${value}, GETUTCDATE(), GETUTCDATE());`;
+const fieldInsert = (id) =>
+    `INSERT INTO [\${mjSchema}].[EntityField]\n  ( [ID], [EntityID], [Sequence], [Name], [Type] )\n  VALUES\n  ( '${id}', '44444444-4444-4444-8444-444444444444', 100025, 'Status', 'nvarchar' );`;
+
+export const SELF_TEST_FIXTURES = [
+    ['a literal EntityFieldID the file does not create is refused', true, valueInsert(`'${FIELD}'`)],
+    ['the same in upper case is refused', true, valueInsert(`'${FIELD.toUpperCase()}'`)],
+    ['a literal EntityFieldID the same file creates passes', false, `${fieldInsert(FIELD)}\n${valueInsert(`'${FIELD}'`)}`],
+    ['created with a different case still matches', false, `${fieldInsert(FIELD.toUpperCase())}\n${valueInsert(`'${FIELD}'`)}`],
+    ['a field created in the file does not excuse a different one', true, `${fieldInsert(OTHER)}\n${valueInsert(`'${FIELD}'`)}`],
+    ['a variable resolved by natural key passes', false, valueInsert('@FulfillmentStatusFieldID')],
+    ['a subquery passes', false, valueInsert(`(SELECT ID FROM [\${mjSchema}].[EntityField] WHERE Name = 'Status')`)],
+    ['a value containing a comma and a parenthesis does not shift the columns', true, valueInsert(`'${FIELD}'`, "'Net (30, 60)'")],
+    ['an insert inside a block comment is ignored', false, `/*\n${valueInsert(`'${FIELD}'`)}\n*/`],
+    ['an insert after a line comment marker is ignored', false, valueInsert(`'${FIELD}'`).split('\n').map((l) => `-- ${l}`).join('\n')],
+    ['an EntityField insert alone is not a value insert', false, fieldInsert(FIELD)],
+];
+
+const SCOPE_TEST_FIXTURES = [
+    ['V-prefix migration is in scope', true, 'migrations/V202610181700__v5.x__Example.sql'],
+    ['baselines are skipped', false, 'migrations/B202607061431__v0.1.x__Schema_and_Types.sql'],
+    ['fixture in tests/ is excluded', false, 'tests/migrations/V202610181700__v5.x__Example.sql'],
+    ['repeatable migration is excluded', false, 'migrations/R__RefreshMetadata.sql'],
+    ['non-migration sql file is excluded', false, 'scripts/seed.sql'],
+];
+
+export function runSelfTest() {
     let failed = 0;
-    for (const [name, files, expected] of cases) {
-        const names = Object.keys(files).map((k) => `${k}.sql`);
-        const got = checkMigrations(names, (n) => files[n.replace(/\.sql$/, '')], new Set(names)).length;
-        if (got !== expected) {
+    for (const [name, expected, sql] of SELF_TEST_FIXTURES) {
+        const actual = scanContent(sql).length > 0;
+        if (actual !== expected) {
+            console.error(`${RED}FAIL${NC} ${name}: expected ${expected}, got ${actual}`);
             failed++;
-            console.error(`${RED}self-test FAIL${NC}: ${name} (expected ${expected}, got ${got})`);
+        } else {
+            console.log(`${GREEN}PASS${NC} ${name}`);
         }
     }
-    if (failed) process.exit(1);
-    console.log(`${GREEN}self-test: ${cases.length} cases pass${NC}`);
+    const lineHit = scanContent(`\n\n${valueInsert(`'${FIELD}'`)}`)[0];
+    if (lineHit?.line !== 3) {
+        console.error(`${RED}FAIL${NC} reports the line the insert starts on: expected 3, got ${lineHit?.line}`);
+        failed++;
+    } else {
+        console.log(`${GREEN}PASS${NC} reports the line the insert starts on`);
+    }
+    for (const [name, expected, path] of SCOPE_TEST_FIXTURES) {
+        const actual = inScope(path);
+        if (actual !== expected) {
+            console.error(`${RED}FAIL${NC} ${name}: expected ${expected}, got ${actual}`);
+            failed++;
+        } else {
+            console.log(`${GREEN}PASS${NC} ${name}`);
+        }
+    }
+    if (failed > 0) {
+        console.error(`\n${RED}Self-test failed: ${failed} fixture(s) failed.${NC}`);
+        process.exit(1);
+    }
+    console.log(`\n${GREEN}Self-test passed: all fixtures behaved as expected.${NC}`);
+}
+
+function git(args, opts = {}) {
+    return execFileSync('git', args, { encoding: 'utf8', maxBuffer: GIT_MAX_BUFFER, ...opts });
+}
+
+const lines = (text) => text.split('\n').map((f) => f.trim()).filter(Boolean);
+
+function report(file, hits, informational) {
+    console[informational ? 'log' : 'error'](`${informational ? YELLOW : RED}${informational ? '' : '✗ '}${file}${NC}${informational ? ' (informational)' : ''}`);
+    for (const h of hits) {
+        console[informational ? 'log' : 'error'](`    ${DIM}line ${h.line}:${NC} EntityFieldID '${h.entityFieldID}' for value ${h.value}`);
+    }
 }
 
 function main() {
     const args = process.argv.slice(2);
-    if (args[0] === '--self-test') return selfTest();
-    const git = (a) => execFileSync('git', a, { encoding: 'utf8' }).trim();
-    const root = git(['rev-parse', '--show-toplevel']);
-    const dir = join(root, 'migrations');
-    const files = readdirSync(dir).filter((f) => VERSIONED_RE.test(f));
-    const read = (name) => readFileSync(join(dir, name), 'utf8');
-
-    let report;
-    const all = args[0] === '--all';
-    if (all) {
-        report = new Set(files);
-    } else {
-        const base = args[0] ?? git(['merge-base', process.env.BASE_REF ?? 'origin/next', 'HEAD']);
-        const head = args[1];
-        const changed = git(['-C', root, 'diff', '--name-only', '--diff-filter=AM', base, ...(head ? [head] : []), '--', 'migrations'])
-            .split('\n')
-            .filter(Boolean)
-            .map((p) => p.replace(/^migrations\//, ''))
-            .filter((f) => VERSIONED_RE.test(f));
-        report = new Set(changed);
-    }
-
-    const hits = checkMigrations(files, read, report);
-    for (const h of hits) {
-        const msg =
-            `migrations/${h.file}:${h.line}: EntityFieldValue for EntityFieldID '${h.id}', which no migration up to this one ` +
-            `creates. Look the field up by entity and name at apply time instead.`;
-        console.log(all ? `${YELLOW}${msg}${NC}` : `::error file=migrations/${h.file},line=${h.line}::${msg}`);
-    }
-    if (hits.length === 0) {
-        console.log(`${GREEN}No EntityFieldValue insert names an EntityFieldID that no migration creates (${report.size} file(s) checked).${NC}`);
+    if (args.includes('--self-test')) {
+        runSelfTest();
         return;
     }
-    if (!all) process.exit(1);
-    console.log(`${YELLOW}${hits.length} finding(s); --all is informational.${NC}`);
+
+    const root = git(['rev-parse', '--show-toplevel']).trim();
+
+    if (args.includes('--all')) {
+        for (const file of lines(git(['ls-files', '*.sql'], { cwd: root })).filter(inScope)) {
+            const abs = join(root, file);
+            if (!existsSync(abs)) continue;
+            const hits = scanContent(readFileSync(abs, 'utf8'));
+            if (hits.length) report(file, hits, true);
+        }
+        return;
+    }
+
+    const isCi = args.length >= 2;
+    let base = args[0];
+    let head = args[1];
+    let changedFiles;
+    if (isCi) {
+        changedFiles = lines(git(['diff', '--name-only', '--diff-filter=ACMR', base, head], { cwd: root })).filter(inScope);
+    } else {
+        const baseRef = process.env.BASE_REF || 'origin/next';
+        try {
+            base = git(['merge-base', baseRef, 'HEAD'], { cwd: root, stdio: ['ignore', 'pipe', 'pipe'] }).trim();
+        } catch (err) {
+            // Falling back to HEAD would diff the tree against itself and scan nothing committed.
+            console.error(`${RED}✗ could not resolve base ref '${baseRef}'${NC}`);
+            console.error(`  ${err.stderr?.toString().trim() || err.message}`);
+            console.error('  Fetch it (e.g. `git fetch origin next`), or set BASE_REF to a ref that resolves.');
+            process.exit(1);
+        }
+        const diffFiles = lines(git(['diff', '--name-only', '--diff-filter=ACMR', base], { cwd: root })).filter(inScope);
+        const untracked = lines(git(['ls-files', '--others', '--exclude-standard'], { cwd: root })).filter(inScope);
+        changedFiles = [...new Set([...diffFiles, ...untracked])];
+    }
+
+    let violations = 0;
+    for (const file of changedFiles) {
+        const abs = join(root, file);
+        if (!existsSync(abs)) continue;
+        let hits = scanContent(readFileSync(abs, 'utf8'));
+        if (!hits.length) continue;
+        if (isCi) {
+            const added = addedLinesFromDiff(git(['diff', '-U0', base, head, '--', file], { cwd: root }));
+            hits = hits.filter((h) => added.has(h.line));
+        }
+        if (!hits.length) continue;
+        report(file, hits, false);
+        violations += hits.length;
+    }
+
+    if (violations > 0) {
+        console.error(`\n${RED}EntityFieldValue inserts keyed on an EntityFieldID this file does not create.${NC}`);
+        console.error(`
+That ID is the authoring database's. On another host the insert fails on
+FK_EntityFieldValue_EntityField or duplicates the value list. Seed the values by
+natural key instead: resolve the field by entity and name into a variable (see the
+FulfillmentStatus block in V202609061900).`);
+        process.exit(1);
+    }
+    console.log(`${GREEN}✓ no EntityFieldValue insert in changed migrations uses a foreign EntityFieldID${NC}`);
 }
 
-const isMain = (() => {
+const isEntry = () => {
     try {
-        return !!process.argv[1] && existsSync(process.argv[1]) && realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+        return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
     } catch {
         return false;
     }
-})();
-if (isMain) main();
+};
+
+if (isEntry()) {
+    main();
+}

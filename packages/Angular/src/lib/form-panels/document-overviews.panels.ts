@@ -91,7 +91,7 @@ export class PaymentOverviewPanel extends BaseFormPanel<mjBizAppsOrdersPaymentHe
                 Title: 'Why header ≠ application',
                 Icon: 'fa-solid fa-circle-info',
                 Span: 2,
-                Note: 'The header is the receipt. PaymentLine rows are how it was applied. One cheque, three invoices = one header, three lines. A refund is a new header that reverses this one — not a negative amount.',
+                Note: 'The header is the receipt. PaymentLine rows are how it was applied. One check, three invoices = one header, three lines. A refund is a new header that reverses this one — not a negative amount.',
             },
         ];
         this.FormComponent.cdr.detectChanges();

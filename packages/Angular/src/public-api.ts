@@ -54,6 +54,11 @@ export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/wi
 export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
 export { BizAppsProductSubscriptionWidgetComponent } from './lib/custom/Product/widgets/product-subscription-widget.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
+export {
+    MJOOrderLinesEditorComponent,
+    type MJODiscountDraft,
+    type MJODiscountMode,
+} from './lib/custom/OrderHeader/order-lines-editor.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 export {
     BizAppsCheckoutSessionStepFormComponent,

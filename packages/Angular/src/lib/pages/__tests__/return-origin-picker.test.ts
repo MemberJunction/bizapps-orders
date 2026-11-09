@@ -48,7 +48,12 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 
-import { MJOReturnPageComponent } from '../orders/return.page';
+import {
+    DEFAULT_RETURN_REASONS,
+    MJOReturnPageComponent,
+    OrderPickerLabel,
+    ParseReturnReasons,
+} from '../orders/return.page';
 
 /** The component's own source, for the binding check at the end of this file. */
 function returnPageSource(): string {
@@ -135,7 +140,7 @@ describe('the returns page can be reached', () => {
         await c.ngOnInit();
 
         expect(presetOf(mockGetOrders.mock.calls[0]), 'a return reverses a booked order — IsBooked is Confirmed')
-            .toBe('booked');
+            .toBe('returnable');
         expect(c.PickerOrders, 'and the page holds them for the picker').toHaveLength(2);
     });
 
@@ -151,7 +156,7 @@ describe('the returns page can be reached', () => {
         const presets = mockGetOrders.mock.calls.map((a) => presetOf(a));
         expect(presets, 'Draft and Quoted orders have no money to give back').not.toContain('drafts');
         expect(presets, 'and "all" would offer orders the server would refuse').not.toContain('all');
-        expect(presets.every((p) => p === 'booked'), `every read must be booked — got ${JSON.stringify(presets)}`)
+        expect(presets.every((p) => p === 'returnable'), `every read must be booked and not a return — got ${JSON.stringify(presets)}`)
             .toBe(true);
     });
 
@@ -181,7 +186,7 @@ describe('the returns page can be reached', () => {
 
         const call = mockGetOrders.mock.calls[0]?.[0] as { Search?: string; Preset?: string };
         expect(call?.Search, 'the text has to reach the query, not just the rendered list').toBe('ORD-0000');
-        expect(call?.Preset, 'and it still only offers booked orders').toBe('booked');
+        expect(call?.Preset, 'and it still only offers booked orders').toBe('returnable');
     });
 
     it('distinguishes "not asked yet" from "asked and got nothing"', async () => {
@@ -394,5 +399,88 @@ describe('the returns page can be reached', () => {
             unwired.map((d) => /name="([^"]+)"/.exec(d)?.[1] ?? '(unnamed)'),
             'each order picker must query the server; one filtering its cached rows is the capped-list bug',
         ).toEqual([]);
+    });
+
+    it('labels picker orders with their customer name so client-side dropdown filtering matches by customer (#836)', async () => {
+        mockGetOrders.mockResolvedValue(ORDERS);
+        const c = page();
+
+        await c.ngOnInit();
+
+        expect(OrderPickerLabel({ OrderNumber: 'ORD-000010', BillToOrganization: 'Acme Corp' })).toBe(
+            'ORD-000010 · Acme Corp',
+        );
+        expect(OrderPickerLabel({ OrderNumber: 'ORD-000011', BillToPerson: 'Alex Rivera' })).toBe(
+            'ORD-000011 · Alex Rivera',
+        );
+        expect(OrderPickerLabel({ OrderNumber: 'ORD-000012' })).toBe('ORD-000012');
+        expect((c.PickerOrders[0] as { DisplayLabel?: string }).DisplayLabel).toContain('ORD-000010');
+
+        const source = returnPageSource();
+        const orderDropdowns = (source.match(/<mj-dropdown[\s\S]*?\/>/g) ?? []).filter((d) =>
+            d.includes('[Data]="PickerOrders"'),
+        );
+        for (const dropdown of orderDropdowns) {
+            expect(dropdown).toContain('TextField="DisplayLabel"');
+        }
+    });
+
+    it('includes Booked in error and Customer terminated in default return reasons and parses custom settings (golive#380)', () => {
+        expect(DEFAULT_RETURN_REASONS).toContain('Booked in error');
+        expect(DEFAULT_RETURN_REASONS).toContain('Customer terminated');
+        expect(ParseReturnReasons('')).toEqual([...DEFAULT_RETURN_REASONS]);
+        expect(ParseReturnReasons('Booked in error, Custom reason ')).toEqual([
+            'Booked in error',
+            'Custom reason',
+        ]);
+    });
+
+    it('emits OrderOpened when OpenBookedReturn is called for a newly booked return (#834)', () => {
+        const c = page() as ReturnType<typeof page> & {
+            BookedReturnID: string | null;
+            BookedReturnOrderNumber: string | null;
+            OrderOpened: { emit: ReturnType<typeof vi.fn> };
+            OpenBookedReturn(): void;
+        };
+        const emit = vi.fn();
+        c.OrderOpened = { emit };
+        c.BookedReturnID = 'ret-order-1';
+        c.BookedReturnOrderNumber = 'ORD-000099';
+
+        c.OpenBookedReturn();
+
+        expect(emit).toHaveBeenCalledWith('ret-order-1');
+    });
+});
+
+describe('an order with nothing left to return (#835)', () => {
+    const line = (bought: number, alreadyReturned: number) => ({
+        LineID: `l-${bought}-${alreadyReturned}`,
+        ProductID: 'p',
+        LineNumber: 1,
+        ProductName: 'Widget',
+        UnitPrice: 10,
+        Bought: bought,
+        AlreadyReturned: alreadyReturned,
+        Returning: 0,
+        TaxRate: 0,
+    });
+    const nothingLeft = (c: ReturnType<typeof page>) =>
+        (c as unknown as { NothingLeftToReturn: boolean }).NothingLeftToReturn;
+
+    it('says so when every line has come back in full', () => {
+        const c = page();
+        c.Lines = [line(2, 2), line(1, 1)];
+        expect(nothingLeft(c)).toBe(true);
+    });
+
+    it('stays quiet while any line has something left', () => {
+        const c = page();
+        c.Lines = [line(2, 2), line(3, 1)];
+        expect(nothingLeft(c)).toBe(false);
+    });
+
+    it('stays quiet before an order is loaded', () => {
+        expect(nothingLeft(page())).toBe(false);
     });
 });

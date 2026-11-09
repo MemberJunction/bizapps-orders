@@ -888,6 +888,15 @@
       "GeneratedFormSection": "Category"
     },
     "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=IsSellableNew"
+    }
+  },
+  {
+    "fields": {
+      "Category": "Product Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
       "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Event Products&Name=MaxQuantityPerLine"
     },
     "sync": {

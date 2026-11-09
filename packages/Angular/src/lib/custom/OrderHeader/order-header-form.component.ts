@@ -5,14 +5,17 @@ import { UserInfoEngine } from '@memberjunction/core-entities';
 import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
+import type { ExportDialogConfig } from '@memberjunction/ng-export-service';
 import type { TabConfig } from '@memberjunction/ng-ui-components';
 import {
+    AsDateValue,
     CanOfferConfirm,
     DescribeClearedEmployers,
     DescribeDisplacedTermStart,
     LoadOrdersEngine,
     OrderHeaderEntity,
     OrdersConfirmReadinessOperation,
+    ToISODate,
     type DateCell,
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     type mjBizAppsOrdersPaymentTypeEntity,
@@ -21,7 +24,9 @@ import {
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from '../../data/entity-names';
 import {
     BuildOrderJournalEntryRows,
+    BuildOrderJournalLineExport,
     BuildOrderJournalRollup,
+    BuildOrderJournalRollupExport,
     ExcludedEntriesLabel,
     GetOrderJournalOrigins,
     GetPaymentTypes,
@@ -138,6 +143,10 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
      */
     public AccountingAsOf: string | null = null;
     public AccountingBasis: OrderJournalDateBasis = 'effective';
+
+    /** The Export dialog on Rolled up and By line. Built when opened, from what the view shows. */
+    public AccountingExportVisible = false;
+    public AccountingExportConfig: ExportDialogConfig | null = null;
 
     public Confirming = false;
     public StatusError: string | null = null;
@@ -685,6 +694,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     private heroTotalAmount(): number | null {
         const preview = this.Pricing.Result?.Totals;
+        // Gross on an unsaved order too: tax and charges are what the order will book (#838).
         if (preview) return preview.GrossTotal;
         if (!this.record?.IsSaved) return null;
         return this.record.TotalGross;
@@ -724,6 +734,22 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
 
     public OpenProduct(id: string): void {
         this.openRecord(MJO_ENTITIES.Product, id);
+    }
+
+    /** The initial payment's received day (`YYYY-MM-DD`), or '' when it takes the order's date. */
+    public get InitialPaymentReceivedDay(): string {
+        return ToISODate(this.record?.InitialPaymentReceivedDate) ?? '';
+    }
+
+    public SetInitialPaymentReceivedDay(value: string): void {
+        if (!this.record) return;
+        this.record.InitialPaymentReceivedDate = AsDateValue(value);
+    }
+
+    public get InitialPaymentReceivedHint(): string {
+        return this.InitialPaymentReceivedDay
+            ? 'The payment is dated this day.'
+            : "Leave blank to date the payment on the order's date.";
     }
 
     public get PaymentParams(): RunViewParams | null {
@@ -925,6 +951,43 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (!this.AccountingAsOf) return null;
         const [y, m, d] = this.AccountingAsOf.split('-').map(Number);
         return y && m && d ? new Date(y, m - 1, d) : null;
+    }
+
+    /** Whether the current view has anything to export. */
+    public get CanExportAccounting(): boolean {
+        if (this.RollupLoading || this.RollupError) return false;
+        if (this.AccountingView === 'summary') return this.RollupCards.length > 0;
+        if (this.AccountingView === 'detail') return this.JournalRows.length > 0;
+        return false;
+    }
+
+    /**
+     * Open MJ's export dialog on the current view, under the same As-of date and basis as the screen.
+     * By line exports one row per journal line (account and dimensions live on lines, not entries).
+     */
+    public OpenAccountingExport(): void {
+        const data = this.journalData;
+        if (!data || !this.CanExportAccounting) return;
+        const options = { AsOf: this.AccountingAsOf, Basis: this.AccountingBasis };
+        const byLine = this.AccountingView === 'detail';
+        const result = byLine
+            ? BuildOrderJournalLineExport(data, options)
+            : BuildOrderJournalRollupExport(BuildOrderJournalRollup(data, options));
+        const order = this.record?.OrderNumber || 'order';
+        const asOf = this.AccountingAsOf ? `-as-of-${this.AccountingAsOf}` : '';
+        this.AccountingExportConfig = {
+            data: result.Rows,
+            columns: result.Columns,
+            defaultFileName: `${order}-journal-${byLine ? 'by-line' : 'rolled-up'}${asOf}`,
+            availableFormats: ['excel', 'csv'],
+            defaultFormat: 'excel',
+            dialogTitle: byLine ? 'Export journal lines' : 'Export rolled-up journal',
+        };
+        this.AccountingExportVisible = true;
+    }
+
+    public CloseAccountingExport(): void {
+        this.AccountingExportVisible = false;
     }
 
     /** The As-of box. Blank means lifetime, which is the default and the point of item 1. */

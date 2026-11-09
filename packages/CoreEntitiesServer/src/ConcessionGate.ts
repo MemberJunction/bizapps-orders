@@ -62,6 +62,8 @@ import {
     ResolveRequiresSaleApproval,
     ConcessionValue,
     Money,
+    OrdersEngine,
+    OrdersEngineReady,
     PickConcessionTier,
     ResolveLinePriceStanding,
     ShareBreach,
@@ -179,7 +181,8 @@ export interface LineConcessionFacts extends PricedLineFacts {
 /** What a line's price and discount give away, when they give anything away. */
 export interface LinePriceConcession {
     Form: 'Price' | 'Scope';
-    EngineUnitPrice: number;
+    /** Null when nothing resolves an engine price; only the `DiscountPct` is then counted (#905). */
+    EngineUnitPrice: number | null;
     Valuation: ConcessionValuation;
     /** The part given away by a stated price below the engine's. */
     PriceValue: number;
@@ -195,7 +198,8 @@ export interface LinePriceConcession {
  * The concession a line carries: a stated price below the engine's, plus what its `DiscountPct` and its
  * held manual discounts take off the price it is charged. Null when none of them gives anything away.
  * The engine's own price and a named list pick give nothing away by price, but a discount on either
- * still does. With no engine price only a held manual discount is counted, against the stated price.
+ * still does. With no engine price, its `DiscountPct` and held manual discounts are counted against the
+ * stated price (#905).
  *
  * A line charged nothing once its concession is taken off is Scope — a product given away — rather than
  * Price: a typed price of zero, or a price kept with a 100% discount (golive #328). Its value is then
@@ -212,7 +216,6 @@ export async function LinePriceConcessionFor(
     const held = Money(Math.max(0, Number(line.HeldDiscount ?? 0)));
     const standing = await ResolveLinePriceStanding(line, provider, user);
     const engine = standing?.EngineUnitPrice ?? null;
-    if (engine == null && !(held > 0)) return null;
     const quantity = Math.abs(Number(line.Quantity ?? 0));
     const charged = line.PriceStated === false && engine != null ? engine : Number(line.UnitPrice ?? 0);
 
@@ -221,8 +224,12 @@ export async function LinePriceConcessionFor(
         ? ConcessionValue({ Form: 'Price', ReferenceUnitPrice: engine, ChargedUnitPrice: charged, Quantity: quantity }).Value
         : 0;
 
+    // With no engine price the discount is counted against the stated price (#905); a line with no
+    // stated price either has nothing a discount can be valued against.
     const discountPct =
-        engine == null || line.RenewsSubscriptionID ? 0 : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
+        line.RenewsSubscriptionID || (engine == null && line.PriceStated === false)
+            ? 0
+            : Math.min(1, Math.max(0, Number(line.DiscountPct ?? 0)));
     const discountValue = Money(Math.max(0, charged) * quantity * discountPct);
 
     const value = Money(priceValue + discountValue + held);
@@ -233,7 +240,7 @@ export async function LinePriceConcessionFor(
     const chargedNothing = (priceConcession && charged <= 0) || (base > 0 && value + MONEY_TOLERANCE >= base);
     return {
         Form: chargedNothing ? 'Scope' : 'Price',
-        EngineUnitPrice: engine ?? charged,
+        EngineUnitPrice: engine,
         Valuation: { Value: value, Percent: base > 0 ? value / base : null },
         PriceValue: priceValue,
         DiscountValue: discountValue,
@@ -251,7 +258,7 @@ export function LineConcessionTerms(line: PricedLineFacts, concession: LinePrice
     if (concession.PriceValue > 0) {
         parts.push(
             `priced at ${Number(line.UnitPrice ?? 0).toFixed(2)} against an engine price of ` +
-                `${concession.EngineUnitPrice.toFixed(2)}`,
+                `${(concession.EngineUnitPrice ?? 0).toFixed(2)}`,
         );
     }
     if (concession.DiscountValue > 0) {
@@ -405,14 +412,72 @@ export async function ProductsRequiringSaleApproval(
         Fields: ['ID', 'ProductTypeID', 'ProductCategoryID', 'RequiresSaleApproval'],
     });
     if (products.length === 0) return new Set();
-    const categories = await read<{ ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null }>({
-        EntityName: PRODUCT_CATEGORY_ENTITY,
-        Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
-    });
-    const types = await read<{ ID: string; RequiresSaleApproval: boolean | null }>({
-        EntityName: PRODUCT_TYPE_ENTITY,
-        Fields: ['ID', 'RequiresSaleApproval'],
-    });
+
+    type CategoryFact = { ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null };
+    type TypeFact = { ID: string; RequiresSaleApproval: boolean | null };
+
+    const engineReady = OrdersEngine.Instance.Loaded || (await OrdersEngineReady(provider, user));
+    const cachedCategories: CategoryFact[] = engineReady
+        ? OrdersEngine.Instance.ProductCategories.map((c) => ({
+              ID: c.ID,
+              ParentProductCategoryID: c.ParentProductCategoryID ?? null,
+              RequiresSaleApproval: (c as { RequiresSaleApproval?: boolean | null }).RequiresSaleApproval ?? null,
+          }))
+        : [];
+    const cachedTypes: TypeFact[] = engineReady
+        ? OrdersEngine.Instance.ProductTypes.map((t) => ({
+              ID: t.ID,
+              RequiresSaleApproval: (t as { RequiresSaleApproval?: boolean | null }).RequiresSaleApproval ?? null,
+          }))
+        : [];
+
+    const cachedCategoryByID = new Map(cachedCategories.map((c) => [c.ID.toLowerCase(), c]));
+    const cachedTypeByID = new Map(cachedTypes.map((t) => [t.ID.toLowerCase(), t]));
+
+    const needsCategories = products.some((p) => p.RequiresSaleApproval === null && !!p.ProductCategoryID);
+    const categoriesInCache =
+        needsCategories &&
+        cachedCategoryByID.size > 0 &&
+        products.every((p) => {
+            if (p.RequiresSaleApproval !== null || !p.ProductCategoryID) return true;
+            const seen = new Set<string>();
+            let cur: string | null = p.ProductCategoryID.toLowerCase();
+            while (cur && !seen.has(cur)) {
+                seen.add(cur);
+                const hit = cachedCategoryByID.get(cur);
+                if (!hit) return false;
+                cur = hit.ParentProductCategoryID?.toLowerCase() ?? null;
+            }
+            return true;
+        });
+
+    const categories: CategoryFact[] = !needsCategories
+        ? []
+        : categoriesInCache
+          ? cachedCategories
+          : await read<CategoryFact>({
+                EntityName: PRODUCT_CATEGORY_ENTITY,
+                Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
+            });
+
+    const needsTypes = products.some((p) => p.RequiresSaleApproval === null && !!p.ProductTypeID);
+    const typesInCache =
+        needsTypes &&
+        cachedTypeByID.size > 0 &&
+        products.every((p) => {
+            if (p.RequiresSaleApproval !== null || !p.ProductTypeID) return true;
+            return cachedTypeByID.has(p.ProductTypeID.toLowerCase());
+        });
+
+    const types: TypeFact[] = !needsTypes
+        ? []
+        : typesInCache
+          ? cachedTypes
+          : await read<TypeFact>({
+                EntityName: PRODUCT_TYPE_ENTITY,
+                Fields: ['ID', 'RequiresSaleApproval'],
+            });
+
     const category = new Map(categories.map((c) => [c.ID.toLowerCase(), c]));
     const type = new Map(types.map((t) => [t.ID.toLowerCase(), t]));
     const required = new Set<string>();

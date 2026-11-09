@@ -1,5 +1,5 @@
 -- =============================================================================================
--- PostgreSQL counterpart of V202611022100__v5.41.x__EngagementLead_And_Metadata_Cleanup.sql
+-- PostgreSQL counterpart of V202611091700__v5.45.x__EngagementLead_And_Metadata_Cleanup.sql
 -- =============================================================================================
 -- Schema names are written unquoted, as the converter emits them, so they fold to the lowercase
 -- schema a PostgreSQL install uses. View rebuild blocks compare lower(n.nspname) against

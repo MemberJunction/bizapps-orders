@@ -413,6 +413,45 @@
             }
 
             <!--
+                EXPECTED DATES — percentage-of-completion lines (golive #455). Recognition follows
+                attested progress, so the dates are optional and only record the expected window.
+            -->
+            @if (ShowsExpectedServicePeriod(line)) {
+                <div class="mjo-ol-term">
+                    @if (CanEditServicePeriod()) {
+                        <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-exp-start-' + line.ID">Expected start</label>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [id]="'mjo-ol-exp-start-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'Start')"
+                            (change)="SetServicePeriod(line, 'Start', $event)">
+                        <label class="mjo-ol-term__label" [attr.for]="'mjo-ol-exp-end-' + line.ID">Expected end</label>
+                        <input
+                            type="date"
+                            class="mjo-ol-term__input"
+                            [id]="'mjo-ol-exp-end-' + line.ID"
+                            [value]="ServicePeriodValue(line, 'End')"
+                            (change)="SetServicePeriod(line, 'End', $event)">
+                    } @else {
+                        <span class="mjo-ol-term__label">Expected start</span>
+                        <span class="mjo-ol-term__value">{{ ServicePeriodValue(line, 'Start') || '—' }}</span>
+                        <span class="mjo-ol-term__label">Expected end</span>
+                        <span class="mjo-ol-term__value">{{ ServicePeriodValue(line, 'End') || '—' }}</span>
+                    }
+                    @if (ServicePeriodBackwards(line)) {
+                        <span class="mjo-ol-term__hint is-error" role="alert">
+                            End date must be on or after the start date.
+                        </span>
+                    } @else if (CanEditServicePeriod()) {
+                        <span class="mjo-ol-term__hint">
+                            Optional. Revenue on this line follows recorded progress, not these dates.
+                        </span>
+                    }
+                </div>
+            }
+
+            <!--
                 COVERAGE OVERLAP — another band of the same subscription family (golive #276).
                 The text is the server's own confirm check (Orders.CheckCoverageOverlap), so what
                 this says is what confirm will do. Checked after each save.

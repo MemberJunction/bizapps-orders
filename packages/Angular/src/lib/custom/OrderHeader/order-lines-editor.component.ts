@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, ElementRef, EventEmitter, Input, OnDestroy, Output, ViewChild, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, ElementRef, EventEmitter, DoCheck, Input, OnDestroy, Output, ViewChild, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import {
@@ -71,6 +71,7 @@ import { MJOOrderLineDetailsPanelComponent } from './order-line-details-panel.co
 import { MJOPartyAddressPickerComponent } from './party-address-picker.component';
 import { FormatSoldAddress } from './order-header-prefs';
 import { BuildStampedTags, type MJOStampedTag } from './line-stamped-tags';
+import { ScrollPickerCursorIntoView } from './picker-scroll';
 import { MJOPricingScheduler, type MJOEngineDefault, type MJOLinePrice, type MJOPricingState } from '../../services/pricing-scheduler.service';
 
 import {
@@ -81,6 +82,7 @@ import {
 import { CachedExtensionEntityInfo, CachedExtensionFormConfig } from './line-extension-cache';
 import {
     AsDateValue,
+    DescendantLines,
     ExtendChoiceTextFor,
     ExtendOutcomeFor,
     HoldingSubscriberFor,
@@ -165,7 +167,7 @@ type CoverageOverlapLine = CheckCoverageOverlapOutput['Lines'][number];
     templateUrl: './order-lines-editor.component.html',
     styleUrls: ['./order-lines-editor.component.css'],
 })
-export class MJOOrderLinesEditorComponent implements OnDestroy {
+export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     private readonly pricing = inject(MJOPricingScheduler);
     private readonly cdr = inject(ChangeDetectorRef);
 
@@ -239,7 +241,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         if (this.pickerCache?.Key !== key) {
             this.pickerCache = {
                 Key: key,
-                Results: RankCatalogMatches(this.Catalog, query, companyID || null).slice(
+                Results: RankCatalogMatches(
+                    this.Catalog.filter((p) => !p.NotSellableNew),
+                    query,
+                    companyID || null,
+                ).slice(
                     0,
                     PICKER_RESULT_LIMIT,
                 ),
@@ -276,10 +282,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             case 'ArrowDown':
                 this.PickerCursor = Math.min(this.PickerCursor + 1, Math.max(results.length - 1, 0));
                 event.preventDefault();
+                this.revealPickerCursor();
                 break;
             case 'ArrowUp':
                 this.PickerCursor = Math.max(this.PickerCursor - 1, 0);
                 event.preventDefault();
+                this.revealPickerCursor();
                 break;
             case 'Enter':
                 if (results[this.PickerCursor]) {
@@ -293,6 +301,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
             default:
                 break;
         }
+    }
+
+    /** Render the moved `.is-cursor` class now, then scroll that row into the list's view (#796). */
+    private revealPickerCursor(): void {
+        this.cdr.detectChanges();
+        ScrollPickerCursorIntoView(this.pickerHost?.nativeElement);
     }
 
     public async AddProduct(product: MJOProductOption): Promise<void> {
@@ -796,6 +810,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         return OrdersEngine.Instance.ServicePeriodSource(line.ProductID) === 'Line';
     }
 
+    /**
+     * A percentage-of-completion line: its dates are optional and only say when the work is expected
+     * to run, since recognition follows attested progress (bc-aidp-next-golive#455). Shown when they
+     * can be typed, or when a booked line carries them.
+     */
+    public ShowsExpectedServicePeriod(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (this.NeedsStatedServicePeriod(line) || !OrdersEngine.Instance.IsProgressMeasured(line.ProductID)) return false;
+        return this.CanEditServicePeriod() || !!line.ServicePeriodStart || !!line.ServicePeriodEnd;
+    }
+
     /** The order is booked, so its lines' dates are the settled ones. */
     public get IsMoneyLocked(): boolean {
         return !!this._order?.MoneyLocked;
@@ -862,10 +886,15 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     public Remove(line: mjBizAppsOrdersOrderLineEntity): void {
         if (!this.EditMode) return;
-        this.expandedLineIds.delete(line.ID);
-        this.overrideEditorLineIds.delete(line.ID);
-        this.shipToEditorLineIds.delete(line.ID);
-        this._order?.Lines.Remove(line);
+        const order = this._order;
+        if (!order) return;
+        // A bundle goes with its components (#793), so their panels close with it.
+        for (const removed of [line, ...DescendantLines(line, order.Lines.Items)]) {
+            this.expandedLineIds.delete(removed.ID);
+            this.overrideEditorLineIds.delete(removed.ID);
+            this.shipToEditorLineIds.delete(removed.ID);
+        }
+        order.RemoveLine(line);
         this.schedulePricing();
     }
 
@@ -1466,6 +1495,22 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     /** The dimension values the order's company books under, for narrowing the panel's value list. */
     public CompanyDimensionValueIDs: ReadonlySet<string> | null = null;
+    /**
+     * The company `CompanyDimensionValueIDs` was read for, or undefined before the first read. The
+     * order's company can change on an open draft, and the list must follow it (#878).
+     */
+    private companyValuesReadFor: string | undefined = undefined;
+
+    /**
+     * Re-read the company's dimension values when the bound order's company changed since they were
+     * read (#878). The catalog itself is read once per order; only this list depends on the company.
+     */
+    public ngDoCheck(): void {
+        if (this.companyValuesReadFor === undefined || !this._order) return;
+        const companyID = String(this._order.CompanyID ?? '');
+        if (companyID.toLowerCase() === this.companyValuesReadFor) return;
+        void this.loadCompanyDimensionValues().then(() => this.cdr.detectChanges());
+    }
 
     /** The stamped tags for the open line, or null for a line the server has not stamped yet. */
     public StampedTagsFor(line: mjBizAppsOrdersOrderLineEntity | null): MJOStampedTag[] | null {
@@ -1531,12 +1576,17 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
      */
     private async loadCompanyDimensionValues(): Promise<void> {
         const companyID = String(this._order?.CompanyID ?? '');
+        // Recorded before the read, so a change detection pass during it does not start another.
+        this.companyValuesReadFor = companyID.toLowerCase();
         if (!companyID) {
             this.CompanyDimensionValueIDs = null;
             return;
         }
         try {
-            this.CompanyDimensionValueIDs = await GetCompanyDimensionValueIDs(companyID);
+            const ids = await GetCompanyDimensionValueIDs(companyID);
+            // A newer read for another company owns the list now.
+            if (this.companyValuesReadFor !== companyID.toLowerCase()) return;
+            this.CompanyDimensionValueIDs = ids;
         } catch (err) {
             console.warn("[order-lines-editor] could not read the company's dimension values", err);
             this.CompanyDimensionValueIDs = null;
@@ -1614,6 +1664,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
         this.DimensionCatalog = [];
         this.stampedTagsByLine = new Map();
         this.CompanyDimensionValueIDs = null;
+        this.companyValuesReadFor = undefined;
         this.expandedLineIds.clear();
         this.SeatSplitNotice = null;
         this.hydratingLineIds.clear();
@@ -1718,7 +1769,9 @@ export class MJOOrderLinesEditorComponent implements OnDestroy {
 
     private async loadCatalog(): Promise<void> {
         try {
-            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser);
+            // Keeps products not sold new: lines already on the order still need their name, subscription
+            // flag and quantity cap from here (`ProductFor`). `PickerResults` leaves them out.
+            this.Catalog = await GetCatalogOptions(this.metadata.CurrentUser, true);
             this.CatalogError = null;
         } catch (error) {
             this.Catalog = [];
