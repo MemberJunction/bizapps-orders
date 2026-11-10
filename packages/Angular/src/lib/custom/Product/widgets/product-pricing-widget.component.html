@@ -474,7 +474,13 @@
                 <i class="fa-solid fa-xmark"></i>
             </button>
         </div>
-        <p class="mjo-quote-lede">The price a sample customer would get from this price list today.</p>
+        <p class="mjo-quote-lede">
+            @if (SelectedChannelID === null) {
+                The price a sample customer would get today.
+            } @else {
+                The price a sample customer on this price list would get today. When the list has no price that applies, the Standard price does, as on an order.
+            }
+        </p>
 
         <div class="mjo-quote-form">
             <label class="mjo-quote-field">

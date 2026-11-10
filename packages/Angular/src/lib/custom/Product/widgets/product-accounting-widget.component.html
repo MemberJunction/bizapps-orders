@@ -26,7 +26,12 @@
     </section>
 
     <section class="mjo-acct-card">
-        <bizapps-product-effective-gl-accounts #effective [Product]="Product">
+        <!-- The two ids are bound on their own so an edit on the form reaches the card (see its ngOnChanges). -->
+        <bizapps-product-effective-gl-accounts
+            #effective
+            [Product]="Product"
+            [RevenueRecognitionTypeID]="Product?.RevenueRecognitionTypeID"
+            [CompanyID]="Product?.CompanyID">
         </bizapps-product-effective-gl-accounts>
     </section>
 

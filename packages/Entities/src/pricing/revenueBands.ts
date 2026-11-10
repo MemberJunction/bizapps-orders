@@ -95,6 +95,76 @@ export function RevenueBandName(range: RevenueBandRange): string {
     return `${FormatRevenue(min)}-${FormatRevenue(range.Max)} rev`;
 }
 
+/**
+ * `name` if no row already uses it, else `name (2)`, `name (3)`, …: the first free one.
+ * `UX_ProductPrice_Product_Name` is unique on (ProductID, Name) whatever the price list or status, so
+ * the same ladder on a second price list, or a band re-added where a deactivated one with the same
+ * range still exists, would otherwise fail on the index. Comparison ignores case and surrounding
+ * whitespace, as the index's collation does.
+ */
+export function UniquePriceName(name: string, taken: Iterable<string | null | undefined>): string {
+    const used = new Set<string>();
+    for (const t of taken) {
+        if (t != null && String(t).trim() !== '') used.add(String(t).trim().toLowerCase());
+    }
+    const base = name.trim();
+    if (!used.has(base.toLowerCase())) return base;
+    for (let n = 2; ; n++) {
+        const candidate = `${base} (${n})`;
+        if (!used.has(candidate.toLowerCase())) return candidate;
+    }
+}
+
+/** The columns the one price order reads. A `ProductPrice` entity or a `simple` row both fit. */
+export interface PriceOrderRow {
+    Priority?: number | string | null;
+    Applicability?: string | null;
+    Name?: string | null;
+    Description?: string | null;
+}
+
+/**
+ * The one order prices are listed in everywhere they are listed (the Pricing panel's cards and
+ * simulation, the product Overview): highest priority first, since that is what wins; within a
+ * priority, revenue bands lowest band first so a ladder reads top to bottom, ahead of rows that are
+ * not bands; then by name. Save order, which is what rows come back in, means nothing to a reader.
+ */
+export function ComparePriceRows(a: PriceOrderRow, b: PriceOrderRow): number {
+    const byPriority = (Number(b.Priority) || 0) - (Number(a.Priority) || 0);
+    if (byPriority !== 0) return byPriority;
+    const am = ParseRevenueBand(a.Applicability)?.Min ?? null;
+    const bm = ParseRevenueBand(b.Applicability)?.Min ?? null;
+    if (am != null || bm != null) return (am ?? -Infinity) - (bm ?? -Infinity);
+    return priceOrderName(a).localeCompare(priceOrderName(b));
+}
+
+function priceOrderName(row: PriceOrderRow): string {
+    return row.Name?.trim() || row.Description?.trim() || 'Price';
+}
+
+/**
+ * Whether a row's Applicability tests the bill-to organization's revenue anywhere, alone or together
+ * with other fields, at any depth. A row that does cannot be decided for a customer with no revenue on
+ * file, whether or not it is a pure band (`ParseRevenueBand` recognises only the pure shape). Invalid
+ * JSON is false: the catalog check that refuses it lives elsewhere.
+ */
+export function ApplicabilityNeedsRevenue(applicabilityJson: string | null | undefined): boolean {
+    if (applicabilityJson == null || String(applicabilityJson).trim() === '') return false;
+    let filter: CompositeFilterDescriptor | FilterDescriptor;
+    try {
+        filter = JSON.parse(String(applicabilityJson)) as CompositeFilterDescriptor | FilterDescriptor;
+    } catch {
+        return false;
+    }
+    const prefix = `${ORGANIZATION_REVENUE_SOURCE}.`;
+    const walk = (f: CompositeFilterDescriptor | FilterDescriptor | null | undefined): boolean => {
+        if (f == null || typeof f !== 'object') return false;
+        if (IsCompositeFilter(f)) return (f.filters ?? []).some(walk);
+        return (f.field ?? '').trim().startsWith(prefix);
+    };
+    return walk(filter);
+}
+
 /** `$2M – $5M`, `Under $2M`, `$250M and up`: the range as the band editor shows it. */
 export function RevenueBandRangeText(range: RevenueBandRange): string {
     const min = range.Min ?? 0;

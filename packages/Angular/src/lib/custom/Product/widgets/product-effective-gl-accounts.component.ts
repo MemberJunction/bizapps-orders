@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, Input, OnDestroy, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, OnChanges, OnDestroy, OnInit, SimpleChanges } from '@angular/core';
 import { Metadata } from '@memberjunction/core';
 import {
     LoadOrdersEngine,
@@ -84,8 +84,16 @@ export function RoleFailureText(role: ExplainedGLRole): string {
     templateUrl: './product-effective-gl-accounts.component.html',
     styleUrls: ['./product-effective-gl-accounts.component.css'],
 })
-export class BizAppsProductEffectiveGLAccountsComponent implements OnInit, OnDestroy {
+export class BizAppsProductEffectiveGLAccountsComponent implements OnInit, OnChanges, OnDestroy {
     @Input() public Product!: mjBizAppsOrdersProductEntity;
+    /**
+     * The product's recognition type and company, bound separately from `Product` so a change made on
+     * the form reaches `ngOnChanges`: the entity is the same object before and after an edit, so a
+     * binding to it alone never reports a change. Deferred Revenue is required only for a deferred
+     * type, and the walk is for the product's company, so each re-reads when its input changes.
+     */
+    @Input() public RevenueRecognitionTypeID: string | null | undefined;
+    @Input() public CompanyID: string | null | undefined;
 
     public Roles: ExplainedGLRole[] = [];
     public AsOf = '';
@@ -102,6 +110,12 @@ export class BizAppsProductEffectiveGLAccountsComponent implements OnInit, OnDes
         await Promise.all([this.loadRevRec(), this.Refresh()]);
     }
 
+    public ngOnChanges(changes: SimpleChanges): void {
+        // ngOnInit handles the first values; later changes are edits on the form.
+        if (changes['RevenueRecognitionTypeID'] && !changes['RevenueRecognitionTypeID'].firstChange) void this.loadRevRec();
+        if (changes['CompanyID'] && !changes['CompanyID'].firstChange) void this.Refresh();
+    }
+
     public ngOnDestroy(): void {
         this.destroyed = true;
     }
@@ -111,8 +125,12 @@ export class BizAppsProductEffectiveGLAccountsComponent implements OnInit, OnDes
     }
 
     private async loadRevRec(): Promise<void> {
-        const id = this.Product?.RevenueRecognitionTypeID;
-        if (!id) return;
+        const id = this.RevenueRecognitionTypeID ?? this.Product?.RevenueRecognitionTypeID;
+        if (!id) {
+            this.IsDeferred = false;
+            this.tick();
+            return;
+        }
         try {
             const md = new Metadata();
             await LoadOrdersEngine(Metadata.Provider, md.CurrentUser);
@@ -166,7 +184,7 @@ export class BizAppsProductEffectiveGLAccountsComponent implements OnInit, OnDes
         try {
             const result = await new OrdersExplainProductGLAccountsOperation().Execute({
                 ProductID: this.Product.ID,
-                CompanyID: this.Product.CompanyID || null,
+                CompanyID: (this.CompanyID ?? this.Product.CompanyID) || null,
             });
             if (!result.Success || !result.Output?.Success) {
                 this.Roles = [];

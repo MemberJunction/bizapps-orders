@@ -11,7 +11,7 @@ import type {
     mjBizAppsOrdersRevenueRecognitionTypeEntity,
     mjBizAppsOrdersSubscriptionTypeEntity,
 } from '@mj-biz-apps/orders-entities';
-import { ParseRevenueBand, RevenueBandRangeText, ToISODate, Today } from '@mj-biz-apps/orders-entities';
+import { ComparePriceRows, ParseRevenueBand, RevenueBandRangeText, ToISODate, Today } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
 import { LoadProductLookupNames } from '../panels/product-lookup-names';
@@ -169,24 +169,22 @@ export type OverviewPriceRow = Pick<
 >;
 
 /**
- * The prices a customer can receive today, in the order the Pricing panel lists them: highest priority
- * first (that is what wins), revenue bands lowest band first within a priority, then by name. Inactive
+ * The prices a customer can receive today, in the order the Pricing panel lists them (`ComparePriceRows`:
+ * highest priority first, revenue bands lowest band first within a priority, then by name). Inactive
  * and expired rows are left out; the card says how many. Exported for the unit test.
  */
 export function ActiveOverviewPrices(rows: OverviewPriceRow[]): OverviewPriceRow[] {
     const today = Today();
-    const bandMin = (r: OverviewPriceRow) => ParseRevenueBand(r.Applicability)?.Min ?? null;
-    return rows
-        .filter((r) => r.Status === 'Active' && (ToISODate(r.EffectiveTo) ?? today) >= today)
-        .sort((a, b) => {
-            const byPriority = (Number(b.Priority) || 0) - (Number(a.Priority) || 0);
-            if (byPriority !== 0) return byPriority;
-            const am = bandMin(a);
-            const bm = bandMin(b);
-            if (am != null || bm != null) return (am ?? -Infinity) - (bm ?? -Infinity);
-            return (a.Name ?? '').localeCompare(b.Name ?? '');
-        });
+    return rows.filter((r) => r.Status === 'Active' && (ToISODate(r.EffectiveTo) ?? today) >= today).sort(ComparePriceRows);
 }
+
+/**
+ * Every price row of one product is loaded, not the first page of them: the active ones are picked
+ * out here, and a product with a ten-band ladder on Standard and two price lists already has thirty
+ * rows, so a page of 24 dropped active prices and miscounted the hidden ones (PR #1052 review). The
+ * ceiling is a guard against a runaway catalog, not a page size.
+ */
+const OVERVIEW_PRICE_ROWS_MAX = 1000;
 
 /** "All customers", "Annual revenue $2M – $5M", or "Member Pricing · Annual revenue Under $2M". */
 export function OverviewPriceScope(row: OverviewPriceRow): string {
@@ -224,7 +222,7 @@ export class ProductOverviewPanel extends BaseFormPanel<mjBizAppsOrdersProductEn
                 MJO_ENTITIES.ProductPrice,
                 `ProductID='${this.Record.ID}'`,
                 ['Name', 'PriceList', 'Amount', 'Status', 'Priority', 'Applicability', 'EffectiveTo'],
-                24,
+                OVERVIEW_PRICE_ROWS_MAX,
                 'Priority DESC, Amount ASC, Name ASC',
             ),
             LoadOverviewRows<Pick<mjBizAppsOrdersProductEntitlementEntity, 'Name' | 'Code' | 'EntitlementType' | 'IsActive'>>(

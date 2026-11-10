@@ -148,6 +148,102 @@ describe('Pricing widget: revenue bands, retirement and the quote tester', () =>
             expect(widget.QuoteResult.AmountText).toBe('Conflict');
             expect(widget.QuoteResult.Why).toContain('both apply at priority 10');
         });
+
+        it('treats a When that tests revenue with another field as undecidable without revenue, not as "not met"', () => {
+            const mixed = JSON.stringify({
+                logic: 'and',
+                filters: [
+                    { field: 'BillToOrganization.OrganizationType', operator: 'eq', value: 'Member' },
+                    { field: 'BillToOrganizationRevenue.AnnualRevenue', operator: 'gte', value: 2 * M },
+                ],
+            });
+            const widget = widgetWith([
+                price({ ID: 'big-members', Name: 'Big members', Amount: 500, Priority: 20, Applicability: mixed }),
+                price({ ID: 'base', Name: 'Base', Amount: 1000, Priority: 10 }),
+            ]);
+            widget.QuoteRevenueMillions = null;
+            widget.RunQuote();
+            expect(widget.QuoteResult.Skipped[0]).toBe('Big members: requires annual revenue (none on file)');
+            widget.QuoteRevenueMillions = 3;
+            widget.RunQuote();
+            expect(widget.QuoteResult.AmountText).toBe('$500.00');
+        });
+
+        describe('on a price-list tab', () => {
+            const rows = [
+                price({ ID: 'std-base', Name: 'Base', Amount: 1000, Priority: 10 }),
+                price({ ID: 'std-big', Name: 'Big customers', Amount: 1500, Priority: 20, Applicability: band(5 * M, null) }),
+                price({ ID: 'list-small', Name: 'Member small', Amount: 800, Priority: 10, PriceListID: 'pl-1', Applicability: band(0, 5 * M) }),
+                price({ ID: 'list-base', Name: 'Member base', Amount: 900, Priority: 10, PriceListID: 'pl-1', Applicability: null }),
+            ];
+
+            it('falls back to the Standard prices when the list has no price that applies, as the resolver does', () => {
+                const widget = widgetWith(rows.filter((r) => r.ID !== 'list-base'));
+                widget.SelectedChannelID = 'pl-1';
+                widget.QuoteRevenueMillions = 10;
+                widget.RunQuote();
+                expect(widget.QuoteResult.AmountText).toBe('$1,500.00');
+                expect(widget.QuoteResult.Why).toContain('Standard price');
+                expect(widget.QuoteResult.Skipped).toEqual(['Member small: conditions not met']);
+            });
+
+            it('lets a list price beat a Standard price of equal priority, and says nothing about falling back', () => {
+                const widget = widgetWith(rows);
+                widget.SelectedChannelID = 'pl-1';
+                widget.QuoteRevenueMillions = 10;
+                widget.RunQuote();
+                // Standard "Big customers" is priority 20; the list's "Member base" is 10 + 1 and loses to it.
+                expect(widget.QuoteResult.AmountText).toBe('$1,500.00');
+                widget.QuoteRevenueMillions = 1;
+                widget.RunQuote();
+                // Both list rows apply at 10 (+1): the tie is reported with the row's own priority.
+                expect(widget.QuoteResult.AmountText).toBe('Conflict');
+                expect(widget.QuoteResult.Why).toContain('both apply at priority 10');
+            });
+
+            it('prefers the list row to a Standard row of the same priority', () => {
+                const widget = widgetWith([
+                    price({ ID: 'std', Name: 'Base', Amount: 1000, Priority: 10 }),
+                    price({ ID: 'list', Name: 'Member base', Amount: 900, Priority: 10, PriceListID: 'pl-1' }),
+                ]);
+                widget.SelectedChannelID = 'pl-1';
+                widget.RunQuote();
+                expect(widget.QuoteResult.AmountText).toBe('$900.00');
+                expect(widget.QuoteResult.Why).not.toContain('Standard price');
+            });
+
+            it('still looks only at Standard rows on the Standard tab', () => {
+                const widget = widgetWith(rows);
+                widget.SelectedChannelID = null;
+                widget.QuoteRevenueMillions = 1;
+                widget.RunQuote();
+                expect(widget.QuoteResult.AmountText).toBe('$1,000.00');
+                expect(widget.QuoteResult.Skipped.join('\n')).not.toContain('Member');
+            });
+        });
+    });
+
+    describe('SaveBandAmount', () => {
+        const row = (record: FakePrice, saved: number) =>
+            ({ Record: record, ID: record.ID, Range: { Min: 0, Max: 2 * M }, MinMillions: 0, MaxMillions: 2, RangeText: '', Amount: saved, StatusText: '', Retired: false }) as never;
+
+        it('keeps the old amount when the field was emptied, instead of saving $0', async () => {
+            const widget = widgetWith([]);
+            widget.EditMode = true;
+            const record = price({ ID: 'b1', Amount: null as unknown as number, Applicability: band(0, 2 * M) });
+            await widget.SaveBandAmount(row(record, 1250));
+            expect(record.Amount).toBe(1250);
+            expect(widget.ActiveToast?.Message).toContain('Price not changed');
+        });
+
+        it('does nothing when the amount is unchanged', async () => {
+            const widget = widgetWith([]);
+            widget.EditMode = true;
+            const record = price({ ID: 'b1', Amount: 1250, Applicability: band(0, 2 * M) });
+            await widget.SaveBandAmount(row(record, 1250));
+            expect(record.Amount).toBe(1250);
+            expect(widget.ActiveToast).toBeNull();
+        });
     });
 
     it('orders same-priority bands lowest band first, whatever order they were saved in', () => {

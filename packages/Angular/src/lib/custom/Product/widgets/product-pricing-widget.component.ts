@@ -27,8 +27,10 @@ import type {
 } from '@mj-biz-apps/orders-entities';
 import { FormatDate, FormatMoney } from '../../../panels/money-format';
 import {
+    ApplicabilityNeedsRevenue,
     AsDateValue,
     BuildRevenueBandApplicability,
+    ComparePriceRows,
     DEFAULT_REVENUE_BAND_EDGES,
     DescribeInapplicableReason,
     DescribeRevenueLadder,
@@ -46,11 +48,15 @@ import {
     ToISODate,
     Today,
     TodayAsDateValue,
+    UniquePriceName,
     priceApplies,
     type PriceRule,
     type PricingModel,
     type RevenueBandRange,
 } from '@mj-biz-apps/orders-entities';
+
+/** The columns `ComparePriceRows` reads, which a generated price entity exposes but does not declare as a type. */
+type PriceOrderRowLike = { Priority?: number | null; Applicability?: string | null; Name?: string | null; Description?: string | null };
 
 export interface PriceChannel {
     ID: string | null;
@@ -423,18 +429,11 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
     }
 
     /**
-     * The one order prices are listed in, in the cards, the simulation and (as far as SQL can) the grid:
-     * highest priority first, since that is what wins; within a priority, revenue bands lowest band first
-     * so a ladder reads top to bottom; then by name. Save order, which is what the rows come back in,
-     * means nothing to the person reading them.
+     * The one order prices are listed in, in the cards, the simulation and (as far as SQL can) the grid.
+     * `ComparePriceRows` in orders-entities holds the rule, so the product Overview lists them the same way.
      */
     private comparePrices(a: ProductPriceEntity, b: ProductPriceEntity): number {
-        const byPriority = (Number(b.Priority) || 0) - (Number(a.Priority) || 0);
-        if (byPriority !== 0) return byPriority;
-        const am = ParseRevenueBand((a as { Applicability?: string | null }).Applicability)?.Min ?? null;
-        const bm = ParseRevenueBand((b as { Applicability?: string | null }).Applicability)?.Min ?? null;
-        if (am != null || bm != null) return (am ?? -Infinity) - (bm ?? -Infinity);
-        return this.PriceDisplayName(a).localeCompare(this.PriceDisplayName(b));
+        return ComparePriceRows(a as PriceOrderRowLike, b as PriceOrderRowLike);
     }
 
     /** The category an inherited price comes from, by name; the engine is loaded before any card is built. */
@@ -899,10 +898,29 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         return best ?? this.nextPriorityOnChannel();
     }
 
+    /**
+     * The name the editor proposes for a band on the selected tab: `Under $2M rev` on Standard,
+     * `Under $2M rev · Member Pricing` on a price list, so the same ladder can exist on both.
+     */
+    private proposedBandName(range: RevenueBandRange): string {
+        const list = this.SelectedChannelID === null ? '' : this.Channels.find((c) => c.ID === this.SelectedChannelID)?.Name?.trim();
+        return list ? `${RevenueBandName(range)} · ${list}` : RevenueBandName(range);
+    }
+
+    /**
+     * `proposedBandName`, made unique among this product's prices, whatever their list or status:
+     * `UX_ProductPrice_Product_Name` is unique on (ProductID, Name) and a deactivated band still holds
+     * its name. `except` is the row being renamed, whose own name does not count as taken.
+     */
+    private freeBandName(range: RevenueBandRange, except?: ProductPriceEntity): string {
+        const taken = this.AllPriceRecords.filter((p) => p !== except && (!except || p.ID !== except.ID)).map((p) => p.Name);
+        return UniquePriceName(this.proposedBandName(range), taken).slice(0, 200);
+    }
+
     private applyBandToRecord(p: ProductPriceEntity, range: RevenueBandRange, amount: number, priority: number): void {
         p.ProductID = this.Product.ID;
         p.PriceListID = this.SelectedChannelID;
-        p.Name = RevenueBandName(range).slice(0, 200);
+        p.Name = this.freeBandName(range);
         p.Applicability = BuildRevenueBandApplicability(range);
         p.Amount = Number.isFinite(amount) ? amount : 0;
         p.PricingModel = 'PerUnit';
@@ -1017,9 +1035,13 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             return;
         }
         const next: RevenueBandRange = { Min: min, Max: max };
-        // A name the editor proposed follows the edges; a name the person typed stays.
+        // A name the editor proposed follows the edges; a name the person typed stays. A proposed name
+        // may carry a "(2)" suffix from `freeBandName`, so the test is on the stem.
         const name = (row.Record.Name ?? '').trim();
-        if (!name || name === RevenueBandName(row.Range)) row.Record.Name = RevenueBandName(next).slice(0, 200);
+        const proposed = this.proposedBandName(row.Range);
+        if (!name || name === proposed || name === RevenueBandName(row.Range) || /^(.*) \(\d+\)$/.exec(name)?.[1] === proposed) {
+            row.Record.Name = this.freeBandName(next, row.Record);
+        }
         row.Record.Applicability = BuildRevenueBandApplicability(next);
         await this.savePricesAndReload(`${row.Record.Name}: ${RevenueBandRangeText(next)}`);
     }
@@ -1030,10 +1052,22 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         this.cdr?.markForCheck();
     }
 
+    /** The message when a price field is left empty or unreadable on blur; the old amount stays. */
+    private static readonly PRICE_KEPT = 'Price not changed. Enter a number such as 1,250.00.';
+
     public async SaveBandAmount(row: BandRow): Promise<void> {
         if (!this.EditMode) return;
-        const amount = Number(row.Record.Amount);
-        if (!Number.isFinite(amount) || amount === row.Amount) {
+        // `mjoCurrency` writes null for an empty or unreadable field, and Number(null) is 0: without this
+        // test, deleting a price to retype it and clicking away saved the band at $0.00 (PR #1052 review).
+        const typed = row.Record.Amount as number | null | undefined;
+        const amount = typed == null ? NaN : Number(typed);
+        if (!Number.isFinite(amount)) {
+            row.Record.Amount = row.Amount;
+            this.ShowToast(BizAppsProductPricingWidgetComponent.PRICE_KEPT, 'error');
+            this.cdr?.markForCheck();
+            return;
+        }
+        if (amount === row.Amount) {
             row.Record.Amount = row.Amount;
             return;
         }
@@ -1489,8 +1523,23 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
 
     public async SavePrice(p: ProductPriceEntity): Promise<void> {
         if (!this.EditMode) return;
+        // Same guard as SaveBandAmount: an emptied price field is "no change", never $0.00.
+        const typed = p.Amount as number | null | undefined;
+        if (typed == null || !Number.isFinite(Number(typed))) {
+            p.Amount = this.savedAmountOf(p);
+            this.ShowToast(BizAppsProductPricingWidgetComponent.PRICE_KEPT, 'error');
+            this.cdr?.markForCheck();
+            return;
+        }
         await this.saveProductGraph();
         this.cdr?.markForCheck();
+    }
+
+    /** The amount a price row had before the current edit, from the entity's field tracking, else 0. */
+    private savedAmountOf(p: ProductPriceEntity): number {
+        const field = (p as { GetFieldByName?: (name: string) => { OldValue?: unknown } | null }).GetFieldByName?.('Amount');
+        const old = Number(field?.OldValue);
+        return Number.isFinite(old) ? old : 0;
     }
 
     public async AddPrice(): Promise<void> {
@@ -1586,11 +1635,29 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         };
     }
 
+    /** The product's own rows on one tab, then the category rows whose name no product row has taken. */
+    private candidatesOn(listID: string | null): Array<{ Record: ProductPriceEntity; Inherited: boolean }> {
+        const inChannel = (p: ProductPriceEntity) => (listID === null ? !p.PriceListID : p.PriceListID === listID);
+        const own = this.AllPriceRecords.filter(inChannel);
+        const names = new Set(own.map((p) => this.PriceDisplayName(p).trim().toLowerCase()));
+        return [
+            ...own.map((p) => ({ Record: p, Inherited: false })),
+            ...this.InheritedRecords.filter((p) => inChannel(p) && !names.has(this.PriceDisplayName(p).trim().toLowerCase())).map((p) => ({
+                Record: p,
+                Inherited: true,
+            })),
+        ];
+    }
+
     /**
-     * Which price the channel would give a sample bill-to organization today: the resolver's own
-     * quantity / date / status test (`IsRuleApplicable`), then each row's When against the sample's
-     * type and revenue, then highest priority wins. Revenue left blank is "unknown", so every band is
+     * Which price a sample bill-to organization would get today: the resolver's own quantity / date /
+     * status test (`IsRuleApplicable`), then each row's When against the sample's type and revenue,
+     * then highest priority wins. Revenue left blank is "unknown", so every row that tests revenue is
      * reported as undecidable, which is what a rep sees in the price picker (`BandUndecided`).
+     *
+     * On a price-list tab the candidates are that list's rows AND the Standard rows, the list's at one
+     * priority higher, which is how `PriceResolver.loadRules` prices a customer on that list: a list
+     * that does not price the line falls back to Standard rather than to "no price" (PR #1052 review).
      */
     public RunQuote(): void {
         const revenue = this.millionsToUsd(this.QuoteRevenueMillions);
@@ -1600,18 +1667,17 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
         };
         const quantity = Number(this.SimQuantity) || 1;
         const now = new Date();
-        const inChannel = (p: ProductPriceEntity) =>
-            this.SelectedChannelID === null ? !p.PriceListID : p.PriceListID === this.SelectedChannelID;
-        const names = new Set(this.AllPriceRecords.filter(inChannel).map((p) => this.PriceDisplayName(p).trim().toLowerCase()));
-        const candidates: Array<{ Record: ProductPriceEntity; Inherited: boolean }> = [
-            ...this.AllPriceRecords.filter(inChannel).map((p) => ({ Record: p, Inherited: false })),
-            ...this.InheritedRecords.filter((p) => inChannel(p) && !names.has(this.PriceDisplayName(p).trim().toLowerCase())).map((p) => ({
-                Record: p,
-                Inherited: true,
-            })),
-        ];
-        candidates.sort((a, b) => this.comparePrices(a.Record, b.Record));
-        const hits: Array<{ Record: ProductPriceEntity; Inherited: boolean; Name: string }> = [];
+        const onList = this.SelectedChannelID !== null;
+        type Candidate = { Record: ProductPriceEntity; Inherited: boolean; EffectivePriority: number };
+        const withPriority = (c: { Record: ProductPriceEntity; Inherited: boolean }, bump: number): Candidate => ({
+            ...c,
+            EffectivePriority: (Number(c.Record.Priority) || 0) + bump,
+        });
+        const candidates: Candidate[] = onList
+            ? [...this.candidatesOn(this.SelectedChannelID).map((c) => withPriority(c, 1)), ...this.candidatesOn(null).map((c) => withPriority(c, 0))]
+            : this.candidatesOn(null).map((c) => withPriority(c, 0));
+        candidates.sort((a, b) => b.EffectivePriority - a.EffectivePriority || this.comparePrices(a.Record, b.Record));
+        const hits: Array<Candidate & { Name: string }> = [];
         const skip: string[] = [];
         for (const c of candidates) {
             const name = this.PriceDisplayName(c.Record);
@@ -1622,7 +1688,7 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
                 continue;
             }
             const raw = (c.Record as { Applicability?: string | null }).Applicability;
-            if (revenue == null && ParseRevenueBand(raw)) {
+            if (revenue == null && ApplicabilityNeedsRevenue(raw)) {
                 skip.push(`${name}: requires annual revenue (none on file)`);
                 continue;
             }
@@ -1635,9 +1701,8 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             if (ok) hits.push({ ...c, Name: name });
             else skip.push(`${name}: conditions not met`);
         }
-        hits.sort((a, b) => Number(b.Record.Priority || 0) - Number(a.Record.Priority || 0));
         const win = hits[0];
-        const tied = win ? hits.filter((h) => Number(h.Record.Priority || 0) === Number(win.Record.Priority || 0)) : [];
+        const tied = win ? hits.filter((h) => h.EffectivePriority === win.EffectivePriority) : [];
         if (win && tied.length > 1) {
             this.QuoteResult = {
                 AmountText: 'Conflict',
@@ -1646,9 +1711,10 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
             };
         } else if (win) {
             const when = this.WhenSentence(win.Record);
+            const fellBack = onList && !win.Record.PriceListID;
             this.QuoteResult = {
                 AmountText: this.FormatCurrency(Number(win.Record.Amount) || 0),
-                Why: `${win.Name}${win.Inherited ? ' · Inherited from ' + this.categoryName(win.Record.ProductCategoryID) : ''}${when ? ' · ' + when : ''}`,
+                Why: `${win.Name}${fellBack ? ' · Standard price' : ''}${win.Inherited ? ' · Inherited from ' + this.categoryName(win.Record.ProductCategoryID) : ''}${when ? ' · ' + when : ''}`,
                 Skipped: skip,
             };
         } else {

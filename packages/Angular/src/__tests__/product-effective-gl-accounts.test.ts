@@ -33,7 +33,7 @@ describe('UnresolvedRoleNames', () => {
     });
 });
 
-describe('Accounts in use: the Source column', () => {
+describe('Accounts used when an order is confirmed: the Assigned on column', () => {
     const step = (Level: string, Scope: string, Won: boolean) => ({
         Level, Scope, Won, RecordID: 'r', GLAccountID: Won ? 'a' : null, AccountCode: Won ? '4000' : null, AccountName: Won ? 'Sales' : null, Dimensions: [],
     });
@@ -56,7 +56,7 @@ describe('Accounts in use: the Source column', () => {
     });
 });
 
-describe('Accounts in use: which roles block confirm', () => {
+describe('Accounts used when an order is confirmed: which roles block confirm', () => {
     const unresolved = (Role: string): ExplainedGLRole => ({
         Role, Steps: [], ResolvedGLAccountID: null, ResolvedCode: null, ResolvedName: null, Failure: 'NotLinked', Message: null,
     });

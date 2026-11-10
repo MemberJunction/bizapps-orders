@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+    ApplicabilityNeedsRevenue,
     BuildRevenueBandApplicability,
+    ComparePriceRows,
     DEFAULT_REVENUE_BAND_EDGES,
     DescribeRevenueLadder,
     DescribeRevenueLadderIssue,
@@ -10,6 +12,7 @@ import {
     RevenueBandRangeText,
     RevenueBandsFromEdges,
     RevenueBandsOverlap,
+    UniquePriceName,
 } from '../pricing/revenueBands.js';
 import { priceApplies } from '../pricing/applicability.js';
 
@@ -211,5 +214,62 @@ describe('RevenueBandsFromEdges', () => {
             { Min: 5 * M, Max: null },
         ]);
         expect(RevenueBandsFromEdges([])).toEqual([]);
+    });
+});
+
+describe('UniquePriceName', () => {
+    it('keeps a name nobody holds', () => {
+        expect(UniquePriceName('Under $2M rev', ['Base', '$2M-$5M rev'])).toBe('Under $2M rev');
+        expect(UniquePriceName('  Under $2M rev ', [])).toBe('Under $2M rev');
+    });
+
+    it('takes the first free numbered suffix, ignoring case, so a deactivated band with the same range does not block a new one', () => {
+        expect(UniquePriceName('Under $2M rev', ['under $2m rev'])).toBe('Under $2M rev (2)');
+        expect(UniquePriceName('Under $2M rev', ['Under $2M rev', 'Under $2M rev (2)', null, undefined, ''])).toBe('Under $2M rev (3)');
+    });
+});
+
+describe('ComparePriceRows', () => {
+    const band = (min: number | null, max: number | null) => BuildRevenueBandApplicability({ Min: min, Max: max });
+
+    it('puts the highest priority first, then bands lowest first, then names', () => {
+        const rows = [
+            { Name: 'Zeta', Priority: 10, Applicability: null },
+            { Name: '$5M+ rev', Priority: 10, Applicability: band(5 * M, null) },
+            { Name: 'Alpha', Priority: 10, Applicability: null },
+            { Name: 'Under $2M rev', Priority: 10, Applicability: band(0, 2 * M) },
+            { Name: 'Override', Priority: 50, Applicability: null },
+        ];
+        expect([...rows].sort(ComparePriceRows).map((r) => r.Name)).toEqual(['Override', 'Alpha', 'Zeta', 'Under $2M rev', '$5M+ rev']);
+    });
+
+    it('reads a missing name from the description and a missing priority as zero', () => {
+        const rows = [
+            { Name: null, Description: 'b', Priority: null, Applicability: null },
+            { Name: '', Description: 'a', Priority: undefined, Applicability: null },
+        ];
+        expect([...rows].sort(ComparePriceRows).map((r) => r.Description)).toEqual(['a', 'b']);
+    });
+});
+
+describe('ApplicabilityNeedsRevenue', () => {
+    it('is true for a pure band and for revenue tested together with another field, at any depth', () => {
+        expect(ApplicabilityNeedsRevenue(BuildRevenueBandApplicability({ Min: 0, Max: 2 * M }))).toBe(true);
+        const mixed = JSON.stringify({
+            logic: 'and',
+            filters: [
+                { field: 'BillToOrganization.OrganizationType', operator: 'eq', value: 'Member' },
+                { logic: 'or', filters: [{ field: REVENUE_BAND_FIELD, operator: 'gte', value: 2 * M }] },
+            ],
+        });
+        expect(ApplicabilityNeedsRevenue(mixed)).toBe(true);
+        expect(ParseRevenueBand(mixed)).toBeNull();
+    });
+
+    it('is false for a When on other fields, an empty When and broken JSON', () => {
+        expect(ApplicabilityNeedsRevenue(JSON.stringify({ logic: 'and', filters: [{ field: 'Order.OrderType', operator: 'eq', value: 'Renewal' }] }))).toBe(false);
+        expect(ApplicabilityNeedsRevenue(null)).toBe(false);
+        expect(ApplicabilityNeedsRevenue('  ')).toBe(false);
+        expect(ApplicabilityNeedsRevenue('{not json')).toBe(false);
     });
 });

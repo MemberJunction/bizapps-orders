@@ -15,12 +15,34 @@ import { Directive, ElementRef, HostListener, forwardRef, inject } from '@angula
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
 import { FormatMoney } from '../panels/money-format';
 
-/** `"$1,250.50"` → `1250.5`; `""` → `null`; `"abc"` → `null`. Exported for the unit test. */
+/**
+ * `"$1,250.50"` → `1250.5`; `"(1,250)"` → `-1250`; `""` → `null`; `"abc"` → `null`. Exported for the
+ * unit test.
+ *
+ * Strict on purpose: only a currency sign, thousands commas in groups of three, one decimal point and
+ * a leading minus or accounting parentheses are read. Anything else is `null`, not a guess: an earlier
+ * version dropped every character it did not know, so `12k` saved as $12 and `1.250,00` as $1.25
+ * (PR #1052 review). A `null` reaches the save handlers as "no change" and the old amount stays.
+ */
 export function ParseCurrencyInput(text: string): number | null {
-    const cleaned = String(text ?? '').replace(/[^0-9.\-]/g, '');
-    if (cleaned === '' || cleaned === '-' || cleaned === '.') return null;
-    const n = Number(cleaned);
-    return Number.isFinite(n) ? n : null;
+    let s = String(text ?? '').trim();
+    if (s === '') return null;
+    let negative = false;
+    if (s.startsWith('(') && s.endsWith(')')) {
+        negative = true;
+        s = s.slice(1, -1).trim();
+    }
+    if (s.startsWith('$')) s = s.slice(1).trim();
+    if (s.startsWith('-')) {
+        negative = !negative;
+        s = s.slice(1).trim();
+    }
+    if (s.startsWith('$')) s = s.slice(1).trim();
+    // Digits with optional comma grouping, an optional fraction (a trailing "." is someone mid-typing).
+    if (!/^(\d{1,3}(,\d{3})+|\d+)(\.\d*)?$/.test(s) && !/^\.\d+$/.test(s)) return null;
+    const n = Number(s.replace(/,/g, ''));
+    if (!Number.isFinite(n)) return null;
+    return negative ? -n : n;
 }
 
 @Directive({
