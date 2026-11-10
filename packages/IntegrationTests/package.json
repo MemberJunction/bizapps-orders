@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-integration-tests",
   "type": "module",
-  "version": "5.45.0",
+  "version": "5.47.0",
   "private": true,
   "description": "Integration check bundles for BizApps Orders, dispatched by `mj test` via MJ's testing framework.",
   "main": "dist/index.js",
@@ -26,20 +26,20 @@
     "vitest": "^4.0.18"
   },
   "dependencies": {
-    "@mj-biz-apps/orders-entities": "^5.45.0",
-    "@mj-biz-apps/orders-server": "^5.45.0",
-    "@mj-biz-apps/orders-core-entities-server": "^5.45.0"
+    "@mj-biz-apps/orders-entities": "^5.47.0",
+    "@mj-biz-apps/orders-server": "^5.47.0",
+    "@mj-biz-apps/orders-core-entities-server": "^5.47.0"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^6.1.6",
-    "@memberjunction/global": "^6.1.6",
-    "@memberjunction/testing-integration": "^6.1.6",
+    "@memberjunction/core": "^6.2.1",
+    "@memberjunction/global": "^6.2.1",
+    "@memberjunction/testing-integration": "^6.2.1",
     "@mj-biz-apps/accounting-engine-base": ">=0.24.0",
     "@mj-biz-apps/accounting-server": ">=0.24.0",
     "@mj-biz-apps/common-entities": ">=5.56.0",
-    "@memberjunction/actions": "^6.1.6",
-    "@memberjunction/actions-base": "^6.1.6",
-    "@memberjunction/core-entities": "^6.1.6"
+    "@memberjunction/actions": "^6.2.1",
+    "@memberjunction/actions-base": "^6.2.1",
+    "@memberjunction/core-entities": "^6.2.1"
   },
   "repository": {
     "type": "git",

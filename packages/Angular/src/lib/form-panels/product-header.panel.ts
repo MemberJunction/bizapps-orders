@@ -8,8 +8,18 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { LoadProductListPriceLabel } from '../panels/catalog-list-price';
 import { ProductLookupNamesTracker, REV_REC_FROM_TYPE_LABEL, type ProductLookupNames } from '../panels/product-lookup-names';
-import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
+import { FormatShortDate, ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
 import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } from './product-readiness';
+
+/** The product's selling window as one phrase. Exported for the unit test. */
+export function AvailabilityText(from: Date | string | null | undefined, to: Date | string | null | undefined): string {
+    const start = FormatShortDate(from);
+    const end = FormatShortDate(to);
+    if (start && end) return `${start} – ${end}`;
+    if (start) return `From ${start}`;
+    if (end) return `Until ${end}`;
+    return 'Always';
+}
 
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Products:header',
@@ -48,6 +58,15 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
 
     public get TypeName(): string {
         return this.Lookups.Type;
+    }
+
+    public get Category(): string {
+        return this.Lookups.Category;
+    }
+
+    /** "Jan 1, 2026 – Dec 31, 2026", "From Jan 1, 2026", "Until Dec 31, 2026" or "Always". */
+    public get Availability(): string {
+        return AvailabilityText(this.Record.AvailableFrom, this.Record.AvailableTo);
     }
 
     public get AvatarIcon(): string {
