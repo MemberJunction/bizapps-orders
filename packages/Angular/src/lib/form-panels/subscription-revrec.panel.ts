@@ -16,7 +16,10 @@ const SECTION_KEY = 'revRec';
     key: 'form-panel:Subscriptions:revRec',
     metadata: {
         entity: 'MJ_BizApps_Orders: Subscriptions',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one.
+        slot: 'after-related',
         sortKey: 80,
         contributionKey: SECTION_KEY,
     },

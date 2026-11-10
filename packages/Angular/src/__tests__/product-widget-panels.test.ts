@@ -8,6 +8,7 @@ import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
     ProductLifecyclePanel,
+    ProductPromosPanel,
     ProductSubscriptionsPanel,
 } from '../lib/form-panels/product-widget.panels';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
@@ -18,7 +19,9 @@ import '../public-api';
  * field in them was empty, and ten fields rendered twice (generated section + widget).
  *
  * Both fixes are structural, so these tests read the structures:
- *  - `replacesSectionKey` on the registration is what removes the duplicate generated section.
+ *  - A `replacesSectionKeys` claim is what removes the duplicate generated section. The header
+ *    panel holds every claim, so the panels that draw those fields keep their own rail items
+ *    (MJ 6.2 files a panel that replaces a field section inside Details).
  *  - Where an `mj-form-field` is DECLARED is what decides whether mj-collapsible-panel's
  *    `@ContentChildren` query can see it. A field declared inside the widget's own template sits
  *    behind a component view boundary and is invisible to the query. That query drives both
@@ -72,8 +75,19 @@ describe('Product widget panels replace their duplicate generated sections', () 
         { name: 'accounting', panel: ProductAccountingPanel, sectionKey: 'financialAndAccounting' },
         { name: 'lifecycle', panel: ProductLifecyclePanel, sectionKey: 'catalogLifecycle' },
         { name: 'subscriptions', panel: ProductSubscriptionsPanel, sectionKey: 'subscriptionAndEntitlements' },
-    ])('the $name panel claims the generated $sectionKey section', ({ panel, sectionKey }) => {
-        expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBe(sectionKey);
+    ])('the header claims the generated $sectionKey section that the $name panel draws', ({ panel, sectionKey }) => {
+        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKeys']).toContain(sectionKey);
+        expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBeUndefined();
+    });
+
+    it.each([
+        { name: 'promos', panel: ProductPromosPanel },
+        { name: 'accounting', panel: ProductAccountingPanel },
+        { name: 'fulfillment', panel: ProductFulfillmentPanel },
+        { name: 'lifecycle', panel: ProductLifecyclePanel },
+        { name: 'subscriptions', panel: ProductSubscriptionsPanel },
+    ])('the $name panel mounts after related, so it keeps its own rail item', ({ panel }) => {
+        expect(PanelRegistrationMetadata(panel)?.['slot']).toBe('after-related');
     });
 
     it('still renders every field of the three replaced sections', () => {
@@ -179,7 +193,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
  */
 describe('The Product header panel owns the identification fields it claims', () => {
     it('claims the generated productIdentification section', () => {
-        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKey']).toBe(
+        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKeys']).toContain(
             'productIdentification'
         );
     });

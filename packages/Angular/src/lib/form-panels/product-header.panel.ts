@@ -18,7 +18,17 @@ import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } 
         slot: 'before-fields',
         sortKey: 100,
         contributionKey: 'header',
-        replacesSectionKey: 'productIdentification',
+        // The header holds every generated-section claim on this form, including the ones the
+        // Accounting, Lifecycle and Subscriptions panels stand in for. MJ 6.2 files a panel that
+        // replaces a field section inside the Details rail item, whatever its slot or inclusion,
+        // so a panel holding its own claim loses its rail item. The header is not a rail item,
+        // so claiming here hides the duplicate fields without moving anything into Details.
+        //   productIdentification: drawn by this header.
+        //   financialAndAccounting: Rev-Rec / IsTaxable / TaxCategory / CompanyID are in the
+        //     Accounting panel; StandaloneSellingPrice is deliberately left off generated forms.
+        //   catalogLifecycle: in the Lifecycle panel; SuccessorProductID is in Fulfillment.
+        //   subscriptionAndEntitlements: all five fields are in Subscriptions or Fulfillment.
+        replacesSectionKeys: ['productIdentification', 'financialAndAccounting', 'catalogLifecycle', 'subscriptionAndEntitlements'],
     },
 })
 @Component({

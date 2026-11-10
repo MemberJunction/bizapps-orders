@@ -41,7 +41,10 @@ export class ProductPricingPanel extends BaseFormPanel<mjBizAppsOrdersProductEnt
     key: 'form-panel:Products:promos',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one.
+        slot: 'after-related',
         sortKey: 70,
         contributionKey: 'promos',
     },
@@ -71,14 +74,12 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     key: 'form-panel:Products:accounting',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one. Its generated-section claim is on the header panel.
+        slot: 'after-related',
         sortKey: 60,
         contributionKey: 'accounting',
-        // Claims the generated `financialAndAccounting` section, which rendered the same
-        // Rev-Rec / IsTaxable / TaxCategory fields a second time. CompanyID moved into this
-        // panel so nothing is lost; StandaloneSellingPrice is deliberately deprecated off
-        // generated forms and is not carried over.
-        replacesSectionKey: 'financialAndAccounting',
     },
 })
 @Component({
@@ -167,7 +168,10 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
     key: 'form-panel:Products:fulfillment',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one.
+        slot: 'after-related',
         sortKey: 50,
         contributionKey: 'fulfillment',
         // Status, AvailableFrom and AvailableTo moved to the Lifecycle panel (golive#433);
@@ -243,12 +247,12 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
     key: 'form-panel:Products:lifecycle',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one. Its generated-section claim is on the header panel.
+        slot: 'after-related',
         sortKey: 95,
         contributionKey: 'lifecycle',
-        // Claims the generated `catalogLifecycle` section, which would render these fields a
-        // second time. Its other field, SuccessorProductID, renders in the Fulfillment panel.
-        replacesSectionKey: 'catalogLifecycle',
     },
 })
 @Component({
@@ -309,12 +313,12 @@ export class ProductLifecyclePanel extends BaseFormPanel<mjBizAppsOrdersProductE
     key: 'form-panel:Products:subscriptions',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one. Its generated-section claim is on the header panel.
+        slot: 'after-related',
         sortKey: 40,
         contributionKey: 'subscriptions',
-        // Claims the generated `subscriptionAndEntitlements` section — every one of its five
-        // fields is already rendered by this panel or the fulfillment panel.
-        replacesSectionKey: 'subscriptionAndEntitlements',
     },
 })
 @Component({

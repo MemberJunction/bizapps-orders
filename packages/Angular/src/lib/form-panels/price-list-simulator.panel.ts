@@ -11,7 +11,10 @@ const SECTION_KEY = 'simulator';
     key: 'form-panel:PriceLists:simulator',
     metadata: {
         entity: 'MJ_BizApps_Orders: Price Lists',
-        slot: 'after-fields',
+        // After-related, not after-fields: MJ 6.2 files every before/after-fields panel inside
+        // the Details rail item. Before 6.2 this was a rail item of its own after Details, and
+        // after-related keeps it one.
+        slot: 'after-related',
         sortKey: 90,
         contributionKey: SECTION_KEY,
     },
