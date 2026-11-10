@@ -205,12 +205,13 @@ export function FormatRate(value: number | null | undefined): string {
  * ```typescript
  * FormatDate('2026-08-01')                    // 'Aug 1, 2026'
  * FormatDate('2026-08-01', { Short: true })   // 'Aug 1'
+ * FormatDate('2026-08-01', { Numeric: true }) // '08/01/2026'
  * FormatDate(order.OrderDate)                 // a Date off an entity works too
  * ```
  */
 export function FormatDate(
     value: DateCell,
-    options: { Short?: boolean } = {},
+    options: MJODateOptions = {},
 ): string {
     return formatDay(dateOnlyDay(value), options);
 }
@@ -235,7 +236,7 @@ export function FormatDate(
  */
 export function FormatInstantDate(
     value: DateCell,
-    options: { Short?: boolean } = {},
+    options: MJODateOptions = {},
 ): string {
     return formatDay(instantDay(value), options);
 }
@@ -294,9 +295,23 @@ function parseDay(text: string | null): CalendarDay | null {
  * Print a calendar day. Formatted in UTC from a UTC-midnight carrier, so the browser's zone has no
  * say in which day is printed — it was decided before this point.
  */
-function formatDay(day: CalendarDay | null, options: { Short?: boolean }): string {
+/**
+ * How a day is written. `Short` drops the year ("Aug 1"). `Numeric` writes `MM/DD/YYYY`
+ * ("08/01/2026"), the form finance screens ask for, and always carries the year: a numeric day
+ * without one reads as a fraction.
+ */
+export interface MJODateOptions {
+    Short?: boolean;
+    Numeric?: boolean;
+}
+
+function formatDay(day: CalendarDay | null, options: MJODateOptions): string {
     if (!day) return '—';
-    return new Date(Date.UTC(...day)).toLocaleDateString('en-US', {
+    const date = new Date(Date.UTC(...day));
+    if (options.Numeric) {
+        return date.toLocaleDateString('en-US', { timeZone: 'UTC', month: '2-digit', day: '2-digit', year: 'numeric' });
+    }
+    return date.toLocaleDateString('en-US', {
         timeZone: 'UTC',
         month: 'short',
         day: 'numeric',

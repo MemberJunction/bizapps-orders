@@ -9,9 +9,19 @@
  * "Is a renewal an order the customer approves, or one the system places for them?" — BOTH, and
  * `AutoRenew` is the switch. `AutoRenew = true` means the customer has already consented to
  * recurring billing, so the system places a CONFIRMED order: it books, it invoices, and coverage
- * continues without a gap. `AutoRenew = false` means it does not renew, full stop — this operation
- * skips it and the term simply ends. Reminder-and-approve for the second case is a communication
- * flow, not a booking one, and does not belong here.
+ * continues without a gap. `AutoRenew = false` means it does not renew, full stop — the scheduled
+ * pass skips it and the term simply ends. Reminder-and-approve for the second case is a
+ * communication flow, not a booking one, and does not belong here.
+ *
+ * TWO WAYS IN. The scheduled pass selects for itself: every subscription whose latest term expires
+ * inside its lead window and whose holder consented. The Renewals page instead names the
+ * subscriptions a person ticked (`SubscriptionIDs`), and for those the lead window and the consent
+ * switch are the person's call, not the selection's: a subscription with auto-renew OFF is placed as
+ * a DRAFT, an ordinary order somebody confirms once the customer agrees, while one with auto-renew
+ * ON is confirmed and invoiced exactly as the pass would have done it, only earlier. `PlaceAs`
+ * overrides that default either way. Everything else — eligibility, pricing, the term, the
+ * idempotency guards, the booking path — is the same code, so a renewal placed from the page is
+ * indistinguishable from one the pass placed.
  *
  * The order is placed at LEAD TIME, not on the expiry date, which is how subscription billing
  * actually works: the invoice goes out before the period it covers. The order carries a one-row
@@ -29,22 +39,19 @@
  *   2. an explicit check for a live renewal line that has not yet produced a term — one drafted or
  *      quoted by hand for this cycle. Earlier cycles' renewals each booked a term, so they do not
  *      count, and a subscription keeps renewing cycle after cycle.
- * Running the operation twice in a row is a no-op, and that is asserted by the check suite.
+ * Running the operation twice in a row is a no-op, and that is asserted by the check suite. A draft
+ * this operation places from the page is held by the second guard like any other draft: the pass
+ * will not place a confirmed order beside it.
  *
  * WHAT IT RENEWS AT (golive #304)
  * Not what the customer last paid. A first-term discount lapses, a product with a successor renews
  * as the successor at its own list price, and an annual increase applies when the new term crosses
- * an anniversary of the subscription's start: `PriceRenewal` in orders-entities decides, and this
- * operation gathers its inputs. The increase is the subscription's `RenewalIncreasePercent`, else the
- * product's, else the nearest category's, else the company's `OrderCompanyPolicy`. The price and how
- * it was reached are reported on every candidate, preview included, written into the order's notes
- * and logged on the renewal event, so the figure can be checked before a live pass books it.
- *
- * A line that bought several terms at once (golive #338: 24 months stated on a 12-month type) at a
- * typed price (`PriceOverridden`) has a price covering all of them, while the renewal buys one term.
- * That price is cut to one term's share of it (`PriorTermShare`) before the rules above apply. An
- * engine-priced line already carries one term's price, whatever period it states, and is not cut. Every candidate also reports the
- * renewal term's start and end, decided by the same subscription behaviour the confirm runs.
+ * an anniversary of the subscription's start: `PriceRenewal` in orders-entities decides, and
+ * `RenewalPricer` (./RenewalPricing.ts) gathers its inputs. The increase is the subscription's
+ * `RenewalIncreasePercent`, else the product's, else the nearest category's, else the company's
+ * `OrderCompanyPolicy`. The price and how it was reached are reported on every candidate, preview
+ * included, written into the order's notes and logged on the renewal event, so the figure can be
+ * checked before a live pass books it.
  *
  * PROMOTIONS THAT CARRY INTO RENEWALS (#289)
  * A promotion with `AppliesToRenewals` set is presented again on each automatic renewal of a
@@ -63,13 +70,13 @@
  *            so extension, term creation, GL resolution and recognition are all the SAME code
  *   POLICY:  SubscriptionBehavior (IsRenewal bypasses ConcurrencyMode — a renewal is not a second
  *            concurrent subscription, it is this one continuing)
- *   PRICING: orders-entities PriceRenewal / ResolveRenewalIncrease / RenewalCrossesAnniversary
+ *   PRICING: ./RenewalPricing.ts, over orders-entities PriceRenewal / ResolveRenewalIncrease / RenewalCrossesAnniversary
  *   PROMOS:  ./RenewalPromotions.ts (which codes, and what became of them); OrderPricingService for the preview
+ *   PAGE:    ./GetRenewalWorklistOperation.ts reads the same subjects for the Renewals page, which calls this with SubscriptionIDs
  *   TABLES:  __mj_BizAppsOrders.{Subscription,SubscriptionTerm,SubscriptionType,OrderHeader,OrderLine,OrderHeaderPaymentSchedule,
  *            Product,ProductCategory,OrderCompanyPolicy,OrderAdjustment,PromotionCode,Promotion}
  */
 import {
-    BaseEntity,
     BaseRemotableOperation,
     DatabaseProviderBase,
     IMetadataProvider,
@@ -81,58 +88,67 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import {
     OrdersSpawnRenewalsOperation as OrdersSpawnRenewalsOperationBase,
-    AsDateValue,
-    BuildLinePriceContext,
-    LoadOrdersEngine,
     OrderPricingService,
-    OrdersEngine,
-    PriceRenewal,
-    PriorTermShare,
-    RenewalCrossesAnniversary,
-    ResolvePrice,
-    ResolveRenewalIncrease,
-    type PricedLineFacts,
-    type RenewalPrice,
+    RENEWABLE_STATUSES,
     mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersSubscriptionEventEntity,
 } from '@mj-biz-apps/orders-entities';
 import type { OrderEntityServer } from './OrderEntityServer.js';
-import { RequireOptionalDay, RequireOptionalUUID, RequireUUID } from './sql-guards.js';
+import { RequireOptionalDay, RequireOptionalUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import {
-    MultiTermLineMonths,
-    ResolveSubscriptionTypeID,
-    SubscriptionBehaviorFor,
-    SubscriptionTypeRulesFrom,
-    type SubscriptionTypeRules,
-} from './SubscriptionBehavior.js';
-import { NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
+import { IsProviderBilled, NotProviderBilledSql } from './ProviderBilledSubscriptions.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { RenewalDueDate, RenewalScheduleRows } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import {
     ClassifyRenewalPromotionCodes,
     RenewalPromotionNote,
-    SelectRenewalPromotionCodes,
     type RenewalPromotionOutcome,
     type UnusableRenewalPromotionCode,
 } from './RenewalPromotions.js';
+import {
+    DayAfter,
+    EffectiveLeadDays,
+    NonSubscriptionSuccessorRefusal,
+    RenewalPricer,
+    type PricedRenewal,
+    type RecordedCodeRow,
+    type RenewalSubjectRow,
+} from './RenewalPricing.js';
 
-const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
-const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
-const SUBSCRIPTION_TYPE_ENTITY = 'MJ_BizApps_Orders: Subscription Types';
+// Re-exported for the callers and tests that have always imported it from here.
+export { NonSubscriptionSuccessorRefusal };
+
 const SUBSCRIPTION_EVENT_ENTITY = 'MJ_BizApps_Orders: Subscription Events';
 const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
 const ORDER_LINE_CHOICE_ENTITY = 'MJ_BizApps_Orders: Order Line Choices';
-const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
+
+/** Term statuses a renewal can continue from. */
+const RENEWABLE_TERM_STATUSES: ReadonlyArray<string> = ['Scheduled', 'Active'];
+
+/** How a placed renewal order is left. */
+export type RenewalPlacement = 'Confirmed' | 'Draft';
 
 export interface SpawnRenewalsInput {
     /** Treat this as "today". Defaults to now. */
     AsOfDate?: Date | string;
     /** Restrict to one subscription — for a targeted retry, or for a test. */
     SubscriptionID?: string;
+    /**
+     * Place renewals for exactly these subscriptions, chosen by a person (the Renewals page). The lead
+     * window and the auto-renew switch do not select here; eligibility still does (Active or Trialing,
+     * latest term Scheduled or Active, not billed by a gateway, no renewal already pending), and each
+     * ineligible id is reported as a skipped candidate rather than silently dropped.
+     */
+    SubscriptionIDs?: string[];
+    /**
+     * How to leave each order: `Confirmed` books and invoices it; `Draft` saves it for a person to
+     * confirm. Defaults to `Confirmed` for the scheduled selection, and for `SubscriptionIDs` to
+     * `Confirmed` where the subscription has auto-renew on and `Draft` where it does not.
+     */
+    PlaceAs?: RenewalPlacement;
     /** Report what WOULD be placed, without placing anything. */
     Preview?: boolean;
     /**
@@ -150,9 +166,15 @@ export interface RenewalCandidate {
     CurrentTermEnd: string;
     /** Lead days actually applied, after the subscription's override of the type's default. */
     LeadDays: number;
+    /** `Subscription.AutoRenew`. */
+    AutoRenew?: boolean;
+    /** How the order was, or would be, left. */
+    OrderStatus?: RenewalPlacement;
     /** Set when the renewal was placed (absent on a preview, or when placing failed). */
     OrderID?: string;
     OrderNumber?: string;
+    /** Which renewal order of this pass the subscription renews on (1-based). Members with the same number share one order. */
+    OrderGroup?: number;
     /** Set when this candidate was skipped, with the reason. */
     SkippedReason?: string;
     /** The product the renewal is placed on: the subscription's own, or its successor. */
@@ -172,6 +194,8 @@ export interface RenewalCandidate {
     UnitPrice?: number;
     /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
     DiscountPct?: number;
+    /** Seats the renewal buys. */
+    Quantity?: number;
     /** First day of the term the renewal buys, `YYYY-MM-DD`, as the confirm will set it. */
     RenewalTermStart?: string;
     /** Last day of the term the renewal buys, `YYYY-MM-DD`, as the confirm will set it. */
@@ -197,99 +221,59 @@ export interface SpawnRenewalsOutput {
     Skipped: number;
 }
 
-interface DueRow {
-    SubscriptionID: string;
-    SubscriptionNumber: string;
-    SubscriptionStatus: string;
-    SubscriptionTypeID: string;
-    CompanyID: string;
-    ProductID: string;
-    HolderOrganizationID: string | null;
-    BeneficiaryPersonID: string | null;
-    SubscriptionRenewalLeadDays: number | null;
-    TypeRenewalLeadDays: number | null;
-    TermID: string;
-    TermNumber: number;
-    TermStartDate: string;
-    TermEndDate: string;
-    /** Seats the expiring term covers (`SubscriptionTerm.Quantity`) — what the renewal buys again. */
-    TermQuantity: number;
-    OrderLineID: string;
-    SubscriptionStartDate: string;
-    SubscriptionIncreasePercent: number | null;
-    CarryDiscountOnRenewal: boolean;
-    /** The renewal card (#289). When set, the renewal is charged on its term start and is due that day. */
-    DefaultCustomerPaymentMethodID: string | null;
-}
-
-interface SourceLineRow {
-    ID: string;
-    OrderHeaderID: string;
-    ProductID: string;
-    Quantity: number;
-    UnitPrice: number;
-    DiscountPct: number | null;
-    PriceOverridden: boolean;
-    ProductPriceID: string | null;
-    /** The coverage the line bought, start of its first term to end of its last (golive #338). */
-    ServicePeriodStart: string | null;
-    ServicePeriodEnd: string | null;
-}
-
-/** A product on the subscription's successor chain, the subscription's own product first. */
-interface ChainProductRow {
-    ID: string;
-    Name: string;
-    Status: string;
-    ProductCategoryID: string;
-    RenewalIncreasePercent: number | null;
-    SuccessorProductID: string | null;
-    /** The product's subscription type, else its product type's default; null when it sells no subscription. */
-    SubscriptionTypeID: string | null;
-    ProductTypeID: string | null;
+/** A subject the selection found, plus the facts only the explicit selection has to judge for itself. */
+/** A priced, guard-passed subscription waiting to be placed, with the candidate that reports it. */
+interface PlaceableMember {
+    due: DueRow;
+    priced: PricedRenewal;
+    candidate: RenewalCandidate;
+    placeAs: RenewalPlacement;
 }
 
 /**
- * Why a successor chain cannot be renewed onto, or null when it can (#869).
- *
- * A successor that resolves no subscription type would book the renewal as a plain line with no
- * term, and every later pass would then skip the subscription as already renewed. So the candidate
- * is skipped with this reason instead. The subscription's own product (the first entry) is not
- * checked: it already holds the subscription.
+ * Which renewal order a subscription renews on: one per selling company, customer (holder
+ * organization and beneficiary person), expiring term end date, placement and renewal card. Two
+ * subscriptions with the same key renew on ONE order with a line each. Exported so the rule can
+ * be read and tested on its own.
  */
-export function NonSubscriptionSuccessorRefusal(chain: ReadonlyArray<Pick<ChainProductRow, 'Name' | 'SubscriptionTypeID'>>): string | null {
-    for (let i = 1; i < chain.length; i++) {
-        if (chain[i].SubscriptionTypeID) continue;
-        return (
-            `${chain[i - 1].Name} names ${chain[i].Name} as its successor, but ${chain[i].Name} is not a subscription ` +
-            `product (neither it nor its product type has a subscription type), so the renewal cannot be placed on it. ` +
-            `Give ${chain[i].Name} a subscription type or change the successor.`
-        );
-    }
-    return null;
+export function RenewalGroupKey(
+    due: Pick<RenewalSubjectRow, 'CompanyID' | 'HolderOrganizationID' | 'BeneficiaryPersonID' | 'TermEndDate' | 'DefaultCustomerPaymentMethodID'>,
+    placeAs: RenewalPlacement,
+): string {
+    const part = (v: unknown): string => (v == null ? '' : String(v).toLowerCase());
+    return [part(due.CompanyID), part(due.HolderOrganizationID), part(due.BeneficiaryPersonID), part(due.TermEndDate), placeAs, part(due.DefaultCustomerPaymentMethodID)].join('|');
 }
 
-/** A promotion code recorded on the line that bought the expiring term. */
-interface RecordedCodeRow {
-    PromotionCodeID: string;
-    Code: string;
-    AppliesToRenewals: boolean;
+interface DueRow extends RenewalSubjectRow {
+    TermStatus?: string;
+    ProviderSubscriptionID?: string | null;
 }
 
-/** What `priceRenewal` decided: the product, quantity and price the renewal line is written with. */
-interface PricedRenewal {
-    ProductID: string;
-    ProductName: string;
-    MovesToSuccessor: boolean;
-    Quantity: number;
-    Price: RenewalPrice;
-    /** The months the prior line's price covered, when it bought several terms and was cut to one (golive #338). */
-    PriorLineMonths: number | null;
-    /** The renewal term, as the confirm will decide it; null when it cannot be decided ahead of the confirm. */
-    Term: { Start: string; End: string } | null;
-    /** The codes the renewal presents (see `RenewalPromotions.ts`), with their PromotionCode IDs. */
-    PromotionCodes: RecordedCodeRow[];
-}
+/** The columns both selections read, under the aliases the rest of the file uses. */
+const SUBJECT_COLUMNS = `
+                s.ID                  AS SubscriptionID,
+                s.SubscriptionNumber,
+                s.Status              AS SubscriptionStatus,
+                s.SubscriptionTypeID,
+                s.CompanyID,
+                s.ProductID,
+                s.HolderOrganizationID,
+                s.BeneficiaryPersonID,
+                s.AutoRenew,
+                s.ProviderSubscriptionID,
+                s.RenewalLeadDays     AS SubscriptionRenewalLeadDays,
+                t.RenewalLeadDays     AS TypeRenewalLeadDays,
+                s.StartDate           AS SubscriptionStartDate,
+                s.RenewalIncreasePercent AS SubscriptionIncreasePercent,
+                s.CarryDiscountOnRenewal,
+                s.DefaultCustomerPaymentMethodID,
+                l.ID                  AS TermID,
+                l.TermNumber,
+                l.StartDate           AS TermStartDate,
+                l.EndDate             AS TermEndDate,
+                l.Status              AS TermStatus,
+                l.Quantity            AS TermQuantity,
+                l.OrderLineID`;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.SpawnRenewals')
 export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
@@ -301,6 +285,10 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         // Caller-supplied ids reach SQL filter text downstream. Validated here,
         // at the boundary, so every frame below this one can trust them.
         RequireOptionalUUID(input.SubscriptionID, 'SubscriptionID');
+        const selected = input.SubscriptionIDs?.length ? RequireUUIDs(input.SubscriptionIDs, 'SubscriptionIDs') : null;
+        if (input.PlaceAs !== undefined && input.PlaceAs !== 'Confirmed' && input.PlaceAs !== 'Draft') {
+            return { Success: false, Message: `PlaceAs takes 'Confirmed' or 'Draft', not '${String(input.PlaceAs)}'.`, Candidates: [], Placed: 0, Skipped: 0 };
+        }
 
         // "Due" is decided against `date` columns, so the as-of value is a calendar day (#209):
         // an instant answers the UTC day, and an evening run would spawn tomorrow's renewals a day
@@ -313,30 +301,50 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             return { Success: false, Message: String((e as Error).message), Candidates: [], Placed: 0, Skipped: 0 };
         }
         const asOf = await CalendarDayOrToday(input.AsOfDate, provider, user);
-        const candidates = await this.findDue(provider, user, asOf, input.SubscriptionID);
-
         const out: SpawnRenewalsOutput = { Success: true, Candidates: [], Placed: 0, Skipped: 0 };
+        const candidates = selected
+            ? await this.findSelected(provider, selected, out)
+            : await this.findDue(provider, user, asOf, input.SubscriptionID);
+
+        const pricer = new RenewalPricer(provider, user);
         const limit = input.MaxCount ?? Number.MAX_SAFE_INTEGER;
         /**
-         * Orders this pass has committed to: PLACED on a live pass, WOULD-place on a preview.
+         * ONE ORDER PER CUSTOMER PER RENEWAL DATE. Subscriptions that renew together (`RenewalGroupKey`:
+         * same selling company, holder and beneficiary, expiring term end, placement and renewal
+         * card, and no carried promotion codes) go on one order with one line each, so a customer
+         * who bought three products together gets one renewal order and one invoice, not three. A
+         * product added mid-term joins only when it was co-terminated to end on the same day;
+         * otherwise it ends on its own date and renews on its own order.
          *
-         * Counted separately from `Placed` because the cap has to bind identically in both modes.
-         * Keyed on `Placed`, it never binds on a preview — `Placed` stays 0 — so the preview
-         * enumerates every due subscription while the live pass stops at the cap, and the list a
-         * person confirms at the go-live gate is not the list the first live pass produces. A
-         * candidate the idempotency guard rejects does not consume the cap: nothing was placed.
+         * The cap counts ORDERS, placed on a live pass and would-place on a preview, so it binds
+         * identically in both modes and the list a person confirms at the go-live gate is the list
+         * the first live pass produces. A subscription joining an order already counted costs
+         * nothing; one that would open a new order past the cap waits for the next pass, unlisted,
+         * as before. A guard rejection or a pricing failure does not consume the cap: nothing was
+         * placed. (A member carrying promotion codes renews on its own order, decided only once it
+         * is priced, so a pass can overshoot the cap by that one order; its base key is not counted
+         * as open, so a code-free sibling cannot open a second one on its account.)
          */
-        let committed = 0;
+        const groups = new Map<string, PlaceableMember[]>();
+        /** Each order's 1-based number in this pass, assigned when its group opens. */
+        const groupIndex = new Map<string, number>();
 
         for (const due of candidates) {
-            if (committed >= limit) break;
+            const placeAs: RenewalPlacement = input.PlaceAs ?? (selected && !due.AutoRenew ? 'Draft' : 'Confirmed');
+            const baseKey = RenewalGroupKey(due, placeAs);
+            // Past the cap, a subscription that would OPEN an order waits for the next pass, unlisted;
+            // one that JOINS an order already open still goes on it. `continue`, not `break`: a later
+            // candidate may belong to an open order, and breaking would split a customer across passes.
+            if (groups.size >= limit && !groups.has(baseKey)) continue;
 
             const candidate: RenewalCandidate = {
                 SubscriptionID: due.SubscriptionID,
                 SubscriptionNumber: due.SubscriptionNumber,
                 ProductID: due.ProductID,
                 CurrentTermEnd: due.TermEndDate,
-                LeadDays: due.SubscriptionRenewalLeadDays ?? due.TypeRenewalLeadDays ?? 0,
+                LeadDays: EffectiveLeadDays(due),
+                AutoRenew: !!due.AutoRenew,
+                OrderStatus: placeAs,
             };
             out.Candidates.push(candidate);
 
@@ -353,7 +361,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // not consume the cap.
             let priced: PricedRenewal;
             try {
-                priced = await this.priceRenewal(provider, user, due);
+                priced = await pricer.Price(due);
             } catch (err) {
                 const message = err instanceof Error ? err.message : String(err);
                 LogError(`Orders.SpawnRenewals: ${due.SubscriptionNumber} could not be priced: ${message}`);
@@ -368,6 +376,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             candidate.IncreaseSource = priced.Price.IncreaseSource;
             candidate.UnitPrice = priced.Price.UnitPrice;
             candidate.DiscountPct = priced.Price.DiscountPct;
+            candidate.Quantity = priced.Quantity;
             if (priced.Term) {
                 candidate.RenewalTermStart = priced.Term.Start;
                 candidate.RenewalTermEnd = priced.Term.End;
@@ -390,30 +399,48 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                     }
                 }
                 out.Skipped++;
-                committed++;
-                continue;
             }
 
-            try {
-                const order = await this.placeRenewal(provider, user, due, priced, asOf.toISOString().slice(0, 10));
-                candidate.OrderID = order.ID;
-                candidate.OrderNumber = order.Number;
-                if (order.Promotions) this.reportPromotions(candidate, order.Promotions);
-                out.Placed++;
-                committed++;
-            } catch (err) {
-                // One subscription's failure must not stop the batch — an unattended job that
-                // aborts on the first bad row silently stops renewing everyone behind it.
-                const message = err instanceof Error ? err.message : String(err);
-                LogError(`Orders.SpawnRenewals: ${due.SubscriptionNumber} failed: ${message}`);
-                candidate.SkippedReason = message;
-                out.Skipped++;
+            // Carried promotion codes are presented at ORDER level, where the engine applies each to
+            // every line it targets. A line that carried a code therefore renews alone, so a code one
+            // purchase earned never discounts a sibling that did not carry it.
+            const key = priced.PromotionCodes.length ? `${baseKey}|codes|${due.SubscriptionID}` : baseKey;
+            const members = groups.get(key) ?? [];
+            members.push({ due, priced, candidate, placeAs });
+            groups.set(key, members);
+            if (!groupIndex.has(key)) groupIndex.set(key, groupIndex.size + 1);
+            candidate.OrderGroup = groupIndex.get(key);
+        }
+
+        let placedSubscriptions = 0;
+        if (!input.Preview) {
+            for (const members of groups.values()) {
+                try {
+                    const order = await this.placeRenewalGroup(provider, user, members, asOf.toISOString().slice(0, 10), members[0].placeAs, !!selected);
+                    for (const m of members) {
+                        m.candidate.OrderID = order.ID;
+                        m.candidate.OrderNumber = order.Number;
+                        if (order.Promotions) this.reportPromotions(m.candidate, order.Promotions);
+                    }
+                    out.Placed++;
+                    placedSubscriptions += members.length;
+                } catch (err) {
+                    // One order's failure must not stop the batch — an unattended job that aborts on
+                    // the first bad row silently stops renewing everyone behind it. Every member of
+                    // the order carries the reason, since none of them was placed.
+                    const message = err instanceof Error ? err.message : String(err);
+                    LogError(`Orders.SpawnRenewals: ${members.map((m) => m.due.SubscriptionNumber).join(', ')} failed: ${message}`);
+                    for (const m of members) {
+                        m.candidate.SkippedReason = message;
+                        out.Skipped++;
+                    }
+                }
             }
         }
 
         out.Message =
-            `${out.Candidates.length} subscription(s) due as of ${asOf.toISOString().slice(0, 10)}; ` +
-            `${out.Placed} renewal order(s) placed, ${out.Skipped} skipped.`;
+            `${out.Candidates.length} subscription(s) ${selected ? 'selected' : 'due'} as of ${asOf.toISOString().slice(0, 10)}; ` +
+            `${out.Placed} renewal order(s) placed for ${placedSubscriptions} subscription(s), ${out.Skipped} skipped.`;
         return out;
     }
 
@@ -441,27 +468,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 SELECT st.*, ROW_NUMBER() OVER (PARTITION BY st.SubscriptionID ORDER BY st.TermNumber DESC) AS rn
                 FROM __mj_BizAppsOrders.SubscriptionTerm st
             )
-            SELECT
-                s.ID                  AS SubscriptionID,
-                s.SubscriptionNumber,
-                s.Status              AS SubscriptionStatus,
-                s.SubscriptionTypeID,
-                s.CompanyID,
-                s.ProductID,
-                s.HolderOrganizationID,
-                s.BeneficiaryPersonID,
-                s.RenewalLeadDays     AS SubscriptionRenewalLeadDays,
-                t.RenewalLeadDays     AS TypeRenewalLeadDays,
-                s.StartDate           AS SubscriptionStartDate,
-                s.RenewalIncreasePercent AS SubscriptionIncreasePercent,
-                s.CarryDiscountOnRenewal,
-                s.DefaultCustomerPaymentMethodID,
-                l.ID                  AS TermID,
-                l.TermNumber,
-                l.StartDate           AS TermStartDate,
-                l.EndDate             AS TermEndDate,
-                l.Quantity            AS TermQuantity,
-                l.OrderLineID
+            SELECT${SUBJECT_COLUMNS}
             FROM __mj_BizAppsOrders.Subscription s
             JOIN __mj_BizAppsOrders.SubscriptionType t ON t.ID = s.SubscriptionTypeID
             JOIN latest l ON l.SubscriptionID = s.ID AND l.rn = 1
@@ -480,6 +487,57 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         `)) as DueRow[];
 
         return Array.isArray(rows) ? rows : [];
+    }
+
+    /**
+     * The subscriptions a person named, each with its latest term, whatever the switch or the window
+     * say. The rules the scheduled selection puts in its WHERE are applied here instead, so an
+     * ineligible choice comes back as a skipped candidate with its reason: a person who ticked a
+     * cancelled subscription is told so, where the pass would simply not have seen it.
+     */
+    private async findSelected(provider: IMetadataProvider, ids: string[], out: SpawnRenewalsOutput): Promise<DueRow[]> {
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const wanted = [...new Set(ids.map((id) => id.toLowerCase()))];
+        const list = wanted.map((id) => `'${id}'`).join(',');
+        const rows = (await db.ExecuteSQL(`
+            WITH latest AS (
+                SELECT st.*, ROW_NUMBER() OVER (PARTITION BY st.SubscriptionID ORDER BY st.TermNumber DESC) AS rn
+                FROM __mj_BizAppsOrders.SubscriptionTerm st
+            )
+            SELECT${SUBJECT_COLUMNS}
+            FROM __mj_BizAppsOrders.Subscription s
+            JOIN __mj_BizAppsOrders.SubscriptionType t ON t.ID = s.SubscriptionTypeID
+            LEFT JOIN latest l ON l.SubscriptionID = s.ID AND l.rn = 1
+            WHERE s.ID IN (${list})
+            ORDER BY l.EndDate, s.SubscriptionNumber
+        `)) as DueRow[];
+        const found = Array.isArray(rows) ? rows : [];
+        const seen = new Set(found.map((r) => String(r.SubscriptionID).toLowerCase()));
+        for (const id of wanted) {
+            if (seen.has(id)) continue;
+            out.Candidates.push({ SubscriptionID: id, SubscriptionNumber: '—', ProductID: '', CurrentTermEnd: '', LeadDays: 0, SkippedReason: 'no such subscription' });
+            out.Skipped++;
+        }
+
+        const eligible: DueRow[] = [];
+        for (const row of found) {
+            const refusal = SelectedRenewalRefusal(row);
+            if (!refusal) {
+                eligible.push(row);
+                continue;
+            }
+            out.Candidates.push({
+                SubscriptionID: row.SubscriptionID,
+                SubscriptionNumber: row.SubscriptionNumber,
+                ProductID: row.ProductID,
+                CurrentTermEnd: row.TermEndDate ?? '',
+                LeadDays: EffectiveLeadDays(row),
+                AutoRenew: !!row.AutoRenew,
+                SkippedReason: refusal,
+            });
+            out.Skipped++;
+        }
+        return eligible;
     }
 
     /**
@@ -506,23 +564,20 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
     }
 
     /**
-     * Place the renewal as an ordinary confirmed order.
-     *
-     * Deliberately NOT a special write path: routing it through `OrderEntityServer.Save` means the
-     * extension, the new term, GL resolution, the recognition schedule and the all-or-none
-     * guarantee are the same code that handles a customer purchase. A bespoke renewal writer would
-     * be a second implementation of booking, drifting from the first.
-     *
-     * `invoiceDay` is the pass's as-of day, `YYYY-MM-DD`: the renewal invoice date. The one-row
-     * schedule the order carries is due that day plus the customer's terms, capped at the order date (#305).
+     * Place ONE renewal order for a group of subscriptions that renew together (one line each), as a
+     * draft or confirmed, inside one transaction: all of it or none of it. The header comes from the
+     * first member; the group key guarantees every member agrees on it.
      */
-    private async placeRenewal(
+    private async placeRenewalGroup(
         provider: IMetadataProvider,
         user: UserInfo,
-        due: DueRow,
-        priced: PricedRenewal,
+        members: ReadonlyArray<PlaceableMember>,
         invoiceDay: string,
+        placeAs: RenewalPlacement,
+        selectedByPerson: boolean,
     ): Promise<{ ID: string; Number: string; Promotions: RenewalPromotionOutcome | null }> {
+        const first = members[0].due;
+        const numbers = members.map((m) => m.due.SubscriptionNumber).join(', ');
         const dbProvider = provider as unknown as DatabaseProviderBase;
         await dbProvider.BeginTransaction();
         try {
@@ -531,69 +586,74 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             order.OrderType = 'Sale';
             // Dated the day AFTER the expiring term, so the new term starts where the old one ends
             // and the ledger shows the sale in the period it belongs to — not on the day the job
-            // happened to run.
-            order.OrderDate = this.dayAfter(due.TermEndDate);
+            // happened to run. Every member ends on the same day (the group key).
+            order.OrderDate = DayAfter(first.TermEndDate);
             // A catch-up run (an as-of day before today) invoices the instalment on that day, the day
             // its due date is counted from, so it does not book it today (#831). An as-of day in the
             // future still invoices today: AR is never dated ahead of the day it is raised.
             const today = (await CalendarDayOrToday(null, provider, user)).toISOString().slice(0, 10);
             order.InstalmentInvoiceDay = invoiceDay < today ? invoiceDay : null;
-            order.CompanyID = due.CompanyID;
-            order.BillToOrganizationID = due.HolderOrganizationID;
-            order.BillToPersonID = due.BeneficiaryPersonID;
-            order.Notes = this.renewalNotes(due, priced);
+            order.CompanyID = first.CompanyID;
+            order.BillToOrganizationID = first.HolderOrganizationID;
+            order.BillToPersonID = first.BeneficiaryPersonID;
+            order.Notes = this.renewalNotes(members, null, placeAs, selectedByPerson);
 
-            const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
-            // Orders writing its own line. An app that froze this line freezes what a PERSON
-            // may change, not Orders closing its own books (#206 item 1).
-            MarkAsOrdersOwnWrite(line);
-            line.NewRecord();
-            // The successor when the subscription moves to one; booking then moves the subscription
-            // onto it (OrderEntityServer.touchExistingSubscription).
-            line.ProductID = priced.ProductID;
-            line.LineNumber = 1;
-            // Per-LINE (D61): renewal is a line-level act, so one order could renew several
-            // subscriptions. Naming the target also removes the guesswork from resolution — the
-            // engine renews exactly this one rather than searching by subscriber and product.
-            line.RenewsSubscriptionID = due.SubscriptionID;
-            // The subscription's own subscriber, carried onto the line's ship-to so the renewal
-            // lands on the same holder even when the order's customer differs.
-            line.ShipToOrganizationID = due.HolderOrganizationID;
-            line.ShipToPersonID = due.BeneficiaryPersonID;
-            // What `priceRenewal` decided (golive #304). Stated on the line, so pricing keeps it rather
-            // than resolving today's list price. It is the pass's own deliberate price, not a typed
-            // concession, so the order is told which lines it priced: the concession gate and the
-            // below-engine review leave them alone while their price is unchanged.
-            line.Quantity = priced.Quantity;
-            line.UnitPrice = priced.Price.UnitPrice;
-            line.DiscountPct = priced.Price.DiscountPct;
-            order.MarkRenewalPriced(line);
+            const codes = [...new Set(members.flatMap((m) => m.priced.PromotionCodes.map((c) => c.Code)))];
+            let lineNumber = 0;
+            for (const { due, priced } of members) {
+                const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, user);
+                // Orders writing its own line. An app that froze this line freezes what a PERSON
+                // may change, not Orders closing its own books (#206 item 1).
+                MarkAsOrdersOwnWrite(line);
+                line.NewRecord();
+                // The successor when the subscription moves to one; booking then moves the subscription
+                // onto it (OrderEntityServer.touchExistingSubscription).
+                line.ProductID = priced.ProductID;
+                line.LineNumber = ++lineNumber;
+                // Per-LINE (D61): renewal is a line-level act, which is what lets one order renew
+                // several subscriptions. Naming the target also removes the guesswork from resolution:
+                // the engine renews exactly this one rather than searching by subscriber and product.
+                line.RenewsSubscriptionID = due.SubscriptionID;
+                // The subscription's own subscriber, carried onto the line's ship-to so the renewal
+                // lands on the same holder even when the order's customer differs.
+                line.ShipToOrganizationID = due.HolderOrganizationID;
+                line.ShipToPersonID = due.BeneficiaryPersonID;
+                // What the pricer decided (golive #304). Stated on the line, so pricing keeps it rather
+                // than resolving today's list price. It is the pass's own deliberate price, not a typed
+                // concession, so the order is told which lines it priced: the concession gate and the
+                // below-engine review leave them alone while their price is unchanged.
+                line.Quantity = priced.Quantity;
+                line.UnitPrice = priced.Price.UnitPrice;
+                line.DiscountPct = priced.Price.DiscountPct;
+                order.MarkRenewalPriced(line);
+
+                // Attached rather than assigned — see the note in CancelSubscriptionOperation.
+                order.Lines.Add(line);
+
+                // The buyer's choices carry forward (#291). A conditional entitlement is granted only on a
+                // line that carries its choice, so a renewal without them would silently drop the access
+                // the buyer chose. They ride in the line's graph and save with the draft.
+                for (const choice of await this.loadSourceChoices(provider, user, due.OrderLineID)) {
+                    const row = await line.Choices.Create();
+                    row.GroupKey = choice.GroupKey;
+                    row.GroupLabel = choice.GroupLabel;
+                    row.OptionValue = choice.OptionValue;
+                    row.OptionLabel = choice.OptionLabel;
+                }
+            }
 
             // Promotions that carry into renewals (#289), through the ordinary promotion path: the
             // engine decides whether each still applies, and writes the discount as an adjustment.
-            if (priced.PromotionCodes.length) {
-                order.PromotionCodes.Codes = priced.PromotionCodes.map((c) => c.Code);
-            }
-
-            // Attached rather than assigned — see the note in CancelSubscriptionOperation.
-            order.Lines.Add(line);
-
-            // The buyer's choices carry forward (#291). A conditional entitlement is granted only on a
-            // line that carries its choice, so a renewal without them would silently drop the access
-            // the buyer chose. They ride in the line's graph and save with the draft.
-            for (const choice of await this.loadSourceChoices(provider, user, due.OrderLineID)) {
-                const row = await line.Choices.Create();
-                row.GroupKey = choice.GroupKey;
-                row.GroupLabel = choice.GroupLabel;
-                row.OptionValue = choice.OptionValue;
-                row.OptionLabel = choice.OptionLabel;
+            // (A member carrying codes is always alone on its order; see the grouping note.)
+            if (codes.length) {
+                order.PromotionCodes.Codes = codes;
             }
 
             // DRAFT FIRST, THEN THE SCHEDULE, THEN CONFIRM (#305). The renewal is invoiced on the day
             // this pass runs, not on its term start, so it carries a one-row schedule due today and
             // D92 books it that way: no AR at confirm, and the instalment — due on or before the
             // order date — is issued inside the same confirm, dated when it is issued. The row must
-            // tie to the line's gross, and that gross exists only once pricing has written the line,
+            // tie to the lines' gross, and that gross exists only once pricing has written the lines,
             // which is what the draft save does. All of it sits in this transaction.
             order.Status = 'Draft';
             if (!(await order.Save())) {
@@ -604,31 +664,39 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // What became of the carried promotions, known once the draft's pricing has run. Written
             // into the notes before the confirm, which re-decides the same codes on the same date.
             let promotions: RenewalPromotionOutcome | null = null;
-            if (priced.PromotionCodes.length) {
-                promotions = ClassifyRenewalPromotionCodes(
-                    priced.PromotionCodes.map((c) => c.Code),
-                    order.UnusablePromotionCodes,
-                    await this.appliedCodes(provider, order.ID, priced.PromotionCodes),
-                );
-                order.Notes = this.renewalNotes(due, priced, promotions);
+            if (codes.length) {
+                const presented = members.flatMap((m) => m.priced.PromotionCodes);
+                promotions = ClassifyRenewalPromotionCodes(codes, order.UnusablePromotionCodes, await this.appliedCodes(provider, order.ID, presented));
+                order.Notes = this.renewalNotes(members, promotions, placeAs, selectedByPerson);
             }
 
-            // Due on the invoice day plus the customer's terms, capped at the order date (#305
-            // review). `resolveDueDate` is the confirm's own terms walk, run now so the row can use
-            // it; confirm then sees the date already set and leaves it. A subscription with a renewal
-            // card is due on the order date, the day `ChargeRenewals` first charges the card (#289).
-            await order.resolveDueDate();
-            const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, !!due.DefaultCustomerPaymentMethodID);
-            await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
+            if (placeAs === 'Draft') {
+                // The notes may have changed above; a draft's second save is the ordinary draft save.
+                if (promotions && !(await order.Save())) {
+                    throw new Error(
+                        `Failed to save the renewal draft ${order.OrderNumber} of ${numbers}: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
+            } else {
+                // Due on the invoice day plus the customer's terms, capped at the order date (#305
+                // review). `resolveDueDate` is the confirm's own terms walk, run now so the row can use
+                // it; confirm then sees the date already set and leaves it. A subscription with a renewal
+                // card is due on the order date, the day `ChargeRenewals` first charges the card (#289).
+                await order.resolveDueDate();
+                const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, !!first.DefaultCustomerPaymentMethodID);
+                await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
 
-            order.Status = 'Confirmed';
-            if (!(await order.Save())) {
-                throw new Error(
-                    `Failed to book renewal order ${order.OrderNumber} of ${due.SubscriptionNumber}: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
-                );
+                order.Status = 'Confirmed';
+                if (!(await order.Save())) {
+                    throw new Error(
+                        `Failed to book renewal order ${order.OrderNumber} of ${numbers}: ${order.LatestResult?.CompleteMessage ?? 'unknown error'}`,
+                    );
+                }
             }
 
-            await this.logEvent(provider, user, due, priced, order.ID, promotions);
+            for (const { due, priced } of members) {
+                await this.logEvent(provider, user, due, priced, order.ID, promotions, placeAs, selectedByPerson);
+            }
             await dbProvider.CommitTransaction();
             return { ID: order.ID, Number: order.OrderNumber, Promotions: promotions };
         } catch (err) {
@@ -675,186 +743,6 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         }
     }
 
-    /**
-     * What the renewal line is written with: product, quantity and price (golive #304).
-     *
-     * Read-only, so a preview runs it too. Throws with a reason a person can act on when the
-     * renewal cannot be priced; the caller skips that candidate.
-     */
-    private async priceRenewal(provider: IMetadataProvider, user: UserInfo, due: DueRow): Promise<PricedRenewal> {
-        const source = await this.loadSourceLine(provider, user, due.OrderLineID);
-        if (!source) {
-            throw new Error(
-                `The order line that bought term ${due.TermNumber} (${due.OrderLineID}) no longer exists, ` +
-                    `so there is no price to renew at.`,
-            );
-        }
-
-        const chain = await this.loadSuccessorChain(provider, due.ProductID);
-        const notSubscription = NonSubscriptionSuccessorRefusal(chain);
-        if (notSubscription) throw new Error(notSubscription);
-        const product = chain[chain.length - 1];
-        const movesToSuccessor = chain.length > 1;
-        const quantity = this.renewalQuantity(due);
-        const renewalDay = this.dayAfter(due.TermEndDate);
-        const carry = !!due.CarryDiscountOnRenewal;
-        await LoadOrdersEngine(provider, user);
-        const priorLineMonths = this.priorLineMonths(due, source);
-        const share = priorLineMonths == null ? 1 : PriorTermShare(priorLineMonths, this.termMonthsOf(due));
-
-        // A list price is resolved only where the rule needs one: the successor's as of the renewal
-        // day, or the prior product's as of the prior order when a price typed below it may lapse.
-        const successorList = movesToSuccessor
-            ? await this.listPrice(provider, user, { ...source, ProductID: product.ID, Quantity: quantity, UnitPrice: null, ProductPriceID: null }, renewalDay)
-            : undefined;
-        const priorList =
-            !movesToSuccessor && source.PriceOverridden && !carry
-                ? await this.listPrice(provider, user, { ...source, Quantity: quantity }, null)
-                : null;
-
-        const increase = ResolveRenewalIncrease({
-            Subscription: due.SubscriptionIncreasePercent,
-            Product: product.RenewalIncreasePercent,
-            Categories: await this.loadCategoryIncreases(provider, product.ProductCategoryID),
-            Company: await this.loadCompanyIncrease(provider, user, due.CompanyID),
-        });
-
-        let price: RenewalPrice;
-        try {
-            price = PriceRenewal({
-                PriorUnitPrice: Number(source.UnitPrice),
-                PriorTermShare: share,
-                PriorDiscountPct: source.DiscountPct,
-                PriorPriceOverridden: !!source.PriceOverridden,
-                PriorListPrice: priorList,
-                SuccessorListPrice: successorList,
-                CarryDiscount: carry,
-                Increase: increase,
-                ApplyIncrease: RenewalCrossesAnniversary(due.SubscriptionStartDate, due.TermStartDate, renewalDay),
-            });
-        } catch (err) {
-            throw new Error(
-                `${due.SubscriptionNumber} moves to ${product.Name} at renewal, but ` +
-                    `${err instanceof Error ? err.message : String(err)}. Add a price for ${product.Name}.`,
-            );
-        }
-
-        return {
-            ProductID: product.ID,
-            ProductName: product.Name,
-            MovesToSuccessor: movesToSuccessor,
-            Quantity: quantity,
-            Price: price,
-            // Only a typed price is cut (see `PriceRenewal`), so only that one is reported as a share.
-            PriorLineMonths: share < 1 && source.PriceOverridden ? priorLineMonths : null,
-            Term: this.renewalTerm(due, product),
-            PromotionCodes: await this.loadRenewalPromotionCodes(provider, source),
-        };
-    }
-
-    /**
-     * The months the source line's price covers when that line bought earlier terms too, or null
-     * (golive #338). Read from the line's service period, which the confirm sets to the whole coverage.
-     */
-    private priorLineMonths(due: DueRow, source: SourceLineRow): number | null {
-        const day = (v: string | Date | null) => (v ? new Date(`${new Date(v).toISOString().slice(0, 10)}T00:00:00Z`) : null);
-        return MultiTermLineMonths(day(source.ServicePeriodStart), day(source.ServicePeriodEnd), day(due.TermStartDate)!);
-    }
-
-    /**
-     * The term length of the subscription's own type: the length the confirm split the source line
-     * by. Throws when the type cannot be read, since renewing at the whole line's price would bill
-     * the customer for every term the line already paid for.
-     */
-    private termMonthsOf(due: DueRow): number {
-        const rules = this.rulesFor(due.SubscriptionTypeID);
-        if (!rules) {
-            throw new Error(
-                `${due.SubscriptionNumber}'s subscription type (${due.SubscriptionTypeID}) was not found, so the share ` +
-                    `of its multi-term line one renewal term is worth cannot be worked out.`,
-            );
-        }
-        return SubscriptionBehaviorFor(rules).TermMonths(rules);
-    }
-
-    /**
-     * The term the renewal buys, decided the way the confirm decides it: the renewal product's
-     * subscription type and behaviour, continuing the subscription from the day after its latest term.
-     * Null when that cannot be decided here (no type, an unregistered driver, a rejection); the
-     * confirm then reports the reason itself.
-     */
-    private renewalTerm(due: DueRow, product: ChainProductRow): { Start: string; End: string } | null {
-        const typeID = ResolveSubscriptionTypeID(
-            product.SubscriptionTypeID,
-            OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID ?? null,
-        );
-        const rules = this.rulesFor(typeID);
-        if (!rules) return null;
-        try {
-            const holder = { OrganizationID: due.HolderOrganizationID ?? null, PersonID: due.BeneficiaryPersonID ?? null };
-            const decision = SubscriptionBehaviorFor(rules).Decide({
-                Rules: rules,
-                PurchaseDate: this.dayAfter(due.TermEndDate),
-                Amount: 0,
-                Existing: {
-                    ID: due.SubscriptionID,
-                    Status: due.SubscriptionStatus,
-                    HolderOrganizationID: holder.OrganizationID,
-                    BeneficiaryPersonID: holder.PersonID,
-                    LatestTermEnd: new Date(due.TermEndDate),
-                    LatestTermNumber: due.TermNumber,
-                },
-                Subscriber: holder,
-                IsRenewal: true,
-            });
-            const term = decision.Term;
-            if (!term) return null;
-            return { Start: term.StartDate.toISOString().slice(0, 10), End: term.EndDate.toISOString().slice(0, 10) };
-        } catch (err) {
-            LogError(`Orders.SpawnRenewals: ${due.SubscriptionNumber} renewal term not decided: ${err instanceof Error ? err.message : String(err)}`);
-            return null;
-        }
-    }
-
-    /** A subscription type's rules from the engine cache, or null when the type is not there. */
-    private rulesFor(subscriptionTypeID: string | null | undefined): SubscriptionTypeRules | null {
-        const cached = OrdersEngine.Instance.SubscriptionTypeByID(subscriptionTypeID);
-        return cached ? SubscriptionTypeRulesFrom(cached as unknown as SubscriptionTypeRules) : null;
-    }
-
-    /**
-     * The codes the renewal presents: those recorded on the line that bought the expiring term whose
-     * promotion carries into renewals (#289). A promotion's adjustment rows always name a line; an
-     * order-level promotion writes one per line, so the source line's own rows are complete.
-     */
-    private async loadRenewalPromotionCodes(provider: IMetadataProvider, source: SourceLineRow): Promise<RecordedCodeRow[]> {
-        const orderID = RequireUUID(String(source.OrderHeaderID), 'OrderHeaderID');
-        const lineID = RequireUUID(String(source.ID), 'OrderLineID');
-        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
-        const rows = (await db.ExecuteSQL(`
-            SELECT pc.ID AS PromotionCodeID, pc.Code, p.AppliesToRenewals, MIN(oa.Sequence) AS FirstSequence
-            FROM __mj_BizAppsOrders.OrderAdjustment oa
-            JOIN __mj_BizAppsOrders.PromotionCode pc ON pc.ID = oa.PromotionCodeID
-            JOIN __mj_BizAppsOrders.Promotion p ON p.ID = pc.PromotionID
-            WHERE oa.OrderHeaderID = '${orderID}'
-              AND oa.OrderLineID = '${lineID}'
-            GROUP BY pc.ID, pc.Code, p.AppliesToRenewals
-            ORDER BY MIN(oa.Sequence), pc.Code
-        `)) as RecordedCodeRow[];
-        if (!Array.isArray(rows)) return [];
-        const keep = new Set(
-            SelectRenewalPromotionCodes(rows.map((r) => ({ Code: r.Code, AppliesToRenewals: !!r.AppliesToRenewals }))).map((c) =>
-                c.toLowerCase(),
-            ),
-        );
-        const out: RecordedCodeRow[] = [];
-        for (const r of rows) {
-            if (!keep.delete(String(r.Code).trim().toLowerCase())) continue;
-            out.push({ PromotionCodeID: String(r.PromotionCodeID), Code: String(r.Code).trim(), AppliesToRenewals: true });
-        }
-        return out;
-    }
-
     /** The presented codes the engine wrote a discount for on this order, read from its adjustment rows. */
     private async appliedCodes(provider: IMetadataProvider, orderID: string, presented: RecordedCodeRow[]): Promise<string[]> {
         const id = RequireUUID(String(orderID), 'OrderHeaderID');
@@ -898,7 +786,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             CompanyID: due.CompanyID,
             BillToPersonID: due.BeneficiaryPersonID,
             BillToOrganizationID: due.HolderOrganizationID,
-            OrderDate: this.dayAfter(due.TermEndDate),
+            OrderDate: DayAfter(due.TermEndDate),
             ShipToAddressID: null,
             Lines: [line],
             PromotionCodes: codes,
@@ -918,166 +806,33 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         candidate.UnusableRenewalPromotionCodes = outcome.Unusable;
     }
 
-    /**
-     * The subscription's product followed along `SuccessorProductID` while the next product is
-     * Active: a successor that is still a draft, or already retired, is not one to renew onto.
-     * The subscription's own product comes first; the last entry is what the renewal is placed on.
-     */
-    private async loadSuccessorChain(provider: IMetadataProvider, productID: string): Promise<ChainProductRow[]> {
-        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
-        const rows = (await db.ExecuteSQL(`
-            WITH chain AS (
-                SELECT p.ID, p.Name, p.Status, p.ProductCategoryID, p.RenewalIncreasePercent, p.SuccessorProductID,
-                       p.SubscriptionTypeID, p.ProductTypeID, 0 AS Depth
-                FROM __mj_BizAppsOrders.Product p
-                WHERE p.ID = '${productID}'
-                UNION ALL
-                SELECT n.ID, n.Name, n.Status, n.ProductCategoryID, n.RenewalIncreasePercent, n.SuccessorProductID,
-                       n.SubscriptionTypeID, n.ProductTypeID, c.Depth + 1
-                FROM chain c
-                JOIN __mj_BizAppsOrders.Product n ON n.ID = c.SuccessorProductID
-                WHERE c.Depth < 20 AND n.Status = 'Active'
-            )
-            SELECT c.ID, c.Name, c.Status, c.ProductCategoryID, c.RenewalIncreasePercent, c.SuccessorProductID,
-                   COALESCE(p.SubscriptionTypeID, pt.DefaultSubscriptionTypeID) AS SubscriptionTypeID, c.ProductTypeID
-            FROM chain c
-            JOIN __mj_BizAppsOrders.Product p ON p.ID = c.ID
-            LEFT JOIN __mj_BizAppsOrders.ProductType pt ON pt.ID = p.ProductTypeID
-            ORDER BY c.Depth
-        `)) as ChainProductRow[];
-        if (!Array.isArray(rows) || rows.length === 0) {
-            throw new Error(`The subscription's product (${productID}) no longer exists, so there is nothing to renew.`);
-        }
-
-        // Successors that loop back would otherwise walk to the depth cap; stop at the first repeat.
-        const seen = new Set<string>();
-        const chain: ChainProductRow[] = [];
-        for (const row of rows) {
-            const key = String(row.ID).toLowerCase();
-            if (seen.has(key)) break;
-            seen.add(key);
-            chain.push(row);
-        }
-        return chain;
-    }
-
-    /** `RenewalIncreasePercent` of a category and each ancestor, the category itself first. */
-    private async loadCategoryIncreases(provider: IMetadataProvider, categoryID: string | null): Promise<Array<number | null>> {
-        if (!categoryID) return [];
-        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
-        const rows = (await db.ExecuteSQL(`
-            WITH chain AS (
-                SELECT c.ID, c.ParentProductCategoryID, c.RenewalIncreasePercent, 0 AS Depth
-                FROM __mj_BizAppsOrders.ProductCategory c
-                WHERE c.ID = '${categoryID}'
-                UNION ALL
-                SELECT p.ID, p.ParentProductCategoryID, p.RenewalIncreasePercent, ch.Depth + 1
-                FROM chain ch
-                JOIN __mj_BizAppsOrders.ProductCategory p ON p.ID = ch.ParentProductCategoryID
-                WHERE ch.Depth < 20
-            )
-            SELECT RenewalIncreasePercent FROM chain ORDER BY Depth
-        `)) as Array<{ RenewalIncreasePercent: number | null }>;
-        return Array.isArray(rows) ? rows.map((r) => (r.RenewalIncreasePercent == null ? null : Number(r.RenewalIncreasePercent))) : [];
-    }
-
-    /** The selling company's `OrderCompanyPolicy.RenewalIncreasePercent`; null when it has no policy row. */
-    private async loadCompanyIncrease(provider: IMetadataProvider, user: UserInfo, companyID: string): Promise<number | null> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<{ RenewalIncreasePercent: number | null }>(
-            {
-                EntityName: ORDER_COMPANY_POLICY_ENTITY,
-                ExtraFilter: `ID='${companyID}'`,
-                Fields: ['RenewalIncreasePercent'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        const value = result?.Results?.[0]?.RenewalIncreasePercent;
-        return value == null ? null : Number(value);
-    }
-
-    /**
-     * What the pricing engine charges for `line`'s product, for the customer on `line`'s order. As of
-     * that order's date, or as of `asOf` when given. Null when no rule prices the product.
-     */
-    private async listPrice(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        line: PricedLineFacts,
-        asOf: Date | null,
-    ): Promise<number | null> {
-        const ctx = await BuildLinePriceContext(line, provider, user);
-        if (!ctx) return null;
-        if (asOf) ctx.AsOf = AsDateValue(asOf) ?? ctx.AsOf;
-        const resolved = await ResolvePrice(ctx, provider, user);
-        return resolved ? Number(resolved.UnitPrice) : null;
-    }
-
-    /** The renewal order's notes: what it renews, how its price was reached, and what its promotions did. */
-    private renewalNotes(due: DueRow, priced: PricedRenewal, promotions?: RenewalPromotionOutcome | null): string {
-        const p = priced.Price;
+    /** The renewal order's notes: one line per subscription it renews (what, who asked, how its price was reached), then what the promotions did. */
+    private renewalNotes(
+        members: ReadonlyArray<{ due: DueRow; priced: PricedRenewal }>,
+        promotions: RenewalPromotionOutcome | null,
+        placeAs: RenewalPlacement,
+        selectedByPerson: boolean,
+    ): string {
         const money = (n: number) => n.toFixed(2);
-        const base = { PriorPrice: 'prior price', PriorList: 'prior list price', SuccessorList: 'list price' }[p.BaseSource];
-        // A multi-term prior line: say the base is one term's share, so the figure reads against the line.
-        const share =
-            p.BaseSource === 'PriorPrice' && priced.PriorLineMonths != null
-                ? ` (one term of a ${Math.round(priced.PriorLineMonths * 100) / 100}-month line)`
-                : '';
-        const parts = [`Automatic renewal of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`];
-        if (priced.MovesToSuccessor) parts.push(`onto successor product ${priced.ProductName}`);
-        const increase = p.IncreasePercent > 0 ? ` + ${p.IncreasePercent}% annual increase (${p.IncreaseSource.toLowerCase()})` : '';
-        const discount = p.DiscountPct > 0 ? `, discount ${Math.round(p.DiscountPct * 10000) / 100}% continued` : '';
-        const price = `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${share}${increase}${discount}.`;
+        const how = selectedByPerson ? (placeAs === 'Draft' ? 'Renewal draft' : 'Renewal') : 'Automatic renewal';
+        const lines = members.map(({ due, priced }) => {
+            const p = priced.Price;
+            const base = { PriorPrice: 'prior price', PriorList: 'prior list price', SuccessorList: 'list price' }[p.BaseSource];
+            // A multi-term prior line: say the base is one term's share, so the figure reads against the line.
+            const share =
+                p.BaseSource === 'PriorPrice' && priced.PriorLineMonths != null
+                    ? ` (one term of a ${Math.round(priced.PriorLineMonths * 100) / 100}-month line)`
+                    : '';
+            const parts = [`${how} of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`];
+            if (selectedByPerson) parts.push('placed from the Renewals page');
+            if (priced.MovesToSuccessor) parts.push(`onto successor product ${priced.ProductName}`);
+            const increase = p.IncreasePercent > 0 ? ` + ${p.IncreasePercent}% annual increase (${p.IncreaseSource.toLowerCase()})` : '';
+            const discount = p.DiscountPct > 0 ? `, discount ${Math.round(p.DiscountPct * 10000) / 100}% continued` : '';
+            return `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${share}${increase}${discount}.`;
+        });
+        const head = members.length > 1 ? [`${members.length} subscriptions renewed together: same customer, same term end.`] : [];
         const promotionNote = promotions ? RenewalPromotionNote(promotions) : '';
-        return promotionNote ? `${price} ${promotionNote}` : price;
-    }
-
-    /**
-     * Quantity for the renewal: the seats the expiring term covers (#589).
-     *
-     * Not the source line's quantity. A PRORATED source line carries a scaled quantity — the short
-     * first period into a calendar anchor (D54) — so 10 seats over half a period read 5, and the
-     * renewal billed and granted 5 seats for a full period. The term records the seats as bought.
-     */
-    private renewalQuantity(due: DueRow): number {
-        return Math.max(1, Number(due.TermQuantity));
-    }
-
-    private dayAfter(date: string): Date {
-        const d = new Date(date);
-        return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
-    }
-
-    private async loadSourceLine(
-        provider: IMetadataProvider,
-        user: UserInfo,
-        orderLineID: string,
-    ): Promise<SourceLineRow | null> {
-        const rv = new RunView(provider as unknown as IRunViewProvider);
-        const result = await rv.RunView<SourceLineRow>(
-            {
-                EntityName: ORDER_LINE_ENTITY,
-                ExtraFilter: `ID='${orderLineID}'`,
-                Fields: [
-                    'ID',
-                    'OrderHeaderID',
-                    'ProductID',
-                    'Quantity',
-                    'UnitPrice',
-                    'DiscountPct',
-                    'PriceOverridden',
-                    'ProductPriceID',
-                    'ServicePeriodStart',
-                    'ServicePeriodEnd',
-                ],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            user,
-        );
-        return result?.Results?.[0] ?? null;
+        return [...head, ...lines, ...(promotionNote ? [promotionNote] : [])].join('\n');
     }
 
     /** The choices recorded on the line that bought the expiring term, in group and option order. */
@@ -1108,6 +863,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         priced: PricedRenewal,
         orderID: string,
         promotions: RenewalPromotionOutcome | null,
+        placeAs: RenewalPlacement,
+        selectedByPerson: boolean,
     ): Promise<void> {
         const event = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEventEntity>(SUBSCRIPTION_EVENT_ENTITY, user);
         event.NewRecord();
@@ -1120,7 +877,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             JSON.stringify({
                 RenewedTermNumber: due.TermNumber,
                 ExpiringTermEnd: due.TermEndDate,
-                LeadDays: due.SubscriptionRenewalLeadDays ?? due.TypeRenewalLeadDays ?? 0,
+                LeadDays: EffectiveLeadDays(due),
+                OrderStatus: placeAs,
+                Placement: selectedByPerson ? 'Selected' : 'Pass',
                 FromProductID: due.ProductID,
                 RenewalProductID: priced.ProductID,
                 BasePrice: priced.Price.BasePrice,
@@ -1142,6 +901,30 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             );
         }
     }
+}
+
+/**
+ * Why a subscription a person named cannot have a renewal placed, or null when it can: the same
+ * rules the scheduled selection applies in SQL, minus the lead window and the auto-renew switch,
+ * which are the person's call. Exported so the Renewals page and its tests read one rule.
+ */
+export function SelectedRenewalRefusal(row: {
+    SubscriptionStatus: string;
+    TermID?: string | null;
+    TermStatus?: string | null;
+    ProviderSubscriptionID?: string | null;
+}): string | null {
+    if (!RENEWABLE_STATUSES.includes(row.SubscriptionStatus)) {
+        return `the subscription is ${row.SubscriptionStatus}, not Active or Trialing, so nothing renews it`;
+    }
+    if (IsProviderBilled(row)) {
+        return 'a payment gateway bills this subscription, so Orders places no renewal order for it';
+    }
+    if (!row.TermID) return 'the subscription has no term to renew from';
+    if (!RENEWABLE_TERM_STATUSES.includes(String(row.TermStatus))) {
+        return `its latest term is ${row.TermStatus}, not Scheduled or Active, so there is nothing to continue`;
+    }
+    return null;
 }
 
 /** Tree-shaking anchor — called from the server bootstrap so the registration is retained. */

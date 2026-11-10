@@ -337,6 +337,55 @@ export class OrderEntityServer extends OrderHeaderEntity {
         this._renewalPricedLines.set(line, Number(line.UnitPrice));
     }
 
+    /** Whether the marks the renewal pass persisted for this order have been read into the map above. */
+    private _persistedRenewalMarksLoaded = false;
+
+    /**
+     * Read back the marks for a renewal order saved by an EARLIER object: the pass leaves a draft for a
+     * person to confirm from the order form, and that confirm runs in a fresh entity whose map is
+     * empty. Without this, the pass's own price reads as a typed one and the concession gate refuses
+     * the confirm the pass would have made without question (golive #304 would have come back).
+     *
+     * The persisted record is the `RenewalOrderSpawned` event the pass writes per renewed subscription
+     * in the same transaction as the order, carrying the unit price it placed. A line that renews that
+     * subscription at that price is the pass's line, unedited. A read that fails leaves the line
+     * unmarked, which is the cautious side: the gate then judges it as a stated price.
+     */
+    private async loadPersistedRenewalMarks(): Promise<void> {
+        if (this._persistedRenewalMarksLoaded || !this.IsSaved) return;
+        this._persistedRenewalMarksLoaded = true;
+        const lines = this.Lines.Items.filter((line) => !!line.RenewsSubscriptionID && !this._renewalPricedLines.has(line));
+        if (!lines.length) return;
+        try {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const result = await rv.RunView<{ SubscriptionID: string; EventData: string | null }>(
+                {
+                    EntityName: SUBSCRIPTION_EVENT_ENTITY,
+                    ExtraFilter: `RelatedOrderHeaderID='${RequireUUID(String(this.ID), 'OrderHeaderID')}' AND EventType='RenewalOrderSpawned'`,
+                    Fields: ['SubscriptionID', 'EventData'],
+                    ResultType: 'simple',
+                },
+                this.ContextCurrentUser,
+            );
+            if (!result.Success) throw new Error(result.ErrorMessage || 'the renewal events could not be read');
+            const placed = new Map<string, number>();
+            for (const row of result.Results) {
+                try {
+                    const data = JSON.parse(row.EventData ?? '{}') as { UnitPrice?: number };
+                    if (data.UnitPrice != null && Number.isFinite(Number(data.UnitPrice))) placed.set(String(row.SubscriptionID).toLowerCase(), Number(data.UnitPrice));
+                } catch {
+                    /* an event without readable data marks nothing */
+                }
+            }
+            for (const line of lines) {
+                const price = placed.get(String(line.RenewsSubscriptionID).toLowerCase());
+                if (price != null) this._renewalPricedLines.set(line, price);
+            }
+        } catch (err) {
+            LogError(`Order ${this.OrderNumber ?? this.ID}: the renewal pass's price marks could not be read: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
+
     /** True for a line the renewal pass priced whose price is unchanged; matched by entity or saved ID. */
     private isUneditedRenewalPrice(line: { ID?: string | null; UnitPrice: number | null }): boolean {
         for (const [marked, price] of this._renewalPricedLines) {
@@ -690,6 +739,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // collection before the gates below, which read the lines (a renewal-only order is exempt from
         // review and the no-deal check), and before it decides subscriptions.
         if (booking && this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        // A renewal draft the pass left: its price marks live in the event it wrote, not in this object.
+        if (booking && this.IsSaved) await this.loadPersistedRenewalMarks();
 
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
