@@ -48,8 +48,9 @@ BILL has no payment-received event; a verified BILL invoice event only starts th
 One BILL invoice is one billing unit: an order, the company that bills it, and an instalment or none.
 
 - **An order with no payment schedule** is one unit, sent through the rail of the order's company
-  (`OrderHeader.CompanyID`) whatever company owns each product. It is invoiceable once `Confirmed` and
-  numbered as the order. Its BILL invoice has one line per printed invoice row plus `Charges` and
+  (`OrderHeader.CompanyID`) whatever company owns each product. It is invoiceable once `Confirmed` with
+  a balance above zero, and numbered as the order; a paid-in-full or free order is not on the worklist,
+  and the order form shows no Send button for it (bc-aidp-next-golive#457). Its BILL invoice has one line per printed invoice row plus `Charges` and
   `Tax`, totalling the order's gross to the cent (`TIE_FAILED` otherwise). An order with money already
   applied is refused (`PART_PAID`), since the invoice would bill that money again.
 - **An order with a payment schedule** has one unit per `OrderHeaderPaymentSchedule` row, sent through

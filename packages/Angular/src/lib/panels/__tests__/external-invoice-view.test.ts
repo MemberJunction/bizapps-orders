@@ -13,6 +13,7 @@ import {
     CanResolveInFlight,
     CanSend,
     DispositionChipClass,
+    NothingToBill,
     SendApplies,
     SendDisabledReason,
     SendIsReissue,
@@ -74,6 +75,32 @@ describe('CanSend', () => {
     it('refuses when no company on the order has a rail', () => {
         expect(CanSend('Confirmed', [], false)).toBe(false);
     });
+
+    it('refuses an order with nothing left to bill, and allows a credit or an unknown balance (#457)', () => {
+        expect(CanSend('Confirmed', [], true, false, 0)).toBe(false);
+        expect(CanSend('Confirmed', [], true, false, -25)).toBe(true);
+        expect(CanSend('Confirmed', [], true, false, 120)).toBe(true);
+        expect(CanSend('Confirmed', [], true, false, null)).toBe(true);
+    });
+});
+
+describe('NothingToBill', () => {
+    it('is true only for an exact zero balance', () => {
+        expect(NothingToBill(0)).toBe(true);
+        expect(NothingToBill(-0)).toBe(true);
+        expect(NothingToBill(0.01)).toBe(false);
+        expect(NothingToBill(-0.01)).toBe(false);
+        expect(NothingToBill(1500)).toBe(false);
+    });
+
+    it('treats a credit as something to show, not as nothing to bill', () => {
+        expect(NothingToBill(-250)).toBe(false);
+    });
+
+    it('does not read a missing balance as zero', () => {
+        expect(NothingToBill(null)).toBe(false);
+        expect(NothingToBill(undefined)).toBe(false);
+    });
 });
 
 describe('SendApplies', () => {
@@ -87,6 +114,17 @@ describe('SendApplies', () => {
         expect(SendApplies([], true, true)).toBe(false);
         expect(SendApplies([row('Sent')], true)).toBe(false);
         expect(SendApplies([row('Sending')], true)).toBe(false);
+    });
+
+    it('does not apply when the balance is zero: paid in full or free, whatever the status (#457)', () => {
+        expect(SendApplies([], true, false, 0)).toBe(false);
+        expect(SendApplies([row('Failed')], true, false, 0)).toBe(false);
+    });
+
+    it('still applies on a credit balance and when the balance is not known', () => {
+        expect(SendApplies([], true, false, -40)).toBe(true);
+        expect(SendApplies([], true, false, undefined)).toBe(true);
+        expect(SendApplies([], true, false, null)).toBe(true);
     });
 });
 
