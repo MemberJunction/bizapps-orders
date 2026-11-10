@@ -91,6 +91,22 @@ describe('Pricing widget: revenue bands, retirement and the quote tester', () =>
         expect(widget.VisiblePrices[1].StatusText).toBe('Inactive');
     });
 
+    it('hides a price kept for orders created before a past cutover, and does not offer to activate it', () => {
+        const olderOnly = (cutover: number) =>
+            JSON.stringify({ logic: 'and', filters: [...JSON.parse(band(2 * M, 5 * M)!).filters, { field: 'Order.__mj_CreatedAt', operator: 'lt', value: cutover }] });
+        const kept = price({ ID: 'kept', Name: '$2M-$5M rev (orders before 2026-11-10)', Priority: 20, Applicability: olderOnly(Date.UTC(2026, 10, 10, 19, 8)) });
+        const future = price({ ID: 'future', Priority: 30, Applicability: olderOnly(Date.UTC(2999, 0, 1)) });
+        const widget = widgetWith([kept, price({ ID: 'live', Priority: 10, Applicability: band(2 * M, 5 * M) }), future]);
+        expect(widget.VisiblePrices.map((c) => c.ID)).toEqual(['future', 'live']);
+        expect(widget.RetiredCount).toBe(1);
+        expect(widget.CanActivate(kept as never)).toBe(false);
+        expect(widget.CanActivate(price({ ID: 'off', Status: 'Inactive' }) as never)).toBe(true);
+        widget.ShowRetired = true;
+        const shown = widget.VisiblePrices.find((c) => c.ID === 'kept');
+        expect(shown?.Retired).toBe(true);
+        expect(shown?.StatusText).toMatch(/^Orders before /);
+    });
+
     describe('RunQuote', () => {
         const ladder = [
             price({ ID: 'b1', Name: 'Under $2M rev', Amount: 10_000, Applicability: band(0, 2 * M) }),

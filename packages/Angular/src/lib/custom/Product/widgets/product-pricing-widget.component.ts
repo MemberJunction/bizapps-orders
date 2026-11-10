@@ -37,6 +37,7 @@ import {
     DescribeRevenueLadderIssue,
     IsRuleApplicable,
     LoadOrdersEngine,
+    OlderOrdersCutoff,
     OrdersEngine,
     PRICE_APPLICABILITY_SOURCES,
     ParseRevenueBand,
@@ -341,12 +342,32 @@ export class BizAppsProductPricingWidgetComponent implements OnInit, OnChanges {
      */
     public IsRetired(p: ProductPriceEntity): boolean {
         if (p.Status !== 'Active') return true;
+        if (this.IsOlderOrdersOnly(p)) return true;
         const to = ToISODate(p.EffectiveTo);
         return to != null && to < Today();
     }
 
+    /**
+     * An Active price kept for orders created before a cutover that has passed (`OlderOrdersCutoff`):
+     * no new order can match it, so it is retired for the catalog's purposes and hidden with the
+     * inactive ones. It is still in force for those older orders, so it is not offered for
+     * activation; deactivating it would move their prices.
+     */
+    public IsOlderOrdersOnly(p: ProductPriceEntity): boolean {
+        if (p.Status !== 'Active') return false;
+        const cutoff = OlderOrdersCutoff((p as { Applicability?: string | null }).Applicability);
+        return cutoff != null && cutoff.getTime() <= Date.now();
+    }
+
+    /** Activate is offered for a price that is inactive or expired, not for one kept for older orders. */
+    public CanActivate(p: ProductPriceEntity): boolean {
+        return this.IsRetired(p) && !this.IsOlderOrdersOnly(p);
+    }
+
     public StatusTextFor(p: ProductPriceEntity): string {
         if (p.Status !== 'Active') return 'Inactive';
+        const cutoff = this.IsOlderOrdersOnly(p) ? OlderOrdersCutoff((p as { Applicability?: string | null }).Applicability) : null;
+        if (cutoff) return `Orders before ${FormatDate(cutoff)}`;
         const to = ToISODate(p.EffectiveTo);
         if (to == null) return '';
         return to < Today() ? `Expired ${FormatDate(p.EffectiveTo)}` : `Expires ${FormatDate(p.EffectiveTo)}`;

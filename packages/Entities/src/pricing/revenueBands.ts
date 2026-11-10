@@ -165,6 +165,42 @@ export function ApplicabilityNeedsRevenue(applicabilityJson: string | null | und
     return walk(filter);
 }
 
+/** The order field a price limited to orders created before a moment tests. */
+export const ORDER_CREATED_FIELD = 'Order.__mj_CreatedAt';
+
+/**
+ * When a row applies only to orders created before some moment, that moment; otherwise null.
+ *
+ * This is how a price change keeps what was already quoted: the old row stays Active, limited by
+ * `Order.__mj_CreatedAt lt <cutover>` (alongside its band, if any), at a priority above the row that
+ * replaces it. Every order created before the cutover keeps resolving the old price, at confirm too,
+ * where a won deal's order is re-priced as of its close date. No order created later can match it, so
+ * once the cutover has passed the row is closed to new sales and the catalog screens treat it as
+ * retired. Read at the top level only (a bare rule, or an `and` of rules), which is the shape the
+ * row is written in; anything else is null, so an unusual rule is shown rather than hidden.
+ */
+export function OlderOrdersCutoff(applicabilityJson: string | null | undefined): Date | null {
+    if (applicabilityJson == null || String(applicabilityJson).trim() === '') return null;
+    let filter: CompositeFilterDescriptor | FilterDescriptor;
+    try {
+        filter = JSON.parse(String(applicabilityJson)) as CompositeFilterDescriptor | FilterDescriptor;
+    } catch {
+        return null;
+    }
+    let leaves: FilterDescriptor[];
+    if (IsCompositeFilter(filter)) {
+        if (filter.logic !== 'and') return null;
+        leaves = (filter.filters ?? []).filter((f): f is FilterDescriptor => f != null && !IsCompositeFilter(f));
+    } else {
+        leaves = [filter];
+    }
+    const rule = leaves.find((f) => (f.field ?? '').trim() === ORDER_CREATED_FIELD && f.operator === 'lt');
+    if (!rule) return null;
+    const value = rule.value as unknown;
+    const at = value instanceof Date ? value : typeof value === 'number' ? new Date(value) : typeof value === 'string' ? new Date(value) : null;
+    return at && !Number.isNaN(at.getTime()) ? at : null;
+}
+
 /** `$2M – $5M`, `Under $2M`, `$250M and up`: the range as the band editor shows it. */
 export function RevenueBandRangeText(range: RevenueBandRange): string {
     const min = range.Min ?? 0;
