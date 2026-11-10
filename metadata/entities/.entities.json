@@ -275,14 +275,15 @@
   {
     "_comments": [
       "Products use generated form + header and domain widgets as contributions.",
-      "AutoEnsureOnSave ensures saving a Product whose ProductType names a ProductExtensionEntity",
-      "(e.g. Event -> EventProduct) automatically creates and validates its disjoint IS-A child."
+      "SubtypeSelector routes zero-arg EnsureISAChild() and ResolveSubtypeEntityName() to ProductType.ProductExtensionEntity.",
+      "AutoEnsureOnSave is intentionally omitted: EventProduct.EventStartsAt is NOT NULL with no default, existing Event-typed",
+      "Products without an EventProduct row must remain editable, and two-step promotion via AttachToParent is supported."
     ],
     "primaryKey": {
       "ID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Products"
     },
     "fields": {
-      "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\", \"AutoEnsureOnSave\": true}",
+      "SubtypeSelector": "{\"Path\": \"ProductTypeID.ProductExtensionEntity\"}",
       "AllowUserSearchAPI": true,
       "AutoUpdateAllowUserSearchAPI": false,
       "Configuration": {

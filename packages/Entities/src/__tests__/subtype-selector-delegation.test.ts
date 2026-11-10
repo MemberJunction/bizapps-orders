@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import type { BaseEntity, EntityInfo } from '@memberjunction/core';
+import { BaseEntity, type EntityInfo } from '@memberjunction/core';
 import type { mjBizAppsOrdersEventProductEntity } from '../generated/entity_subclasses.js';
 import { OrderHeaderEntity } from '../OrderHeaderEntity.js';
 import { OrderLineExtensionCompanion } from '../OrderLineExtensionCompanion.js';
+import { ProductEntity, ProductTypeEntity } from '../ProductEntity.js';
 import { OrdersEngine } from '../pricing/OrdersEngine.js';
 
 const EVENT_PRODUCT_ID = 'aaaaaaaa-0000-0000-0000-000000000011';
@@ -121,5 +122,33 @@ describe('SubtypeSelector delegation across Orders entities', () => {
         const hydrated = await companion.EnsureEntity();
         expect(hydrated).toBe(fakeChild);
         expect(setMany).toHaveBeenCalledWith({ Comments: 'Wheelchair aisle' }, true);
+    });
+
+    it('ProductEntity.Save and ProductTypeEntity.Save clear BaseEntity.ClearSubtypeLookupCache when type or extension mapping changes', async () => {
+        const superSaveSpy = vi.spyOn(BaseEntity.prototype, 'Save').mockResolvedValue(true);
+        const clearCacheSpy = vi.spyOn(BaseEntity, 'ClearSubtypeLookupCache');
+
+        const product = Object.create(ProductEntity.prototype) as ProductEntity;
+        Object.defineProperty(product, 'IsSaved', { value: true, configurable: true });
+        vi.spyOn(product, 'GetFieldByName').mockImplementation((name: string) =>
+            name === 'ProductTypeID'
+                ? ({ Dirty: true } as ReturnType<ProductEntity['GetFieldByName']>)
+                : (null as unknown as ReturnType<ProductEntity['GetFieldByName']>),
+        );
+
+        await product.Save();
+        expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+
+        clearCacheSpy.mockClear();
+        const productType = Object.create(ProductTypeEntity.prototype) as ProductTypeEntity;
+        vi.spyOn(productType, 'GetFieldByName').mockImplementation((name: string) =>
+            name === 'OrderLineExtensionEntity'
+                ? ({ Dirty: true } as ReturnType<ProductTypeEntity['GetFieldByName']>)
+                : (null as unknown as ReturnType<ProductTypeEntity['GetFieldByName']>),
+        );
+
+        await productType.Save();
+        expect(clearCacheSpy).toHaveBeenCalledTimes(1);
+        superSaveSpy.mockRestore();
     });
 });
