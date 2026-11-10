@@ -5,7 +5,9 @@
  * another order and lowering an agreed amount all undo money a booked order already holds. Finance
  * runs them: an early termination, a settlement, a refund or a credit transfer is not new sales, and
  * an account director one click away from them gets them wrong. So each needs
- * `MJ.BizApps.Orders.Order.Reverse`, held by the Finance role.
+ * `MJ.BizApps.Orders.Order.Reverse`, held by the Finance role (and Developer, which keeps every
+ * permission). A return (Returns page, a reversal order confirmed through `OrderEntityServer`) is
+ * deliberately not gated: returns stay with whoever books orders.
  *
  * Shared so the screens hide what the operations refuse. The permission FAILS CLOSED, as
  * {@link UserHasAuthorization} does: a missing authorization row means the grant was never
@@ -37,7 +39,7 @@ export function ReversalRefusal(action: string, user: UserInfo | null | undefine
         );
     }
     if (!UserCanReverse(user, { Authorizations: auths })) {
-        return `${action} needs the ${ORDER_REVERSE_AUTH} authorization, held by the Finance role. Ask finance to do it.`;
+        return `${action} needs the ${ORDER_REVERSE_AUTH} authorization, held by the Finance role (and Developer). Ask finance to do it.`;
     }
     return null;
 }

@@ -7,9 +7,14 @@ credit between orders with what Orders has today (bc-aidp-next-golive#454).
 
 Finance. Cancelling a subscription, refunding a payment, moving an account credit and lowering an
 agreed amount each need the `MJ.BizApps.Orders.Order.Reverse` authorization, which the Finance role
-holds. Everyone else sees the Cancel subscription control hidden and the Issue refund and Apply
+holds (Developer holds it too, so developers keep every permission). Everyone else sees the Cancel subscription control hidden and the Issue refund and Apply
 credit buttons disabled, and the operations refuse them. Records of something the payment gateway
 already did (a refund made at Stripe, a subscription Stripe ended) are booked without it.
+
+Returns are not gated. Whoever books orders can still return lines from the Returns page, including
+lines of a subscription sale billed by invoice; that books a credit memo and ends access the same way
+a cancellation does. This is deliberate: returns stay with order entry, and only the four actions
+above are finance's.
 
 Account directors keep creating and winning deals. A reissued order is not a new sale, so finance
 creates it directly in Orders, not through a deal: a deal would count it as a win in pipeline and
