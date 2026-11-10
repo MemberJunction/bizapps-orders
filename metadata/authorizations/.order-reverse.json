@@ -1,0 +1,14 @@
+[
+  {
+    "fields": {
+      "Name": "MJ.BizApps.Orders.Order.Reverse",
+      "ParentID": null,
+      "IsActive": true,
+      "UseAuditLog": true,
+      "Description": "Reverse money a booked order holds: cancel a subscription (Orders.CancelSubscription, with its credit memo), refund a payment (Orders.RefundPayment), move an account credit to another order (Orders.ApplyAccountCredit), or lower an agreed amount (Orders.AmendArrangement with NewAmount). Each refuses a caller without it, before any read or write; a record of something the payment gateway already did is exempt. Held by the Finance role, and by Developer, which keeps every permission (bc-aidp-next-golive#454). A return (a reversal order booked from the Returns page) does not need it. Without this row, all four are refused."
+    },
+    "primaryKey": {
+      "ID": "B1743944-D373-4F8E-A5CE-0FE96F38B9D9"
+    }
+  }
+]
