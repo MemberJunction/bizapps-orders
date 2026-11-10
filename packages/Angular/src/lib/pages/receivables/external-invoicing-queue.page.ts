@@ -112,6 +112,13 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
             </button>
         </div>
 
+        <div class="row mjo-xq__actions mjo-xq__poll-bar" data-testid="poll-payments-bar">
+            <button type="button" mjButton variant="outline" [disabled]="Busy || PollBlocked" (click)="RunPoll()">
+                <i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ Busy ? 'Working…' : PollJob?.State === 'Preview' ? 'Preview payment check' : 'Check for payments now' }}
+            </button>
+            <span class="small muted">{{ PollHint }}</span>
+        </div>
+
         @if (Tab === 'invoices') {
             <div class="row mjo-xq__actions">
                 <button type="button" mjButton variant="outline" [disabled]="!SelectedInvoice" (click)="OpenSelected()">
@@ -142,13 +149,6 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
                 (PresetChanged)="OnPreset($event)"
                 (RowClicked)="SelectedInvoice = $event" />
         } @else {
-            <div class="row mjo-xq__actions">
-                <button type="button" mjButton variant="outline" [disabled]="Busy || PollBlocked" (click)="RunPoll()">
-                    <i class="fa-solid fa-rotate" aria-hidden="true"></i> {{ Busy ? 'Working…' : PollJob?.State === 'Preview' ? 'Preview payment check' : 'Check for payments now' }}
-                </button>
-                <span class="small muted">{{ PollHint }}</span>
-            </div>
-
             <mjo-worklist-table
                 [Columns]="PaymentColumns"
                 [Rows]="Exceptions"

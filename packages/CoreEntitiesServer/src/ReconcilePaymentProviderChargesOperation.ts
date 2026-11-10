@@ -85,10 +85,10 @@ export class ReconcilePaymentProviderChargesOperation extends OrdersReconcilePay
         user: UserInfo,
     ): Promise<OrdersReconcilePaymentProviderChargesOutput> {
         if (input.PaymentProviderID) RequireUUID(input.PaymentProviderID, 'PaymentProviderID');
-        RequireOptionalDay(input.FromDate, 'FromDate');
-        RequireOptionalDay(input.ToDate, 'ToDate');
-        const toDate = ToISODate(await CalendarDayOrToday(input.ToDate, provider, user)) as string;
-        const fromDate = input.FromDate ? (ToISODate(input.FromDate) as string) : shiftDay(toDate, -(DEFAULT_WINDOW_DAYS - 1));
+        const fromDay = RequireOptionalDay(input.FromDate, 'FromDate');
+        const toDay = RequireOptionalDay(input.ToDate, 'ToDate');
+        const toDate = ToISODate(await CalendarDayOrToday(toDay, provider, user)) as string;
+        const fromDate = (fromDay ? ToISODate(fromDay) : null) ?? shiftDay(toDate, -(DEFAULT_WINDOW_DAYS - 1));
         const preview = input.Preview !== false;
 
         const out: OrdersReconcilePaymentProviderChargesOutput = {

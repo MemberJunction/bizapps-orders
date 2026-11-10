@@ -220,10 +220,25 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      */
     protected bookingInFlight = false;
 
+    /** Set by the server subclass when stamping `ConfirmedAt` / `ConfirmedByUserID` on the booking save. */
+    protected confirmationStamped = false;
+
     /** True when this save is the first transition into a booked status (plan D8). */
     protected willBookOnThisSave(): boolean {
         if (this.bookingInFlight) return true;
         if (!BOOKED_STATUSES.has(this.Status)) return false;
+        if (!this.IsSaved) return true;
+        const hasFields = Array.isArray((this as { Fields?: unknown }).Fields) || Object.prototype.hasOwnProperty.call(this, 'GetFieldByName');
+        const statusField = hasFields ? this.GetFieldByName('Status') : undefined;
+        if (statusField) {
+            const from = statusField.OldValue as string | undefined;
+            if (BOOKED_STATUSES.has(from ?? '')) return false;
+            const confirmedAtField = this.GetFieldByName('ConfirmedAt');
+            if (confirmedAtField && confirmedAtField.OldValue != null) return false;
+            return true;
+        }
+        const confirmedAtField = hasFields ? this.GetFieldByName('ConfirmedAt') : undefined;
+        if (confirmedAtField) return confirmedAtField.OldValue == null;
         if (this.ConfirmedAt) return false; // already booked — never re-book
         return true;
     }
@@ -279,6 +294,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return created;
     }
 
+    public override Revert(): boolean {
+        const ok = super.Revert();
+        for (const line of this.Lines.Items) {
+            line.Revert();
+            line.ISAChild?.Revert();
+        }
+        return ok;
+    }
+
     public override Validate(): ValidationResult {
         if (this.InitialPaymentDetailID_Object) {
             if (this.isInitialPaymentDetailEmpty(this.InitialPaymentDetailID_Object)) {
@@ -298,6 +322,7 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.refuseBookedMoneyEdits(result);
         this.refuseBookedAddressEdits(result);
         this.refuseBookedPaymentTermsEdit(result);
+        this.refuseCallerConfirmationStamp(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -506,6 +531,29 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 ValidationErrorType.Failure,
             ),
         );
+    }
+
+    /**
+     * `ConfirmedAt` and `ConfirmedByUserID` are written only by the server's booking save.
+     * Refusing caller changes here prevents a Draft or Confirm save from pre-populating
+     * `ConfirmedAt` or forging the confirmer identity.
+     */
+    private refuseCallerConfirmationStamp(result: ValidationResult): void {
+        if (this.confirmationStamped) return;
+        for (const name of ['ConfirmedAt', 'ConfirmedByUserID'] as const) {
+            if (name === 'ConfirmedByUserID' && this.MoneyLocked) continue;
+            if (this.FieldIsDirty(name)) {
+                result.Success = false;
+                result.Errors.push(
+                    new ValidationErrorInfo(
+                        name,
+                        `${name} is stamped by the server when the order is confirmed and cannot be set directly.`,
+                        this.GetFieldByName(name)?.Value,
+                        ValidationErrorType.Failure,
+                    ),
+                );
+            }
+        }
     }
 
     /**

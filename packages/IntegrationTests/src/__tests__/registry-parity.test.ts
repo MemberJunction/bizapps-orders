@@ -144,7 +144,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'payment-providers': 20,
     'ach-settlement': 17,
     'embedded-payment-detail': 17,
-    'payment-schedule': 23,
+    'payment-schedule': 25,
     'schedule-replace': 9,
     'payment-deposit': 15,
     'contract-reversal': 12,

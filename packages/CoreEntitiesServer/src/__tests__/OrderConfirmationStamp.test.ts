@@ -63,4 +63,45 @@ describe('the booking walk', () => {
         expect(source.match(/this\.ConfirmedAt\s*=/g)).toHaveLength(1);
         expect(source).toMatch(/if \(booking\) \{\s*this\.stampConfirmation\(\);\s*\}/);
     });
+
+    it('refuses caller writes to ConfirmedAt or ConfirmedByUserID before booking (#969)', () => {
+        const order = Object.create(OrderEntityServer.prototype) as {
+            passesConfirmationStampGuard: () => boolean;
+        };
+        let lastMessage = '';
+        Object.defineProperty(order, 'IsSaved', { value: false, configurable: true });
+        Object.defineProperty(order, 'Status', { value: 'Draft', configurable: true });
+        Object.defineProperty(order, 'ConfirmedAt', { value: null, configurable: true });
+        Object.defineProperty(order, 'Fields', {
+            value: [
+                { Name: 'Status', Value: 'Draft', OldValue: 'Draft', Dirty: false },
+                { Name: 'ConfirmedAt', Value: new Date(), OldValue: null, Dirty: true },
+            ],
+            configurable: true,
+        });
+        Object.defineProperty(order, 'RegisterResultHistoryEntry', {
+            value: (r: { Message: string }) => {
+                lastMessage = r.Message;
+            },
+            configurable: true,
+        });
+
+        expect(order.passesConfirmationStampGuard()).toBe(false);
+        expect(lastMessage).toContain('ConfirmedAt is stamped by the server');
+    });
+
+    it('restores ConfirmedAt and ConfirmedByUserID when a booking save rolls back (#969)', () => {
+        const order = Object.create(OrderEntityServer.prototype) as {
+            Fields: Array<{ Name: string; Value: unknown }>;
+            restoreConfirmationStamp: (at: Date | null, by: string | null) => void;
+        };
+        const fields = [
+            { Name: 'ConfirmedAt', Value: new Date() },
+            { Name: 'ConfirmedByUserID', Value: 'user-1' },
+        ];
+        Object.defineProperty(order, 'Fields', { value: fields, configurable: true });
+        order.restoreConfirmationStamp(null, null);
+        expect(fields.find((f) => f.Name === 'ConfirmedAt')?.Value).toBeNull();
+        expect(fields.find((f) => f.Name === 'ConfirmedByUserID')?.Value).toBeNull();
+    });
 });
