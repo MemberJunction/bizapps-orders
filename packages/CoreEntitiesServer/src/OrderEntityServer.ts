@@ -32,6 +32,7 @@ import {
     CompositeKey,
     DatabaseProviderBase,
     EntityDeleteOptions,
+    EntityPermissionType,
     EntitySaveOptions,
     IMetadataProvider,
     IRunViewProvider,
@@ -45,6 +46,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
@@ -71,6 +73,7 @@ import {
     HostOrderLineEditVeto,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
+    InitialPaymentDay,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -91,11 +94,11 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
-import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
 import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
 import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
@@ -683,15 +686,25 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const booking = this.willBookOnThisSave();
 
+        // A form that saved the draft and then confirmed reloads the HEADER only. Booking needs the
+        // collection before the gates below, which read the lines (a renewal-only order is exempt from
+        // review and the no-deal check), and before it decides subscriptions.
+        if (booking && this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
 
         // A REMOVAL ANOTHER APP REFUSES FAILS THE SAVE, before anything is written (#799).
         if (!booking && !(await this.passesRemovalVeto())) return false;
+        // AND ONE THE PERSON MAY NOT MAKE, before the cleanup runs as the system user (golive #461).
+        if (!this.passesCleanupRight('remove lines from', EntityPermissionType.Update)) return false;
 
         // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
         // reviewer sees the order as it will book. Off until a host switches a trigger on.
+        // ONLY THE ROLES THE NoDealConfirmRoles SETTING NAMES CONFIRM AN ORDER NO DEAL CREATED (golive
+        // #390), ahead of the review so a confirm the user may not make raises no review. Off by default.
+        if (booking && !(await this.passesNoDealConfirmGate())) return false;
         if (booking && !(await this.passesOrderReviewGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
@@ -834,12 +847,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // lines, subscription decisions settle the quantities, and each line is priced. None of
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
-            // A form that saved the draft and then confirmed reloads the HEADER only.
-            // Booking is the only caller that MUST have the collection before it decides subscriptions.
-            if (booking && this.IsSaved && !this.Lines.IsLoaded) {
-                await this.Lines.Load();
-            }
-
             await this.expandBundles();
             // EVERY LINE'S PRODUCT IN THE CATALOG CACHE, reloaded once if any is missing (golive #301).
             // Subscription decisions, the company stamp, dimension tags and booking all read the
@@ -1361,6 +1368,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return false;
     }
 
+    /** Refuse a confirm of an order with no deal by a user outside the NoDealConfirmRoles setting (golive #390). */
+    private async passesNoDealConfirmGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const refusal = await CheckNoDealConfirm(this.reviewOrderInput(), {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
     /**
      * A save of an unconfirmed order that changes its bill-to, company, prices or service dates sends a
      * deal-created or already-reviewed order (back) to review, and an edit to a renewal's carried-forward
@@ -1813,6 +1833,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             return false;
         }
         if (!this.IsSaved) return super.Delete(options);
+        if (!this.passesCleanupRight('delete', EntityPermissionType.Delete)) return false;
 
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         try {
@@ -1851,7 +1872,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const lines = await this.loadRowsForDelete<mjBizAppsOrdersOrderLineEntity>('MJ_BizApps_Orders: Order Lines', byOrder);
         for (const line of ChildLinesFirst(lines)) {
             await this.deleteLineDependents(line);
-            if (!(await line.Delete())) {
+            if (!(await this.deleteAsCleanupUser(line))) {
                 throw new Error(`Failed to delete order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`);
             }
         }
@@ -1883,7 +1904,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const result = await rv.RunView<T>(
             { EntityName: entityName, ExtraFilter: filter, ResultType: 'entity_object', MaxRows: DEPENDENT_ROW_CAP },
-            this.ContextCurrentUser,
+            this.cleanupUser(),
         );
         if (!result?.Success) {
             throw new Error(`Failed to read ${entityName} for order ${this.OrderNumber ?? ''}: ${result?.ErrorMessage ?? 'unknown error'}`);
@@ -1913,6 +1934,52 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 );
             }
         }
+    }
+
+    /**
+     * The user a draft's cleanup reads and deletes as, once {@link passesCleanupRight} has passed.
+     *
+     * The rows a removed draft line or a deleted draft order leaves behind — the line itself, its
+     * price components, dimensions, concessions, adjustments and allocations — are written by
+     * Orders' own saves and never edited by hand, so the business roles hold Create and Update on
+     * them and not Delete. Deleting them as the signed-in user refused every line removal for those
+     * roles (golive #461). The person's right is checked once, at the order, and the deletes that
+     * follow are Orders' own. The change log names the system user as the deleter; the order's own
+     * save names the person.
+     */
+    private cleanupUser(): UserInfo {
+        const system = UserCache.Instance.GetSystemUser();
+        if (!system) throw new Error('Deleting a draft order line needs the MJ system user, and the user cache does not hold it.');
+        return system;
+    }
+
+    /** Delete `row` as {@link cleanupUser}, then give it back its own user. */
+    private async deleteAsCleanupUser(row: BaseEntity): Promise<boolean> {
+        const own = row.ContextCurrentUser;
+        row.ContextCurrentUser = this.cleanupUser();
+        try {
+            return await row.Delete();
+        } finally {
+            row.ContextCurrentUser = own;
+        }
+    }
+
+    /**
+     * Whether the signed-in user may make this change at all, asked before the cleanup runs as the
+     * system user. Removing a line needs Update on the order and on its lines; deleting a draft
+     * order needs Delete on the order. A save with no saved line removed asks nothing.
+     */
+    private passesCleanupRight(verb: string, onOrder: EntityPermissionType): boolean {
+        const removing = onOrder === EntityPermissionType.Update;
+        if (removing && !this.Lines.Removed.some((line) => line.IsSaved)) return true;
+        const user = this.ContextCurrentUser;
+        const lineRight = () =>
+            !!(this.ProviderToUse as unknown as IMetadataProvider).EntityByName(ORDER_LINE_ENTITY)?.GetUserPermisions(user!).CanUpdate;
+        const allowed = !!user && this.CheckPermissions(onOrder, false) && (!removing || lineRight());
+        if (allowed) return true;
+        const message = `You do not have permission to ${verb} order ${this.OrderNumber ?? ''}. Nothing was changed.`;
+        this.RegisterResultHistoryEntry(removing ? this.buildFailureResult(new Error(message)) : this.buildDeleteFailure(message));
+        return false;
     }
 
     /**
@@ -1955,7 +2022,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
              */
             const serverLine = line as unknown as { BypassExternalEditVeto?: boolean };
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
-            if (!(await line.Delete())) {
+            if (!(await this.deleteAsCleanupUser(line))) {
                 throw new Error(
                     `Failed to delete removed order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
                 );
@@ -1977,8 +2044,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * `EventOrderLine` is an IS-A child rather than a dependent row, and `BaseEntity.Delete()`
      * already walks that chain itself.
      *
-     * Deletes go through the entity so row-level security and the change log see them; the repo has
-     * no raw-DELETE precedent and this is not the place to start one.
+     * Deletes go through the entity so the change log sees them; the repo has no raw-DELETE
+     * precedent and this is not the place to start one. They run as the system user — see
+     * {@link cleanupUser}.
      */
     private async deleteLineDependents(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
@@ -1992,7 +2060,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     ResultType: 'entity_object',
                     MaxRows: DEPENDENT_ROW_CAP,
                 },
-                this.ContextCurrentUser,
+                this.cleanupUser(),
             );
             const rows = result?.Results ?? [];
             // The cap is a guard, not a page size: silently deleting the first thousand and leaving
@@ -2304,7 +2372,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ ID: string; Code: string }>(
             {
                 EntityName: CHARGE_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`,
+                ExtraFilter: `ID IN (${unique.map((id) => `'${EscapeSQLString(id)}'`).join(',')})`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser as UserInfo,
@@ -4472,7 +4540,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (types.length === 0) return null;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const quoted = types.map((t) => `'${EscapeSQLString(t)}'`).join(',');
         const date = asOf.toISOString().slice(0, 10);
 
         const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(
@@ -5212,12 +5280,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
-        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
-        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
-        // next caller to reach this method with no order date should not discover that. Keeping the
-        // stated day matters just as much: a backdated order's payment must carry the same date.
-        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
+        // The day the money arrived when finance gave one (bc-aidp-next-golive#448), else the order's
+        // own day, else today's business day (#209). `OrderDate` is defaulted at `NewRecord()` since
+        // #168, so the last fallback is very likely unreachable — but a `DATE` column fed `new Date()`
+        // is dated tomorrow for the whole American evening, and the next caller to reach this method
+        // with no order date should not discover that. Keeping the stated day matters just as much:
+        // a backdated order's payment must carry the same date, and so must its cash entry.
+        payment.PaymentDate = await CalendarDayOrToday(InitialPaymentDay(this.OrderDate, this.InitialPaymentReceivedDate), provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;

@@ -17,5 +17,18 @@
       "lastModified": "2026-09-02T03:26:35.400Z",
       "checksum": "d149ca316f8d1b07e8273d09f51621e0e9b4e95da8a12de09bd80120f366477c"
     }
+  },
+  {
+    "_comments": [
+      "Templates for notices sent to staff (in-app and email) rather than to customers."
+    ],
+    "fields": {
+      "Name": "Orders: Notifications",
+      "Description": "Emails sent to staff through MJ notifications, such as a payment that needs review. Edited here so the wording can change without a deploy.",
+      "UserID": "@lookup:MJ: Users.Name=System"
+    },
+    "primaryKey": {
+      "ID": "FF8645EE-3681-4AD2-B1E7-1F1761EE0361"
+    }
   }
 ]

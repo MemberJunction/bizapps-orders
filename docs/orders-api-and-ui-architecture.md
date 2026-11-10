@@ -75,6 +75,7 @@ metadata descriptions predate the code.
 | **Order lifecycle and fulfillment** | | | |
 | `Orders.AdvanceOrderState` | `orders:write` | Sync | Back-office entry of something already done (a counter sale, a shipment made before anyone opened the system, a migration): marks a Confirmed order's fulfillable lines, then sets its `FulfillmentStatus` to Fulfilled. The caller decides whether it may move with lines still Pending. Refuses an order that is not Confirmed; books nothing. |
 | `Orders.ConfirmReadiness` | `orders:read` | Sync | The concession problems that would make confirm refuse a saved, unbooked order, one sentence each. Runs the check confirm runs; the order form lists them under "Before this can be confirmed" and keeps Confirm off while any remain. Writes nothing. |
+| `Orders.ExplainProductGLAccounts` | `orders:read` | Sync | For one product, company and day: the GL account each role books to and every level of the walk (product, category and its parents, product type, company default) with the winner marked, or the refusal confirm would give. Runs `GLAccountResolver.Explain`, which shares `Resolve`'s walk; the product's Accounting tab shows it as Effective accounts. Writes nothing. |
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Marks lines Fulfilled and sets the order's `FulfillmentStatus` once nothing is left to ship, in one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
 | `Orders.GetPriorReturns` | `orders:read` | Sync | How much of each line has been returned and how much may still come back, from the same cap confirm enforces. |
@@ -257,7 +258,15 @@ over the generated ones. The Order Header form is the compose form and sets
 `ShowRelatedEntities: false` — leftover related grids do not belong under Lines. Products,
 Subscriptions, Subscription Terms, Price Lists and Promotions use the generated form plus panel
 contributions and `Layout: left-nav`; the Products form adds a save-time confirmation
-(`product-save-guard-form.component.ts`). The reversing-payment self-join on Payment Headers is
+(`product-save-guard-form.component.ts`). Its Pricing panel (`product-pricing-widget`) shows one
+channel's prices three ways — cards with their When, a revenue-band editor (edges in $M, one row per
+band; see HOW_THE_SYSTEM_WORKS §6), and MJ's data grid — and a "Simulate price" drawer that runs the
+resolver's own applicability checks against a sample customer, with a price list's rows at one priority
+above the Standard rows, as `PriceResolver.loadRules` prices a customer on that list. Every view lists
+prices in the order `ComparePriceRows` (orders-entities) gives, as does the product Overview. Prices are deactivated (Status
+Inactive or an expiration date), not deleted; price inputs are currency fields (`mjoCurrency`); and
+the conditions builder lists each source's `commonFields` from `PRICE_APPLICABILITY_SOURCES` unless
+"Show all fields" is on. The reversing-payment self-join on Payment Headers is
 `inclusion: None`, matching `Order Headers.ReversesOrderHeaderID`.
 
 `@RegisterClass` decorators only run if the module is in the bundle, so `public-api.ts` both imports

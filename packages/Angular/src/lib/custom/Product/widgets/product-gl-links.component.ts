@@ -148,9 +148,10 @@ export interface ProductGLLinkRow {
  * ── WHAT IS DELIBERATELY NOT HERE ──
  *
  * No fallback chain. A product with no direct link still books, through category and company defaults,
- * and `GlResolutionPreviewComponent` in accounting-ng already renders that chain. Showing a resolved
- * account here without saying it came from a category would read as "this product is linked" when it is
- * not, which is the same confusion #112 caused one screen over.
+ * and showing a resolved account here without saying it came from a category would read as "this
+ * product is linked" when it is not, which is the same confusion #112 caused one screen over. The chain
+ * is shown separately, under this panel, by `BizAppsProductEffectiveGLAccountsComponent`
+ * (golive#439), which asks the server's walk and labels each level.
  */
 @Component({
     standalone: false,
@@ -164,6 +165,8 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
     @Input() public FormContext?: FormContext;
 
     @Output() public Navigate = new EventEmitter<FormNavigationEvent>();
+    /** After a link is added, edited, retired or removed, so the Effective accounts block re-reads. */
+    @Output() public LinksChanged = new EventEmitter<void>();
 
     public Rows: ProductGLLinkRow[] = [];
     public Loading = true;
@@ -274,14 +277,14 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
      */
     public StatusLabel(row: ProductGLLinkRow): string {
         if (row.Active) {
-            return 'In force';
+            return 'Active';
         }
         if (row.Status !== 'Active') {
             // Disabled or Pending — the row's own status is the honest answer.
             return row.Status;
         }
         // Active, but not the winner. Which of the two remaining reasons applies is a date question.
-        return this.HasApplied(row) ? 'Superseded' : 'Not started';
+        return this.HasApplied(row) ? 'Superseded' : 'Scheduled';
     }
 
     /**
@@ -302,10 +305,9 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
      */
     public RemoveWarning(row: ProductGLLinkRow): string {
         return row.Active
-            ? 'Remove this link permanently. It is IN FORCE today, so orders booked today may already '
-                + 'have resolved through it. It cannot be retired instead, because a link cannot end on '
-                + 'the day it starts.'
-            : 'Remove this link permanently. It has not started yet, so nothing has booked through it.';
+            ? 'Delete this assignment. It is active today, so orders posted today may already have used it. '
+                + 'It cannot be ended instead, because an assignment cannot end on the day it starts.'
+            : 'Delete this assignment. It has not started, so nothing has posted through it.';
     }
 
     /** Opens accounting's Account Links screen, which is where a link is created or retired. */
@@ -560,6 +562,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             }
             this.Editing = null;
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -642,6 +645,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             }
             this.Draft = null;
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -731,6 +735,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             // The row this form was bound to has just changed underneath it; see closeEditFor.
             this.closeEditFor(row.ID);
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {
@@ -773,6 +778,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
             // The row this form was bound to has just changed underneath it; see closeEditFor.
             this.closeEditFor(row.ID);
             await this.Refresh(true);
+            this.LinksChanged.emit();
         } catch (err) {
             this.WriteError = err instanceof Error ? err.message : String(err);
         } finally {

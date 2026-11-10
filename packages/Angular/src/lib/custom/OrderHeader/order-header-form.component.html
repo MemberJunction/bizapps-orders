@@ -220,6 +220,18 @@
                 <div class="mjo-oh-fields">
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentTypeID" Type="textbox" [EditMode]="ComposeMode" [FormContext]="formContext" LinkType="Record" (Navigate)="OnFormNavigate($event)"></mj-form-field>
                     <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="InitialPaymentAmount" Type="number" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+                    <!-- bc-aidp-next-golive#448: the day the money arrived, when it is not the order's date. -->
+                    <label class="mjo-oh-ref">
+                        <span class="mjo-oh-ref__label">Received on</span>
+                        <input
+                            type="date"
+                            class="mj-input"
+                            [ngModel]="InitialPaymentReceivedDay"
+                            (ngModelChange)="SetInitialPaymentReceivedDay($event)"
+                            [disabled]="!ComposeMode"
+                            aria-label="Day the initial payment was received">
+                        <span class="mjo-oh-hint">{{ InitialPaymentReceivedHint }}</span>
+                    </label>
                     @if (PaymentRequiresReference) {
                         <label class="mjo-oh-ref">
                             <span class="mjo-oh-ref__label">Check / ACH reference</span>
@@ -236,6 +248,7 @@
                 </div>
                 @if (record.IsSaved && PaymentParams) {
                     <mj-explorer-entity-data-grid
+                        #paymentGrid
                         [Params]="PaymentParams"
                         [AllowLoad]="true"
                         [ShowToolbar]="true"
@@ -245,6 +258,7 @@
                         [MaxHeight]="RelatedGridHeight"
                         (Navigate)="OnFormNavigate($event)">
                     </mj-explorer-entity-data-grid>
+                    <mjo-order-payment-dates [OrderHeaderID]="record.ID" (Changed)="paymentGrid.Refresh()"></mjo-order-payment-dates>
                 } @else {
                     <div class="mjo-oh-hint">Intent only — the payment is created when the order is confirmed.</div>
                 }

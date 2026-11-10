@@ -90,6 +90,11 @@
  *   CS38      Orders.ConfirmReadiness lists each concession problem confirm refuses with, in its wording, writes
  *             nothing, and lists none once a concession covers the line
  *
+ * A price entered today does not apply to an order dated earlier (bc-aidp-next-golive#437):
+ *
+ *   CS39      a typed price on an order dated before the product's only price is in force confirms, measured as
+ *             a product with no price is
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -115,6 +120,7 @@ import type {
   mjBizAppsOrdersSalesRuleEntity,
   mjBizAppsOrdersSubscriptionTermEntity,
 } from "@mj-biz-apps/orders-entities";
+import { AsDateValue, Today } from "@mj-biz-apps/orders-entities";
 import {
   ACCT_SCHEMA,
   AcknowledgeAmendmentsWith,
@@ -128,6 +134,7 @@ import {
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
+  upsertViaEntity,
 } from "../fixture.js";
 import {
   ORDER_CONCESSION_ENTITY,
@@ -136,6 +143,7 @@ import {
   SALES_AUTHORITY_ENTITY,
   SALES_RULE_ENTITY,
   PERSON_ENTITY,
+  PRODUCT_PRICE_ENTITY,
   REFERRAL_PROGRAM_ENTITY,
   SUBSCRIPTION_TERM_ENTITY,
   TASK_DECISION_ENTITY,
@@ -1790,6 +1798,39 @@ export const ConcessionChecks: NamedCheck[] = [
         built.Order.Status = "Confirmed";
         Assert(await built.Order.Save(), `with the list empty, confirm should pass: ${built.Order.LatestResult?.CompleteMessage}`);
         AssertEqual((await confirmReadiness(ctx, built.Order.ID)).length, 0, "a booked order lists nothing");
+      }),
+  },
+  {
+    Id: "concessions.CS39",
+    Name: "CS39: a typed price on an order dated before the product's only price is in force confirms",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        const today = Today();
+        // Every price the product could resolve starts today, as one entered in the app does.
+        const prices = await TxQuery<{ ID: string }>(ctx,
+          `SELECT pp.ID FROM ${ORDERS_SCHEMA}.ProductPrice pp
+            WHERE pp.Status = 'Active'
+              AND (pp.ProductID = '${f.Products.WidgetA}'
+                   OR pp.ProductCategoryID = (SELECT ProductCategoryID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.WidgetA}'))`);
+        Assert(prices.length > 0, "WidgetA has no price to move");
+        for (const p of prices) {
+          await upsertViaEntity(ctx, PRODUCT_PRICE_ENTITY, p.ID, { EffectiveFrom: today, EffectiveTo: null });
+        }
+
+        const dayBefore = new Date(`${today}T00:00:00Z`);
+        dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          OrderDate: AsDateValue(dayBefore.toISOString().slice(0, 10)) ?? undefined,
+          Lines: [{ ProductID: f.Products.WidgetA, Quantity: 1, UnitPrice: 6000 }],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(await built.Order.Save(),
+          `a typed price with no price in force on the order date should confirm: ${built.Order.LatestResult?.CompleteMessage}`);
       }),
   },
 ];

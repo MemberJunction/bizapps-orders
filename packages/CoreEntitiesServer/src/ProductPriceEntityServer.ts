@@ -15,29 +15,40 @@
  *
  * WHAT COUNTS AS A COLLISION
  * Same product, same price list, same fee type, same priority, with OVERLAPPING quantity bands AND
- * overlapping absolute windows. Recurrence is not considered: a monthly and a weekday rule can
- * genuinely never coincide, and proving that here would mean reimplementing the applicability
- * engine against every possible date. The order-time check remains the backstop for the cases this
- * cannot see — this catches the common, obvious, avoidable ones.
+ * overlapping absolute windows, unless both rows are revenue bands with disjoint revenue ranges
+ * (`ParseRevenueBand`): "$2M-$5M rev" and "$5M-$10M rev" can never both apply, so a product's bands
+ * sit at ONE priority, which is also what lets this check catch two bands that do overlap (#1004).
+ * Any other When is not consulted: proving that two arbitrary filters are mutually exclusive would
+ * mean re-implementing the applicability engine against every possible order, so two rows that differ
+ * only by such a When need distinct priorities. Recurrence is not considered either: a monthly and a
+ * weekday rule can genuinely never coincide, and proving that here would mean evaluating every date.
+ * The order-time check remains the backstop for the cases this cannot see — this catches the
+ * common, obvious, avoidable ones.
  *
  * CONNECTS TO:
  *   PURE:  ./PricingBehavior.ts (PickPriceRule — the reader this protects)
+ *          @mj-biz-apps/orders-entities pricing/revenueBands.ts (the band contract)
  *   DOC:   plans/archive/pricing-schema.md
  */
 import { BaseEntity, ValidationErrorInfo, ValidationResult } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { LoadOrdersEngine, OrdersEngine, ProductPriceEntity } from '@mj-biz-apps/orders-entities';
+import {
+    LoadOrdersEngine,
+    OrdersEngine,
+    ParseRevenueBand,
+    ProductPriceEntity,
+    RevenueBandsOverlap,
+} from '@mj-biz-apps/orders-entities';
 
 const PRODUCT_PRICE_ENTITY = 'MJ_BizApps_Orders: Product Prices';
 
-interface SiblingRow {
-    ID: string;
-    Priority: number;
+/** What the collision check reads from a rule; `Applicability` is the When JSON. */
+export interface CollisionRule {
     MinQuantity: number | null;
     MaxQuantity: number | null;
     EffectiveFrom: Date;
     EffectiveTo: Date | null;
-    Description: string | null;
+    Applicability: string | null;
 }
 
 /** Do two [min,max] bands overlap? Null bounds are open. */
@@ -61,6 +72,20 @@ function windowsOverlap(aFrom: Date, aTo: Date | null, bFrom: Date, bTo: Date | 
     const s2 = new Date(bFrom).getTime();
     const e2 = bTo ? new Date(bTo).getTime() : Infinity;
     return s1 <= e2 && s2 <= e1;
+}
+
+/**
+ * Can two same-priority rules (same product or category, price list and fee type) both apply to one
+ * order line? True when their quantity bands and effective windows overlap, except for two revenue
+ * bands whose revenue ranges are disjoint. Exported for the unit test; the entity calls it.
+ */
+export function PriceRulesCanCollide(a: CollisionRule, b: CollisionRule): boolean {
+    if (!bandsOverlap(a.MinQuantity, a.MaxQuantity, b.MinQuantity, b.MaxQuantity)) return false;
+    if (!windowsOverlap(a.EffectiveFrom, a.EffectiveTo, b.EffectiveFrom, b.EffectiveTo)) return false;
+    const bandA = ParseRevenueBand(a.Applicability);
+    const bandB = ParseRevenueBand(b.Applicability);
+    if (bandA && bandB && !RevenueBandsOverlap(bandA, bandB)) return false;
+    return true;
 }
 
 @RegisterClass(BaseEntity, PRODUCT_PRICE_ENTITY)
@@ -92,22 +117,32 @@ export class ProductPriceEntityServer extends ProductPriceEntity {
             return (o.ProductCategoryID ?? '').toLowerCase() === catKey;
         });
 
-        const clash = siblings.find(
-            (o) =>
-                bandsOverlap(this.MinQuantity, this.MaxQuantity, o.MinQuantity, o.MaxQuantity) &&
-                windowsOverlap(this.EffectiveFrom, this.EffectiveTo, o.EffectiveFrom, o.EffectiveTo),
+        const clash = siblings.find((o) =>
+            PriceRulesCanCollide(this, {
+                MinQuantity: o.MinQuantity,
+                MaxQuantity: o.MaxQuantity,
+                EffectiveFrom: o.EffectiveFrom,
+                EffectiveTo: o.EffectiveTo,
+                Applicability: (o as { Applicability?: string | null }).Applicability ?? null,
+            }),
         );
 
         if (clash) {
+            const bothBands = ParseRevenueBand(this.Applicability) && ParseRevenueBand((clash as { Applicability?: string | null }).Applicability);
+            const other = (clash as { Name?: string | null }).Name?.trim() || clash.Description?.trim() || clash.ID;
             result.Success = false;
             result.Errors.push(
                 new ValidationErrorInfo(
                     'ProductPriceEntityServer.ValidateAsync',
-                    `This price rule collides with an existing one: both have priority ${this.Priority}, overlapping ` +
-                        `quantity bands and overlapping effective windows for the same product or category, price list and fee ` +
-                        `type. The other is ${clash.Description?.trim() || clash.ID}. Pricing resolves by highest ` +
-                        `priority and refuses to break a tie, so an order using either quantity would fail. Give one ` +
-                        `of them a different priority, narrow a quantity band, or separate the date windows.`,
+                    bothBands
+                        ? `This revenue band overlaps another band on the same product, price list and fee type at priority ` +
+                          `${this.Priority}: ${other}. An organization whose revenue falls in both would get no price, so ` +
+                          `move one band's edge until the two ranges meet without overlapping.`
+                        : `This price rule collides with an existing one: both have priority ${this.Priority}, overlapping ` +
+                          `quantity bands and overlapping effective windows for the same product or category, price list and fee ` +
+                          `type. The other is ${other}. Pricing resolves by highest ` +
+                          `priority and refuses to break a tie, so an order using either quantity would fail. Give one ` +
+                          `of them a different priority, narrow a quantity band, or separate the date windows.`,
                     null,
                 ),
             );

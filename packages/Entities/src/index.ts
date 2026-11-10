@@ -104,6 +104,7 @@ export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
 export * from './pricing/organizationRevenue';
+export * from './pricing/revenueBands';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
@@ -111,6 +112,8 @@ export * from './pricing/linePriceContext';
 export * from './accessOverride';
 // Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
 export * from './coverage-overlap';
+// A payment's date and correcting it (bc-aidp-next-golive#448) — the authorization and the initial payment's day.
+export * from './payment-date';
 export * from './pricing/linePricePick';
 
 /**

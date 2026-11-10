@@ -522,7 +522,8 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
             if (preview && out.Success) {
                 return { Tone: 'success' as const, Text: `Preview only, nothing was recorded. ${out.Message ?? ''}`.trim() };
             }
-            return { Tone: out.Success ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
+            const clean = out.Success && out.ResultCode !== 'ATTENTION';
+            return { Tone: clean ? ('success' as const) : ('warning' as const), Text: out.Message ?? `${out.Captured} payment(s) recorded.` };
         });
     }
 
