@@ -1,5 +1,113 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.47.0
+
+### Patch Changes
+
+- c0ea095: Revenue-band pricing can be set up and maintained from the product's Pricing panel, and two bands with
+  disjoint revenue ranges no longer collide (#1004).
+
+  - **Band editor.** The Pricing panel gains a "Revenue bands" view: one row per band of the bill-to
+    organization's annual revenue, with the edges in $M, the price, and the band's status. Edit an edge or
+    a price in place; add a band; start a whole ladder from a list of edges (ten bands from "Under $2M" to
+    "$250M+" proposed). The editor writes the band's `Applicability` and proposes its name, and reports
+    gaps and overlaps in the ladder. A banded product opens on this view. A proposed name carries the
+    price list's name on a list tab and a "(2)" suffix when the product already has a price of that name,
+    so the same ladder can exist on Standard and a list and a band can be re-added beside a deactivated
+    one (`UX_ProductPrice_Product_Name` is unique per product whatever the list or status). Emptying a
+    price field and clicking away keeps the old amount; it no longer saves $0.00.
+  - **Deactivate instead of delete.** Every price shows whether it is active, expires on a date, or has
+    expired; inactive prices are hidden until asked for. Deactivate sets the price inactive, so lines
+    already priced keep their price and new lines no longer get it; Activate undoes it. Status and
+    expiration date are editable on the card, and the card links to the full record.
+  - **Conditions.** The When builder is labelled "Conditions" and lists the handful of fields a price rule
+    tests (status, type, region, revenue) instead of every column of five entities; "Show all fields" shows
+    them all. A revenue band's conditions read as "Customer annual revenue $2M – $5M".
+  - **Currency fields.** Every price input shows and accepts money (`$12,500.00`), not a bare number
+    (`mjoCurrency`, exported from orders-ng). The parser reads a currency sign, thousands commas, one
+    decimal point, a minus sign or accounting parentheses, and refuses anything else (`12k`, `1.250,00`)
+    rather than guessing.
+  - **Simulate price** takes the sample customer's annual revenue, applies the resolver's own status, date
+    and quantity checks, reports a priority tie as the conflict it would be, and says why each price was
+    not applied; blank revenue shows what any price that tests revenue does when no figure is on file. On
+    a price-list tab it prices the way the resolver prices a customer on that list: the list's rows at one
+    priority higher, then the Standard rows, so a list that does not price the line shows the Standard
+    price it would fall back to.
+  - **Price lists.** The base tab is "Standard" (prices every customer can receive); a price list's tab
+    appears only when it prices this product, or in Edit. The grid shows the selected tab's rows, like the
+    other two views, and prices at one priority list lowest revenue band first.
+  - **One order everywhere.** The cards, the grid, the simulation and the product's Overview list prices
+    highest priority first, revenue bands lowest band first within a priority, then by name: one
+    comparator, `ComparePriceRows` in orders-entities. The Overview shows "Active prices" (name, who it
+    applies to, amount) from every price row of the product, not the first page of them, and counts the
+    inactive ones; its cards use plain labels (Sales summary, Entitlements, Event details).
+  - **Accounting tab.** Three cards with one look: Accounting setup (the product's own columns),
+    Accounts used when an order is confirmed (a Role / GL account / Assigned on table from the server's walk, with a
+    one-line warning naming only the roles confirm requires: Accounts Receivable and Sales, plus Deferred
+    Revenue for a deferred recognition type, re-read when the type or company changes on the form) and
+    Accounts assigned directly to this product (role, account, effective window, status, with Add
+    assignment, Edit, End and Delete as labelled forms rather than icon rows). Assignment statuses read
+    Active / Scheduled / Superseded.
+  - **Product form layout.** The header strip carries list price, type, category, availability, revenue
+    recognition and tax, with the selling company as a chip beside the status. A Details panel directly
+    under the header holds Company, Status, Sellable to new customers and the availability dates; it
+    replaces the Lifecycle panel and the empty generated Details section. The Overview's Active prices
+    table is full width with a right-aligned Amount column.
+  - **Server.** `ProductPriceEntityServer` reads both rows' Applicability through `ParseRevenueBand` and
+    lets two revenue bands with disjoint ranges share a priority; two bands that overlap are refused with a
+    message naming the other band. `pricing/revenueBands.ts` holds the band contract (parse, build, name,
+    overlap, ladder gaps) for both tiers.
+
+- Updated dependencies [c0ea095]
+  - @mj-biz-apps/orders-entities@5.47.0
+
+## 5.46.0
+
+### Patch Changes
+
+- 6426e7b: Removing a line from a draft order, or deleting a draft order, no longer needs Delete permission on order lines and the rows their saves write (price components, dimensions, concessions, adjustments, allocations). The signed-in user's right is checked once at the order (Update on the order and its lines to remove a line, Delete on the order to delete it), and the cleanup then reads and deletes as the system user. A user without that right is refused before anything is changed.
+- Updated dependencies [bde9dcc]
+  - @mj-biz-apps/orders-entities@5.46.0
+
+## 5.45.0
+
+### Minor Changes
+
+- 90b45a9: Add the Orders setting `NoDealConfirmRoles` (golive #390): comma-separated role names whose holders may confirm an order that no deal created. Anyone else's confirm of such an order is refused with a message naming the roles. Checkout, provider-payment, reversal and renewal-only orders are exempt. Empty (the default) switches the check off, and so does a host with no order-to-deal link registered, which logs one warning.
+
+### Patch Changes
+
+- Updated dependencies [38ecc01]
+  - @mj-biz-apps/orders-entities@5.45.0
+
+## 5.44.0
+
+### Minor Changes
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- 7b693a7: `Orders.PreviewPrice` takes `IgnoreSellability`, which prices a product whatever its Status and availability window. The product header's Activate check uses it, so a priced Draft product no longer reads as "could not be checked". Entering edit mode closes the readiness warning, and Activate refuses to save once the form is in edit mode.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+- de11edd: Progress attestation follows finance's books-closed-through date instead of posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` reads the line's company's `AccountingCompanyProfile.BooksClosedThroughDate` once per call and refuses a measurement date on or before it, on preview and post and on a supersede, with the message "This month has already been closed by finance. Please contact them to proceed." If that date cannot be read, the attestation is refused; a line with no company, no profile or no date has nothing closed. A supersede's reversal is dated on the replaced observation's own date, or on the first open day when finance has closed that month, and the message says why it moved. The replacement's catch-up always posts on the date entered, so `CatchUpDate` equals `MeasurementDate` whenever there is a catch-up. The supersede no longer reads journal entry batches. The attestation screen's supersede text matches. It needs accounting 0.24.0, the first release with `BooksClosedThroughDate` and the shared closed-books rule, so the accounting peer ranges and the `mj-app.json` dependency now start at 0.24.0.
+
+### Patch Changes
+
+- 4480151: The payment poll now re-checks open Unmatched Bill.com payments from their stored record on every pass, and captures one once every invoice it settles has been loaded, however long ago Bill.com last changed it.
+
+  A re-checked payment whose capture is refused gets the same Payment Needs Review notice as one the fetch refuses.
+
+- 5c9cdd5: Journal entries Orders writes for a payment allocation, an order booking or a revenue recognition now name the customer (billing organization, else billing person) in their description, so accounting's batch views show whose payment or order each entry is for.
+- Updated dependencies [3f9d524]
+- Updated dependencies [a4dba56]
+- Updated dependencies [a48a6e2]
+- Updated dependencies [a17a7bf]
+- Updated dependencies [fbf3ad4]
+- Updated dependencies [d2a22a0]
+- Updated dependencies [7b693a7]
+- Updated dependencies [cc62ad9]
+- Updated dependencies [de11edd]
+  - @mj-biz-apps/orders-entities@5.44.0
+
 ## 5.43.0
 
 ### Patch Changes
@@ -1211,8 +1319,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                      "FK_EntityFieldValue_EntityField"
+                                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                              "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

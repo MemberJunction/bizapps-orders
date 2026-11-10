@@ -1,22 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { BaseEntity } from '@memberjunction/core';
 import { MJGlobal } from '@memberjunction/global';
-import {
-    ORGANIZATION_REVENUE_SOURCE,
-    OrdersEngine,
-    ProductPriceEntity,
-    mjBizAppsOrdersProductPriceEntity,
-} from '@mj-biz-apps/orders-entities';
-import { ProductPriceEntityServer } from '../ProductPriceEntityServer';
+import { ProductPriceEntity, mjBizAppsOrdersProductPriceEntity } from '@mj-biz-apps/orders-entities';
+import { PriceRulesCanCollide, ProductPriceEntityServer, type CollisionRule } from '../ProductPriceEntityServer';
+import { BuildRevenueBandApplicability } from '@mj-biz-apps/orders-entities';
 
 const ENTITY_KEY = 'MJ_BizApps_Orders: Product Prices';
-
-function bandWhen(min: number, max: number | null, maxOp: 'lt' | 'lte' = 'lt'): string {
-    const field = `${ORGANIZATION_REVENUE_SOURCE}.AnnualRevenue`;
-    const filters: Array<Record<string, unknown>> = [{ field, operator: 'gte', value: min }];
-    if (max != null) filters.push({ field, operator: maxOp, value: max });
-    return JSON.stringify({ logic: 'and', filters });
-}
 
 /**
  * Registered on the server, `ProductPriceEntityServer` replaces `ProductPriceEntity` for every
@@ -65,82 +54,75 @@ describe('ProductPriceEntityServer', () => {
             warnSpy.mockRestore();
         }
     });
+});
 
-    describe('revenue-band priority collision (#1004)', () => {
-        const makeCandidate = (applicability: string | null) => {
-            const candidate = Object.create(ProductPriceEntityServer.prototype) as ProductPriceEntityServer;
-            Object.defineProperties(candidate, {
-                ID: { value: 'price-new', configurable: true },
-                IsSaved: { value: false, configurable: true },
-                Status: { value: 'Active', configurable: true },
-                ProductID: { value: 'prod-1', configurable: true },
-                ProductCategoryID: { value: null, configurable: true },
-                PriceListID: { value: null, configurable: true },
-                FeeType: { value: 'Standard', configurable: true },
-                Priority: { value: 0, configurable: true },
-                MinQuantity: { value: null, configurable: true },
-                MaxQuantity: { value: null, configurable: true },
-                EffectiveFrom: { value: new Date('2026-01-01T00:00:00Z'), configurable: true },
-                EffectiveTo: { value: null, configurable: true },
-                Applicability: { value: applicability, configurable: true },
-                ProviderToUse: { value: {}, configurable: true },
-                ContextCurrentUser: { value: {}, configurable: true },
-            });
-            vi.spyOn(ProductPriceEntity.prototype, 'ValidateAsync').mockResolvedValue({
-                Success: true,
-                Errors: [],
-            } as never);
-            vi.spyOn(OrdersEngine.Instance, 'Config').mockResolvedValue(undefined);
-            vi.spyOn(OrdersEngine.Instance, 'Loaded', 'get').mockReturnValue(true);
-            return candidate;
-        };
+/**
+ * The collision test itself (#1004). Siblings are already matched on product/category, price list,
+ * fee type and priority; this decides whether two such rules can both apply to one order line.
+ */
+describe('PriceRulesCanCollide', () => {
+    const M = 1_000_000;
+    const rule = (overrides: Partial<CollisionRule> = {}): CollisionRule => ({
+        MinQuantity: null,
+        MaxQuantity: null,
+        EffectiveFrom: new Date('2026-01-01T00:00:00Z'),
+        EffectiveTo: null,
+        Applicability: null,
+        ...overrides,
+    });
+    const band = (min: number | null, max: number | null) => BuildRevenueBandApplicability({ Min: min, Max: max });
 
-        it('allows a second revenue-band row when the revenue bands are disjoint (half-open touching edge)', async () => {
-            vi.spyOn(OrdersEngine.Instance, 'ProductPrices', 'get').mockReturnValue([
-                {
-                    ID: 'price-existing',
-                    Status: 'Active',
-                    ProductID: 'prod-1',
-                    ProductCategoryID: null,
-                    PriceListID: null,
-                    FeeType: 'Standard',
-                    Priority: 0,
-                    MinQuantity: null,
-                    MaxQuantity: null,
-                    EffectiveFrom: new Date('2026-01-01T00:00:00Z'),
-                    EffectiveTo: null,
-                    Description: 'Under $1M rev',
-                    Applicability: bandWhen(0, 1_000_000, 'lt'),
-                } as never,
-            ]);
-            const candidate = makeCandidate(bandWhen(1_000_000, 2_000_000, 'lt'));
-            const result = await candidate.ValidateAsync();
-            expect(result.Success).toBe(true);
-            expect(result.Errors).toHaveLength(0);
+    it('two plain rules with open quantity and open dates collide', () => {
+        expect(PriceRulesCanCollide(rule(), rule())).toBe(true);
+    });
+
+    it('disjoint quantity bands or separate date windows do not collide', () => {
+        expect(PriceRulesCanCollide(rule({ MinQuantity: 1, MaxQuantity: 9 }), rule({ MinQuantity: 10, MaxQuantity: null }))).toBe(false);
+        expect(
+            PriceRulesCanCollide(
+                rule({ EffectiveFrom: new Date('2026-01-01'), EffectiveTo: new Date('2026-06-30') }),
+                rule({ EffectiveFrom: new Date('2026-07-01'), EffectiveTo: null }),
+            ),
+        ).toBe(false);
+    });
+
+    it('two revenue bands with disjoint ranges do not collide, even adjacent ones', () => {
+        expect(PriceRulesCanCollide(rule({ Applicability: band(0, 2 * M) }), rule({ Applicability: band(2 * M, 5 * M) }))).toBe(false);
+        expect(PriceRulesCanCollide(rule({ Applicability: band(250 * M, null) }), rule({ Applicability: band(null, 2 * M) }))).toBe(false);
+    });
+
+    it('two revenue bands whose ranges overlap collide', () => {
+        expect(PriceRulesCanCollide(rule({ Applicability: band(0, 5 * M) }), rule({ Applicability: band(2 * M, 10 * M) }))).toBe(true);
+        expect(PriceRulesCanCollide(rule({ Applicability: band(0, null) }), rule({ Applicability: band(50 * M, null) }))).toBe(true);
+    });
+
+    it('a revenue band and a rule with no When collide: the plain rule applies to every organization', () => {
+        expect(PriceRulesCanCollide(rule({ Applicability: band(0, 2 * M) }), rule())).toBe(true);
+    });
+
+    it('a When that is not a pure band is not consulted, so the rules collide', () => {
+        const mixed = JSON.stringify({
+            logic: 'and',
+            filters: [
+                { field: 'BillToOrganizationRevenue.AnnualRevenue', operator: 'gte', value: 0 },
+                { field: 'BillToOrganization.Status', operator: 'eq', value: 'Active' },
+            ],
         });
+        expect(PriceRulesCanCollide(rule({ Applicability: mixed }), rule({ Applicability: band(5 * M, null) }))).toBe(true);
+        expect(
+            PriceRulesCanCollide(
+                rule({ Applicability: JSON.stringify({ field: 'BillToOrganization.Status', operator: 'eq', value: 'Active' }) }),
+                rule({ Applicability: JSON.stringify({ field: 'BillToOrganization.Status', operator: 'eq', value: 'Prospect' }) }),
+            ),
+        ).toBe(true);
+    });
 
-        it('refuses a second revenue-band row when the revenue bands overlap', async () => {
-            vi.spyOn(OrdersEngine.Instance, 'ProductPrices', 'get').mockReturnValue([
-                {
-                    ID: 'price-existing',
-                    Status: 'Active',
-                    ProductID: 'prod-1',
-                    ProductCategoryID: null,
-                    PriceListID: null,
-                    FeeType: 'Standard',
-                    Priority: 0,
-                    MinQuantity: null,
-                    MaxQuantity: null,
-                    EffectiveFrom: new Date('2026-01-01T00:00:00Z'),
-                    EffectiveTo: null,
-                    Description: 'Under $2M rev',
-                    Applicability: bandWhen(0, 2_000_000, 'lt'),
-                } as never,
-            ]);
-            const candidate = makeCandidate(bandWhen(1_000_000, 5_000_000, 'lt'));
-            const result = await candidate.ValidateAsync();
-            expect(result.Success).toBe(false);
-            expect(result.Errors[0]?.Message).toMatch(/collides with an existing one/);
-        });
+    it('disjoint revenue bands still do not collide when quantity bands and dates overlap', () => {
+        expect(
+            PriceRulesCanCollide(
+                rule({ MinQuantity: 1, MaxQuantity: 100, Applicability: band(0, 2 * M) }),
+                rule({ MinQuantity: 50, MaxQuantity: null, Applicability: band(2 * M, null) }),
+            ),
+        ).toBe(false);
     });
 });

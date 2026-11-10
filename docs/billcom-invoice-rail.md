@@ -123,7 +123,9 @@ needs `orders:read`, the others `orders:write`.
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
-`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Capture
+`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Each pass
+also rebuilds every open `Unmatched` payment from its stored BILL record, and captures one whose invoices
+have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
