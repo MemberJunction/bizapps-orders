@@ -8,8 +8,18 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { LoadProductListPriceLabel } from '../panels/catalog-list-price';
 import { ProductLookupNamesTracker, REV_REC_FROM_TYPE_LABEL, type ProductLookupNames } from '../panels/product-lookup-names';
-import { ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
+import { FormatShortDate, ProductAvatarIcon, ProductStatusChipClass } from './document-form.helpers';
 import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } from './product-readiness';
+
+/** The product's selling window as one phrase. Exported for the unit test. */
+export function AvailabilityText(from: Date | string | null | undefined, to: Date | string | null | undefined): string {
+    const start = FormatShortDate(from);
+    const end = FormatShortDate(to);
+    if (start && end) return `${start} – ${end}`;
+    if (start) return `From ${start}`;
+    if (end) return `Until ${end}`;
+    return 'Always';
+}
 
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Products:header',
@@ -18,17 +28,18 @@ import { ACTIVATION_GL_ROLES, EvaluateProductReadiness, type ProductReadiness } 
         slot: 'before-fields',
         sortKey: 100,
         contributionKey: 'header',
-        // The header holds every generated-section claim on this form, including the ones the
-        // Accounting, Lifecycle and Subscriptions panels stand in for. MJ 6.2 files a panel that
-        // replaces a field section inside the Details rail item, whatever its slot or inclusion,
-        // so a panel holding its own claim loses its rail item. The header is not a rail item,
-        // so claiming here hides the duplicate fields without moving anything into Details.
+        // The header claims the generated sections the Accounting and Subscriptions panels draw.
+        // MJ 6.2 files a panel that replaces a field section inside the Details rail item,
+        // whatever its slot or inclusion, so a panel holding its own claim loses its rail item.
+        // The header is not a rail item, so claiming here hides the duplicate fields and moves
+        // nothing into Details. (`catalogLifecycle` is claimed by the Details panel, which
+        // belongs in Details.)
         //   productIdentification: drawn by this header.
-        //   financialAndAccounting: Rev-Rec / IsTaxable / TaxCategory / CompanyID are in the
-        //     Accounting panel; StandaloneSellingPrice is deliberately left off generated forms.
-        //   catalogLifecycle: in the Lifecycle panel; SuccessorProductID is in Fulfillment.
-        //   subscriptionAndEntitlements: all five fields are in Subscriptions or Fulfillment.
-        replacesSectionKeys: ['productIdentification', 'financialAndAccounting', 'catalogLifecycle', 'subscriptionAndEntitlements'],
+        //   financialAndAccounting: Rev-Rec / IsTaxable / TaxCategory are in the Accounting panel,
+        //     CompanyID in the Details panel; StandaloneSellingPrice is deliberately left off
+        //     generated forms.
+        //   subscriptionAndEntitlements: every field is in the Subscriptions or Fulfillment panel.
+        replacesSectionKeys: ['productIdentification', 'financialAndAccounting', 'subscriptionAndEntitlements'],
     },
 })
 @Component({
@@ -58,6 +69,15 @@ export class ProductHeaderPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
 
     public get TypeName(): string {
         return this.Lookups.Type;
+    }
+
+    public get Category(): string {
+        return this.Lookups.Category;
+    }
+
+    /** "Jan 1, 2026 – Dec 31, 2026", "From Jan 1, 2026", "Until Dec 31, 2026" or "Always". */
+    public get Availability(): string {
+        return AvailabilityText(this.Record.AvailableFrom, this.Record.AvailableTo);
     }
 
     public get AvatarIcon(): string {
