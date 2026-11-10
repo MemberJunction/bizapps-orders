@@ -262,7 +262,15 @@ over the generated ones. The Order Header form is the compose form and sets
 `ShowRelatedEntities: false` — leftover related grids do not belong under Lines. Products,
 Subscriptions, Subscription Terms, Price Lists and Promotions use the generated form plus panel
 contributions and `Layout: left-nav`; the Products form adds a save-time confirmation
-(`product-save-guard-form.component.ts`). The reversing-payment self-join on Payment Headers is
+(`product-save-guard-form.component.ts`). Its Pricing panel (`product-pricing-widget`) shows one
+channel's prices three ways — cards with their When, a revenue-band editor (edges in $M, one row per
+band; see HOW_THE_SYSTEM_WORKS §6), and MJ's data grid — and a "Simulate price" drawer that runs the
+resolver's own applicability checks against a sample customer, with a price list's rows at one priority
+above the Standard rows, as `PriceResolver.loadRules` prices a customer on that list. Every view lists
+prices in the order `ComparePriceRows` (orders-entities) gives, as does the product Overview. Prices are deactivated (Status
+Inactive or an expiration date), not deleted; price inputs are currency fields (`mjoCurrency`); and
+the conditions builder lists each source's `commonFields` from `PRICE_APPLICABILITY_SOURCES` unless
+"Show all fields" is on. The reversing-payment self-join on Payment Headers is
 `inclusion: None`, matching `Order Headers.ReversesOrderHeaderID`.
 
 `@RegisterClass` decorators only run if the module is in the bundle, so `public-api.ts` both imports

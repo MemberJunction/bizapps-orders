@@ -50,6 +50,7 @@ export {
     EVENT_PRODUCT_EXTENSION_ENTITY,
 } from './lib/custom/Product/product-save-guard-form.component';
 export { BizAppsProductPricingWidgetComponent } from './lib/custom/Product/widgets/product-pricing-widget.component';
+export { MJOCurrencyInputDirective, ParseCurrencyInput } from './lib/custom/currency-input.directive';
 export { BizAppsProductPromotionsWidgetComponent } from './lib/custom/Product/widgets/product-promotions-widget.component';
 export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/widgets/product-accounting-widget.component';
 export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
