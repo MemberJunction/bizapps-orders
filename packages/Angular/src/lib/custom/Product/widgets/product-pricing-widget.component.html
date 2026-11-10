@@ -15,28 +15,47 @@
         <div class="mjo-card-header">
             <div class="mjo-card-title">
                 <i class="fa-solid fa-tags"></i>
-                <span>Prices</span>
+                <span>Pricing</span>
             </div>
             <div class="mjo-card-header-actions">
-                <button type="button" class="mjo-btn-subtle" (click)="OpenQuote()">
-                    <i class="fa-solid fa-flask"></i>
-                    <span>Test a quote</span>
+                <button type="button" class="mjo-btn-subtle" (click)="OpenQuote()" title="See which price a sample customer receives">
+                    <i class="fa-solid fa-calculator"></i>
+                    <span>Simulate price</span>
                 </button>
-                <button type="button" class="mjo-btn-subtle" (click)="ToggleAdvancedView()">
-                    <i [class]="IsAdvancedGridView ? 'fa-solid fa-tags' : 'fa-solid fa-table-cells'"></i>
-                    <span>{{ IsAdvancedGridView ? 'Prices' : 'Advanced grid' }}</span>
-                </button>
+                @if (RetiredCount > 0) {
+                    <button type="button" class="mjo-btn-subtle" (click)="ToggleRetired()" [title]="ShowRetired ? 'Hide inactive and expired prices' : 'Show inactive and expired prices'">
+                        <i [class]="ShowRetired ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
+                        <span>{{ ShowRetired ? 'Hide inactive' : 'Show inactive (' + RetiredCount + ')' }}</span>
+                    </button>
+                }
+                <div class="mjo-view-switch" role="tablist" aria-label="Pricing view">
+                    <button type="button" role="tab" [class.active]="ViewMode === 'cards'" [attr.aria-selected]="ViewMode === 'cards'" (click)="SetView('cards')">
+                        <i class="fa-solid fa-tags"></i><span>Prices</span>
+                    </button>
+                    @if (BandRows.length > 0 || EditMode) {
+                        <button type="button" role="tab" [class.active]="ViewMode === 'bands'" [attr.aria-selected]="ViewMode === 'bands'" (click)="SetView('bands')">
+                            <i class="fa-solid fa-layer-group"></i><span>Revenue bands</span>
+                        </button>
+                    }
+                    <button type="button" role="tab" [class.active]="ViewMode === 'grid'" [attr.aria-selected]="ViewMode === 'grid'" (click)="SetView('grid')">
+                        <i class="fa-solid fa-table-cells"></i><span>Grid</span>
+                    </button>
+                </div>
             </div>
         </div>
 
         @if (ShowChannelBar) {
-            <div class="mjo-channel-bar">
+            <div class="mjo-channel-bar" role="tablist" aria-label="Price list">
+                <span class="mjo-channel-label">Price list</span>
                 <div class="mjo-channel-list">
-                    @for (ch of Channels; track ch.ID) {
+                    @for (ch of VisibleChannels; track ch.ID) {
                         <button
                             type="button"
                             class="mjo-channel-tab"
                             [class.active]="SelectedChannelID === ch.ID"
+                            role="tab"
+                            [attr.aria-selected]="SelectedChannelID === ch.ID"
+                            [title]="ch.ID == null ? 'Prices every customer can receive' : (ch.DiscountDescription || 'Prices for customers assigned to this price list')"
                             (click)="SelectChannel(ch.ID)">
                             <i [class]="ch.Icon"></i>
                             <span>{{ ch.Name }}</span>
@@ -47,7 +66,7 @@
             </div>
         }
 
-        @if (IsAdvancedGridView) {
+        @if (ViewMode === 'grid') {
             @if (ProductPricesViewParams) {
                 <div class="mjo-grid-wrap">
                     <mj-explorer-entity-data-grid
@@ -62,6 +81,176 @@
                     </mj-explorer-entity-data-grid>
                 </div>
             }
+        } @else if (ViewMode === 'bands') {
+            <div class="mjo-bands">
+                @if (IsLoading) {
+                    <div class="mjo-loading-state">
+                        <mj-loading text="Loading prices…" size="small"></mj-loading>
+                    </div>
+                } @else {
+                    <p class="mjo-bands-lede">
+                        Price by the customer's annual revenue. Each band includes its lower limit and excludes its upper
+                        limit. Revenue comes from the organization's latest tax return; if none is on file, the band is
+                        selected on the order line.
+                    </p>
+                    @if (BandRows.length === 0) {
+                        <mj-empty-state
+                            Size="compact"
+                            Icon="fa-solid fa-layer-group"
+                            Title="No revenue bands"
+                            [Message]="EditMode ? 'Create a band ladder below, or add bands one at a time.' : 'Edit the product to add revenue bands.'" />
+                    } @else {
+                        <div class="mjo-band-table-wrap">
+                            <table class="mjo-band-table">
+                                <thead>
+                                    <tr>
+                                        <th>Band</th>
+                                        <th class="num">From ($M)</th>
+                                        <th class="num">To ($M)</th>
+                                        <th class="num">Price</th>
+                                        <th>Status</th>
+                                        @if (EditMode) { <th></th> }
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @for (row of BandRows; track row.ID) {
+                                        <tr [class.retired]="row.Retired">
+                                            <td class="mjo-band-name">
+                                                @if (EditMode) {
+                                                    <input class="mjo-input-text" [(ngModel)]="row.Record.Name" (blur)="SaveBandName(row)" [disabled]="IsSaving" aria-label="Band name">
+                                                } @else {
+                                                    <span class="mjo-band-title">{{ row.Record.Name }}</span>
+                                                }
+                                                <span class="mjo-band-range">{{ row.RangeText }}</span>
+                                            </td>
+                                            <td class="num">
+                                                @if (EditMode) {
+                                                    <input type="number" class="mjo-input-num mjo-input-num--wide" [(ngModel)]="row.MinMillions" min="0" step="0.5" placeholder="0" (blur)="SaveBandEdges(row)" [disabled]="IsSaving" aria-label="Revenue from, in millions">
+                                                } @else {
+                                                    {{ row.MinMillions ?? 0 }}
+                                                }
+                                            </td>
+                                            <td class="num">
+                                                @if (EditMode) {
+                                                    <input type="number" class="mjo-input-num mjo-input-num--wide" [(ngModel)]="row.MaxMillions" min="0" step="0.5" placeholder="No limit" (blur)="SaveBandEdges(row)" [disabled]="IsSaving" aria-label="Revenue to, in millions">
+                                                } @else {
+                                                    {{ row.MaxMillions == null ? 'No limit' : row.MaxMillions }}
+                                                }
+                                            </td>
+                                            <td class="num">
+                                                @if (EditMode) {
+                                                    <input type="text" mjoCurrency class="mjo-input-price" [(ngModel)]="row.Record.Amount" (blur)="SaveBandAmount(row)" [disabled]="IsSaving" aria-label="Price">
+                                                } @else {
+                                                    <span class="mjo-band-amount">{{ FormatCurrency(row.Amount) }}</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="mjo-offer-status" [class.retired]="row.Retired">{{ row.StatusText || 'Active' }}</span>
+                                            </td>
+                                            @if (EditMode) {
+                                                <td class="mjo-band-actions">
+                                                    @if (row.Retired) {
+                                                        <button type="button" class="mjo-btn-subtle" (click)="RestorePrice(row.Record)" [disabled]="IsSaving" title="Make this band available to new order lines">Activate</button>
+                                                    } @else {
+                                                        <button type="button" class="mjo-btn-subtle" (click)="RetirePrice(row.Record)" [disabled]="IsSaving" title="Stop offering this band on new order lines. Existing lines keep their price.">Deactivate</button>
+                                                    }
+                                                    <button type="button" class="mjo-btn-subtle mjo-btn-icon" (click)="OpenPriceRecord(row.Record, $event)" title="Open price record">
+                                                        <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                                    </button>
+                                                </td>
+                                            }
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (LadderIssues.length) {
+                            <div class="mjo-ladder-issues">
+                                <i class="fa-solid fa-triangle-exclamation"></i>
+                                <span>Revenue ranges with no price, or more than one:</span>
+                                @for (issue of LadderIssues; track issue) {
+                                    <span class="mjo-ladder-issue">{{ issue }}</span>
+                                }
+                            </div>
+                        } @else {
+                            <div class="mjo-ladder-ok">
+                                <i class="fa-solid fa-circle-check"></i>
+                                <span>All revenue levels are covered. No gaps or overlaps.</span>
+                            </div>
+                        }
+                    }
+
+                    @if (EditMode) {
+                        @if (BandRows.length === 0) {
+                            <div class="mjo-band-setup">
+                                <div class="mjo-when-title">Create band ladder</div>
+                                <div class="mjo-quick-add-inputs">
+                                    <label class="mjo-field-group mjo-field-group--grow">
+                                        <span class="mjo-sub-label">Breakpoints ($M)</span>
+                                        <input class="mjo-input-text mjo-input-text--wide" [(ngModel)]="BandSetupEdgesText" [disabled]="IsSaving" placeholder="0, 2, 5, 10, 25, 50, 75, 100, 150, 250">
+                                    </label>
+                                    <label class="mjo-field-group">
+                                        <span class="mjo-sub-label">Default price</span>
+                                        <input type="text" mjoCurrency class="mjo-input-price" [(ngModel)]="BandSetupAmount" [disabled]="IsSaving">
+                                    </label>
+                                    <label class="mjo-field-group">
+                                        <span class="mjo-sub-label">Effective date</span>
+                                        <input type="date" class="mjo-input-text" [(ngModel)]="NewPriceEffectiveFrom" [disabled]="IsSaving">
+                                    </label>
+                                    <button type="button" class="mjo-btn-add" [disabled]="IsSaving" (click)="CreateBandLadder()">
+                                        @if (IsSaving) {
+                                            <mj-loading class="mjo-btn-add__loading" [showText]="false" size="small" logoColor="currentColor"></mj-loading>
+                                            <span>Saving…</span>
+                                        } @else {
+                                            <i class="fa-solid fa-plus"></i>
+                                            <span>Create bands</span>
+                                        }
+                                    </button>
+                                </div>
+                                <span class="mjo-quick-add-hint">{{ BandSetupPreview }} All bands start at the default price. Adjust each price in the table.</span>
+                            </div>
+                        } @else {
+                            <div class="mjo-quick-add-bar">
+                                <div class="mjo-quick-add-inputs">
+                                    <span class="mjo-quick-add-label">
+                                        <i class="fa-solid fa-plus-circle"></i> Add band
+                                    </span>
+                                    <label class="mjo-field-group">
+                                        <span class="mjo-sub-label">From ($M)</span>
+                                        <input type="number" class="mjo-input-num mjo-input-num--wide" [(ngModel)]="NewBandMinMillions" min="0" step="0.5" placeholder="0" [disabled]="IsSaving">
+                                    </label>
+                                    <label class="mjo-field-group">
+                                        <span class="mjo-sub-label">To ($M)</span>
+                                        <input type="number" class="mjo-input-num mjo-input-num--wide" [(ngModel)]="NewBandMaxMillions" min="0" step="0.5" placeholder="No limit" [disabled]="IsSaving">
+                                    </label>
+                                    <label class="mjo-field-group">
+                                        <span class="mjo-sub-label">Price</span>
+                                        <input type="text" mjoCurrency class="mjo-input-price" [(ngModel)]="NewBandAmount" [disabled]="IsSaving">
+                                    </label>
+                                    <label class="mjo-field-group">
+                                        <span class="mjo-sub-label">Effective date</span>
+                                        <input type="date" class="mjo-input-text" [(ngModel)]="NewPriceEffectiveFrom" [disabled]="IsSaving">
+                                    </label>
+                                    <button type="button" class="mjo-btn-add" [disabled]="IsSaving" (click)="AddBand()">
+                                        @if (IsSaving) {
+                                            <mj-loading class="mjo-btn-add__loading" [showText]="false" size="small" logoColor="currentColor"></mj-loading>
+                                            <span>Saving…</span>
+                                        } @else {
+                                            <i class="fa-solid fa-plus"></i>
+                                            <span>Add band</span>
+                                        }
+                                    </button>
+                                </div>
+                                @if (TopBandOpen) {
+                                    <span class="mjo-quick-add-hint">The top band has no upper limit. Set one before adding a band above it.</span>
+                                } @else {
+                                    <span class="mjo-quick-add-hint">Leave To blank for the top band. Applies to orders dated on or after the effective date.</span>
+                                }
+                            </div>
+                        }
+                    }
+                }
+            </div>
         } @else {
             @if (IsLoading) {
                 <div class="mjo-loading-state">
@@ -71,8 +260,8 @@
                 <mj-empty-state
                     Size="compact"
                     Icon="fa-solid fa-tags"
-                    Title="No prices on this channel"
-                    [Message]="EditMode ? 'Add a price. When is optional — only if this rate is not for everyone.' : 'Switch to Edit to add prices.'" />
+                    Title="No prices"
+                    [Message]="EditMode ? 'Add a price below. Add conditions only when a price applies to specific customers.' : 'Edit the product to add prices.'" />
             } @else {
                 <div
                     class="mjo-price-list"
@@ -86,10 +275,11 @@
                             [cdkDragDisabled]="!EditMode || row.Inherited"
                             [class.open]="ExpandedPriceID === row.ID && PriceCanExpand(row)"
                             [class.selected]="SelectedPriceID === row.ID"
-                            [class.inherited]="row.Inherited">
+                            [class.inherited]="row.Inherited"
+                            [class.retired]="row.Retired">
                             <button type="button" class="mjo-offer-h" (click)="TogglePrice(row)">
                                 @if (EditMode && !row.Inherited) {
-                                    <span class="mjo-offer-grip" cdkDragHandle title="Drag to change rank">
+                                    <span class="mjo-offer-grip" cdkDragHandle title="Drag to change priority">
                                         <i class="fa-solid fa-grip-vertical"></i>
                                     </span>
                                 }
@@ -100,13 +290,18 @@
                                         <span class="mjo-offer-when">{{ row.WhenText }}</span>
                                     }
                                 </span>
-                                <span class="mjo-offer-from" [class.inherited]="row.Inherited">{{ row.SourceLabel }}</span>
+                                @if (row.StatusText) {
+                                    <span class="mjo-offer-status" [class.retired]="row.Retired">{{ row.StatusText }}</span>
+                                }
+                                @if (row.SourceLabel) {
+                                    <span class="mjo-offer-from inherited">{{ row.SourceLabel }}</span>
+                                }
                             </button>
                             @if (ExpandedPriceID === row.ID && PriceCanExpand(row)) {
                                 <div class="mjo-offer-body" (click)="$event.stopPropagation()">
                                     @if (row.Inherited) {
                                         <p class="mjo-inherit-note">
-                                            Inherited. A price with this name on the product replaces it.
+                                            Inherited from the product category. A product price with the same name overrides it.
                                             @if (EditMode) {
                                                 <button type="button" class="mjo-btn-subtle" (click)="OverrideInherited(row)">Override on this product</button>
                                             }
@@ -119,11 +314,11 @@
                                                     <input class="mjo-input-text" [(ngModel)]="row.Record.Name" (blur)="SavePrice(row.Record)">
                                                 </label>
                                                 <label class="mjo-field-group">
-                                                    <span class="mjo-sub-label">Amount</span>
-                                                    <input type="number" class="mjo-input-price" [(ngModel)]="row.Record.Amount" min="0" step="0.01" (blur)="SavePrice(row.Record)">
+                                                    <span class="mjo-sub-label">Price</span>
+                                                    <input type="text" mjoCurrency class="mjo-input-price" [(ngModel)]="row.Record.Amount" (blur)="SavePrice(row.Record)">
                                                 </label>
                                                 <label class="mjo-field-group">
-                                                    <span class="mjo-sub-label">Model</span>
+                                                    <span class="mjo-sub-label">Pricing model</span>
                                                     <select class="mjo-input-select" [(ngModel)]="row.Record.PricingModel" (change)="SavePrice(row.Record)">
                                                         <option value="PerUnit">Per unit</option>
                                                         <option value="Package">Package</option>
@@ -132,17 +327,45 @@
                                                     </select>
                                                 </label>
                                             </div>
+                                            <div class="mjo-offer-fields mjo-offer-lifecycle">
+                                                <label class="mjo-field-group">
+                                                    <span class="mjo-sub-label">Status</span>
+                                                    <select class="mjo-input-select" [(ngModel)]="row.Record.Status" (change)="OnStatusChange(row.Record)" [disabled]="IsSaving">
+                                                        <option value="Active">Active</option>
+                                                        <option value="Inactive">Inactive</option>
+                                                    </select>
+                                                </label>
+                                                <label class="mjo-field-group">
+                                                    <span class="mjo-sub-label">Expiration date</span>
+                                                    <input type="date" class="mjo-input-text" [ngModel]="EffectiveToInput(row.Record)" (ngModelChange)="OnEffectiveToChange(row.Record, $event)" [disabled]="IsSaving">
+                                                </label>
+                                                @if (row.Retired) {
+                                                    <button type="button" class="mjo-btn-subtle" (click)="RestorePrice(row.Record)" [disabled]="IsSaving" title="Make this price available to new order lines">Activate</button>
+                                                } @else {
+                                                    <button type="button" class="mjo-btn-subtle" (click)="RetirePrice(row.Record)" [disabled]="IsSaving" title="Stop offering this price on new order lines. Existing lines keep their price.">Deactivate</button>
+                                                }
+                                                <button type="button" class="mjo-btn-subtle" (click)="OpenPriceRecord(row.Record, $event)">
+                                                    <i class="fa-solid fa-arrow-up-right-from-square"></i>
+                                                    <span>Open record</span>
+                                                </button>
+                                            </div>
                                         }
                                         @if (EditMode && row.WhenText && WhenEditorPriceID !== row.ID) {
                                             <div class="mjo-when-read">
-                                                <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">Edit When</button>
+                                                <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">Edit conditions</button>
                                             </div>
                                         } @else if (EditMode && WhenEditorPriceID !== row.ID) {
-                                            <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">+ When</button>
+                                            <button type="button" class="mjo-btn-subtle" (click)="OpenWhenEditor(row)">+ Conditions</button>
                                         }
                                         @if (EditMode && WhenEditorPriceID === row.ID) {
                                             <div class="mjo-when-edit">
-                                                <div class="mjo-when-title">When this price applies</div>
+                                                <div class="mjo-when-head">
+                                                    <div class="mjo-when-title">Conditions</div>
+                                                    <label class="mjo-when-allfields">
+                                                        <input type="checkbox" [ngModel]="ShowAllWhenFields" (ngModelChange)="ToggleAllWhenFields($event)">
+                                                        <span>Show all fields</span>
+                                                    </label>
+                                                </div>
                                                 <mj-filter-builder
                                                     [fields]="WhenFields"
                                                     [filter]="WhenFilter"
@@ -150,25 +373,30 @@
                                                     (filterChange)="OnWhenFilterChange($event)">
                                                 </mj-filter-builder>
                                                 <div class="mjo-when-actions">
-                                                    <button type="button" class="mjo-btn-subtle" (click)="ClearWhen(row)">Remove When</button>
+                                                    <button type="button" class="mjo-btn-subtle" (click)="ClearWhen(row)">Remove conditions</button>
                                                     <button type="button" class="mjo-btn-subtle" (click)="CloseWhenEditor()">Cancel</button>
-                                                    <button type="button" class="mjo-btn-add" (click)="SaveWhen(row)">Save When</button>
+                                                    <button type="button" class="mjo-btn-add" (click)="SaveWhen(row)">Save conditions</button>
                                                 </div>
                                             </div>
                                         }
                                         @if (HasAdvanced(row.Record) || AdvancedEditingID === row.ID) {
                                             <div class="mjo-adv">
-                                                <div class="mjo-when-title">Qty, dates, fee</div>
+                                                <div class="mjo-when-title">Quantity, fee type &amp; priority</div>
                                                 @if (EditMode) {
                                                     <div class="mjo-adv-grid">
-                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Min qty</span>
+                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Min quantity</span>
                                                             <input type="number" class="mjo-input-num" [(ngModel)]="row.Record.MinQuantity" (blur)="SavePrice(row.Record)">
                                                         </label>
-                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Max qty</span>
+                                                        <label class="mjo-field-group"><span class="mjo-sub-label">Max quantity</span>
                                                             <input type="number" class="mjo-input-num" [(ngModel)]="row.Record.MaxQuantity" (blur)="SavePrice(row.Record)">
                                                         </label>
                                                         <label class="mjo-field-group"><span class="mjo-sub-label">Fee type</span>
-                                                            <input class="mjo-input-text" [(ngModel)]="row.Record.FeeType" (blur)="SavePrice(row.Record)">
+                                                            <select class="mjo-input-select" [(ngModel)]="row.Record.FeeType" (change)="SavePrice(row.Record)">
+                                                                <option value="Standard">Standard</option>
+                                                                <option value="Setup">Setup</option>
+                                                                <option value="Recurring">Recurring</option>
+                                                                <option value="Overage">Overage</option>
+                                                            </select>
                                                         </label>
                                                         <label class="mjo-field-group"><span class="mjo-sub-label">Priority</span>
                                                             <input type="number" class="mjo-input-num" [(ngModel)]="row.Record.Priority" (blur)="SavePrice(row.Record)">
@@ -177,22 +405,22 @@
                                                 } @else {
                                                     <div class="mjo-adv-read">
                                                         @if (row.Record.MinQuantity != null) {
-                                                            <span>Min qty {{ row.Record.MinQuantity }}</span>
+                                                            <span>Min quantity {{ row.Record.MinQuantity }}</span>
                                                         }
                                                         @if (row.Record.MaxQuantity != null) {
-                                                            <span>Max qty {{ row.Record.MaxQuantity }}</span>
+                                                            <span>Max quantity {{ row.Record.MaxQuantity }}</span>
                                                         }
                                                         @if (row.Record.FeeType && row.Record.FeeType !== 'Standard') {
-                                                            <span>{{ row.Record.FeeType }}</span>
+                                                            <span>{{ row.Record.FeeType }} fee</span>
                                                         }
                                                         @if (row.Record.EffectiveTo) {
-                                                            <span>Until {{ FormatDate(row.Record.EffectiveTo) }}</span>
+                                                            <span>Expires {{ FormatDate(row.Record.EffectiveTo) }}</span>
                                                         }
                                                     </div>
                                                 }
                                             </div>
                                         } @else if (EditMode) {
-                                            <button type="button" class="mjo-btn-subtle" (click)="OpenAdvanced(row.ID, $event)">+ Qty, dates, fee</button>
+                                            <button type="button" class="mjo-btn-subtle" (click)="OpenAdvanced(row.ID, $event)">+ Quantity, fee type &amp; priority</button>
                                         }
                                     }
                                 </div>
@@ -210,17 +438,17 @@
                         </span>
                         <label class="mjo-field-group">
                             <span class="mjo-sub-label">Name</span>
-                            <input class="mjo-input-text" [(ngModel)]="NewPriceName" placeholder="Base">
+                            <input class="mjo-input-text" [(ngModel)]="NewPriceName" placeholder="List price">
                         </label>
                         <label class="mjo-field-group">
-                            <span class="mjo-sub-label">Amount</span>
-                            <input type="number" class="mjo-input-price" [(ngModel)]="NewPriceAmount" min="0" step="0.01">
+                            <span class="mjo-sub-label">Price</span>
+                            <input type="text" mjoCurrency class="mjo-input-price" [(ngModel)]="NewPriceAmount">
                         </label>
                         <label class="mjo-field-group">
-                            <span class="mjo-sub-label">Effective from</span>
+                            <span class="mjo-sub-label">Effective date</span>
                             <input type="date" class="mjo-input-text" [(ngModel)]="NewPriceEffectiveFrom" [disabled]="IsSaving">
                         </label>
-                        <span class="mjo-quick-add-hint">Orders dated before this day won't get this price.</span>
+                        <span class="mjo-quick-add-hint">Applies to orders dated on or after this date.</span>
                         <button type="button" class="mjo-btn-add" [disabled]="IsSaving" (click)="AddPrice()">
                             @if (IsSaving) {
                                 <mj-loading class="mjo-btn-add__loading" [showText]="false" size="small" logoColor="currentColor"></mj-loading>
@@ -239,27 +467,46 @@
 
 @if (QuoteDrawerOpen) {
     <div class="mjo-quote-scrim" (click)="CloseQuote()"></div>
-    <aside class="mjo-quote-drawer" role="dialog" aria-label="Test a quote">
+    <aside class="mjo-quote-drawer" role="dialog" aria-label="Price simulation">
         <div class="mjo-quote-drawer-h">
-            <h3>Test a quote</h3>
-            <button type="button" class="mjo-btn-subtle" (click)="CloseQuote()">Close</button>
+            <h3>Price simulation</h3>
+            <button type="button" class="mjo-btn-subtle mjo-quote-close" (click)="CloseQuote()" aria-label="Close">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
         </div>
-        <p class="mjo-quote-lede">Optional. Sample bill-to type against these prices. Same walk as GL — product then category.</p>
-        <label class="mjo-field-group">
-            <span class="mjo-sub-label">Bill-to organization Type</span>
-            <select class="mjo-input-select" [(ngModel)]="QuoteOrgType" (ngModelChange)="RunQuote()">
-                <option value="Member">Member</option>
-                <option value="Prospect">Prospect</option>
-            </select>
-        </label>
-        <label class="mjo-field-group">
-            <span class="mjo-sub-label">Qty</span>
-            <input type="number" class="mjo-input-num" [(ngModel)]="SimQuantity" min="1" (ngModelChange)="RunQuote()">
-        </label>
-        <div class="mjo-quote-amt">{{ QuoteResult.AmountText }}</div>
-        <p class="mjo-quote-why">{{ QuoteResult.Why }}</p>
-        @if (QuoteResult.Skipped) {
-            <p class="mjo-quote-why">{{ QuoteResult.Skipped }}</p>
+        <p class="mjo-quote-lede">The price a sample customer would get from this price list today.</p>
+
+        <div class="mjo-quote-form">
+            <label class="mjo-quote-field">
+                <span>Customer type</span>
+                <select class="mjo-input-select" [(ngModel)]="QuoteOrgType" (ngModelChange)="RunQuote()">
+                    <option value="Member">Member</option>
+                    <option value="Prospect">Prospect</option>
+                </select>
+            </label>
+            <label class="mjo-quote-field">
+                <span>Quantity</span>
+                <input type="number" class="mjo-input-num" [(ngModel)]="SimQuantity" min="1" (ngModelChange)="RunQuote()">
+            </label>
+            <label class="mjo-quote-field mjo-quote-field--wide">
+                <span>Annual revenue ($M)</span>
+                <input type="number" class="mjo-input-num" [(ngModel)]="QuoteRevenueMillions" min="0" step="0.5" placeholder="Unknown" (ngModelChange)="RunQuote()">
+                <small>Leave blank for a customer with no revenue on file.</small>
+            </label>
+        </div>
+
+        <div class="mjo-quote-result">
+            <div class="mjo-quote-amt">{{ QuoteResult.AmountText }}</div>
+            <p class="mjo-quote-why">{{ QuoteResult.Why }}</p>
+        </div>
+
+        @if (QuoteResult.Skipped.length) {
+            <div class="mjo-quote-skipped-title">Not applied</div>
+            <ul class="mjo-quote-skipped">
+                @for (s of QuoteResult.Skipped; track s) {
+                    <li>{{ s }}</li>
+                }
+            </ul>
         }
     </aside>
 }
