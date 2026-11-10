@@ -183,8 +183,7 @@ const { UserCache } = await import('@memberjunction/generic-database-provider');
 const provider = await setupSQLServerClient(
     new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'),
 );
-// UserCache.Refresh takes a DatabaseProviderBase on MJ 6.2+ (pool on MJ 6.1).
-await UserCache.Instance.Refresh(typeof provider.QuoteSchemaAndView === 'function' ? provider : pool);
+await UserCache.Instance.Refresh(provider);
 const user = UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owner') ?? UserCache.Users[0];
 if (!user) throw new Error('No context user in UserCache.');
 

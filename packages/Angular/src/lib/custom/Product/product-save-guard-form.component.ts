@@ -95,14 +95,8 @@ export class BizAppsProductSaveGuardFormComponent extends mjBizAppsOrdersProduct
             await engine.EnsureLoaded();
             const productType = engine.ProductTypeByID(record.ProductTypeID);
 
-            const resolvedSubtype =
-                typeof record.ResolveSubtypeEntityName === 'function'
-                    ? await record.ResolveSubtypeEntityName()
-                    : null;
-
             return ShouldConfirmEventRevRec({
                 hasEventExtension:
-                    resolvedSubtype === EVENT_PRODUCT_EXTENSION_ENTITY ||
                     productType?.ProductExtensionEntity === EVENT_PRODUCT_EXTENSION_ENTITY ||
                     record.ISAChild?.EntityInfo?.Name === EVENT_PRODUCT_EXTENSION_ENTITY,
                 revRecTypeID: record.RevenueRecognitionTypeID,

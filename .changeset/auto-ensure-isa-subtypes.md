@@ -4,4 +4,4 @@
 "@mj-biz-apps/orders-ng": minor
 ---
 
-Enable `SubtypeSelector.AutoEnsureOnSave` on `MJ_BizApps_Orders: Products` and delegate `OrderLine` extension provisioning (`CheckoutSessionService`, `OrderHeaderEntity.SplitLineIntoSeats`, `OrderLineExtensionCompanion`, and `order-lines-editor.component`) to declarative zero-argument `EnsureISAChild()` rather than duplicating `ProductType.OrderLineExtensionEntity` lookups across tiers.
+Delegate `OrderLine` extension provisioning (`CheckoutSessionService`, `OrderHeaderEntity.SplitLineIntoSeats`, `OrderLineExtensionCompanion`, and `order-lines-editor.component`) to declarative zero-argument `EnsureISAChild()` rather than duplicating `ProductType.OrderLineExtensionEntity` lookups across tiers, avoid creating empty `EventOrderLine` rows on general-admission checkout lines with no unit payload, and clear `BaseEntity.ClearSubtypeLookupCache()` when `Product.ProductTypeID` or `ProductType` extension mappings change.

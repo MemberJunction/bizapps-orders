@@ -11,11 +11,12 @@
  */
 import { BaseEntity, type EntitySaveOptions, type FieldValueCollection, type IMetadataProvider, LogError } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
-import { mjBizAppsOrdersProductEntity } from './generated/entity_subclasses';
+import { mjBizAppsOrdersProductEntity, mjBizAppsOrdersProductTypeEntity } from './generated/entity_subclasses';
 import { LoadOrdersEngine, OrdersEngine } from './pricing/OrdersEngine';
 import { ResolveTaxability, type TaxabilityCategoryLevel } from './pricing/TaxResolver';
 
 const ENTITY = 'MJ_BizApps_Orders: Products';
+const PRODUCT_TYPE_ENTITY = 'MJ_BizApps_Orders: Product Types';
 
 /** The product fields a product type supplies a default for. */
 export type ProductDefaults = {
@@ -126,8 +127,14 @@ export class ProductEntity extends mjBizAppsOrdersProductEntity {
      * The same fill before a new product saves, after loading the engine — a caller whose engine
      * was not loaded when the type was set still saves with the type's defaults. Existing products
      * are not touched here: a null `IsTaxable` on a saved product is not this save's to change.
+     *
+     * Also clears `BaseEntity.ClearSubtypeLookupCache()` when an existing product's `ProductTypeID`
+     * changes so `OrderLine`'s two-hop `SubtypeSelector` (`ProductID.ProductTypeID.OrderLineExtensionEntity`)
+     * never serves a stale cached hop after a type change on MJ 6.1/6.2.
      */
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        const wasSaved = this.IsSaved;
+        const productTypeDirty = Boolean(this.GetFieldByName('ProductTypeID')?.Dirty);
         if (!this.IsSaved) {
             try {
                 await LoadOrdersEngine(this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
@@ -136,7 +143,11 @@ export class ProductEntity extends mjBizAppsOrdersProductEntity {
                 LogError(`Product type defaults not applied — OrdersEngine unavailable: ${e}`);
             }
         }
-        return super.Save(options);
+        const saved = await super.Save(options);
+        if (saved && wasSaved && productTypeDirty) {
+            BaseEntity.ClearSubtypeLookupCache();
+        }
+        return saved;
     }
 
     /** Synchronous: reads the engine only when it is already loaded. */
@@ -160,5 +171,25 @@ export class ProductEntity extends mjBizAppsOrdersProductEntity {
         if ('SubscriptionTypeID' in writes) this.SubscriptionTypeID = writes.SubscriptionTypeID ?? null;
         if ('IsTaxable' in writes) this.IsTaxable = writes.IsTaxable ?? null;
         this.stampedDefaults = { ...this.stampedDefaults, ...writes };
+    }
+}
+
+/**
+ * Shared ProductType subclass: clears `BaseEntity.ClearSubtypeLookupCache()` whenever a product
+ * type's `OrderLineExtensionEntity` or `ProductExtensionEntity` changes so declarative
+ * `SubtypeSelector` resolutions on `Product` and `OrderLine` refresh immediately without waiting
+ * for a server restart.
+ */
+@RegisterClass(BaseEntity, PRODUCT_TYPE_ENTITY)
+export class ProductTypeEntity extends mjBizAppsOrdersProductTypeEntity {
+    public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        const extensionDirty =
+            Boolean(this.GetFieldByName('OrderLineExtensionEntity')?.Dirty) ||
+            Boolean(this.GetFieldByName('ProductExtensionEntity')?.Dirty);
+        const saved = await super.Save(options);
+        if (saved && extensionDirty) {
+            BaseEntity.ClearSubtypeLookupCache();
+        }
+        return saved;
     }
 }
