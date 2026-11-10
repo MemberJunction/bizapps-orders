@@ -24,18 +24,45 @@ export interface PriceApplicabilitySource {
     entityName?: string;
     /** The fields of a computed source that no entity describes. */
     fields?: readonly { name: string; label: string; type: 'number' | 'string' | 'date' | 'boolean' }[];
+    /**
+     * The entity's fields the When builder offers by default. An entity has dozens of columns (ids,
+     * URLs, rollups, snapshots) and a price rule tests a handful; the builder lists these and shows
+     * the rest behind "every field". Absent for a computed source, which lists `fields`.
+     */
+    commonFields?: readonly string[];
 }
 
 /** Keys the When builder writes and the resolver reads. Keep in lockstep with the mockup. */
+const ORDER_WHEN_FIELDS = ['OrderType', 'OrderDate', 'Status', 'Origin', 'Company', 'IPCountry', 'CardIssuingCountry'] as const;
+const PRODUCT_WHEN_FIELDS = ['SKU', 'Name', 'Status', 'ProductType', 'ProductCategory', 'Company', 'IsTaxable', 'TaxCategory'] as const;
+const PERSON_WHEN_FIELDS = [
+    'Title', 'Status', 'SeniorityLevel', 'PrimaryJobFunction', 'CurrentJobTitle', 'CurrentOrganizationName',
+    'EmailDomain', 'PrimaryAddressState', 'PrimaryAddressCountry',
+] as const;
+const ORGANIZATION_WHEN_FIELDS = [
+    'Name', 'Status', 'OrganizationType', 'Acronym', 'WebsiteDomain', 'Parent', 'PrimaryAddressState', 'PrimaryAddressCountry',
+] as const;
+const ADDRESS_WHEN_FIELDS = ['City', 'StateProvince', 'PostalCode', 'Country'] as const;
+
 export const PRICE_APPLICABILITY_SOURCES: readonly PriceApplicabilitySource[] = [
-    { key: 'Order', label: 'Order', entityName: 'MJ_BizApps_Orders: Order Headers' },
-    { key: 'Product', label: 'Product', entityName: 'MJ_BizApps_Orders: Products' },
-    { key: 'BillToPerson', label: 'Bill-to person', entityName: 'MJ_BizApps_Common: People' },
-    { key: 'BillToOrganization', label: 'Bill-to organization', entityName: 'MJ_BizApps_Common: Organizations' },
-    { key: 'ShipToPerson', label: 'Ship-to person', entityName: 'MJ_BizApps_Common: People' },
-    { key: 'ShipToOrganization', label: 'Ship-to organization', entityName: 'MJ_BizApps_Common: Organizations' },
-    { key: 'BillToAddress', label: 'Bill-to address', entityName: 'MJ_BizApps_Common: Addresses' },
-    { key: 'ShipToAddress', label: 'Ship-to address', entityName: 'MJ_BizApps_Common: Addresses' },
+    { key: 'Order', label: 'Order', entityName: 'MJ_BizApps_Orders: Order Headers', commonFields: ORDER_WHEN_FIELDS },
+    { key: 'Product', label: 'Product', entityName: 'MJ_BizApps_Orders: Products', commonFields: PRODUCT_WHEN_FIELDS },
+    { key: 'BillToPerson', label: 'Bill-to person', entityName: 'MJ_BizApps_Common: People', commonFields: PERSON_WHEN_FIELDS },
+    {
+        key: 'BillToOrganization',
+        label: 'Bill-to organization',
+        entityName: 'MJ_BizApps_Common: Organizations',
+        commonFields: ORGANIZATION_WHEN_FIELDS,
+    },
+    { key: 'ShipToPerson', label: 'Ship-to person', entityName: 'MJ_BizApps_Common: People', commonFields: PERSON_WHEN_FIELDS },
+    {
+        key: 'ShipToOrganization',
+        label: 'Ship-to organization',
+        entityName: 'MJ_BizApps_Common: Organizations',
+        commonFields: ORGANIZATION_WHEN_FIELDS,
+    },
+    { key: 'BillToAddress', label: 'Bill-to address', entityName: 'MJ_BizApps_Common: Addresses', commonFields: ADDRESS_WHEN_FIELDS },
+    { key: 'ShipToAddress', label: 'Ship-to address', entityName: 'MJ_BizApps_Common: Addresses', commonFields: ADDRESS_WHEN_FIELDS },
     {
         key: ORGANIZATION_REVENUE_SOURCE,
         label: 'Bill-to organization revenue',
