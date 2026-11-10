@@ -1,5 +1,214 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.47.0
+
+### Patch Changes
+
+- Updated dependencies [c0ea095]
+  - @mj-biz-apps/orders-entities@5.47.0
+  - @mj-biz-apps/orders-core-entities-server@5.47.0
+  - @mj-biz-apps/orders-server@5.47.0
+
+## 5.46.0
+
+### Patch Changes
+
+- Updated dependencies [6426e7b]
+- Updated dependencies [bde9dcc]
+  - @mj-biz-apps/orders-core-entities-server@5.46.0
+  - @mj-biz-apps/orders-entities@5.46.0
+  - @mj-biz-apps/orders-server@5.46.0
+
+## 5.45.0
+
+### Patch Changes
+
+- Updated dependencies [90b45a9]
+- Updated dependencies [38ecc01]
+  - @mj-biz-apps/orders-core-entities-server@5.45.0
+  - @mj-biz-apps/orders-entities@5.45.0
+  - @mj-biz-apps/orders-server@5.45.0
+
+## 5.44.0
+
+### Patch Changes
+
+- Updated dependencies [3f9d524]
+- Updated dependencies [4480151]
+- Updated dependencies [a4dba56]
+- Updated dependencies [5c9cdd5]
+- Updated dependencies [a48a6e2]
+- Updated dependencies [a17a7bf]
+- Updated dependencies [fbf3ad4]
+- Updated dependencies [d2a22a0]
+- Updated dependencies [7b693a7]
+- Updated dependencies [cc62ad9]
+- Updated dependencies [de11edd]
+  - @mj-biz-apps/orders-entities@5.44.0
+  - @mj-biz-apps/orders-core-entities-server@5.44.0
+  - @mj-biz-apps/orders-server@5.44.0
+
+## 5.43.0
+
+### Patch Changes
+
+- Updated dependencies [d45e6ae]
+- Updated dependencies [534b368]
+  - @mj-biz-apps/orders-entities@5.43.0
+  - @mj-biz-apps/orders-core-entities-server@5.43.0
+  - @mj-biz-apps/orders-server@5.43.0
+
+## 5.42.0
+
+### Patch Changes
+
+- Updated dependencies [5529725]
+- Updated dependencies [72787da]
+  - @mj-biz-apps/orders-entities@5.42.0
+  - @mj-biz-apps/orders-core-entities-server@5.42.0
+  - @mj-biz-apps/orders-server@5.42.0
+
+## 5.41.0
+
+### Patch Changes
+
+- Updated dependencies [0caaeb0]
+- Updated dependencies [0045f58]
+  - @mj-biz-apps/orders-entities@5.41.0
+  - @mj-biz-apps/orders-core-entities-server@5.41.0
+  - @mj-biz-apps/orders-server@5.41.0
+
+## 5.40.0
+
+### Minor Changes
+
+- ce26b74: Orders now hears what a gateway that bills a subscription did, and books it (option E, E3 + E4 + E6).
+
+  - **The sync.** `SyncProviderSubscription` reads the gateway subscription and its invoices since the latest term
+    began, plans with the pure `PlanProviderSubscriptionSync`, and brings Orders in line, reporting every difference.
+    Events only trigger a re-read; the gateway's records are the truth.
+  - **Renewals booked (E4).** A renewal the gateway charged becomes a confirmed renewal order on the subscription's own
+    product at what was charged, its payment captured keyed by the gateway charge (only for a period Orders has not
+    booked: an imported subscriber's current year is never booked again; a taxed renewal goes to a person), `PaymentSucceeded` and
+    `RenewalOrderSpawned` events, and the next term; any refund the gateway already made is booked after the capture.
+    Only this order may renew a gateway-billed subscription (`SanctionGatewayRenewal`); a cancelled one is reactivated,
+    keeping its gateway id, with a Task for support. A $0 renewal is booked at the last price, 100% off.
+  - **A gateway refund of a renewal (D20)** is a money-only credit order applied to the renewal (`Orders.ApplyAccountCredit`),
+    so the renewal owes nothing, full refund or partial; access is unchanged; a Task per credit. The refund door and a
+    cancel decide under one subscription lock and never credit one refund twice. **A cancel follows the same per-term
+    figure for every renewal the gateway charged and has refunded any of** (what it refunded less what Orders already
+    credited, applied to the renewal), on every path: a recorded gateway end, the term D19 skips, an `Immediate` cancel
+    and a backdated request alike; the type's refund rule no longer credits such a renewal on top of the gateway's refund.
+    A renewal the gateway refunded nothing of, and every term Orders billed, follow the type's rule as before. A $0
+    renewal (100% off) is never read as refunded in full.
+  - **Spending a return's credit.** An order's applied total may go below zero by the credit the order itself carries
+    (a return or cancellation), never by cash; `Orders.ApplyAccountCredit` now settles only the credit's own customer's
+    orders, only between CONFIRMED orders (a Draft, Quoted or Voided order holds no credit and owes nothing), and locks
+    both orders, so one credit is spent once. The Account Credit page lists the same (orders-ng: Credits Held and the
+    targets leave out Draft, Quoted and Voided orders).
+  - **End of term on a subscription the gateway still bills (D19)** ends with the latest booked term the gateway had
+    charged by the request day and has not refunded in full: a cancel on the renewal day keeps the paid year; a
+    request dated before the renewal (recorded later) and a fully refunded renewal keep the term covering the request,
+    the refunded term reversing what the gateway refunded. Terms ridden past are stamped Completed at their own end.
+  - **Failures and the end state.** Each failed attempt is a `PaymentFailed` event; no order until paid; access is kept
+    to the end of the gateway's next retry day (capped at 45 days past coverage). A portal cancel turns automatic renewal
+    off (and back on when withdrawn); a subscription the gateway ended is cancelled in Orders.
+  - **The webhook endpoint check** (at every server start, and the hourly job) now judges the subscription event kinds
+    too, so an endpoint that predates this release reports `Drift` with the ten kinds it does not send.
+  - **The webhook** routes the driver's subscription event kinds to the sync (500 on failure so the gateway redelivers);
+    a gateway subscription no Orders subscription records is classified (`not_ours`, `unknown_subscription` with one
+    Task); the third failed delivery for one subscription raises an urgent `GatewaySyncFailed` Task. The account's
+    `BillsSubscriptions` switch gates new hand-overs only; subscriptions the gateway already bills are always followed.
+  - **New actions:** `Orders.SyncProviderSubscriptions` (nightly job, ships Disabled and in Preview) and
+    `Orders.LinkProviderSubscription` (checked link of an existing subscription, then a sync: the account must be the
+    subscription's company's, the gateway subscription must not name another Orders subscription, an existing
+    provider is never overwritten, a customer e-mail that differs refuses and one that cannot be compared needs a person's `CustomerConfirmed`,
+    and an older price is linked with `AllowPriceOfAnotherProduct`).
+  - **Entity (orders-entities):** `Linking` now covers a NEW subscription created already carrying a gateway id (the
+    same write and the same guess as a saved one gaining it), so that too is refused from any form or API unless a
+    server door sanctioned it.
+  - **Driver:** `HandledSubscriptionEventKinds`, `ListProviderSubscriptionInvoices` and a richer
+    `DescribeProviderSubscription` (price, quantity, customer, e-mail, metadata, `EndedAt`); Stripe implements them.
+
+  No migration. Integration checks SR75–SR98-OT (subscription-renewal) and AC-OT1 (account-credit).
+
+### Patch Changes
+
+- 8bc53d1: The gateway subscription sync no longer reports a false difference for an imported subscriber in its first year. Their current gateway invoice is the creation invoice (`subscription_create`), and the importer's term-1 payment already records its charge, yet the planner reported "charged … at creation" for each one (372 of 509 in a full-size import rehearsal), so a nightly preview could never show 0 differences. `PlanProviderSubscriptionSync` now checks whether the invoice's charge is booked before classifying any paid invoice that is not a renewal: a booked creation charge is in line, and an unbooked one (the gateway charging on top of checkout) is still reported. A booked charge now means one recorded on a payment that did not fail and sits on THIS subscription's orders (`BookedChargeFilter`, also used for renewals); before, any payment anywhere recording the charge counted. A one-off invoice whose charge someone booked by hand no longer raises `GatewayChargeNotBooked`; a proration still raises `GatewayPlanChanged`, worded "the charge is booked, but the plan changed: <old> → <new>" when it is booked.
+- Updated dependencies [fb48fbb]
+- Updated dependencies [78b298a]
+- Updated dependencies [135f01f]
+- Updated dependencies [1f58444]
+- Updated dependencies [ce26b74]
+- Updated dependencies [367a402]
+- Updated dependencies [8bc53d1]
+  - @mj-biz-apps/orders-entities@5.40.0
+  - @mj-biz-apps/orders-core-entities-server@5.40.0
+  - @mj-biz-apps/orders-server@5.40.0
+
+## 5.39.0
+
+### Patch Changes
+
+- e99a31e: `Orders.CapturePayment` no longer reports a read it could not complete as a record that does not
+  exist (#967). It read the orders it allocates to without checking whether the read succeeded, so a
+  read that timed out waiting on another transaction's lock, or lost its connection, refused the
+  capture with `OrderNotFound` ("Order … does not exist."). The checkout classes `OrderNotFound` as
+  terminal, so the webhook stopped asking Stripe to retry and a charged buyer was left with no payment
+  booked.
+
+  - A failed read of the orders is now `OrderReadFailed`, carrying the read's error. Before refusing
+    with `OrderNotFound`, the capture re-reads the ids its first read did not return, once and past the
+    cache, so an order another transaction committed in between is found.
+  - A tender the orders engine does not hold is checked against the `Payment Types` table before
+    `UnknownTender`; a failed read there is `TenderReadFailed`.
+  - A failed read-back of the payment just written is `PaymentReadFailed`, and a capture that cannot
+    read its payment back now rolls it back rather than committing a payment it reports as failed.
+
+  None of the three new codes is in `TERMINAL_CAPTURE_BLOCKER_CODES`, so the checkout page, the
+  webhook (which returns 500 so Stripe retries) and operator replay treat them as transient. A read that
+  succeeds and finds nothing keeps its terminal code. A new check, `capture-payment.CP13-OT`, holds the
+  order under another connection's open transaction while a capture runs, and asserts the capture is
+  retryable and that the retry books once the transaction ends.
+
+- 5342f5b: The integration checks that complete a checkout (SR46, SR52 and SR53) pass again (#947). Since the
+  checkout capture moved onto its own provider (#928), it wrote on another connection, outside the
+  transaction each check holds and rolls back, and waited on that transaction's locks until the 60 s
+  request timeout. `JoinCallerTransactionForTests` is a new test seam: inside it, `WithIsolatedProvider` runs its
+  work on the caller's provider, and `InRolledBackTransaction` runs each check inside it. The seam is
+  scoped to one async call chain, and production never enters it, so outside it `WithIsolatedProvider`
+  behaves as before.
+
+  The seam is exported only from a new `./testing` subpath
+  (`@mj-biz-apps/orders-core-entities-server/testing`), not from the package root. The package now has
+  an `exports` map (`.`, `./testing`, `./package.json`): the root exports what it did before, minus the
+  seam, and a deep import into `dist/` is no longer resolvable.
+
+  A new check, `subscription-renewal.SR46-OT`, runs SR46's payment outside the harness transaction, so the
+  capture runs on its own provider as in production; a capture that waits on its own request's transaction
+  fails it. It deletes what it committed with `PurgeCheckoutRun`. The order-tree delete it shares with
+  `PurgeReviewRun` now also removes outbound deliveries and instalment billings, and lifts the Invoiced
+  instalment guard, which it needed for a paid renewal.
+
+- 72af687: Two renewal checks for lead times other than 90 days: a lead time changed on the subscription type is the one the renewal job uses, with a subscription's own lead days still overriding it, and a subscription moved to another type renews on that type's lead time.
+- 4104f24: A hand-entered order with a line at a unit price of 0 can no longer be confirmed. The order form's "Before this can be confirmed" list names the line once and asks for the negotiated price, or the price with a 100% discount to give it away; the confirm save refuses with the same message before anything books. Checkout and payment-created orders, bundle components and return lines are exempt. So is a renewal line the renewal job priced at zero (a product now listed at zero) while its price is unchanged, so a $0 renewal books instead of failing the job on every run; the same line edited to zero by hand is refused. When accounting refuses an order's booking, the message now gives each distinct error once, naming the order lines it applies to, instead of once per draft.
+- Updated dependencies [fcc3ad9]
+- Updated dependencies [e99a31e]
+- Updated dependencies [1e2a5c6]
+- Updated dependencies [65ddeb2]
+- Updated dependencies [117cd8a]
+- Updated dependencies [5342f5b]
+- Updated dependencies [29af2af]
+- Updated dependencies [06897c1]
+- Updated dependencies [adb8e61]
+- Updated dependencies [d6a280d]
+- Updated dependencies [f129713]
+- Updated dependencies [756afe7]
+- Updated dependencies [4104f24]
+  - @mj-biz-apps/orders-core-entities-server@5.39.0
+  - @mj-biz-apps/orders-entities@5.39.0
+  - @mj-biz-apps/orders-server@5.39.0
+
 ## 5.38.0
 
 ### Patch Changes

@@ -26,7 +26,7 @@
 
 <template id="page">
 
-  <div slot="meta"><span class="mj-chip">Pending</span><span class="mj-chip mj-chip--outline">not captured</span></div>
+  <div slot="meta"><span class="mjo-chip">Pending</span><span class="mjo-chip mjo-chip--outline">not captured</span></div>
 
   <div slot="actions">
     <button class="mj-btn mj-btn--outline">Save as pending</button>
@@ -325,7 +325,7 @@ function renderConfirm(t, overs, cross) {
 
     <details class="mj-panel" open style="margin-top:var(--mj-space-4)">
       <summary><i class="fa-solid fa-list-check"></i> Applying to
-        <span class="right"><span class="mj-chip mj-chip--outline">${open.length} orders</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--outline">${open.length} orders</span></span></summary>
       <div class="mj-panel-body">
         <table class="mj-table mj-table--compact"><tbody>
           ${open.map(o => `<tr><td class="mono">${o.number}</td>
@@ -339,7 +339,7 @@ function renderConfirm(t, overs, cross) {
 
     <details class="mj-panel" ${cross.size > 1 ? 'open' : ''}>
       <summary><i class="fa-solid fa-scale-balanced"></i> Journal entries
-        <span class="right"><span class="mj-chip mj-chip--success">${cross.size > 1 ? (cross.size + 1) : 1} entries · balanced</span></span></summary>
+        <span class="right"><span class="mjo-chip mjo-chip--success">${cross.size > 1 ? (cross.size + 1) : 1} entries · balanced</span></span></summary>
       <div class="mj-panel-body small">
         <b>Cash leg</b> — Dr Operating Cash ${F.money(state.amount)} / Cr A/R ${F.money(state.amount)}.
         ${cross.size > 1 ? `<div style="margin-top:var(--mj-space-2)"><b>Intercompany legs</b> — one entry per

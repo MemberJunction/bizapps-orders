@@ -28,7 +28,20 @@
  *   TABLE:  __mj_BizAppsOrders.SubscriptionType
  *   CALLER: OrderEntityServer (term creation at confirm)
  */
-import { RegisterClass } from '@memberjunction/global';
+import { MJGlobal, RegisterClass } from '@memberjunction/global';
+import {
+    CadenceMonths,
+    DefaultTermEnd,
+    DefaultTermStart,
+    KeptStatedEnd,
+    MonthsCovered,
+    NextAnchorAfter,
+    StatedMonths,
+} from '@mj-biz-apps/orders-entities';
+
+// The date arithmetic for a stated period lives in the shared package, so the order screen reads
+// the same months confirm does (golive #338). Re-exported for callers that import it from here.
+export { MonthsCovered, WholeMonthsBetween } from '@mj-biz-apps/orders-entities';
 
 /** The rules row, as plain data. */
 export interface SubscriptionTypeRules {
@@ -76,6 +89,10 @@ export interface ExistingSubscription {
     /** End of the latest term, if any. */
     LatestTermEnd?: Date | null;
     LatestTermNumber?: number | null;
+    /** The gateway's id when a payment gateway bills it (E2b): another order must not change it unseen. */
+    ProviderSubscriptionID?: string | null;
+    /** Member-facing number, for messages. */
+    SubscriptionNumber?: string | null;
 }
 
 /** One term a purchase buys. */
@@ -199,12 +216,29 @@ export interface CancellationDecision {
      */
     ReversalFraction: number;
     /**
+     * The exact amount the reversal credits, when it must be a figure and not a rounded fraction of the line
+     * (a refund the payment gateway made: the reversal must equal it to the cent). Absent: quantity × price.
+     */
+    ReversalAmount?: number;
+    /**
+     * With `ReversalAmount`, for a gateway renewal's refund: what its charge took and what is already credited back, so
+     * the reversal's quantity is sized by the shared rule (`CreditReversalQuantity`) from the money still owed back.
+     */
+    ReversalBasis?: { Paid: number; Credited: number };
+    /**
      * `Canceled` when coverage is cut short, `Completed` when the customer simply declines renewal
      * and rides the term out — the difference matters for "why did this lapse" reporting.
      */
     TermStatus: 'Canceled' | 'Completed';
     /** Which rules produced this, in a sentence. Surfaced to the user, so it names the policy. */
     Explanation: string;
+    /**
+     * The coverage half of `Explanation` alone (when coverage ends and the term's status), without the type's refund
+     * rule. A caller that replaces the money with a figure the type did not decide (a payment gateway's refund, D20)
+     * explains it from this, so the message never states the type's figure and the replacing one side by side.
+     * Absent (a host's own behavior): the caller keeps `Explanation`.
+     */
+    Coverage?: string;
 }
 
 /**
@@ -358,6 +392,13 @@ export interface SubscriptionPurchaseContext {
      * subscription it names.
      */
     RequestedAction?: 'ExtendExisting' | 'CreateNew' | null;
+    /**
+     * A renewal the payment gateway already charged for (E4, `SanctionGatewayRenewal`). It always
+     * continues the subscription it names: an active one is extended, a lapsed or cancelled one is
+     * reactivated (never a second subscription, Andrew's rule), and either way the new term starts the
+     * day after the last one ended, because that is the period the gateway was paid for.
+     */
+    GatewayRenewal?: boolean;
 }
 
 function money(v: number): number {
@@ -408,30 +449,38 @@ function daysBetween(a: Date, b: Date): number {
 }
 
 /**
- * The number of whole months from `start` through `end` inclusive, or null when the span is not a
- * whole number of months (2026-11-01 through 2027-04-30 is 6; through 2027-04-29 is null).
+ * The months a line's price covers, when that line bought earlier terms as well as the one starting
+ * on `termStart`; null when it bought only that term or states no period (golive #338).
+ *
+ * A line stating 24 months on a 12-month type buys two terms, and its price covers both. A line
+ * whose period starts on the term's own start bought that term alone, whatever its length, so its
+ * price is one term's: that keeps a short first term, or a custom-cadence term a few days longer than
+ * its whole months, from reading as several.
  */
-export function WholeMonthsBetween(start: Date, end: Date): number | null {
-    const s = utcDay(start);
-    const after = addDays(utcDay(end), 1);
-    const months = (after.getUTCFullYear() - s.getUTCFullYear()) * 12 + (after.getUTCMonth() - s.getUTCMonth());
-    if (months <= 0) return null;
-    return addMonths(s, months).getTime() === after.getTime() ? months : null;
+export function MultiTermLineMonths(
+    lineStart: Date | null | undefined,
+    lineEnd: Date | null | undefined,
+    termStart: Date,
+): number | null {
+    if (!lineStart || !lineEnd) return null;
+    if (utcDay(lineStart).getTime() >= utcDay(termStart).getTime()) return null;
+    return MonthsCovered(lineStart, lineEnd);
 }
 
 /**
- * The length of `start` through `end` inclusive in months: whole months counted from `start`, plus
- * the remaining days as a fraction of the month they fall in. 2026-11-01 through 2027-11-30 is 13.
+ * The behaviour object for a subscription type: the base class when the type names no driver, or
+ * the registered subclass when it does. Throws when the named driver is not registered.
  */
-export function MonthsCovered(start: Date, end: Date): number {
-    const s = utcDay(start);
-    const after = addDays(utcDay(end), 1);
-    let whole = 0;
-    while (addMonths(s, whole + 1).getTime() <= after.getTime()) whole++;
-    const from = addMonths(s, whole);
-    const rest = daysBetween(from, after);
-    if (rest <= 0) return whole;
-    return whole + rest / daysBetween(from, addMonths(s, whole + 1));
+export function SubscriptionBehaviorFor(rules: SubscriptionTypeRules): SubscriptionBehavior {
+    if (!rules.DriverClass) return new SubscriptionBehavior();
+    const driver = MJGlobal.Instance.ClassFactory.CreateInstance<SubscriptionBehavior>(SubscriptionBehavior, rules.DriverClass);
+    if (!driver) {
+        throw new Error(
+            `Subscription type '${rules.Code}' names driver '${rules.DriverClass}', which is not ` +
+                `registered. Register a SubscriptionBehavior subclass under that key.`,
+        );
+    }
+    return driver;
 }
 
 /** Calendar date for user-facing explanations. */
@@ -511,7 +560,7 @@ export class SubscriptionBehavior {
                 Action: 'Reject',
                 RejectReason:
                     `This subscription type (${ctx.Rules.Code}) does not allow a second concurrent ` +
-                    `subscription for the same subscriber, and an active one already exists.` +
+                    `subscription for the same subscriber, and one whose coverage has not ended already exists.` +
                     (ctx.RequestedAction === 'CreateNew'
                         ? ` The line asks for a new subscription, which this type cannot have; extend the existing one instead.`
                         : ''),
@@ -521,7 +570,14 @@ export class SubscriptionBehavior {
         // An extension starts where the existing coverage ends — never overlapping it. That rule
         // outranks a stated start: honoring one here would either overlap the term still running
         // or leave a gap in coverage the customer has already been sold.
-        const extending = action === 'ExtendExisting';
+        // Reactivating a canceled subscription whose coverage still runs continues that coverage
+        // too, rather than starting a second term over the same dates (#737). A gateway renewal of a
+        // cancelled subscription continues it even after it lapsed: the gateway charged for the
+        // period right after the last term, not one starting on the day the charge was booked.
+        const extending =
+            action === 'ExtendExisting' ||
+            (action === 'Reactivate' &&
+                (this.CanceledCoverageRunning(ctx) || (!!ctx.GatewayRenewal && !!ctx.Existing?.LatestTermEnd)));
         const existingCoverageEnd = extending ? (ctx.Existing?.LatestTermEnd ?? null) : null;
         const start = existingCoverageEnd
             ? addDays(existingCoverageEnd, 1)
@@ -568,7 +624,7 @@ export class SubscriptionBehavior {
             Term: terms[0],
             Terms: terms,
             ...(followsStatedEnd
-                ? { StatedLength: { Months: Math.round(MonthsCovered(start, lastEnd) * 100) / 100, TypeMonths: this.TermMonths(ctx.Rules) } }
+                ? { StatedLength: { Months: StatedMonths(start, lastEnd), TypeMonths: this.TermMonths(ctx.Rules) } }
                 : {}),
         };
     }
@@ -589,12 +645,8 @@ export class SubscriptionBehavior {
         // derive when the line states none.
         const intendedStart = ctx.RequestedStartDate ?? utcDay(this.ComputeStartDate({ ...ctx, RequestedStartDate: null }));
         if (requestedEnd.getTime() < intendedStart.getTime()) return null;
-        if (!extending || start.getTime() === intendedStart.getTime()) return requestedEnd;
-
-        const months = WholeMonthsBetween(intendedStart, requestedEnd);
-        return months !== null
-            ? addDays(addMonths(start, months), -1)
-            : addDays(start, daysBetween(intendedStart, requestedEnd));
+        if (!extending) return requestedEnd;
+        return KeptStatedEnd(intendedStart, requestedEnd, start);
     }
 
     /**
@@ -776,12 +828,19 @@ export class SubscriptionBehavior {
         // Reactivation still applies below when the subscription has lapsed — a renewal arriving
         // after a lapse should revive it rather than silently extend a dead one.
         const isActive = existing.Status === 'Active' || existing.Status === 'Trialing';
+        // The gateway was paid for the next period: continue THIS subscription, whatever the type's
+        // reactivation window says.
+        if (ctx.GatewayRenewal) return isActive ? 'ExtendExisting' : 'Reactivate';
         if (ctx.IsRenewal && isActive) return 'ExtendExisting';
+        // A canceled subscription whose paid coverage has not ended still holds those dates, so a
+        // second purchase follows the concurrency rule as it would for a live one (#737). Treating
+        // it as lapsed reactivated it with a term over the same window and a second Active grant.
+        const covering = isActive || this.CanceledCoverageRunning(ctx);
         // The line's own answer, when it gives one (golive #299). Before this the type's rule was
         // the only answer, so every same-product purchase under `ExtendExisting` became the next
         // term and started a year late.
         if (!ctx.IsRenewal && ctx.RequestedAction === 'CreateNew') {
-            if (isActive && ctx.Rules.ConcurrencyMode === 'RejectDuplicate') return 'Reject';
+            if (covering && ctx.Rules.ConcurrencyMode === 'RejectDuplicate') return 'Reject';
             return 'CreateNew';
         }
         if (!ctx.IsRenewal && ctx.RequestedAction === 'ExtendExisting' && isActive) return 'ExtendExisting';
@@ -789,6 +848,16 @@ export class SubscriptionBehavior {
             switch (ctx.Rules.ConcurrencyMode) {
                 case 'AllowMultiple': return 'CreateNew';
                 case 'ExtendExisting': return 'ExtendExisting';
+                case 'RejectDuplicate': return 'Reject';
+            }
+        }
+        // Canceled with coverage still running. Extending it must also undo the cancellation, which
+        // is what 'Reactivate' does; `Decide` starts that term the day after the coverage ends.
+        if (covering) {
+            if (!ctx.IsRenewal && ctx.RequestedAction === 'ExtendExisting') return 'Reactivate';
+            switch (ctx.Rules.ConcurrencyMode) {
+                case 'AllowMultiple': return 'CreateNew';
+                case 'ExtendExisting': return 'Reactivate';
                 case 'RejectDuplicate': return 'Reject';
             }
         }
@@ -809,6 +878,16 @@ export class SubscriptionBehavior {
     }
 
     /**
+     * True when the existing subscription is Canceled but its latest term has not ended by the
+     * purchase date: a cancellation at end of term keeps the paid coverage running (#737).
+     */
+    protected CanceledCoverageRunning(ctx: SubscriptionPurchaseContext): boolean {
+        const existing = ctx.Existing;
+        if (!existing || existing.Status !== 'Canceled' || !existing.LatestTermEnd) return false;
+        return utcDay(existing.LatestTermEnd).getTime() >= ctx.PurchaseDate.getTime();
+    }
+
+    /**
      * A stated start, or else Immediate / Deferred / snap-forward to the calendar anchor.
      *
      * The override lives HERE rather than in `Decide` so that a driver subclass overriding this
@@ -822,32 +901,18 @@ export class SubscriptionBehavior {
         // somebody typed deliberately.
         if (ctx.RequestedStartDate) return ctx.RequestedStartDate;
 
-        const purchase = ctx.PurchaseDate;
-        switch (ctx.Rules.StartMode) {
-            case 'Immediate':
-                return purchase;
-            case 'Deferred':
-                return addDays(purchase, ctx.Rules.DeferredStartDays ?? 0);
-            case 'CalendarAnchored':
-                // ExtendToNextAnchor waits for the anchor; Prorate/ChargeFull start NOW and run to
-                // the anchor, which is what makes the first term partial.
-                return ctx.Rules.PartialPeriodMode === 'ExtendToNextAnchor'
-                    ? this.NextAnchor(ctx, purchase)
-                    : purchase;
-        }
+        // Otherwise the type's StartMode moves the purchase day (`DefaultTermStart`, shared with the
+        // order screen); the anchor stays this behavior's to decide.
+        return DefaultTermStart(ctx.Rules, ctx.PurchaseDate, (from) => this.NextAnchor(ctx, from));
     }
 
+    /**
+     * One term length after `start`, or on a calendar-anchored first term the day before the next
+     * anchor (`DefaultTermEnd`, shared with the order screen). The term length and the anchor stay
+     * this behavior's to decide.
+     */
     protected ComputeEndDate(ctx: SubscriptionPurchaseContext, start: Date, extending: boolean): Date {
-        const months = this.TermMonths(ctx.Rules);
-
-        if (ctx.Rules.StartMode === 'CalendarAnchored' && !extending) {
-            // A partial first term runs from the purchase to the day before the next anchor.
-            const anchor = this.NextAnchor(ctx, start);
-            if (ctx.Rules.PartialPeriodMode !== 'ExtendToNextAnchor' && anchor.getTime() > start.getTime()) {
-                return addDays(anchor, -1);
-            }
-        }
-        return addDays(addMonths(start, months), -1);
+        return DefaultTermEnd(ctx.Rules, start, extending, this.TermMonths(ctx.Rules), (from) => this.NextAnchor(ctx, from));
     }
 
     /**
@@ -875,25 +940,13 @@ export class SubscriptionBehavior {
 
     /** The next occurrence of AnchorMonth/AnchorDay strictly after `from`. */
     protected NextAnchor(ctx: SubscriptionPurchaseContext, from: Date): Date {
-        const month = (ctx.Rules.AnchorMonth ?? 1) - 1;
-        const day = ctx.Rules.AnchorDay ?? 1;
-        const base = utcDay(from);
-        let anchor = new Date(Date.UTC(base.getUTCFullYear(), month, day));
         // Strictly after: buying ON the anchor date starts a FULL term at that anchor rather than
         // a zero-length stub ending the day before itself.
-        if (anchor.getTime() <= base.getTime()) {
-            anchor = new Date(Date.UTC(base.getUTCFullYear() + 1, month, day));
-        }
-        return anchor;
+        return NextAnchorAfter(ctx.Rules, from);
     }
 
     protected MonthsForCadence(cadence: SubscriptionTypeRules['BillingCadence'], customDays?: number | null): number {
-        switch (cadence) {
-            case 'Monthly': return 1;
-            case 'Quarterly': return 3;
-            case 'Annual': return 12;
-            case 'Custom': return Math.max(1, Math.round((customDays ?? 30) / 30));
-        }
+        return CadenceMonths(cadence, customDays);
     }
 
     /**
@@ -997,6 +1050,29 @@ export class SubscriptionBehavior {
     }
 
     /**
+     * Whether a cancellation ends access AT ONCE, rather than at the end of its access-through day.
+     *
+     * Only an `Immediate` cancel with no grace, and only when it is made for today or an earlier day, or
+     * before the term has started (`DecideCancellation` clamps such a request to the term's first day, which
+     * would otherwise keep that whole day). Every other cancellation keeps its access-through day in full (end
+     * of term, end of a billing period, any grace, and an `Immediate` one requested for a later day), which is
+     * also how `EvaluateGrantAccess` reads a cancelled subscription.
+     *
+     * Pure. `context` is the one `DecideCancellation` was given (its `Rules` after `RulesForTiming`); `today`
+     * is the business day.
+     *
+     * Example (Chicago, last day 31 Dec, cancelled at 7 pm Central): `EndOfTerm` is false, so access runs
+     * to 00:00 Central on 1 Jan; `Immediate` is true, so the grants are revoked on the spot. `Immediate`
+     * requested for two days from now is false: access runs through that day.
+     */
+    public EndsAccessOnCancel(context: CancellationContext, decision: CancellationDecision, today: Date): boolean {
+        if (context.Rules.CancellationMode !== 'Immediate' || (context.Rules.GracePeriodDays ?? 0) !== 0) return false;
+        const requested = utcDay(context.RequestDate).getTime();
+        const beforeTerm = requested < utcDay(context.Term.StartDate).getTime();
+        return beforeTerm || utcDay(decision.AccessThroughDate).getTime() <= utcDay(today).getTime();
+    }
+
+    /**
      * Apply the type's cancellation rules to a request. Pure — computes dates and amounts, touches
      * nothing. Override any protected piece below to change one aspect.
      */
@@ -1035,6 +1111,7 @@ export class SubscriptionBehavior {
             // they paid for. Only a cut-short term is `Canceled`.
             TermStatus: effective.getTime() >= ctx.Term.EndDate.getTime() ? 'Completed' : 'Canceled',
             Explanation: explanation,
+            Coverage: `Coverage ends ${isoDay(effective)} (${ctx.Rules.CancellationMode}).`,
         };
     }
 
@@ -1065,6 +1142,7 @@ export class SubscriptionBehavior {
                 ReversalFraction: 0,
                 TermStatus: 'Canceled',
                 Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept.`,
+                Coverage: `${coverage}.`,
             };
         }
         return {
@@ -1079,6 +1157,7 @@ export class SubscriptionBehavior {
                 rawContext.Rules.CancellationRefundMode === 'NoRefund'
                     ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed and its instalments withdrawn.`
                     : `${coverage} and its full ${amount} reversed.`,
+            Coverage: `${coverage}.`,
         };
     }
 
@@ -1276,21 +1355,10 @@ export function SubscriptionTypeRulesFrom(row: SubscriptionTypeRules): Subscript
 }
 
 /**
- * Which subscription type a product actually uses at confirm.
- *
- * `Product.SubscriptionTypeID` wins when set. Otherwise the product type's
- * `DefaultSubscriptionTypeID` (Membership → Annual Rolling, etc.). Null means
- * the line is not a subscription — no term, no service period from this path.
+ * Which subscription type a product actually uses at confirm. Lives in orders-entities so the
+ * screens that decide whether a line is a subscription apply the same rule (golive #339).
  */
-export function ResolveSubscriptionTypeID(
-    productSubscriptionTypeID: string | null | undefined,
-    typeDefaultSubscriptionTypeID: string | null | undefined,
-): string | null {
-    const explicit = productSubscriptionTypeID?.trim();
-    if (explicit) return explicit;
-    const inherited = typeDefaultSubscriptionTypeID?.trim();
-    return inherited || null;
-}
+export { ResolveSubscriptionTypeID } from '@mj-biz-apps/orders-entities';
 
 /**
  * Which revenue-recognition type a product actually uses at booking.

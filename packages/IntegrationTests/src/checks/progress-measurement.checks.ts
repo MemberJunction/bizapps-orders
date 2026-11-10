@@ -47,10 +47,10 @@
  *   PM24 an invoice posted between the mistake and the supersede: revenue nets to zero on the
  *        mistaken date, the contra legs need not, and the line's end balances match a control line
  *        that was never mistyped
- *   PM25 a supersede whose replaced month is already in a Posted batch books its reversal AND the
- *        replacement's catch-up on day 1 of the first later month with none — skipping every posted
- *        month in between — while the replacement row keeps the date the supervisor chose, and
- *        preview and post agree on the dates
+ *   PM25 finance's books-closed-through date (golive #316): a measurement date on or before it is
+ *        refused on preview and post, supersede included; a supersede of an observation in a closed
+ *        month books its reversal on the first open day, while the replacement's catch-up posts on
+ *        the date entered, and preview and post agree on the dates
  *
  * Every attestation here is made as an Engagement Lead-only user, never the System owner, so each
  * check also proves the role is enough on its own.
@@ -232,6 +232,20 @@ async function worklistOutput(ctx: IntegrationCheckContext, user = withOnlyRole(
 
 const lineTotal = (ctx: IntegrationCheckContext, lineID: string) =>
     TxOne<{ RecognizedToDate: number }>(ctx, `SELECT RecognizedToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`);
+
+/** The refusal for a date in a month finance has closed (golive #316). */
+const CLOSED_BOOKS = 'This month has already been closed by finance. Please contact them to proceed.';
+
+/** Set the line's company's books-closed-through date, or clear it. Rolled back with the check. */
+async function closeBooksThrough(ctx: IntegrationCheckContext, lineID: string, date: string | null): Promise<void> {
+    const { CompanyID } = await TxOne<{ CompanyID: string }>(ctx, `SELECT CompanyID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`);
+    const rows = await TxQuery<{ ID: string }>(ctx, `SELECT ID FROM ${ACCT_SCHEMA}.AccountingCompanyProfile WHERE ID = '${CompanyID}'`);
+    AssertEqual(rows.length, 1, "the line's company has an accounting profile");
+    await TxQuery(
+        ctx,
+        `UPDATE ${ACCT_SCHEMA}.AccountingCompanyProfile SET BooksClosedThroughDate = ${date ? `'${date}'` : 'NULL'} WHERE ID = '${CompanyID}'`,
+    );
+}
 
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -908,8 +922,8 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 Assert(fixed.Success, `the supersede must post: ${fixed.Message}`);
                 AssertEqual(fixed.SupersededMeasurementID?.toLowerCase(), typo.OrderLineProgressMeasurementID?.toLowerCase(), 'it names the row it replaced');
                 AssertEqual(fixed.ReversalAmount, -300.01, "the reversal is the typo's own delta, negated");
-                AssertEqual(fixed.ReversalDate, '2027-08-31', "no batch has posted the typo's month, so the reversal keeps its date");
-                AssertEqual(fixed.CatchUpDate, '2026-08-31', 'and the catch-up keeps the date the supervisor chose');
+                AssertEqual(fixed.ReversalDate, '2027-08-31', "finance has not closed the typo's month, so the reversal keeps its date");
+                AssertEqual(fixed.CatchUpDate, '2026-08-31', 'and the catch-up posts on the date the supervisor entered');
                 Assert(!!fixed.ReversalJournalEntryID && !!fixed.JournalEntryID, 'two entries: the reversal and the catch-up');
                 AssertEqual(fixed.RecognizedToDateBefore, 400, 'the catch-up starts from what July left');
                 AssertEqual(fixed.RecognitionAmount, 150.01, 'and posts only its own delta');
@@ -1111,53 +1125,64 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
     },
     {
         Id: 'progress-measurement.PM25',
-        Name: 'PM25: a replaced month already in a posted batch books the reversal and the catch-up in the first later month with none',
+        Name: "PM25: a date on or before finance's books-closed-through date is refused, supersede included; a closed reversal moves to the first open day",
         RequiresMutation: true,
         Fn: async (ctx) =>
             InRolledBackTransaction(ctx, async () => {
-                const { lineID } = await bookedProjectLine(ctx);
-                const companyID = (await TxOne<{ CompanyID: string }>(ctx, `SELECT CompanyID FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${lineID}'`)).CompanyID;
-                const postBatch = (number: string, postingDate: string) =>
-                    TxQuery(
-                        ctx,
-                        `INSERT INTO ${ACCT_SCHEMA}.JournalEntryBatch (JournalEntryBatchNumber, CompanyID, PostingDate, TargetSystem, BatchedByUserID, Status, PostedAt)
-                         VALUES ('${number}', '${companyID}', '${postingDate}', 'BusinessCentral', '${ctx.User.ID}', 'Posted', SYSDATETIMEOFFSET())`,
-                    );
+                // An ordinary attestation into a closed month is refused on both paths and writes nothing.
+                const fresh = await bookedProjectLine(ctx);
+                await closeBooksThrough(ctx, fresh.lineID, '2026-08-31');
+                for (const preview of [true, false]) {
+                    const out = await record(ctx, { OrderLineID: fresh.lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.4, Preview: preview });
+                    AssertEqual(out.Success, false, `a closed-month date is refused (preview ${preview})`);
+                    AssertEqual(out.Message, CLOSED_BOOKS, 'with the agreed message');
+                }
+                AssertEqual((await observations(ctx, fresh.lineID)).length, 0, 'nothing was written');
+                const open = await record(ctx, { OrderLineID: fresh.lineID, MeasurementDate: '2026-09-01', PercentComplete: 0.4, Preview: true });
+                Assert(open.Success, `the first open day is accepted: ${open.Message}`);
+                // Reopened, so the next line can be attested in July and August before August closes.
+                await closeBooksThrough(ctx, fresh.lineID, null);
+                const reopened = await record(ctx, { OrderLineID: fresh.lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.4, Preview: true });
+                Assert(reopened.Success, `with nothing closed the same date is accepted: ${reopened.Message}`);
 
+                const { lineID } = await bookedProjectLine(ctx);
                 Assert((await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 })).Success, 'July at 40%');
-                // August typed at 70% instead of 55%, and then August closes.
+                // August typed at 70% instead of 55%, and then finance closes August.
                 const typo = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.7 });
                 Assert(typo.Success, typo.Message ?? '');
-                await postBatch('PM25-AUG', '2026-08-31');
+                await closeBooksThrough(ctx, lineID, '2026-08-31');
 
-                const supersede = (preview: boolean) =>
+                const supersede = (date: string, preview: boolean) =>
                     record(
                         ctx,
-                        { OrderLineID: lineID, MeasurementDate: '2026-08-31', PercentComplete: 0.55, SupersedesMeasurementID: typo.OrderLineProgressMeasurementID, Preview: preview },
+                        { OrderLineID: lineID, MeasurementDate: date, PercentComplete: 0.55, SupersedesMeasurementID: typo.OrderLineProgressMeasurementID, Preview: preview },
                         supervisor(ctx),
                     );
-                const preview = await supersede(true);
-                Assert(preview.Success, `the preview must succeed: ${preview.Message}`);
-                AssertEqual(preview.ReversalDate, '2026-09-01', 'August is posted, so the reversal moves to 1 September');
-                AssertEqual(preview.CatchUpDate, '2026-09-01', 'and the catch-up follows it, so nothing new posts into August');
-                Assert(/2026-09-01/.test(String(preview.Message ?? '')), `the preview message states the reversal date: ${preview.Message}`);
-                Assert(/revenue on 2026-09-01 \(2026-08 is in a posted batch\)\.$/.test(String(preview.Message ?? '')), `the preview message states the catch-up date: ${preview.Message}`);
+                for (const preview of [true, false]) {
+                    const intoAugust = await supersede('2026-08-31', preview);
+                    AssertEqual(intoAugust.Success, false, `a supersede dated into closed August is refused (preview ${preview})`);
+                    AssertEqual(intoAugust.Message, CLOSED_BOOKS, 'with the agreed message');
+                }
 
-                // September closes too before the supervisor posts: the reversal skips it as well.
-                await postBatch('PM25-SEP', '2026-09-30');
-                const fixed = await supersede(false);
+                const preview = await supersede('2026-09-30', true);
+                Assert(preview.Success, `the preview must succeed: ${preview.Message}`);
+                AssertEqual(preview.ReversalDate, '2026-09-01', 'August is closed, so the reversal moves to the first open day');
+                AssertEqual(preview.CatchUpDate, '2026-09-30', 'and the catch-up posts on the date entered');
+                Assert(/revenue on 2026-09-01 \(moved from 2026-08-31: finance has closed the books through 2026-08-31/.test(String(preview.Message ?? '')), `the preview message says the reversal moved and why: ${preview.Message}`);
+                Assert(!/posted batch/.test(String(preview.Message ?? '')), 'and does not mention a posted batch');
+
+                const fixed = await supersede('2026-09-30', false);
                 Assert(fixed.Success, `the supersede must post: ${fixed.Message}`);
-                AssertEqual(fixed.ReversalDate, '2026-10-01', 'every consecutive posted month is skipped');
-                AssertEqual(fixed.CatchUpDate, '2026-10-01', 'by the catch-up too');
+                AssertEqual(fixed.ReversalDate, '2026-09-01', 'preview and post agree on the reversal date');
+                AssertEqual(fixed.CatchUpDate, '2026-09-30', 'and on the catch-up date');
                 AssertEqual(fixed.ReversalAmount, -300.01, "the reversal is the typo's own delta, negated");
                 AssertEqual(fixed.RecognitionAmount, 150.01, 'the replacement catches up from the restored 40%');
 
                 const entries = await recognitionEntries(ctx, lineID);
                 const on = (date: string) => entries.filter((e) => e.EffectiveDate === date).map((e) => cents(Number(e.Signed))).sort((a, b) => a - b);
-                AssertEqual(JSON.stringify(on('2026-10-01')), JSON.stringify([-300.01, 150.01]), 'the reversal and the catch-up are both booked in the first open month');
+                AssertEqual(JSON.stringify(on('2026-09-01')), JSON.stringify([-300.01]), 'the reversal is booked on the first open day');
+                AssertEqual(JSON.stringify(on('2026-09-30')), JSON.stringify([150.01]), 'the catch-up on the date entered');
                 AssertEqual(JSON.stringify(on('2026-08-31')), JSON.stringify([300.01]), 'nothing new posts into closed August: only the typo is there');
-                const replacement = (await observations(ctx, lineID)).find((o) => o.ID === fixed.OrderLineProgressMeasurementID);
-                AssertEqual(replacement?.MeasurementDate, '2026-08-31', 'the replacement row keeps the date the supervisor chose');
                 AssertEqual(cents(entries.reduce((sum, e) => sum + Number(e.Signed), 0)), 550.01, 'the ledger holds exactly 55%');
                 AssertEqual(Number((await lineTotal(ctx, lineID)).RecognizedToDate), 550.01, "and so does the line's running total");
             }),

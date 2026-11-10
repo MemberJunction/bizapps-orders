@@ -60,12 +60,12 @@ export class SubscriptionHeaderPanel extends BaseFormPanel<mjBizAppsOrdersSubscr
     /**
      * A confirmed cancellation rewrote the status, end date and auto-renew, and the terms, grants and
      * events beside them. `RefreshRecord()` reloads the record and tells every panel through
-     * `OnRecordRefreshed`, so the Overview cards update too; when it declines (edit mode) the record is
-     * re-read directly so this header at least shows the cancellation.
+     * `OnRecordRefreshed`, so the Overview cards update too. It declines only in edit mode, where the
+     * cancel control is disabled (bizapps-orders#749); re-reading the record here instead would update
+     * this header alone and throw away the unsaved edits.
      */
     public async OnCanceled(): Promise<void> {
-        const refreshed = await this.FormComponent.RefreshRecord();
-        if (!refreshed) await this.Record.Refresh();
+        await this.FormComponent.RefreshRecord();
         this.FormComponent.cdr.detectChanges();
     }
 

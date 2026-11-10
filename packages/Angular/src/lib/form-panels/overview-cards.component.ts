@@ -20,6 +20,8 @@ export interface MJOOverviewCard {
     Facts?: MJOOverviewFact[];
     Headers?: string[];
     Rows?: string[][];
+    /** Column indexes that hold amounts or counts; they are right-aligned with tabular figures. */
+    NumericColumns?: number[];
     Items?: MJOOverviewListItem[];
 }
 
@@ -52,21 +54,21 @@ export interface MJOOverviewCard {
                         }
                         @if (card.Headers?.length && card.Rows) {
                             @if (card.Rows.length === 0) {
-                                <div class="mjo-ov-empty">None yet</div>
+                                <mj-empty-state Size="inline" Message="None yet" />
                             } @else {
                                 <table class="mjo-ov-table">
                                     <thead>
                                         <tr>
-                                            @for (h of card.Headers; track h) {
-                                                <th>{{ h }}</th>
+                                            @for (h of card.Headers; track h; let i = $index) {
+                                                <th [class.num]="card.NumericColumns?.includes(i)">{{ h }}</th>
                                             }
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @for (row of card.Rows; track $index) {
                                             <tr>
-                                                @for (cell of row; track $index) {
-                                                    <td>{{ cell }}</td>
+                                                @for (cell of row; track $index; let i = $index) {
+                                                    <td [class.num]="card.NumericColumns?.includes(i)">{{ cell }}</td>
                                                 }
                                             </tr>
                                         }
@@ -76,7 +78,7 @@ export interface MJOOverviewCard {
                         }
                         @if (card.Items) {
                             @if (card.Items.length === 0) {
-                                <div class="mjo-ov-empty">None yet</div>
+                                <mj-empty-state Size="inline" Message="None yet" />
                             } @else {
                                 @for (item of card.Items; track item.Title + item.Detail) {
                                     <div class="mjo-ov-row">

@@ -85,7 +85,7 @@
 }
 
 .mjo-doc-stat__value {
-    font-size: var(--mj-text-md);
+    font-size: var(--mj-text-base);
     font-weight: 650;
     color: var(--mj-text-primary);
     overflow: hidden;
@@ -258,6 +258,12 @@
     border-bottom: 0;
 }
 
+.mjo-ov-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .mjo-ov-row {
     display: flex;
     align-items: center;
@@ -281,12 +287,6 @@
     margin: 2px 0 0;
     font-size: 12px;
     color: var(--mj-text-secondary);
-}
-
-.mjo-ov-empty {
-    padding: 12px 4px;
-    color: var(--mj-text-muted);
-    font-size: var(--mj-text-sm);
 }
 
 @media (max-width: 800px) {
@@ -351,4 +351,34 @@
 
 .mjo-doc-hero__field ::ng-deep .mj-forms-field-control {
     width: 100%;
+}
+
+/* golive#433 — the Draft banner and the readiness warning under it. */
+.mjo-doc-hero__draft {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.mjo-doc-hero__readiness {
+    border: 1px solid var(--mj-status-warning-border, #e8c27a);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-size: 13px;
+}
+
+.mjo-doc-hero__readiness p {
+    margin: 0 0 6px;
+}
+
+.mjo-doc-hero__readiness ul {
+    margin: 0 0 8px;
+    padding-left: 18px;
+}
+
+.mjo-doc-hero__readiness-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
 }

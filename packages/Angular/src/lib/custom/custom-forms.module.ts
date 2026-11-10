@@ -11,35 +11,43 @@ import { DragDropModule } from '@angular/cdk/drag-drop';
 // MemberJunction Form Primitives
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
+import { ExportServiceModule } from '@memberjunction/ng-export-service';
 import { LinkDirectivesModule } from '@memberjunction/ng-link-directives';
 
 
-import { MJButtonDirective, MJTabNavComponent } from '@memberjunction/ng-ui-components';
+import { MJButtonDirective, MJEmptyStateComponent, MJTabNavComponent } from '@memberjunction/ng-ui-components';
+import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { FilterBuilderModule } from '@memberjunction/ng-filter-builder';
-import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
+import { DeferredRevenueWaterfallModule, GlResolutionPreviewComponent } from '@mj-biz-apps/accounting-ng';
 import { PartyFieldComponent, SellingCompanyFieldComponent } from '@mj-biz-apps/common-ng';
 
 // Custom Form Components
 import { BizAppsProductSaveGuardFormComponent, LoadProductSaveGuardFormComponent } from './Product/product-save-guard-form.component';
 import { BizAppsProductPricingWidgetComponent } from './Product/widgets/product-pricing-widget.component';
+import { MJOCurrencyInputDirective } from './currency-input.directive';
 import { BizAppsProductPromotionsWidgetComponent } from './Product/widgets/product-promotions-widget.component';
 import { BizAppsProductAccountingWidgetComponent } from './Product/widgets/product-accounting-widget.component';
 import { BizAppsProductGLLinksComponent } from './Product/widgets/product-gl-links.component';
+import { BizAppsProductEffectiveGLAccountsComponent } from './Product/widgets/product-effective-gl-accounts.component';
 import { BizAppsProductFulfillmentWidgetComponent } from './Product/widgets/product-fulfillment-widget.component';
 import { BizAppsProductSubscriptionWidgetComponent } from './Product/widgets/product-subscription-widget.component';
 import { BizAppsOrderHeaderFormComponent, LoadOrderHeaderFormComponent } from './OrderHeader/order-header-form.component';
 import { MJOOrderLinesEditorComponent } from './OrderHeader/order-lines-editor.component';
 import { MJOPartyAddressPickerComponent } from './OrderHeader/party-address-picker.component';
 import { BizAppsPaymentHeaderFormComponent, LoadPaymentHeaderFormComponent } from './PaymentHeader/payment-header-form.component';
+import { MJOChangePaymentDateComponent } from './PaymentHeader/change-payment-date.component';
+import { MJOOrderPaymentDatesComponent } from './PaymentHeader/order-payment-dates.component';
 import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } from './EventOrderLine/event-order-line-form.component';
 
 @NgModule({
     declarations: [
+        MJOCurrencyInputDirective,
         BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
         BizAppsProductAccountingWidgetComponent,
         BizAppsProductGLLinksComponent,
+        BizAppsProductEffectiveGLAccountsComponent,
         BizAppsProductFulfillmentWidgetComponent,
         BizAppsProductSubscriptionWidgetComponent,
         BizAppsOrderHeaderFormComponent,
@@ -52,22 +60,30 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         DragDropModule,
         BaseFormsModule,
         EntityViewerModule,
+        ExportServiceModule,
         LinkDirectivesModule,
         MJButtonDirective,
         MJTabNavComponent,
+        MJEmptyStateComponent,
+        SharedGenericModule,
         FilterBuilderModule,
         MJOOrderLinesEditorComponent,
         MJOPartyAddressPickerComponent,
+        MJOChangePaymentDateComponent,
+        MJOOrderPaymentDatesComponent,
         DeferredRevenueWaterfallModule,
+        GlResolutionPreviewComponent,
         SellingCompanyFieldComponent,
         PartyFieldComponent,
     ],
     exports: [
+        MJOCurrencyInputDirective,
         BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
         BizAppsProductAccountingWidgetComponent,
         BizAppsProductGLLinksComponent,
+        BizAppsProductEffectiveGLAccountsComponent,
         BizAppsProductFulfillmentWidgetComponent,
         BizAppsProductSubscriptionWidgetComponent,
         BizAppsOrderHeaderFormComponent,

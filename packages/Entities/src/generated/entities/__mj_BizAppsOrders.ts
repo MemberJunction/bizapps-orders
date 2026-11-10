@@ -1420,6 +1420,10 @@ export const mjBizAppsOrdersEventProductSchema = z.object({
         * * Field Name: VenueAddress
         * * Display Name: Venue Address Details
         * * SQL Data Type: nvarchar(255)`),
+    IsSellableNew: z.boolean().describe(`
+        * * Field Name: IsSellableNew
+        * * Display Name: Is Sellable New
+        * * SQL Data Type: bit`),
 });
 
 export type mjBizAppsOrdersEventProductEntityType = z.infer<typeof mjBizAppsOrdersEventProductSchema>;
@@ -2823,6 +2827,11 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Card Issuing Country
         * * SQL Data Type: char(2)
         * * Description: ISO 3166-1 alpha-2 country of the issuer of the card that paid at self-serve checkout, as the payment gateway reports it. VAT location evidence alongside the billing address. NULL when the order was not paid by card through self-serve checkout, or when the gateway did not report a country.`),
+    InitialPaymentReceivedDate: z.date().nullable().describe(`
+        * * Field Name: InitialPaymentReceivedDate
+        * * Display Name: Initial Payment Received Date
+        * * SQL Data Type: date
+        * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -3193,7 +3202,7 @@ export const mjBizAppsOrdersOrderLineProgressMeasurementSchema = z.object({
         * * Field Name: ReversalJournalEntryID
         * * Display Name: Reversal Journal Entry ID
         * * SQL Data Type: uniqueidentifier
-        * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`),
+        * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate, so the revenue it recognised nets to zero on that date, unless that date is on or before the company's AccountingCompanyProfile.BooksClosedThroughDate; then on the first day after it. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.`),
     AttestedByUser: z.string().nullable().describe(`
         * * Field Name: AttestedByUser
         * * Display Name: Attested By User
@@ -4234,6 +4243,12 @@ export const mjBizAppsOrdersPaymentProviderPriceSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    UseForNewSubscriptions: z.boolean().describe(`
+        * * Field Name: UseForNewSubscriptions
+        * * Display Name: Use For New Subscriptions
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: The price a new gateway-billed subscription to this product is created on. At most one active row per provider and product. Other active rows still map charges to the product (unmatched charges) but are never used for new subscriptions.`),
     PaymentProvider: z.string().describe(`
         * * Field Name: PaymentProvider
         * * Display Name: Payment Provider Name
@@ -4364,6 +4379,12 @@ export const mjBizAppsOrdersPaymentProviderTypeSchema = z.object({
         * * Display Name: Updated At
         * * SQL Data Type: datetimeoffset
         * * Default Value: getutcdate()`),
+    SupportsSubscriptionBilling: z.boolean().describe(`
+        * * Field Name: SupportsSubscriptionBilling
+        * * Display Name: Supports Subscription Billing
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether the gateway can bill a subscription itself: charge the card each period and send its own receipts. Orders creates a gateway subscription only for a provider whose type supports it and whose account has BillsSubscriptions set.`),
 });
 
 export type mjBizAppsOrdersPaymentProviderTypeEntityType = z.infer<typeof mjBizAppsOrdersPaymentProviderTypeSchema>;
@@ -4425,6 +4446,12 @@ export const mjBizAppsOrdersPaymentProviderSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ: Company Integrations (vwCompanyIntegrations.ID)
         * * Description: The MJ Company Integration whose connector and credential this provider uses (Bill.com). NULL for providers that resolve credentials through CredentialsRef. A pointer, never a secret.`),
+    BillsSubscriptions: z.boolean().describe(`
+        * * Field Name: BillsSubscriptions
+        * * Display Name: Bills Subscriptions
+        * * SQL Data Type: bit
+        * * Default Value: 0
+        * * Description: Whether this account bills the auto-renewing subscriptions sold through it. When set and the type supports it, Orders creates a gateway subscription after the first payment, and the gateway charges each renewal. Turning it off stops new ones only: a subscription already billed by the gateway keeps being skipped by Orders' renewal jobs.`),
     PaymentProviderType: z.string().describe(`
         * * Field Name: PaymentProviderType
         * * Display Name: Provider Type
@@ -5656,6 +5683,12 @@ export const mjBizAppsOrdersProductSchema = z.object({
         * * Display Name: Requires Sale Approval
         * * SQL Data Type: bit
         * * Description: When true, every line for this product holds its order at confirm until an approved concession, decided by the ConcessionLimit rule's approving role, covers it: the requester's own Sales Authority never approves it. Overrides the product's category and type. NULL means inherit from the next level: the product category and its ancestors, then the product type.`),
+    IsSellableNew: z.boolean().describe(`
+        * * Field Name: IsSellableNew
+        * * Display Name: Is Sellable New
+        * * SQL Data Type: bit
+        * * Default Value: 1
+        * * Description: 0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it.`),
     ProductType: z.string().describe(`
         * * Field Name: ProductType
         * * Display Name: Product Type Name
@@ -7043,12 +7076,13 @@ export const mjBizAppsOrdersSubscriptionSchema = z.object({
         * * Field Name: PaymentProviderID
         * * Display Name: Payment Provider
         * * SQL Data Type: uniqueidentifier
-        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)`),
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+        * * Description: The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.`),
     ProviderSubscriptionID: z.string().nullable().describe(`
         * * Field Name: ProviderSubscriptionID
         * * Display Name: Provider Subscription ID
         * * SQL Data Type: nvarchar(100)
-        * * Description: Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.`),
+        * * Description: The gateway's id for a subscription it bills (for Stripe, sub_...). When set, the gateway named by PaymentProviderID charges every renewal and Orders' renewal jobs skip the subscription; NULL means Orders renews it.`),
     MigratesFromSubscriptionID: z.string().nullable().describe(`
         * * Field Name: MigratesFromSubscriptionID
         * * Display Name: Migrates From Subscription
@@ -11288,6 +11322,19 @@ export class mjBizAppsOrdersEventProductEntity extends BaseEntity<mjBizAppsOrder
     */
     get VenueAddress(): string | null {
         return this.Get('VenueAddress');
+    }
+
+    /**
+    * * Field Name: IsSellableNew
+    * * Display Name: Is Sellable New
+    * * SQL Data Type: bit
+    * * IS-A Source: Inherited from MJ_BizApps_Orders: Products
+    */
+    get IsSellableNew(): boolean {
+        return this.Get('IsSellableNew');
+    }
+    set IsSellableNew(value: boolean) {
+        this.Set('IsSellableNew', value);
     }
 }
 
@@ -15642,6 +15689,19 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: InitialPaymentReceivedDate
+    * * Display Name: Initial Payment Received Date
+    * * SQL Data Type: date
+    * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.
+    */
+    get InitialPaymentReceivedDate(): Date | null {
+        return this.Get('InitialPaymentReceivedDate');
+    }
+    set InitialPaymentReceivedDate(value: Date | null) {
+        this.Set('InitialPaymentReceivedDate', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -16641,7 +16701,7 @@ export class mjBizAppsOrdersOrderLineProgressMeasurementEntity extends BaseEntit
     * * Field Name: ReversalJournalEntryID
     * * Display Name: Reversal Journal Entry ID
     * * SQL Data Type: uniqueidentifier
-    * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate while that month has no posted batch for the line's company, so the revenue it recognised nets to zero on that date; otherwise on the first day of the first later month with no posted batch. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.
+    * * Description: Soft reference into accounting: the entry reversing the superseded observation's recognition. Dated on that observation's MeasurementDate, so the revenue it recognised nets to zero on that date, unless that date is on or before the company's AccountingCompanyProfile.BooksClosedThroughDate; then on the first day after it. The Deferred/Unbilled split follows the line's billing at the time of the supersede. NULL when this row supersedes nothing, or when the superseded observation posted no entry.
     */
     get ReversalJournalEntryID(): string | null {
         return this.Get('ReversalJournalEntryID');
@@ -19761,6 +19821,20 @@ export class mjBizAppsOrdersPaymentProviderPriceEntity extends BaseEntity<mjBizA
     }
 
     /**
+    * * Field Name: UseForNewSubscriptions
+    * * Display Name: Use For New Subscriptions
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: The price a new gateway-billed subscription to this product is created on. At most one active row per provider and product. Other active rows still map charges to the product (unmatched charges) but are never used for new subscriptions.
+    */
+    get UseForNewSubscriptions(): boolean {
+        return this.Get('UseForNewSubscriptions');
+    }
+    set UseForNewSubscriptions(value: boolean) {
+        this.Set('UseForNewSubscriptions', value);
+    }
+
+    /**
     * * Field Name: PaymentProvider
     * * Display Name: Payment Provider Name
     * * SQL Data Type: nvarchar(200)
@@ -20107,6 +20181,20 @@ export class mjBizAppsOrdersPaymentProviderTypeEntity extends BaseEntity<mjBizAp
     get __mj_UpdatedAt(): Date {
         return this.Get('__mj_UpdatedAt');
     }
+
+    /**
+    * * Field Name: SupportsSubscriptionBilling
+    * * Display Name: Supports Subscription Billing
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether the gateway can bill a subscription itself: charge the card each period and send its own receipts. Orders creates a gateway subscription only for a provider whose type supports it and whose account has BillsSubscriptions set.
+    */
+    get SupportsSubscriptionBilling(): boolean {
+        return this.Get('SupportsSubscriptionBilling');
+    }
+    set SupportsSubscriptionBilling(value: boolean) {
+        this.Set('SupportsSubscriptionBilling', value);
+    }
 }
 
 
@@ -20265,6 +20353,20 @@ export class mjBizAppsOrdersPaymentProviderEntity extends BaseEntity<mjBizAppsOr
     }
     set CompanyIntegrationID(value: string | null) {
         this.Set('CompanyIntegrationID', value);
+    }
+
+    /**
+    * * Field Name: BillsSubscriptions
+    * * Display Name: Bills Subscriptions
+    * * SQL Data Type: bit
+    * * Default Value: 0
+    * * Description: Whether this account bills the auto-renewing subscriptions sold through it. When set and the type supports it, Orders creates a gateway subscription after the first payment, and the gateway charges each renewal. Turning it off stops new ones only: a subscription already billed by the gateway keeps being skipped by Orders' renewal jobs.
+    */
+    get BillsSubscriptions(): boolean {
+        return this.Get('BillsSubscriptions');
+    }
+    set BillsSubscriptions(value: boolean) {
+        this.Set('BillsSubscriptions', value);
     }
 
     /**
@@ -23964,6 +24066,20 @@ export class mjBizAppsOrdersProductEntity extends BaseEntity<mjBizAppsOrdersProd
     }
     set RequiresSaleApproval(value: boolean | null) {
         this.Set('RequiresSaleApproval', value);
+    }
+
+    /**
+    * * Field Name: IsSellableNew
+    * * Display Name: Is Sellable New
+    * * SQL Data Type: bit
+    * * Default Value: 1
+    * * Description: 0 = kept for existing orders, imports and renewals, and not offered by the add-product pickers for a new sale. Pricing ignores it.
+    */
+    get IsSellableNew(): boolean {
+        return this.Get('IsSellableNew');
+    }
+    set IsSellableNew(value: boolean) {
+        this.Set('IsSellableNew', value);
     }
 
     /**
@@ -27926,6 +28042,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * RenewalLeadDays: Renewal lead days must be a non-negative number (0 or greater) if specified.
     * * Table-Level: A subscription cannot migrate from itself; the source subscription must be a different subscription.
     * * Table-Level: A subscription cannot migrate to itself. This prevents logical errors where a subscription's migration destination is set as its own record.
+    * * Table-Level: If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.
     * @public
     * @method
     * @override
@@ -27936,6 +28053,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
         this.ValidateRenewalLeadDaysGreaterThanOrEqualToZero(result);
         this.ValidateMigratesFromSubscriptionIDNotEqualsID(result);
         this.ValidateMigratesToSubscriptionIDNotEqualToID(result);
+        this.ValidateProviderSubscriptionIDAndPaymentProviderID(result);
         result.Success = result.Success && (result.Errors.length === 0);
 
         return result;
@@ -28006,6 +28124,33 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     			this.MigratesToSubscriptionID,
     			ValidationErrorType.Failure
     		));
+    	}
+    }
+
+    /**
+    * If a provider subscription ID is specified, it cannot be blank and a payment provider must also be assigned to the subscription.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateProviderSubscriptionIDAndPaymentProviderID(result: ValidationResult) {
+    	if (this.ProviderSubscriptionID != null) {
+    		if (this.ProviderSubscriptionID.trim().length === 0) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"ProviderSubscriptionID",
+    				"Provider Subscription ID cannot be blank when provided.",
+    				this.ProviderSubscriptionID,
+    				ValidationErrorType.Failure
+    			));
+    		}
+    		if (this.PaymentProviderID == null) {
+    			result.Errors.push(new ValidationErrorInfo(
+    				"PaymentProviderID",
+    				"Payment Provider is required when a Provider Subscription ID is specified.",
+    				this.PaymentProviderID,
+    				ValidationErrorType.Failure
+    			));
+    		}
     	}
     }
 
@@ -28220,6 +28365,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * Display Name: Payment Provider
     * * SQL Data Type: uniqueidentifier
     * * Related Entity/Foreign Key: MJ_BizApps_Orders: Payment Providers (vwPaymentProviders.ID)
+    * * Description: The payment provider that bills this subscription. Required when ProviderSubscriptionID is set.
     */
     get PaymentProviderID(): string | null {
         return this.Get('PaymentProviderID');
@@ -28232,7 +28378,7 @@ export class mjBizAppsOrdersSubscriptionEntity extends BaseEntity<mjBizAppsOrder
     * * Field Name: ProviderSubscriptionID
     * * Display Name: Provider Subscription ID
     * * SQL Data Type: nvarchar(100)
-    * * Description: Provider-side subscription identifier (e.g. Stripe sub_...), when provider-billed.
+    * * Description: The gateway's id for a subscription it bills (for Stripe, sub_...). When set, the gateway named by PaymentProviderID charges every renewal and Orders' renewal jobs skip the subscription; NULL means Orders renews it.
     */
     get ProviderSubscriptionID(): string | null {
         return this.Get('ProviderSubscriptionID');

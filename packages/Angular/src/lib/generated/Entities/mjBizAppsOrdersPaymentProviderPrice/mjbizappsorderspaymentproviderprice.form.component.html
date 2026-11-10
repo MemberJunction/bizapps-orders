@@ -10,16 +10,6 @@
     <!-- ========================================
          FIELD PANELS
          ======================================== -->
-    <!-- Details Section -->
-    <mj-collapsible-panel
-        SectionKey="details"
-        SectionName="Details"
-        Icon="fa fa-align-left"
-        [Form]="this"
-        [FormContext]="formContext">
-
-    </mj-collapsible-panel>
-
     <!-- Gateway Configuration Section -->
     <mj-collapsible-panel
         SectionKey="gatewayConfiguration"
@@ -75,6 +65,14 @@
             [Record]="record"
             [ShowLabel]="true"
             FieldName="IsActive"
+            Type="checkbox"
+            [EditMode]="EditMode"
+            [FormContext]="formContext"
+        ></mj-form-field>
+        <mj-form-field 
+            [Record]="record"
+            [ShowLabel]="true"
+            FieldName="UseForNewSubscriptions"
             Type="checkbox"
             [EditMode]="EditMode"
             [FormContext]="formContext"

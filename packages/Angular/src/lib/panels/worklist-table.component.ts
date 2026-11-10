@@ -1,5 +1,6 @@
 import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MJEmptyStateComponent, MJFilterChipComponent } from '@memberjunction/ng-ui-components';
 
 /** How a column's value is rendered. */
 export type MJOColumnKind =
@@ -11,7 +12,7 @@ export type MJOColumnKind =
     | 'number'
     /** Formatted date. */
     | 'date'
-    /** A `mj-chip`; `ChipClass` picks the variant. */
+    /** A `mjo-chip`; `ChipClass` picks the variant. */
     | 'chip'
     /** Monospace — document numbers and references. */
     | 'mono';
@@ -49,7 +50,7 @@ export interface MJOColumn<TRow = any> {
 export interface MJOPreset {
     Key: string;
     Label: string;
-    /** Shown as a count pill. Omit — or pass 0 — to render no pill. */
+    /** Shown in brackets after the label. Omit — or pass 0 — to show none. */
     Count?: number | null;
     Icon?: string;
 }
@@ -95,7 +96,7 @@ export type MJORow = any;
 @Component({
     selector: 'mjo-worklist-table',
     standalone: true,
-    imports: [CommonModule],
+    imports: [CommonModule, MJFilterChipComponent, MJEmptyStateComponent],
     template: `
         @if (Presets.length || Searchable) {
             <div class="mjo-wl__toolbar">
@@ -113,20 +114,13 @@ export type MJORow = any;
                 @if (Presets.length) {
                     <div class="row wrap mjo-wl__presets" role="group" aria-label="Quick filters">
                         @for (preset of Presets; track preset.Key) {
-                            <button
-                                type="button"
-                                class="mj-filter-chip"
-                                [class.is-active]="preset.Key === ActivePreset"
-                                [attr.aria-pressed]="preset.Key === ActivePreset"
-                                (click)="PresetChanged.emit(preset.Key)">
-                                @if (preset.Icon) {
-                                    <i [class]="preset.Icon" aria-hidden="true"></i>
-                                }
-                                {{ preset.Label }}
-                                @if (preset.Count) {
-                                    <span class="count">{{ preset.Count }}</span>
-                                }
-                            </button>
+                            <!-- A zero count is left off, as before: "(0)" on a preset reads as an error. -->
+                            <mj-filter-chip
+                                [Label]="preset.Label"
+                                [Icon]="preset.Icon ?? null"
+                                [Count]="preset.Count || null"
+                                [Active]="preset.Key === ActivePreset"
+                                (Clicked)="PresetChanged.emit(preset.Key)" />
                         }
                     </div>
                 }
@@ -137,6 +131,16 @@ export type MJORow = any;
             <table class="mj-table">
                 <thead>
                     <tr>
+                        @if (Selectable) {
+                            <th class="mjo-wl__check">
+                                <input
+                                    type="checkbox"
+                                    aria-label="Select every row shown"
+                                    [checked]="allChecked()"
+                                    [indeterminate]="someChecked()"
+                                    (change)="toggleAll($any($event.target).checked)">
+                            </th>
+                        }
                         @for (column of Columns; track column.Key) {
                             <th
                                 [class.num]="column.Kind === 'money' || column.Kind === 'number'"
@@ -166,13 +170,22 @@ export type MJORow = any;
                             [class.is-clickable]="RowClicked.observed"
                             [class.is-selected]="isSelected(row)"
                             (click)="onRowClick(row)">
+                            @if (Selectable) {
+                                <td class="mjo-wl__check" (click)="$event.stopPropagation()">
+                                    <input
+                                        type="checkbox"
+                                        [attr.aria-label]="'Select ' + row[RowKey]"
+                                        [checked]="isChecked(row)"
+                                        (change)="toggleRow(row, $any($event.target).checked)">
+                                </td>
+                            }
                             @for (column of Columns; track column.Key) {
                                 <td
                                     [class.num]="column.Kind === 'money' || column.Kind === 'number'"
                                     [class.mono]="column.Kind === 'mono'"
                                     [class]="hideClass(column)">
                                     @if (column.Kind === 'chip') {
-                                        <span class="mj-chip" [class]="column.ChipClass?.(row) ?? ''">
+                                        <span class="mjo-chip" [class]="column.ChipClass?.(row) ?? ''">
                                             {{ display(row, column) }}
                                         </span>
                                     } @else {
@@ -186,12 +199,12 @@ export type MJORow = any;
                         </tr>
                     } @empty {
                         <tr>
-                            <td [attr.colspan]="Columns.length">
-                                <div class="mj-empty mjo-wl__empty">
-                                    <i [class]="EmptyIcon" aria-hidden="true"></i>
-                                    <div class="t">{{ EmptyTitle }}</div>
-                                    <div class="small">{{ EmptyHint }}</div>
-                                </div>
+                            <td [attr.colspan]="Columns.length + (Selectable ? 1 : 0)">
+                                <mj-empty-state
+                                    Size="compact"
+                                    [Icon]="EmptyIcon"
+                                    [Title]="EmptyTitle"
+                                    [Message]="EmptyHint" />
                             </td>
                         </tr>
                     }
@@ -215,11 +228,11 @@ export type MJORow = any;
             .mjo-wl__presets {
                 gap: 6px;
             }
-            .mjo-wl__empty {
-                padding: var(--mj-space-8);
-            }
             .mjo-wl__note {
                 margin-top: var(--mj-space-3);
+            }
+            .mjo-wl__check {
+                width: 36px;
             }
 
             /* Columns drop in a stated order rather than the table scrolling
@@ -275,7 +288,13 @@ export class MJOWorklistTableComponent {
     /** Muted line under the table — where a stated caveat belongs. */
     @Input() FootNote: string | null = null;
 
+    /** Show a checkbox per row for choosing several at once. Keys are `RowKey` values. */
+    @Input() Selectable = false;
+    @Input() CheckedKeys: readonly string[] = [];
+
     @Output() PresetChanged = new EventEmitter<string>();
+    /** The full set of checked keys after a checkbox changed. */
+    @Output() CheckedKeysChange = new EventEmitter<string[]>();
     @Output() SearchChanged = new EventEmitter<string>();
     @Output() SortChanged = new EventEmitter<string>();
     @Output() RowClicked = new EventEmitter<MJORow>();
@@ -286,6 +305,31 @@ export class MJOWorklistTableComponent {
 
     protected isSelected(row: MJORow): boolean {
         return this.SelectedKey != null && String(row[this.RowKey]) === this.SelectedKey;
+    }
+
+    protected isChecked(row: MJORow): boolean {
+        return this.CheckedKeys.includes(String(row[this.RowKey]));
+    }
+
+    protected allChecked(): boolean {
+        return this.Rows.length > 0 && this.Rows.every((r) => this.isChecked(r));
+    }
+
+    protected someChecked(): boolean {
+        return !this.allChecked() && this.Rows.some((r) => this.isChecked(r));
+    }
+
+    protected toggleRow(row: MJORow, checked: boolean): void {
+        const key = String(row[this.RowKey]);
+        const rest = this.CheckedKeys.filter((k) => k !== key);
+        this.CheckedKeysChange.emit(checked ? [...rest, key] : rest);
+    }
+
+    /** Checks or clears every row shown; keys checked outside the shown rows are kept. */
+    protected toggleAll(checked: boolean): void {
+        const shown = new Set(this.Rows.map((r) => String(r[this.RowKey])));
+        const rest = this.CheckedKeys.filter((k) => !shown.has(k));
+        this.CheckedKeysChange.emit(checked ? [...rest, ...shown] : rest);
     }
 
     protected onRowClick(row: MJORow): void {

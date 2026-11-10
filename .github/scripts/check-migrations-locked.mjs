@@ -71,7 +71,10 @@ function git(args, cwd = process.cwd()) {
  * teaches people to merge past this check — the exact habit it exists to stop.
  */
 export function ChangedLockedMigrations(base, head, cwd = process.cwd()) {
-    const raw = git(['diff', '--diff-filter=MRDT', '--name-status', '-M', `${base}...${head}`, '--', 'migrations/'], cwd);
+    // `:(top)` roots the pathspec at the repository, not at `cwd`. A plain `migrations/` run from
+    // `packages/Entities` names `packages/Entities/migrations/`, matches nothing, and reports clean
+    // on a real edit (#822). Paths in `--name-status` output are repo-relative either way.
+    const raw = git(['diff', '--diff-filter=MRDT', '--name-status', '-M', `${base}...${head}`, '--', ':(top)migrations/'], cwd);
     if (!raw) return [];
     return raw
         .split('\n')
@@ -175,6 +178,28 @@ function selfTest() {
         const ok = got.length === 0;
         console.log(`  ${ok ? '✓' : '✗'} a branch merely behind the base is clean — expected [], got [${got}]`);
         if (!ok) fail.push('a-branch-merely-behind-is-clean');
+    }
+
+    // Run from a subdirectory: the pathspec must still name the repository's `migrations/` (#822).
+    {
+        const dir = join(root, 'run-from-a-subdirectory');
+        mkdirSync(join(dir, 'migrations'), { recursive: true });
+        mkdirSync(join(dir, 'packages', 'Entities'), { recursive: true });
+        git(['init', '-q', '.'], dir);
+        git(['config', 'user.email', 't@t'], dir);
+        git(['config', 'user.name', 't'], dir);
+        writeFileSync(join(dir, 'migrations', 'V202601010000__v1__A.sql'), 'CREATE TABLE a(i int);\n');
+        writeFileSync(join(dir, 'packages', 'Entities', 'index.ts'), 'export {};\n');
+        git(['add', '-A'], dir);
+        git(['commit', '-qm', 'base'], dir);
+        const base = git(['rev-parse', 'HEAD'], dir);
+        writeFileSync(join(dir, 'migrations', 'V202601010000__v1__A.sql'), 'CREATE TABLE a(i int, j int);\n');
+        git(['add', '-A'], dir);
+        git(['commit', '-qm', 'change'], dir);
+        const got = ChangedLockedMigrations(base, git(['rev-parse', 'HEAD'], dir), join(dir, 'packages', 'Entities')).map((f) => f.Status);
+        const ok = JSON.stringify(got) === JSON.stringify(['modified']);
+        console.log(`  ${ok ? '✓' : '✗'} an edit is caught when run from a subdirectory — expected [modified], got [${got}]`);
+        if (!ok) fail.push('run-from-a-subdirectory');
     }
 
     scenario('two at once are both reported', (d) => {

@@ -7,14 +7,19 @@
  * Plan D11 — the booking entry per line:
  *
  *     Dr  Accounts Receivable      net (+ tax when the tax build lands)
- *     Dr  Sales Discounts          discount            (contra; omitted when 0)
+ *     Dr  Sales Discounts          discount            (contra; up-front lines only, omitted when 0)
  *         Cr  Sales                gross               (recognized at booking)
- *         Cr  Deferred Revenue     gross               (deferred — released per the schedule)
+ *         Cr  Deferred Revenue     net                 (deferred — released per the schedule)
  *
  * where net is the LINE'S OWN stored LineTotalNet — the authority, not a recomputation —
  * discount = (rate-gross × DiscountPct) + DiscountAmount, and gross = net + discount.
  * Both discount fields are applied because the line applies both.
  * The entry balances by construction: net + discount = gross.
+ *
+ * A DEFERRED LINE BOOKS ITS DISCOUNT WHEN IT EARNS, not at booking — the rule the instalment
+ * invoice already follows. Deferred Revenue holds what the customer owes (net), and each release
+ * carries its share of the discount, so Deferred clears to zero and Sales and Sales Discounts each
+ * reach gross and discount over the term.
  *
  * Plan D92 — A COMPANY BILLED BY INSTALMENT RAISES NO BILLING ENTRY HERE. The order and its
  * schedule are the subledger; the ledger records what happened — billed, collected, earned. So
@@ -42,7 +47,8 @@
  * we emit one REAL FORWARD-DATED entry per schedule slice:
  *
  *     Dr  Deferred Revenue         slice
- *         Cr  Sales                slice        (EffectiveDate = the recognition date)
+ *     Dr  Sales Discounts          slice's share of the discount   (omitted with no account)
+ *         Cr  Sales                slice + its discount share       (EffectiveDate = the recognition date)
  *
  * No materializer, no wake-up job — the ledger holds the future. A 12-month subscription books one
  * AR/Deferred entry plus twelve dated release entries, all inside the same booking transaction.
@@ -78,7 +84,9 @@ import {
     ProratedCreditMemo,
     RefuseEarnedNotBilled,
     SplitContraLegs,
+    StagedDeferredAfter,
     StagedEarnedThrough,
+    TrueUpFinalMirrors,
     type DatedRelease,
     type ReversalPosition,
     type ReversalScheduleRow,
@@ -98,6 +106,7 @@ import { RecognitionMirrors, RevenueRecognitionDriver, type RevRecEntry } from '
 import { GIFT_CARD_PRODUCT_TYPE_CODE } from './GiftCardBehavior.js';
 import { MergeLineDimensions } from './LineDimensionMerge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
+import { CustomerPart, OrderCustomerName } from './JournalEntryCustomer.js';
 import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
@@ -276,6 +285,13 @@ export interface ValueEntryAccounts {
 export interface CreditMemoForLine extends ReversalPosition {
     /** The origin's net, which is what its staged releases were built from. */
     OriginNet: number;
+    /**
+     * The origin's own service window, which its staged releases were built over (#839). Earned to
+     * date is measured on it, not on the reversing line's window, which a return may state shorter.
+     * Absent, the reversing line's window is used.
+     */
+    OriginServicePeriodStart?: Date | string | null;
+    OriginServicePeriodEnd?: Date | string | null;
     /** Earlier reversals of the same origin, whose mirrored releases are no longer earned. */
     PriorReversals: PriorReversal[];
     /** The origin order's instalments, so an earned-ahead refusal can name the one to issue. */
@@ -568,6 +584,8 @@ export class OrderJournalEntryFactory {
         if (!product) {
             throw new Error(`Order line ${line.ID} references product ${line.ProductID}, which was not found.`);
         }
+        // Named in each entry's description so accounting's batch view shows whose order it is (bc-aidp-next-golive#452).
+        const customer = CustomerPart(OrderCustomerName(order));
 
         const typeDefault = OrdersEngine.Instance.ProductTypeByID(product.ProductTypeID)?.DefaultRevenueRecognitionTypeID;
         const revRecID = ResolveRevenueRecognitionTypeID(product.RevenueRecognitionTypeID, typeDefault);
@@ -664,15 +682,24 @@ export class OrderJournalEntryFactory {
             creditLabel = 'Sales';
         }
 
-        let discountAccount: string | null = null;
+        let lineDiscountAccount: string | null = null;
         if (discount !== 0) {
             try {
-                discountAccount = await resolve(GL_ROLE.SalesDiscounts);
+                lineDiscountAccount = await resolve(GL_ROLE.SalesDiscounts);
             } catch (err) {
                 if (!IsRoleNotLinked(err)) throw err;
-                discountAccount = null; // plan D11 — net into the revenue credit instead
+                lineDiscountAccount = null; // plan D11 — net into the revenue credit instead
             }
         }
+        // A DEFERRED LINE'S DISCOUNT IS BOOKED AS IT IS EARNED, never at booking. Its releases are
+        // built from the net, so a discount split here would credit Deferred Revenue with the gross
+        // and leave the discount there with nothing to release it. Booking credits Deferred with the
+        // net instead, and each release (or progress catch-up) debits its own share of the discount.
+        // A FULLY DISCOUNTED deferred line therefore books nothing: its credit is zero and the
+        // zero-line filter below drops the entry, and with a zero net no release is staged either.
+        const discountAtRecognition = revRec.IsDeferred && !isGiftCard;
+        const discountAccount = discountAtRecognition ? null : lineDiscountAccount;
+        const releaseDiscountAccount = discountAtRecognition && net !== 0 ? lineDiscountAccount : null;
 
         // ── the value entry (D10/D11), raised here only when this company is NOT on instalments ──
         //
@@ -885,10 +912,10 @@ export class OrderJournalEntryFactory {
                           EntryType: memo > 0 ? await ResolveInstalmentEntryType(this._provider, this._contextUser) : 'OrderBooking',
                           Description:
                               memo > 0
-                                  ? `Order ${order.OrderNumber} line ${line.LineNumber} — credit memo ` +
+                                  ? `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — credit memo ` +
                                     `reversing order ${creditMemo?.OriginOrderNumber ?? 'unknown'} line ` +
                                     `${creditMemo?.OriginLineNumber ?? '?'} — ${product.Name}`
-                                  : `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                  : `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — ` +
                                     `${isReversal ? 'REVERSAL of ' : ''}${product.Name}`,
                           LinkedEntityID: this._orderLineEntityID,
                           LinkedRecordID: line.ID,
@@ -909,9 +936,19 @@ export class OrderJournalEntryFactory {
             // the months of the whole coverage are recognized evenly (golive #338).
             const windows: Array<{ ID: string; StartDate: Date; EndDate: Date; Amount: number } | undefined> =
                 terms && terms.length ? [...terms] : [undefined];
+            // EACH RELEASE CARRIES ITS SHARE OF THE DISCOUNT, sliced from running totals across every
+            // term's releases so the shares sum to exactly the line's discount. Rounding each slice
+            // on its own would strand a cent in Deferred that nothing later releases.
+            let releasedNet = 0;
+            const discountThrough = (released: number) => (net === 0 ? 0 : money((discount * released) / net));
             for (const term of windows) {
+                // A zero amount stages nothing: every slice would be a JE line for zero, which
+                // accounting refuses as MALFORMED_DRAFT, and a 100%-off line would then refuse the
+                // whole order (golive #328).
+                const releaseAmount = term ? term.Amount : net;
+                if (money(releaseAmount) === 0) continue;
                 const schedule = this.driverFor(revRec).BuildSchedule({
-                    Amount: term ? term.Amount : net,
+                    Amount: releaseAmount,
                     BookingDate: new Date(effectiveDate),
                     ServicePeriodStart: term ? term.StartDate : (line.ServicePeriodStart ? new Date(line.ServicePeriodStart) : null),
                     ServicePeriodEnd: term ? term.EndDate : (line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : null),
@@ -922,10 +959,36 @@ export class OrderJournalEntryFactory {
                 // A SCHEDULED ORIGIN KEEPS WHAT IT HAS EARNED (Andrew, #237). The memo gave back only the
                 // unearned part, so only the releases still to come are mirrored; mirroring the whole
                 // term would also un-recognise the months already delivered and strand them in Deferred.
-                const releases = scheduledOrigin
+                let releases = scheduledOrigin
                     ? schedule.Entries.filter((e) => isoDate(e.RecognitionDate) > effectiveDate)
                     : schedule.Entries;
+                const shares = new Map<(typeof schedule.Entries)[number], number>();
+                for (const entry of schedule.Entries) {
+                    const before = discountThrough(releasedNet);
+                    releasedNet = money(releasedNet + entry.Amount);
+                    shares.set(entry, money(discountThrough(releasedNet) - before));
+                }
+                // THE REVERSAL THAT TAKES THE LAST UNITS BACK EMPTIES DEFERRED EXACTLY (#841). Each
+                // reversing line's rounding remainder sits in its own first month, before its date, so
+                // partial reversals of an uneven amount mirror a few cents more or less than the origin
+                // deferred. The final one trues its last mirror to what the origin still holds. A
+                // reversing line creates no terms, so it has one window and this runs once.
+                if (scheduledOrigin && releases.length && Math.abs(Number(line.Quantity)) >= Number(scheduledOrigin.RemainingQuantity) - 1e-9) {
+                    const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, scheduledOrigin, effectiveDate, recognitionMonths);
+                    const target = StagedDeferredAfter(Own, PriorMirrors, effectiveDate);
+                    // One cent per release of the origin and of each earlier reversal is the most rounding can drift.
+                    const tolerance = 0.01 * Own.length * (1 + scheduledOrigin.PriorReversals.length);
+                    const amounts = TrueUpFinalMirrors(releases.map((e) => Number(e.Amount)), target, tolerance);
+                    // A trued-up mirror keeps the discount share of the release it replaces.
+                    releases = releases.map((e, i) => {
+                        if (amounts[i] === Number(e.Amount)) return e;
+                        const trued = { ...e, Amount: amounts[i] };
+                        shares.set(trued, shares.get(e) ?? 0);
+                        return trued;
+                    });
+                }
                 for (const entry of releases) {
+                    const share = releaseDiscountAccount ? (shares.get(entry) ?? 0) : 0;
                     const releaseLines: JELineDraft[] = [
                         {
                             GLAccountID: bookingCreditAccount,
@@ -933,13 +996,21 @@ export class OrderJournalEntryFactory {
                             Description: `Release deferred — ${product.Name}`,
                             Dimensions: lineDims,
                         },
-                        {
-                            GLAccountID: salesAccount,
-                            CreditAmount: entry.Amount,
-                            Description: `Revenue — ${product.Name}`,
-                            Dimensions: lineDims,
-                        },
                     ];
+                    if (releaseDiscountAccount && share !== 0) {
+                        releaseLines.push({
+                            GLAccountID: releaseDiscountAccount,
+                            DebitAmount: share,
+                            Description: `Discount — ${product.Name}`,
+                            Dimensions: lineDims,
+                        });
+                    }
+                    releaseLines.push({
+                        GLAccountID: salesAccount,
+                        CreditAmount: money(entry.Amount + share),
+                        Description: `Revenue — ${product.Name}`,
+                        Dimensions: lineDims,
+                    });
                     const releaseEntryLines = mirrorIf(isReversal, releaseLines);
                     this.assertBalanced(releaseEntryLines, order, line, 'recognition');
 
@@ -952,7 +1023,7 @@ export class OrderJournalEntryFactory {
                             EffectiveDate: isoDate(entry.RecognitionDate),
                             EntryType: 'RevenueRecognition',
                             Description:
-                                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                                `Order ${order.OrderNumber} line ${line.LineNumber}${customer} — ` +
                                 `${isReversal ? 'unrecognize' : 'recognize'} ${product.Name}`,
                             // D46: anchor to the TERM when there is one; otherwise the line (event
                             // products are deferred but have no subscription and therefore no term).
@@ -973,7 +1044,7 @@ export class OrderJournalEntryFactory {
      * releases earlier reversals of it already mirrored back — see {@link StagedEarnedThrough}.
      *
      * Both are rebuilt from the same driver and the same code the staging used: the origin at its
-     * net over the window this reversing line inherited, and each earlier reversal at its own net,
+     * net over its own window (#839), and each earlier reversal at its own net,
      * window and date, keeping only the releases after that date exactly as its booking did. Needed
      * because `RecognizedToDate` does not count staged releases.
      */
@@ -984,6 +1055,21 @@ export class OrderJournalEntryFactory {
         asOf: string,
         recognitionMonths?: number,
     ): number {
+        const { Own, PriorMirrors } = this.stagedReleaseSets(revRec, line, origin, asOf, recognitionMonths);
+        return StagedEarnedThrough(Own, PriorMirrors, asOf);
+    }
+
+    /**
+     * The origin's staged releases and the releases earlier reversals of it mirrored back, rebuilt
+     * as {@link stagedEarnedThrough} describes.
+     */
+    private stagedReleaseSets(
+        revRec: RevRecTypeRow,
+        line: mjBizAppsOrdersOrderLineEntity,
+        origin: CreditMemoForLine,
+        asOf: string,
+        recognitionMonths?: number,
+    ): { Own: DatedRelease[]; PriorMirrors: DatedRelease[] } {
         const releases = (amount: number, booked: string, start?: Date | string | null, end?: Date | string | null): DatedRelease[] =>
             this.driverFor(revRec)
                 .BuildSchedule({
@@ -1006,8 +1092,13 @@ export class OrderJournalEntryFactory {
             const after = prior.OrderDate;
             return releases(prior.Net, after, prior.ServicePeriodStart, prior.ServicePeriodEnd).filter((r) => r.Date > after);
         });
-        const own = releases(origin.OriginNet, asOf, line.ServicePeriodStart, line.ServicePeriodEnd);
-        return StagedEarnedThrough(own, priorMirrors, asOf);
+        // The origin's window, not this line's: a return stating a shorter window would otherwise
+        // shrink what the origin earned and grow the memo (#839).
+        const hasOriginWindow = !!(origin.OriginServicePeriodStart || origin.OriginServicePeriodEnd);
+        const own = hasOriginWindow
+            ? releases(origin.OriginNet, asOf, origin.OriginServicePeriodStart, origin.OriginServicePeriodEnd)
+            : releases(origin.OriginNet, asOf, line.ServicePeriodStart, line.ServicePeriodEnd);
+        return { Own: own, PriorMirrors: priorMirrors };
     }
 
     /**
@@ -1175,7 +1266,7 @@ export class OrderJournalEntryFactory {
             EffectiveDate: measurementDate,
             EntryType: 'RevenueRecognition',
             Description:
-                `Order ${order.OrderNumber} line ${line.LineNumber} — ` +
+                `Order ${order.OrderNumber} line ${line.LineNumber}${CustomerPart(OrderCustomerName(order))} — ` +
                 `${delta < 0 ? 'unrecognize' : 'recognize'} ${product.Name} ${note}`,
             LinkedEntityID: this._orderLineEntityID,
             LinkedRecordID: line.ID,

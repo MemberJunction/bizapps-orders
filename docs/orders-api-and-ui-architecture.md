@@ -74,6 +74,8 @@ metadata descriptions predate the code.
 | `Orders.PreviewPrice` | `orders:read` | Sync | One product's price and how it resolved. Explicitly advisory — promotions stack against order totals, so a per-line answer cannot be final. |
 | **Order lifecycle and fulfillment** | | | |
 | `Orders.AdvanceOrderState` | `orders:write` | Sync | Back-office entry of something already done (a counter sale, a shipment made before anyone opened the system, a migration): marks a Confirmed order's fulfillable lines, then sets its `FulfillmentStatus` to Fulfilled. The caller decides whether it may move with lines still Pending. Refuses an order that is not Confirmed; books nothing. |
+| `Orders.ConfirmReadiness` | `orders:read` | Sync | The concession problems that would make confirm refuse a saved, unbooked order, one sentence each. Runs the check confirm runs; the order form lists them under "Before this can be confirmed" and keeps Confirm off while any remain. Writes nothing. |
+| `Orders.ExplainProductGLAccounts` | `orders:read` | Sync | For one product, company and day: the GL account each role books to and every level of the walk (product, category and its parents, product type, company default) with the winner marked, or the refusal confirm would give. Runs `GLAccountResolver.Explain`, which shares `Resolve`'s walk; the product's Accounting tab shows it as Effective accounts. Writes nothing. |
 | `Orders.FulfillOrderLines` | `orders:write` | Sync | Marks lines Fulfilled and sets the order's `FulfillmentStatus` once nothing is left to ship, in one act. |
 | `Orders.GetFulfillmentQueue` | `orders:read` | Sync | The shipping backlog is computed, not stored. |
 | `Orders.GetPriorReturns` | `orders:read` | Sync | How much of each line has been returned and how much may still come back, from the same cap confirm enforces. |
@@ -94,6 +96,7 @@ metadata descriptions predate the code.
 | `Orders.GetOverdueWorklist` | `orders:read` | Sync | The collections worklist. Overdue changes with the clock, so it is computed, not stored. |
 | `Orders.GetBillingWorklist` | `orders:read` | Sync | Scheduled instalments inside their billing window with no invoice behind them. |
 | `Orders.IssueInstalmentInvoice` | `orders:write` | Sync | Issues one Scheduled instalment: freezes its document number, stamps `InvoicedAt`, moves it to Invoiced and books its billing entry, in one transaction. Issuing twice changes nothing. |
+| `Orders.ReplacePaymentSchedule` | `orders:write` | Sync | Sets an order's payment schedule to a supplied list of rows. Instalments already invoiced must be in the list unchanged and are kept; the rest replace the Scheduled rows, numbered by due date, and must tie to the order's lines. Refuses adding a schedule to an order confirmed without one, and removing one from a confirmed order. All or none; Sales calls it at Close Won and when a won deal's schedule changes. |
 | **Progress (percentage of completion)** | | | |
 | `Orders.RecordProgress` | `orders:write` | Sync | Records one attested percent-complete observation on a line and posts the cumulative revenue catch-up. Preview writes nothing. |
 | `Orders.GetProgressWorklist` | `orders:read` | Sync | The monthly attestation list: each booked percentage-of-completion line with its last observation and revenue recognised to date. |
@@ -255,7 +258,15 @@ over the generated ones. The Order Header form is the compose form and sets
 `ShowRelatedEntities: false` — leftover related grids do not belong under Lines. Products,
 Subscriptions, Subscription Terms, Price Lists and Promotions use the generated form plus panel
 contributions and `Layout: left-nav`; the Products form adds a save-time confirmation
-(`product-save-guard-form.component.ts`). The reversing-payment self-join on Payment Headers is
+(`product-save-guard-form.component.ts`). Its Pricing panel (`product-pricing-widget`) shows one
+channel's prices three ways — cards with their When, a revenue-band editor (edges in $M, one row per
+band; see HOW_THE_SYSTEM_WORKS §6), and MJ's data grid — and a "Simulate price" drawer that runs the
+resolver's own applicability checks against a sample customer, with a price list's rows at one priority
+above the Standard rows, as `PriceResolver.loadRules` prices a customer on that list. Every view lists
+prices in the order `ComparePriceRows` (orders-entities) gives, as does the product Overview. Prices are deactivated (Status
+Inactive or an expiration date), not deleted; price inputs are currency fields (`mjoCurrency`); and
+the conditions builder lists each source's `commonFields` from `PRICE_APPLICABILITY_SOURCES` unless
+"Show all fields" is on. The reversing-payment self-join on Payment Headers is
 `inclusion: None`, matching `Order Headers.ReversesOrderHeaderID`.
 
 `@RegisterClass` decorators only run if the module is in the bundle, so `public-api.ts` both imports

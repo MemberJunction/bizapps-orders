@@ -7,6 +7,7 @@
 import { BaseEntity, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { OrdersEngine, OrdersEngineReady } from './OrdersEngine.js';
 import { RequireUUID } from '../sql-guards.js';
+import { LoadOrganizationRevenue, ORGANIZATION_REVENUE_SOURCE } from './organizationRevenue.js';
 import {
     EvaluateFilter,
     type CompositeFilterDescriptor,
@@ -19,19 +20,54 @@ export type { FilterEvalContext };
 export interface PriceApplicabilitySource {
     key: string;
     label: string;
-    entityName: string;
+    /** The entity whose fields the source offers. Absent for a computed source, which lists `fields`. */
+    entityName?: string;
+    /** The fields of a computed source that no entity describes. */
+    fields?: readonly { name: string; label: string; type: 'number' | 'string' | 'date' | 'boolean' }[];
+    /**
+     * The entity's fields the When builder offers by default. An entity has dozens of columns (ids,
+     * URLs, rollups, snapshots) and a price rule tests a handful; the builder lists these and shows
+     * the rest behind "every field". Absent for a computed source, which lists `fields`.
+     */
+    commonFields?: readonly string[];
 }
 
 /** Keys the When builder writes and the resolver reads. Keep in lockstep with the mockup. */
+const ORDER_WHEN_FIELDS = ['OrderType', 'OrderDate', 'Status', 'Origin', 'Company', 'IPCountry', 'CardIssuingCountry'] as const;
+const PRODUCT_WHEN_FIELDS = ['SKU', 'Name', 'Status', 'ProductType', 'ProductCategory', 'Company', 'IsTaxable', 'TaxCategory'] as const;
+const PERSON_WHEN_FIELDS = [
+    'Title', 'Status', 'SeniorityLevel', 'PrimaryJobFunction', 'CurrentJobTitle', 'CurrentOrganizationName',
+    'EmailDomain', 'PrimaryAddressState', 'PrimaryAddressCountry',
+] as const;
+const ORGANIZATION_WHEN_FIELDS = [
+    'Name', 'Status', 'OrganizationType', 'Acronym', 'WebsiteDomain', 'Parent', 'PrimaryAddressState', 'PrimaryAddressCountry',
+] as const;
+const ADDRESS_WHEN_FIELDS = ['City', 'StateProvince', 'PostalCode', 'Country'] as const;
+
 export const PRICE_APPLICABILITY_SOURCES: readonly PriceApplicabilitySource[] = [
-    { key: 'Order', label: 'Order', entityName: 'MJ_BizApps_Orders: Order Headers' },
-    { key: 'Product', label: 'Product', entityName: 'MJ_BizApps_Orders: Products' },
-    { key: 'BillToPerson', label: 'Bill-to person', entityName: 'MJ_BizApps_Common: People' },
-    { key: 'BillToOrganization', label: 'Bill-to organization', entityName: 'MJ_BizApps_Common: Organizations' },
-    { key: 'ShipToPerson', label: 'Ship-to person', entityName: 'MJ_BizApps_Common: People' },
-    { key: 'ShipToOrganization', label: 'Ship-to organization', entityName: 'MJ_BizApps_Common: Organizations' },
-    { key: 'BillToAddress', label: 'Bill-to address', entityName: 'MJ_BizApps_Common: Addresses' },
-    { key: 'ShipToAddress', label: 'Ship-to address', entityName: 'MJ_BizApps_Common: Addresses' },
+    { key: 'Order', label: 'Order', entityName: 'MJ_BizApps_Orders: Order Headers', commonFields: ORDER_WHEN_FIELDS },
+    { key: 'Product', label: 'Product', entityName: 'MJ_BizApps_Orders: Products', commonFields: PRODUCT_WHEN_FIELDS },
+    { key: 'BillToPerson', label: 'Bill-to person', entityName: 'MJ_BizApps_Common: People', commonFields: PERSON_WHEN_FIELDS },
+    {
+        key: 'BillToOrganization',
+        label: 'Bill-to organization',
+        entityName: 'MJ_BizApps_Common: Organizations',
+        commonFields: ORGANIZATION_WHEN_FIELDS,
+    },
+    { key: 'ShipToPerson', label: 'Ship-to person', entityName: 'MJ_BizApps_Common: People', commonFields: PERSON_WHEN_FIELDS },
+    {
+        key: 'ShipToOrganization',
+        label: 'Ship-to organization',
+        entityName: 'MJ_BizApps_Common: Organizations',
+        commonFields: ORGANIZATION_WHEN_FIELDS,
+    },
+    { key: 'BillToAddress', label: 'Bill-to address', entityName: 'MJ_BizApps_Common: Addresses', commonFields: ADDRESS_WHEN_FIELDS },
+    { key: 'ShipToAddress', label: 'Ship-to address', entityName: 'MJ_BizApps_Common: Addresses', commonFields: ADDRESS_WHEN_FIELDS },
+    {
+        key: ORGANIZATION_REVENUE_SOURCE,
+        label: 'Bill-to organization revenue',
+        fields: [{ name: 'AnnualRevenue', label: 'Annual revenue (USD)', type: 'number' }],
+    },
 ];
 
 export function parseApplicability(
@@ -91,8 +127,11 @@ async function loadRow(
 }
 
 /**
- * Load the eight-record bag `EvaluateFilter` reads. Missing parties are `null`,
+ * Load the record bag `EvaluateFilter` reads. Missing parties are `null`,
  * so a When on ship-to is false unless the operator is empty/null.
+ *
+ * `BillToOrganizationRevenue` comes from the host's registered revenue provider and is null when
+ * the revenue is unknown; a revenue-band price then cannot be decided (see `organizationRevenue.ts`).
  */
 export async function loadApplicabilityContext(
     ids: ApplicabilityPartyIDs,
@@ -115,6 +154,7 @@ export async function loadApplicabilityContext(
         ShipToOrganization,
         BillToAddress,
         ShipToAddress,
+        BillToOrganizationRevenue,
     ] = await Promise.all([
         loadRow('MJ_BizApps_Orders: Products', ids.ProductID, provider, user),
         loadRow('MJ_BizApps_Common: People', party('BillToPersonID', ids.BillToPersonID), provider, user),
@@ -123,6 +163,7 @@ export async function loadApplicabilityContext(
         loadRow('MJ_BizApps_Common: Organizations', party('ShipToOrganizationID', ids.ShipToOrganizationID), provider, user),
         loadRow('MJ_BizApps_Common: Addresses', party('BillToAddressID', ids.BillToAddressID), provider, user),
         loadRow('MJ_BizApps_Common: Addresses', party('ShipToAddressID', ids.ShipToAddressID), provider, user),
+        LoadOrganizationRevenue(party('BillToOrganizationID', ids.BillToOrganizationID), revenueAsOf(order), provider, user),
     ]);
 
     return {
@@ -134,5 +175,13 @@ export async function loadApplicabilityContext(
         ShipToOrganization,
         BillToAddress,
         ShipToAddress,
+        [ORGANIZATION_REVENUE_SOURCE]: BillToOrganizationRevenue ? { ...BillToOrganizationRevenue } : null,
     };
+}
+
+/** The order's date when it has one, else today: the provider picks the figure in force then. */
+function revenueAsOf(order: Record<string, unknown> | null): Date {
+    const raw = order?.['OrderDate'];
+    const d = raw instanceof Date ? raw : raw ? new Date(String(raw)) : null;
+    return d && !Number.isNaN(d.getTime()) ? d : new Date();
 }

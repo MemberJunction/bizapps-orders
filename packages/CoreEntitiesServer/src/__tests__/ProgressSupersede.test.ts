@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { AuthorizationInfo, UserInfo } from '@memberjunction/core';
 import {
     BackDatedWarning,
-    CatchUpDate,
+    CLOSED_BOOKS_REFUSAL,
+    ClosedBooksRefusal,
     EffectiveObservations,
     FutureDateWarning,
     MonthEnd,
@@ -121,47 +122,47 @@ describe('BackDatedWarning', () => {
     });
 });
 
-describe('ReversalDate', () => {
-    it('keeps the replaced date while its month has no posted batch', () => {
-        expect(ReversalDate('2026-08-31', [])).toBe('2026-08-31');
-        expect(ReversalDate('2026-08-31', ['2026-07', '2026-09'])).toBe('2026-08-31');
+describe('ClosedBooksRefusal', () => {
+    it('refuses a date on or before the books-closed-through date, with the agreed message', () => {
+        expect(ClosedBooksRefusal('2026-08-31', '2026-08-31')).toBe('This month has already been closed by finance. Please contact them to proceed.');
+        expect(ClosedBooksRefusal('2026-07-31', '2026-08-31')).toBe(CLOSED_BOOKS_REFUSAL);
     });
 
-    it('moves to day 1 of the next month when the replaced month is posted', () => {
-        expect(ReversalDate('2026-08-31', ['2026-08'])).toBe('2026-09-01');
+    it('passes a date after it', () => {
+        expect(ClosedBooksRefusal('2026-09-01', '2026-08-31')).toBeNull();
+        expect(ClosedBooksRefusal('2026-09-30', '2026-08-31')).toBeNull();
     });
 
-    it('skips every consecutive posted month', () => {
-        expect(ReversalDate('2026-08-15', ['2026-08', '2026-09', '2026-10', '2026-12'])).toBe('2026-11-01');
+    it('passes everything when nothing is closed', () => {
+        expect(ClosedBooksRefusal('2020-01-31', null)).toBeNull();
     });
 
-    it('rolls over the year', () => {
-        expect(ReversalDate('2026-11-30', ['2026-11', '2026-12'])).toBe('2027-01-01');
-    });
-
-    it('reads only the date part of a timestamp', () => {
-        expect(ReversalDate('2026-08-31T00:00:00Z', [])).toBe('2026-08-31');
-        expect(ReversalDate('2026-08-31T00:00:00Z', ['2026-08'])).toBe('2026-09-01');
+    it('reads the date part of a timestamp', () => {
+        expect(ClosedBooksRefusal('2026-08-31T00:00:00Z', '2026-08-31')).toBe(CLOSED_BOOKS_REFUSAL);
     });
 });
 
-describe('CatchUpDate', () => {
-    it('keeps the chosen date while the replaced month is open', () => {
-        expect(CatchUpDate('2026-08-31', '2026-08-31', '2026-08-31')).toBe('2026-08-31');
-        expect(CatchUpDate('2026-09-15', '2026-08-31', '2026-08-31')).toBe('2026-09-15');
+describe('ReversalDate', () => {
+    it('keeps the replaced date when it is after the books-closed-through date', () => {
+        expect(ReversalDate('2026-09-30', '2026-08-31')).toBe('2026-09-30');
     });
 
-    it('follows the reversal out of a closed month', () => {
-        expect(CatchUpDate('2026-08-31', '2026-08-31', '2026-09-01')).toBe('2026-09-01');
-        expect(CatchUpDate('2026-08-20', '2026-08-31', '2026-10-01')).toBe('2026-10-01');
+    it('keeps the replaced date when nothing is closed', () => {
+        expect(ReversalDate('2026-08-31', null)).toBe('2026-08-31');
     });
 
-    it('keeps a chosen date after the first open day', () => {
-        expect(CatchUpDate('2026-09-15', '2026-08-31', '2026-09-01')).toBe('2026-09-15');
+    it('moves to the first open day when finance has closed the replaced month', () => {
+        expect(ReversalDate('2026-08-31', '2026-08-31')).toBe('2026-09-01');
+        expect(ReversalDate('2026-06-15', '2026-08-31')).toBe('2026-09-01');
+    });
+
+    it('rolls over the year', () => {
+        expect(ReversalDate('2026-12-31', '2026-12-31')).toBe('2027-01-01');
     });
 
     it('reads only the date part of a timestamp', () => {
-        expect(CatchUpDate('2026-08-31T00:00:00Z', '2026-08-31T00:00:00Z', '2026-09-01')).toBe('2026-09-01');
+        expect(ReversalDate('2026-08-31T00:00:00Z', null)).toBe('2026-08-31');
+        expect(ReversalDate('2026-08-31T00:00:00Z', '2026-08-31')).toBe('2026-09-01');
     });
 });
 

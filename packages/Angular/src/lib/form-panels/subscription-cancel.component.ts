@@ -28,10 +28,12 @@ const CANCELLABLE_STATUSES = new Set(['Active', 'Trialing', 'Paused']);
  * stale preview can never be confirmed.
  *
  * Offered only to a viewer who may update subscriptions, and only while the subscription is in a
- * status it can be cancelled from.
+ * status it can be cancelled from. While the form is in edit mode the control is shown disabled: the
+ * form reloads the record after a cancellation, and it will not reload over unsaved edits
+ * (bizapps-orders#749).
  *
  * ```html
- * <mjo-subscription-cancel [Record]="Record" [Provider]="provider" (Canceled)="refresh()" />
+ * <mjo-subscription-cancel [Record]="Record" [Provider]="provider" [EditMode]="editing" (Canceled)="refresh()" />
  * ```
  */
 @Component({
@@ -46,6 +48,8 @@ export class MJOSubscriptionCancelComponent {
     @Input({ required: true }) Record!: mjBizAppsOrdersSubscriptionEntity;
     /** The provider the record was loaded through; the operation and the permission check use it. */
     @Input({ required: true }) Provider!: IMetadataProvider;
+    /** True while the host form has unsaved edits open; cancelling waits until they are saved or discarded. */
+    @Input() EditMode = false;
     /** Emits after a confirmed cancellation, so the host can reload the record. */
     @Output() Canceled = new EventEmitter<CancelSubscriptionOutput>();
 
@@ -66,6 +70,25 @@ export class MJOSubscriptionCancelComponent {
         return !!user && this.Record.EntityInfo.GetUserPermisions(user).CanUpdate;
     }
 
+    /**
+     * The payment gateway's subscription id when a gateway bills this subscription (E2b). Cancelling
+     * then also cancels it at the gateway, first; the panel says so before anything is pressed.
+     */
+    public get GatewaySubscriptionID(): string | null {
+        return this.Record?.ProviderSubscriptionID ?? null;
+    }
+
+    /**
+     * What the gateway will do (preview) or did (after), in words, for the preview's row. Named by the
+     * coverage end beside it: the gateway's own bound (`BillingEndsAt`) is 00:00 the day AFTER coverage
+     * in the business zone, which reads as a day too late next to "Coverage ends".
+     */
+    public GatewayLine(gateway: NonNullable<CancelSubscriptionOutput['Gateway']>, coverageEnds?: string | null): string {
+        if (gateway.When === 'Now') return 'Stops billing today';
+        const day = this.Day(coverageEnds);
+        return day === '—' ? `Won't renew; nothing charged after coverage ends` : `Won't renew; nothing charged after coverage ends ${day}`;
+    }
+
     /** The type's name for the default option, from the subscription's own view field. */
     public get TypeName(): string {
         return this.Record?.SubscriptionType || 'the subscription type';
@@ -76,6 +99,7 @@ export class MJOSubscriptionCancelComponent {
     }
 
     public Start(): void {
+        if (this.EditMode) return;
         this.Open = true;
         this.Timing = 'Type';
         this.Reason = '';
@@ -103,7 +127,7 @@ export class MJOSubscriptionCancelComponent {
     }
 
     public async Confirm(): Promise<void> {
-        if (!this.Preview) return;
+        if (!this.Preview || this.EditMode) return;
         const output = await this.execute(false);
         if (!output) return;
         this.Close();

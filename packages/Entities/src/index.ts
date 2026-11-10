@@ -29,8 +29,10 @@ export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
 export * from './attendee-seats';
+export * from './bundle-lines';
 export * from './order-line-edit-veto';
 export * from './order-confirm-veto';
+export * from './order-origin';
 export * from './order-review';
 
 /**
@@ -41,6 +43,8 @@ export * from './order-review';
 export * from './OrderHeaderEntity';
 export * from './OrderLineEntity';
 export * from './SubscriptionTermEntity';
+export * from './SubscriptionEntity';
+export * from './provider-billed';
 export * from './ProductPriceEntity';
 export * from './ProductEntity';
 export * from './OrderLineExtensionCompanion';
@@ -99,6 +103,8 @@ export * from './sql-guards';
 export * from './pricing/ConcessionBehavior';
 export * from './pricing/OrderPricingService';
 export * from './pricing/applicability';
+export * from './pricing/organizationRevenue';
+export * from './pricing/revenueBands';
 export * from './pricing/inheritPrices';
 export * from './pricing/priceOverride';
 export * from './pricing/linePriceContext';
@@ -106,6 +112,8 @@ export * from './pricing/linePriceContext';
 export * from './accessOverride';
 // Running a band alongside existing coverage (bizapps-orders#511) — the authorization and the reason.
 export * from './coverage-overlap';
+// A payment's date and correcting it (bc-aidp-next-golive#448) — the authorization and the initial payment's day.
+export * from './payment-date';
 export * from './pricing/linePricePick';
 
 /**
@@ -118,8 +126,11 @@ export * from './pricing/linePricePick';
  */
 export * from './date-cell';
 export * from './displaced-term-start';
+// Term ends and stated lengths, shared by confirm and the order screen (golive #338).
+export * from './subscription-term-length';
 // Whether a subscription line's subscriber already holds its product — the extend-or-new question.
 export * from './existing-holding';
+export * from './subscription-type';
 
 /**
  * `IsOverdue` / `DaysOverdue` / `OverdueSQL` / `OverdueFilter` — what "overdue" means, stated once.
@@ -145,6 +156,9 @@ export * from './base-entity-augmentation';
 export * from './billing-location';
 // Pure decisions for money arriving on an external rail (Bill.com) — read by Orders.PollExternalPayments.
 export * from './ExternalPaymentBehavior.js';
+// Setting an external-payment exception aside, and the shared entity that enforces it (golive#449).
+export * from './external-payment-set-aside';
+export * from './ExternalPaymentEntity';
 // Whether the scheduled poll job lets the payment poll record cash — read by the operation, the webhook and the queue page (#583).
 export * from './external-payment-poll-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).

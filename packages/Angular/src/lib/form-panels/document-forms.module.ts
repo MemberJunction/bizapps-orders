@@ -2,7 +2,7 @@ import { NgModule } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { BaseFormsModule } from '@memberjunction/ng-base-forms';
-import { MJAlertComponent, MJButtonDirective, MJComboboxComponent } from '@memberjunction/ng-ui-components';
+import { MJAlertComponent, MJButtonDirective, MJComboboxComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
 import { DeferredRevenueWaterfallModule } from '@mj-biz-apps/accounting-ng';
 import { RelatedChipsComponent } from '@mj-biz-apps/common-ng';
 import { CustomFormsModule } from '../custom/custom-forms.module';
@@ -19,9 +19,12 @@ import { SubscriptionTermHeaderPanel } from './subscription-term-header.panel';
 import { SubscriptionTermRevRecPanel } from './subscription-term-revrec.panel';
 import { OrderAccessOverridesPanel } from './order-access-overrides.panel';
 import { ProductHeaderPanel } from './product-header.panel';
+import { MJOProductRevRecFieldComponent } from './product-rev-rec-field.component';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductDetailsPanel,
+    ProductLifecycleClaimPanel,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductSubscriptionsPanel,
@@ -77,10 +80,13 @@ const PANELS = [
     SubscriptionTermRevRecPanel,
     OrderAccessOverridesPanel,
     ProductHeaderPanel,
+    MJOProductRevRecFieldComponent,
     ProductPricingPanel,
     ProductPromosPanel,
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductDetailsPanel,
+    ProductLifecycleClaimPanel,
     ProductSubscriptionsPanel,
     PriceListHeaderPanel,
     PriceListSimulatorPanel,
@@ -127,6 +133,7 @@ const PANELS = [
         MJButtonDirective,
         MJOMoneyPipe,
         MJComboboxComponent,
+        MJEmptyStateComponent,
         RelatedChipsComponent,
         DeferredRevenueWaterfallModule,
         CustomFormsModule,

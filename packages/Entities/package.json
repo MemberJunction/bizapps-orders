@@ -1,7 +1,7 @@
 {
   "name": "@mj-biz-apps/orders-entities",
   "type": "module",
-  "version": "5.38.0",
+  "version": "5.47.0",
   "description": "MJ BizApps Orders Entity Subclasses",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -14,13 +14,13 @@
   "scripts": {
     "start": "ts-node-dev src/index.ts",
     "build": "tsc && tsc-alias -f",
-    "test": "echo \"No tests configured yet\""
+    "test": "vitest run --root ../.. packages/Entities/"
   },
   "author": "MemberJunction.com",
   "license": "BUSL-1.1",
   "devDependencies": {
-    "@memberjunction/core": "^6.1.6",
-    "@memberjunction/global": "^6.1.6",
+    "@memberjunction/core": "^6.2.1",
+    "@memberjunction/global": "^6.2.1",
     "@mj-biz-apps/common-entities": "5.56.0",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.9.3"
@@ -30,8 +30,8 @@
     "zod": "^3.25.28"
   },
   "peerDependencies": {
-    "@memberjunction/core": "^6.1.6",
-    "@memberjunction/global": "^6.1.6",
+    "@memberjunction/core": "^6.2.1",
+    "@memberjunction/global": "^6.2.1",
     "@mj-biz-apps/common-entities": "^5.56.0"
   },
   "repository": {

@@ -117,7 +117,28 @@ describe('CheckoutPublicHostComponent events', () => {
         await create().ngOnInit();
         expect(seen.slice(-2)).toEqual([
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'This checkout is not available.' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout is not available.' } },
+        ]);
+    });
+
+    it('reports ERROR for a checkout link with no reference (#859)', async () => {
+        const c = create();
+        c.slug = '';
+        await c.ngOnInit();
+        expect(c.loadError).toBe('This checkout link is missing its reference.');
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'ERROR' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'This checkout link is missing its reference.' } },
+        ]);
+    });
+
+    it('reports ERROR when the page has no secure random source (#859)', async () => {
+        const c = create();
+        (c as unknown as { clientKey(): string }).clientKey = () => '';
+        await c.ngOnInit();
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'ERROR' } },
+            { type: 'checkout-error', detail: { stage: 'initialize', message: 'Checkout requires a secure random source. Open this page over HTTPS.' } },
         ]);
     });
 
@@ -162,13 +183,44 @@ describe('CheckoutPublicHostComponent events', () => {
         expect(seen).toEqual([
             { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
             { type: 'checkout-state-change', detail: { state: 'ERROR' } },
-            { type: 'checkout-error', detail: { message: 'Could not price this checkout.' } },
+            { type: 'checkout-error', detail: { stage: 'draft', message: 'Could not price this checkout.' } },
         ]);
         responses['/draft'] = { Success: true, RequiresPayment: false };
         seen = [];
         await c.onSubmitted(submission());
         expect(seen[0]).toEqual({ type: 'checkout-state-change', detail: { state: 'PROCESSING' } });
         expect(seen.some((e) => e.type === 'checkout-complete')).toBe(true);
+    });
+
+    it('names the stage that failed: payment, then complete (#860)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: true, TotalGross: 0 };
+        responses['/payment-intent'] = { Success: false, ErrorMessage: 'Could not start payment.' };
+        const c = create();
+        await c.ngOnInit();
+        await c.onSubmitted(submission());
+        expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'payment', message: 'Could not start payment.' });
+
+        responses['/draft'] = { Success: true, RequiresPayment: false };
+        responses['/complete'] = { Success: false, ErrorMessage: 'Failed to complete checkout: boom' };
+        seen = [];
+        await c.onSubmitted(submission());
+        expect(seen.find((e) => e.type === 'checkout-error')?.detail).toEqual({ stage: 'complete', message: 'Failed to complete checkout: boom' });
+    });
+
+    it('shows a changed total as a notice, not an error, and reports no error (#819)', async () => {
+        responses['/draft'] = { Success: true, RequiresPayment: true, TotalGross: 107.5, Tax: 7.5 };
+        const c = create();
+        await c.ngOnInit();
+        seen = [];
+        await c.onSubmitted({ ...submission(), totalGross: 100 } as CheckoutSubmissionEvent);
+        expect(c.errorMessage).toBeNull();
+        expect(c.noticeMessage).toBe('The total is 107.50, including 7.50 sales tax. Review it and press Pay again.');
+        expect(seen).toEqual([
+            { type: 'checkout-state-change', detail: { state: 'PROCESSING' } },
+            { type: 'checkout-state-change', detail: { state: 'CHECKOUT' } },
+        ]);
+        c.onQuoteInvalidated();
+        expect(c.noticeMessage).toBeNull();
     });
 
     describe('/complete outlasting the gateway in front of the server', () => {
@@ -291,6 +343,47 @@ describe('CheckoutPublicHostComponent events', () => {
             seen = [];
             c.skipPassword();
             expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'SUCCESS' } }]);
+        });
+    });
+
+    describe('a reload into the account step (#858)', () => {
+        const completing = (): void => {
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => (k === 'mj-checkout-completing:annual' ? 'sess-1' : null),
+                setItem: () => undefined,
+                removeItem: () => undefined,
+            });
+        };
+
+        it('shows the order number and follows the widget’s redirect once the step settles', async () => {
+            completing();
+            responses['/account'] = {
+                Success: true,
+                Account: { Outcome: 'Created', CanSetPassword: true },
+                Confirmation: { OrderNumber: 'SO-7', RedirectUrl: 'https://example.com/thanks', SuccessMessage: null },
+            };
+            const location = { href: 'https://shop.example.com/checkout/annual' };
+            vi.stubGlobal('window', { location });
+            const c = create();
+            await c.ngOnInit();
+            expect(c.orderNumber).toBe('SO-7');
+            expect(c.successMessage).toBe('Thank you. Order SO-7 is confirmed.');
+            expect(c.redirectUrl).toBe('https://example.com/thanks');
+            expect(location.href).toBe('https://shop.example.com/checkout/annual');
+
+            c.skipPassword();
+            expect(location.href).toContain('https://example.com/thanks');
+            expect(location.href).toContain('SO-7');
+        });
+
+        it('keeps the generic wording when the confirmation is missing', async () => {
+            completing();
+            responses['/account'] = { Success: true, Account: { Outcome: 'Created', CanSetPassword: true } };
+            const c = create();
+            await c.ngOnInit();
+            expect(c.orderNumber).toBeNull();
+            expect(c.redirectUrl).toBeNull();
+            expect(c.successMessage).toBe('Thank you. Your order is confirmed.');
         });
     });
 
@@ -472,6 +565,101 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(inits).toBe(2);
             expect(c.successMessage).toBeNull();
             expect(c.config).not.toBeNull();
+        });
+    });
+
+    describe('after the host removes the element', () => {
+        let calls: string[];
+        let stored: Record<string, string>;
+        let location: { href: string };
+        let onAccessStatus: () => void;
+
+        beforeEach(() => {
+            calls = [];
+            stored = {};
+            onAccessStatus = () => undefined;
+            location = { href: 'https://shop.example/buy' };
+            vi.stubGlobal('window', { location });
+            vi.stubGlobal('sessionStorage', {
+                getItem: (k: string) => stored[k] ?? null,
+                setItem: (k: string, v: string) => void (stored[k] = v),
+                removeItem: (k: string) => void delete stored[k],
+            });
+            responses['/initialize'] = { Success: true, SessionID: 'sess-1', Configuration: { ...CONFIG, redirectUrl: 'https://shop.example/thanks' } };
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.stubGlobal(
+                'fetch',
+                vi.fn().mockImplementation((url: string, init?: { body?: string }) => {
+                    const path = url.replace('/checkout', '');
+                    calls.push(path);
+                    if (path === '/access-status') onAccessStatus();
+                    return base(url, init);
+                })
+            );
+        });
+
+        /** Holds `/complete` until the test lets it answer, and says when it was asked. */
+        const holdComplete = () => {
+            let release!: () => void;
+            let asked!: () => void;
+            const wasAsked = new Promise<void>((r) => (asked = r));
+            const gate = new Promise<void>((r) => (release = r));
+            const base = vi.mocked(fetch).getMockImplementation()!;
+            vi.mocked(fetch).mockImplementation(async (url: string, init?: { body?: string }) => {
+                if (String(url).endsWith('/complete')) {
+                    asked();
+                    await gate;
+                }
+                return base(url, init);
+            });
+            return { release, wasAsked };
+        };
+
+        it('still completes a sale removed mid-/complete, but sends no event and does not redirect', async () => {
+            const c = create();
+            await c.ngOnInit();
+            seen = [];
+            const { release, wasAsked } = holdComplete();
+            const run = c.onSubmitted(submission());
+            await wasAsked;
+            c.ngOnDestroy();
+            release();
+            await run;
+            expect(calls).toContain('/complete');
+            expect(seen).toEqual([{ type: 'checkout-state-change', detail: { state: 'PROCESSING' } }]);
+            expect(calls).not.toContain('/access-status');
+            expect(location.href).toBe('https://shop.example/buy');
+        });
+
+        it('skips the account step but keeps the marker that lets a reload resume it', async () => {
+            responses['/complete'] = { Success: true, OrderNumber: 'SO-1', TotalGross: 0, AccountStep: true };
+            const c = create();
+            await c.ngOnInit();
+            const { release, wasAsked } = holdComplete();
+            const run = c.onSubmitted(submission());
+            await wasAsked;
+            c.ngOnDestroy();
+            release();
+            await run;
+            expect(calls).not.toContain('/account');
+            expect(stored['mj-checkout-completing:annual']).toBe('sess-1');
+        });
+
+        it('stops polling for access once removed', async () => {
+            const c = create();
+            c.accessPollIntervalMs = 0;
+            let answers = 0;
+            responses['/access-status'] = { Success: true, State: 'Pending' };
+            onAccessStatus = () => {
+                answers++;
+                c.ngOnDestroy();
+            };
+            await c.ngOnInit();
+            seen = [];
+            await c.onSubmitted(submission());
+            expect(answers).toBe(1);
+            expect(calls.filter((p) => p === '/access-status')).toHaveLength(1);
+            expect(location.href).toBe('https://shop.example/buy');
         });
     });
 });

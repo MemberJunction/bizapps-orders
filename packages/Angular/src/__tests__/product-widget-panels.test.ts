@@ -1,12 +1,14 @@
 import '@angular/compiler';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MJGlobal } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
+    ProductDetailsPanel,
+    ProductLifecycleClaimPanel,
     ProductSubscriptionsPanel,
 } from '../lib/form-panels/product-widget.panels';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
@@ -43,6 +45,7 @@ const SUBSCRIPTION_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-subscriptio
 const FULFILLMENT_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-fulfillment-widget.component.html`);
 const ACCOUNTING_WIDGET_HTML = ReadRepoFile(`${WIDGETS_DIR}product-accounting-widget.component.html`);
 const PRODUCT_HEADER_HTML = ReadRepoFile('../lib/form-panels/product-header.panel.html');
+const PRODUCT_HEADER_TS = ReadRepoFile('../lib/form-panels/product-header.panel.ts');
 const GENERATED_PRODUCT_FORM_HTML = ReadRepoFile(
     '../lib/generated/Entities/mjBizAppsOrdersProduct/mjbizappsordersproduct.form.component.html'
 );
@@ -68,7 +71,8 @@ function PanelRegistrationMetadata(panel: unknown): Record<string, unknown> | un
 describe('Product widget panels replace their duplicate generated sections', () => {
     it.each([
         { name: 'accounting', panel: ProductAccountingPanel, sectionKey: 'financialAndAccounting' },
-        { name: 'fulfillment', panel: ProductFulfillmentPanel, sectionKey: 'catalogLifecycle' },
+        { name: 'details', panel: ProductDetailsPanel, sectionKey: 'details' },
+        { name: 'lifecycle claim', panel: ProductLifecycleClaimPanel, sectionKey: 'catalogLifecycle' },
         { name: 'subscriptions', panel: ProductSubscriptionsPanel, sectionKey: 'subscriptionAndEntitlements' },
     ])('the $name panel claims the generated $sectionKey section', ({ panel, sectionKey }) => {
         expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBe(sectionKey);
@@ -78,6 +82,7 @@ describe('Product widget panels replace their duplicate generated sections', () 
         const rendered = new Set([
             ...FieldNames(PanelTemplate(ProductAccountingPanel)),
             ...FieldNames(PanelTemplate(ProductFulfillmentPanel)),
+            ...FieldNames(PanelTemplate(ProductDetailsPanel)),
             ...FieldNames(PanelTemplate(ProductSubscriptionsPanel)),
             ...FieldNames(SUBSCRIPTION_WIDGET_HTML),
             ...FieldNames(FULFILLMENT_WIDGET_HTML),
@@ -113,20 +118,22 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
         {
             name: 'accounting',
             panel: ProductAccountingPanel,
-            fields: ['CompanyID', 'RevenueRecognitionTypeID', 'IsTaxable', 'TaxCategory'],
+            fields: ['RevenueRecognitionTypeID', 'IsTaxable', 'TaxCategory'],
         },
         {
             name: 'fulfillment',
             panel: ProductFulfillmentPanel,
             fields: [
-                'Status',
-                'AvailableFrom',
-                'AvailableTo',
                 'EntitlementGrantTiming',
                 'EntitlementQuantityMode',
                 'EntitlementValidityMode',
                 'SuccessorProductID',
             ],
+        },
+        {
+            name: 'details',
+            panel: ProductDetailsPanel,
+            fields: ['Status', 'CompanyID', 'IsSellableNew', 'AvailableFrom', 'AvailableTo'],
         },
     ])('the $name panel declares its fields in its own template', ({ panel, fields }) => {
         // Declared in the panel template => a ContentChild of mj-collapsible-panel =>
@@ -160,8 +167,11 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
         // the two NOT NULL lookups, which a saved record always has a value for, so the GL links
         // cannot be hidden along with an all-blank section.
         const declared = FieldNames(PanelTemplate(ProductAccountingPanel));
-        expect(declared).toContain('CompanyID');
+        expect(declared).toContain('IsTaxable');
         expect(declared).toContain('RevenueRecognitionTypeID');
+        // In read mode RevenueRecognitionTypeID is not an mj-form-field, so the two tax fields must
+        // stay renderable whatever their values or the section hides itself.
+        expect(PanelTemplate(ProductAccountingPanel).match(/\[HideWhenEmptyInReadOnlyMode\]="false"/g)).toHaveLength(2);
     });
 });
 
@@ -191,5 +201,120 @@ describe('The Product header panel owns the identification fields it claims', ()
         // to be real inputs when the form is in edit mode.
         expect(PRODUCT_HEADER_HTML).toContain('[EditMode]="EditMode"');
         expect(PRODUCT_HEADER_HTML).toContain('@if (EditMode) {');
+    });
+});
+
+/**
+ * golive#433 — Status sat under Fulfillment, where nobody found it, so a new product stayed Draft
+ * and hidden from the pickers. It now lives in Lifecycle, and only there.
+ */
+describe('Status lives in the Details panel', () => {
+    it('the Details panel does not share the key of the generated section it claims, which the form hides', () => {
+        expect(PanelTemplate(ProductDetailsPanel)).not.toContain('SectionKey="details"');
+        expect(PanelRegistrationMetadata(ProductDetailsPanel)?.['replacesSectionKey']).toBe('details');
+    });
+
+    it('the lifecycle claim renders nothing, so Status is set in Details only', () => {
+        expect(FieldNames(PanelTemplate(ProductLifecycleClaimPanel))).toEqual([]);
+        expect(FieldNames(PanelTemplate(ProductDetailsPanel))).toContain('Status');
+    });
+
+    it('is not in the Fulfillment panel', () => {
+        expect(FieldNames(PanelTemplate(ProductFulfillmentPanel))).not.toContain('Status');
+    });
+
+    it('the Fulfillment panel no longer claims a generated section', () => {
+        expect(PanelRegistrationMetadata(ProductFulfillmentPanel)?.['replacesSectionKey']).toBeUndefined();
+    });
+
+    it('the header offers Activate on a Draft product', () => {
+        expect(PRODUCT_HEADER_HTML).toContain('@if (IsDraft) {');
+        expect(PRODUCT_HEADER_HTML).toContain('Draft — not sellable on deals or orders.');
+        expect(PRODUCT_HEADER_HTML).toContain('(click)="Activate()"');
+        expect(PRODUCT_HEADER_HTML).toContain('(click)="ActivateAnyway()"');
+    });
+
+    it("the readiness check asks pricing to ignore the product's Draft status", () => {
+        // Without the flag, pricing refuses every Draft product, so the check could never pass.
+        expect(PRODUCT_HEADER_TS).toContain('IgnoreSellability: true');
+    });
+});
+
+/**
+ * "Activate anyway" saves the record, so it must not run once the user is editing: the save would
+ * write their pending edits too.
+ */
+describe('Activate never saves pending edits', () => {
+    type Header = ProductHeaderPanel;
+
+    /** Replaces the server round trip with a stub. */
+    function stubReadiness(panel: Header, check: () => Promise<unknown>): void {
+        (panel as unknown as { checkReadiness: () => Promise<unknown> }).checkReadiness = check;
+    }
+
+    /** A header on a saved Draft product, built without Angular's injector. */
+    function header(): { panel: Header; form: { EditMode: boolean }; save: ReturnType<typeof vi.fn> } {
+        const save = vi.fn().mockResolvedValue(true);
+        const form = { EditMode: false };
+        const panel = Object.create(ProductHeaderPanel.prototype) as Header;
+        Object.assign(panel, {
+            Record: { Status: 'Draft', IsSaved: true, ID: 'p-1', Save: save },
+            FormComponent: form,
+            Activating: false,
+            Readiness: null,
+            ActivateError: null,
+        });
+        return { panel, form, save };
+    }
+
+    const GAPS = { Ready: false, Missing: ['No price is in force today.'] };
+
+    it('closes the readiness warning on entering edit mode', () => {
+        const { panel, form } = header();
+        panel.Readiness = GAPS as never;
+        panel.ngDoCheck();
+        expect(panel.Readiness).not.toBeNull();
+        form.EditMode = true;
+        panel.ngDoCheck();
+        expect(panel.Readiness).toBeNull();
+    });
+
+    it('Activate anyway does not save in edit mode', async () => {
+        const { panel, form, save } = header();
+        panel.Readiness = GAPS as never;
+        form.EditMode = true;
+        await panel.ActivateAnyway();
+        expect(save).not.toHaveBeenCalled();
+        expect(panel.Record.Status).toBe('Draft');
+    });
+
+    it('Activate does not save when edit mode starts while the check runs', async () => {
+        const { panel, form, save } = header();
+        stubReadiness(panel, async () => {
+            form.EditMode = true;
+            return { Ready: true, Missing: [] };
+        });
+        await panel.Activate();
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    it('Activate saves Active when the product is ready and the form is not editing', async () => {
+        const { panel, save } = header();
+        stubReadiness(panel, async () => ({ Ready: true, Missing: [] }));
+        await panel.Activate();
+        expect(save).toHaveBeenCalledOnce();
+        expect(panel.Record.Status).toBe('Active');
+    });
+});
+
+describe('The Product header strip', () => {
+    it('shows the facts the Overview used to repeat', () => {
+        for (const label of ['List price', 'Product type', 'Category', 'Available', 'Revenue recognition', 'Tax']) {
+            expect(PRODUCT_HEADER_HTML).toContain(`<span class="mjo-doc-stat__label">${label}</span>`);
+        }
+    });
+
+    it('shows the selling company as a chip beside the status', () => {
+        expect(PRODUCT_HEADER_HTML).toContain('{{ Record.Company }}</span>');
     });
 });

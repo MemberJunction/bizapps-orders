@@ -143,13 +143,23 @@ export function renderCheckoutHostErrorPage(options: CheckoutHostErrorOptions): 
 }
 
 const PAGE_CSS = `
-:root { color-scheme: light dark; }
+:root {
+  color-scheme: light dark;
+  --co-bg: #f8fafc;
+  --co-text: #0f172a;
+  --co-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --co-error: #b3261e;
+  --co-ok: #0f7b3b;
+  --co-border: #c9cdd4;
+  --co-surface: #fff;
+  --co-primary: #2563eb;
+}
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; min-height: 100%; }
 body {
-  background: var(--mj-bg, #f8fafc);
-  color: var(--mj-text, #0f172a);
-  font-family: var(--mj-font-body, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+  background: var(--co-bg);
+  color: var(--co-text);
+  font-family: var(--co-font);
   -webkit-text-size-adjust: 100%;
   min-height: 100vh;
 }
@@ -162,18 +172,18 @@ body {
   font-size: 1.0625rem;
   line-height: 1.5;
 }
-.mj-co__error { color: var(--mj-error, #b3261e); }
-.mj-co__ok { color: var(--mj-ok, #0f7b3b); }
+.mj-co__error { color: var(--co-error); }
+.mj-co__ok { color: var(--co-ok); }
 .mj-co h1 { font-size: 1.5rem; margin: 0 0 0.5rem; }
 .mj-co p { margin: 0 0 1rem; }
 .mj-co label { display: block; font-weight: 600; margin: 0.75rem 0 0.25rem; }
 .mj-co input:not([type=checkbox]):not([type=radio]), .mj-co select, .mj-co textarea {
   width: 100%;
   padding: 0.5rem 0.65rem;
-  border: 1px solid var(--mj-border, #c9cdd4);
+  border: 1px solid var(--co-border);
   border-radius: 6px;
   font: inherit;
-  background: var(--mj-surface, #fff);
+  background: var(--co-surface);
   color: inherit;
 }
 .mj-co button {
@@ -181,7 +191,7 @@ body {
   padding: 0.65rem 1.1rem;
   border: 0;
   border-radius: 6px;
-  background: var(--mj-primary, #2563eb);
+  background: var(--co-primary);
   color: #fff;
   font: inherit;
   font-weight: 600;
@@ -189,6 +199,8 @@ body {
 }
 .mj-co button[disabled] { opacity: 0.6; cursor: not-allowed; }
 .mj-co__total { font-weight: 600; margin-top: 1rem; }
+.mj-co__unit { border: 1px solid var(--mj-border-default, #d0d5dd); border-radius: 6px; margin: 1rem 0 0; padding: 0.5rem 1rem 1rem; }
+.mj-co__unit legend { font-weight: 600; padding: 0 0.25rem; }
 #mj-co-card { margin-top: 1rem; }
 `;
 
@@ -412,11 +424,15 @@ const BOOT_SCRIPT = `
     var form = document.createElement('form');
     form.setAttribute('novalidate', 'novalidate');
 
-    function addField(name, label, type, required, placeholder, options) {
+    // parent and idSuffix place a field inside one unit's fieldset; the field keeps its name, and
+    // each unit's values are read from its own fieldset.
+    function addField(name, label, type, required, placeholder, options, parent, idSuffix) {
+      var into = parent || form;
+      var id = 'mj-co-' + name + (idSuffix || '');
       var lab = document.createElement('label');
-      lab.setAttribute('for', 'mj-co-' + name);
+      lab.setAttribute('for', id);
       lab.textContent = label + (required ? ' *' : '');
-      form.appendChild(lab);
+      into.appendChild(lab);
       var input;
       if (type === 'select' && options && options.length) {
         input = document.createElement('select');
@@ -445,11 +461,11 @@ const BOOT_SCRIPT = `
         input = document.createElement('input');
         input.type = type === 'number' ? 'number' : (type === 'date' ? 'date' : 'text');
       }
-      input.id = 'mj-co-' + name;
+      input.id = id;
       input.name = name;
       if (placeholder && input.placeholder !== undefined) input.placeholder = placeholder;
       if (required && input.type !== 'checkbox') input.required = true;
-      form.appendChild(input);
+      into.appendChild(input);
       return input;
     }
 
@@ -463,10 +479,63 @@ const BOOT_SCRIPT = `
     }
 
     var extFields = Array.isArray(config.extensionFields) ? config.extensionFields : [];
-    extFields.forEach(function (f) {
-      if (!f || !f.name || f.name === 'email') return;
-      addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options);
-    });
+    // A per-unit product books one line per unit, and the server refuses a line whose number of
+    // detail sets differs from its quantity (#876). So it gets one set of fields per unit, redrawn
+    // as the quantity changes, as the Angular element does.
+    var perUnit = (config.unitMode === 'perUnit' || config.isEvent === true) && extFields.length > 0;
+    var unitsBox = null;
+    function unitCount() {
+      var n = qtyInput ? parseInt(qtyInput.value, 10) || 1 : 1;
+      var max = config.maxQuantity ? Number(config.maxQuantity) : 50;
+      return Math.max(1, Math.min(n, max));
+    }
+    function readUnit(scope) {
+      var values = {};
+      extFields.forEach(function (f) {
+        if (!f || !f.name) return;
+        var el = scope.elements.namedItem(f.name);
+        if (el && 'type' in el) values[f.name] = fieldValue(el);
+      });
+      return values;
+    }
+    function unitSets() {
+      return unitsBox ? Array.prototype.slice.call(unitsBox.querySelectorAll('fieldset.mj-co__unit')) : [];
+    }
+    function renderUnits() {
+      var kept = unitSets().map(readUnit);
+      unitsBox.innerHTML = '';
+      var n = unitCount();
+      for (var i = 0; i < n; i++) {
+        var set = document.createElement('fieldset');
+        set.className = 'mj-co__unit';
+        var legend = document.createElement('legend');
+        legend.textContent = 'Item ' + (i + 1);
+        set.appendChild(legend);
+        unitsBox.appendChild(set);
+        extFields.forEach(function (f) {
+          if (!f || !f.name) return;
+          var input = addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options, set, '-' + (i + 1));
+          var prior = kept[i] ? kept[i][f.name] : undefined;
+          if (prior === undefined || prior === '') return;
+          if (input.type === 'checkbox') input.checked = prior === true;
+          else input.value = String(prior);
+        });
+      }
+    }
+    if (perUnit) {
+      unitsBox = document.createElement('div');
+      form.appendChild(unitsBox);
+      renderUnits();
+      if (qtyInput) {
+        qtyInput.addEventListener('input', renderUnits);
+        qtyInput.addEventListener('change', renderUnits);
+      }
+    } else {
+      extFields.forEach(function (f) {
+        if (!f || !f.name || f.name === 'email') return;
+        addField(f.name, f.label || f.name, f.type || 'text', !!f.required, f.placeholder || '', f.options);
+      });
+    }
 
     var cardMount = document.createElement('div');
     cardMount.id = 'mj-co-card';
@@ -491,18 +560,19 @@ const BOOT_SCRIPT = `
       ev.preventDefault();
       submit.disabled = true;
       status.textContent = 'Pricing…';
-      var emailEl = form.elements.namedItem('email');
+      // By id: a per-unit form can hold an attendee field also named email.
+      var emailEl = document.getElementById('mj-co-email');
       var email = emailEl && 'value' in emailEl ? String(emailEl.value || '').trim() : '';
       var qty = qtyInput ? Math.max(1, parseInt(qtyInput.value, 10) || 1) : 1;
-      var extensionFields = {};
-      extFields.forEach(function (f) {
-        if (!f || !f.name) return;
-        var el = form.elements.namedItem(f.name);
-        if (el && 'type' in el) extensionFields[f.name] = fieldValue(el);
-      });
       var line = { ProductID: productId, Quantity: qty };
-      if (Object.keys(extensionFields).length) {
-        line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
+      if (perUnit) {
+        var units = unitSets().map(readUnit);
+        line.ExtensionData = { EntityName: config.extensionEntityName, Fields: units[0] || {}, Units: units };
+      } else {
+        var extensionFields = readUnit(form);
+        if (Object.keys(extensionFields).length) {
+          line.ExtensionData = { EntityName: config.extensionEntityName, Fields: extensionFields };
+        }
       }
       var finishing = function () { status.textContent = 'Payment received. Finishing your order…'; };
       post('/draft', {

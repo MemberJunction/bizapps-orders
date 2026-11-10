@@ -42,7 +42,7 @@
     @if (Loading) {
         <p class="mjo-term-empty">Loading access overrides…</p>
     } @else if (!Overrides.length) {
-        <p class="mjo-term-empty">No access overrides on this order.</p>
+        <mj-empty-state Size="inline" Message="No access overrides on this order." />
     } @else {
         <ul class="mjo-ao-list">
             @for (o of Overrides; track o.ID) {

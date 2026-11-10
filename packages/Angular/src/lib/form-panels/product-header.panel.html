@@ -9,24 +9,87 @@
                 <span class="mjo-doc-chip">{{ Record.SKU || 'SKU TBD' }}</span>
                 <span class="mjo-doc-chip">{{ TypeName }}</span>
                 <span [class]="StatusClass">{{ Record.Status || 'Draft' }}</span>
+                @if (Record.Company) {
+                    <span class="mjo-doc-chip mjo-doc-chip--info" [title]="'Sold by ' + Record.Company">{{ Record.Company }}</span>
+                }
             </div>
         </div>
     </div>
+    <!--
+        golive#433 — a Draft product is hidden from the deal and order pickers without a word, so the
+        header says so and offers Activate. Activate checks for a price in force today and for Sales
+        and Deferred Revenue accounts, and warns rather than blocks (g433.1 A).
+    -->
+    @if (IsDraft) {
+        <div class="mjo-doc-hero__draft">
+            <mj-alert Variant="warning" Size="sm" Icon="fa-solid fa-circle-pause">
+                <span class="mjo-doc-hero__draft-text">
+                    <b>Draft — not sellable on deals or orders.</b>
+                    @if (EditMode) {
+                        Save first, then activate it here, or set Status under Lifecycle.
+                    } @else if (!Record.IsSaved) {
+                        Save the product before activating it.
+                    }
+                </span>
+                @if (!EditMode && Record.IsSaved && !Readiness) {
+                    <button type="button" mjButton variant="primary" size="sm" actions
+                        [disabled]="!CanActivate" (click)="Activate()">
+                        <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
+                        {{ Activating ? 'Checking…' : 'Activate' }}
+                    </button>
+                }
+            </mj-alert>
+            @if (Readiness) {
+                <div class="mjo-doc-hero__readiness">
+                    <p>This product is not ready to sell:</p>
+                    <ul>
+                        @for (gap of Readiness.Missing; track gap) {
+                            <li>{{ gap }}</li>
+                        }
+                    </ul>
+                    <p>Activate it anyway? It will appear in the pickers, and lines for it may fail to price or to confirm until these are fixed.</p>
+                    <div class="mjo-doc-hero__readiness-actions">
+                        <button type="button" mjButton variant="flat" size="sm" (click)="CancelActivate()">Cancel</button>
+                        <button type="button" mjButton variant="primary" size="sm" [disabled]="Activating" (click)="ActivateAnyway()">Activate anyway</button>
+                    </div>
+                </div>
+            }
+            @if (ActivateError) {
+                <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation">{{ ActivateError }}</mj-alert>
+            }
+        </div>
+    }
     @if (!EditMode && Record.Description) {
         <p class="mjo-doc-hero__description">{{ Record.Description }}</p>
     }
+    <!-- The product's key facts in one strip, so the Overview below can give its width to the prices. -->
     <div class="mjo-doc-hero__stats">
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">List price</span>
             <span class="mjo-doc-stat__value">{{ Price }}</span>
         </div>
         <div class="mjo-doc-stat">
-            <span class="mjo-doc-stat__label">Rev-rec</span>
-            <span class="mjo-doc-stat__value">{{ RevRec }}</span>
+            <span class="mjo-doc-stat__label">Product type</span>
+            <span class="mjo-doc-stat__value" [title]="TypeName">{{ TypeName }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Category</span>
+            <span class="mjo-doc-stat__value" [title]="Category">{{ Category }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Available</span>
+            <span class="mjo-doc-stat__value" [title]="Availability">{{ Availability }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Revenue recognition</span>
+            <span class="mjo-doc-stat__value" [title]="RevRec">{{ RevRec }}</span>
+            @if (RevRecSource) {
+                <span class="mjo-doc-stat__sub">{{ RevRecSource }}</span>
+            }
         </div>
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">Tax</span>
-            <span class="mjo-doc-stat__value">{{ Record.IsTaxable ? 'Taxable' : 'Exempt' }}</span>
+            <span class="mjo-doc-stat__value">{{ Record.IsTaxable ? 'Taxable' : 'Tax exempt' }}</span>
         </div>
     </div>
     <!-- This panel claims the generated `productIdentification` section, so it OWNS

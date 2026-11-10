@@ -46,7 +46,7 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
     selector: 'mjo-line-price-picker',
     imports: [CommonModule, MJOMoneyPipe],
     template: `
-        @if (Line && OverrideKind !== 'none') {
+        @if (Line && (OverrideKind !== 'none' || BandChoiceOpen)) {
             <div class="mjo-lpp__row">
                 <!--
                     Selection is bound PER OPTION, not as [value] on the select: the select's value is
@@ -75,17 +75,19 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
                         aria-label="Custom unit price">
                 }
             </div>
-            <label class="mjo-lpp__reason" [class.is-off]="!CanExplainOverride(Line)" [class.is-required]="NeedsOverrideReason(Line)">
-                <span>Override Explanation @if (CanExplainOverride(Line)) {<em class="mjo-lpp__req" aria-hidden="true">*</em>}</span>
-                <textarea
-                    rows="2"
-                    [disabled]="!CanExplainOverride(Line)"
-                    [required]="CanExplainOverride(Line)"
-                    [attr.aria-required]="CanExplainOverride(Line)"
-                    [value]="OverrideReasonText(Line)"
-                    (input)="SetOverrideReason(Line, $event)"
-                    placeholder="Required — why this price differs from the default"></textarea>
-            </label>
+            <!-- Shown only once the line has left its default: a disabled box on every line read as a field to fill in. -->
+            @if (CanExplainOverride(Line)) {
+                <label class="mjo-lpp__reason" [class.is-required]="NeedsOverrideReason(Line)">
+                    <span>Override Explanation <em class="mjo-lpp__req" aria-hidden="true">*</em></span>
+                    <textarea
+                        rows="2"
+                        required
+                        aria-required="true"
+                        [value]="OverrideReasonText(Line)"
+                        (input)="SetOverrideReason(Line, $event)"
+                        placeholder="Required — why this price differs from the default"></textarea>
+                </label>
+            }
         }
     `,
     styles: [
@@ -136,9 +138,6 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
                 color: var(--mj-text-muted);
                 margin-bottom: 4px;
             }
-            .mjo-lpp__reason.is-off {
-                opacity: 0.55;
-            }
             .mjo-lpp__req {
                 font-style: normal;
                 color: var(--mj-status-error-text);
@@ -153,10 +152,6 @@ import { FormatMoney, MJOMoneyPipe } from './money-format';
                 padding: 6px 8px;
                 text-align: left;
                 font-variant-numeric: normal;
-            }
-            .mjo-lpp__reason textarea:disabled {
-                cursor: not-allowed;
-                background: var(--mj-bg-surface-subtle, var(--mj-bg-surface));
             }
         `,
     ],
@@ -211,7 +206,15 @@ export class MJOLinePricePickerComponent implements OnInit {
     }
 
     public IsOverridden(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return IsLinePriceOverridden(line, this.EngineDefault);
+        return IsLinePriceOverridden(line, this.EngineDefault, this.Applicable);
+    }
+
+    /**
+     * The product is priced by revenue band and the buyer's revenue is unknown, so the rep picks the
+     * band. Shown to every user: choosing a band the rules could not choose is not an override.
+     */
+    public get BandChoiceOpen(): boolean {
+        return !this.EngineDefault && (this.Applicable ?? []).some((p) => p.BandUndecided);
     }
 
     /** True when the line is on a typed price rather than a named rule. */
@@ -263,14 +266,16 @@ export class MJOLinePricePickerComponent implements OnInit {
      */
     public DefaultLabel(): string {
         const unit = this.DefaultUnit;
-        if (unit == null) return 'Default price';
+        if (unit == null) return this.BandChoiceOpen ? 'Pick a revenue band' : 'Default price';
         const rule = this.EngineDefault?.PriceName ?? this.PriceSource;
         const amount = FormatMoney(unit);
         return rule && rule !== 'stated' ? `Default (${rule}) · ${amount}` : `Default · ${amount}`;
     }
 
     public NamedPricesFor(): ApplicablePrice[] {
-        return NamedPricesBesideDefault(this.Applicable, this.EngineDefault);
+        const named = NamedPricesBesideDefault(this.Applicable, this.EngineDefault);
+        // Without an override grant only the bands are offered.
+        return this.OverrideKind === 'none' ? named.filter((p) => p.BandUndecided) : named;
     }
 
     public CanRestoreDefault(line: mjBizAppsOrdersOrderLineEntity): boolean {
@@ -283,7 +288,7 @@ export class MJOLinePricePickerComponent implements OnInit {
     }
 
     public NeedsOverrideReason(line: mjBizAppsOrdersOrderLineEntity): boolean {
-        return LineNeedsOverrideReason(line, this.EngineDefault);
+        return LineNeedsOverrideReason(line, this.EngineDefault, this.Applicable);
     }
 
     public OverrideReasonText(line: mjBizAppsOrdersOrderLineEntity): string {
@@ -291,7 +296,7 @@ export class MJOLinePricePickerComponent implements OnInit {
     }
 
     public PickNamedPrice(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
-        if (this.OverrideKind === 'none') return;
+        if (this.OverrideKind === 'none' && !this.BandChoiceOpen) return;
         const target = event.target;
         if (!(target instanceof HTMLSelectElement)) return;
         const id = target.value;
@@ -307,6 +312,7 @@ export class MJOLinePricePickerComponent implements OnInit {
         }
         const hit = this.Applicable.find((p) => UUIDsEqual(p.ID, id));
         if (!hit) return;
+        if (this.OverrideKind === 'none' && !hit.BandUndecided) return;
         this.customAmountOpen = false;
         this.applied(PinLineToNamedPrice(line, hit, this.EngineDefault));
     }

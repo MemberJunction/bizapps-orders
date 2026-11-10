@@ -1,6 +1,6 @@
 import { ChangeDetectorRef, Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } from '@memberjunction/ng-entity-viewer';
+import { EntityViewerModule, type RecordSelectedEvent } from '@memberjunction/ng-entity-viewer';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { FormatDate, FormatInstantDate, FormatMoney, DaysSince } from '../../panels/money-format';
 import { MJO_ENTITIES } from '../../data/entity-names';
@@ -22,6 +22,12 @@ import {
     type mjBizAppsOrdersSubscriptionEventEntity,
     type mjBizAppsOrdersSubscriptionTermEntity,
 } from '@mj-biz-apps/orders-entities';
+
+/**
+ * The payload `mj-view-workspace` emits from `OpenRecordRequested`. The workspace declares it inline
+ * rather than exporting a named type, so it is restated here.
+ */
+type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> };
 
 /** A subscription row. */
 interface MJOSubscriptionRow extends Record<string, unknown> {
@@ -83,11 +89,12 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
 
                 <div class="mjo-sub__viewer-host">
                     @if (SubscriptionEntityInfo) {
-                        <mj-entity-viewer
+                        <mj-view-workspace
                             [Entity]="SubscriptionEntityInfo"
+                            [AutoSaveView]="true"
                             (RecordSelected)="OnRecordSelected($event)"
-                            (RecordOpened)="OnRecordOpened($event)">
-                        </mj-entity-viewer>
+                            (OpenRecordRequested)="OnRecordOpened($event)">
+                        </mj-view-workspace>
                     } @else {
                         <div class="small muted" style="padding: 24px;">Loading subscriptions...</div>
                     }
@@ -101,7 +108,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                             <i class="fa-solid fa-rotate" aria-hidden="true"></i>
                             <h3>{{ Selected.SubscriptionNumber }}</h3>
                             <span class="right mjo-sub__head-actions">
-                                <span class="mj-chip" [class]="statusClass(Selected)">{{ Selected.Status }}</span>
+                                <span class="mjo-chip" [class]="statusClass(Selected)">{{ Selected.Status }}</span>
                                 <button type="button" mjButton variant="outline" size="sm" (click)="OpenSelected()"
                                         title="Open the subscription's form, where it can be cancelled">
                                     <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i> Open
@@ -163,12 +170,12 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                                             <td class="small">
                                                 {{ termDateOf(term['StartDate']) }} → {{ termDateOf(term['EndDate']) }}
                                                 @if (term['IsProrated']) {
-                                                    <span class="mj-chip mj-chip--outline">prorated</span>
+                                                    <span class="mjo-chip mjo-chip--outline">prorated</span>
                                                 }
                                             </td>
                                             <td class="num">{{ moneyOf(term['Amount']) }}</td>
                                             <td>
-                                                <span class="mj-chip" [class]="termClass(term)">
+                                                <span class="mjo-chip" [class]="termClass(term)">
                                                     {{ isCurrentTerm(term) ? 'current' : (term['Status'] ?? '—') }}
                                                 </span>
                                             </td>
@@ -189,7 +196,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                         <div class="mj-card-pad">
                             @for (event of Events; track event['ID']) {
                                 <div class="mjo-sub__event">
-                                    <span class="mj-chip mj-chip--outline">{{ event['EventType'] }}</span>
+                                    <span class="mjo-chip mjo-chip--outline">{{ event['EventType'] }}</span>
                                     <span class="small muted">{{ instantOf(event['OccurredAt']) }}</span>
                                 </div>
                             } @empty {
@@ -248,7 +255,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -318,9 +325,12 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         }
     }
 
-    /** Double-click opens the form; the single click before it has already filled the side panel. */
-    public OnRecordOpened(event: RecordOpenedEvent): void {
-        const id = (event.compositeKey?.GetValueByFieldName('ID') ?? event.record?.['ID']) as string | undefined;
+    /**
+     * Double-click opens the form; the single click before it has already filled the side panel.
+     * The workspace hands back the opened row; Subscription's key is `ID`, so the row carries it.
+     */
+    public OnRecordOpened(event: OpenRecordRequest): void {
+        const id = event.record['ID'] as string | undefined;
         if (id) this.SubscriptionOpened.emit({ ID: id });
     }
 
@@ -395,8 +405,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     }
 
     protected termClass(term: mjBizAppsOrdersSubscriptionTermEntity): string {
-        if (this.isCurrentTerm(term)) return 'mj-chip--success';
-        return term['Status'] === 'Canceled' ? 'mj-chip--outline' : 'mj-chip--outline';
+        if (this.isCurrentTerm(term)) return 'mjo-chip--success';
+        return term['Status'] === 'Canceled' ? 'mjo-chip--outline' : 'mjo-chip--outline';
     }
 
     /**
@@ -496,12 +506,12 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     protected statusClass(row: MJOSubscriptionRow): string {
         switch (row.Status) {
             case 'Active':
-                return 'mj-chip--success';
+                return 'mjo-chip--success';
             case 'Grace':
-                return 'mj-chip--warning';
+                return 'mjo-chip--warning';
             case 'Cancelled':
             case 'Expired':
-                return 'mj-chip--outline';
+                return 'mjo-chip--outline';
             default:
                 return '';
         }

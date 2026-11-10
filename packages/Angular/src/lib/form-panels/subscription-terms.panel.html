@@ -14,10 +14,7 @@
     </div>
     @if (ViewMode === 'cards') {
         @if (Terms.length === 0) {
-            <div class="mjo-term-empty">
-                <i class="fa-solid fa-calendar-xmark" aria-hidden="true"></i>
-                <span>No coverage terms yet.</span>
-            </div>
+            <mj-empty-state Size="inline" Icon="fa-solid fa-calendar-xmark" Message="No coverage terms yet." />
         } @else {
             <div class="mjo-terms-deck">
                 @for (term of Terms; track term.ID; let i = $index) {

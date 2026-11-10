@@ -74,10 +74,12 @@ describe('Subscription header — after a confirmed cancellation', () => {
         expect(form.cdr.detectChanges).toHaveBeenCalled();
     });
 
-    it('re-reads the record itself when the form declines to refresh', async () => {
-        const { panel, record } = hosted(false);
+    it('never re-reads the record itself, which would update the header alone and drop unsaved edits (#749)', async () => {
+        // The form declines only in edit mode, where cancelling is not offered.
+        const { panel, record, form } = hosted(false);
         await panel.OnCanceled();
 
-        expect(record.Refresh).toHaveBeenCalledOnce();
+        expect(form.RefreshRecord).toHaveBeenCalledOnce();
+        expect(record.Refresh).not.toHaveBeenCalled();
     });
 });

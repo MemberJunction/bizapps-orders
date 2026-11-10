@@ -242,6 +242,11 @@ describe('order header link wiring', () => {
             expect(instance.Money('balance')).toBe('$895');
         });
 
+        it('shows the gross total on an unsaved draft, tax and charges included (#838)', () => {
+            const instance = form({ IsSaved: false, AmountPaid: 0, Balance: null }, priced(895, 968.84));
+            expect(instance.Money('total')).toBe('$968.84');
+        });
+
         it('keeps cents across the trio when any figure has them', () => {
             const instance = form({ IsSaved: true, TotalGross: 895.5, AmountPaid: 100, Balance: 795.5 });
             expect(instance.Money('total')).toBe('$895.50');
@@ -290,6 +295,10 @@ describe('order header link wiring', () => {
         expect(lines).toContain('<mjo-line-price-picker');
         expect(lines).toContain('Use Default Price');
         expect(picker).toContain('Override Explanation');
+        // The explanation box exists only on an overridden line, never as a disabled box (#723).
+        expect(picker).toMatch(/@if \(CanExplainOverride\(Line\)\) \{\s*<label class="mjo-lpp__reason"/);
+        expect(picker).not.toContain('is-off');
+        expect(picker).not.toContain('[disabled]="!CanExplainOverride(Line)"');
         expect(picker).toContain('(input)="SetOverrideReason(Line, $event)"');
         expect(rules).toContain("stamp(line, 'PriceOverridden', true)");
         expect(rules).toContain("stamp(line, 'PriceOverrideReason', trimmed === '' ? null : trimmed)");

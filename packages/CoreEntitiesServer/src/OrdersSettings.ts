@@ -63,6 +63,13 @@ export const ORDERS_SETTING = {
      */
     AccessOverrideFallbackApproverRole: 'AccessOverrideFallbackApproverRole',
     /**
+     * The NAME of the MJ role whose active holders are assigned every alert Task Orders raises: a checkout
+     * payment that could not be booked, a provider subscription that needs a person, an outbound delivery
+     * that was dead-lettered. Assignment is what makes the tasks app notify someone; an unassigned alert is
+     * a row nobody is told about. Unset or empty leaves alerts unassigned, as before this setting existed.
+     */
+    AlertTaskRole: 'AlertTaskRole',
+    /**
      * Days a booked term's start and end may move together before the shift goes to finance review
      * (bizapps-orders#507). A shift is a term change, not a sales concession, so this is one figure for
      * the app rather than a rep's SalesAuthority limit. At or above it is reviewed. Unset or unreadable
@@ -111,6 +118,12 @@ export const ORDERS_SETTING = {
      * created, since nobody reviews their own order (#320 §5). Unset refuses such an order's confirm.
      */
     OrderReviewEscalationRole: 'OrderReviewEscalationRole',
+    /**
+     * Comma-separated NAMES of the MJ roles whose holders may confirm an order no deal created
+     * (bc-aidp-next-golive#390). Checkout, provider-payment, reversal and renewal-only orders are exempt.
+     * Empty or unset switches the check off, so anyone who may confirm an order may confirm it.
+     */
+    NoDealConfirmRoles: 'NoDealConfirmRoles',
     /**
      * The amount at or below which a refund may be issued by a holder of `RefundApproverRole`
      * (bc-aidp-next-golive#320 §3). Above it, only the receiving company's `ApprovalCFOUserID` may
@@ -331,6 +344,12 @@ export class OrdersSettings {
         );
     }
 
+    /** The role whose holders are assigned Orders' alert Tasks, or null when none is configured. */
+    public static get AlertTaskRole(): string | null {
+        const value = this.raw(ORDERS_SETTING.AlertTaskRole)?.trim();
+        return value ? value : null;
+    }
+
     /** The role that acknowledges amendments, or `null` when none is configured. */
     public static get AmendmentAcknowledgmentRole(): string | null {
         const value = this.raw(ORDERS_SETTING.AmendmentAcknowledgmentRole)?.trim();
@@ -388,6 +407,14 @@ export class OrdersSettings {
             ReviewerRole: this.raw(ORDERS_SETTING.OrderReviewerRole)?.trim() || null,
             EscalationRole: this.raw(ORDERS_SETTING.OrderReviewEscalationRole)?.trim() || null,
         };
+    }
+
+    /**
+     * The roles whose holders may confirm an order with no deal; empty switches the check off (#390).
+     * @throws when the Orders application row is missing, rather than reading the check as off.
+     */
+    public static get NoDealConfirmRoles(): string[] {
+        return asList(this.rawAppScoped(ORDERS_SETTING.NoDealConfirmRoles), []);
     }
 
     /**

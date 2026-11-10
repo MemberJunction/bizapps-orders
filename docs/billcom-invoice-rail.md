@@ -123,12 +123,17 @@ needs `orders:read`, the others `orders:write`.
 
 **Capture.** `PAID` is captured; `SCHEDULED` and unknown statuses are held; `VOID`, `CANCELED` and
 `ESCHEATED` never are (`BILLCOM_PAYMENT_STATUS`). Every invoice a payment is applied to must be a `Sent`
-`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Capture
+`ExternalInvoice` of that provider, all for one company, or nothing is captured (`Unmatched`). Each pass
+also rebuilds every open `Unmatched` payment from its stored BILL record, and captures one whose invoices
+have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
-corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows fails with `ATTENTION`, so the
-job notifies.
+corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
+Each payment that pass moved into one of those states (or from one to another) gets one
+`Payment Needs Review` notification (in-app and email by default) to the poll job's notify user, else
+its owner, else the user running the poll; payments already waiting from earlier passes are not
+announced again.
 
 ## Actions, jobs and the webhook
 
@@ -162,7 +167,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
 | `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. |
-| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person sets `Ignored` to close a row. |
+| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 
 `PaymentProvider.CompanyIntegrationID` points a provider row at its `MJ: Company Integrations` row. A
