@@ -28,7 +28,18 @@ export function AvailabilityText(from: Date | string | null | undefined, to: Dat
         slot: 'before-fields',
         sortKey: 100,
         contributionKey: 'header',
-        replacesSectionKey: 'productIdentification',
+        // The header claims the generated sections the Accounting and Subscriptions panels draw.
+        // MJ 6.2 files a panel that replaces a field section inside the Details rail item,
+        // whatever its slot or inclusion, so a panel holding its own claim loses its rail item.
+        // The header is not a rail item, so claiming here hides the duplicate fields and moves
+        // nothing into Details. (`catalogLifecycle` is claimed by the Details panel, which
+        // belongs in Details.)
+        //   productIdentification: drawn by this header.
+        //   financialAndAccounting: Rev-Rec / IsTaxable / TaxCategory are in the Accounting panel,
+        //     CompanyID in the Details panel; StandaloneSellingPrice is deliberately left off
+        //     generated forms.
+        //   subscriptionAndEntitlements: every field is in the Subscriptions or Fulfillment panel.
+        replacesSectionKeys: ['productIdentification', 'financialAndAccounting', 'subscriptionAndEntitlements'],
     },
 })
 @Component({

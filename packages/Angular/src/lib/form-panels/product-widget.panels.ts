@@ -3,6 +3,15 @@ import { RegisterClassEx } from '@memberjunction/global';
 import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsOrdersProductEntity } from '@mj-biz-apps/orders-entities';
 
+/**
+ * Rail placement on MJ 6.2. MJ 6.2 files every panel at `before-fields`/`after-fields` with no
+ * inclusion, and every panel that replaces a generated field section, inside the Details rail
+ * item. Before 6.2 Promotions, Accounting, Fulfillment and Subscriptions were rail items of their
+ * own after Details. They mount at `after-related` to stay that way (the related band sorts by
+ * `sortKey`, descending), and the generated sections they stand in for are claimed by the header
+ * panel, which is not a rail item. Pricing declares `inclusion: 'Primary'`, so it leads.
+ */
+
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Products:pricing',
     metadata: {
@@ -41,7 +50,8 @@ export class ProductPricingPanel extends BaseFormPanel<mjBizAppsOrdersProductEnt
     key: 'form-panel:Products:promos',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related: see the rail note at the top of this file.
+        slot: 'after-related',
         sortKey: 70,
         contributionKey: 'promos',
     },
@@ -71,14 +81,10 @@ export class ProductPromosPanel extends BaseFormPanel<mjBizAppsOrdersProductEnti
     key: 'form-panel:Products:accounting',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related: see the rail note at the top of this file.
+        slot: 'after-related',
         sortKey: 60,
         contributionKey: 'accounting',
-        // Claims the generated `financialAndAccounting` section, which rendered the same
-        // Rev-Rec / IsTaxable / TaxCategory fields a second time. CompanyID renders in the
-        // Details panel; StandaloneSellingPrice is deliberately deprecated off generated forms
-        // and is not carried over.
-        replacesSectionKey: 'financialAndAccounting',
     },
 })
 @Component({
@@ -166,11 +172,12 @@ export class ProductAccountingPanel extends BaseFormPanel<mjBizAppsOrdersProduct
     key: 'form-panel:Products:fulfillment',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related: see the rail note at the top of this file.
+        slot: 'after-related',
         sortKey: 50,
         contributionKey: 'fulfillment',
         // Status, AvailableFrom and AvailableTo moved to the Lifecycle panel (golive#433);
-        // SuccessorProductID stays here. The Lifecycle panel claims `catalogLifecycle`.
+        // SuccessorProductID stays here. The Details panel claims `catalogLifecycle`.
     },
 })
 @Component({
@@ -239,13 +246,12 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
  * under the header. The header's Draft banner activates in one click; this is where any other
  * status is set.
  *
- * WHY THIS CLAIMS `details` AND A SECOND PANEL CLAIMS `catalogLifecycle`. CodeGen emits a
- * `details` section with no fields for Products, and mj-collapsible-panel hides a section only
- * when every field it projects is unreadable, never when it projects none, so the generated
- * Details rendered as an empty panel. Claiming it puts this panel in its place. The generated
- * `catalogLifecycle` section still has to be claimed or Status and the dates render twice, and
- * on MJ 6.1 a panel claims ONE section (`replacesSectionKeys` arrives in 6.2), so
- * `ProductLifecycleClaimPanel` below claims it and renders nothing.
+ * WHY THIS CLAIMS `details` AND `catalogLifecycle`. CodeGen emits a `details` section with no
+ * fields for Products, and mj-collapsible-panel hides a section only when every field it projects
+ * is unreadable, never when it projects none, so the generated Details rendered as an empty panel.
+ * Claiming it puts this panel in its place. The generated `catalogLifecycle` section is claimed too,
+ * or Status, the dates and IsSellableNew render twice; its SuccessorProductID is in Fulfillment.
+ * Both claims keep this panel in the Details rail item, which is where it belongs.
  */
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Products:details',
@@ -256,6 +262,7 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
         sortKey: 200,
         contributionKey: 'details',
         replacesSectionKey: 'details',
+        replacesSectionKeys: ['catalogLifecycle'],
     },
 })
 @Component({
@@ -326,39 +333,14 @@ export class ProductFulfillmentPanel extends BaseFormPanel<mjBizAppsOrdersProduc
 })
 export class ProductDetailsPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {}
 
-/**
- * Claims the generated `catalogLifecycle` section and renders nothing: its fields live in
- * `ProductDetailsPanel`, which already claims the generated `details` section, and a panel can
- * claim one section on MJ 6.1. Remove this and claim both from the Details panel with
- * `replacesSectionKeys` once the host runs 6.2.
- */
-@RegisterClassEx(BaseFormPanel, {
-    key: 'form-panel:Products:lifecycle',
-    metadata: {
-        entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
-        sortKey: 95,
-        contributionKey: 'lifecycle',
-        replacesSectionKey: 'catalogLifecycle',
-    },
-})
-@Component({
-    standalone: false,
-    selector: 'mjo-product-lifecycle-claim-panel',
-    template: '',
-})
-export class ProductLifecycleClaimPanel extends BaseFormPanel<mjBizAppsOrdersProductEntity> {}
-
 @RegisterClassEx(BaseFormPanel, {
     key: 'form-panel:Products:subscriptions',
     metadata: {
         entity: 'MJ_BizApps_Orders: Products',
-        slot: 'after-fields',
+        // After-related: see the rail note at the top of this file.
+        slot: 'after-related',
         sortKey: 40,
         contributionKey: 'subscriptions',
-        // Claims the generated `subscriptionAndEntitlements` section — every one of its five
-        // fields is already rendered by this panel or the fulfillment panel.
-        replacesSectionKey: 'subscriptionAndEntitlements',
     },
 })
 @Component({
