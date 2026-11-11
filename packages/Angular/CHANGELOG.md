@@ -1,5 +1,14 @@
 # @mj-biz-apps/orders-ng
 
+## 5.48.0
+
+### Patch Changes
+
+- b7f802f: Products, Price Lists, Subscriptions and Subscription Terms forms keep the side-rail items they had before MJ 6.2. MJ 6.2 files every panel mounted at a field slot, and every panel that replaces a generated field section, inside the Details rail item. Promotions, Accounting, Fulfillment, Subscriptions, Volume simulator and both Deferred Revenue panels now mount after related, so each stays its own rail item after Details. The Products header claims the generated sections Accounting and Subscriptions draw, and the Details panel claims `catalogLifecycle` itself, which retires the render-nothing lifecycle claim panel.
+- Updated dependencies [c2060b4]
+- Updated dependencies [f6c0da6]
+  - @mj-biz-apps/orders-entities@5.48.0
+
 ## 5.47.1
 
 ### Patch Changes
@@ -1133,8 +1142,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                "FK_EntityFieldValue_EntityField"
+                                                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

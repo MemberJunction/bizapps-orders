@@ -1,5 +1,12 @@
 # @mj-biz-apps/orders-entities
 
+## 5.48.0
+
+### Minor Changes
+
+- c2060b4: Cancelling a subscription, refunding a payment, moving an account credit and lowering an agreed amount now need the new `MJ.BizApps.Orders.Order.Reverse` authorization, granted to the Finance and Developer roles; the matching screens hide or disable those actions for everyone else. Records of what the payment gateway already did are exempt, and returns stay open to whoever books orders.
+- f6c0da6: Release seed for the order reversal authorization: `V…__v5.48.x__Metadata_Sync` creates `MJ.BizApps.Orders.Order.Reverse` and grants it to Finance and Developer, so a host that upgrades by migration can still cancel subscriptions, refund payments, move account credits and lower agreed amounts. Every record is create-only, guarded on its ID or natural key. It has a Postgres counterpart.
+
 ## 5.47.1
 
 ### Patch Changes
@@ -942,8 +949,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                "FK_EntityFieldValue_EntityField"
+                                                                                  The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                  "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

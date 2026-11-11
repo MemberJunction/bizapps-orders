@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const mocks = vi.hoisted(() => ({
     calls: [] as { input: Record<string, unknown>; options: Record<string, unknown> }[],
     output: { Success: true } as Record<string, unknown>,
+    mayReverse: true,
 }));
 
 vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
     return {
         ...actual,
+        UserCanReverse: () => mocks.mayReverse,
         OrdersCancelSubscriptionOperation: class {
             Execute(input: Record<string, unknown>, options: Record<string, unknown>) {
                 mocks.calls.push({ input, options });
@@ -58,6 +60,7 @@ describe('Cancel subscription', () => {
     beforeEach(() => {
         mocks.calls.length = 0;
         mocks.output = PREVIEW;
+        mocks.mayReverse = true;
     });
 
     it('is offered on a live subscription to a viewer who may update subscriptions', () => {
@@ -70,6 +73,11 @@ describe('Cancel subscription', () => {
         expect(componentFor({ Status: 'Canceled' }).CanCancel).toBe(false);
         expect(componentFor({ IsSaved: false }).CanCancel).toBe(false);
         expect(componentFor({}, false).CanCancel).toBe(false);
+    });
+
+    it('is not offered to a viewer without the finance reversal authorization (bc-aidp-next-golive#454)', () => {
+        mocks.mayReverse = false;
+        expect(componentFor({}).CanCancel).toBe(false);
     });
 
     it('does not open or confirm while the form is in edit mode (#749)', async () => {
