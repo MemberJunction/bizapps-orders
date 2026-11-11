@@ -16,7 +16,8 @@ const SECTION_KEY = 'revRec';
     key: 'form-panel:Subscriptions:revRec',
     metadata: {
         entity: 'MJ_BizApps_Orders: Subscriptions',
-        slot: 'after-fields',
+        // After-related so it stays its own rail item after Details on MJ 6.2 (see product-widget.panels.ts).
+        slot: 'after-related',
         sortKey: 80,
         contributionKey: SECTION_KEY,
     },

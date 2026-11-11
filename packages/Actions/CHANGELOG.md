@@ -1,5 +1,7 @@
 # @mj-biz-apps/orders-actions
 
+## 5.48.0
+
 ## 5.47.1
 
 ## 5.47.0

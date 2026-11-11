@@ -72,6 +72,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import type { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
+import { ReversalGate } from './ReversalAuthority.js';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
@@ -179,6 +180,9 @@ export class ApplyAccountCreditOperation extends OrdersApplyAccountCreditOperati
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<ApplyAccountCreditOutput> {
+        // FIRST, BEFORE ANY READ OR WRITE: reversing booked money is finance's (bc-aidp-next-golive#454).
+        const refusal = ReversalGate('Moving an account credit to another order', provider, user);
+        if (refusal) return { Success: false, Message: refusal };
         if (!input?.SourceOrderHeaderID || !input?.TargetOrderHeaderID) {
             return { Success: false, Message: 'Both SourceOrderHeaderID and TargetOrderHeaderID are required.' };
         }
