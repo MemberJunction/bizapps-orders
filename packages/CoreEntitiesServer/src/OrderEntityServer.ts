@@ -74,6 +74,12 @@ import {
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
     InitialPaymentDay,
+    ExplainInstalmentsBeforeMovedTerms,
+    ExplainUnansweredHeldLines,
+    FindInstalmentsBeforeMovedTerms,
+    FindUnansweredHeldLines,
+    IsSystemOrderOrigin,
+    type MovedTermLine,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
@@ -815,6 +821,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // The values land on `this`, so they are persisted by the same `super.Save()` as everything
         // else and remain atomic with the booking.
         if (booking) await this.resolveDueDate();
+        // A LINE FOR A PRODUCT THE CUSTOMER ALREADY HOLDS MUST SAY WHAT IT IS (golive #467). Reads
+        // only, so outside the transaction like the due date above.
+        if (booking) await this.refuseUnansweredHeldLines();
 
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
 
@@ -997,6 +1006,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // whole confirm back: no journal entries, no subscription, no sequence number spent.
                 // An order with no schedule rows has nothing to check and books exactly as before.
                 const scheduleRows = await this.verifyScheduleTies(lines);
+                // AND IT MUST NOT FALL DUE BEFORE A TERM THE CONFIRM MOVED (golive #467). Before
+                // `issueDueInstalments`, which would otherwise invoice those rows today.
+                this.refuseInstalmentsBeforeMovedTerms(lines, decisions, scheduleRows);
 
                 // Subscriptions before booking: a term must exist so recognition entries can anchor
                 // to it (D46) and use its anchored/prorated window rather than raw line dates.
@@ -5446,6 +5458,91 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * receivable. One read, at the one place that already owns the transaction — the factory is
      * handed the facts rather than querying for them.
      */
+    /**
+     * Refuse the confirm while a subscription line for a product its subscriber already holds has
+     * not said whether it extends that subscription or starts a new one (golive #467).
+     *
+     * Without an answer the type's `ConcurrencyMode` decides, and under `ExtendExisting` the line
+     * becomes the next term and starts the day after current coverage ends, a year or more after the
+     * dates entered. The order screen asks the question; until now confirm let it go unanswered, so
+     * the move happened with nothing said. The test is `FindUnansweredHeldLines`, the one the order
+     * screen and the deal screen ask with, so the three cannot disagree about which lines need it.
+     *
+     * Direct orders only. A checkout (`Widget`) or a provider-payment import has no person who could
+     * answer, and keeps the type's rule. A reversal returns what was sold, and a renewal names the
+     * subscription it continues, so neither is asked.
+     */
+    private async refuseUnansweredHeldLines(): Promise<void> {
+        if (IsSystemOrderOrigin(this.Origin) || this.ReversesOrderHeaderID) return;
+        const lines = this.Lines.Items.filter((l) => !l.ReversesOrderLineID && Number(l.Quantity ?? 0) > 0);
+        if (lines.length === 0) return;
+        const unanswered = await FindUnansweredHeldLines(
+            this,
+            lines,
+            this.ProviderToUse as unknown as IRunViewProvider,
+            this.ContextCurrentUser as UserInfo,
+        );
+        if (unanswered.length === 0) return;
+        throw new Error(
+            ExplainUnansweredHeldLines(this.OrderNumber ?? null, unanswered, (id) => OrdersEngine.Instance.ProductByID(id)?.Name ?? null),
+        );
+    }
+
+    /**
+     * Refuse the confirm when a line's stated start moved to the next term and the payment schedule
+     * still falls due before that term starts (golive #467).
+     *
+     * The schedule is the order's, so the confirm does not move it: on an order with several lines
+     * there is no single shift that is right, and changing money dates unseen is the defect. The test
+     * is `FindInstalmentsBeforeMovedTerms`, which the order screen also runs to warn before confirm.
+     * An order with no schedule rows, or no moved start, passes untouched.
+     */
+    private refuseInstalmentsBeforeMovedTerms(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
+        scheduleRows: ScheduleTimingFacts[],
+    ): void {
+        if (!scheduleRows.length || !decisions.size) return;
+        const byLineID = new Map<string, SubscriptionDecisionForLine>();
+        for (const [pending, decided] of decisions) {
+            if (pending.ID) byLineID.set(uuidKey(pending.ID), decided);
+        }
+
+        const moved: MovedTermLine[] = [];
+        for (const line of lines) {
+            const decided = byLineID.get(uuidKey(line.ID));
+            const decision = decided?.Decision;
+            if (!decided || !decision?.StartOverrideIgnored || !decision.Term || !decided.RequestedStart) continue;
+            const statedStart = ToISODate(decided.RequestedStart);
+            const settledStart = ToISODate(decision.Term.StartDate);
+            if (!statedStart || !settledStart) continue;
+            moved.push({
+                LineNumber: line.LineNumber ?? null,
+                Product: decided.Product.Name ?? null,
+                LineTotalGross: Number(line.LineTotalGross ?? 0),
+                StatedStart: statedStart,
+                StatedEnd: ToISODate(decided.RequestedEnd),
+                SettledStart: settledStart,
+                SettledEnd: ToISODate(CoverageEndOf(decision)),
+            });
+        }
+        if (moved.length === 0) return;
+
+        const orderGross = lines.reduce((sum, l) => sum + Number(l.LineTotalGross ?? 0), 0);
+        const found = FindInstalmentsBeforeMovedTerms(
+            scheduleRows.map((r) => ({
+                InstallmentNumber: r.InstallmentNumber ?? null,
+                DueDate: r.DueDate,
+                Amount: Number(r.Amount ?? 0),
+                Status: r.Status,
+            })),
+            moved,
+            orderGross,
+        );
+        if (found.length === 0) return;
+        throw new Error(ExplainInstalmentsBeforeMovedTerms(this.OrderNumber ?? null, found));
+    }
+
     private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
         const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(

@@ -422,6 +422,7 @@ async function buySubscription(
     promotionCodes?: string[],
     organizationID?: string,
     billToPersonID?: string,
+    action?: 'ExtendExisting' | 'CreateNew',
 ) {
     const f = Fx();
     const result = await ConfirmOrder(ctx.User, {
@@ -429,7 +430,7 @@ async function buySubscription(
         OrderDate: JAN_1,
         BillToOrganizationID: organizationID ?? f.Customers.OrganizationID,
         BillToPersonID: billToPersonID,
-        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct }],
+        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price, DiscountPct: discountPct, SubscriptionAction: action }],
         PromotionCodes: promotionCodes,
     });
     Assert(result.Saved, `confirm failed: ${result.Message}`);
@@ -2820,16 +2821,16 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 await flagPrice(ctx, account, f.Products.SubRolling, 'price_it_rolling');
                 const linked = await ensureProviderSubscriptions(ctx, { SubscriptionIDs: [sub.SubscriptionID] });
                 const oldID = linked.Outcomes[0].ProviderSubscriptionID!;
-                const buyAgain = (orderDate: string) =>
+                const buyAgain = (orderDate: string, action?: 'ExtendExisting' | 'CreateNew') =>
                     ConfirmOrder(ctx.User, {
                         CompanyID: f.CoA.ID,
                         OrderDate: new Date(`${orderDate}T00:00:00Z`),
                         BillToOrganizationID: f.Customers.OrganizationID,
-                        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: action }],
                     });
 
                 // SubRolling extends an existing subscription: here that would bill a year the gateway bills too.
-                const extend = await buyAgain('2026-02-01');
+                const extend = await buyAgain('2026-02-01', 'ExtendExisting');
                 Assert(!extend.Saved, 'a second order cannot extend it');
                 Assert(/billed by the payment gateway.*cannot extend it/.test(extend.Message ?? ''), `and says why: ${extend.Message}`);
 
@@ -3333,7 +3334,8 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     'WouldLink',
                     'control: confirmed by a person (an imported subscriber on an older price), it passes',
                 );
-                const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID);
+                // The second organization already holds `personal`: extend it, as before.
+                const other = await subscriptionWithCard(ctx, account, f.Customers.SecondOrganizationID, 'ExtendExisting');
                 await markProviderBilled(ctx, other.SubscriptionID, account, 'sub_it_taken');
                 fakeGateway.held.push({ ProviderSubscriptionID: 'sub_it_taken', Status: 'active', IsLive: true, Customer: 'cus_z', Metadata: {} });
                 AssertEqual((await link('sub_it_taken')).Code, 'LinkedElsewhere', 'one another subscription records');
@@ -3377,7 +3379,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                 AssertEqual(off.Outcome, 'Changed', `followed with the switch off: ${JSON.stringify(off)}`);
                 AssertEqual((await termsOf(ctx, g.SubscriptionID)).length, 2, 'the renewal the gateway charged is booked');
                 // …while the switch still stops a new hand-over (E2's rule, unchanged).
-                const fresh = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, Fx().Customers.SecondOrganizationID);
+                const fresh = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, Fx().Customers.SecondOrganizationID, undefined, 'ExtendExisting');
                 await payInFull(ctx, fresh.OrderID, Fx().Customers.SecondOrganizationID);
                 const handed = await EnsureProviderSubscriptions({ SubscriptionIDs: [fresh.SubscriptionID], Now: new Date('2026-01-01T12:00:00Z') }, ctx.Provider, ctx.User);
                 AssertEqual(handed.Outcomes.filter((o) => o.Code === 'Created').length, 0, `no new gateway subscription with the switch off: ${JSON.stringify(handed.Outcomes)}`);
@@ -3395,7 +3397,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     CompanyID: f.CoA.ID,
                     OrderDate: new Date('2026-02-01T00:00:00Z'),
                     BillToOrganizationID: f.Customers.OrganizationID,
-                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200, SubscriptionAction: 'ExtendExisting' }],
                 });
                 Assert(!extend.Saved && /billed by the payment gateway/.test(extend.Message ?? ''), `refused: ${extend.Message}`);
                 const renewalLine = await ConfirmOrder(ctx.User, {
@@ -4832,10 +4834,15 @@ async function flagPrice(ctx: IntegrationCheckContext, providerID: string, produ
  * An annual subscription (bought 1 Jan 2026, paid) with a renewal card kept on this account, as checkout
  * leaves it.
  */
-async function subscriptionWithCard(ctx: IntegrationCheckContext, providerID: string, organizationID?: string) {
+async function subscriptionWithCard(
+    ctx: IntegrationCheckContext,
+    providerID: string,
+    organizationID?: string,
+    action?: 'ExtendExisting' | 'CreateNew',
+) {
     const f = Fx();
     const holder = organizationID ?? f.Customers.OrganizationID;
-    const bought = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder);
+    const bought = await buySubscription(ctx, 'SubRolling', 1200, undefined, undefined, holder, undefined, action);
     // Paid, as a checkout's order is: the hand-over waits while the latest term's order owes money.
     await payInFull(ctx, bought.OrderID, holder);
     const tenderID = f.PaymentTypeIDs.get('CreditCard');

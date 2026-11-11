@@ -80,10 +80,14 @@ import {
     AsDateValue,
     DescendantLines,
     ExtendChoiceTextFor,
+    DescribeInstalmentsBeforeMovedTerm,
     ExtendOutcomeFor,
+    FindInstalmentsBeforeMovedTerms,
     HoldingSubscriberFor,
     TodayAsDateValue,
+    ToISODate,
     type ExtendChoiceText,
+    type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
 } from '@mj-biz-apps/orders-entities';
 
 /**
@@ -171,6 +175,12 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
 
     @Input() public Provider: IMetadataProvider | null = null;
     @Input() public EditMode = true;
+    /**
+     * The order's payment schedule, as the order form read it. The extend-or-new choice warns when
+     * adding the line as the next term would leave instalments due before that term starts
+     * (golive #467). Null or empty: nothing to warn about.
+     */
+    @Input() public Instalments: mjBizAppsOrdersOrderHeaderPaymentScheduleEntity[] | null = null;
 
     @Input()
     public set Order(value: OrderHeaderEntity | null) {
@@ -645,6 +655,46 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
             Choice: text.Choice.endsWith(')') ? `${text.Choice.slice(0, -1)}, ends ${end})` : `${text.Choice} (ends ${end})`,
             Hint: text.Hint.replace(/\.$/, ` and ending ${end}.`),
         };
+    }
+
+    /**
+     * What "Add as next term" would leave behind in the payment schedule (golive #467): the
+     * instalments due before the new term starts, which confirm refuses. Null when the line is not
+     * set to extend, states no start, would not move, or the schedule is fine.
+     *
+     * The same test confirm runs (`FindInstalmentsBeforeMovedTerms`), over this line alone.
+     */
+    public HoldingScheduleWarning(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): string | null {
+        if (line.SubscriptionAction !== 'ExtendExisting' || !line.ServicePeriodStart || !this.Instalments?.length) return null;
+        const purchaseDay = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
+        if (ExtendOutcomeFor(holding, purchaseDay).Kind !== 'NextTerm') return null;
+        const statedStart = ToISODate(line.ServicePeriodStart);
+        const settledStart = ToISODate(ContinuationStartFrom(holding));
+        if (!statedStart || !settledStart || settledStart <= statedStart) return null;
+
+        const lines = this._order?.Lines?.Items ?? [];
+        const orderGross = Number(this._order?.TotalGross ?? lines.reduce((sum, l) => sum + Number(l.LineTotalGross ?? 0), 0));
+        const [found] = FindInstalmentsBeforeMovedTerms(
+            this.Instalments.map((r) => ({
+                InstallmentNumber: r.InstallmentNumber ?? null,
+                DueDate: r.DueDate,
+                Amount: Number(r.Amount ?? 0),
+                Status: r.Status,
+            })),
+            [
+                {
+                    LineNumber: line.LineNumber ?? null,
+                    Product: line.Product ?? null,
+                    LineTotalGross: Number(line.LineTotalGross ?? 0),
+                    StatedStart: statedStart,
+                    StatedEnd: ToISODate(line.ServicePeriodEnd),
+                    SettledStart: settledStart,
+                    SettledEnd: this.HoldingContinuationEnd(line, holding) || null,
+                },
+            ],
+            orderGross,
+        );
+        return found ? `${DescribeInstalmentsBeforeMovedTerm(found)} Confirm will refuse until they move into the new term.` : null;
     }
 
     /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */

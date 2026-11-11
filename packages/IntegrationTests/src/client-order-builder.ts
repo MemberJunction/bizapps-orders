@@ -34,6 +34,8 @@ export interface ClientLineSpec {
     ShipToAddressID?: string;
     ServicePeriodStart?: string;
     ServicePeriodEnd?: string;
+    /** `OrderLine.SubscriptionAction`: the answer to "the customer already holds this product" (golive #467). */
+    SubscriptionAction?: 'ExtendExisting' | 'CreateNew';
     /** After confirm, persist an Event Order Line with this PersonID. */
     EventPersonID?: string;
 }
@@ -238,6 +240,7 @@ function applyLine(line: mjBizAppsOrdersOrderLineEntity, spec: ClientLineSpec, l
     if (spec.ShipToAddressID) line.ShipToAddressID = spec.ShipToAddressID;
     if (spec.ServicePeriodStart) line.ServicePeriodStart = new Date(spec.ServicePeriodStart);
     if (spec.ServicePeriodEnd) line.ServicePeriodEnd = new Date(spec.ServicePeriodEnd);
+    if (spec.SubscriptionAction) line.SubscriptionAction = spec.SubscriptionAction;
 }
 
 /**

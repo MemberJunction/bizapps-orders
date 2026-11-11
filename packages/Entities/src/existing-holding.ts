@@ -19,6 +19,7 @@ import type {
     mjBizAppsOrdersOrderHeaderEntity,
     mjBizAppsOrdersOrderLineEntity,
 } from './generated/entity_subclasses';
+import { ToISODate } from './date-cell';
 import { ResolveSubscriptionTypeID } from './subscription-type';
 
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -178,6 +179,33 @@ export interface UnansweredHeldLine {
     LineNumber: number;
     ProductID: string;
     Holding: ExistingHolding;
+}
+
+/**
+ * The confirm's refusal for lines that have not answered extend-or-new (golive #467). Without an
+ * answer the subscription type's rule decides, and under `ExtendExisting` that moves the line to the
+ * next term, a year or more after the dates entered, with nothing said before confirm.
+ *
+ * `productName` names each line's product; an unknown product is named by its line alone.
+ */
+export function ExplainUnansweredHeldLines(
+    orderNumber: string | null,
+    lines: readonly UnansweredHeldLine[],
+    productName: (productID: string) => string | null,
+): string {
+    const order = orderNumber ? `Order ${orderNumber}` : 'The order';
+    const each = lines.map((l) => {
+        const product = productName(l.ProductID);
+        const through = ToISODate(l.Holding.LatestTermEnd);
+        return (
+            `Line ${l.LineNumber}${product ? ` (${product})` : ''}: the customer already holds ` +
+            `${l.Holding.SubscriptionNumber}${through ? `, covered through ${through}` : ''}.`
+        );
+    });
+    return (
+        `${order} was not confirmed. ${each.join(' ')} Choose on ${lines.length === 1 ? 'the line' : 'each line'} whether ` +
+        `it adds the next term to that subscription or starts a new subscription on the dates entered.`
+    );
 }
 
 /**
