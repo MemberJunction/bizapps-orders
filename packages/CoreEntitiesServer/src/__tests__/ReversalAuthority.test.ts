@@ -13,6 +13,7 @@ import { CancelSubscriptionOperation, WithGatewayEndRecorded } from '../CancelSu
 import { RefundPaymentOperation } from '../RefundPaymentOperation.js';
 import { ApplyAccountCreditOperation } from '../ApplyAccountCreditOperation.js';
 import { AmendArrangementOperation } from '../AmendArrangementOperation.js';
+import { OrderConcessionEntityServer } from '../OrderConcessionEntityServer.js';
 
 const FINANCE_ROLE = 'F0000000-0000-0000-0000-000000000001';
 const AD_ROLE = 'A0000000-0000-0000-0000-000000000001';
@@ -94,5 +95,59 @@ describe('the finance reversal gate', () => {
             );
             expect(past).toMatch(/read past the gate/);
         });
+    });
+});
+
+/**
+ * #1060: the same amount change saved straight onto an Order Concession (the generated form, or the
+ * API) is refused at recording, before the row is valued or anything is read.
+ */
+describe('a direct Order Concession save that lowers an agreed amount', () => {
+    function recordAs(user: UserInfo, provider: IMetadataProvider, newAmount: number | null = 50) {
+        const row = Object.create(OrderConcessionEntityServer.prototype) as Record<string, unknown>;
+        // Field accessors live on BaseEntity, so they are shadowed rather than assigned.
+        Object.defineProperty(row, 'DeliveryForm', { value: 'Price' });
+        Object.defineProperty(row, 'NewAmount', { value: newAmount });
+        Object.defineProperty(row, 'Reason', { value: 'Early termination' });
+        Object.defineProperty(row, 'ContextCurrentUser', { value: user });
+        Object.defineProperty(row, 'ProviderToUse', { value: provider });
+        return (row as unknown as { prepareNew(): Promise<string | null> }).prepareNew();
+    }
+    // Past the gate, recording goes on to value the row, which this bare instance cannot do; what it
+    // fails on there is not the gate's refusal.
+    const GATE_REFUSAL = /Changing an agreed amount needs|is not installed/;
+
+    it('refuses an account director before reading anything', async () => {
+        const refusal = await recordAs(accountDirector, catalogOnly());
+        expect(refusal).toMatch(/^Changing an agreed amount needs/);
+        expect(refusal).toContain(ORDER_REVERSE_AUTH);
+    });
+
+    it('refuses everyone while the authorization is not installed', async () => {
+        expect(await recordAs(finance, catalogOnly(false))).toMatch(/is not installed/);
+    });
+
+    it('lets a finance user past the gate', async () => {
+        const past = await recordAs(finance, catalogOnly()).then(
+            (out) => out ?? '',
+            (e: Error) => e.message,
+        );
+        expect(past).not.toMatch(GATE_REFUSAL);
+    });
+
+    it('lets a record of what the gateway already did through', async () => {
+        const past = await WithGatewayRecord(() => recordAs(accountDirector, catalogOnly())).then(
+            (out) => out ?? '',
+            (e: Error) => e.message,
+        );
+        expect(past).not.toMatch(GATE_REFUSAL);
+    });
+
+    it('leaves a price concession on a draft line (no NewAmount) to its own approval routing', async () => {
+        const past = await recordAs(accountDirector, catalogOnly(), null).then(
+            (out) => out ?? '',
+            (e: Error) => e.message,
+        );
+        expect(past).not.toMatch(GATE_REFUSAL);
     });
 });

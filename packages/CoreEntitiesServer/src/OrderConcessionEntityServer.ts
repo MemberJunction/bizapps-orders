@@ -146,6 +146,7 @@ import { ApplyTermsChange, CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram } from './ReferralProgram.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { RequireUUID } from './sql-guards.js';
+import { ReversalGate } from './ReversalAuthority.js';
 import { ApplyTermExtension, AsDay, CheckTermExtension, IsoDay, type ApprovedDurationConcession, type CheckedTermExtension } from './TermExtension.js';
 import { ApplyTermShift, CheckTermShift, ShiftReviewRoleID, type ApprovedShiftConcession } from './TermShift.js';
 import { ApplySeatAddition, CheckSeatAddition } from './SeatAddition.js';
@@ -494,6 +495,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     private async prepareNew(): Promise<string | null> {
         const user = this.ContextCurrentUser;
         if (!user?.ID) return 'A concession must be attributable to a user, and no user was supplied.';
+        // Lowering an agreed amount is finance's on every route, not only through Orders.AmendArrangement
+        // (#1060): a direct save of the same row would otherwise book the credit memo ungated. Checked at
+        // recording only, since a recorded concession's amount fields cannot change (AUTHORED_FIELDS).
+        if (this.IsAmountChange) {
+            const refusal = ReversalGate('Changing an agreed amount', this.provider(), user);
+            if (refusal) return refusal;
+        }
         if (!this.Reason?.trim()) return 'A concession must state its reason.';
 
         this.termDateChange = null;

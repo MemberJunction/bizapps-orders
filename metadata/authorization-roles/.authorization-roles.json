@@ -114,5 +114,35 @@
     "primaryKey": {
       "ID": "371E0243-B1B6-4C32-8561-011DC1504328"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Order.Delete",
+      "RoleID": "@lookup:MJ: Roles.Name=Finance",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "1C3BB570-20E2-4F61-8860-7489DB593373"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Order.Delete",
+      "RoleID": "@lookup:MJ: Roles.Name=Developer",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "2914C1F3-C0F7-48E5-AED3-45F30C50E85F"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Order.DeleteOwn",
+      "RoleID": "@lookup:MJ: Roles.Name=Account Director",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "56DEF15B-4DA8-486F-BEC7-33ACE0E91822"
+    }
   }
 ]
