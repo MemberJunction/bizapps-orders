@@ -119,7 +119,7 @@ const EXPECTED_BUNDLES: Record<string, number> = {
     'payment-ledger': 12,
     intercompany: 14,
     events: 12,
-    'orders-isa': 10,
+    'orders-isa': 11,
     'line-subscriber': 20,
     'account-credit': 12,
     pricing: 23,

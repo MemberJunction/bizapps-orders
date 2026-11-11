@@ -797,15 +797,15 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
      * seat, each with its own attendee record, and returns the added lines. Returns none when the
      * line needs no split. See {@link SplitIntoSeatLines}.
      *
-     * Reads `OrdersEngine`; the caller loads it.
+     * Each seat copies `ProductID` before calling zero-argument `EnsureISAChild()`, letting
+     * `OrderLine`'s declarative `SubtypeSelector` (`ProductID.ProductTypeID.OrderLineExtensionEntity`)
+     * resolve the extension entity from `OrdersEngine` metadata caches.
      */
     public async SplitLineIntoSeats(line: OrderHeaderEntity['Lines']['Items'][number]): Promise<OrderHeaderEntity['Lines']['Items']> {
-        const engine = OrdersEngine.Instance;
-        const product = engine.ProductByID(line.ProductID);
-        const extensionEntity = engine.ProductTypeByID(product?.ProductTypeID)?.OrderLineExtensionEntity ?? null;
         return SplitIntoSeatLines(line, async () => {
             const seat = await this.Lines.Create();
-            if (extensionEntity) await seat.EnsureISAChild(extensionEntity);
+            seat.ProductID = line.ProductID;
+            await seat.EnsureISAChild();
             return seat;
         });
     }

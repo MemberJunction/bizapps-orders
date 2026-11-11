@@ -1321,9 +1321,8 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
                 return line.Extension.Entity;
             }
             if (line.IsSaved && !this.hydratingLineIds.has(line.ID)) {
-                const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
-                if (extName) {
-                    void this.hydrateSingleLine(line, extName);
+                if (this.ProductFor(line)?.OrderLineExtensionEntity) {
+                    void this.hydrateSingleLine(line);
                 }
             }
             return null;
@@ -1567,20 +1566,22 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
 
     private async addExtendedLine(product: MJOProductOption): Promise<void> {
         if (!this._order || !product.OrderLineExtensionEntity) return;
-        CachedExtensionEntityInfo(this.metadata, product.OrderLineExtensionEntity);
         const line = (await this._order.Lines.Create()) as OrderLineEntity;
         line.ProductID = product.ID;
         line.Quantity = ClampLineQuantity(1, product.MaxQuantityPerLine);
-        await line.EnsureISAChild(product.OrderLineExtensionEntity);
+        const child = await line.EnsureISAChild();
+        CachedExtensionEntityInfo(this.metadata, child?.EntityInfo?.Name ?? product.OrderLineExtensionEntity);
         this.expandedLineIds.add(line.ID);
     }
 
-    private async hydrateSingleLine(line: OrderLineEntity, extName: string): Promise<void> {
+    private async hydrateSingleLine(line: OrderLineEntity): Promise<void> {
         if (this.hydratingLineIds.has(line.ID)) return;
         this.hydratingLineIds.add(line.ID);
         try {
-            CachedExtensionEntityInfo(this.metadata, extName);
-            await line.EnsureISAChild(extName);
+            const child = await line.EnsureISAChild();
+            if (child?.EntityInfo?.Name) {
+                CachedExtensionEntityInfo(this.metadata, child.EntityInfo.Name);
+            }
             this.cdr.detectChanges();
         } finally {
             this.hydratingLineIds.delete(line.ID);
@@ -1591,12 +1592,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         if (!this._order) return;
         if (this.Catalog.length === 0) await this.loadCatalog();
         for (const line of this.Lines) {
-            const extName = this.ProductFor(line)?.OrderLineExtensionEntity;
-            if (extName && line.IsSaved) {
+            if (this.ProductFor(line)?.OrderLineExtensionEntity && line.IsSaved) {
                 if (line instanceof OrderLineEntity) {
-                    await this.hydrateSingleLine(line, extName);
+                    await this.hydrateSingleLine(line);
                 } else if ((line as unknown as OrderLineEntity).Extension) {
-                    await this.hydrateSingleLine(line as unknown as OrderLineEntity, extName);
+                    await this.hydrateSingleLine(line as unknown as OrderLineEntity);
                 }
             }
         }

@@ -13,10 +13,16 @@
  */
 import path from 'node:path';
 import { importAccountingPackage, importServerPeer } from './resolve-app-packages.mjs';
+import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
 import { openSync, closeSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import dotenv from 'dotenv';
-import sql from 'mssql';
+
+// Resolve `mssql` from `@memberjunction/sqlserver-dataprovider` so `pool` and
+// `setupSQLServerClient(pool)` always share the exact same `mssql`/`tedious` major
+// version (e.g. mssql@11 on MJ 6.1 vs mssql@12 on MJ 6.2+).
+const requireFromSqlProvider = createRequire(import.meta.resolve('@memberjunction/sqlserver-dataprovider'));
+const sql = requireFromSqlProvider('mssql');
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(here, '..', '.env'), quiet: true });
@@ -177,7 +183,7 @@ const { UserCache } = await import('@memberjunction/generic-database-provider');
 const provider = await setupSQLServerClient(
     new SQLServerProviderConfigData(pool, process.env.MJ_CORE_SCHEMA || '__mj'),
 );
-await UserCache.Instance.Refresh(pool);
+await UserCache.Instance.Refresh(provider);
 const user = UserCache.Users.find((u) => u?.Type?.trim().toLowerCase() === 'owner') ?? UserCache.Users[0];
 if (!user) throw new Error('No context user in UserCache.');
 
