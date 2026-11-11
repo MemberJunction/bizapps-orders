@@ -136,6 +136,15 @@ export interface RenewalPrice {
     /** The increase actually applied: 0 when none is set or the term crosses no anniversary. */
     IncreasePercent: number;
     IncreaseSource: RenewalIncreaseSource;
+    /**
+     * The increase that IS set, whether or not this term applied it: the resolved ladder value and its
+     * level. Lets a screen say "2% is set, and this renewal crosses no anniversary, so it was not
+     * applied" rather than showing no increase as if none existed.
+     */
+    IncreaseSetPercent: number;
+    IncreaseSetSource: RenewalIncreaseSource;
+    /** Whether the new term crosses an anniversary, so the set increase was applied. */
+    IncreaseApplied: boolean;
     UnitPrice: number;
     DiscountPct: number;
 }
@@ -186,6 +195,9 @@ export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
         BaseSource: source,
         IncreasePercent: percent,
         IncreaseSource: input.ApplyIncrease ? input.Increase.Source : 'None',
+        IncreaseSetPercent: Number(input.Increase.Percent),
+        IncreaseSetSource: input.Increase.Source,
+        IncreaseApplied: input.ApplyIncrease,
         UnitPrice: cents(base * (1 + percent / 100)),
         DiscountPct: discount,
     };

@@ -109,6 +109,52 @@
   },
   {
     "fields": {
+      "Name": "Change Subscription Product",
+      "OperationKey": "Orders.ChangeSubscriptionProduct",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Correct the product on one or more subscriptions: what they are subscriptions to, and so what their next renewal is placed on. Writes the subscription rows and nothing else: the order that sold the current term, its journal and its deal keep the product they were booked with, and the next renewal carries the new product at the current term's price plus the increase. The product must be Active and a subscription product; a subscription on a different subscription type is refused unless AdoptProductType moves it; a product sold by another company is allowed and reported as a warning; a gateway-billed subscription refuses the change. One line back per subscription.",
+      "InputTypeName": "OrdersChangeSubscriptionProductInput",
+      "InputTypeDefinition": "@file:types/orders-change-subscription-product.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersChangeSubscriptionProductOutput",
+      "OutputTypeDefinition": "@file:types/orders-change-subscription-product.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C442"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Set Renewal Settings",
+      "OperationKey": "Orders.SetRenewalSettings",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "Set the renewal switches on one or more subscriptions: AutoRenew (whether the scheduled pass renews it) and RenewalIncreasePercent (the rate the renewal pricer reads before the product's, its category's and the company's; null clears so it inherits, 0 is a deliberate no-increase). A field left out is left alone. Writes the subscription rows through the entity and nothing else: no order is touched, and the next renewal each subscription places follows the new settings. A gateway-billed subscription refuses an auto-renew change and is reported, not failed. One line back per subscription.",
+      "InputTypeName": "OrdersSetRenewalSettingsInput",
+      "InputTypeDefinition": "@file:types/orders-set-renewal-settings.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersSetRenewalSettingsOutput",
+      "OutputTypeDefinition": "@file:types/orders-set-renewal-settings.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:subscriptions:write",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C441"
+    }
+  },
+  {
+    "fields": {
       "Name": "Spawn Renewals",
       "OperationKey": "Orders.SpawnRenewals",
       "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
@@ -132,6 +178,29 @@
     "sync": {
       "lastModified": "2026-10-07T18:32:18.034Z",
       "checksum": "d31ca049128406c4d45b4dee8671157cc38653d2dea4787a58f36ee05a99be42"
+    }
+  },
+  {
+    "fields": {
+      "Name": "Get Renewal Worklist",
+      "OperationKey": "Orders.GetRenewalWorklist",
+      "CategoryID": "@lookup:MJ: Remote Operation Categories.Name=Subscriptions",
+      "Description": "The Renewals page: every subscription whose coverage ends inside a window (soonest first), with the order that bought the expiring term, the renewal order where one exists, and otherwise the price a renewal would be placed at and the day the scheduled pass would place it. Read-only; computed per request because the window moves with the calendar and the price with the catalog. The projection runs the same pricer Orders.SpawnRenewals places with.",
+      "InputTypeName": "OrdersGetRenewalWorklistInput",
+      "InputTypeDefinition": "@file:types/orders-get-renewal-worklist.input.ts",
+      "InputTypeIsArray": false,
+      "OutputTypeName": "OrdersGetRenewalWorklistOutput",
+      "OutputTypeDefinition": "@file:types/orders-get-renewal-worklist.output.ts",
+      "OutputTypeIsArray": false,
+      "ExecutionMode": "Sync",
+      "RequiredScope": "orders:read",
+      "RequiresSystemUser": false,
+      "GenerationType": "Manual",
+      "CodeApprovalStatus": "Approved",
+      "Status": "Active"
+    },
+    "primaryKey": {
+      "ID": "C2D5F3B1-7E4A-4B29-8F63-1D2E6B92C440"
     }
   },
   {
