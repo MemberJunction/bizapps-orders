@@ -36,6 +36,7 @@ import { TodayAsDateValue, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-a
 import type { BasePaymentProvider } from './BasePaymentProvider.js';
 import { raiseProviderSubscriptionAlert } from './checkoutCaptureAlert.js';
 import { ApplyAccountCreditOperation, LockOrderRows } from './ApplyAccountCreditOperation.js';
+import { WithGatewayRecord } from './ReversalAuthority.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY } from './entity-names.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import type { OrderEntityServer } from './OrderEntityServer.js';
@@ -454,9 +455,12 @@ export async function ApplyGatewayCredit(orderLineID: string, provider: IMetadat
             const held = -(await balanceOf(id)).Balance;
             const amount = money(Math.min(held, owing, left));
             if (amount <= 0.005) return { Amount: 0 };
-            const result = await new ApplyAccountCreditOperation().ExecuteServer(
-                { SourceOrderHeaderID: id, TargetOrderHeaderID: line.OrderHeaderID, Amount: amount, Reason: 'Credit for a refund the payment gateway made on this renewal' },
-                { provider, user, emitProgress: () => undefined },
+            // The record of a gateway refund, past the finance gate (./ReversalAuthority.ts).
+            const result = await WithGatewayRecord(() =>
+                new ApplyAccountCreditOperation().ExecuteServer(
+                    { SourceOrderHeaderID: id, TargetOrderHeaderID: line.OrderHeaderID, Amount: amount, Reason: 'Credit for a refund the payment gateway made on this renewal' },
+                    { provider, user, emitProgress: () => undefined },
+                ),
             );
             if (!result.Success || !result.Output?.Success) return { Amount: 0, Refusal: result.Output?.Message ?? result.ErrorMessage ?? 'unknown error' };
             return { Amount: amount };

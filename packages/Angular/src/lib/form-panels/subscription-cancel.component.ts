@@ -3,6 +3,7 @@ import type { IMetadataProvider } from '@memberjunction/core';
 import {
     OrdersCancelSubscriptionOperation,
     ToISODate,
+    UserCanReverse,
     type CancelSubscriptionInput,
     type CancelSubscriptionOutput,
     type mjBizAppsOrdersSubscriptionEntity,
@@ -27,7 +28,8 @@ const CANCELLABLE_STATUSES = new Set(['Active', 'Trialing', 'Paused']);
  * second calculation done here. Changing the timing or the reason throws the preview away, so a
  * stale preview can never be confirmed.
  *
- * Offered only to a viewer who may update subscriptions, and only while the subscription is in a
+ * Offered only to a viewer who may update subscriptions and holds MJ.BizApps.Orders.Order.Reverse
+ * (the Finance role; the operation refuses everyone else, bc-aidp-next-golive#454), and only while the subscription is in a
  * status it can be cancelled from. While the form is in edit mode the control is shown disabled: the
  * form reloads the record after a cancellation, and it will not reload over unsaved edits
  * (bizapps-orders#749).
@@ -67,7 +69,7 @@ export class MJOSubscriptionCancelComponent {
     public get CanCancel(): boolean {
         if (!this.Record?.IsSaved || !CANCELLABLE_STATUSES.has(this.Record.Status)) return false;
         const user = this.Provider?.CurrentUser;
-        return !!user && this.Record.EntityInfo.GetUserPermisions(user).CanUpdate;
+        return !!user && this.Record.EntityInfo.GetUserPermisions(user).CanUpdate && UserCanReverse(user, this.Provider);
     }
 
     /**

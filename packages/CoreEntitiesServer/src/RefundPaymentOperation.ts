@@ -47,6 +47,7 @@ import {
     type AppliedAllocation,
 } from './PaymentReversalFactory.js';
 import { CheckRefundAuthority } from './RefundAuthority.js';
+import { ReversalGate } from './ReversalAuthority.js';
 
 const PAYMENT_HEADER_ENTITY = 'MJ_BizApps_Orders: Payment Headers';
 
@@ -96,6 +97,11 @@ export class RefundPaymentOperation extends OrdersRefundPaymentOperationBase {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<RefundPaymentOutput> {
+        // FIRST, BEFORE ANY READ OR WRITE: reversing booked money is finance's (bc-aidp-next-golive#454).
+        // The amount rule in ./RefundAuthority.ts still applies on top of it.
+        const refusal = ReversalGate('Refunding a payment', provider, user);
+        if (refusal) return { Success: false, Message: refusal };
+
         // Caller-supplied ids reach SQL filter text downstream. Validated here,
         // at the boundary, so every frame below this one can trust them.
         RequireUUID(input.PaymentHeaderID, 'PaymentHeaderID');
