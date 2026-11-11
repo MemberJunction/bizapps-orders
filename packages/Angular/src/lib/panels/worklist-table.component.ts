@@ -185,7 +185,7 @@ export type MJORow = any;
                                             type="checkbox"
                                             [checked]="isTicked(row)"
                                             (change)="toggle(row, $any($event.target).checked)"
-                                            [attr.aria-label]="'Select ' + (row[RowKey] ?? '')">
+                                            [attr.aria-label]="rowLabel(row)">
                                     }
                                 </td>
                             }
@@ -305,6 +305,12 @@ export class MJOWorklistTableComponent {
     /** Which rows may be ticked. Omit for every row. A row this refuses shows no checkbox. */
     @Input() SelectableRow: ((row: MJORow) => boolean) | null = null;
 
+    /**
+     * What a row's checkbox is called to assistive technology, in words a person would use (a number
+     * and a name). Omit to label it with the row's key, which is only readable when the key is one.
+     */
+    @Input() RowLabel: ((row: MJORow) => string) | null = null;
+
     @Input() EmptyTitle = 'Nothing matches';
     @Input() EmptyHint = 'Try a different filter, or clear the search.';
     @Input() EmptyIcon = 'fa-solid fa-magnifying-glass';
@@ -334,6 +340,10 @@ export class MJOWorklistTableComponent {
 
     protected keyOf(row: MJORow): string {
         return String(row[this.RowKey]);
+    }
+
+    protected rowLabel(row: MJORow): string {
+        return this.RowLabel ? this.RowLabel(row) : `Select ${row[this.RowKey] ?? ''}`;
     }
 
     protected canSelect(row: MJORow): boolean {

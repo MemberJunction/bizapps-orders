@@ -30,6 +30,8 @@ import {
     TermWarning,
     PruneProducts,
     CurrentProductsNote,
+    PendingRenewalWarning,
+    PlacedText,
     ProductChangeText,
     ReadPageState,
     WritePageState,
@@ -175,6 +177,7 @@ describe('what the columns say', () => {
     it('labels every state', () => {
         expect(RenewalStateLabel('Scheduled')).toBe('Auto-renews');
         expect(RenewalStateLabel('WillEnd')).toBe('Will end');
+        expect(RenewalStateLabel('Ended')).toBe('Ended');
         expect(RenewalStateLabel('ProviderBilled')).toBe('Gateway billed');
     });
 });
@@ -506,5 +509,37 @@ describe('ExclusionNote', () => {
         ).toBe('4 · already renewed (2), billed by a payment gateway (1), not renewable (canceled) (1)');
         expect(ExclusionNote([row({ State: 'RenewalPending', RenewalOrderID: 'd' })])).toBe('1 · a renewal draft already exists (1)');
         expect(ExclusionNote([])).toBeNull();
+    });
+
+    it('PlacedText names each order once, however many subscriptions renewed on it, and who was skipped', () => {
+        const candidate = (over: Partial<RenewalCandidate>): RenewalCandidate =>
+            ({ SubscriptionID: 'id', SubscriptionNumber: 'SUB-1', ProductID: 'p', CurrentTermEnd: '2027-03-31', LeadDays: 90, ...over }) as RenewalCandidate;
+        const grouped = [
+            candidate({ SubscriptionNumber: 'SUB-1', OrderID: 'o-29', OrderNumber: 'ORD-000029', OrderStatus: 'Draft' }),
+            candidate({ SubscriptionNumber: 'SUB-2', OrderID: 'o-29', OrderNumber: 'ORD-000029', OrderStatus: 'Draft' }),
+        ];
+        expect(PlacedText(grouped, 1)).toBe('1 renewal order created for 2 subscriptions: ORD-000029 (draft).');
+
+        const mixed = [
+            ...grouped,
+            candidate({ SubscriptionNumber: 'SUB-3', OrderID: 'o-30', OrderNumber: 'ORD-000030', OrderStatus: 'Confirmed' }),
+            candidate({ SubscriptionNumber: 'SUB-4', SkippedReason: 'a renewal order already exists for this term' }),
+        ];
+        expect(PlacedText(mixed, 2)).toBe(
+            '2 renewal orders created for 3 subscriptions: ORD-000029 (draft), ORD-000030 (confirmed). 1 skipped: SUB-4 (a renewal order already exists for this term).',
+        );
+        expect(PlacedText([candidate({ SkippedReason: 'no such subscription' })], 0)).toBe('0 renewal orders created. 1 skipped: SUB-1 (no such subscription).');
+    });
+
+    it('PendingRenewalWarning names the pending renewal orders among the chosen rows, and is silent when none is pending', () => {
+        const pending = row({ SubscriptionNumber: 'SUB-4', RenewalOrderID: 'o-30', RenewalOrderNumber: 'ORD-000030', RenewalOrderStatus: 'Draft', RenewalBooked: false, State: 'RenewalPending' });
+        const booked = row({ SubscriptionNumber: 'SUB-5', RenewalOrderID: 'o-31', RenewalOrderNumber: 'ORD-000031', RenewalOrderStatus: 'Confirmed', RenewalBooked: true, State: 'Renewed' });
+        const open = row({ SubscriptionNumber: 'SUB-6', RenewalOrderID: null, RenewalOrderNumber: null, RenewalBooked: false });
+        expect(PendingRenewalWarning([open, booked], 'It keeps its price.')).toBeNull();
+        expect(PendingRenewalWarning([open, pending], 'It keeps its price.')).toBe('SUB-4 has renewal order ORD-000030 (Draft) pending. It keeps its price.');
+        const second = row({ SubscriptionNumber: 'SUB-7', RenewalOrderID: 'o-32', RenewalOrderNumber: 'ORD-000032', RenewalOrderStatus: 'Draft', RenewalBooked: false, State: 'RenewalPending' });
+        expect(PendingRenewalWarning([pending, second], 'They keep their prices.')).toBe(
+            '2 of the selected subscriptions have a renewal order pending: ORD-000030 (Draft), ORD-000032 (Draft). They keep their prices.',
+        );
     });
 });

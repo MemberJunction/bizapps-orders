@@ -1367,6 +1367,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     public async PreviewConcessionProblems(): Promise<string[]> {
         if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        // The same marks confirm reads: a draft the renewal pass left is judged on the pass's own
+        // prices here too, or the form's Confirm stays disabled on an order the save would book.
+        await this.loadPersistedRenewalMarks();
         return this.concessionGateProblems();
     }
 

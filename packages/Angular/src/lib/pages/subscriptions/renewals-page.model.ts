@@ -27,7 +27,7 @@ export const RENEWAL_WINDOWS: ReadonlyArray<{ Days: number; Label: string }> = [
 /** The states the scheduled pass will still act on. */
 const AUTO_STATES: ReadonlyArray<RenewalWorklistState> = ['DueNow', 'Scheduled'];
 /** The states where a person has to place the renewal, or let it end. */
-const MANUAL_STATES: ReadonlyArray<RenewalWorklistState> = ['WillEnd', 'Lapsed'];
+const MANUAL_STATES: ReadonlyArray<RenewalWorklistState> = ['WillEnd', 'Ended', 'Lapsed'];
 /** The states where a renewal order already exists. */
 const PLACED_STATES: ReadonlyArray<RenewalWorklistState> = ['Renewed', 'RenewalPending'];
 
@@ -114,6 +114,8 @@ export function RenewalStateLabel(state: RenewalWorklistState): string {
             return 'Lapsed';
         case 'WillEnd':
             return 'Will end';
+        case 'Ended':
+            return 'Ended';
         case 'ProviderBilled':
             return 'Gateway billed';
         case 'Inactive':
@@ -133,6 +135,7 @@ export function RenewalStateChipClass(state: RenewalWorklistState): string {
         case 'DueNow':
             return 'mjo-chip--info';
         case 'WillEnd':
+        case 'Ended':
         case 'Lapsed':
             return 'mjo-chip--warning';
         default:
@@ -153,6 +156,8 @@ export function RenewalStateNote(row: RenewalWorklistRow): string | null {
             return 'awaiting confirmation';
         case 'WillEnd':
             return 'auto-renew is off';
+        case 'Ended':
+            return 'auto-renew was off';
         case 'Lapsed':
             return 'ended before the pass';
         case 'Inactive':
@@ -357,6 +362,50 @@ export function CurrentProductsNote(rows: ReadonlyArray<RenewalWorklistRow>): st
         .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
         .map(([name, n]) => (rows.length > 1 ? `${name} ×${n}` : name))
         .join(', ');
+}
+
+/**
+ * What the page says after `Orders.SpawnRenewals` placed orders: one entry per ORDER, not per
+ * subscription, since a customer's subscriptions renew together on one order; then who was skipped.
+ */
+export function PlacedText(candidates: ReadonlyArray<RenewalCandidate>, placed: number): string {
+    const done = candidates.filter((c) => c.OrderID);
+    const skipped = candidates.filter((c) => !c.OrderID);
+    const orders = new Map<string, string>();
+    for (const c of done) {
+        const key = String(c.OrderID);
+        if (!orders.has(key)) orders.set(key, `${c.OrderNumber ?? c.OrderID} (${c.OrderStatus === 'Draft' ? 'draft' : 'confirmed'})`);
+    }
+    const list = [...orders.values()].slice(0, 5).join(', ');
+    const head =
+        `${placed} renewal order${placed === 1 ? '' : 's'} created` +
+        (done.length ? ` for ${done.length} subscription${done.length === 1 ? '' : 's'}` : '') +
+        `${list ? `: ${list}${orders.size > 5 ? ', …' : ''}` : ''}.`;
+    const tail = skipped.length
+        ? ` ${skipped.length} skipped: ${skipped
+              .slice(0, 3)
+              .map((c) => `${c.SubscriptionNumber} (${c.SkippedReason ?? 'no reason reported'})`)
+              .join('; ')}${skipped.length > 3 ? `, and ${skipped.length - 3} more` : ''}.`
+        : '';
+    return head + tail;
+}
+
+/**
+ * The rows among `rows` that have a renewal order pending (placed, not yet booked), as a warning for a
+ * dialog whose change does not reach that order, ending in `consequence`. Null when none is pending.
+ */
+export function PendingRenewalWarning(rows: ReadonlyArray<RenewalWorklistRow>, consequence: string): string | null {
+    const pending = rows.filter((r) => r.RenewalOrderID && !r.RenewalBooked);
+    if (!pending.length) return null;
+    const order = (r: RenewalWorklistRow): string => `${r.RenewalOrderNumber ?? 'an order'}${r.RenewalOrderStatus ? ` (${r.RenewalOrderStatus})` : ''}`;
+    const who =
+        pending.length === 1
+            ? `${pending[0].SubscriptionNumber} has renewal order ${order(pending[0])} pending`
+            : `${pending.length} of the selected subscriptions have a renewal order pending: ${pending
+                  .slice(0, 3)
+                  .map(order)
+                  .join(', ')}${pending.length > 3 ? `, and ${pending.length - 3} more` : ''}`;
+    return `${who}. ${consequence}`;
 }
 
 /** What the page says after `Orders.ChangeSubscriptionProduct` ran. */
@@ -679,7 +728,7 @@ export type RenewalsSortKey =
     | 'RenewalPrice';
 
 /** The order the renewal states sort in: what needs a person first, then what the pass handles, then what is done. */
-const STATE_ORDER: ReadonlyArray<RenewalWorklistState> = ['Lapsed', 'WillEnd', 'DueNow', 'Scheduled', 'RenewalPending', 'Renewed', 'ProviderBilled', 'Inactive'];
+const STATE_ORDER: ReadonlyArray<RenewalWorklistState> = ['Lapsed', 'Ended', 'WillEnd', 'DueNow', 'Scheduled', 'RenewalPending', 'Renewed', 'ProviderBilled', 'Inactive'];
 
 export function CompareRows(a: RenewalWorklistRow, b: RenewalWorklistRow, key: RenewalsSortKey): number {
     const text = (v: string | null | undefined): string => (v ?? '').toLowerCase();

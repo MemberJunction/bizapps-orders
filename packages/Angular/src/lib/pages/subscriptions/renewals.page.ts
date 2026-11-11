@@ -15,7 +15,6 @@ import {
     OrdersGetRenewalWorklistOperation,
     OrdersSetRenewalSettingsOperation,
     OrdersSpawnRenewalsOperation,
-    type RenewalCandidate,
     type RenewalWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { MJOStatTileComponent } from '../../panels/stat-tile.component';
@@ -37,6 +36,8 @@ import {
     MatchesSearch,
     NO_FACETS,
     NeedsAttention,
+    PendingRenewalWarning,
+    PlacedText,
     ProductChangeText,
     PruneCompanies,
     PruneProducts,
@@ -308,6 +309,7 @@ const LOOKBACK_DAYS = 30;
                     [SortKey]="SortKey"
                     [SortDescending]="SortDescending"
                     RowKey="SubscriptionID"
+                    [RowLabel]="RowLabel"
                     [SelectedKey]="Selected?.SubscriptionID ?? null"
                     [Selectable]="true"
                     [SelectedKeys]="SelectedKeys"
@@ -458,6 +460,12 @@ const LOOKBACK_DAYS = 30;
             <p class="mjo-rn__dialog-lede">
                 {{ IncreaseTargets.length === 1 ? '1 subscription' : IncreaseTargets.length + ' subscriptions' }} selected. Applies to future renewals; existing orders are not affected.
             </p>
+            @if (IncreasePendingNote) {
+                <p class="mjo-note mjo-rn__dialog-warning">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    {{ IncreasePendingNote }}
+                </p>
+            }
             <label class="mjo-rn__field">
                 <span class="small muted">Annual increase</span>
                 <span class="mjo-rn__pct">
@@ -554,6 +562,12 @@ const LOOKBACK_DAYS = 30;
         </mj-dialog>
 
         <mj-dialog [Visible]="ProductOpen" Title="Change product" Size="sm" (Close)="ProductOpen = false">
+            @if (ProductPendingNote) {
+                <p class="mjo-note mjo-rn__dialog-warning mjo-rn__dialog-lede">
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    {{ ProductPendingNote }}
+                </p>
+            }
             <dl class="mjo-rn__facts">
                 <dt>Subscriptions</dt>
                 <dd>{{ ProductTargets.length }}</dd>
@@ -735,6 +749,7 @@ const LOOKBACK_DAYS = 30;
             .mjo-rn__error { color: var(--mj-status-error-text, #b42318); margin: var(--mj-space-2) 0 0; }
             .mjo-rn__note { margin-bottom: var(--mj-space-4); }
             .mjo-rn__actions {
+                flex-wrap: wrap;
                 align-items: center;
                 gap: var(--mj-space-3);
                 margin-bottom: var(--mj-space-4);
@@ -791,10 +806,14 @@ export class MJORenewalsPageComponent implements OnInit {
     public IncreaseValue: number | null = null;
     public IncreaseClear = false;
     public IncreaseError: string | null = null;
+    /** A chosen subscription has a renewal draft pending: the rate does not reach it. */
+    public IncreasePendingNote: string | null = null;
     /** The change-product dialog. Options load once, on first open. */
     public ProductOpen = false;
     public ProductTargets: string[] = [];
     public ProductCurrentNote = '';
+    /** A chosen subscription has a renewal draft pending: the operation refuses it. */
+    public ProductPendingNote: string | null = null;
     public ProductCompanyNote = '';
     /** Every Active subscription product, with its company, loaded once; `ProductChoices` is the slice for the chosen rows' company. */
     private productCatalog: Array<{ ID: string; Name: string; CompanyID: string; Company: string }> = [];
@@ -849,6 +868,9 @@ export class MJORenewalsPageComponent implements OnInit {
     public get PlaceableSelected(): string[] {
         return this.AllRows.filter((r) => this.SelectedKeys.includes(r.SubscriptionID) && CanPlaceRenewal(r)).map((r) => r.SubscriptionID);
     }
+
+    /** What a row's checkbox is called to a screen reader: the subscription and whose it is, not its id. */
+    public readonly RowLabel = (row: RenewalWorklistRow): string => `Select ${row.SubscriptionNumber}, ${row.ContactName || row.AccountName || row.ProductName}`;
 
     public readonly Columns: MJOColumn<RenewalWorklistRow>[] = [
         { Key: 'ContactName', Label: 'Customer', Sortable: true, Format: (r) => r.ContactName ?? r.AccountName ?? '—', Secondary: (r) => (r.ContactName && r.AccountName ? r.AccountName : null) },
@@ -1109,7 +1131,7 @@ export class MJORenewalsPageComponent implements OnInit {
                 return;
             }
             this.PlaceOpen = false;
-            this.Notice = { Tone: output.Placed ? 'success' : 'warning', Text: this.placedText(output.Candidates, output.Placed) };
+            this.Notice = { Tone: output.Placed ? 'success' : 'warning', Text: PlacedText(output.Candidates, output.Placed) };
             this.SelectedKeys = [];
             await this.load();
         } finally {
@@ -1129,6 +1151,7 @@ export class MJORenewalsPageComponent implements OnInit {
         this.IncreaseValue = shared === undefined ? null : shared;
         this.IncreaseClear = false;
         this.IncreaseError = null;
+        this.IncreasePendingNote = PendingRenewalWarning(rows, 'A pending order keeps the price it was placed at; void it and create it again to renew at the new rate.');
         this.IncreaseOpen = true;
     }
 
@@ -1181,6 +1204,7 @@ export class MJORenewalsPageComponent implements OnInit {
         this.ProductTargets = [...subscriptionIDs];
         const chosen = this.AllRows.filter((r) => subscriptionIDs.includes(r.SubscriptionID));
         this.ProductCurrentNote = CurrentProductsNote(chosen);
+        this.ProductPendingNote = PendingRenewalWarning(chosen, 'Confirming that order would put the subscription back on the order\'s product, so the change is refused for it until the order is voided or its line corrected.');
         const companies = [...new Map(chosen.map((r) => [r.CompanyID, r.CompanyName || '(none)'])).entries()];
         this.ProductCompanyNote = companies.map(([, name]) => name).join(', ');
         this.ProductChoice = null;
@@ -1293,23 +1317,6 @@ export class MJORenewalsPageComponent implements OnInit {
     }
 
     /** "3 renewal orders placed: ORD-1001 (confirmed), ORD-1002 (draft) … 1 skipped: SUB-7 (reason)". */
-    private placedText(candidates: RenewalCandidate[], placed: number): string {
-        const done = candidates.filter((c) => c.OrderID);
-        const skipped = candidates.filter((c) => !c.OrderID);
-        const list = done
-            .slice(0, 5)
-            .map((c) => `${c.OrderNumber ?? c.OrderID} (${c.OrderStatus === 'Draft' ? 'draft' : 'confirmed'})`)
-            .join(', ');
-        const head = `${placed} renewal order${placed === 1 ? '' : 's'} created${list ? `: ${list}${done.length > 5 ? ', …' : ''}` : ''}.`;
-        const tail = skipped.length
-            ? ` ${skipped.length} skipped: ${skipped
-                  .slice(0, 3)
-                  .map((c) => `${c.SubscriptionNumber} (${c.SkippedReason ?? 'no reason reported'})`)
-                  .join('; ')}${skipped.length > 3 ? `, and ${skipped.length - 3} more` : ''}.`
-            : '';
-        return head + tail;
-    }
-
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {

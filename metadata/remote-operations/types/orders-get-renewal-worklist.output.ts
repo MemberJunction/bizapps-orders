@@ -14,6 +14,7 @@ export type RenewalWorklistState =
     | 'Scheduled'
     | 'Lapsed'
     | 'WillEnd'
+    | 'Ended'
     | 'ProviderBilled'
     | 'Inactive';
 

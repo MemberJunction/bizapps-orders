@@ -40,7 +40,14 @@ describe('ClassifyRenewal', () => {
 
     it('says a term with auto-renew off will simply end, whatever the dates', () => {
         expect(ClassifyRenewal({ ...BASE, AutoRenew: false })).toEqual({ State: 'WillEnd', AutoRenewOn: null });
-        expect(ClassifyRenewal({ ...BASE, AutoRenew: false, AsOf: '2027-06-01' }).State).toBe('WillEnd');
+        expect(ClassifyRenewal({ ...BASE, AutoRenew: false, AsOf: '2027-03-31' }).State).toBe('WillEnd');
+    });
+
+    it('says a term with auto-renew off has ended once its last day is past, not that it "will end"', () => {
+        expect(ClassifyRenewal({ ...BASE, AutoRenew: false, AsOf: '2027-04-01' })).toEqual({ State: 'Ended', AutoRenewOn: null });
+        expect(ClassifyRenewal({ ...BASE, AutoRenew: false, AsOf: '2027-06-01' }).State).toBe('Ended');
+        // The pass's lower bound is about what the pass places; it does not make an ended term "lapsed".
+        expect(ClassifyRenewal({ ...BASE, AutoRenew: false, AsOf: '2027-04-12' }).State).toBe('Ended');
     });
 
     it('never renews a subscription that is not Active or Trialing', () => {

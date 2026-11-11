@@ -24,6 +24,7 @@
  * - `Scheduled`       auto-renew is on; the pass will place it on `AutoRenewOn`.
  * - `Lapsed`          auto-renew is on but the term ended before the pass's lower bound, so it will not be revived by a routine pass.
  * - `WillEnd`         auto-renew is off: the term simply ends unless a person places a renewal.
+ * - `Ended`           auto-renew is off and the term has ended; nothing renewed it, and only a person can.
  * - `ProviderBilled`  a payment gateway bills it; Orders places no renewal order.
  * - `Inactive`        the subscription is not Active or Trialing (canceled, paused, expired), so nothing renews it.
  */
@@ -34,6 +35,7 @@ export type RenewalState =
     | 'Scheduled'
     | 'Lapsed'
     | 'WillEnd'
+    | 'Ended'
     | 'ProviderBilled'
     | 'Inactive';
 
@@ -87,10 +89,14 @@ export function ClassifyRenewal(facts: RenewalFacts): RenewalClassification {
     if (facts.RenewalPending) return { State: 'RenewalPending', AutoRenewOn: null };
     if (facts.ProviderBilled) return { State: 'ProviderBilled', AutoRenewOn: null };
     if (!RENEWABLE_STATUSES.includes(facts.Status)) return { State: 'Inactive', AutoRenewOn: null };
-    if (!facts.AutoRenew) return { State: 'WillEnd', AutoRenewOn: null };
+
+    const daysToEnd = DaysBetweenDays(facts.AsOf, facts.TermEndDate);
+    // Auto-renew off: the term ends on its own, and once it has, it has ended. The switch says
+    // nothing about the pass's lower bound, which applies only to a term the pass would place.
+    if (!facts.AutoRenew) return { State: daysToEnd < 0 ? 'Ended' : 'WillEnd', AutoRenewOn: null };
 
     // The pass's lower bound: a term that ended before yesterday is not revived by a routine run.
-    if (DaysBetweenDays(facts.AsOf, facts.TermEndDate) < -1) return { State: 'Lapsed', AutoRenewOn: null };
+    if (daysToEnd < -1) return { State: 'Lapsed', AutoRenewOn: null };
 
     const placeOn = AddDays(facts.TermEndDate, -Math.max(0, Math.floor(facts.LeadDays)));
     if (placeOn <= facts.AsOf) return { State: 'DueNow', AutoRenewOn: facts.AsOf };

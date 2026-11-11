@@ -15,7 +15,10 @@
  * billed. A product sold by another company is allowed and reported as a warning: the subscription
  * keeps its own company, which is also what keeps subscriptions bought together on one renewal
  * order. A gateway-billed subscription refuses the change by the entity's own rule (the gateway
- * owns its product) and is reported, not failed.
+ * owns its product) and is reported, not failed. A subscription with a renewal order pending (a
+ * draft the pass or a person left, not yet confirmed) is refused with the order's number: confirming
+ * that order moves the subscription onto the product its line names, which would silently undo the
+ * correction. The person voids the draft, or corrects the line on it, and then changes the product.
  *
  * WHO CHANGED WHAT is MJ's record-change log: the Subscriptions entity tracks changes, so the old
  * and new product, the user and the time are kept without a column of this app's own.
@@ -23,7 +26,7 @@
  * CONNECTS TO:
  *   CALLERS: the Renewals page (`renewals.page.ts`) · API callers
  *   WRITES:  MJ_BizApps_Orders: Subscriptions, through SubscriptionEntityServer
- *   READS:   MJ_BizApps_Orders: Products
+ *   READS:   MJ_BizApps_Orders: Products · Order Lines and Order Headers (a renewal order pending)
  */
 import { BaseRemotableOperation, LogError, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
@@ -144,6 +147,16 @@ export class ChangeSubscriptionProductOperation extends OrdersChangeSubscription
             };
             if (previousID && previousID.toLowerCase() === product.ID.toLowerCase()) return base;
 
+            const pending = await this.pendingRenewalOrder(provider, id);
+            if (pending) {
+                return {
+                    ...base,
+                    Error:
+                        `renewal order ${pending.OrderNumber} (${pending.Status}) is pending for this subscription, and confirming it ` +
+                        `would move the subscription back onto that order's product. Void the order, or change the product on its line, first.`,
+                };
+            }
+
             const typeDiffers = String(sub.SubscriptionTypeID ?? '').toLowerCase() !== String(product.SubscriptionTypeID ?? '').toLowerCase();
             if (typeDiffers && !adoptType) {
                 return {
@@ -173,6 +186,26 @@ export class ChangeSubscriptionProductOperation extends OrdersChangeSubscription
             LogError(`Orders.ChangeSubscriptionProduct: subscription ${id} could not be changed: ${message}`);
             return { ...blank, Error: message };
         }
+    }
+
+    /**
+     * A live renewal order for this subscription that has not produced a term: the renewal pass's own
+     * second guard, read the same way (`SpawnRenewalsOperation.alreadyRenewed`, `GetRenewalWorklist`'s
+     * pending renewals). Newest first, so the number reported is the latest draft.
+     */
+    private async pendingRenewalOrder(provider: IMetadataProvider, subscriptionID: string): Promise<{ OrderNumber: string; Status: string } | null> {
+        const db = provider as unknown as { ExecuteSQL(sql: string): Promise<unknown> };
+        const rows = (await db.ExecuteSQL(`
+            SELECT TOP 1 oh.OrderNumber, oh.Status
+            FROM __mj_BizAppsOrders.OrderLine ol
+            JOIN __mj_BizAppsOrders.OrderHeader oh ON oh.ID = ol.OrderHeaderID
+            WHERE ol.RenewsSubscriptionID = '${RequireUUID(subscriptionID, 'SubscriptionID')}'
+              AND oh.Status <> 'Voided'
+              AND NOT EXISTS (SELECT 1 FROM __mj_BizAppsOrders.SubscriptionTerm st WHERE st.OrderLineID = ol.ID)
+            ORDER BY oh.OrderDate DESC, oh.OrderNumber DESC
+        `)) as Array<{ OrderNumber: string; Status: string }>;
+        const row = Array.isArray(rows) ? rows[0] : undefined;
+        return row ? { OrderNumber: String(row.OrderNumber), Status: String(row.Status) } : null;
     }
 }
 

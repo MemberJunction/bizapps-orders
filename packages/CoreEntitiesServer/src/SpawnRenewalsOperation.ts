@@ -323,7 +323,8 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
          * as before. A guard rejection or a pricing failure does not consume the cap: nothing was
          * placed. (A member carrying promotion codes renews on its own order, decided only once it
          * is priced, so a pass can overshoot the cap by that one order; its base key is not counted
-         * as open, so a code-free sibling cannot open a second one on its account.)
+         * as open, so a code-free sibling cannot open a second one on its account. A group that
+         * fails and is retried one member at a time, below, can overshoot it the same way.)
          */
         const groups = new Map<string, PlaceableMember[]>();
         /** Each order's 1-based number in this pass, assigned when its group opens. */
@@ -414,26 +415,32 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
 
         let placedSubscriptions = 0;
         if (!input.Preview) {
+            const day = asOf.toISOString().slice(0, 10);
+            let nextGroup = groupIndex.size;
             for (const members of groups.values()) {
-                try {
-                    const order = await this.placeRenewalGroup(provider, user, members, asOf.toISOString().slice(0, 10), members[0].placeAs, !!selected);
-                    for (const m of members) {
-                        m.candidate.OrderID = order.ID;
-                        m.candidate.OrderNumber = order.Number;
-                        if (order.Promotions) this.reportPromotions(m.candidate, order.Promotions);
-                    }
-                    out.Placed++;
+                // One order's failure must not stop the batch — an unattended job that aborts on
+                // the first bad row silently stops renewing everyone behind it.
+                if (await this.tryPlaceGroup(provider, user, members, day, !!selected, out)) {
                     placedSubscriptions += members.length;
-                } catch (err) {
-                    // One order's failure must not stop the batch — an unattended job that aborts on
-                    // the first bad row silently stops renewing everyone behind it. Every member of
-                    // the order carries the reason, since none of them was placed.
-                    const message = err instanceof Error ? err.message : String(err);
-                    LogError(`Orders.SpawnRenewals: ${members.map((m) => m.due.SubscriptionNumber).join(', ')} failed: ${message}`);
-                    for (const m of members) {
-                        m.candidate.SkippedReason = message;
-                        out.Skipped++;
-                    }
+                    continue;
+                }
+                if (members.length === 1) {
+                    out.Skipped++;
+                    continue;
+                }
+                // ONE MEMBER'S FAILURE HOLDS BACK ONLY ITSELF. The group's order is one transaction,
+                // so a member that cannot be booked (an unresolved GL account, a refused line) rolled
+                // every sibling back with it. Retried one member at a time, the healthy ones place
+                // on orders of their own and only the broken one waits, which is what the pass did
+                // before orders were grouped: a scheduled pass that skipped the whole customer
+                // would repeat that every night until someone fixed the one subscription.
+                members.forEach((m, i) => {
+                    // Each now stands for an order of its own: the first keeps the group's number.
+                    if (i > 0) m.candidate.OrderGroup = ++nextGroup;
+                });
+                for (const m of members) {
+                    if (await this.tryPlaceGroup(provider, user, [m], day, !!selected, out)) placedSubscriptions++;
+                    else out.Skipped++;
                 }
             }
         }
@@ -561,6 +568,37 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
               AND NOT EXISTS (SELECT 1 FROM __mj_BizAppsOrders.SubscriptionTerm st WHERE st.OrderLineID = ol.ID)
         `)) as unknown[];
         return Array.isArray(pending) && pending.length > 0;
+    }
+
+    /**
+     * Place a group's order and report it on every member; on failure, record the reason on every
+     * member and say so. Counts the order in `out.Placed`; the caller decides what a failure counts
+     * as, since a failed group is retried a member at a time.
+     */
+    private async tryPlaceGroup(
+        provider: IMetadataProvider,
+        user: UserInfo,
+        members: ReadonlyArray<PlaceableMember>,
+        invoiceDay: string,
+        selectedByPerson: boolean,
+        out: SpawnRenewalsOutput,
+    ): Promise<boolean> {
+        try {
+            const order = await this.placeRenewalGroup(provider, user, members, invoiceDay, members[0].placeAs, selectedByPerson);
+            for (const m of members) {
+                m.candidate.OrderID = order.ID;
+                m.candidate.OrderNumber = order.Number;
+                delete m.candidate.SkippedReason;
+                if (order.Promotions) this.reportPromotions(m.candidate, order.Promotions);
+            }
+            out.Placed++;
+            return true;
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            LogError(`Orders.SpawnRenewals: ${members.map((m) => m.due.SubscriptionNumber).join(', ')} failed: ${message}`);
+            for (const m of members) m.candidate.SkippedReason = message;
+            return false;
+        }
     }
 
     /**

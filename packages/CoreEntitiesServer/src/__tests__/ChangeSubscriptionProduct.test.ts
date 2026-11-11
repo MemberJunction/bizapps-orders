@@ -44,6 +44,9 @@ interface Row {
 interface Store {
     rows: Map<string, Row>;
     saved: { ID: string; ProductID: string; SubscriptionTypeID: string }[];
+    /** A renewal order pending per subscription id, as the pending-renewal query would answer. */
+    pending: Map<string, { OrderNumber: string; Status: string }>;
+    sql: string[];
 }
 
 function world(): { provider: IMetadataProvider; store: Store } {
@@ -54,8 +57,16 @@ function world(): { provider: IMetadataProvider; store: Store } {
             [S3, { SubscriptionNumber: 'SUB-3', ProductID: CONVERTED, SubscriptionTypeID: 'annual', CompanyID: 'co-a', refuse: 'the gateway bills this subscription' }],
         ]),
         saved: [],
+        pending: new Map(),
+        sql: [],
     };
     const provider = {
+        ExecuteSQL: async (q: string) => {
+            store.sql.push(q);
+            const id = /RenewsSubscriptionID = '([^']+)'/.exec(q)?.[1]?.toLowerCase();
+            const row = id ? store.pending.get(id) : undefined;
+            return row ? [row] : [];
+        },
         GetEntityObject: async () => {
             const entity = {
                 ID: '',
@@ -123,6 +134,22 @@ describe('Orders.ChangeSubscriptionProduct', () => {
         expect(moved.Changes[0]).toMatchObject({ Changed: true, TypeMoved: true, Warning: 'the product is sold by another company; the subscription keeps its own' });
         expect(store.saved).toEqual([{ ID: S1, ProductID: OTHER_TYPE, SubscriptionTypeID: 'monthly' }]);
         expect(moved.Message).toMatch(/\(1 moved to its subscription type\)/);
+    });
+
+    it('refuses a subscription with a renewal order pending, naming the order, and leaves it as it was', async () => {
+        // Confirming the pending draft moves the subscription onto the draft line's product, so a
+        // change made meanwhile would be undone without a word (PR #1059 review, issue 2).
+        const { provider, store } = world();
+        store.pending.set(S1, { OrderNumber: 'ORD-000029', Status: 'Draft' });
+        const out = await run({ SubscriptionIDs: [S1, S2], ProductID: REAL }, provider);
+        expect(out).toMatchObject({ Success: true, Updated: 0, Unchanged: 1, Failed: 1 });
+        const [one, two] = out.Changes;
+        expect(one.Error).toMatch(/ORD-000029 \(Draft\) is pending/);
+        expect(one).toMatchObject({ Changed: false, CurrentProductID: CONVERTED });
+        expect(two).toMatchObject({ Changed: false, CurrentProductID: REAL });
+        expect(store.saved).toEqual([]);
+        expect(store.sql[0]).toMatch(/NOT EXISTS \(SELECT 1 FROM __mj_BizAppsOrders\.SubscriptionTerm/);
+        expect(store.sql[0]).toMatch(/oh\.Status <> 'Voided'/);
     });
 
     it('refuses an unknown, inactive or non-subscription product before touching any subscription', async () => {
