@@ -8,7 +8,7 @@ import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
     ProductDetailsPanel,
-    ProductLifecycleClaimPanel,
+    ProductPromosPanel,
     ProductSubscriptionsPanel,
 } from '../lib/form-panels/product-widget.panels';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
@@ -19,7 +19,10 @@ import '../public-api';
  * field in them was empty, and ten fields rendered twice (generated section + widget).
  *
  * Both fixes are structural, so these tests read the structures:
- *  - `replacesSectionKey` on the registration is what removes the duplicate generated section.
+ *  - A section claim on a registration is what removes the duplicate generated section. On MJ 6.2
+ *    a panel that holds a claim on a field section is filed inside the Details rail item, so the
+ *    header claims the sections the Accounting and Subscriptions panels draw, and the Details
+ *    panel, which belongs in Details, claims `details` and `catalogLifecycle`.
  *  - Where an `mj-form-field` is DECLARED is what decides whether mj-collapsible-panel's
  *    `@ContentChildren` query can see it. A field declared inside the widget's own template sits
  *    behind a component view boundary and is invisible to the query. That query drives both
@@ -69,13 +72,31 @@ function PanelRegistrationMetadata(panel: unknown): Record<string, unknown> | un
 }
 
 describe('Product widget panels replace their duplicate generated sections', () => {
+    /** Every section a registration claims, singular and plural keys together. */
+    function Claims(panel: unknown): string[] {
+        const meta = PanelRegistrationMetadata(panel);
+        const one = meta?.['replacesSectionKey'];
+        const many = meta?.['replacesSectionKeys'];
+        return [...(typeof one === 'string' ? [one] : []), ...(Array.isArray(many) ? many.map(String) : [])];
+    }
+
     it.each([
-        { name: 'accounting', panel: ProductAccountingPanel, sectionKey: 'financialAndAccounting' },
-        { name: 'details', panel: ProductDetailsPanel, sectionKey: 'details' },
-        { name: 'lifecycle claim', panel: ProductLifecycleClaimPanel, sectionKey: 'catalogLifecycle' },
-        { name: 'subscriptions', panel: ProductSubscriptionsPanel, sectionKey: 'subscriptionAndEntitlements' },
-    ])('the $name panel claims the generated $sectionKey section', ({ panel, sectionKey }) => {
-        expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBe(sectionKey);
+        { owner: 'header', panel: ProductHeaderPanel, sectionKey: 'financialAndAccounting' },
+        { owner: 'header', panel: ProductHeaderPanel, sectionKey: 'subscriptionAndEntitlements' },
+        { owner: 'Details panel', panel: ProductDetailsPanel, sectionKey: 'details' },
+        { owner: 'Details panel', panel: ProductDetailsPanel, sectionKey: 'catalogLifecycle' },
+    ])('the $owner claims the generated $sectionKey section', ({ panel, sectionKey }) => {
+        expect(Claims(panel)).toContain(sectionKey);
+    });
+
+    it.each([
+        { name: 'promos', panel: ProductPromosPanel },
+        { name: 'accounting', panel: ProductAccountingPanel },
+        { name: 'fulfillment', panel: ProductFulfillmentPanel },
+        { name: 'subscriptions', panel: ProductSubscriptionsPanel },
+    ])('the $name panel claims nothing and mounts after related, so it keeps its own rail item', ({ panel }) => {
+        expect(Claims(panel)).toEqual([]);
+        expect(PanelRegistrationMetadata(panel)?.['slot']).toBe('after-related');
     });
 
     it('still renders every field of the three replaced sections', () => {
@@ -184,7 +205,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
  */
 describe('The Product header panel owns the identification fields it claims', () => {
     it('claims the generated productIdentification section', () => {
-        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKey']).toBe(
+        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKeys']).toContain(
             'productIdentification'
         );
     });
@@ -214,8 +235,8 @@ describe('Status lives in the Details panel', () => {
         expect(PanelRegistrationMetadata(ProductDetailsPanel)?.['replacesSectionKey']).toBe('details');
     });
 
-    it('the lifecycle claim renders nothing, so Status is set in Details only', () => {
-        expect(FieldNames(PanelTemplate(ProductLifecycleClaimPanel))).toEqual([]);
+    it('Status is set in the Details panel, which claims the generated catalogLifecycle section', () => {
+        expect(PanelRegistrationMetadata(ProductDetailsPanel)?.['replacesSectionKeys']).toContain('catalogLifecycle');
         expect(FieldNames(PanelTemplate(ProductDetailsPanel))).toContain('Status');
     });
 
