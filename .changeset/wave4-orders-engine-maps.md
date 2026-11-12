@@ -1,5 +1,5 @@
 ---
-"@mj-biz-apps/orders-entities": patch
+"@mj-biz-apps/orders-entities": minor
 ---
 
 Optimize OrdersEngine with deferred browser startup and O(1) Map-indexed lookups:
