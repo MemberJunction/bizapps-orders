@@ -15,7 +15,7 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-11-09 · latest migration `V202611111208__v5.48.x__OrderConcession_Withdrawn.sql`
+> **Verified against the live database:** 2026-11-09 · latest migration `V202611120618__v5.50.x__OrderConcession_Withdrawn.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
 > **71 tables · 128 internal relationships · 78 cross-app foreign keys ·

@@ -39,7 +39,7 @@ SET standard_conforming_strings = on;
 -- ===================== DDL: Tables, PKs, Indexes =====================
 
 -- =============================================================================
--- V202611111208 — A concession is withdrawn, not deleted (golive #403)
+-- V202611120618 — A concession is withdrawn, not deleted (golive #403)
 -- =============================================================================
 -- Withdrawing a concession used to delete it, so the order lost the record of what was
 -- offered and when it was taken back. A role allowed to record concessions but not to
