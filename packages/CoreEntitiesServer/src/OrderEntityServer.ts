@@ -822,8 +822,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // else and remain atomic with the booking.
         if (booking) await this.resolveDueDate();
         // A LINE FOR A PRODUCT THE CUSTOMER ALREADY HOLDS MUST SAY WHAT IT IS (golive #467). Reads
-        // only, so outside the transaction like the due date above.
-        if (booking) await this.refuseUnansweredHeldLines();
+        // only, so outside the transaction like the due date above. A refusal reads like every other
+        // confirm refusal: `false`, with the reason on `LatestResult`, not a throw.
+        if (booking) {
+            try {
+                await this.refuseUnansweredHeldLines();
+            } catch (err) {
+                LogError(`OrderEntityServer.Save refused order ${this.OrderNumber ?? this.ID}: ${err}`);
+                this.RegisterResultHistoryEntry(this.buildFailureResult(err));
+                return false;
+            }
+        }
 
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
 
