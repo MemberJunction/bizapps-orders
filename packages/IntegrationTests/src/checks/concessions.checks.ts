@@ -95,6 +95,12 @@
  *   CS39      a typed price on an order dated before the product's only price is in force confirms, measured as
  *             a product with no price is
  *
+ * A withdrawn concession stays on the order as a record (golive #403):
+ *
+ *   CS40      withdrawing a Pending one keeps it as Withdrawn with who and when, cancels its task, and releases the
+ *             confirm; Withdrawn is final; one an approver decided on a draft can be withdrawn and keeps its
+ *             decision; one applied to a booked term cannot
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -1831,6 +1837,57 @@ export const ConcessionChecks: NamedCheck[] = [
         built.Order.Status = "Confirmed";
         Assert(await built.Order.Save(),
           `a typed price with no price in force on the order date should confirm: ${built.Order.LatestResult?.CompleteMessage}`);
+      }),
+  },
+  {
+    Id: "concessions.CS40",
+    Name: "CS40: a withdrawn concession stays as Withdrawn, counts toward nothing, and is final",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const { Built, RuleID } = await orderNeedingApproval(ctx);
+        const withdrawn = await pendingSeats(ctx, Built.Lines[0].ID, 3);
+        const [task] = await approvalTasksOf(ctx, withdrawn.ID);
+        Built.Order.Status = "Confirmed";
+        Assert(!(await Built.Order.Save()), "a Pending concession must hold the confirm");
+        Built.Order.Status = "Draft";
+
+        withdrawn.Status = "Withdrawn";
+        Assert(await withdrawn.Save(), `withdrawing a Pending concession failed: ${withdrawn.LatestResult?.CompleteMessage}`);
+        const kept = await TxOne<{ Status: string; WithdrawnByUserID: string | null; WithdrawnAt: Date | null; DecidedByUserID: string | null }>(ctx,
+          `SELECT Status, WithdrawnByUserID, WithdrawnAt, DecidedByUserID FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${withdrawn.ID}'`);
+        AssertEqual(kept?.Status, "Withdrawn", "the concession stays on the order, Withdrawn");
+        Assert(sameID(String(kept.WithdrawnByUserID), ctx.User.ID) && kept.WithdrawnAt != null, "who withdrew it and when are stamped");
+        AssertEqual(kept.DecidedByUserID, null, "a concession withdrawn while Pending was never decided");
+        const [after] = await approvalTasksOf(ctx, withdrawn.ID);
+        AssertEqual(after?.Task.ID, task.Task.ID, "its approval task still links it");
+        AssertEqual(after?.Task.Status, "Cancelled", "and is cancelled");
+
+        withdrawn.Status = "Approved";
+        Assert(!(await withdrawn.Save()), "a Withdrawn concession is not decided afterwards");
+
+        // An approver's decision on a draft can still be withdrawn, and the record keeps who approved it.
+        const decided = await pendingSeats(ctx, Built.Lines[0].ID, 2);
+        await letTheUserDecide(ctx, RuleID);
+        decided.Status = "Approved";
+        Assert(await decided.Save(), `a role holder's approval failed: ${decided.LatestResult?.CompleteMessage}`);
+        decided.Status = "Withdrawn";
+        Assert(await decided.Save(), `withdrawing an approved concession on a draft failed: ${decided.LatestResult?.CompleteMessage}`);
+        const decision = await TxOne<{ DecidedByUserID: string | null }>(ctx,
+          `SELECT DecidedByUserID FROM ${ORDERS_SCHEMA}.OrderConcession WHERE ID = '${decided.ID}'`);
+        Assert(sameID(String(decision.DecidedByUserID), ctx.User.ID), "the withdrawn concession keeps its approver");
+
+        Built.Order.Status = "Confirmed";
+        Assert(await Built.Order.Save(), `with every concession withdrawn, confirm should pass: ${Built.Order.LatestResult?.CompleteMessage}`);
+
+        // An extension applied to a booked term when it was approved stays.
+        await AcknowledgeAmendmentsWith(ctx);
+        const { Term } = await bookTerm(ctx, 1200);
+        await grantAuthority(ctx, { maxValue: 1000, maxDays: 30 });
+        const applied = await recordConcession(ctx, { DeliveryForm: "Duration", SubscriptionTermID: Term.ID, AddedDays: 14 });
+        Assert(applied.Saved && applied.Entity.Status === "Approved", `expected an approved extension: ${applied.Message}`);
+        applied.Entity.Status = "Withdrawn";
+        Assert(!(await applied.Entity.Save()), "an extension applied to a booked term cannot be withdrawn");
       }),
   },
 ];
