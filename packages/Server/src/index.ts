@@ -79,6 +79,9 @@ import {
     LoadTaxResolver,
     LoadRevenueRecognitionDrivers,
     LoadSpawnRenewalsOperation,
+    LoadGetRenewalWorklistOperation,
+    LoadSetRenewalSettingsOperation,
+    LoadChangeSubscriptionProductOperation,
     LoadDetectOverlappingSubscriptionsOperation,
     LoadReconcilePaymentProviderChargesOperation,
     LoadCreateOrderFromProviderPaymentOperation,
@@ -196,6 +199,9 @@ export function LoadBizAppsOrdersServer(): void {
     LoadCancelSubscriptionOperation(); // the 'Orders.CancelSubscription' remote operation
     LoadAmendArrangementOperation();   // 'Orders.AmendArrangement' — extend a booked term, previewed and approved
     LoadSpawnRenewalsOperation();      // the 'Orders.SpawnRenewals' remote operation (D55)
+    LoadGetRenewalWorklistOperation(); // 'Orders.GetRenewalWorklist' — the Renewals page: what ends in the window, what renewed, what would renew at what
+    LoadSetRenewalSettingsOperation(); // 'Orders.SetRenewalSettings' — the Renewals page's bulk auto-renew / increase update: writes subscriptions only, never orders
+    LoadChangeSubscriptionProductOperation(); // 'Orders.ChangeSubscriptionProduct' — the Renewals page's "Change product": corrects the subscription, never the booked order or deal
     LoadIssueExternalInvoiceOperation();        // 'Orders.IssueExternalInvoice' — one billing unit → one Bill.com invoice, once (golive #146)
     LoadCancelExternalInvoiceOperation();       // 'Orders.CancelExternalInvoice' — archive an unpaid rail invoice, no ledger event (golive #147)
     LoadAdoptExternalInvoiceOperation();        // 'Orders.AdoptExternalInvoice' — resolve a claimed unit by recording the invoice the rail already holds

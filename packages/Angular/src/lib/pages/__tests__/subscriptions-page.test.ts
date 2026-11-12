@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RunView, type IMetadataProvider } from '@memberjunction/core';
 import { Today, type mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
-import { MJOSubscriptionsPageComponent } from '../receivables/subscriptions.page';
+import { MJOSubscriptionsPageComponent } from '../subscriptions/subscriptions.page';
 import { LoadSubscriptionRevRec } from '../../data/orders-queries';
 
 type PageInternals = {

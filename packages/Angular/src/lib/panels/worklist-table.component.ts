@@ -81,6 +81,13 @@ export type MJORow = any;
  * without admitting it; dropping the lowest-value columns at least tells the
  * truth about what is on screen.
  *
+ * TICKING IS SEPARATE FROM CLICKING. With `Selectable` on, each row gains a
+ * checkbox and the header a tick-all for the rows on screen; ticking changes
+ * `SelectedKeys` and emits `SelectionChanged`, and never fires `RowClicked`, so
+ * a page can keep a side panel on the clicked row while a batch builds up. The
+ * host owns the set: a preset change narrows what is on screen, not what is
+ * ticked, and `SelectableRow` lets it say which rows may be ticked at all.
+ *
  * ## Example
  *
  * ```html
@@ -132,13 +139,14 @@ export type MJORow = any;
                 <thead>
                     <tr>
                         @if (Selectable) {
-                            <th class="mjo-wl__check">
+                            <th class="mjo-wl__tick">
                                 <input
                                     type="checkbox"
-                                    aria-label="Select every row shown"
-                                    [checked]="allChecked()"
-                                    [indeterminate]="someChecked()"
-                                    (change)="toggleAll($any($event.target).checked)">
+                                    [checked]="allVisibleSelected()"
+                                    [indeterminate]="someVisibleSelected()"
+                                    [disabled]="!selectableRows().length"
+                                    (change)="toggleAll($any($event.target).checked)"
+                                    aria-label="Select every row shown">
                             </th>
                         }
                         @for (column of Columns; track column.Key) {
@@ -171,12 +179,14 @@ export type MJORow = any;
                             [class.is-selected]="isSelected(row)"
                             (click)="onRowClick(row)">
                             @if (Selectable) {
-                                <td class="mjo-wl__check" (click)="$event.stopPropagation()">
-                                    <input
-                                        type="checkbox"
-                                        [attr.aria-label]="'Select ' + row[RowKey]"
-                                        [checked]="isChecked(row)"
-                                        (change)="toggleRow(row, $any($event.target).checked)">
+                                <td class="mjo-wl__tick" (click)="$event.stopPropagation()">
+                                    @if (canSelect(row)) {
+                                        <input
+                                            type="checkbox"
+                                            [checked]="isTicked(row)"
+                                            (change)="toggle(row, $any($event.target).checked)"
+                                            [attr.aria-label]="rowLabel(row)">
+                                    }
                                 </td>
                             }
                             @for (column of Columns; track column.Key) {
@@ -231,8 +241,13 @@ export type MJORow = any;
             .mjo-wl__note {
                 margin-top: var(--mj-space-3);
             }
-            .mjo-wl__check {
+            .mjo-wl__tick {
                 width: 36px;
+                text-align: center;
+            }
+            .mjo-wl__tick input {
+                cursor: pointer;
+                margin: 0;
             }
 
             /* Columns drop in a stated order rather than the table scrolling
@@ -281,6 +296,21 @@ export class MJOWorklistTableComponent {
     /** The selected row's key, if the host tracks one. */
     @Input() SelectedKey: string | null = null;
 
+    /** Show a checkbox per row and a tick-all in the header. */
+    @Input() Selectable = false;
+
+    /** The ticked rows' keys. Owned by the host; the table only proposes changes through `SelectionChanged`. */
+    @Input() SelectedKeys: ReadonlyArray<string> = [];
+
+    /** Which rows may be ticked. Omit for every row. A row this refuses shows no checkbox. */
+    @Input() SelectableRow: ((row: MJORow) => boolean) | null = null;
+
+    /**
+     * What a row's checkbox is called to assistive technology, in words a person would use (a number
+     * and a name). Omit to label it with the row's key, which is only readable when the key is one.
+     */
+    @Input() RowLabel: ((row: MJORow) => string) | null = null;
+
     @Input() EmptyTitle = 'Nothing matches';
     @Input() EmptyHint = 'Try a different filter, or clear the search.';
     @Input() EmptyIcon = 'fa-solid fa-magnifying-glass';
@@ -288,16 +318,13 @@ export class MJOWorklistTableComponent {
     /** Muted line under the table — where a stated caveat belongs. */
     @Input() FootNote: string | null = null;
 
-    /** Show a checkbox per row for choosing several at once. Keys are `RowKey` values. */
-    @Input() Selectable = false;
-    @Input() CheckedKeys: readonly string[] = [];
-
     @Output() PresetChanged = new EventEmitter<string>();
-    /** The full set of checked keys after a checkbox changed. */
-    @Output() CheckedKeysChange = new EventEmitter<string[]>();
     @Output() SearchChanged = new EventEmitter<string>();
     @Output() SortChanged = new EventEmitter<string>();
     @Output() RowClicked = new EventEmitter<MJORow>();
+
+    /** The full set of ticked keys after a change — never a delta, so the host cannot drift from the table. */
+    @Output() SelectionChanged = new EventEmitter<string[]>();
 
     protected trackRow(index: number, row: MJORow): unknown {
         return row[this.RowKey] ?? index;
@@ -307,33 +334,61 @@ export class MJOWorklistTableComponent {
         return this.SelectedKey != null && String(row[this.RowKey]) === this.SelectedKey;
     }
 
-    protected isChecked(row: MJORow): boolean {
-        return this.CheckedKeys.includes(String(row[this.RowKey]));
-    }
-
-    protected allChecked(): boolean {
-        return this.Rows.length > 0 && this.Rows.every((r) => this.isChecked(r));
-    }
-
-    protected someChecked(): boolean {
-        return !this.allChecked() && this.Rows.some((r) => this.isChecked(r));
-    }
-
-    protected toggleRow(row: MJORow, checked: boolean): void {
-        const key = String(row[this.RowKey]);
-        const rest = this.CheckedKeys.filter((k) => k !== key);
-        this.CheckedKeysChange.emit(checked ? [...rest, key] : rest);
-    }
-
-    /** Checks or clears every row shown; keys checked outside the shown rows are kept. */
-    protected toggleAll(checked: boolean): void {
-        const shown = new Set(this.Rows.map((r) => String(r[this.RowKey])));
-        const rest = this.CheckedKeys.filter((k) => !shown.has(k));
-        this.CheckedKeysChange.emit(checked ? [...rest, ...shown] : rest);
-    }
-
     protected onRowClick(row: MJORow): void {
         if (this.RowClicked.observed) this.RowClicked.emit(row);
+    }
+
+    protected keyOf(row: MJORow): string {
+        return String(row[this.RowKey]);
+    }
+
+    protected rowLabel(row: MJORow): string {
+        return this.RowLabel ? this.RowLabel(row) : `Select ${row[this.RowKey] ?? ''}`;
+    }
+
+    protected canSelect(row: MJORow): boolean {
+        return this.SelectableRow ? this.SelectableRow(row) : true;
+    }
+
+    protected isTicked(row: MJORow): boolean {
+        return this.SelectedKeys.includes(this.keyOf(row));
+    }
+
+    /** The rows on screen that may be ticked. */
+    protected selectableRows(): MJORow[] {
+        return this.Rows.filter((row) => this.canSelect(row));
+    }
+
+    protected allVisibleSelected(): boolean {
+        const rows = this.selectableRows();
+        return rows.length > 0 && rows.every((row) => this.isTicked(row));
+    }
+
+    protected someVisibleSelected(): boolean {
+        const rows = this.selectableRows();
+        return rows.some((row) => this.isTicked(row)) && !rows.every((row) => this.isTicked(row));
+    }
+
+    protected toggle(row: MJORow, ticked: boolean): void {
+        const key = this.keyOf(row);
+        const next = new Set(this.SelectedKeys);
+        if (ticked) next.add(key);
+        else next.delete(key);
+        this.SelectionChanged.emit([...next]);
+    }
+
+    /**
+     * Tick or untick every selectable row ON SCREEN. Rows a preset has hidden keep their state: a
+     * tick-all that silently cleared ticks the user could not see would be a surprise either way.
+     */
+    protected toggleAll(ticked: boolean): void {
+        const visible = this.selectableRows().map((row) => this.keyOf(row));
+        const next = new Set(this.SelectedKeys);
+        for (const key of visible) {
+            if (ticked) next.add(key);
+            else next.delete(key);
+        }
+        this.SelectionChanged.emit([...next]);
     }
 
     protected hideClass(column: MJOColumn): string {

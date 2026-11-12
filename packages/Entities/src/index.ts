@@ -165,3 +165,4 @@ export * from './ExternalPaymentEntity';
 export * from './external-payment-poll-job.js';
 // What a subscription renews at: the lapsed discount, the annual increase and the successor move (golive #304).
 export * from './renewal-price.js';
+export * from './renewal-worklist.js';
