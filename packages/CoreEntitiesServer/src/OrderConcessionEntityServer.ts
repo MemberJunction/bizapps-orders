@@ -19,7 +19,7 @@
  *
  * DECIDING ONE. The only change a recorded concession accepts is Pending → Approved or Rejected, by a
  * holder of the rule's role, with an optional note. A different concession is a new record: withdraw
- * a Pending one (delete it) and record again.
+ * the earlier one and record again.
  *
  * AN APPROVED DURATION CONCESSION EXTENDS ITS TERM (golive #221). It is checked when recorded and applied in
  * the approval's own transaction by ./TermExtension.ts: the term's end, the recognition schedule, access and an
@@ -74,10 +74,19 @@
  * or by a decision, raises accounting's acknowledgment task in the same transaction (./ConcessionAcknowledgment.ts).
  * A term extension raises its own, with the re-cut schedule. Withdrawing the concession closes its task.
  *
- * WITHDRAWING ONE. A Pending concession can be withdrawn, and so can one approved on the requester's
- * own authority while its order is not confirmed. No approver decided the second kind, and the
- * customer is not yet committed to it; withdrawing and recording it again is how it is measured
- * against a draft that has since changed (the confirm gate's share check).
+ * WITHDRAWING ONE (golive #403). Setting Status to Withdrawn takes a concession back and keeps it on the
+ * order as a record, stamped with who withdrew it and when; it then counts toward nothing (the share check,
+ * the confirm gate, the order's totals). A Pending concession can be withdrawn, and so can an Approved one
+ * while its order is not confirmed and it names no booked term: nothing was applied for it yet, and the
+ * customer is not committed to it. An approved one keeps its approver and decision date. Its requester can
+ * withdraw it without the right to update concessions, so a role that may record concessions but not edit
+ * them can still replace one (`CheckPermissions`); anyone else needs that right. Withdrawing closes the
+ * concession's open tasks. Withdrawn is final.
+ *
+ * DELETING ONE. Still allowed for a Pending concession, for one approved on the requester's own authority
+ * while its order is not confirmed, and for every concession of a draft line being removed. No approver
+ * decided the second kind; withdrawing and recording it again is how it is measured against a draft that
+ * has since changed (the confirm gate's share check).
  *
  * CONNECTS TO:
  *   PURE:   @mj-biz-apps/orders-entities ConcessionBehavior
@@ -95,6 +104,7 @@ import {
     BaseEntityResult,
     DatabaseProviderBase,
     EntityDeleteOptions,
+    EntityPermissionType,
     EntitySaveOptions,
     IRunViewProvider,
     LogError,
@@ -186,6 +196,8 @@ const AUTHORED_FIELDS = [
     'SalesRuleID',
     'DecidedByUserID',
     'DecidedAt',
+    'WithdrawnByUserID',
+    'WithdrawnAt',
 ] as const;
 
 interface LineRow {
@@ -213,6 +225,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         const recording = !this.IsSaved;
         if (this.escalation) return this.saveEscalation(options);
+        if (!recording && this.IsWithdrawal) return this.saveWithdrawal(options);
         const gatewayProblem = await this.refuseOnGatewayBilledTerm(recording);
         if (gatewayProblem) {
             this.RegisterResultHistoryEntry(this.buildRejection(gatewayProblem));
@@ -417,6 +430,72 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     /** The concession's value as a share of what the line would have cost, kept by `prepareNew` for the summary. */
     private valuedPercent: number | null = null;
 
+    // ─── Withdrawing ──────────────────────────────────────────────────────────
+
+    /** This save takes a recorded concession back: its Status moves to Withdrawn. */
+    public get IsWithdrawal(): boolean {
+        return this.IsSaved && this.GetFieldByName('Status')?.Dirty === true && this.Status === 'Withdrawn';
+    }
+
+    /**
+     * A concession's requester may withdraw it without the right to update concessions (golive #403), so a role
+     * that records concessions but cannot edit them can still replace one. Only a withdrawal is let through:
+     * `saveWithdrawal` refuses one that changes anything but the status, before this check runs.
+     */
+    public override CheckPermissions(type: EntityPermissionType, throwError: boolean): boolean {
+        if (type === EntityPermissionType.Update && this.EntityInfo.AllowUpdateAPI && this.IsWithdrawal && this.withdrawnByRequester) {
+            return true;
+        }
+        return super.CheckPermissions(type, throwError);
+    }
+
+    private get withdrawnByRequester(): boolean {
+        const user = this.ContextCurrentUser;
+        return !!user?.ID && UUIDsEqual(user.ID, this.RequestedByUserID);
+    }
+
+    /** Stamp who withdrew it and when, and close its open tasks, in one transaction. The row stays. */
+    private async saveWithdrawal(options?: EntitySaveOptions): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        const problem = await this.withdrawalProblem(user);
+        if (problem || !user) {
+            this.RegisterResultHistoryEntry(this.buildRejection(problem ?? 'A withdrawal must be attributable to a user, and no user was supplied.'));
+            return false;
+        }
+        this.WithdrawnByUserID = user.ID;
+        this.WithdrawnAt = new Date();
+        const id = this.ID;
+        const orderHeaderID = this.OrderHeaderID;
+        return this.withApprovalTask('update', () => super.Save(options), async (ctx) => {
+            // A Pending concession's approval task, or an approved one's acknowledgment task (golive #268).
+            await CloseConcessionTasks(id, orderHeaderID, 'Withdrawn', ctx);
+        });
+    }
+
+    /**
+     * Why this concession cannot be withdrawn, or null. Pending: always. Approved: only while its order is not
+     * confirmed and it names no booked term, so nothing was applied for it and the customer is not committed to it.
+     */
+    private async withdrawalProblem(user: UserInfo | undefined): Promise<string | null> {
+        if (!user?.ID) return 'A withdrawal must be attributable to a user, and no user was supplied.';
+        const changed = [...AUTHORED_FIELDS, 'DecisionNotes', 'SignedAmendmentReference'].filter(
+            (name) => this.GetFieldByName(name)?.Dirty === true,
+        );
+        if (changed.length > 0) return `A withdrawal changes only the concession's status, not ${changed.join(', ')}.`;
+
+        const previous = String(this.GetFieldByName('Status')?.OldValue ?? '');
+        if (previous === 'Pending') return null;
+        if (previous !== 'Approved') return `This concession is ${previous}; only a Pending or Approved one can be withdrawn.`;
+        if (this.SubscriptionTermID) {
+            return 'This concession was applied to a booked term when it was approved, so it cannot be withdrawn.';
+        }
+        const order = await this.loadRow<{ Status: string }>(ORDER_HEADER_ENTITY, this.OrderHeaderID, ['Status'], user);
+        if (!order || !IsEditable(order.Status)) {
+            return 'This concession was approved on an order that is confirmed, so the customer is committed to it and it cannot be withdrawn.';
+        }
+        return null;
+    }
+
     /**
      * Set only by `OrderEntityServer` when it deletes a removed DRAFT line's dependents. A booked order
      * refuses line removals outright, so this never reaches a concession a customer was committed to.
@@ -503,7 +582,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const valued = await this.valueByForm(user);
         if (typeof valued === 'string') return valued;
 
-        // Measured against the order as it stands, with every concession on it that is not Rejected.
+        // Measured against the order as it stands, with every concession on it still Pending or Approved.
         const net = await OrderNetTotal(this.OrderHeaderID, [], this.provider(), user);
         const others = await OrderConcessionTotal(this.OrderHeaderID, this.provider(), user);
         const share = ConcessionShare(others + valued.Value, net);

@@ -169,7 +169,8 @@ tiered and volume models. The walk that reads all this is in §6.
 \`SalesAuthority\` and \`SalesRule\` are the guardrails — who is allowed to give value away, and how much.
 \`OrderConcession\` records each concession on an order, whatever form it takes (price, duration, seats,
 scope or payment terms), with its computed value and the approval decision. An order cannot be
-confirmed, nor its documents sent, while a concession on it is \`Pending\`.`,
+confirmed, nor its documents sent, while a concession on it is \`Pending\`. A withdrawn concession stays on
+the order as \`Withdrawn\`, with who withdrew it and when, and counts toward nothing.`,
     },
     {
         key: 'order', title: 'The order itself',
