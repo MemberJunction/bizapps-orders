@@ -20,6 +20,8 @@ export interface MJOOverviewCard {
     Facts?: MJOOverviewFact[];
     Headers?: string[];
     Rows?: string[][];
+    /** Column indexes that hold amounts or counts; they are right-aligned with tabular figures. */
+    NumericColumns?: number[];
     Items?: MJOOverviewListItem[];
 }
 
@@ -57,16 +59,16 @@ export interface MJOOverviewCard {
                                 <table class="mjo-ov-table">
                                     <thead>
                                         <tr>
-                                            @for (h of card.Headers; track h) {
-                                                <th>{{ h }}</th>
+                                            @for (h of card.Headers; track h; let i = $index) {
+                                                <th [class.num]="card.NumericColumns?.includes(i)">{{ h }}</th>
                                             }
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @for (row of card.Rows; track $index) {
                                             <tr>
-                                                @for (cell of row; track $index) {
-                                                    <td>{{ cell }}</td>
+                                                @for (cell of row; track $index; let i = $index) {
+                                                    <td [class.num]="card.NumericColumns?.includes(i)">{{ cell }}</td>
                                                 }
                                             </tr>
                                         }

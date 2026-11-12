@@ -103,7 +103,10 @@ metadata descriptions predate the code.
 | `Orders.DetectUnattestedProgress` | `orders:write` | LongRunning | The nightly pass that puts lines left unattested too long on accounting's finance-exception list. |
 | **Subscriptions** | | | |
 | `Orders.CancelSubscription` | `orders:subscriptions:write` | Sync | Policy in, reversal out. Revokes standing grants when access-through has already passed. |
-| `Orders.SpawnRenewals` | `orders:subscriptions:write` | LongRunning | Places renewal orders at lead time. |
+| `Orders.SpawnRenewals` | `orders:subscriptions:write` | LongRunning | Places renewal orders at lead time; or, given `SubscriptionIDs`, for the subscriptions a person chose on the Renewals page (confirmed where auto-renew is on, a draft where it is off). |
+| `Orders.GetRenewalWorklist` | `orders:read` | Sync | The Renewals page: subscriptions whose coverage ends inside a window, with the current order, the renewal order where one exists, and otherwise the projected renewal price and the day the pass would place it. |
+| `Orders.ChangeSubscriptionProduct` | `orders:subscriptions:write` | Sync | Correct the product on chosen subscriptions (the Renewals page's "Change product"). Subscriptions only; booked orders and deals keep theirs; a subscription with a renewal order pending is refused, naming the order. One line back per subscription. |
+| `Orders.SetRenewalSettings` | `orders:subscriptions:write` | Sync | Set `AutoRenew` and/or `RenewalIncreasePercent` on chosen subscriptions (the Renewals page's bulk buttons). Subscriptions only, through the entity; no order is touched. One line back per subscription. |
 | `Orders.AmendArrangement` | `orders:subscriptions:write` | Sync | Extends a booked term at no charge, moves its start and end together (a shift, reviewed by finance at or above `TermShiftReviewDays`), or changes a confirmed order's payment terms, through an approved concession. Finance can escalate a shift under review to the ConcessionLimit approver. Preview writes nothing. Shortening a term is refused for now. |
 | `Orders.CheckCoverageOverlap` | `orders:read` | Sync | Whether confirm will refuse, ask to acknowledge, or allow each subscription line's overlap with coverage the holder already has. Runs the check confirm runs. |
 | `Orders.DetectOverlappingSubscriptions` | `orders:subscriptions:write` | LongRunning | Raises a finance exception for each pair of one holder's live subscriptions whose terms overlap. |
@@ -243,7 +246,8 @@ truth for the Rail column.
 |---|---|---|
 | Orders | `OrdersSectionResource` | Dashboard · All orders \| Work: Fulfillment queue · Returns |
 | Payments | `PaymentsSectionResource` | Dashboard · All payments \| Work: Refunds · Account credits |
-| Receivables | `ReceivablesSectionResource` | Customer A/R · Overdue worklist · Billing worklist · Invoicing queue · Progress attestation · Subscriptions |
+| Receivables | `ReceivablesSectionResource` | Customer A/R · Overdue worklist · Billing worklist · Invoicing queue · Progress attestation |
+| Subscriptions | `SubscriptionsSectionResource` | Renewals · All subscriptions |
 | Catalog | `CatalogSectionResource` | Products & categories · Pricing · Promotions · Charges & tax |
 
 The mockups also show Fast entry, an order editor and Take a payment as rail pages. In the shipped
@@ -258,7 +262,15 @@ over the generated ones. The Order Header form is the compose form and sets
 `ShowRelatedEntities: false` — leftover related grids do not belong under Lines. Products,
 Subscriptions, Subscription Terms, Price Lists and Promotions use the generated form plus panel
 contributions and `Layout: left-nav`; the Products form adds a save-time confirmation
-(`product-save-guard-form.component.ts`). The reversing-payment self-join on Payment Headers is
+(`product-save-guard-form.component.ts`). Its Pricing panel (`product-pricing-widget`) shows one
+channel's prices three ways — cards with their When, a revenue-band editor (edges in $M, one row per
+band; see HOW_THE_SYSTEM_WORKS §6), and MJ's data grid — and a "Simulate price" drawer that runs the
+resolver's own applicability checks against a sample customer, with a price list's rows at one priority
+above the Standard rows, as `PriceResolver.loadRules` prices a customer on that list. Every view lists
+prices in the order `ComparePriceRows` (orders-entities) gives, as does the product Overview. Prices are deactivated (Status
+Inactive or an expiration date), not deleted; price inputs are currency fields (`mjoCurrency`); and
+the conditions builder lists each source's `commonFields` from `PRICE_APPLICABILITY_SOURCES` unless
+"Show all fields" is on. The reversing-payment self-join on Payment Headers is
 `inclusion: None`, matching `Order Headers.ReversesOrderHeaderID`.
 
 `@RegisterClass` decorators only run if the module is in the bundle, so `public-api.ts` both imports
@@ -266,7 +278,7 @@ contributions and `Layout: left-nav`; the Products form adds a save-time confirm
 
 ### Composition, not inheritance, for the frame
 
-`<mjo-section-shell>` is one presentational component the four sections hand a rail to. Angular does
+`<mjo-section-shell>` is one presentational component the five sections hand a rail to. Angular does
 not inherit templates, so a base *class* would have meant four copies of the frame — four places for
 it to drift. The shared behaviour that *is* inheritable (rail construction, active-page state,
 per-user persistence, cached mounting) lives in `MJOSectionBaseComponent`, a `@Directive()` so

@@ -7,7 +7,8 @@ import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import {
     ProductAccountingPanel,
     ProductFulfillmentPanel,
-    ProductLifecyclePanel,
+    ProductDetailsPanel,
+    ProductPromosPanel,
     ProductSubscriptionsPanel,
 } from '../lib/form-panels/product-widget.panels';
 import { ProductHeaderPanel } from '../lib/form-panels/product-header.panel';
@@ -18,7 +19,10 @@ import '../public-api';
  * field in them was empty, and ten fields rendered twice (generated section + widget).
  *
  * Both fixes are structural, so these tests read the structures:
- *  - `replacesSectionKey` on the registration is what removes the duplicate generated section.
+ *  - A section claim on a registration is what removes the duplicate generated section. On MJ 6.2
+ *    a panel that holds a claim on a field section is filed inside the Details rail item, so the
+ *    header claims the sections the Accounting and Subscriptions panels draw, and the Details
+ *    panel, which belongs in Details, claims `details` and `catalogLifecycle`.
  *  - Where an `mj-form-field` is DECLARED is what decides whether mj-collapsible-panel's
  *    `@ContentChildren` query can see it. A field declared inside the widget's own template sits
  *    behind a component view boundary and is invisible to the query. That query drives both
@@ -68,19 +72,38 @@ function PanelRegistrationMetadata(panel: unknown): Record<string, unknown> | un
 }
 
 describe('Product widget panels replace their duplicate generated sections', () => {
+    /** Every section a registration claims, singular and plural keys together. */
+    function Claims(panel: unknown): string[] {
+        const meta = PanelRegistrationMetadata(panel);
+        const one = meta?.['replacesSectionKey'];
+        const many = meta?.['replacesSectionKeys'];
+        return [...(typeof one === 'string' ? [one] : []), ...(Array.isArray(many) ? many.map(String) : [])];
+    }
+
     it.each([
-        { name: 'accounting', panel: ProductAccountingPanel, sectionKey: 'financialAndAccounting' },
-        { name: 'lifecycle', panel: ProductLifecyclePanel, sectionKey: 'catalogLifecycle' },
-        { name: 'subscriptions', panel: ProductSubscriptionsPanel, sectionKey: 'subscriptionAndEntitlements' },
-    ])('the $name panel claims the generated $sectionKey section', ({ panel, sectionKey }) => {
-        expect(PanelRegistrationMetadata(panel)?.['replacesSectionKey']).toBe(sectionKey);
+        { owner: 'header', panel: ProductHeaderPanel, sectionKey: 'financialAndAccounting' },
+        { owner: 'header', panel: ProductHeaderPanel, sectionKey: 'subscriptionAndEntitlements' },
+        { owner: 'Details panel', panel: ProductDetailsPanel, sectionKey: 'details' },
+        { owner: 'Details panel', panel: ProductDetailsPanel, sectionKey: 'catalogLifecycle' },
+    ])('the $owner claims the generated $sectionKey section', ({ panel, sectionKey }) => {
+        expect(Claims(panel)).toContain(sectionKey);
+    });
+
+    it.each([
+        { name: 'promos', panel: ProductPromosPanel },
+        { name: 'accounting', panel: ProductAccountingPanel },
+        { name: 'fulfillment', panel: ProductFulfillmentPanel },
+        { name: 'subscriptions', panel: ProductSubscriptionsPanel },
+    ])('the $name panel claims nothing and mounts after related, so it keeps its own rail item', ({ panel }) => {
+        expect(Claims(panel)).toEqual([]);
+        expect(PanelRegistrationMetadata(panel)?.['slot']).toBe('after-related');
     });
 
     it('still renders every field of the three replaced sections', () => {
         const rendered = new Set([
             ...FieldNames(PanelTemplate(ProductAccountingPanel)),
             ...FieldNames(PanelTemplate(ProductFulfillmentPanel)),
-            ...FieldNames(PanelTemplate(ProductLifecyclePanel)),
+            ...FieldNames(PanelTemplate(ProductDetailsPanel)),
             ...FieldNames(PanelTemplate(ProductSubscriptionsPanel)),
             ...FieldNames(SUBSCRIPTION_WIDGET_HTML),
             ...FieldNames(FULFILLMENT_WIDGET_HTML),
@@ -116,7 +139,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
         {
             name: 'accounting',
             panel: ProductAccountingPanel,
-            fields: ['CompanyID', 'RevenueRecognitionTypeID', 'IsTaxable', 'TaxCategory'],
+            fields: ['RevenueRecognitionTypeID', 'IsTaxable', 'TaxCategory'],
         },
         {
             name: 'fulfillment',
@@ -129,9 +152,9 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
             ],
         },
         {
-            name: 'lifecycle',
-            panel: ProductLifecyclePanel,
-            fields: ['Status', 'AvailableFrom', 'AvailableTo', 'IsSellableNew'],
+            name: 'details',
+            panel: ProductDetailsPanel,
+            fields: ['Status', 'CompanyID', 'IsSellableNew', 'AvailableFrom', 'AvailableTo'],
         },
     ])('the $name panel declares its fields in its own template', ({ panel, fields }) => {
         // Declared in the panel template => a ContentChild of mj-collapsible-panel =>
@@ -165,8 +188,11 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
         // the two NOT NULL lookups, which a saved record always has a value for, so the GL links
         // cannot be hidden along with an all-blank section.
         const declared = FieldNames(PanelTemplate(ProductAccountingPanel));
-        expect(declared).toContain('CompanyID');
+        expect(declared).toContain('IsTaxable');
         expect(declared).toContain('RevenueRecognitionTypeID');
+        // In read mode RevenueRecognitionTypeID is not an mj-form-field, so the two tax fields must
+        // stay renderable whatever their values or the section hides itself.
+        expect(PanelTemplate(ProductAccountingPanel).match(/\[HideWhenEmptyInReadOnlyMode\]="false"/g)).toHaveLength(2);
     });
 });
 
@@ -179,7 +205,7 @@ describe('Contributed sections declare their fields where mj-collapsible-panel c
  */
 describe('The Product header panel owns the identification fields it claims', () => {
     it('claims the generated productIdentification section', () => {
-        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKey']).toBe(
+        expect(PanelRegistrationMetadata(ProductHeaderPanel)?.['replacesSectionKeys']).toContain(
             'productIdentification'
         );
     });
@@ -203,7 +229,17 @@ describe('The Product header panel owns the identification fields it claims', ()
  * golive#433 — Status sat under Fulfillment, where nobody found it, so a new product stayed Draft
  * and hidden from the pickers. It now lives in Lifecycle, and only there.
  */
-describe('Status lives in the Lifecycle panel', () => {
+describe('Status lives in the Details panel', () => {
+    it('the Details panel does not share the key of the generated section it claims, which the form hides', () => {
+        expect(PanelTemplate(ProductDetailsPanel)).not.toContain('SectionKey="details"');
+        expect(PanelRegistrationMetadata(ProductDetailsPanel)?.['replacesSectionKey']).toBe('details');
+    });
+
+    it('Status is set in the Details panel, which claims the generated catalogLifecycle section', () => {
+        expect(PanelRegistrationMetadata(ProductDetailsPanel)?.['replacesSectionKeys']).toContain('catalogLifecycle');
+        expect(FieldNames(PanelTemplate(ProductDetailsPanel))).toContain('Status');
+    });
+
     it('is not in the Fulfillment panel', () => {
         expect(FieldNames(PanelTemplate(ProductFulfillmentPanel))).not.toContain('Status');
     });
@@ -289,5 +325,17 @@ describe('Activate never saves pending edits', () => {
         await panel.Activate();
         expect(save).toHaveBeenCalledOnce();
         expect(panel.Record.Status).toBe('Active');
+    });
+});
+
+describe('The Product header strip', () => {
+    it('shows the facts the Overview used to repeat', () => {
+        for (const label of ['List price', 'Product type', 'Category', 'Available', 'Revenue recognition', 'Tax']) {
+            expect(PRODUCT_HEADER_HTML).toContain(`<span class="mjo-doc-stat__label">${label}</span>`);
+        }
+    });
+
+    it('shows the selling company as a chip beside the status', () => {
+        expect(PRODUCT_HEADER_HTML).toContain('{{ Record.Company }}</span>');
     });
 });

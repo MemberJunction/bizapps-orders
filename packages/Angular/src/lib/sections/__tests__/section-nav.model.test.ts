@@ -12,6 +12,7 @@ import {
     ORDERS_SUB_PAGES,
     PAYMENTS_SUB_PAGES,
     RECEIVABLES_SUB_PAGES,
+    SUBSCRIPTIONS_SUB_PAGES,
     type OrdersSubPage,
 } from '../section-nav.model';
 
@@ -19,10 +20,11 @@ const ALL_RAILS: Array<[string, OrdersSubPage[]]> = [
     ['orders', ORDERS_SUB_PAGES],
     ['payments', PAYMENTS_SUB_PAGES],
     ['receivables', RECEIVABLES_SUB_PAGES],
+    ['subscriptions', SUBSCRIPTIONS_SUB_PAGES],
     ['catalog', CATALOG_SUB_PAGES],
 ];
 
-describe('the four rails', () => {
+describe('the five rails', () => {
     it.each(ALL_RAILS)('%s has unique page ids', (_name, pages) => {
         const ids = pages.map((p) => p.Id);
         expect(new Set(ids).size).toBe(ids.length);
@@ -35,10 +37,13 @@ describe('the four rails', () => {
         }
     });
 
-    it('puts subscriptions under receivables, not orders', () => {
-        // Deliberate: a subscription's daily question is "will it renew and will
-        // it get paid", which is a receivables question.
-        expect(RECEIVABLES_SUB_PAGES.map((p) => p.Id)).toContain('subscriptions');
+    it('gives subscriptions their own rail, led by renewals, and keeps them off the others', () => {
+        // Deliberate: accounting and the product teams both work renewals, and a
+        // worklist with an action is not a receivables report. Renewals lead the
+        // rail because "what ends soon" is the question both teams arrive with.
+        expect(SUBSCRIPTIONS_SUB_PAGES[0].Id).toBe('renewals');
+        expect(SUBSCRIPTIONS_SUB_PAGES.map((p) => p.Id)).toContain('list');
+        expect(RECEIVABLES_SUB_PAGES.map((p) => p.Id)).not.toContain('subscriptions');
         expect(ORDERS_SUB_PAGES.map((p) => p.Id)).not.toContain('subscriptions');
     });
 });

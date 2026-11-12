@@ -11,14 +11,22 @@
  * The sanction is a module-private set rather than a property, so nothing outside this server can grant
  * it: a client that set a flag on its own object would still be refused.
  *
+ * ON CREATE, THE CONTRACT'S INCREASE. A new subscription with no `RenewalIncreasePercent` of its own
+ * takes the negotiated annual increase from the contract behind its birth order (the deal on that
+ * order names the contract; `ContractIncrease.ts`). Copied once, here, so every path that creates a
+ * subscription (confirm, migration, a hand-entered one with a line) gets it, and so the pricer keeps
+ * reading one column. Nothing happens on a host without the Sales and Contracts apps.
+ *
  * CONNECTS TO:
  *   CALLERS: ./ProviderSubscriptions.ts (the hand-over records the gateway id) · ./CancelSubscriptionOperation.ts ·
- *            ./OrderEntityServer.ts (touchExistingSubscription) · ./ProviderSubscriptionSync.ts · ./LinkProviderSubscription.ts
+ *            ./OrderEntityServer.ts (touchExistingSubscription, createSubscription) · ./ProviderSubscriptionSync.ts · ./LinkProviderSubscription.ts
+ *   READS:   ./ContractIncrease.ts
  *   BASE:    @mj-biz-apps/orders-entities SubscriptionEntity
  */
-import { BaseEntity } from '@memberjunction/core';
+import { BaseEntity, type EntitySaveOptions, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { SubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { ApplyContractIncreaseOnCreate } from './ContractIncrease.js';
 
 const SANCTIONED = new WeakSet<object>();
 
@@ -26,6 +34,14 @@ const SANCTIONED = new WeakSet<object>();
 export class SubscriptionEntityServer extends SubscriptionEntity {
     protected override ProviderBilledChangeSanctioned(): boolean {
         return SANCTIONED.has(this);
+    }
+
+    public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        // Before the save, so the rate lands in the same INSERT as the subscription and the row is
+        // never seen without it. The hook refuses nothing and never throws: a contract that cannot be
+        // read leaves the rate empty, which is what the row would have held anyway.
+        await ApplyContractIncreaseOnCreate(this, this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+        return super.Save(options);
     }
 }
 

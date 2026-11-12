@@ -94,6 +94,7 @@ import {
 import { InstalmentsToCancel } from './ContractBalance.js';
 import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { LoadReversalContext } from './ReversalResolver.js';
+import { ReversalGate, WithGatewayRecord } from './ReversalAuthority.js';
 import { BusinessTimeZoneEngine, ToCalendarDay, type CalendarDay } from '@mj-biz-apps/common-entities';
 import { IsProviderBilled } from './ProviderBilledSubscriptions.js';
 import { SanctionCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
@@ -140,7 +141,8 @@ const gatewayEndRecorded = new AsyncLocalStorage<{ Recording: true }>();
 
 /** Run a cancel that records the gateway's end. Server-only. */
 export function WithGatewayEndRecorded<T>(fn: () => Promise<T>): Promise<T> {
-    return gatewayEndRecorded.run({ Recording: true }, fn);
+    // A record of the gateway's end is not a person's reversal, so the finance gate lets it through.
+    return gatewayEndRecorded.run({ Recording: true }, () => WithGatewayRecord(fn));
 }
 
 export interface CancelSubscriptionInput {
@@ -285,6 +287,10 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CancelSubscriptionOutput> {
+        // FIRST, BEFORE ANY READ OR WRITE: reversing booked money is finance's (bc-aidp-next-golive#454).
+        const refusal = ReversalGate('Cancelling a subscription', provider, user);
+        if (refusal) return { Success: false, Message: refusal };
+
         // Caller-supplied ids reach SQL filter text downstream. Validated here,
         // at the boundary, so every frame below this one can trust them.
         RequireUUID(input.SubscriptionID, 'SubscriptionID');

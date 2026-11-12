@@ -1,7 +1,8 @@
 import { ChangeDetectorRef, Component, EventEmitter, Input, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { OrdersRefundPaymentOperation } from '@mj-biz-apps/orders-entities';
+import { Metadata } from '@memberjunction/core';
+import { OrdersRefundPaymentOperation, ORDER_REVERSE_AUTH, UserCanReverse } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe } from '../../panels/money-format';
 import { MJButtonDirective } from '@memberjunction/ng-ui-components';
@@ -27,6 +28,10 @@ interface MJOUnapplication {
  * the same three, in the same ratio — choosing which order to claw back from would
  * be re-making a decision the original payment already made, and making it
  * differently.
+ *
+ * FINANCE ISSUES REFUNDS. Without MJ.BizApps.Orders.Order.Reverse (the Finance role) the page shows
+ * what a refund would do and does not offer to issue one; the operation refuses it anyway
+ * (bc-aidp-next-golive#454).
  *
  * THE PROCESSING FEE IS NOT REVERSED. The processor kept its cut; reversing it
  * would claim money back from them that never returns.
@@ -170,6 +175,9 @@ interface MJOUnapplication {
                         <i class="fa-solid fa-arrow-rotate-left" aria-hidden="true"></i>
                         {{ Busy ? 'Issuing…' : 'Issue refund' }}
                     </button>
+                    @if (!MayReverse) {
+                        <span class="small muted">Refunds are issued by finance ({{ ReverseAuth }}).</span>
+                    }
                     @if (Error) {
                         <span class="small mjo-rf__error">{{ Error }}</span>
                     }
@@ -238,6 +246,9 @@ export class MJORefundPageComponent implements OnInit {
     public Reason = '';
     public Busy = false;
     public Error: string | null = null;
+    /** Whether the viewer holds the finance reversal authorization (bc-aidp-next-golive#454). */
+    public readonly MayReverse = UserCanReverse(new Metadata().CurrentUser, new Metadata());
+    public readonly ReverseAuth = ORDER_REVERSE_AUTH;
 
     public ngOnInit(): void {
         // Default to a full refund of whatever remains — the common case.
@@ -249,7 +260,7 @@ export class MJORefundPageComponent implements OnInit {
     }
 
     public get CanRefund(): boolean {
-        return this.Amount > 0 && this.Amount <= this.Refundable;
+        return this.MayReverse && this.Amount > 0 && this.Amount <= this.Refundable;
     }
 
     /**

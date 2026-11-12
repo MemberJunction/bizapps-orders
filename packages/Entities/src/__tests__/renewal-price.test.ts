@@ -87,6 +87,9 @@ describe('PriceRenewal', () => {
             BaseSource: 'PriorPrice',
             IncreasePercent: 0,
             IncreaseSource: 'None',
+            IncreaseSetPercent: 0,
+            IncreaseSetSource: 'None',
+            IncreaseApplied: true,
             UnitPrice: 1000,
             DiscountPct: 0,
         });
@@ -240,5 +243,19 @@ describe('a line that bought several terms renews at one term of its price (goli
         const p = priced(24, 20000, { SuccessorListPrice: 12000 });
         expect(p.BaseSource).toBe('SuccessorList');
         expect(p.BasePrice).toBe(12000);
+    });
+});
+
+describe('PriceRenewal reports the increase that is set, applied or not', () => {
+    const base = { PriorUnitPrice: 1000, PriorDiscountPct: 0, PriorPriceOverridden: false, PriorListPrice: null, SuccessorListPrice: undefined, CarryDiscount: false, Increase: { Percent: 2, Source: 'Subscription' as const } };
+
+    it('applied: the set and applied figures agree', () => {
+        const p = PriceRenewal({ ...base, ApplyIncrease: true });
+        expect(p).toMatchObject({ IncreasePercent: 2, IncreaseSource: 'Subscription', IncreaseSetPercent: 2, IncreaseSetSource: 'Subscription', IncreaseApplied: true, UnitPrice: 1020 });
+    });
+
+    it('not applied: the price carries no increase, and the set rate is still reported', () => {
+        const p = PriceRenewal({ ...base, ApplyIncrease: false });
+        expect(p).toMatchObject({ IncreasePercent: 0, IncreaseSource: 'None', IncreaseSetPercent: 2, IncreaseSetSource: 'Subscription', IncreaseApplied: false, UnitPrice: 1000 });
     });
 });
