@@ -1,7 +1,7 @@
 /**
  * @fileoverview The information architecture, as data.
  *
- * Four sections organised by JOB rather than by entity, each a top tab in the
+ * Five sections organised by JOB rather than by entity, each a top tab in the
  * Orders Application (`metadata/applications/.orders-application.json`) and each
  * owning a left rail over its own sub-pages. MJ's rule: top nav across sections,
  * left nav within one.
@@ -44,7 +44,7 @@ export interface OrdersNavBadges {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
- * The four rails
+ * The five rails
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /** Orders — take an order, then work the ones you have. */
@@ -65,11 +65,8 @@ export const PAYMENTS_SUB_PAGES: OrdersSubPage[] = [
 
 /**
  * Receivables — its own section rather than a "Reports" folder, because A/R,
- * aging and renewals are operational work with worklists and actions. Filing
+ * aging and collections are operational work with worklists and actions. Filing
  * them under Reports would tell the accounting team their work is read-only.
- *
- * Subscriptions live here, not under Orders, because the daily question about a
- * subscription is "will it renew and will it get paid".
  */
 export const RECEIVABLES_SUB_PAGES: OrdersSubPage[] = [
     { Id: 'aging', Label: 'Customer A/R', Icon: 'fa-solid fa-user-tag', Description: 'Balances by customer' },
@@ -77,7 +74,22 @@ export const RECEIVABLES_SUB_PAGES: OrdersSubPage[] = [
     { Id: 'billing', Label: 'Billing worklist', Icon: 'fa-solid fa-file-invoice-dollar', Description: 'Installments due, not yet invoiced' },
     { Id: 'invoicing-queue', Label: 'Invoicing queue', Icon: 'fa-solid fa-paper-plane', Description: 'Waiting to send, and payments needing a person' },
     { Id: 'progress', Label: 'Progress attestation', Icon: 'fa-solid fa-diagram-project', Description: 'Percent complete on project lines' },
-    { Id: 'subscriptions', Label: 'Subscriptions', Icon: 'fa-solid fa-rotate', Description: 'Terms and renewals' },
+];
+
+/**
+ * Subscriptions — its own top tab, because two teams come to it with different
+ * jobs and neither of them is "receivables". Accounting asks what will renew,
+ * when, and at what price; the product teams ask what is ending and who to talk
+ * to. Both start from the same list of what ends inside a window, which is the
+ * Renewals page; the full register of subscriptions sits beside it.
+ *
+ * It used to live on the Receivables rail. It moved out once renewals became a
+ * worklist with an action (tick rows, place their renewal orders) rather than a
+ * read-only view of terms.
+ */
+export const SUBSCRIPTIONS_SUB_PAGES: OrdersSubPage[] = [
+    { Id: 'renewals', Label: 'Renewals', Icon: 'fa-solid fa-rotate', Description: 'What ends soon, what renews, at what price' },
+    { Id: 'list', Label: 'All subscriptions', Icon: 'fa-solid fa-table-list', Description: 'Terms, history and recognition' },
 ];
 
 /** Catalog — where the behaviour every order inherits is configured. */
