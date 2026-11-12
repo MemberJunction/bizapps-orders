@@ -10,7 +10,7 @@
       "RequiresReference": 0,
       "Sequence": 10,
       "IsActive": 1,
-      "BookProcessingFeeInline": 0
+      "BookProcessingFeeInline": 1
     },
     "primaryKey": {
       "ID": "2F1A6D30-0C41-4E7B-9E51-0A1B7C2D3E01"
