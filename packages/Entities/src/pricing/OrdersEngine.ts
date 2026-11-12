@@ -32,7 +32,15 @@
  *
  * @module @mj-biz-apps/orders-entities
  */
-import { BaseEngine, RegisterForStartup, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import {
+    BaseEngine,
+    BaseEnginePropertyConfig,
+    BaseEntity,
+    RegisterForStartup,
+    type IMetadataProvider,
+    type IRunViewProvider,
+    type UserInfo,
+} from '@memberjunction/core';
 import type { Observable } from 'rxjs';
 import type {
     mjBizAppsOrdersChargeTypeEntity,
@@ -63,10 +71,22 @@ export type ServicePeriodSource = 'NotRequired' | 'Event' | 'Subscription' | 'Li
  *
  * Use `OrdersEngine.Instance` after `Config()`; every accessor is a synchronous property read.
  */
-@RegisterForStartup()
+@RegisterForStartup({ deferred: typeof window !== 'undefined' })
 export class OrdersEngine extends BaseEngine<OrdersEngine> {
     public static get Instance(): OrdersEngine {
         return super.getInstance<OrdersEngine>();
+    }
+
+    private _indexGeneration = 0;
+
+    protected override NotifyDataChange(
+        config: BaseEnginePropertyConfig,
+        data: unknown[],
+        changeType: 'refresh' | 'add' | 'update' | 'delete' = 'refresh',
+        affectedEntity?: BaseEntity,
+    ): void {
+        super.NotifyDataChange(config, data, changeType, affectedEntity);
+        this._indexGeneration++;
     }
 
     private _paymentTypes: mjBizAppsOrdersPaymentTypeEntity[] = [];
@@ -82,6 +102,466 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     private _eventProducts: mjBizAppsOrdersEventProductEntity[] = [];
     /** The reload in flight, so concurrent misses share one query. See {@link EnsureProducts}. */
     private _productReload: Promise<void> | null = null;
+
+    private _paymentTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersPaymentTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersPaymentTypeEntity>;
+    } | null = null;
+    private _paymentTypesGen = -1;
+    private _paymentTypesArray: mjBizAppsOrdersPaymentTypeEntity[] | null = null;
+    private _paymentTypesLength = -1;
+
+    private ensurePaymentTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersPaymentTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersPaymentTypeEntity>;
+    } {
+        const current = this.PaymentTypes;
+        if (
+            this._paymentTypesIndex &&
+            this._paymentTypesGen === this._indexGeneration &&
+            this._paymentTypesArray === current &&
+            this._paymentTypesLength === current.length
+        ) {
+            return this._paymentTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersPaymentTypeEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersPaymentTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._paymentTypesIndex = { byId, byCode };
+        this._paymentTypesGen = this._indexGeneration;
+        this._paymentTypesArray = current;
+        this._paymentTypesLength = current.length;
+        return this._paymentTypesIndex;
+    }
+
+    private _paymentProviderTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>;
+    } | null = null;
+    private _paymentProviderTypesGen = -1;
+    private _paymentProviderTypesArray: mjBizAppsOrdersPaymentProviderTypeEntity[] | null = null;
+    private _paymentProviderTypesLength = -1;
+
+    private ensurePaymentProviderTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>;
+    } {
+        const current = this.PaymentProviderTypes;
+        if (
+            this._paymentProviderTypesIndex &&
+            this._paymentProviderTypesGen === this._indexGeneration &&
+            this._paymentProviderTypesArray === current &&
+            this._paymentProviderTypesLength === current.length
+        ) {
+            return this._paymentProviderTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersPaymentProviderTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+        }
+
+        this._paymentProviderTypesIndex = { byId };
+        this._paymentProviderTypesGen = this._indexGeneration;
+        this._paymentProviderTypesArray = current;
+        this._paymentProviderTypesLength = current.length;
+        return this._paymentProviderTypesIndex;
+    }
+
+    private _paymentTermsTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersPaymentTermsTypeEntity>;
+    } | null = null;
+    private _paymentTermsTypesGen = -1;
+    private _paymentTermsTypesArray: mjBizAppsOrdersPaymentTermsTypeEntity[] | null = null;
+    private _paymentTermsTypesLength = -1;
+
+    private ensurePaymentTermsTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersPaymentTermsTypeEntity>;
+    } {
+        const current = this.PaymentTermsTypes;
+        if (
+            this._paymentTermsTypesIndex &&
+            this._paymentTermsTypesGen === this._indexGeneration &&
+            this._paymentTermsTypesArray === current &&
+            this._paymentTermsTypesLength === current.length
+        ) {
+            return this._paymentTermsTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersPaymentTermsTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+        }
+
+        this._paymentTermsTypesIndex = { byId };
+        this._paymentTermsTypesGen = this._indexGeneration;
+        this._paymentTermsTypesArray = current;
+        this._paymentTermsTypesLength = current.length;
+        return this._paymentTermsTypesIndex;
+    }
+
+    private _chargeTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersChargeTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersChargeTypeEntity>;
+    } | null = null;
+    private _chargeTypesGen = -1;
+    private _chargeTypesArray: mjBizAppsOrdersChargeTypeEntity[] | null = null;
+    private _chargeTypesLength = -1;
+
+    private ensureChargeTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersChargeTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersChargeTypeEntity>;
+    } {
+        const current = this.ChargeTypes;
+        if (
+            this._chargeTypesIndex &&
+            this._chargeTypesGen === this._indexGeneration &&
+            this._chargeTypesArray === current &&
+            this._chargeTypesLength === current.length
+        ) {
+            return this._chargeTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersChargeTypeEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersChargeTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._chargeTypesIndex = { byId, byCode };
+        this._chargeTypesGen = this._indexGeneration;
+        this._chargeTypesArray = current;
+        this._chargeTypesLength = current.length;
+        return this._chargeTypesIndex;
+    }
+
+    private _productTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersProductTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersProductTypeEntity>;
+    } | null = null;
+    private _productTypesGen = -1;
+    private _productTypesArray: mjBizAppsOrdersProductTypeEntity[] | null = null;
+    private _productTypesLength = -1;
+
+    private ensureProductTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersProductTypeEntity>;
+        byCode: Map<string, mjBizAppsOrdersProductTypeEntity>;
+    } {
+        const current = this.ProductTypes;
+        if (
+            this._productTypesIndex &&
+            this._productTypesGen === this._indexGeneration &&
+            this._productTypesArray === current &&
+            this._productTypesLength === current.length
+        ) {
+            return this._productTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersProductTypeEntity>();
+        const byCode = new Map<string, mjBizAppsOrdersProductTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const codeKey = (item.Code ?? '').trim().toLowerCase();
+            if (codeKey && !byCode.has(codeKey)) {
+                byCode.set(codeKey, item);
+            }
+        }
+
+        this._productTypesIndex = { byId, byCode };
+        this._productTypesGen = this._indexGeneration;
+        this._productTypesArray = current;
+        this._productTypesLength = current.length;
+        return this._productTypesIndex;
+    }
+
+    private _subscriptionTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersSubscriptionTypeEntity>;
+    } | null = null;
+    private _subscriptionTypesGen = -1;
+    private _subscriptionTypesArray: mjBizAppsOrdersSubscriptionTypeEntity[] | null = null;
+    private _subscriptionTypesLength = -1;
+
+    private ensureSubscriptionTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersSubscriptionTypeEntity>;
+    } {
+        const current = this.SubscriptionTypes;
+        if (
+            this._subscriptionTypesIndex &&
+            this._subscriptionTypesGen === this._indexGeneration &&
+            this._subscriptionTypesArray === current &&
+            this._subscriptionTypesLength === current.length
+        ) {
+            return this._subscriptionTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersSubscriptionTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+        }
+
+        this._subscriptionTypesIndex = { byId };
+        this._subscriptionTypesGen = this._indexGeneration;
+        this._subscriptionTypesArray = current;
+        this._subscriptionTypesLength = current.length;
+        return this._subscriptionTypesIndex;
+    }
+
+    private _revenueRecognitionTypesIndex: {
+        byId: Map<string, mjBizAppsOrdersRevenueRecognitionTypeEntity>;
+    } | null = null;
+    private _revenueRecognitionTypesGen = -1;
+    private _revenueRecognitionTypesArray: mjBizAppsOrdersRevenueRecognitionTypeEntity[] | null = null;
+    private _revenueRecognitionTypesLength = -1;
+
+    private ensureRevenueRecognitionTypesIndex(): {
+        byId: Map<string, mjBizAppsOrdersRevenueRecognitionTypeEntity>;
+    } {
+        const current = this.RevenueRecognitionTypes;
+        if (
+            this._revenueRecognitionTypesIndex &&
+            this._revenueRecognitionTypesGen === this._indexGeneration &&
+            this._revenueRecognitionTypesArray === current &&
+            this._revenueRecognitionTypesLength === current.length
+        ) {
+            return this._revenueRecognitionTypesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersRevenueRecognitionTypeEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+        }
+
+        this._revenueRecognitionTypesIndex = { byId };
+        this._revenueRecognitionTypesGen = this._indexGeneration;
+        this._revenueRecognitionTypesArray = current;
+        this._revenueRecognitionTypesLength = current.length;
+        return this._revenueRecognitionTypesIndex;
+    }
+
+    private _eventProductsIndex: {
+        byId: Map<string, mjBizAppsOrdersEventProductEntity>;
+    } | null = null;
+    private _eventProductsGen = -1;
+    private _eventProductsArray: mjBizAppsOrdersEventProductEntity[] | null = null;
+    private _eventProductsLength = -1;
+
+    private ensureEventProductsIndex(): {
+        byId: Map<string, mjBizAppsOrdersEventProductEntity>;
+    } {
+        const current = this.EventProducts;
+        if (
+            this._eventProductsIndex &&
+            this._eventProductsGen === this._indexGeneration &&
+            this._eventProductsArray === current &&
+            this._eventProductsLength === current.length
+        ) {
+            return this._eventProductsIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersEventProductEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+        }
+
+        this._eventProductsIndex = { byId };
+        this._eventProductsGen = this._indexGeneration;
+        this._eventProductsArray = current;
+        this._eventProductsLength = current.length;
+        return this._eventProductsIndex;
+    }
+
+    private _productsIndex: {
+        byId: Map<string, mjBizAppsOrdersProductEntity>;
+        bySku: Map<string, mjBizAppsOrdersProductEntity>;
+    } | null = null;
+    private _productsGen = -1;
+    private _productsArray: mjBizAppsOrdersProductEntity[] | null = null;
+    private _productsLength = -1;
+
+    private ensureProductsIndex(): {
+        byId: Map<string, mjBizAppsOrdersProductEntity>;
+        bySku: Map<string, mjBizAppsOrdersProductEntity>;
+    } {
+        const current = this.Products;
+        if (
+            this._productsIndex &&
+            this._productsGen === this._indexGeneration &&
+            this._productsArray === current &&
+            this._productsLength === current.length
+        ) {
+            return this._productsIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersProductEntity>();
+        const bySku = new Map<string, mjBizAppsOrdersProductEntity>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+            const skuKey = (item.SKU ?? '').trim().toLowerCase();
+            if (skuKey && !bySku.has(skuKey)) {
+                bySku.set(skuKey, item);
+            }
+        }
+
+        this._productsIndex = { byId, bySku };
+        this._productsGen = this._indexGeneration;
+        this._productsArray = current;
+        this._productsLength = current.length;
+        return this._productsIndex;
+    }
+
+    private _productPricesIndex: {
+        byId: Map<string, mjBizAppsOrdersProductPriceEntity>;
+        byProductId: Map<string, mjBizAppsOrdersProductPriceEntity[]>;
+        baseByProductId: Map<string, mjBizAppsOrdersProductPriceEntity[]>;
+        byCategoryId: Map<string, mjBizAppsOrdersProductPriceEntity[]>;
+    } | null = null;
+    private _productPricesGen = -1;
+    private _productPricesArray: mjBizAppsOrdersProductPriceEntity[] | null = null;
+    private _productPricesLength = -1;
+
+    private ensureProductPricesIndex(): {
+        byId: Map<string, mjBizAppsOrdersProductPriceEntity>;
+        byProductId: Map<string, mjBizAppsOrdersProductPriceEntity[]>;
+        baseByProductId: Map<string, mjBizAppsOrdersProductPriceEntity[]>;
+        byCategoryId: Map<string, mjBizAppsOrdersProductPriceEntity[]>;
+    } {
+        const current = this.ProductPrices;
+        if (
+            this._productPricesIndex &&
+            this._productPricesGen === this._indexGeneration &&
+            this._productPricesArray === current &&
+            this._productPricesLength === current.length
+        ) {
+            return this._productPricesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersProductPriceEntity>();
+        const byProductId = new Map<string, mjBizAppsOrdersProductPriceEntity[]>();
+        const baseByProductId = new Map<string, mjBizAppsOrdersProductPriceEntity[]>();
+        const byCategoryId = new Map<string, mjBizAppsOrdersProductPriceEntity[]>();
+
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+            }
+
+            const prodIdKey = uuidKey(item.ProductID);
+            if (prodIdKey) {
+                let prodList = byProductId.get(prodIdKey);
+                if (!prodList) {
+                    prodList = [];
+                    byProductId.set(prodIdKey, prodList);
+                }
+                prodList.push(item);
+
+                if (!item.PriceListID && (!item.Status || item.Status === 'Active')) {
+                    let baseList = baseByProductId.get(prodIdKey);
+                    if (!baseList) {
+                        baseList = [];
+                        baseByProductId.set(prodIdKey, baseList);
+                    }
+                    baseList.push(item);
+                }
+            }
+
+            const catIdKey = uuidKey((item as { ProductCategoryID?: string | null }).ProductCategoryID);
+            if (catIdKey) {
+                let catList = byCategoryId.get(catIdKey);
+                if (!catList) {
+                    catList = [];
+                    byCategoryId.set(catIdKey, catList);
+                }
+                catList.push(item);
+            }
+        }
+
+        for (const baseList of baseByProductId.values()) {
+            baseList.sort((a, b) => Number(b.Priority || 0) - Number(a.Priority || 0));
+        }
+
+        this._productPricesIndex = { byId, byProductId, baseByProductId, byCategoryId };
+        this._productPricesGen = this._indexGeneration;
+        this._productPricesArray = current;
+        this._productPricesLength = current.length;
+        return this._productPricesIndex;
+    }
+
+    private _productCategoriesIndex: {
+        byId: Map<string, mjBizAppsOrdersProductCategoryEntity>;
+        parentById: Map<string, string | null>;
+    } | null = null;
+    private _productCategoriesGen = -1;
+    private _productCategoriesArray: mjBizAppsOrdersProductCategoryEntity[] | null = null;
+    private _productCategoriesLength = -1;
+
+    private ensureProductCategoriesIndex(): {
+        byId: Map<string, mjBizAppsOrdersProductCategoryEntity>;
+        parentById: Map<string, string | null>;
+    } {
+        const current = this.ProductCategories;
+        if (
+            this._productCategoriesIndex &&
+            this._productCategoriesGen === this._indexGeneration &&
+            this._productCategoriesArray === current &&
+            this._productCategoriesLength === current.length
+        ) {
+            return this._productCategoriesIndex;
+        }
+
+        const byId = new Map<string, mjBizAppsOrdersProductCategoryEntity>();
+        const parentById = new Map<string, string | null>();
+        for (const item of current) {
+            const idKey = uuidKey(item.ID);
+            if (idKey && !byId.has(idKey)) {
+                byId.set(idKey, item);
+                parentById.set(idKey, (item.ParentProductCategoryID as string | null | undefined) ?? null);
+            }
+        }
+
+        this._productCategoriesIndex = { byId, parentById };
+        this._productCategoriesGen = this._indexGeneration;
+        this._productCategoriesArray = current;
+        this._productCategoriesLength = current.length;
+        return this._productCategoriesIndex;
+    }
 
     /**
      * Load (or refresh) the cache.
@@ -154,40 +634,54 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     public PaymentTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTypeEntity | undefined {
-        return byID(this.PaymentTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensurePaymentTypesIndex().byId.get(key);
     }
     public PaymentTypeByCode(code: string | null | undefined): mjBizAppsOrdersPaymentTypeEntity | undefined {
-        if (!code) return undefined;
-        const wanted = code.trim().toLowerCase();
-        return this.PaymentTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensurePaymentTypesIndex().byCode.get(key);
     }
     public ChargeTypeByCode(code: string | null | undefined): mjBizAppsOrdersChargeTypeEntity | undefined {
-        if (!code) return undefined;
-        const wanted = code.trim().toLowerCase();
-        return this.ChargeTypes.find((t) => t.Code?.trim().toLowerCase() === wanted);
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensureChargeTypesIndex().byCode.get(key);
     }
     public ChargeTypeByID(id: string | null | undefined): mjBizAppsOrdersChargeTypeEntity | undefined {
-        return byID(this.ChargeTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureChargeTypesIndex().byId.get(key);
     }
     public PaymentProviderTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentProviderTypeEntity | undefined {
-        return byID(this.PaymentProviderTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensurePaymentProviderTypesIndex().byId.get(key);
     }
     public PaymentTermsTypeByID(id: string | null | undefined): mjBizAppsOrdersPaymentTermsTypeEntity | undefined {
-        return byID(this.PaymentTermsTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensurePaymentTermsTypesIndex().byId.get(key);
     }
     public ProductTypeByID(id: string | null | undefined): mjBizAppsOrdersProductTypeEntity | undefined {
-        return byID(this.ProductTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureProductTypesIndex().byId.get(key);
     }
     public ProductTypeByCode(code: string | null | undefined): mjBizAppsOrdersProductTypeEntity | undefined {
-        if (!code) return undefined;
-        const wanted = code.trim().toLowerCase();
-        return this.ProductTypes.find((t) => (t.Code ?? '').trim().toLowerCase() === wanted);
+        const key = (code ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensureProductTypesIndex().byCode.get(key);
     }
     public SubscriptionTypeByID(id: string | null | undefined): mjBizAppsOrdersSubscriptionTypeEntity | undefined {
-        return byID(this.SubscriptionTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureSubscriptionTypesIndex().byId.get(key);
     }
     public RevenueRecognitionTypeByID(id: string | null | undefined): mjBizAppsOrdersRevenueRecognitionTypeEntity | undefined {
-        return byID(this.RevenueRecognitionTypes, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureRevenueRecognitionTypesIndex().byId.get(key);
     }
 
     /**
@@ -221,10 +715,14 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         return ResolveSubscriptionTypeID(product.SubscriptionTypeID, this.ProductTypeByID(product.ProductTypeID)?.DefaultSubscriptionTypeID);
     }
     public EventProductByID(id: string | null | undefined): mjBizAppsOrdersEventProductEntity | undefined {
-        return byID(this.EventProducts, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureEventProductsIndex().byId.get(key);
     }
     public ProductByID(id: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
-        return byID(this.Products, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureProductsIndex().byId.get(key);
     }
 
     /**
@@ -293,15 +791,19 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     }
 
     public ProductBySKU(sku: string | null | undefined): mjBizAppsOrdersProductEntity | undefined {
-        const wanted = sku?.trim().toLowerCase();
-        if (!wanted) return undefined;
-        return this.Products.find((p) => (p.SKU ?? '').trim().toLowerCase() === wanted);
+        const key = (sku ?? '').trim().toLowerCase();
+        if (!key) return undefined;
+        return this.ensureProductsIndex().bySku.get(key);
     }
     public ProductPriceByID(id: string | null | undefined): mjBizAppsOrdersProductPriceEntity | undefined {
-        return byID(this.ProductPrices, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureProductPricesIndex().byId.get(key);
     }
     public ProductCategoryByID(id: string | null | undefined): mjBizAppsOrdersProductCategoryEntity | undefined {
-        return byID(this.ProductCategories, id);
+        const key = uuidKey(id);
+        if (!key) return undefined;
+        return this.ensureProductCategoriesIndex().byId.get(key);
     }
 
     public ProductTypeCode(productID: string | null | undefined): string | null {
@@ -358,9 +860,8 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
     public BaseProductPrices(productID: string | null | undefined): mjBizAppsOrdersProductPriceEntity[] {
         const id = uuidKey(productID);
         if (!id) return [];
-        return this.ProductPrices.filter(
-            (p) => uuidKey(p.ProductID) === id && !p.PriceListID && (!p.Status || p.Status === 'Active'),
-        ).sort((a, b) => Number(b.Priority || 0) - Number(a.Priority || 0));
+        const bucket = this.ensureProductPricesIndex().baseByProductId.get(id);
+        return bucket ? [...bucket] : [];
     }
 
     /** Prices hanging on this product or any of the given categories (inherit walk). */
@@ -368,24 +869,44 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         productID: string | null | undefined,
         categoryIDs: readonly string[] = [],
     ): mjBizAppsOrdersProductPriceEntity[] {
+        const index = this.ensureProductPricesIndex();
         const pid = uuidKey(productID);
-        const cats = new Set(categoryIDs.map(uuidKey).filter(Boolean));
-        return this.ProductPrices.filter((p) => {
-            if (pid && uuidKey(p.ProductID) === pid) return true;
-            const cat = uuidKey((p as { ProductCategoryID?: string | null }).ProductCategoryID);
-            return !!cat && cats.has(cat);
-        });
+        const results: mjBizAppsOrdersProductPriceEntity[] = [];
+        const seen = new Set<mjBizAppsOrdersProductPriceEntity>();
+
+        if (pid) {
+            const productPrices = index.byProductId.get(pid);
+            if (productPrices) {
+                for (const p of productPrices) {
+                    if (!seen.has(p)) {
+                        seen.add(p);
+                        results.push(p);
+                    }
+                }
+            }
+        }
+
+        for (const catId of categoryIDs) {
+            const catKey = uuidKey(catId);
+            if (!catKey) continue;
+            const catPrices = index.byCategoryId.get(catKey);
+            if (catPrices) {
+                for (const p of catPrices) {
+                    if (!seen.has(p)) {
+                        seen.add(p);
+                        results.push(p);
+                    }
+                }
+            }
+        }
+
+        return results;
     }
 
     /** Category and ancestors, nearest first. */
     public CategoryChain(startCategoryID: string | null | undefined): string[] {
         if (!startCategoryID) return [];
-        const parent = new Map(
-            this.ProductCategories.map((c) => [
-                uuidKey(c.ID),
-                (c.ParentProductCategoryID as string | null | undefined) ?? null,
-            ]),
-        );
+        const parent = this.ensureProductCategoriesIndex().parentById;
         const chain: string[] = [];
         const seen = new Set<string>();
         let current: string | null = startCategoryID;
@@ -396,12 +917,6 @@ export class OrdersEngine extends BaseEngine<OrdersEngine> {
         }
         return chain;
     }
-}
-
-function byID<T extends { ID?: string }>(rows: T[], id: string | null | undefined): T | undefined {
-    if (!id) return undefined;
-    const wanted = id.toLowerCase();
-    return rows.find((r) => r.ID?.toLowerCase() === wanted);
 }
 
 /** Load the cache. Idempotent and cheap after the first call. */
