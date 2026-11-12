@@ -45,6 +45,7 @@ import {
     type CheckoutAttribution,
     MergeCheckoutTracking,
     NormalizeCheckoutTracking,
+    NormalizeStoredCheckoutTracking,
     type CheckoutTracking,
     CheckCheckoutChoices,
     ChoicesForStorage,
@@ -1517,8 +1518,7 @@ export class CheckoutSessionService {
     private static storedTracking(metadataJSON: string | null): CheckoutTracking | null {
         if (!metadataJSON) return null;
         try {
-            const stored = (JSON.parse(metadataJSON) as { Tracking?: { PageURL?: unknown; Cookies?: unknown } }).Tracking;
-            return stored ? NormalizeCheckoutTracking({ pageUrl: stored.PageURL, cookies: stored.Cookies }) : null;
+            return NormalizeStoredCheckoutTracking((JSON.parse(metadataJSON) as { Tracking?: unknown }).Tracking);
         } catch {
             return null;
         }

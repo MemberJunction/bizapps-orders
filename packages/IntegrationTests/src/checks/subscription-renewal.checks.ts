@@ -2674,6 +2674,58 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
     },
 
     {
+        Id: 'subscription-renewal.SR105',
+        Name: "SR105: a checkout keeps the page's tracking (page URL, referrer host, named cookies) on the session, without the personal data a URL can carry",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const widgetID = await createViaEntity(ctx, CHECKOUT_WIDGET_ENTITY, {
+                    Name: `${f.Run} tracking checkout`,
+                    CompanyID: f.CoA.ID,
+                    Status: 'Active',
+                    Configuration: JSON.stringify({ currency: 'USD', productId: f.Products.SubRolling }),
+                });
+                const slug = `${f.Run.toLowerCase()}-trk-${widgetID.slice(0, 8).toLowerCase()}`;
+                await createViaEntity(ctx, CHECKOUT_WIDGET_DISTRIBUTION_ENTITY, { CheckoutWidgetID: widgetID, Slug: slug, Status: 'Active' });
+                const key = `it-trk-${widgetID.slice(0, 8)}`;
+                const init = await CheckoutSessionService.InitializeSession(slug, key, ctx.User);
+                Assert(init.Success, `a session opens: ${init.ErrorMessage}`);
+                const email = `trk-it-${widgetID.slice(0, 8).toLowerCase()}@example.com`;
+                const lines = [{ ProductID: f.Products.SubRolling, Quantity: 1 }];
+                const billing = { Country: 'US', StateProvince: 'IL', PostalCode: '60601' };
+                // A first-and-latest-visit cookie as a page script writes it: URI-encoded JSON.
+                const visits = JSON.stringify({ ft: { s: 'google', m: 'cpc', lp: '/blog/x', at: '2026-11-01' }, lt: { ref: 'www.linkedin.com', lp: '/pricing', at: '2026-11-11' } });
+
+                // Draft 1: the page URL carries an e-mail and a token next to the UTM tags; the buyer came from a search.
+                const first = await CheckoutSessionService.UpdateDraft(init.SessionID!, key, email, lines, billing, ctx.User, {
+                    Tracking: {
+                        pageUrl: 'https://www.example.com/pricing?email=jane%40example.com&token=s3cret&utm_source=google&utm_medium=cpc&gclid=g-1#plans',
+                        referrer: 'https://www.google.com/search?q=jane%40example.com',
+                        cookies: { hubspotutk: 'abc123def', sc_attr: decodeURIComponent(encodeURIComponent(visits)) },
+                    },
+                });
+                Assert(first.Success, `the first draft prices: ${first.ErrorMessage}`);
+                // Draft 2: no referrer this time, a new cookie value, the same page.
+                const second = await CheckoutSessionService.UpdateDraft(init.SessionID!, key, email, lines, billing, ctx.User, {
+                    Tracking: { pageUrl: 'https://www.example.com/pricing', cookies: { hubspotutk: 'abc123xyz' } },
+                });
+                Assert(second.Success, `the second draft prices: ${second.ErrorMessage}`);
+
+                const row = await TxOne<{ MetadataJSON: string }>(ctx, `SELECT MetadataJSON FROM ${ORDERS_SCHEMA}.CheckoutSession WHERE ID = '${init.SessionID}'`);
+                const tracking = (JSON.parse(row.MetadataJSON) as { Tracking?: { PageURL?: string; ReferrerHost?: string; Cookies?: Record<string, string> } }).Tracking;
+                AssertEqual(tracking?.PageURL, 'https://www.example.com/pricing', 'the latest page, reduced to origin and path');
+                AssertEqual(tracking?.ReferrerHost, 'www.google.com', "the first draft's referrer host is kept by the second");
+                AssertEqual(tracking?.Cookies?.hubspotutk, 'abc123xyz', 'the newest cookie value wins');
+                AssertEqual(tracking?.Cookies?.sc_attr, visits, 'the structured cookie is kept whole');
+                AssertEqual(Object.keys(tracking?.Cookies ?? {}).sort().join(','), 'hubspotutk,sc_attr', 'and nothing else');
+                // Both directions: what attribution needs is there, what it must not keep is nowhere in the row.
+                for (const leaked of ['jane', 's3cret', '#plans', 'q=']) {
+                    Assert(!row.MetadataJSON.includes(leaked), `the session does not keep "${leaked}"`);
+                }
+            }),
+    },
+    {
         Id: 'subscription-renewal.SR67',
         Name: 'SR67: the returning-buyer refusal, both directions: refused in the company the gateway bills; not elsewhere, not for someone else, a ticket or a cancelled subscription',
         RequiresMutation: true,

@@ -1115,21 +1115,24 @@ export class CheckoutPublicHostComponent implements OnInit, AfterViewChecked, On
     }
 
     /**
-     * The page the checkout is embedded on and the cookies the host named. Read at each draft rather
-     * than once at start, because a tracker on the page can set its cookie after the element loads.
+     * The page the checkout is embedded on, the page that linked to it, and the cookies the host named.
+     * Read at each draft rather than once at start, because a tracker on the page can set its cookie
+     * after the element loads. The server keeps only what attribution needs (see checkout-tracking.ts).
      */
-    private readTracking(): { pageUrl: string | null; cookies: Record<string, string> } {
+    private readTracking(): { pageUrl: string | null; referrer: string | null; cookies: Record<string, string> } {
         let pageUrl: string | null = null;
+        let referrer: string | null = null;
         let cookies: Record<string, string> = {};
         try {
             pageUrl = window.location.href;
+            referrer = document.referrer || null;
             if (this.captureCookieNames.length > 0) {
                 cookies = ReadNamedCookies(document.cookie, this.captureCookieNames);
             }
         } catch {
             /* no window (server render) or cookies blocked */
         }
-        return { pageUrl, cookies };
+        return { pageUrl, referrer, cookies };
     }
 
     /** Session storage is scoped per slug, and apart for the pay-renewal mode so the two never share a session. */

@@ -1784,14 +1784,21 @@ describe('CheckoutSessionService', () => {
         it('keeps the page URL and captured cookies with the draft', async () => {
             const res = await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
             expect(res.Success).toBe(true);
-            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' } });
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' }, ReferrerHost: null });
         });
 
         it('merges a cookie set after the first draft with what that draft stored', async () => {
             await draft({ pageUrl: 'https://example.com/pricing', cookies: {} });
             await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
             await draft(undefined);
-            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' } });
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' }, ReferrerHost: null });
+        });
+
+        it('keeps the referrer host across drafts, and strips personal data from the page URL', async () => {
+            await draft({ pageUrl: 'https://example.com/pricing?email=a%40b.com&utm_source=ad', referrer: 'https://www.google.com/search?q=x', cookies: {} });
+            await draft({ pageUrl: 'https://example.com/pricing', cookies: { visitor: 'abc' } });
+            expect(stored()).toEqual({ PageURL: 'https://example.com/pricing', Cookies: { visitor: 'abc' }, ReferrerHost: 'www.google.com' });
+            expect(mocks.mockSessionInstance.MetadataJSON).not.toContain('a%40b.com');
         });
 
         it('drops tracking it cannot read rather than refusing the checkout', async () => {

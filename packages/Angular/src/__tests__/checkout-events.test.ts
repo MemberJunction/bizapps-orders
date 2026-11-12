@@ -474,7 +474,16 @@ describe('CheckoutPublicHostComponent events', () => {
             const c = create();
             await c.ngOnInit();
             await c.onSubmitted(submission());
-            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing?utm_source=ad', cookies: { visitor: 'abc123' } });
+            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing?utm_source=ad', referrer: null, cookies: { visitor: 'abc123' } });
+        });
+
+        it('sends the page that linked to the checkout page', async () => {
+            vi.stubGlobal('window', { location: { href: 'https://example.com/pricing' } });
+            vi.stubGlobal('document', { cookie: '', referrer: 'https://www.google.com/' });
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing', referrer: 'https://www.google.com/', cookies: {} });
         });
 
         it('captures no cookies when the host names none', async () => {
@@ -483,7 +492,7 @@ describe('CheckoutPublicHostComponent events', () => {
             const c = create();
             await c.ngOnInit();
             await c.onSubmitted(submission());
-            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing', cookies: {} });
+            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing', referrer: null, cookies: {} });
         });
 
         it('after a failed payment, resets without the Cancel events and starts a new session', async () => {
