@@ -103,7 +103,7 @@ describe('RenewalPriceStart (golive #478)', () => {
     });
 
     it('applies the increase after a 13-month line booked as a year and a remainder', () => {
-        // SUB-000176: 12/20/2025-2/5/2027 on one line, terms 12/20/2025 and 12/20/2026, renewal 2/6/2027.
+        // One line covering 12/20/2025-2/5/2027: terms start 12/20/2025 and 12/20/2026, renewal 2/6/2027.
         expect(RenewalCrossesAnniversary('2025-12-20', '2026-12-20', '2027-02-06')).toBe(false); // the old reading
         expect(crosses('2025-12-20', '2026-12-20', '2025-12-20', '2027-02-06')).toBe(true);
         // The renewal after that is an ordinary one-term line and still crosses one.
