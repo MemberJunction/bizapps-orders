@@ -342,7 +342,7 @@
                         }
                         <span class="mjo-ol-term__hint" [class.is-error]="!line.SubscriptionAction">
                             @if (line.SubscriptionAction === 'CreateNew') {
-                                Confirm creates a second subscription for this customer alongside
+                                Confirm creates a new subscription for this customer, separate from
                                 {{ holding.SubscriptionNumber }}.
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
                                 {{ HoldingExtendLineText(line, holding).Hint }}

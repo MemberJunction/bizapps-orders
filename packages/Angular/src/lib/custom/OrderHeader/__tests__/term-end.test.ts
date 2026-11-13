@@ -142,6 +142,22 @@ describe('term end on a subscription line', () => {
         });
     });
 
+    it('gives no "as entered" warning when no start was typed: the order date supplied it', () => {
+        const holding = {
+            SubscriptionID: 's1',
+            SubscriptionNumber: 'SUB-0001',
+            Status: 'Active',
+            LatestTermEnd: d('2027-09-30'),
+        } as MJOExistingHolding;
+        const c = editor('2026-10-20');
+        // The two choices still show their different dates; only the sentence about entered dates is left out.
+        expect(c.HoldingExtendLineText(line('p-member'), holding)).toEqual({
+            Choice: 'Renew SUB-0001 (2027-10-01 to 2028-09-30)',
+            Hint: "Confirm adds this line to SUB-0001 as its next term, at this line's price.",
+        });
+        expect(c.HoldingNewSubscriptionText(line('p-member'))).toBe('Create new subscription (2026-10-20 to 2027-10-19)');
+    });
+
     it('shows the line\'s own dates on the "Create new subscription" choice', () => {
         expect(editor().HoldingNewSubscriptionText(line('p-member', '2026-10-01'))).toBe(
             'Create new subscription (2026-10-01 to 2027-09-30)',
