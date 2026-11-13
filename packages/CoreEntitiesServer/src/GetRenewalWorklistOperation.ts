@@ -40,7 +40,13 @@ import {
     type RenewalWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { RequireDate, RequireUUIDs } from './sql-guards.js';
-import { EffectiveLeadDays, RenewalPricer, type RenewalSourceLineRow, type RenewalSubjectRow } from './RenewalPricing.js';
+import {
+    EffectiveLeadDays,
+    LineFirstTermStartSql,
+    RenewalPricer,
+    type RenewalSourceLineRow,
+    type RenewalSubjectRow,
+} from './RenewalPricing.js';
 import { LoadRenewalPass } from './RenewalPassMode.js';
 
 const money = (v: number | null | undefined): number | null => (v == null ? null : Math.round((Number(v) + Number.EPSILON) * 100) / 100);
@@ -75,6 +81,8 @@ interface SubjectRow {
     LatestTermStatus: string;
     LatestOrderLineID: string;
     LatestQuantity: number;
+    /** Earliest term start on the latest term's order line (golive #478). */
+    LatestLineFirstTermStart: string | null;
     PriorTermID: string | null;
     PriorTermNumber: number | null;
     PriorTermStart: string | null;
@@ -165,6 +173,8 @@ export class GetRenewalWorklistOperation extends OrdersGetRenewalWorklistOperati
                       Status: String(subject.PriorTermStatus),
                       OrderLineID: String(subject.PriorOrderLineID),
                       Quantity: Number(subject.PriorQuantity ?? 1),
+                      // A term already renewed is never projected, so where its price began is not read.
+                      LineFirstTermStart: null,
                   }
                 : {
                       TermID: String(subject.LatestTermID),
@@ -174,6 +184,7 @@ export class GetRenewalWorklistOperation extends OrdersGetRenewalWorklistOperati
                       Status: String(subject.LatestTermStatus),
                       OrderLineID: String(subject.LatestOrderLineID),
                       Quantity: Number(subject.LatestQuantity ?? 1),
+                      LineFirstTermStart: ToISODate(subject.LatestLineFirstTermStart),
                   };
             const current = lines.get(expiring.OrderLineID.toLowerCase()) ?? null;
             const renewal = renewed
@@ -257,6 +268,7 @@ export class GetRenewalWorklistOperation extends OrdersGetRenewalWorklistOperati
                     TermEndDate: expiring.End,
                     TermQuantity: expiring.Quantity,
                     OrderLineID: expiring.OrderLineID,
+                    LineFirstTermStartDate: expiring.LineFirstTermStart,
                     SubscriptionStartDate: ToISODate(subject.SubscriptionStartDate) ?? expiring.Start,
                     SubscriptionIncreasePercent: subject.SubscriptionIncreasePercent == null ? null : Number(subject.SubscriptionIncreasePercent),
                     CarryDiscountOnRenewal: !!subject.CarryDiscountOnRenewal,
@@ -339,6 +351,7 @@ export class GetRenewalWorklistOperation extends OrdersGetRenewalWorklistOperati
                 l.Status                 AS LatestTermStatus,
                 l.OrderLineID            AS LatestOrderLineID,
                 l.Quantity               AS LatestQuantity,
+                ${LineFirstTermStartSql('l')} AS LatestLineFirstTermStart,
                 p.ID                     AS PriorTermID,
                 p.TermNumber             AS PriorTermNumber,
                 p.StartDate              AS PriorTermStart,
