@@ -40,7 +40,14 @@ afterEach(() => {
 
 function editor(editMode: boolean, moneyLocked = false): MJOOrderLinesEditorComponent {
     const c = Object.create(MJOOrderLinesEditorComponent.prototype) as MJOOrderLinesEditorComponent;
-    Object.assign(c as object, { EditMode: editMode, _order: { MoneyLocked: moneyLocked } });
+    Object.assign(c as object, {
+        // Nothing refuses: the read-only state a registered veto sets is line-edit-lock.test.ts's.
+        lineEditRefusals: [],
+        lineEditCheckPending: false,
+        LineEditCheckFailed: false,
+        EditMode: editMode,
+        _order: { MoneyLocked: moneyLocked },
+    });
     return c;
 }
 

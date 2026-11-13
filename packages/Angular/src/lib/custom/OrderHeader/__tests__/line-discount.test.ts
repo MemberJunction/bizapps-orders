@@ -44,6 +44,10 @@ function component(stub: Stub): MJOOrderLinesEditorComponent {
     const drafts = new Map<string, MJODiscountDraft>();
     if (stub.draft) drafts.set('L1', { Mode: 'percent', Value: null, Reason: '', ...stub.draft });
     Object.assign(instance as object, {
+        // Nothing refuses: the read-only state a registered veto sets is line-edit-lock.test.ts's.
+        lineEditRefusals: [],
+        lineEditCheckPending: false,
+        LineEditCheckFailed: false,
         EditMode: true,
         DiscountAuthorityLoaded: true,
         DiscountAuthority: stub.authority === false ? null : { ID: 'SA1', MaxDiscountPct: stub.cap ?? null },
