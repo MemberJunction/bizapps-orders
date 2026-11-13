@@ -30,6 +30,7 @@ import {
     PriceRenewal,
     PriorTermShare,
     RenewalCrossesAnniversary,
+    RenewalPriceStart,
     ResolvePrice,
     ResolveRenewalIncrease,
     type PricedLineFacts,
@@ -71,6 +72,13 @@ export interface RenewalSubjectRow {
     /** Seats the expiring term covers (`SubscriptionTerm.Quantity`) — what the renewal buys again. */
     TermQuantity: number;
     OrderLineID: string;
+    /**
+     * The start of the earliest term on this subscription that `OrderLineID` bought (golive #478):
+     * where the price being renewed began. Differs from `TermStartDate` only when the line bought
+     * several terms. Null reads as `TermStartDate`. Required, so a selection that forgets it does
+     * not compile into the old reading; select it with {@link LineFirstTermStartSql}.
+     */
+    LineFirstTermStartDate: string | null;
     SubscriptionStartDate: string;
     SubscriptionIncreasePercent: number | null;
     CarryDiscountOnRenewal: boolean;
@@ -166,6 +174,20 @@ export function DayAfter(date: string | Date): Date {
     return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1));
 }
 
+/**
+ * SQL for {@link RenewalSubjectRow.LineFirstTermStartDate}: the earliest start among the terms of
+ * the same subscription bought by the same order line as the term aliased `termAlias`.
+ */
+export function LineFirstTermStartSql(termAlias: string): string {
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(termAlias)) {
+        throw new Error(`LineFirstTermStartSql: '${termAlias}' is not a plain SQL table alias.`);
+    }
+    return (
+        `(SELECT MIN(ft.StartDate) FROM __mj_BizAppsOrders.SubscriptionTerm ft ` +
+        `WHERE ft.SubscriptionID = ${termAlias}.SubscriptionID AND ft.OrderLineID = ${termAlias}.OrderLineID)`
+    );
+}
+
 /** Lead days in force for a subject: its own, else its type's, else 0. */
 export function EffectiveLeadDays(subject: Pick<RenewalSubjectRow, 'SubscriptionRenewalLeadDays' | 'TypeRenewalLeadDays'>): number {
     return subject.SubscriptionRenewalLeadDays ?? subject.TypeRenewalLeadDays ?? 0;
@@ -247,6 +269,13 @@ export class RenewalPricer {
             Company: await this.loadCompanyIncrease(due.CompanyID),
         });
 
+        // From where the price began, not where the last term on the line began (golive #478).
+        const applyIncrease = RenewalCrossesAnniversary(
+            due.SubscriptionStartDate,
+            RenewalPriceStart(due.TermStartDate, due.LineFirstTermStartDate),
+            renewalDay,
+        );
+
         let price: RenewalPrice;
         try {
             price = PriceRenewal({
@@ -258,7 +287,7 @@ export class RenewalPricer {
                 SuccessorListPrice: successorList,
                 CarryDiscount: carry,
                 Increase: increase,
-                ApplyIncrease: RenewalCrossesAnniversary(due.SubscriptionStartDate, due.TermStartDate, renewalDay),
+                ApplyIncrease: applyIncrease,
             });
         } catch (err) {
             throw new Error(

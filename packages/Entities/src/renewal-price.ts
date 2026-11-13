@@ -10,8 +10,10 @@
  *      stated on the subscription (`CarryDiscountOnRenewal`).
  *   2. A product with a successor renews AS the successor, priced from the successor's current list.
  *   3. An annual increase applies on top, from the start of the renewal term, when that term crosses
- *      an anniversary of the subscription's start. Every invoice in a term carries one price, so the
- *      increase belongs to a term, never to part of one.
+ *      an anniversary of the subscription's start that has passed since the price being renewed
+ *      began. Every invoice in a term carries one price, so the increase belongs to a term, never to
+ *      part of one. A line that bought several terms set its price once, at the first of them, so
+ *      the price began there and not at its last term (golive #478). See {@link RenewalPriceStart}.
  *   4. A renewal buys one term. A line that bought several terms at once (24 months sold as one line
  *      on a 12-month type) with a typed price (`PriceOverridden`) has a price covering all of them, so
  *      the prior price is cut to one term's share of it before the rules above apply (golive #338).
@@ -57,8 +59,32 @@ export function ResolveRenewalIncrease(levels: RenewalIncreaseLevels): ResolvedR
 }
 
 /**
+ * The day the price being renewed began: the start of the earliest term the expiring term's order
+ * line bought (golive #478).
+ *
+ * One line buys one term in the ordinary case, and this is that term's start. A line booked as
+ * several terms (24 months sold as one line, or a 13-month line booked as a year and a remainder)
+ * set its price once, at the first of them. Measured from the last term instead, a remainder that
+ * starts on the anniversary looks as though it had already taken the increase, and the renewal
+ * after it is priced flat.
+ *
+ * `lineFirstTermStart` absent, or later than the expiring term's start, leaves the term's own start.
+ */
+export function RenewalPriceStart(expiringTermStart: Date | string, lineFirstTermStart: Date | string | null | undefined): Date | string {
+    if (lineFirstTermStart == null || lineFirstTermStart === '') return expiringTermStart;
+    return dayNumber(lineFirstTermStart) < dayNumber(expiringTermStart) ? lineFirstTermStart : expiringTermStart;
+}
+
+function dayNumber(value: Date | string): number {
+    const d = calendarDay(value);
+    return Date.UTC(d.y, d.m, d.d);
+}
+
+/**
  * Whether a renewal term starting on `newTermStart` crosses an anniversary of `anchor` (the
- * subscription's start) that the term being renewed, starting on `priorTermStart`, had not.
+ * subscription's start) that had not passed on `priorTermStart`, the day the price being renewed
+ * began: the expiring term's start, or the start of the first term its line bought when that line
+ * bought several ({@link RenewalPriceStart}).
  *
  * An annual term crosses one on every renewal. A monthly or quarterly term crosses one once a year,
  * so its price rises once a year rather than on every renewal. A short first term into a calendar
