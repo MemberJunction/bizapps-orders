@@ -1,5 +1,16 @@
 # @mj-biz-apps/orders-core-entities-server
 
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+### Patch Changes
+
+- Updated dependencies [f950cc2]
+  - @mj-biz-apps/orders-entities@5.50.0
+
 ## 5.49.0
 
 ### Minor Changes
@@ -1356,8 +1367,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                    The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                    "FK_EntityFieldValue_EntityField"
+                                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                      "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
