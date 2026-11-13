@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import type { IRunViewProvider } from '@memberjunction/core';
 import { ResolveSingularActiveEmployerOrganization } from '../PartyAffiliationBehavior';
 
-// A real UUID: the filter now refuses a non-UUID personID (RequireUUID) and answers null.
+// A real UUID: a non-UUID personID is refused (RequireUUID) before the read.
 const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 
 describe('ResolveSingularActiveEmployerOrganization', () => {
@@ -50,7 +50,7 @@ describe('ResolveSingularActiveEmployerOrganization', () => {
 
     it('refuses a non-UUID personID without querying', async () => {
         const mockProvider = createMockProvider([{ ToOrganizationID: 'org-1' }]);
-        expect(await ResolveSingularActiveEmployerOrganization(mockProvider, "x' OR '1'='1")).toBeNull();
+        await expect(ResolveSingularActiveEmployerOrganization(mockProvider, "x' OR '1'='1")).rejects.toThrow(/personID must be a UUID/);
         expect(mockProvider.RunView).not.toHaveBeenCalled();
     });
 });

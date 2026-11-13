@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { BusinessTimeZoneEngine, type InstanceConfigurationRow } from '@mj-biz-apps/common-entities';
 import { ResolveActiveEmployerOrganization } from '../PartyAffiliationBehavior';
 
-// A real UUID: the filter now refuses a non-UUID personID (RequireUUID) and answers null.
+// A real UUID: a non-UUID personID is refused (RequireUUID) before the read.
 const PERSON = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 
 describe('ResolveActiveEmployerOrganization default asOf', () => {
@@ -45,5 +45,11 @@ describe('ResolveActiveEmployerOrganization default asOf', () => {
         const c = capture();
         await ResolveActiveEmployerOrganization(c.provider, PERSON, new Date('2026-09-15T00:00:00.000Z'));
         expect(c.filter()).toContain(`StartDate <= '2026-09-15'`);
+    });
+
+    it('refuses a non-UUID person id instead of reading it as "no employer"', async () => {
+        const c = capture();
+        await expect(ResolveActiveEmployerOrganization(c.provider, "x' OR '1'='1")).rejects.toThrow(/personID must be a UUID/);
+        expect(c.filter()).toBe('');
     });
 });

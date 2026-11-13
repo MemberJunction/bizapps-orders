@@ -31,6 +31,7 @@
  */
 import { randomUUID } from 'node:crypto';
 import { BaseEntity, CompositeKey, Metadata, RunView } from '@memberjunction/core';
+import { EscapeSQLString } from '@memberjunction/global';
 import { OrdersEngine, RequireUUID, RequireUUIDs, type mjBizAppsOrdersProductBundleItemEntity } from '@mj-biz-apps/orders-entities';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import type { IMetadataProvider } from '@memberjunction/core';
@@ -255,7 +256,7 @@ export async function WithBusinessZone(
         await InRolledBackTransaction(ctx, async () => {
             await TxQuery(
                 ctx,
-                `UPDATE __mj.InstanceConfiguration SET Value = '${JSON.stringify({ iana, sql: sqlName }).replace(/'/g, "''")}' ` +
+                `UPDATE __mj.InstanceConfiguration SET Value = '${EscapeSQLString(JSON.stringify({ iana, sql: sqlName }))}' ` +
                     `WHERE FeatureKey = 'BizApps.BusinessTimeZone'`,
             );
             await BusinessTimeZoneEngine.Instance.Config(true, ctx.User, ctx.Provider);
