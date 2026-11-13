@@ -112,6 +112,27 @@ describe('CatalogOptionFrom', () => {
         expect(option.SubscriptionTypeID).toBe('subtype-rolling');
     });
 
+    it("prefers the product's own subscription type over its type's default", () => {
+        const option = CatalogOptionFrom(
+            {
+                ID: 'prod-8',
+                Name: 'Monthly Membership',
+                SKU: 'MEM-MONTHLY',
+                ProductType: 'Membership',
+                ProductTypeID: 'type-membership',
+                CompanyID: 'co-1',
+                Company: 'Meridian',
+                IsTaxable: false,
+                MaxQuantityPerLine: null,
+                SubscriptionTypeID: 'subtype-monthly',
+            },
+            { OrderLineExtensionEntity: null, DefaultSubscriptionTypeID: 'subtype-annual' },
+            0,
+        );
+
+        expect(option.SubscriptionTypeID).toBe('subtype-monthly');
+    });
+
     it('shows no list price when the product has no base price row', () => {
         const option = CatalogOptionFrom(
             {
