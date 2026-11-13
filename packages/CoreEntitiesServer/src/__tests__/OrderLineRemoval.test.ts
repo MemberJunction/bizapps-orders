@@ -94,7 +94,15 @@ function dependentRow(label: string, log: string[], succeeds = true) {
 function orderWith(removed: FakeLine[], items: FakeLine[] = []) {
     const instance = Object.create(OrderEntityServer.prototype) as unknown as RemovalOrder;
     Object.assign(instance, {
-        Lines: { Removed: removed, Items: items, Dirty: true, IsLoaded: true },
+        Lines: {
+            Removed: removed,
+            Items: items,
+            Dirty: true,
+            IsLoaded: true,
+            AcceptChanges: vi.fn(function (this: { Removed: FakeLine[] }) {
+                this.Removed = [];
+            }),
+        },
         CheckoutAnswers: { Items: [] },
     });
     // `ProviderToUse` and `ContextCurrentUser` are getters on BaseEntity, so they are shadowed
@@ -360,5 +368,43 @@ describe('OrderEntityServer.Save — removal ordering', () => {
         // One refresh only — the unconditional one at the end of a successful save.
         expect(log.filter((entry) => entry === 'refresh-rollups')).toHaveLength(1);
         expect(log.indexOf('refresh-rollups')).toBeGreaterThan(log.indexOf('save-header'));
+    });
+
+    it('clears the pending removals once the save commits (#1045)', async () => {
+        // The deletes are issued here and the header save skips collections, so nothing in MJ
+        // empties `Lines.Removed`. Left pending, the next save of the same object saw a dirty
+        // collection, and a confirm on lines that were built rather than loaded asked `Load()` to
+        // discard the removal, which MJ refuses.
+        const log: string[] = [];
+        const { instance, headerSave } = savableOrder([fakeLine(1, log)], [fakeLine(2, log)], log);
+        const lines = (instance as unknown as { Lines: { Removed: FakeLine[]; AcceptChanges: ReturnType<typeof vi.fn> } }).Lines;
+
+        try {
+            await expect(instance.Save()).resolves.toBe(true);
+        } finally {
+            headerSave.mockRestore();
+        }
+
+        expect(lines.AcceptChanges).toHaveBeenCalledTimes(1);
+        expect(lines.Removed).toEqual([]);
+    });
+
+    it('keeps the pending removals when the save rolls back, so a retry deletes them', async () => {
+        const log: string[] = [];
+        const removed = fakeLine(1, log);
+        const { instance, headerSave } = savableOrder([removed], [], log);
+        headerSave.mockImplementation(async () => false);
+        // The failure result reads the field list a real entity loads; what it says is not this test's subject.
+        Object.assign(instance, { RegisterResultHistoryEntry: vi.fn(), buildFailureResult: vi.fn() });
+        const lines = (instance as unknown as { Lines: { Removed: FakeLine[]; AcceptChanges: ReturnType<typeof vi.fn> } }).Lines;
+
+        try {
+            await expect(instance.Save()).resolves.toBe(false);
+        } finally {
+            headerSave.mockRestore();
+        }
+
+        expect(lines.AcceptChanges).not.toHaveBeenCalled();
+        expect(lines.Removed).toEqual([removed]);
     });
 });

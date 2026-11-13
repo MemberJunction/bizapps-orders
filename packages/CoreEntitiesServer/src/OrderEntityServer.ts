@@ -840,7 +840,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             //
             // It runs HERE rather than inside `savePendingLines` for two reasons: `expandBundles`
             // renumbers the survivors just below, so the numbers must already be free; and a
-            // successful `super.Save()` can call `AcceptChanges()` on the collection, which empties
+            // successful `super.Save()` can call `AcceptChanges()` on the collection (when an embed
+            // makes it a graph save; otherwise the commit below does it), which empties
             // `Removed` — by the time the line writers run there may be nothing left to read.
             // AND THE ROW'S TOTALS NOW WIN, because the delete just moved them.
             //
@@ -1083,6 +1084,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // charge again and booking credited it twice. Cleared only once committed, so a save
             // that rolls back can be retried with the same requests.
             this._charges = [];
+            // A REMOVED LINE IS CONSUMED BY THE SAVE THAT DELETED IT. `deleteRemovedLines` issued the
+            // deletes itself, and the header save skips collections, so MJ clears `Lines.Removed` only
+            // when an embed happens to turn that save into a graph save. Left in place, the removal
+            // kept `Lines.Dirty` true: every later save of this object took the full line walk, and a
+            // confirm on a collection that was built rather than loaded asked `Lines.Load()` to
+            // discard it, which MJ refuses (#1045). Cleared only once committed, so a save that rolls
+            // back can be retried with the same removals.
+            this.Lines.AcceptChanges();
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
