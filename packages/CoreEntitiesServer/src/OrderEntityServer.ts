@@ -93,6 +93,7 @@ import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { CheckOrderDelete } from './OrderDeleteAuthority.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
 import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
@@ -1888,6 +1889,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
         }
         if (!this.IsSaved) return super.Delete(options);
         if (!this.passesCleanupRight('delete', EntityPermissionType.Delete)) return false;
+        // Whose order: any order with MJ.BizApps.Orders.Order.Delete, only one the user created with
+        // ...DeleteOwn (#1021). Sales' deal delete runs as the system user, which is exempt.
+        const deleteRefusal = await CheckOrderDelete(
+            { ID: this.ID, Label: `Order ${this.OrderNumber ?? this.ID}` },
+            this.ProviderToUse as unknown as IMetadataProvider,
+            this.ContextCurrentUser!,
+        );
+        if (deleteRefusal) {
+            this.RegisterResultHistoryEntry(this.buildDeleteFailure(deleteRefusal));
+            return false;
+        }
 
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
         try {
