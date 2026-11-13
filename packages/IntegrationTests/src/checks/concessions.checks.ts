@@ -351,12 +351,15 @@ async function pendingSeats(ctx: IntegrationCheckContext, lineID: string, seats:
   return c.Entity;
 }
 
-/** Confirm a one-year SubRolling subscription at `price`; returns the order and its term. */
-async function bookTerm(ctx: IntegrationCheckContext, price: number) {
+/**
+ * Confirm a one-year SubRolling subscription at `price`; returns the order and its term. A repeat
+ * purchase extends the subscription already held; on a first purchase the answer changes nothing.
+ */
+async function bookTerm(ctx: IntegrationCheckContext, price: number, action: "ExtendExisting" | "CreateNew" = "ExtendExisting") {
   const f = Fx();
   const result = await ConfirmOrder(ctx.User, {
     CompanyID: f.CoA.ID,
-    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: price }],
+    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: price, SubscriptionAction: action }],
   });
   Assert(result.Saved, `the subscription order did not confirm: ${result.Message}`);
   const term = await TxOne<{ ID: string; StartDate: Date; EndDate: Date; Amount: number }>(ctx,
@@ -1634,7 +1637,7 @@ export const ConcessionChecks: NamedCheck[] = [
         const f = Fx();
         const draft = await BuildOrder(ctx.User, {
           CompanyID: f.CoA.ID,
-          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 2, UnitPrice: 1200 }],
+          Lines: [{ ProductID: f.Products.SubRolling, Quantity: 2, UnitPrice: 1200, SubscriptionAction: "ExtendExisting" }],
         });
         Assert(await draft.Order.Save(), `the draft did not save: ${draft.Order.LatestResult?.CompleteMessage}`);
         const onDraft = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: draft.Lines[0].ID, AddedQuantity: 1 });

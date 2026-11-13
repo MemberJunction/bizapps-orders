@@ -132,6 +132,8 @@ export * from './displaced-term-start';
 export * from './subscription-term-length';
 // Whether a subscription line's subscriber already holds its product — the extend-or-new question.
 export * from './existing-holding';
+// Instalments a moved term leaves behind, refused at confirm and warned on the line (golive #467).
+export * from './moved-term-schedule';
 export * from './subscription-type';
 
 /**

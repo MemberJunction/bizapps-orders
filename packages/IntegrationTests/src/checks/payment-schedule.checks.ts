@@ -41,6 +41,8 @@
  *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
  *   PS-V  a two-company order's schedule is the order company's; each instalment takes one number
  *         and books one billing entry per product company, each in its own books (golive #311)
+ *   PS-W  a schedule left due before a term the confirm moved to the next one refuses the confirm;
+ *         moved into the new term, the order books (golive #467)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  *
@@ -61,7 +63,7 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, Today } from '@mj-biz-apps/orders-entities';
 import { BuildInvoiceDocuments, type OrderHeaderPaymentScheduleEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 import {
     CreateProductPrice,
@@ -1080,6 +1082,69 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                     AssertEqual(Number(totals[1].BilledToDate), 200, 'on both companies');
                 }),
             ),
+    },
+    {
+        Id: 'payment-schedule.PS-W',
+        Name: 'PS-W: a schedule left before a term the confirm moved REFUSES the confirm; moved into it, the order books (golive #467)',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const addDays = (iso: string, days: number) => new Date(Date.parse(`${iso}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+                const today = Today();
+
+                // The customer already holds the product.
+                const sold = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+                });
+                Assert(sold.Saved, `the first order confirms: ${sold.Message}`);
+                const held = await TxOne<{ EndDate: string }>(
+                    ctx,
+                    `SELECT CONVERT(varchar(10), MAX(t.EndDate), 23) AS EndDate
+                       FROM ${ORDERS_SCHEMA}.SubscriptionTerm t
+                       JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = t.OrderLineID
+                      WHERE ol.OrderHeaderID = '${sold.Order.ID}'`,
+                );
+                const settledStart = addDays(held.EndDate, 1);
+
+                // A second order adds the next term but states a start a month out, and its schedule
+                // is planned around that start.
+                const statedStart = addDays(today, 30);
+                const draft = await BuildOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    BillToOrganizationID: f.Customers.OrganizationID,
+                    Lines: [
+                        {
+                            ProductID: f.Products.SubRolling,
+                            Quantity: 1,
+                            UnitPrice: 1200,
+                            ServicePeriodStart: statedStart,
+                            SubscriptionAction: 'ExtendExisting',
+                        },
+                    ],
+                });
+                Assert(await draft.Order.Save(), `draft must save: ${draft.Order.LatestResult?.CompleteMessage ?? ''}`);
+                const orderID = draft.Order.ID as string;
+                const ids = await addInstalments(ctx, orderID, [
+                    { InstallmentNumber: 1, DueDate: statedStart, Amount: 600 },
+                    { InstallmentNumber: 2, DueDate: addDays(statedStart, 90), Amount: 600 },
+                ]);
+
+                const refused = await confirm(ctx, orderID);
+                Assert(!refused.saved, 'instalments due before the moved term must not confirm');
+                Assert(refused.message.includes('fall due before that term starts'), `the refusal explains itself: ${refused.message}`);
+                Assert(refused.message.includes(`runs ${settledStart}`), `and names the new start ${settledStart}: ${refused.message}`);
+                AssertEqual((await header(ctx, orderID)).Status, 'Draft', 'the confirm rolled back');
+                Assert((await schedule(ctx, orderID)).every((r) => r.Status === 'Scheduled'), 'and invoiced nothing');
+
+                // Moved into the new term, the same order books.
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule SET DueDate = '${settledStart}' WHERE ID = '${ids[0]}'`);
+                await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule SET DueDate = '${addDays(settledStart, 90)}' WHERE ID = '${ids[1]}'`);
+                const booked = await confirm(ctx, orderID);
+                Assert(booked.saved, `a schedule inside the new term confirms: ${booked.message}`);
+            }),
     },
 ];
 
