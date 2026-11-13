@@ -1,5 +1,18 @@
 # @mj-biz-apps/orders-integration-tests
 
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+### Patch Changes
+
+- Updated dependencies [f950cc2]
+  - @mj-biz-apps/orders-entities@5.50.0
+  - @mj-biz-apps/orders-core-entities-server@5.50.0
+  - @mj-biz-apps/orders-server@5.50.0
+
 ## 5.49.0
 
 ### Patch Changes
