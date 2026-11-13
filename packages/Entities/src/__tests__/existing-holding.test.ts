@@ -240,8 +240,8 @@ describe('a paused holding: what "extend" does (golive #339)', () => {
 
     it('an active holding is extended: next term from the day after coverage ends', () => {
         const text = ExtendChoiceTextFor(holding({ Status: 'Active' }), day);
-        expect(text.Choice).toBe('Add as next term (starts 2027-10-01)');
-        expect(text.Hint).toContain('adds a term to SUB-1');
+        expect(text.Choice).toBe('Renew SUB-1 (starts 2027-10-01)');
+        expect(text.Hint).toBe("Confirm adds this line to SUB-1 as its next term, at this line's price.");
     });
 
     it('a paused holding whose type reactivates is described as a reactivation, not a next term', () => {

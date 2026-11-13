@@ -114,7 +114,7 @@ describe('term end on a subscription line', () => {
         expect(c.HoldingContinuationEnd(line('p-member', '2026-10-01'), holding)).toBe('2028-09-30');
     });
 
-    it('adds that end to the "Add as next term" choice and hint, inside the start date\'s brackets', () => {
+    it('puts the dates a renewal gives on the "Renew" choice, and says so when they are not the dates entered', () => {
         const holding = {
             SubscriptionID: 's1',
             SubscriptionNumber: 'SUB-0001',
@@ -122,17 +122,41 @@ describe('term end on a subscription line', () => {
             LatestTermEnd: d('2027-09-30'),
         } as MJOExistingHolding;
         expect(editor().HoldingExtendLineText(line('p-member', '2026-10-01'), holding)).toEqual({
-            Choice: 'Add as next term (starts 2027-10-01, ends 2028-09-30)',
-            Hint: 'Confirm adds a term to SUB-0001, starting the day after its coverage ends and ending 2028-09-30.',
+            Choice: 'Renew SUB-0001 (2027-10-01 to 2028-09-30)',
+            Hint:
+                "Confirm adds this line to SUB-0001 as its next term, at this line's price. It will run 2027-10-01 to " +
+                '2028-09-30, not 2026-10-01 to 2027-09-30 as entered, because a new term starts the day after the current one ends.',
         });
     });
 
-    it('keeps the plain next-term text when the holding has no coverage end to count from', () => {
+    it('gives no warning when the entered dates are the ones a renewal gives', () => {
+        const holding = {
+            SubscriptionID: 's1',
+            SubscriptionNumber: 'SUB-0001',
+            Status: 'Active',
+            LatestTermEnd: d('2027-09-30'),
+        } as MJOExistingHolding;
+        expect(editor().HoldingExtendLineText(line('p-member', '2027-10-01'), holding)).toEqual({
+            Choice: 'Renew SUB-0001 (2027-10-01 to 2028-09-30)',
+            Hint: "Confirm adds this line to SUB-0001 as its next term, at this line's price.",
+        });
+    });
+
+    it('shows the line\'s own dates on the "Create new subscription" choice', () => {
+        expect(editor().HoldingNewSubscriptionText(line('p-member', '2026-10-01'))).toBe(
+            'Create new subscription (2026-10-01 to 2027-09-30)',
+        );
+        expect(editor().HoldingNewSubscriptionText(line('p-member', '2026-10-01', '2027-03-31'))).toBe(
+            'Create new subscription (2026-10-01 to 2027-03-31)',
+        );
+    });
+
+    it('keeps the plain renew text when the holding has no coverage end to count from', () => {
         const holding = { SubscriptionID: 's1', SubscriptionNumber: 'SUB-0001', Status: 'Active', LatestTermEnd: null } as MJOExistingHolding;
-        // No continuation date means no end either, so the text is the plain next-term text.
+        // No continuation date means no dates to show, so the text is the plain one.
         expect(editor().HoldingExtendLineText(line('p-member', '2026-10-01'), holding)).toEqual({
-            Choice: 'Add as next term',
-            Hint: 'Confirm adds a term to SUB-0001, starting the day after its coverage ends.',
+            Choice: 'Renew SUB-0001',
+            Hint: "Confirm adds this line to SUB-0001 as its next term, at this line's price.",
         });
     });
 
