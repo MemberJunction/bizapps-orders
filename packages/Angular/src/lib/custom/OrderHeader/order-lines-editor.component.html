@@ -312,12 +312,13 @@
 
                 <!-- The customer already holds this product (golive #299): ask whether this line
                      extends that subscription or starts another, instead of letting the type's
-                     rule decide silently at confirm. -->
+                     rule decide silently at confirm. Worded as a question, with the dates each
+                     answer gives on its button (golive #480). -->
                 @if (ExistingHoldingFor(line); as holding) {
                     <div class="mjo-ol-holding" role="group" [attr.aria-label]="'Existing subscription ' + holding.SubscriptionNumber">
                         <span class="mjo-ol-holding__text">
-                            The customer already holds {{ holding.SubscriptionNumber }} for this product
-                            @if (HoldingCoverageEnd(holding)) { (covered through {{ HoldingCoverageEnd(holding) }}) }.
+                            This customer already has this product on {{ holding.SubscriptionNumber }}@if (HoldingCoverageEnd(holding)) {, which runs through {{ HoldingCoverageEnd(holding) }}}.
+                            Is this line a renewal of that subscription, or a new one?
                         </span>
                         @if (CanEditServicePeriod()) {
                             <div class="mjo-ol-holding__choices">
@@ -335,18 +336,19 @@
                                     [class.is-selected]="line.SubscriptionAction === 'CreateNew'"
                                     [attr.aria-pressed]="line.SubscriptionAction === 'CreateNew'"
                                     (click)="SetSubscriptionAction(line, 'CreateNew')">
-                                    New subscription (keeps this line's dates)
+                                    {{ HoldingNewSubscriptionText(line) }}
                                 </button>
                             </div>
                         }
                         <span class="mjo-ol-term__hint" [class.is-error]="!line.SubscriptionAction">
                             @if (line.SubscriptionAction === 'CreateNew') {
-                                Confirm starts a separate subscription on this line's service period.
+                                Confirm creates a new subscription for this customer, separate from
+                                {{ holding.SubscriptionNumber }}.
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
                                 {{ HoldingExtendLineText(line, holding).Hint }}
                             } @else {
-                                Not chosen. The subscription type's rule will decide at confirm, and it may move this
-                                line's dates.
+                                Not chosen. If you confirm without choosing, the subscription type's default
+                                applies, and it may change this line's dates.
                             }
                         </span>
                     </div>

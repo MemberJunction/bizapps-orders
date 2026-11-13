@@ -631,20 +631,50 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     }
 
     /**
-     * The extend choice's text for one line: {@link HoldingExtendText}, plus the end an "Add as next
-     * term" choice would give this line (golive #338). Only the next-term outcome takes the line's
-     * dates; a reactivation or a new subscription runs on the line's own dates.
+     * The extend choice's text for one line: {@link HoldingExtendText}, with the dates a renewal would
+     * give this line (golive #338, #480), and a warning when those are not the dates the line states.
+     * Only the next-term outcome takes the holding's dates; a reactivation or a new subscription runs
+     * on the line's own dates.
      */
     public HoldingExtendLineText(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): ExtendChoiceText {
         const text = this.HoldingExtendText(holding);
         const purchaseDay = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         if (ExtendOutcomeFor(holding, purchaseDay).Kind !== 'NextTerm') return text;
+        const start = this.HoldingContinuationStart(holding);
         const end = this.HoldingContinuationEnd(line, holding);
-        if (!end) return text;
+        if (!start || !end) return text;
+        const own = this.ownTermDates(line);
+        // "As entered" is only true of a start somebody typed; a start the order date supplies was not.
+        const moved = !!line.ServicePeriodStart && !!own.Start && !!own.End && (own.Start !== start || own.End !== end);
         return {
-            Choice: text.Choice.endsWith(')') ? `${text.Choice.slice(0, -1)}, ends ${end})` : `${text.Choice} (ends ${end})`,
-            Hint: text.Hint.replace(/\.$/, ` and ending ${end}.`),
+            Choice: `Renew ${holding.SubscriptionNumber} (${start} to ${end})`,
+            Hint: moved
+                ? `${text.Hint} It will run ${start} to ${end}, not ${own.Start} to ${own.End} as entered, ` +
+                  `because a new term starts the day after the current one ends.`
+                : text.Hint,
         };
+    }
+
+    /**
+     * The "new subscription" choice's label, with the dates that subscription would run: the line's
+     * own (golive #480), so the two choices can be compared.
+     */
+    public HoldingNewSubscriptionText(line: mjBizAppsOrdersOrderLineEntity): string {
+        const own = this.ownTermDates(line);
+        return own.Start && own.End
+            ? `Create new subscription (${own.Start} to ${own.End})`
+            : `Create new subscription (keeps this line's dates)`;
+    }
+
+    /**
+     * The dates the line has when no existing coverage moves them: its stated or derived start, and
+     * its stated end or one type term from that start. What a separate subscription would run on.
+     */
+    private ownTermDates(line: mjBizAppsOrdersOrderLineEntity): { Start: string; End: string } {
+        const start = this.intendedTermStart(line);
+        const rules = this.termRules(line);
+        const end = line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : start && rules ? DefaultTermEnd(rules, start, false) : null;
+        return { Start: this.dateInputValue(start), End: this.dateInputValue(end) };
     }
 
     /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */
@@ -747,7 +777,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     }
 
     /**
-     * The end an "Add as next term" choice would give this line: its stated length kept from the
+     * The end a "Renew" choice would give this line: its stated length kept from the
      * continuation date, or one type term from it.
      */
     public HoldingContinuationEnd(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): string {
