@@ -1,5 +1,13 @@
 # @mj-biz-apps/orders-ng
 
+## 5.50.1
+
+### Patch Changes
+
+- c8eedb2: A renewal takes its annual increase when the expiring term is not the first term its order line bought (golive #478). The anniversary test now measures from the start of the earliest term that line bought, where its price began, instead of from the expiring term's start. A 13-month line booked as a year and a remainder, or an annual line with a one-day last term, used to renew flat because the last term already started on the anniversary. A line that bought one term renews as before: annual on every renewal, quarterly and monthly once a year.
+- Updated dependencies [c8eedb2]
+  - @mj-biz-apps/orders-entities@5.50.1
+
 ## 5.50.0
 
 ### Minor Changes
@@ -1176,8 +1184,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                      The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                      "FK_EntityFieldValue_EntityField"
+                                                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                        "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.
