@@ -1,9 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { RegisterOrderLineEditVeto } from '@mj-biz-apps/orders-entities';
 import { OrderEntityServer } from '../OrderEntityServer.js';
 import { OrderLineEntityServer } from '../OrderLineEntityServer.js';
+
+// A removed line is deleted as the system user (golive #461); the unit tests have no user cache.
+vi.mock('@memberjunction/generic-database-provider', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@memberjunction/generic-database-provider')>();
+    return { ...actual, UserCache: { Instance: { GetSystemUser: () => ({ ID: 'system' }) } } };
+});
 
 /**
  * THE WHOLE-ORDER PATH IS NOT ENTITLED TO SKIP AN EXTERNAL FREEZE (golive#206 item 1, review 2).

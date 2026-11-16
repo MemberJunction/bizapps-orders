@@ -24,6 +24,7 @@ import { PartyFieldComponent, SellingCompanyFieldComponent } from '@mj-biz-apps/
 // Custom Form Components
 import { BizAppsProductSaveGuardFormComponent, LoadProductSaveGuardFormComponent } from './Product/product-save-guard-form.component';
 import { BizAppsProductPricingWidgetComponent } from './Product/widgets/product-pricing-widget.component';
+import { MJOCurrencyInputDirective } from './currency-input.directive';
 import { BizAppsProductPromotionsWidgetComponent } from './Product/widgets/product-promotions-widget.component';
 import { BizAppsProductAccountingWidgetComponent } from './Product/widgets/product-accounting-widget.component';
 import { BizAppsProductGLLinksComponent } from './Product/widgets/product-gl-links.component';
@@ -40,6 +41,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
 
 @NgModule({
     declarations: [
+        MJOCurrencyInputDirective,
         BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,
@@ -75,6 +77,7 @@ import { BizAppsEventOrderLineFormComponent, LoadEventOrderLineFormComponent } f
         PartyFieldComponent,
     ],
     exports: [
+        MJOCurrencyInputDirective,
         BizAppsProductSaveGuardFormComponent,
         BizAppsProductPricingWidgetComponent,
         BizAppsProductPromotionsWidgetComponent,

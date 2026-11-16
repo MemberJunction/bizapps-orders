@@ -94,5 +94,25 @@
     "primaryKey": {
       "ID": "95C1EB47-69B0-49AB-A007-FC035EB5CB86"
     }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Order.Reverse",
+      "RoleID": "@lookup:MJ: Roles.Name=Finance",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "123FEF5B-7669-43A0-BDD0-0E51B0AA4C44"
+    }
+  },
+  {
+    "fields": {
+      "AuthorizationID": "@lookup:MJ: Authorizations.Name=MJ.BizApps.Orders.Order.Reverse",
+      "RoleID": "@lookup:MJ: Roles.Name=Developer",
+      "Type": "Allow"
+    },
+    "primaryKey": {
+      "ID": "371E0243-B1B6-4C32-8561-011DC1504328"
+    }
   }
 ]

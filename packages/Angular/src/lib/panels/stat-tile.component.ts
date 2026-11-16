@@ -51,16 +51,52 @@ export interface MJOBarRow {
                     <i [class]="Icon" aria-hidden="true"></i>
                 }
                 {{ Label }}
+                @if (Amount && Detail) {
+                    <span class="mjo-stat__caption">{{ Detail }}</span>
+                }
             </span>
-            <span class="v">{{ Value }}</span>
-            @if (Detail) {
-                <span class="d">{{ Detail }}</span>
+            @if (Amount) {
+                <span class="mjo-stat__row">
+                    <span class="v">{{ Value }}</span>
+                    <span class="mjo-stat__amount mj-num">{{ Amount }}</span>
+                </span>
+            } @else {
+                <span class="v">{{ Value }}</span>
+                @if (Detail) {
+                    <span class="d">{{ Detail }}</span>
+                }
             }
             <ng-content></ng-content>
         </div>
     `,
     styles: [
         `
+            /* With an Amount: the caption sits on the label row, right-aligned, and the count and
+               the money share the next row, the money a step below the count. */
+            .mjo-stat__caption {
+                margin-left: auto;
+                font-size: 11.5px;
+                font-weight: 400;
+                letter-spacing: 0;
+                text-transform: none;
+                color: var(--mj-text-muted);
+                white-space: nowrap;
+            }
+            .mjo-stat__row {
+                display: flex;
+                align-items: baseline;
+                justify-content: space-between;
+                gap: var(--mj-space-3);
+            }
+            .mjo-stat__amount {
+                font-size: 20px;
+                font-weight: var(--mj-font-bold, 700);
+                letter-spacing: -0.01em;
+                line-height: 1.2;
+                color: var(--mj-text-primary);
+                font-variant-numeric: tabular-nums;
+                white-space: nowrap;
+            }
             .mjo-stat--clickable {
                 cursor: pointer;
             }
@@ -83,6 +119,9 @@ export class MJOStatTileComponent {
 
     /** One line of context under it. */
     @Input() Detail: string | null = null;
+
+    /** A money figure beside the value, nearly as large: what the count is worth. With it, `Detail` moves up beside the label. */
+    @Input() Amount: string | null = null;
 
     @Input() Icon: string | null = null;
 
