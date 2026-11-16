@@ -1,5 +1,5 @@
 -- =============================================================================
--- V202611081200 — OrderHeader and OrderHeaderPaymentSchedule delete guards
+-- V202611162000 — OrderHeader and OrderHeaderPaymentSchedule delete guards
 -- =============================================================================
 -- 1. trg_OrderHeader_ImmutableAfterConfirm becomes AFTER UPDATE, DELETE and
 --    adds 51019: a Confirmed order header cannot be deleted. Draft, Quoted and

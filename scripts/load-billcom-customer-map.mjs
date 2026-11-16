@@ -11,7 +11,7 @@
  *   records for review.
  *
  * INPUT
- *   Reads a JSON or CSV export of Bill.com customers (`--customers <file>`) together with the target
+ *   Reads a JSON export of Bill.com customers (`--customers <file>`: an array, or `{ records: [...] }`) with the target
  *   `PaymentProviderID` (`--provider <uuid>`), and matches each active Bill.com customer against
  *   Organizations and People by:
  *     1. Exact `accountNumber` = Party `ID`
@@ -19,14 +19,18 @@
  *     3. Normalized `name` (exact unique match)
  *
  * SAFETY
- *   - Dry-run by default: prints a JSON/table reconciliation report of `Matched`, `AlreadyMapped`,
- *     `Ambiguous`, and `Unmatched` records without writing anything.
+ *   - Dry-run by default (or `--dry-run`): prints a JSON reconciliation report of `Matched`,
+ *     `AlreadyMapped`, `Ambiguous`, and `Unmatched` records without writing anything.
+ *   - `--apply` with `--dry-run` is refused, as is any flag the script does not know, so a typo
+ *     never turns a dry run into a write.
  *   - Pass `--apply` to insert the unambiguous `Matched` rows into `[__mj_BizAppsOrders].[ExternalCustomer]`
  *     inside a single transaction, skipping any party that already has a mapping for that provider.
  *
  * USAGE
  *   DB_HOST=... DB_PORT=1433 DB_DATABASE=... DB_USERNAME=... DB_PASSWORD=... \
- *     node scripts/load-billcom-customer-map.mjs --provider <PaymentProviderID> --customers <path.json> [--apply]
+ *     node scripts/load-billcom-customer-map.mjs --provider <PaymentProviderID> --customers <path.json> [--dry-run | --apply]
+ *
+ *   `MJ_ORDERS_SCHEMA` / `MJ_COMMON_SCHEMA` override the schema names; each must be a plain identifier.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -177,27 +181,41 @@ export function reconcileBillComCustomerMap({
     return { Matched: matched, AlreadyMapped: alreadyMapped, Ambiguous: ambiguous, Unmatched: unmatched };
 }
 
-function parseArgs(argv) {
-    const out = { apply: false, provider: null, customers: null };
+/** Parse the command line. Throws on an unknown flag, or on `--apply` with `--dry-run`. */
+export function parseArgs(argv) {
+    const out = { apply: false, dryRun: false, provider: null, customers: null };
     for (let i = 0; i < argv.length; i++) {
         const a = argv[i];
         if (a === '--apply') out.apply = true;
+        else if (a === '--dry-run') out.dryRun = true;
         else if (a === '--provider') out.provider = argv[++i] ?? null;
         else if (a === '--customers') out.customers = argv[++i] ?? null;
+        else throw new Error(`Unknown argument: ${a}`);
     }
+    if (out.apply && out.dryRun) throw new Error('--apply and --dry-run cannot be combined.');
     return out;
+}
+
+/**
+ * A schema name from the environment, checked before it is put between brackets in SQL text:
+ * identifiers cannot be bound as parameters, so anything but a plain identifier is refused.
+ */
+export function schemaName(value, fallback) {
+    const name = value || fallback;
+    if (!/^\w+$/.test(name)) throw new Error(`Schema name '${name}' is not a plain identifier.`);
+    return name;
 }
 
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     if (!args.provider || !args.customers) {
-        console.error('Usage: node scripts/load-billcom-customer-map.mjs --provider <PaymentProviderID> --customers <customers.json> [--apply]');
+        console.error('Usage: node scripts/load-billcom-customer-map.mjs --provider <PaymentProviderID> --customers <customers.json> [--dry-run | --apply]');
         process.exit(2);
     }
     const raw = JSON.parse(fs.readFileSync(path.resolve(args.customers), 'utf8'));
     const billComCustomers = Array.isArray(raw) ? raw : Array.isArray(raw.records) ? raw.records : [];
-    const ordersSchema = process.env.MJ_ORDERS_SCHEMA || '__mj_BizAppsOrders';
-    const commonSchema = process.env.MJ_COMMON_SCHEMA || '__mj_BizAppsCommon';
+    const ordersSchema = schemaName(process.env.MJ_ORDERS_SCHEMA, '__mj_BizAppsOrders');
+    const commonSchema = schemaName(process.env.MJ_COMMON_SCHEMA, '__mj_BizAppsCommon');
 
     const pool = await sql.connect({
         server: process.env.DB_HOST || 'localhost',
@@ -260,7 +278,7 @@ async function main() {
                         .input('ProviderID', sql.UniqueIdentifier, args.provider)
                         .input('OrgID', sql.UniqueIdentifier, m.BillToOrganizationID)
                         .input('PersonID', sql.UniqueIdentifier, m.BillToPersonID)
-                        .input('Ref', sql.NVarChar(200), m.ExternalCustomerRef)
+                        .input('Ref', sql.NVarChar(100), m.ExternalCustomerRef)
                         .query(`
                             INSERT INTO [${ordersSchema}].[ExternalCustomer]
                                 (PaymentProviderID, BillToOrganizationID, BillToPersonID, ExternalCustomerRef, LastSyncedAt)

@@ -90,18 +90,36 @@ describe('the booking walk', () => {
         expect(lastMessage).toContain('ConfirmedAt is stamped by the server');
     });
 
-    it('restores ConfirmedAt and ConfirmedByUserID when a booking save rolls back (#969)', () => {
+    it('restores ConfirmedAt and ConfirmedByUserID, value and baseline, when a booking save rolls back (#969)', () => {
         const order = Object.create(OrderEntityServer.prototype) as {
-            Fields: Array<{ Name: string; Value: unknown }>;
-            restoreConfirmationStamp: (at: Date | null, by: string | null) => void;
+            captureConfirmationStamp: () => unknown;
+            restoreConfirmationStamp: (prior: unknown) => void;
         };
-        const fields = [
-            { Name: 'ConfirmedAt', Value: new Date() },
-            { Name: 'ConfirmedByUserID', Value: 'user-1' },
-        ];
+        const field = (Name: string) => {
+            const f = {
+                Name,
+                Value: null as unknown,
+                OldValue: null as unknown,
+                RestoreOldValue(v: unknown) {
+                    f.OldValue = v;
+                },
+            };
+            return f;
+        };
+        const fields = [field('ConfirmedAt'), field('ConfirmedByUserID'), field('Status')];
         Object.defineProperty(order, 'Fields', { value: fields, configurable: true });
-        order.restoreConfirmationStamp(null, null);
-        expect(fields.find((f) => f.Name === 'ConfirmedAt')?.Value).toBeNull();
-        expect(fields.find((f) => f.Name === 'ConfirmedByUserID')?.Value).toBeNull();
+        const prior = order.captureConfirmationStamp();
+
+        // The booking save stamps both and re-baselines them before it throws.
+        for (const f of fields.slice(0, 2)) {
+            f.Value = f.Name === 'ConfirmedAt' ? new Date() : 'user-1';
+            f.OldValue = f.Value;
+        }
+        order.restoreConfirmationStamp(prior);
+
+        for (const f of fields.slice(0, 2)) {
+            expect(f.Value).toBeNull();
+            expect(f.OldValue).toBeNull();
+        }
     });
 });

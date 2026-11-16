@@ -96,7 +96,7 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { EscapeSQLString, IsUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
@@ -312,6 +312,13 @@ interface CreateJournalEntriesResult {
     Success: boolean;
     Results?: Array<{ Success: boolean; JournalEntryID?: string; EntryNumber?: string }>;
     Errors?: Array<{ Code: string; Message: string; DraftIndex?: number; LineIndex?: number }>;
+}
+
+/** One confirmation-stamp field's value and baseline, captured before a booking save. */
+interface ConfirmationStampState {
+    Name: string;
+    Value: unknown;
+    OldValue: unknown;
 }
 
 @RegisterClass(BaseEntity, ORDER_ENTITY)
@@ -619,18 +626,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async checkEventAttendees(): Promise<string[]> {
         if (!this.willBookOnThisSave() || this.Lines.Count === 0) return [];
-        return this.missingAttendeeMessages();
-    }
-
-    /** Missing-attendee refusals for this order's current lines, without requiring `willBookOnThisSave()`. */
-    private async missingAttendeeMessages(): Promise<string[]> {
-        if (this.Lines.Count === 0) return [];
         const provider = this.ProviderToUse as unknown as IRunViewProvider;
         const lines = this.Lines.Items;
-        const productIDs = lines.map((l) => l.ProductID).filter((id): id is string => IsUUID(id));
-        if (productIDs.length === 0) return [];
 
-        const requiring = await LoadProductsRequiringAttendees(productIDs, provider, this.ContextCurrentUser);
+        const requiring = await LoadProductsRequiringAttendees(lines.map((l) => l.ProductID), provider, this.ContextCurrentUser);
         if (requiring.size === 0) return [];
 
         const eventRowInMemory = (line: mjBizAppsOrdersOrderLineEntity): mjBizAppsOrdersEventOrderLineEntity | null => {
@@ -847,8 +846,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // entity object can be re-saved, and a stale latch would make a later ordinary update
         // re-run the booking-only rules. See `bookingInFlight`.
         this.bookingInFlight = booking;
-        const priorConfirmedAt = this.safeFieldValue('ConfirmedAt') as Date | null;
-        const priorConfirmedBy = this.safeFieldValue('ConfirmedByUserID') as string | null;
+        const priorConfirmationStamp = this.captureConfirmationStamp();
 
         try {
             await dbProvider.BeginTransaction();
@@ -1122,7 +1120,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // unresolvable GL account reads as "it just didn't work". The UI, the API and the
             // integration suite all need the reason; the log is not a return value.
             if (booking) {
-                this.restoreConfirmationStamp(priorConfirmedAt, priorConfirmedBy);
+                this.restoreConfirmationStamp(priorConfirmationStamp);
             }
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
@@ -1455,18 +1453,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return true;
     }
 
-    private safeFieldValue(name: string): unknown {
-        if (Array.isArray((this as { Fields?: unknown }).Fields)) {
-            const found = this.Fields.find((f) => f.Name === name);
-            if (found) return found.Value ?? null;
-        }
-        try {
-            return this.GetFieldByName(name)?.Value ?? null;
-        } catch {
-            return Object.getOwnPropertyDescriptor(this, name)?.value ?? null;
-        }
-    }
-
     private safeFieldDirty(name: string): boolean {
         if (Array.isArray((this as { Fields?: unknown }).Fields)) {
             const found = this.Fields.find((f) => f.Name === name);
@@ -1711,21 +1697,23 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /** Restore pre-stamp confirmation fields if the booking save throws and rolls back (#969). */
-    private restoreConfirmationStamp(priorConfirmedAt: Date | null, priorConfirmedBy: string | null): void {
-        if (Array.isArray((this as { Fields?: unknown }).Fields)) {
-            const ca = this.Fields.find((f) => f.Name === 'ConfirmedAt');
-            if (ca) ca.Value = priorConfirmedAt;
-            const cb = this.Fields.find((f) => f.Name === 'ConfirmedByUserID');
-            if (cb) cb.Value = priorConfirmedBy;
-            return;
+    private restoreConfirmationStamp(prior: ConfirmationStampState[]): void {
+        // Value AND OldValue: the booking save may have re-baselined OldValue before it threw, and a
+        // restored field left dirty would make a retry on this object fail the caller-stamp guard.
+        for (const state of prior) {
+            const field = this.Fields.find((f) => f.Name === state.Name);
+            if (!field) continue;
+            field.Value = state.Value;
+            field.RestoreOldValue(state.OldValue);
         }
-        try {
-            this.Set('ConfirmedAt', priorConfirmedAt);
-            this.Set('ConfirmedByUserID', priorConfirmedBy);
-        } catch {
-            Object.defineProperty(this, 'ConfirmedAt', { value: priorConfirmedAt, writable: true, configurable: true });
-            Object.defineProperty(this, 'ConfirmedByUserID', { value: priorConfirmedBy, writable: true, configurable: true });
-        }
+    }
+
+    /** The two stamp fields as they stand before the booking save, for {@link restoreConfirmationStamp}. */
+    private captureConfirmationStamp(): ConfirmationStampState[] {
+        const fields = Array.isArray((this as { Fields?: unknown }).Fields) ? this.Fields : [];
+        return fields
+            .filter((f) => f.Name === 'ConfirmedAt' || f.Name === 'ConfirmedByUserID')
+            .map((f) => ({ Name: f.Name, Value: f.Value, OldValue: f.OldValue }));
     }
 
     /**
@@ -4309,7 +4297,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // link and the service period back to their pre-confirm values.
             const inMemory = this.Lines.Items.find((l) => l !== line && UUIDsEqual(l.ID, line.ID));
             if (inMemory) {
-                MarkAsOrdersOwnWrite(inMemory);
                 inMemory.SubscriptionID = line.SubscriptionID;
                 inMemory.ServicePeriodStart = line.ServicePeriodStart;
                 inMemory.ServicePeriodEnd = line.ServicePeriodEnd;
@@ -4883,10 +4870,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const holder = this.holderFilter(match);
         if (!holder) return null;
         const person = match.PersonID === 'Any' ? null : match.PersonID;
-        return this.loadSubscriptionState(
-            `ProductID='${productID}' AND Status <> 'Migrated' AND (Status <> 'Canceled' OR ProviderSubscriptionID IS NOT NULL) AND ${holder}`,
-            person,
-        );
+        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`, person);
     }
 
     /**

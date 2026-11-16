@@ -531,6 +531,15 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
     /** Poll the rail for payments now, so a payment just made in the rail shows on the order without switching screens. */
     public async CheckPayments(): Promise<void> {
         if (this.Busy || !this.CanCheckPayments) return;
+        // The poll is not scoped to this order, so it asks first, as the invoicing queue does.
+        if (!(await this.confirm.Confirm({
+            title: 'Check the rail for payments now?',
+            message: 'This reads every payment the rail reported since the last poll, for all orders on it, not only this one, and records each cleared one as cash against its order.',
+            detail: 'The scheduled poll would do this on its own at its next run.',
+            type: 'warning',
+            confirmText: 'Check and record',
+            cancelText: 'Not yet',
+        }))) return;
         this.Busy = true;
         this.Notice = null;
         this.cdr.detectChanges();

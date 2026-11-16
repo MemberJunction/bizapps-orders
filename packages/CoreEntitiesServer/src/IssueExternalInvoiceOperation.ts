@@ -512,22 +512,26 @@ export async function IssueOneUnit(
     // 9. Denormalise onto the instalment row (the #239/#242 contract) and, best effort, the header.
     if (row) await stampScheduleRow(provider, user, String(row.ID), { ExternalSystem: rail.Config.TypeCode, ExternalInvoiceRef: ref, SentAt: sentAt });
     await stampHeaderDocumentNumber(provider, user, order, rail.Config.PaymentProviderID, payload.Payload.DocumentNumber);
-    await notifyInvoiceReadyOnRail(
-        provider,
-        user,
-        {
-            OrderHeaderID: order.ID,
-            OrderNumber: order.OrderNumber,
-            CustomerName: String(order.BillToOrganization ?? order.BillToPerson ?? ''),
-            ExternalInvoiceID: externalInvoiceID,
-            ExternalInvoiceRef: ref,
-            DocumentNumber: payload.Payload.DocumentNumber,
-            Amount: payload.Payload.Amount,
-            DueDate: payload.Payload.DueDate,
-            RailName: rail.Config.Name,
-            SentAt: sentAt.toISOString(),
-        },
-    );
+    // The notice and its settings are Bill.com's ("review and send in Bill.com"); another rail sends
+    // its own invoices, so it raises none.
+    if (rail.Config.TypeCode === BILLCOM_RAIL_TYPE_CODE) {
+        await notifyInvoiceReadyOnRail(
+            provider,
+            user,
+            {
+                OrderHeaderID: order.ID,
+                OrderNumber: order.OrderNumber,
+                CustomerName: String(order.BillToOrganization ?? order.BillToPerson ?? ''),
+                ExternalInvoiceID: externalInvoiceID,
+                ExternalInvoiceRef: ref,
+                DocumentNumber: payload.Payload.DocumentNumber,
+                Amount: payload.Payload.Amount,
+                DueDate: payload.Payload.DueDate,
+                RailName: rail.Config.Name,
+                SentAt: sentAt.toISOString(),
+            },
+        );
+    }
 
     return {
         Success: true,
@@ -986,6 +990,12 @@ interface InvoiceReadyNoticeFacts {
     SentAt: string;
 }
 
+/** The provider type the Bill.com rail registers under (`@RegisterClass(BaseInvoiceRail, 'BillCom')`). */
+const BILLCOM_RAIL_TYPE_CODE = 'BillCom';
+
+/** How long the invoice-ready webhook may take before it is abandoned and logged. */
+const INVOICE_READY_WEBHOOK_TIMEOUT_MS = 10_000;
+
 /**
  * Notify finance when an invoice has been created on the external rail so they know it is ready to
  * review/send in Bill.com. Best effort: a notification failure is logged and never rolls back a sent invoice.
@@ -1055,6 +1065,8 @@ async function notifyInvoiceReadyOnRail(
         try {
             const resp = await fetch(webhookUrl, {
                 method: 'POST',
+                // Awaited inline after the invoice is stamped, so a slow endpoint must not hold the send.
+                signal: AbortSignal.timeout(INVOICE_READY_WEBHOOK_TIMEOUT_MS),
                 headers: { 'content-type': 'application/json' },
                 body: JSON.stringify({
                     Event: 'ExternalInvoiceReady',

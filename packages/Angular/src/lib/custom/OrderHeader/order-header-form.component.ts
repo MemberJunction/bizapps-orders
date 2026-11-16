@@ -6,7 +6,7 @@ import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { ExportDialogConfig } from '@memberjunction/ng-export-service';
-import type { TabConfig } from '@memberjunction/ng-ui-components';
+import { MJConfirmService, type TabConfig } from '@memberjunction/ng-ui-components';
 import {
     AsDateValue,
     CanOfferConfirm,
@@ -195,6 +195,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     protected navigationService = inject(NavigationService, { optional: true });
+    private readonly confirmService = inject(MJConfirmService);
 
     override OnFormNavigate(event: FormNavigationEvent): void {
         this.Navigate.emit(event);
@@ -424,22 +425,6 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         super.ngOnDestroy();
     }
 
-    /**
-     * Surface entity validation and server save refusals in the form's StatusError banner (#393).
-     * BaseFormComponent shows a generic toast on Save failure; reading `record.LatestResult.CompleteMessage`
-     * puts the specific validation or server refusal sentence on the order form itself.
-     */
-    override async SaveRecord(StopEditModeAfterSave: boolean): Promise<boolean> {
-        this.StatusError = null;
-        const saved = await super.SaveRecord(StopEditModeAfterSave);
-        if (!saved) {
-            this.StatusError =
-                this.record?.LatestResult?.CompleteMessage?.trim() || 'The order could not be saved.';
-            this.cdr?.detectChanges();
-        }
-        return saved;
-    }
-
     /** True when this booked order has an external invoice document number and an open balance waiting on payment. */
     public get ShowCheckExternalPayments(): boolean {
         return (
@@ -453,6 +438,15 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     /** Run the external payment poll from the order's Payment tab and refresh the order if money arrived. */
     public async CheckExternalPaymentsNow(): Promise<void> {
         if (!this.record?.IsSaved || this.CheckingExternalPayments) return;
+        // The poll is not scoped to this order, so it asks first, as the invoicing queue does.
+        if (!(await this.confirmService.Confirm({
+                title: 'Check the rail for payments now?',
+                message: 'This reads every payment the rail reported since the last poll, for all orders on it, not only this one, and records each cleared one as cash against its order.',
+                detail: 'The scheduled poll would do this on its own at its next run.',
+                type: 'warning',
+                confirmText: 'Check and record',
+                cancelText: 'Not yet',
+            }))) return;
         this.CheckingExternalPayments = true;
         this.ExternalPaymentNotice = null;
         this.StatusError = null;

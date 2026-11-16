@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { ValidationResult, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import {
     ORDER_HEADER_MONEY_FIELDS,
-    ORDER_LINE_MONEY_FIELDS,
     IsLineOnUndecidedBand,
     IsProductReplacedWithoutPriceEdit,
     MarkLinePriceStated,
@@ -17,15 +18,11 @@ import { PreviewPriceOperation } from '../PreviewPriceOperation.js';
 import { SpawnRenewalsOperation } from '../SpawnRenewalsOperation.js';
 import { DetectOverlappingSubscriptionsOperation } from '../DetectOverlappingSubscriptionsOperation.js';
 import { ReconcilePaymentProviderChargesOperation } from '../ReconcilePaymentProviderChargesOperation.js';
-import { MergeLineDimensions } from '../LineDimensionMerge.js';
-import { SubscriptionViewParams } from '../../../Angular/src/lib/data/orders-queries.js';
 
 const USER = { ID: '11111111-2222-4333-8444-555555555555', Name: 'Test User' } as unknown as UserInfo;
 
 describe('Group 01 — Order booking & line money guards', () => {
-    it('includes ServicePeriodStart and ServicePeriodEnd in ORDER_LINE_MONEY_FIELDS and ConfirmedByUserID in ORDER_HEADER_MONEY_FIELDS (#975, #915)', () => {
-        expect(ORDER_LINE_MONEY_FIELDS).toContain('ServicePeriodStart');
-        expect(ORDER_LINE_MONEY_FIELDS).toContain('ServicePeriodEnd');
+    it('includes ConfirmedByUserID in ORDER_HEADER_MONEY_FIELDS (#915)', () => {
         expect(ORDER_HEADER_MONEY_FIELDS).toContain('ConfirmedByUserID');
     });
 
@@ -203,65 +200,104 @@ describe('Group 04 — Bill.com application settings (#741, #970, #755)', () => 
     });
 });
 
-describe('Group 05 — Subscription placement & Order Subscriptions tab (#384)', () => {
-    it('findExistingSubscription excludes non-gateway Canceled and Migrated subscriptions while preserving gateway-billed Canceled (#384)', async () => {
-        const capturedFilters: string[] = [];
-        const order = Object.create(OrderEntityServer.prototype) as {
-            findExistingSubscription: (
-                productID: string,
-                match: { OrganizationID: string | null; PersonID: string | null },
-            ) => Promise<unknown>;
+describe('Group 05 — the guards are wired into Validate and Save', () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    /** What the shared entity's own checks answer here: nothing wrong. */
+    const passing = (): ValidationResult => Object.assign(new ValidationResult(), { Success: true });
+
+    /** A saved line on a Confirmed order with no journal entry, Quantity dirty; every other guard stubbed. */
+    function zeroLine(flags: { BypassBookedCheck?: boolean; BypassExternalEditVeto?: boolean } = {}) {
+        const line = Object.create(OrderLineEntityServer.prototype) as Record<string, unknown> & {
+            ValidateAsync: () => Promise<ValidationResult>;
         };
-        Object.defineProperty(order, 'ContextCurrentUser', { value: USER, configurable: true });
-        Object.defineProperty(order, 'ProviderToUse', {
-            value: {
-                RunView: async (params: { ExtraFilter?: string }) => {
-                    if (params.ExtraFilter) capturedFilters.push(params.ExtraFilter);
-                    return { Success: true, Results: [] };
-                },
-            } as unknown as IMetadataProvider,
-            configurable: true,
-        });
-
-        await order.findExistingSubscription('aaaaaaaa-1111-4222-8333-444444444444', {
-            OrganizationID: 'bbbbbbbb-1111-4222-8333-444444444444',
-            PersonID: null,
-        });
-
-        expect(capturedFilters).toHaveLength(1);
-        expect(capturedFilters[0]).toContain("Status <> 'Migrated'");
-        expect(capturedFilters[0]).toContain("(Status <> 'Canceled' OR ProviderSubscriptionID IS NOT NULL)");
-    });
-
-    it('SubscriptionViewParams includes subscriptions whose terms reference the order lines (#384)', () => {
-        const lineID = 'cccccccc-1111-4222-8333-444444444444';
-        const params = SubscriptionViewParams([lineID]);
-        expect(params).not.toBeNull();
-        expect(params?.ExtraFilter).toContain(`OrderLineID IN ('${lineID}')`);
-        expect(params?.ExtraFilter).toContain(
-            `OR ID IN (SELECT SubscriptionID FROM [__mj_BizAppsOrders].[vwSubscriptionTerms] WHERE OrderLineID IN ('${lineID}'))`,
-        );
-    });
-});
-
-describe('Group 06 — Payment allocation line dimension merging (#383)', () => {
-    it('merges OrderLine.DimensionID/DimensionValueID with OrderLineDimension rows without duplicating axes (#383)', () => {
-        const ventureDim = '11111111-aaaa-4bbb-8ccc-111111111111';
-        const ventureVal = '22222222-aaaa-4bbb-8ccc-222222222222';
-        const productDim = '33333333-aaaa-4bbb-8ccc-333333333333';
-        const ventureValStored = '44444444-aaaa-4bbb-8ccc-444444444444';
-        const productValStored = '55555555-aaaa-4bbb-8ccc-555555555555';
-
-        const storedDims = [
-            { DimensionID: ventureDim, DimensionValueID: ventureValStored },
-            { DimensionID: productDim, DimensionValueID: productValStored },
-        ];
-
-        const merged = MergeLineDimensions({ DimensionID: ventureDim, DimensionValueID: ventureVal }, storedDims);
-
-        expect(merged).toEqual([
-            { DimensionID: productDim, DimensionValueID: productValStored },
-            { DimensionID: ventureDim, DimensionValueID: ventureVal },
+        const define = (name: string, value: unknown) => Object.defineProperty(line, name, { value, configurable: true, writable: true });
+        define('IsSaved', true);
+        define('Quantity', 2);
+        define('ReversesOrderLineID', null);
+        define('DimensionID', null);
+        define('DimensionValueID', null);
+        define('BypassBookedCheck', flags.BypassBookedCheck ?? false);
+        define('BypassExternalEditVeto', flags.BypassExternalEditVeto ?? false);
+        define('Fields', [
+            { Name: 'OrderHeaderID', Value: 'aaaaaaaa-2222-4333-8444-555555555555', Dirty: false },
+            { Name: 'JournalEntryID', Value: null, Dirty: false },
+            { Name: 'Quantity', Value: 2, Dirty: true },
         ]);
+        for (const guard of ['refuseUnexplainedOverride', 'refuseParentNotFromExpansion', 'refuseNewLineOnBookedOrder', 'refuseVetoedEdit']) {
+            define(guard, () => undefined);
+        }
+        define('storedOrderStatus', async () => 'Confirmed');
+        // The shared entity's own checks pass; what is under test is this class's ValidateAsync.
+        vi.spyOn(Object.getPrototypeOf(OrderLineEntityServer.prototype), 'ValidateAsync').mockImplementation(async () => passing());
+        return line;
+    }
+
+    it('a standalone save of a $0 booked line is refused through ValidateAsync (#916)', async () => {
+        const result = await zeroLine().ValidateAsync();
+        expect(result.Success).toBe(false);
+        expect(result.Errors.map((e) => e.Message).join(' ')).toContain('This line is booked');
+    });
+
+    it("Orders' own-write flag does not switch the $0-line guard off; only the booking graph save does", async () => {
+        expect((await zeroLine({ BypassExternalEditVeto: true }).ValidateAsync()).Success).toBe(false);
+        const graph = await zeroLine({ BypassBookedCheck: true }).ValidateAsync();
+        expect(graph.Errors.map((e) => e.Message)).toEqual([]);
+        expect(graph.Success).toBe(true);
+    });
+
+    it('a caller-set ConfirmedAt is refused through the header Validate (#915)', () => {
+        const order = Object.create(OrderEntityServer.prototype) as Record<string, unknown> & { Validate: () => ValidationResult };
+        const define = (name: string, value: unknown) => Object.defineProperty(order, name, { value, configurable: true, writable: true });
+        define('InitialPaymentDetailID_Object', null);
+        define('confirmationStamped', false);
+        define('MoneyLocked', false);
+        define('FieldIsDirty', (name: string) => name === 'ConfirmedAt');
+        define('GetFieldByName', () => ({ Value: new Date() }));
+        for (const guard of ['dropSavePopulatedFieldErrors', 'refuseBookedMoneyEdits', 'refuseBookedAddressEdits', 'refuseBookedPaymentTermsEdit']) {
+            define(guard, () => undefined);
+        }
+        define('statusTransitionVerdict', () => ({ Allowed: true }));
+        define('willBookOnThisSave', () => false);
+        // Walk up to the generated class and let its own field checks pass.
+        let generated = Object.getPrototypeOf(OrderEntityServer.prototype);
+        while (generated && !Object.prototype.hasOwnProperty.call(generated, 'refuseCallerConfirmationStamp')) generated = Object.getPrototypeOf(generated);
+        vi.spyOn(Object.getPrototypeOf(generated), 'Validate').mockImplementation(() => passing());
+
+        const result = order.Validate();
+        expect(result.Success).toBe(false);
+        expect(result.Errors.map((e) => e.Message).join(' ')).toContain('ConfirmedAt is stamped by the server');
+    });
+
+    it('a failed booking save puts the confirmation stamp back (#969)', () => {
+        // The rollback catch is deep inside the booking transaction; the source is the stable thing to pin.
+        const source = readFileSync(join(import.meta.dirname, '..', 'OrderEntityServer.ts'), 'utf8');
+        expect(source).toMatch(/catch \(err\) \{[\s\S]{0,1500}?if \(booking\) \{\s*this\.restoreConfirmationStamp\(priorConfirmationStamp\);/);
+    });
+
+    it('a line saved as the parent leg of an IS-A leaf save does not save its extension again', async () => {
+        const line = Object.create(OrderLineEntityServer.prototype) as { Save: (o?: unknown) => Promise<boolean>; persistExtension: () => Promise<void>; PrepareForSave: () => Promise<void> };
+        line.PrepareForSave = async () => undefined;
+        const persist = vi.fn(async () => undefined);
+        line.persistExtension = persist;
+        vi.spyOn(Object.getPrototypeOf(OrderLineEntityServer.prototype), 'Save').mockResolvedValue(true);
+
+        await line.Save({ IsParentEntitySave: true });
+        expect(persist).not.toHaveBeenCalled();
+        await line.Save({});
+        expect(persist).toHaveBeenCalledTimes(1);
+    });
+
+    it('an IS-A extension whose parent is this line is not re-loaded from itself', async () => {
+        const line = Object.create(OrderLineEntityServer.prototype) as Record<string, unknown> & { persistExtension: () => Promise<void> };
+        const loadFromData = vi.fn(async () => true);
+        const ext = { ISAParent: line, IsSaved: true, Dirty: false, Get: () => 'L1', Set: () => undefined, EntityInfo: { ParentEntityFieldNames: new Set<string>() }, Fields: [] };
+        Object.defineProperty(line, 'Extension', { value: { IsConfigured: true, EnsureEntity: async () => ext }, configurable: true });
+        Object.defineProperty(line, 'ID', { value: 'L1', configurable: true });
+        Object.defineProperty(line, 'LoadFromData', { value: loadFromData, configurable: true });
+        Object.defineProperty(line, 'GetAll', { value: () => ({}), configurable: true });
+
+        await line.persistExtension();
+        expect(loadFromData).not.toHaveBeenCalled();
     });
 });

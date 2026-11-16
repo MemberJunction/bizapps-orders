@@ -294,15 +294,6 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return created;
     }
 
-    public override Revert(): boolean {
-        const ok = super.Revert();
-        for (const line of this.Lines.Items) {
-            line.Revert();
-            line.ISAChild?.Revert();
-        }
-        return ok;
-    }
-
     public override Validate(): ValidationResult {
         if (this.InitialPaymentDetailID_Object) {
             if (this.isInitialPaymentDetailEmpty(this.InitialPaymentDetailID_Object)) {

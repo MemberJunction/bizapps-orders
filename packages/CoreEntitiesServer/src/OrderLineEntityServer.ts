@@ -333,7 +333,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
     }
 
     /** Set by OrderEntityServer when saving lines as part of an order graph save/booking. */
-    public override BypassBookedCheck = false;
+    public BypassBookedCheck = false;
 
     /**
      * Set by Orders' OWN writers, so an external freeze does not stop Orders' bookkeeping.
@@ -361,7 +361,7 @@ export class OrderLineEntityServer extends OrderLineEntity {
      * this and not that. One flag meaning two rules is a flag that gets set for one reason and
      * silently changes the other.
      */
-    public override BypassExternalEditVeto = false;
+    public BypassExternalEditVeto = false;
 
     /**
      * A new line saved on its own (not through the order graph) still has to
@@ -390,13 +390,21 @@ export class OrderLineEntityServer extends OrderLineEntity {
      * to a booked order once the parent is Confirmed. `OrderLineEntity.refuseBookedMoneyEdits`
      * checks `JournalEntryID` because it has no database access; this checks the parent's stored
      * status when a standalone line save changes a booked field without a journal entry.
+     *
+     * Only the booking graph save (`BypassBookedCheck`) is exempt. `BypassExternalEditVeto` is not:
+     * that flag lets Orders' own writers past an outside app's freeze, and one flag meaning two rules
+     * would let a line marked for one reason change booked money for the other. None of Orders' own
+     * writers changes a booked line's money. The service period is left to trigger 51003, which knows
+     * the line's term windows that Orders' term amendments re-date it to.
      */
     private async refuseMoneyEditOnBookedOrder(result: ValidationResult): Promise<void> {
-        if (!this.IsSaved || this.BypassBookedCheck || this.BypassExternalEditVeto) {
+        if (!this.IsSaved || this.BypassBookedCheck) {
             return;
         }
         const fields = Array.isArray((this as { Fields?: unknown }).Fields) ? this.Fields : [];
-        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => fields.some((f) => f.Name === name && f.Dirty === true));
+        const dirty = ORDER_LINE_MONEY_FIELDS.filter(
+            (name) => !SERVICE_PERIOD_FIELDS.includes(name) && fields.some((f) => f.Name === name && f.Dirty === true),
+        );
         if (dirty.length === 0) return;
 
         const fieldVal = (name: string): unknown => fields.find((f) => f.Name === name)?.Value;

@@ -249,9 +249,11 @@ interface HandledDelivery {
 
 /**
  * Run `work` on an isolated provider instance when one can be created, falling back to `shared`
- * only if `CreateIndependentInstance` itself fails before `work` begins.
+ * only if `CreateIndependentInstance` itself fails before `work` begins. A failure from inside
+ * `work` is rethrown, never retried on `shared`: the work stamps the idempotency key, so running it
+ * twice would apply the event twice. Exported for its unit test only.
  */
-async function withIsolatedOrSharedProvider<T>(
+export async function withIsolatedOrSharedProvider<T>(
     work: (own: IMetadataProvider) => Promise<T>,
     shared: IMetadataProvider,
 ): Promise<T> {

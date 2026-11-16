@@ -20,8 +20,6 @@ export const ORDER_LINE_MONEY_FIELDS = [
     'ChargeAmount',
     'LineTotalNet',
     'LineTotalGross',
-    'ServicePeriodStart',
-    'ServicePeriodEnd',
 ] as const;
 
 /**

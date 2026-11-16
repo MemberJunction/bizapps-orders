@@ -16,7 +16,6 @@
  */
 import { IMetadataProvider, IRunViewProvider, RunView, UserInfo } from '@memberjunction/core';
 import { LoadOrdersEngine, OrdersEngine } from '@mj-biz-apps/orders-entities';
-import { MergeLineDimensions } from './LineDimensionMerge.js';
 import type { GiftCardSaleLine, OrderLineShare } from './PaymentAllocationFactory.js';
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 import { CompanySlices, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
@@ -32,8 +31,6 @@ interface OrderLineRow {
     CompanyID: string;
     ProductID: string;
     LineTotalGross: number;
-    DimensionID?: string | null;
-    DimensionValueID?: string | null;
 }
 
 interface OrderLineDimensionRow {
@@ -50,13 +47,8 @@ interface OrderLineDimensionRow {
  * clear a different amount than was ever receivable.
  *
  * The tags are read from the same `OrderLineDimension` rows `OrderJournalEntryFactory` stamps onto
- * the booking entry (D31), merged with the line's own `DimensionID`/`DimensionValueID` columns the
- * same way booking merges them, so the credit that clears a receivable carries what the debit that
+ * the booking entry (D31), so the credit that clears a receivable carries what the debit that
  * raised it carried. An order with no tags simply comes back with none.
- *
- * NO `DimensionDefault` LOOKUP HERE. Booking does not consult the mapping; it books the rows that
- * `stampLineDimensions` already wrote from it on save. Adding a default here would put an axis on
- * the AR credit that the AR debit never had, and AR by that dimension would stop netting.
  */
 export async function LoadOrderLineShares(
     provider: IRunViewProvider,
@@ -69,7 +61,7 @@ export async function LoadOrderLineShares(
         {
             EntityName: ORDER_LINE_ENTITY,
             ExtraFilter: `OrderHeaderID='${orderID}'`,
-            Fields: ['ID', 'CompanyID', 'ProductID', 'LineTotalGross', 'DimensionID', 'DimensionValueID'],
+            Fields: ['ID', 'CompanyID', 'ProductID', 'LineTotalGross'],
             ResultType: 'simple',
             BypassCache: true,
         },
@@ -93,10 +85,7 @@ export async function LoadOrderLineShares(
     await LoadOrdersEngine(provider as unknown as IMetadataProvider, user);
 
     return rows.map((l) => {
-        const dims = MergeLineDimensions(
-            { DimensionID: l.DimensionID, DimensionValueID: l.DimensionValueID },
-            tags.get(String(l.ID).toLowerCase()) ?? [],
-        );
+        const dims = tags.get(String(l.ID).toLowerCase());
         const product = OrdersEngine.Instance.ProductByID(l.ProductID);
         if (!product) {
             throw new Error(`Order line ${l.ID} references product ${l.ProductID}, which was not found.`);
@@ -110,7 +99,7 @@ export async function LoadOrderLineShares(
                 ProductCategoryID: product.ProductCategoryID ?? null,
                 ProductTypeID: product.ProductTypeID,
             },
-            ...(dims.length ? { Dimensions: dims } : {}),
+            ...(dims?.length ? { Dimensions: dims } : {}),
         };
     });
 }
