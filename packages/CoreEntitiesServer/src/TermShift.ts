@@ -43,7 +43,7 @@ import { EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import type { ApprovalTaskContext } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
+import { MarkAsOrdersOwnWrite, SanctionServicePeriodRedate } from './OrderLineEntityServer.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { BusinessTimeZoneEngine, CalendarDayIn } from '@mj-biz-apps/common-entities';
 import { TermDayEnd, TermDayStart } from './TermGrantWindow.js';
@@ -353,6 +353,8 @@ async function moveLineServicePeriod(checked: CheckedTermShift, ctx: ApprovalTas
     const line = await ctx.Provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
     MarkAsOrdersOwnWrite(line);
     if (!(await line.Load(checked.OrderLineID))) throw new Error(`Order line ${checked.OrderLineID} was not found.`);
+    // The line is booked, so its service period is frozen (golive #391); this amendment is the sanctioned move.
+    SanctionServicePeriodRedate(line);
     line.ServicePeriodStart = checked.NewStartDate;
     line.ServicePeriodEnd = checked.NewEndDate;
     if (!(await line.Save())) {

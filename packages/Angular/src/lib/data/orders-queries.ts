@@ -1599,13 +1599,22 @@ function rollupLabels(
     return { Company, Account, Dimension, DimensionValue };
 }
 
-/** What this order started, as grid params. Null when the order has no lines. */
+/**
+ * What this order started or extended, as grid params. Null when the order has no lines.
+ *
+ * `Subscription.OrderLineID` names only the line that STARTED a subscription. A line that added a
+ * term to one already running (an extension, a renewal, a purchase that continued existing coverage)
+ * is recorded on the term instead, so the order's Subscriptions tab read 0 rows for it (golive #384).
+ * The term's `OrderLineID` is the line that bought it, so both are read.
+ */
 export function SubscriptionViewParams(orderLineIDs: string[]): RunViewParams | null {
     const list = uuidList(orderLineIDs);
     if (!list) return null;
     return {
         EntityName: MJO_ENTITIES.Subscription,
-        ExtraFilter: `OrderLineID IN (${list})`,
+        ExtraFilter:
+            `OrderLineID IN (${list}) OR ID IN ` +
+            `(SELECT SubscriptionID FROM [__mj_BizAppsOrders].[vwSubscriptionTerms] WHERE OrderLineID IN (${list}))`,
         OrderBy: 'StartDate DESC',
         ResultType: 'entity_object',
     };

@@ -201,20 +201,18 @@ describe('a veto that allows is still the one that decides', () => {
     });
 
     /**
-     * ⚠ THIS PINS A GAP, NOT A GUARANTEE, and it is deliberately written to fail if the gap closes.
+     * THE DEAL LOCK IS NOT WHAT FREEZES A BOOKED LINE'S PERIOD, and this pins that it does not try to.
      *
      * The booked bound in this file lives entirely inside the deal lock: it decides whether to SKIP
-     * the veto, so it binds only where the veto would have refused. With an allowing veto a booked
-     * line takes the edit, and trigger 51003 does not cover these two columns either. Measured, not
-     * inferred -- a live probe confirmed an order, loaded the line fresh, registered an allowing
-     * veto, and the save landed with the stored row changed.
-     *
-     * That is pre-existing on `next` and is not this change's doing. If a post-confirm freeze is
-     * ever added, this expectation SHOULD go red; flip it to `true` then rather than deleting it.
+     * the veto, so it binds only where the veto would have refused. With an allowing veto the veto
+     * check lets a booked line's dates through. The freeze lives elsewhere (golive #391): the dates
+     * are booked-line fields (`ORDER_LINE_MONEY_FIELDS`, refused in `Validate` once the line carries
+     * its journal entry) and trigger 51003 compares them. `BookedServicePeriod.test.ts` and the
+     * integration checks `service-period-lock.SP7`/`SP8` hold that half.
      */
-    it('lets a booked line through when the deal does not lock — a known gap, pinned', async () => {
+    it('lets a booked line through the veto check when the deal does not lock — the freeze is elsewhere', async () => {
         const out = await run(MOVED, 'Confirmed', 'update', null);
-        expect(out.refused, 'today nothing refuses this; see the comment above before changing it').toBe(false);
+        expect(out.refused, 'the veto check does not refuse this; see the comment above').toBe(false);
         expect(out.asked).toBe(1);
     });
 });

@@ -88,8 +88,18 @@ function IsBlankValue(value: unknown): boolean {
     return value === null || value === undefined || (typeof value === 'string' && value.trim() === '');
 }
 
+/**
+ * Lines whose NEXT save may move a booked service period (golive #391). Module-private, like the term
+ * amendment sanction, so nothing outside this server can grant it; consumed by that save.
+ */
+const SERVICE_PERIOD_REDATE_SANCTIONED = new WeakSet<object>();
+
 @RegisterClass(BaseEntity, ORDER_LINE_ENTITY)
 export class OrderLineEntityServer extends OrderLineEntity {
+    protected override BookedServicePeriodChangeSanctioned(): boolean {
+        return SERVICE_PERIOD_REDATE_SANCTIONED.has(this);
+    }
+
     /**
      * Set only by bundle expansion, on the component lines it writes (bc-aidp-next-golive#292).
      *
@@ -463,7 +473,13 @@ export class OrderLineEntityServer extends OrderLineEntity {
 
     public override async Save(options?: EntitySaveOptions): Promise<boolean> {
         await this.PrepareForSave();
-        const ok = await super.Save(options);
+        let ok: boolean;
+        try {
+            ok = await super.Save(options);
+        } finally {
+            // One save, not the object's lifetime: a line kept after the amendment is frozen again.
+            SERVICE_PERIOD_REDATE_SANCTIONED.delete(this);
+        }
         if (!ok) {
             return false;
         }
@@ -639,6 +655,25 @@ export class OrderLineEntityServer extends OrderLineEntity {
  */
 export function MarkAsOrdersOwnWrite(line: unknown): void {
     (line as { BypassExternalEditVeto?: boolean }).BypassExternalEditVeto = true;
+}
+
+/**
+ * Let this booked line's next save move its service period, and only that (golive #391).
+ *
+ * For Orders' term amendments (`TermExtension`, `TermShift`), which move the subscription term first
+ * and then copy its window onto the line that bought it. Every other booked-line field stays frozen,
+ * and trigger 51003 still refuses a period that is not one of the line's own terms' windows.
+ *
+ * Call it where the line is loaded for the amendment, and only there. Refuses an object the server
+ * subclass did not produce, which would mean the sanction does nothing.
+ */
+export function SanctionServicePeriodRedate(line: BaseEntity): void {
+    if (!(line instanceof OrderLineEntityServer)) {
+        throw new Error(
+            "The order line was not loaded through the orders server's entity subclass, so its booked service period cannot be moved.",
+        );
+    }
+    SERVICE_PERIOD_REDATE_SANCTIONED.add(line);
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

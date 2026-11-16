@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * Exercise the confirmed-order guard checks in trg_OrderHeader_ImmutableAfterConfirm
- * (51013, 51014, 51017) and trg_OrderLine_ImmutableAfterConfirm (51002, 51003, 51008) against a
+ * (51013, 51014, 51017) and trg_OrderLine_ImmutableAfterConfirm (51002, 51003 including the
+ * service period, 51008) against a
  * real database, and the order they run in (golive #288). The address checks, 51015 and 51016,
  * have their own harness: address-snapshot-triggers.mjs.
  *
@@ -175,7 +176,11 @@ try {
     // Line checks.
     await expectOutcome('Confirmed: change line Quantity', 51003, L(GL1, 'Quantity = 3'));
     await expectOutcome('Confirmed: same-value rewrite, as spUpdate* issues', 'ok',
-        L(GL1, 'Quantity = Quantity, UnitPrice = UnitPrice, JournalEntryID = JournalEntryID'));
+        L(GL1, 'Quantity = Quantity, UnitPrice = UnitPrice, JournalEntryID = JournalEntryID, ' +
+            'ServicePeriodStart = ServicePeriodStart, ServicePeriodEnd = ServicePeriodEnd'));
+    // The service period (golive #391). GL1 bought no subscription term, so no window may be taken.
+    await expectOutcome('Confirmed: change line ServicePeriodEnd', 51003, L(GL1, `ServicePeriodEnd = '2028-06-30'`));
+    await expectOutcome('Confirmed: fill a blank ServicePeriodStart', 51003, L(GL1, `ServicePeriodStart = ISNULL(ServicePeriodStart, '2026-01-01')`));
     await expectOutcome('Confirmed: re-point line journal entry', 51008, L(GL1, `JournalEntryID = '${JE2}'`));
     await expectOutcome('Confirmed: clear line journal entry', 51008, L(GL1, 'JournalEntryID = NULL'));
     await expectOutcome('Order: 51003 before 51008', 51003, L(GL1, 'Quantity = 3, JournalEntryID = NULL'));

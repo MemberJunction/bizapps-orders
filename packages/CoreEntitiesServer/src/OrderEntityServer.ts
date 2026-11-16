@@ -94,7 +94,7 @@ import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { EscapeSQLString, IsUUID, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
@@ -605,11 +605,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * memory when there is one, and otherwise the row on disk.
      */
     private async checkEventAttendees(): Promise<string[]> {
-        if (!this.willBookOnThisSave() || this.Lines.Count === 0) return [];
+        if (!this.willBookOnThisSave()) return [];
+        return this.missingAttendeeMessages(this.Lines.Items.map((l) => l.ProductID));
+    }
+
+    /**
+     * The missing-attendee refusals for the lines as held, whatever this save is. Confirm asks it through
+     * `checkEventAttendees`; the order form's readiness list asks it through `PreviewConcessionProblems`,
+     * so the form names the missing attendee before Confirm is pressed rather than only after (golive #382).
+     */
+    private async missingAttendeeMessages(productIDs: Array<string | null | undefined>): Promise<string[]> {
+        if (this.Lines.Count === 0) return [];
         const provider = this.ProviderToUse as unknown as IRunViewProvider;
         const lines = this.Lines.Items;
 
-        const requiring = await LoadProductsRequiringAttendees(lines.map((l) => l.ProductID), provider, this.ContextCurrentUser);
+        const requiring = await LoadProductsRequiringAttendees(productIDs, provider, this.ContextCurrentUser);
         if (requiring.size === 0) return [];
 
         const eventRowInMemory = (line: mjBizAppsOrdersOrderLineEntity): mjBizAppsOrdersEventOrderLineEntity | null => {
@@ -1361,8 +1371,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
-     * What the concession gate would refuse this order's confirm for, without confirming (golive #340).
-     * Writes nothing. Loads the saved lines first when they are not in memory, so a freshly loaded
+     * What the concession gate would refuse this order's confirm for, without confirming (golive #340),
+     * and any event line still missing its attendee (golive #382). Writes nothing. Loads the saved lines first when they are not in memory, so a freshly loaded
      * order is judged on the lines confirm would book. `Orders.ConfirmReadiness` answers with this.
      */
     public async PreviewConcessionProblems(): Promise<string[]> {
@@ -1370,7 +1380,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // The same marks confirm reads: a draft the renewal pass left is judged on the pass's own
         // prices here too, or the form's Confirm stays disabled on an order the save would book.
         await this.loadPersistedRenewalMarks();
-        return this.concessionGateProblems();
+        // A line with no product yet, or one that is not an id, has no attendee rule to read; the
+        // preview leaves it to the save rather than failing the whole readiness list over it.
+        const productIDs = this.Lines.Items.map((l) => l.ProductID).filter((id): id is string => IsUUID(id));
+        const [concessions, attendees] = await Promise.all([
+            this.concessionGateProblems(),
+            this.missingAttendeeMessages(productIDs),
+        ]);
+        return [...concessions, ...attendees];
     }
 
     /** The gate's problems, one clause each as `FindUnapprovedConcessions` words them. None without a context user. */
@@ -4777,6 +4794,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * A RENEWAL names its subscription outright (D55) — resolving by (customer, product) instead
      * would be a guess, and would pick the wrong one whenever a customer holds two subscriptions to
      * the same product under an `AllowMultiple` type.
+     *
+     * A CANCELED SUBSCRIPTION IS NOT ONE TO ATTACH TO (golive #384). A later order for the same product
+     * used to find it, reactivate it and stack a new term beside the canceled one, so one sale left two
+     * terms of deferred revenue and a renewal. A purchase after a cancellation starts a new
+     * subscription. The exception is a gateway-billed one (`ProviderSubscriptionID` set): its canceled
+     * row still has to reach `ProviderBilledPurchaseVerdict`, which decides how a fresh start retires it.
      */
     private async findExistingSubscription(
         productID: string,
@@ -4785,7 +4808,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const holder = this.holderFilter(match);
         if (!holder) return null;
         const person = match.PersonID === 'Any' ? null : match.PersonID;
-        return this.loadSubscriptionState(`ProductID='${productID}' AND ${holder}`, person);
+        return this.loadSubscriptionState(
+            `ProductID='${productID}' AND (Status <> 'Canceled' OR ProviderSubscriptionID IS NOT NULL) AND ${holder}`,
+            person,
+        );
     }
 
     /**

@@ -38,7 +38,7 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
 
     /** The extension entity name in metadata, if configured. */
     public get EntityName(): string | null {
-        return this._entity?.EntityInfo?.Name ?? this._entityName;
+        return this.Entity?.EntityInfo?.Name ?? this._entityName;
     }
 
     /** The live extension entity instance, if provisioned. */
@@ -153,16 +153,22 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
             return null;
         }
 
+        // `Entity`, not `_entity`: an extension provisioned as the line's IS-A child (the order form
+        // calls `EnsureISAChild` on the line) never passes through `SetEntity`, so `_entity` stays null
+        // while `IsConfigured` is true. Reading `_entity` here sent the line with no extension at all,
+        // and the attendee chosen in Event details never left the browser (golive #382).
+        const entity = this.Entity;
+
         // In request mode, skip clean saved extensions to save bandwidth
-        if (mode !== 'result' && this._entity && this._entity.IsSaved && !this._entity.Dirty) {
+        if (mode !== 'result' && entity && entity.IsSaved && !entity.Dirty) {
             return null;
         }
 
-        if (this._entity) {
+        if (entity) {
             return {
-                EntityName: this._entity.EntityInfo?.Name ?? this._entityName ?? '',
-                Fields: this._entity.GetAll(),
-                IsNew: !this._entity.IsSaved,
+                EntityName: entity.EntityInfo?.Name ?? this._entityName ?? '',
+                Fields: entity.GetAll(),
+                IsNew: !entity.IsSaved,
             };
         }
 
@@ -193,18 +199,26 @@ export class OrderLineExtensionCompanion extends EntityCompanion<OrderLineExtens
             await this.EnsureEntity(data.EntityName);
             if (this._entity && mode === 'result') {
                 await this._entity.LoadFromData(data.Fields, true);
+            } else if (this._entity) {
+                // Applied here as well as in `EnsureEntity`: when the extension is the line's IS-A
+                // child, `EnsureEntity` attaches it through `SetEntity`, which clears the wire data
+                // before it is applied, and an entity already attached returns early without applying
+                // it. Either way the request's values were dropped on the server (golive #382).
+                // Setting the same values twice is harmless.
+                this._entity.SetMany(data.Fields, true);
             }
         }
     }
 
     /** @inheritdoc */
     public override Validate(result: ValidationResult): void {
-        if (this._entity) {
-            const extResult = this._entity.Validate();
+        const entity = this.Entity;
+        if (entity) {
+            const extResult = entity.Validate();
             if (!extResult.Success && extResult.Errors.length > 0) {
                 // If extension is an IS-A child, only include its own field errors, not parent chain duplicates
-                const ownErrors = this._entity.ISAParent
-                    ? extResult.Errors.filter(err => !this._entity!.EntityInfo.ParentEntityFieldNames?.has(err.Source))
+                const ownErrors = entity.ISAParent
+                    ? extResult.Errors.filter(err => !entity.EntityInfo.ParentEntityFieldNames?.has(err.Source))
                     : extResult.Errors;
                 if (ownErrors.length > 0) {
                     result.Success = false;

@@ -57,7 +57,7 @@ import {
     type ApprovalTaskContext,
 } from './ConcessionApprovalTask.js';
 import { ORDER_CONCESSION_ENTITY, ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
+import { MarkAsOrdersOwnWrite, SanctionServicePeriodRedate } from './OrderLineEntityServer.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
 import { TermDayEnd } from './TermGrantWindow.js';
@@ -422,6 +422,8 @@ async function moveLineServicePeriodEnd(checked: CheckedTermExtension, ctx: Appr
     const line = await ctx.Provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
     MarkAsOrdersOwnWrite(line);
     if (!(await line.Load(checked.OrderLineID))) throw new Error(`Order line ${checked.OrderLineID} was not found.`);
+    // The line is booked, so its service period is frozen (golive #391); this amendment is the sanctioned move.
+    SanctionServicePeriodRedate(line);
     line.ServicePeriodEnd = checked.NewEndDate;
     if (!(await line.Save())) {
         throw new Error(`The service period of the line that bought term ${checked.TermNumber} could not be moved: ${line.LatestResult?.CompleteMessage}`);
