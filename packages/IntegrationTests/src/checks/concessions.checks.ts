@@ -101,6 +101,12 @@
  *             confirm; Withdrawn is final; one an approver decided on a draft can be withdrawn and keeps its
  *             decision; one applied to a booked term cannot
  *
+ * A rep's share limit rises with the order's product mix (golive #281):
+ *
+ *   CS41      a mix tier raises the share limit on an order spanning two product types, so 8% is approved on
+ *             authority; removing one product type drops the limit back, holds the confirm, and the concession
+ *             recorded again is Pending
+ *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
  *
@@ -147,6 +153,7 @@ import {
   ORDER_HEADER_ENTITY,
   ORDER_LINE_ENTITY,
   SALES_AUTHORITY_ENTITY,
+  SALES_AUTHORITY_MIX_TIER_ENTITY,
   SALES_RULE_ENTITY,
   PERSON_ENTITY,
   PRODUCT_PRICE_ENTITY,
@@ -1888,6 +1895,57 @@ export const ConcessionChecks: NamedCheck[] = [
         Assert(applied.Saved && applied.Entity.Status === "Approved", `expected an approved extension: ${applied.Message}`);
         applied.Entity.Status = "Withdrawn";
         Assert(!(await applied.Entity.Save()), "an extension applied to a booked term cannot be withdrawn");
+      }),
+  },
+  {
+    Id: "concessions.CS41",
+    Name: "CS41: a mix tier raises the share limit by the order's product types, and loses it when a type is removed",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const f = Fx();
+        // WidgetA is a physical good and DiscountedA a service: two product types.
+        await CreateProductPrice(ctx, f.Products.WidgetA, 100);
+        await CreateProductPrice(ctx, f.Products.DiscountedA, 100);
+        const authorityID = await grantAuthority(ctx, { maxValue: 5000, maxShare: 0.05 });
+        await createViaEntity(ctx, SALES_AUTHORITY_MIX_TIER_ENTITY, {
+          SalesAuthorityID: authorityID,
+          MinProductTypes: 2,
+          MaxConcessionPctOfContract: 0.1,
+        });
+        await addRule(ctx, "ConcessionLimit", await roleTheUserLacks(ctx));
+
+        const built = await BuildOrder(ctx.User, {
+          CompanyID: f.CoA.ID,
+          Lines: [
+            { ProductID: f.Products.WidgetA, Quantity: 90 },
+            { ProductID: f.Products.DiscountedA, Quantity: 10 },
+          ],
+        });
+        Assert(await built.Order.Save(), `the draft did not save: ${built.Order.LatestResult?.CompleteMessage}`);
+        const seatsLine = built.Lines.find((l) => l.ProductID === f.Products.WidgetA);
+        Assert(seatsLine?.ID != null, "the seats line was not saved");
+
+        const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 8 });
+        Assert(c.Saved, `recording failed: ${c.Message}`);
+        AssertEqual(c.Entity.Status, "Approved", `800 is 8% of a 10000 order spanning two product types: ${c.Message}`);
+
+        // The service line goes: 800 is now 8.9% of 9000, under the tier but over the 5% the authority holds alone.
+        const service = built.Order.Lines.Items.find((l) => l.ProductID === f.Products.DiscountedA);
+        Assert(service != null, "the service line is not on the order");
+        built.Order.Lines.Remove(service);
+        Assert(await built.Order.Save(), `removing the line must save: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Confirmed";
+        Assert(!(await built.Order.Save()), "with one product type the approval on authority no longer covers the order");
+        Assert(/8\.9% of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+          `the refusal should give the base limit, got: ${built.Order.LatestResult?.CompleteMessage}`);
+
+        built.Order.Status = "Draft";
+        Assert(await c.Entity.Delete(), `withdrawing an approval on authority from a draft failed: ${c.Entity.LatestResult?.CompleteMessage}`);
+        const again = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 8 });
+        Assert(again.Saved, `recording again failed: ${again.Message}`);
+        AssertEqual(again.Entity.Status, "Pending", "measured against one product type, it needs approval");
       }),
   },
 ];
