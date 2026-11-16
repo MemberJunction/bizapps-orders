@@ -1,8 +1,8 @@
 /**
  * Which OrderHeader columns the database owns, and who wins when memory disagrees with the row.
  *
- * WHAT A ROLLUP IS HERE. `TotalGross`, `AmountPaid`, `Balance` and `FulfillmentStatus` are
- * maintained by `__mj_BizAppsOrders.spRecalcOrderHeaderTotals`, which the OrderLine and PaymentLine
+ * WHAT A ROLLUP IS HERE. `TotalGross`, `AmountPaid`, `Balance`, `FulfillmentStatus` and the two
+ * recurring totals (`RecurringMonthlyTotal`, `RecurringAnnualTotal`, golive #485) are maintained by `__mj_BizAppsOrders.spRecalcOrderHeaderTotals`, which the OrderLine and PaymentLine
  * triggers fire. No caller authors them. They are cross-table aggregates a computed column cannot
  * express (D41), which is why they are stored rather than derived per reader — and why a process
  * that writes lines has to go back and ask what the aggregate became.
@@ -29,7 +29,14 @@
  * list of the read that fetches them — so adding a trigger-maintained column here is the whole
  * change on the TypeScript side.
  */
-export const ORDER_ROLLUP_FIELDS = ['TotalGross', 'AmountPaid', 'Balance', 'FulfillmentStatus'] as const;
+export const ORDER_ROLLUP_FIELDS = [
+    'TotalGross',
+    'AmountPaid',
+    'Balance',
+    'FulfillmentStatus',
+    'RecurringMonthlyTotal',
+    'RecurringAnnualTotal',
+] as const;
 
 /** One of the rollup column names. */
 export type OrderRollupField = (typeof ORDER_ROLLUP_FIELDS)[number];
@@ -43,6 +50,8 @@ export type OrderRollups = {
     AmountPaid?: number | null;
     Balance?: number | null;
     FulfillmentStatus?: string | null;
+    RecurringMonthlyTotal?: number | null;
+    RecurringAnnualTotal?: number | null;
 };
 
 /** Resolved rollups — every column present, `null` meaning "not computed yet". */
@@ -51,6 +60,8 @@ export type ResolvedOrderRollups = {
     AmountPaid: number | null;
     Balance: number | null;
     FulfillmentStatus: string | null;
+    RecurringMonthlyTotal: number | null;
+    RecurringAnnualTotal: number | null;
 };
 
 /**
@@ -70,11 +81,12 @@ export type ResolvedOrderRollups = {
  * // The row has computed the total; the entity's pre-line NULL loses.
  * MergeOrderRollups({ TotalGross: 895, AmountPaid: 0, Balance: 895, FulfillmentStatus: 'Pending' },
  *                   { TotalGross: null, Balance: null })
- * // → { TotalGross: 895, AmountPaid: 0, Balance: 895, FulfillmentStatus: 'Pending' }
+ * // → { TotalGross: 895, AmountPaid: 0, Balance: 895, FulfillmentStatus: 'Pending',
+ * //     RecurringMonthlyTotal: null, RecurringAnnualTotal: null }
  *
  * // No row came back — keep what we have rather than inventing nulls.
  * MergeOrderRollups(null, { TotalGross: 240, AmountPaid: 0, Balance: 240 })
- * // → { TotalGross: 240, AmountPaid: 0, Balance: 240, FulfillmentStatus: null }
+ * // → { TotalGross: 240, AmountPaid: 0, Balance: 240, FulfillmentStatus: null, RecurringMonthlyTotal: null, … }
  * ```
  */
 export function MergeOrderRollups(
@@ -95,5 +107,7 @@ export function MergeOrderRollups(
         AmountPaid: resolve('AmountPaid'),
         Balance: resolve('Balance'),
         FulfillmentStatus: resolve('FulfillmentStatus'),
+        RecurringMonthlyTotal: resolve('RecurringMonthlyTotal'),
+        RecurringAnnualTotal: resolve('RecurringAnnualTotal'),
     };
 }

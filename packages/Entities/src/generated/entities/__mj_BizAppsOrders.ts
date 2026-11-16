@@ -2848,6 +2848,16 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Initial Payment Received Date
         * * SQL Data Type: date
         * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.`),
+    RecurringMonthlyTotal: z.number().nullable().describe(`
+        * * Field Name: RecurringMonthlyTotal
+        * * Display Name: Recurring Monthly Total
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The order's recurring revenue per month: each subscription line's net amount divided by the months it covers (its service period, or its subscription type's term when it has none). One-time lines add nothing. Maintained by spRecalcOrderHeaderTotals whenever a line changes; never set by hand.`),
+    RecurringAnnualTotal: z.number().nullable().describe(`
+        * * Field Name: RecurringAnnualTotal
+        * * Display Name: Recurring Annual Total
+        * * SQL Data Type: decimal(18, 2)
+        * * Description: The order's recurring revenue per year: twelve times RecurringMonthlyTotal. Maintained by spRecalcOrderHeaderTotals whenever a line changes; never set by hand.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -15811,6 +15821,32 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
     set ConfirmedByUserID(value: string | null) {
         this.Set('ConfirmedByUserID', value);
+    }
+
+    /**
+    * * Field Name: RecurringMonthlyTotal
+    * * Display Name: Recurring Monthly Total
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The order's recurring revenue per month: each subscription line's net amount divided by the months it covers (its service period, or its subscription type's term when it has none). One-time lines add nothing. Maintained by spRecalcOrderHeaderTotals whenever a line changes; never set by hand.
+    */
+    get RecurringMonthlyTotal(): number | null {
+        return this.Get('RecurringMonthlyTotal');
+    }
+    set RecurringMonthlyTotal(value: number | null) {
+        this.Set('RecurringMonthlyTotal', value);
+    }
+
+    /**
+    * * Field Name: RecurringAnnualTotal
+    * * Display Name: Recurring Annual Total
+    * * SQL Data Type: decimal(18, 2)
+    * * Description: The order's recurring revenue per year: twelve times RecurringMonthlyTotal. Maintained by spRecalcOrderHeaderTotals whenever a line changes; never set by hand.
+    */
+    get RecurringAnnualTotal(): number | null {
+        return this.Get('RecurringAnnualTotal');
+    }
+    set RecurringAnnualTotal(value: number | null) {
+        this.Set('RecurringAnnualTotal', value);
     }
 
     /**

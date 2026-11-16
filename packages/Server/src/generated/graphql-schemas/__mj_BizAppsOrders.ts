@@ -6953,6 +6953,12 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true, description: "The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself."}) 
     InitialPaymentReceivedDate?: Date;
         
+    @Field(() => Float, {nullable: true, description: "The order's recurring revenue per month: each subscription line's net amount divided by the months it covers (its service period, or its subscription type's term when it has none). One-time lines add nothing. Maintained by spRecalcOrderHeaderTotals whenever a line changes; never set by hand."}) 
+    RecurringMonthlyTotal?: number;
+        
+    @Field(() => Float, {nullable: true, description: "The order's recurring revenue per year: twelve times RecurringMonthlyTotal. Maintained by spRecalcOrderHeaderTotals whenever a line changes; never set by hand."}) 
+    RecurringAnnualTotal?: number;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -7161,6 +7167,12 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     InitialPaymentReceivedDate: Date | null;
 
+    @Field(() => Float, { nullable: true })
+    RecurringMonthlyTotal: number | null;
+
+    @Field(() => Float, { nullable: true })
+    RecurringAnnualTotal: number | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7290,6 +7302,12 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     InitialPaymentReceivedDate?: Date | null;
+
+    @Field(() => Float, { nullable: true })
+    RecurringMonthlyTotal?: number | null;
+
+    @Field(() => Float, { nullable: true })
+    RecurringAnnualTotal?: number | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

@@ -28,6 +28,8 @@ describe('MergeOrderRollups', () => {
             AmountPaid: 0,
             Balance: 895,
             FulfillmentStatus: 'NotApplicable',
+            RecurringMonthlyTotal: null,
+            RecurringAnnualTotal: null,
         });
     });
 
@@ -67,6 +69,8 @@ describe('MergeOrderRollups', () => {
             AmountPaid: 0,
             Balance: 240,
             FulfillmentStatus: 'Pending',
+            RecurringMonthlyTotal: null,
+            RecurringAnnualTotal: null,
         });
     });
 
@@ -78,6 +82,8 @@ describe('MergeOrderRollups', () => {
             AmountPaid: null,
             Balance: null,
             FulfillmentStatus: null,
+            RecurringMonthlyTotal: null,
+            RecurringAnnualTotal: null,
         });
     });
 
@@ -99,6 +105,20 @@ describe('MergeOrderRollups', () => {
             'AmountPaid',
             'Balance',
             'FulfillmentStatus',
+            'RecurringMonthlyTotal',
+            'RecurringAnnualTotal',
         ]);
+    });
+
+    it('takes the recurring totals from the row, including a zero for an order with no subscription lines', () => {
+        // golive #485: a deal copies these onto MRR and ARR. A stale entity value sent back on a
+        // header-only update would overwrite what the rollup computed, exactly as Balance could.
+        const merged = MergeOrderRollups(
+            { TotalGross: 1200, RecurringMonthlyTotal: 0, RecurringAnnualTotal: 0 },
+            { RecurringMonthlyTotal: 100, RecurringAnnualTotal: 1200 },
+        );
+
+        expect(merged.RecurringMonthlyTotal).toBe(0);
+        expect(merged.RecurringAnnualTotal).toBe(0);
     });
 });
