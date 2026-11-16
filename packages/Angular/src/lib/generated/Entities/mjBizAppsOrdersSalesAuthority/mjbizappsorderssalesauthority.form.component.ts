@@ -20,7 +20,8 @@ export class mjBizAppsOrdersSalesAuthorityFormComponent extends BaseFormComponen
             { sectionKey: 'authorityLimits', sectionName: 'Authority Limits', isExpanded: true },
             { sectionKey: 'systemMetadata', sectionName: 'System Metadata', isExpanded: false },
             { sectionKey: 'mJBizAppsOrdersOrderAdjustments', sectionName: 'Order Adjustments', isExpanded: false },
-            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false }
+            { sectionKey: 'mJBizAppsOrdersOrderConcessions', sectionName: 'Order Concessions', isExpanded: false },
+            { sectionKey: 'mJBizAppsOrdersSalesAuthorityMixTiers', sectionName: 'Sales Authority Mix Tiers', isExpanded: false }
         ]);
     }
 }
