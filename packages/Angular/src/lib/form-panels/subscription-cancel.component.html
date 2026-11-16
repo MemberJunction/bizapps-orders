@@ -17,7 +17,7 @@
                 <i class="fa-solid fa-credit-card" aria-hidden="true"></i>
                 The payment gateway bills this subscription ({{ GatewaySubscriptionID }}). Cancelling here also cancels it there,
                 first: if the gateway does not confirm, nothing changes. Refunds of what the gateway charged are made at the gateway;
-                the Refund below is a credit on the order and moves no money.
+                the Reversed amount below is a credit on the order and moves no money.
             </p>
         }
         <fieldset class="mjo-sc__timing" [disabled]="Busy">
@@ -40,7 +40,37 @@
                 <input type="radio" name="timing" value="Immediate" [(ngModel)]="Timing" (ngModelChange)="Changed()" />
                 <span>
                     <strong>Immediately instead</strong>
-                    <span class="mjo-sc__hint">Coverage and access end today. Any refund follows the subscription type's refund rule; give other money back from the payment's Refund page.</span>
+                    <span class="mjo-sc__hint">Coverage and access end today. What is given back is the choice below.</span>
+                </span>
+            </label>
+        </fieldset>
+        <fieldset class="mjo-sc__timing" [disabled]="Busy">
+            <legend>What is given back?</legend>
+            @if (RefundDefault) {
+                <p class="mjo-sc__hint" id="mjo-sc-refund-default">
+                    The term starts {{ Day(RefundDefault.TermStart) }} and nothing has been paid on its order, so this starts on a full
+                    reversal: the amount still owed and the revenue scheduled for it are taken back, and no money is refunded.
+                </p>
+            }
+            <label class="mjo-sc__option">
+                <input type="radio" name="refund" value="Type" [(ngModel)]="Refund" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>As the subscription type sets it</strong>
+                    <span class="mjo-sc__hint">{{ TypeName }}'s refund rule decides. Under a type that does not refund, the term stays owed and its revenue is still recognized.</span>
+                </span>
+            </label>
+            <label class="mjo-sc__option">
+                <input type="radio" name="refund" value="Full" [(ngModel)]="Refund" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>The whole term</strong>
+                    <span class="mjo-sc__hint">Reverses the full term: it is credited to the order and its revenue not yet recognized is taken back. Money already paid becomes a credit to refund.</span>
+                </span>
+            </label>
+            <label class="mjo-sc__option">
+                <input type="radio" name="refund" value="ProrateUnused" [(ngModel)]="Refund" (ngModelChange)="Changed()" />
+                <span>
+                    <strong>The unused part</strong>
+                    <span class="mjo-sc__hint">Reverses the part of the term after coverage ends, by days.</span>
                 </span>
             </label>
         </fieldset>
@@ -53,7 +83,7 @@
             <dl class="mjo-sc__preview" aria-live="polite">
                 <div><dt>Coverage ends</dt><dd>{{ Day(d.EffectiveDate) }}</dd></div>
                 <div><dt>Access ends</dt><dd>{{ Day(d.AccessThroughDate) }}</dd></div>
-                <div><dt>Refund</dt><dd>{{ Preview?.TotalRefundAmount ?? d.RefundAmount | mjoMoney: { Zero: 'None' } }}</dd></div>
+                <div><dt>Reversed</dt><dd>{{ Preview?.TotalRefundAmount ?? d.RefundAmount | mjoMoney: { Zero: 'None' } }}</dd></div>
                 @if (Preview?.Gateway; as g) {
                     <div><dt>Payment gateway</dt><dd>{{ GatewayLine(g, d.EffectiveDate) }}</dd></div>
                 }

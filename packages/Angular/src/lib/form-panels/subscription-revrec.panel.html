@@ -14,6 +14,18 @@
     @if (Loading) {
         <p class="mjo-term-empty">Loading recognition schedule…</p>
     } @else if (View === 'waterfall') {
+        @if (OffsetMonths > 0) {
+            <p class="mjo-term-empty">
+                A return or cancellation reversed {{ OffsetMonths }} {{ OffsetMonths === 1 ? 'month' : 'months' }} of this schedule.
+                {{ OffsetMonths === 1 ? 'It is' : 'They are' }} left out here; Journals lists both sides.
+            </p>
+        }
+        @if (PartlyOffsetMonths > 0) {
+            <p class="mjo-term-empty">
+                {{ PartlyOffsetMonths }} {{ PartlyOffsetMonths === 1 ? 'month was' : 'months were' }} partly reversed and
+                {{ PartlyOffsetMonths === 1 ? 'is' : 'are' }} still shown at the full amount; Journals lists the reversing entries.
+            </p>
+        }
         <mj-deferred-revenue-waterfall
             [JournalEntries]="Entries"
             [Title]="'Subscription deferred revenue'"

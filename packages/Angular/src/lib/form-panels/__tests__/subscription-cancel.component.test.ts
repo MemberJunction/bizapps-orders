@@ -5,6 +5,11 @@ const mocks = vi.hoisted(() => ({
     calls: [] as { input: Record<string, unknown>; options: Record<string, unknown> }[],
     output: { Success: true } as Record<string, unknown>,
     mayReverse: true,
+    refundDefault: null as null | { Refund: 'Full'; TermStart: string },
+}));
+
+vi.mock('../../data/cancel-refund-default', () => ({
+    LoadCancelRefundDefault: () => Promise.resolve(mocks.refundDefault),
 }));
 
 vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
@@ -41,6 +46,8 @@ function componentFor(record: Partial<mjBizAppsOrdersSubscriptionEntity>, canUpd
         Busy: false,
         Error: null,
         Timing: 'Type',
+        Refund: 'Type',
+        RefundDefault: null,
         Reason: '',
         Preview: null,
         EditMode: false,
@@ -61,6 +68,7 @@ describe('Cancel subscription', () => {
         mocks.calls.length = 0;
         mocks.output = PREVIEW;
         mocks.mayReverse = true;
+        mocks.refundDefault = null;
     });
 
     it('is offered on a live subscription to a viewer who may update subscriptions', () => {
@@ -130,6 +138,50 @@ describe('Cancel subscription', () => {
         await c.RunPreview();
 
         expect(mocks.calls[0].input).toEqual({ SubscriptionID: SUB, Timing: 'EndOfTerm', Reason: undefined, Preview: true });
+    });
+
+    describe('what is given back (golive #384)', () => {
+        it('sends no refund when the type decides, and the chosen one otherwise', async () => {
+            const c = componentFor({});
+            await c.Start();
+            expect(c.Refund).toBe('Type');
+            await c.RunPreview();
+            expect(mocks.calls[0].input).toMatchObject({ Refund: undefined });
+
+            c.Refund = 'ProrateUnused';
+            c.Changed();
+            await c.RunPreview();
+            expect(mocks.calls[1].input).toMatchObject({ Refund: 'ProrateUnused', Preview: true });
+        });
+
+        it('starts on the whole term for an unstarted, unpaid term, and says why', async () => {
+            mocks.refundDefault = { Refund: 'Full', TermStart: '2027-02-01' };
+            const c = componentFor({});
+            await c.Start();
+            expect(c.Refund).toBe('Full');
+            expect(c.RefundDefault).toEqual({ Refund: 'Full', TermStart: '2027-02-01' });
+            await c.RunPreview();
+            await c.Confirm();
+            expect(mocks.calls[1].input).toMatchObject({ Refund: 'Full', Preview: false });
+        });
+
+        it('does not override a choice made while the default was loading', async () => {
+            mocks.refundDefault = { Refund: 'Full', TermStart: '2027-02-01' };
+            const c = componentFor({});
+            const started = c.Start();
+            c.Refund = 'ProrateUnused';
+            await started;
+            expect(c.Refund).toBe('ProrateUnused');
+        });
+
+        it('resets to the type\'s rule when closed', async () => {
+            mocks.refundDefault = { Refund: 'Full', TermStart: '2027-02-01' };
+            const c = componentFor({});
+            await c.Start();
+            c.Close();
+            expect(c.Refund).toBe('Type');
+            expect(c.RefundDefault).toBeNull();
+        });
     });
 
     it('drops the preview when the choice changes, so a stale preview cannot be confirmed', async () => {

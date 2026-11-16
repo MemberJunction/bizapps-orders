@@ -227,6 +227,36 @@ describe('LoadSubscriptionRevRec', () => {
         expect(loaded.TermIDs).toEqual([terms[0].ID]);
     });
 
+    it('loads the lines reversing a term, nets the months they take back and labels a canceled term (golive #474)', async () => {
+        const TERM = '22222222-2222-2222-2222-222222222222';
+        const ORIGIN = '33333333-3333-3333-3333-333333333333';
+        const RETURN = '44444444-4444-4444-4444-444444444444';
+        const lines = (amount: number) => ({ IsAvailable: true, Items: [{ DebitAmount: amount }, { CreditAmount: amount }] });
+        const entries = [
+            { ID: 'nov', LinkedRecordID: TERM, EffectiveDate: new Date('2026-11-12T00:00:00Z'), Description: 'recognize Sidecar', EntryType: 'RevenueRecognition', Lines: lines(1000) },
+            { ID: 'nov-r', LinkedRecordID: RETURN, EffectiveDate: new Date('2026-11-12T00:00:00Z'), Description: 'unrecognize Sidecar', EntryType: 'RevenueRecognition', Lines: lines(1000) },
+            { ID: 'book-r', LinkedRecordID: RETURN, EffectiveDate: new Date('2026-11-10T00:00:00Z'), Description: 'Booking reversal', EntryType: 'Standard', Lines: lines(2000) },
+        ];
+        const calls: Array<{ EntityName?: string; ExtraFilter?: string }> = [];
+        vi.spyOn(RunView, 'FromMetadataProvider').mockReturnValue({
+            RunView: async (params: { EntityName?: string; ExtraFilter?: string }) => {
+                calls.push(params);
+                if (params.EntityName?.includes('Order Lines')) return { Success: true, Results: [{ ID: RETURN, ReversesOrderLineID: ORIGIN }] };
+                return { Success: true, Results: entries };
+            },
+        } as unknown as RunView);
+
+        const terms = [{ ID: TERM, TermNumber: 1, OrderLineID: ORIGIN, Status: 'Canceled' }];
+        const loaded = await LoadSubscriptionRevRec({ ID: SUB_ID, OrderLineID: ORIGIN }, { CurrentUser: undefined } as unknown as IMetadataProvider, terms);
+
+        expect(calls[0].ExtraFilter).toContain(`ReversesOrderLineID IN ('${ORIGIN}')`);
+        expect(calls[1].ExtraFilter).toContain(RETURN);
+        expect(loaded.Entries).toEqual([]);
+        expect(loaded.OffsetMonths).toBe(1);
+        expect(loaded.ReversalLineIDs).toEqual([RETURN]);
+        expect(loaded.TermLookup[TERM].Label).toBe('Term 1 (canceled)');
+    });
+
     it('queries nothing and reports CanRead false without journal entry read permission', async () => {
         const runView = vi.fn();
         vi.spyOn(RunView, 'FromMetadataProvider').mockReturnValue({ RunView: runView } as unknown as RunView);

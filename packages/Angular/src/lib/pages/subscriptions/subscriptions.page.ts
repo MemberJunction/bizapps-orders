@@ -212,6 +212,12 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                         </div>
                         <div class="mj-card-pad">
                             @if (CanReadRecognition) {
+                                @if (RecognitionOffsetMonths > 0) {
+                                    <div class="small muted mjo-sub__note">
+                                        A return or cancellation reversed {{ RecognitionOffsetMonths }}
+                                        {{ RecognitionOffsetMonths === 1 ? 'month' : 'months' }} of this schedule; they are left out here.
+                                    </div>
+                                }
                                 <mj-deferred-revenue-waterfall
                                     [JournalEntries]="RecognitionEntries"
                                     [Title]="'Subscription deferred revenue'"
@@ -344,6 +350,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     public RecognitionEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
     public RecognitionTermLookup: SubscriptionTermLookup = {};
     public CanReadRecognition = true;
+    /** Months a return or cancellation took back in full, left out of the waterfall (golive #474). */
+    public RecognitionOffsetMonths = 0;
     /** The subscription type's lead days, the engine's fallback when the subscription sets none. */
     public TypeRenewalLeadDays: number | null = null;
 
@@ -387,6 +395,7 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         this.RecognitionEntries = recognition.Entries;
         this.RecognitionTermLookup = recognition.TermLookup;
         this.CanReadRecognition = recognition.CanRead;
+        this.RecognitionOffsetMonths = recognition.OffsetMonths;
         this.TypeRenewalLeadDays = leadDays;
         this.cdr.detectChanges();
     }

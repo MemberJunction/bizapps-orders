@@ -743,6 +743,15 @@ describe('cancellation policy', () => {
             expect(d.RefundAmount).toBe(0);
             expect(d.ReversalFraction).toBe(0);
             expect(d.Explanation).toMatch(/does not refund/i);
+            // golive #474: the preview also says the revenue stays scheduled, not only that nothing is refunded.
+            expect(d.Explanation).toMatch(/deferred revenue is still recognized on its schedule/);
+        });
+
+        it('says a reversal takes back the revenue not yet recognized (golive #474)', () => {
+            const prorated = cancelWith({ CancellationMode: 'Immediate', CancellationRefundMode: 'ProrateUnused' }, '2026-07-01');
+            expect(prorated.Explanation).toMatch(/takes back the matching deferred revenue not yet recognized/);
+            const full = cancelWith({ CancellationMode: 'Immediate', CancellationRefundMode: 'FullRefund' }, '2026-07-01');
+            expect(full.Explanation).toMatch(/takes back the matching deferred revenue not yet recognized/);
         });
 
         it('ProrateUnused refunds the unused remainder — the half-year case', () => {
