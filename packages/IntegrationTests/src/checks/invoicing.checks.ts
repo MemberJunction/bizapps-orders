@@ -304,6 +304,25 @@ export const InvoicingChecks: NamedCheck[] = [
         });
         Assert(sale.Saved, `sale failed: ${sale.Message}`);
 
+        // PAID FIRST. A return's credit settles what the order it reverses still owes, so a return
+        // of an unpaid sale ends at a zero balance and owes the customer nothing. The credit memo
+        // this check renders is the one that holds a credit: the return of a sale already paid for.
+        const capture = MJGlobal.Instance.ClassFactory.CreateInstance<
+          BaseRemotableOperation<Record<string, unknown>, { Success: boolean; Message?: string }>
+        >(BaseRemotableOperation, "Orders.CapturePayment");
+        Assert(capture != null, "'Orders.CapturePayment' is not registered");
+        const paid = await capture!.Execute(
+          {
+            Amount: Number(sale.Order.TotalGross),
+            ReceivingCompanyID: f.CoA.ID,
+            BillToOrganizationID: f.Customers.OrganizationID,
+            TenderCode: "Cash",
+            Allocations: [{ OrderHeaderID: sale.Order.ID as string, Amount: Number(sale.Order.TotalGross) }],
+          },
+          { provider: ctx.Provider, user: ctx.User },
+        );
+        Assert(paid.Success && paid.Output.Success, `paying the sale failed: ${paid.Output?.Message}`);
+
         const ret = await ConfirmOrder(ctx.User, {
           CompanyID: f.CoA.ID,
           OrderType: "Return",
