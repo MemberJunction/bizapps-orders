@@ -9,6 +9,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+    CanceledTermCoverageEnd,
     SubscriptionBehavior,
     ResolveSubscriptionTypeID,
     ResolveRevenueRecognitionTypeID,
@@ -548,6 +549,100 @@ describe('concurrency and reactivation', () => {
             expect(iso(decision.Term!.StartDate)).toBe('2027-11-01');
             expect(decide(rules({ ReactivationMode: 'AlwaysCreateNew' }), after, 1200, { Existing: canceled }).Action).toBe('CreateNew');
         });
+    });
+});
+
+describe('a canceled subscription whose term was cut short', () => {
+    // Bought for 2026, cancelled immediately on 1 February: the term keeps the end it was sold with,
+    // and coverage ended on the cancellation day.
+    const cutShort = {
+        ID: 'sub-1',
+        Status: 'Canceled',
+        LatestTermEnd: new Date('2026-12-31T00:00:00Z'),
+        LatestCoverageEnd: new Date('2026-02-01T00:00:00Z'),
+        LatestTermNumber: 1,
+    };
+    const reactivating = rules({ ReactivationMode: 'ReactivateExisting' });
+
+    it('a purchase after the cancellation starts on its own day, not after the cancelled term', () => {
+        const decision = decide(reactivating, new Date('2026-03-01T00:00:00Z'), 1200, { Existing: cutShort });
+        expect(decision.Action).toBe('Reactivate');
+        expect(decision.SubscriptionID).toBe('sub-1');
+        expect(iso(decision.Term!.StartDate)).toBe('2026-03-01');
+        expect(iso(decision.Term!.EndDate)).toBe('2027-02-28');
+        expect(decision.Term!.TermNumber).toBe(2);
+    });
+
+    it('goes back to the reactivation policy, as for any coverage that has ended', () => {
+        const after = new Date('2026-03-01T00:00:00Z');
+        expect(decide(rules({ ReactivationMode: 'AlwaysCreateNew' }), after, 1200, { Existing: cutShort }).Action).toBe('CreateNew');
+        expect(decide(rules({ ConcurrencyMode: 'RejectDuplicate', ReactivationMode: 'ReactivateExisting' }), after, 1200, { Existing: cutShort }).Action).toBe('Reactivate');
+    });
+
+    it('honors a stated start after the cancellation instead of displacing it', () => {
+        const stated = new Date('2026-04-01T00:00:00Z');
+        const decision = decide(reactivating, new Date('2026-03-01T00:00:00Z'), 1200, { Existing: cutShort, RequestedStartDate: stated });
+        expect(iso(decision.Term!.StartDate)).toBe('2026-04-01');
+        expect(decision.StartOverrideIgnored).not.toBe(true);
+    });
+
+    it('a purchase before the cancellation takes effect continues from the day coverage ends', () => {
+        // Cancelled for 1 February, bought again on 15 January: covered until the 1st, so the new term
+        // starts on the 2nd, not on 1 January 2027.
+        const decision = decide(reactivating, new Date('2026-01-15T00:00:00Z'), 1200, { Existing: cutShort });
+        expect(decision.Action).toBe('Reactivate');
+        expect(iso(decision.Term!.StartDate)).toBe('2026-02-02');
+    });
+
+    it('a purchase on the last covered day still counts as during coverage', () => {
+        const decision = decide(reactivating, new Date('2026-02-01T00:00:00Z'), 1200, { Existing: cutShort });
+        expect(iso(decision.Term!.StartDate)).toBe('2026-02-02');
+    });
+
+    it('with no coverage end given, coverage runs to the term end as before', () => {
+        const { LatestCoverageEnd: _none, ...endOfTerm } = cutShort;
+        const decision = decide(reactivating, new Date('2026-03-01T00:00:00Z'), 1200, { Existing: endOfTerm });
+        expect(iso(decision.Term!.StartDate)).toBe('2027-01-01');
+    });
+
+    it('a gateway renewal still continues from the end of the latest term', () => {
+        const decision = decide(reactivating, new Date('2026-03-01T00:00:00Z'), 1200, { Existing: cutShort, GatewayRenewal: true });
+        expect(decision.Action).toBe('Reactivate');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-01-01');
+    });
+
+    it('a live subscription is extended from its term end whatever coverage end is given', () => {
+        const live = { ...cutShort, Status: 'Active' };
+        const decision = decide(rules({ ConcurrencyMode: 'ExtendExisting' }), new Date('2026-03-01T00:00:00Z'), 1200, { Existing: live });
+        expect(decision.Action).toBe('ExtendExisting');
+        expect(iso(decision.Term!.StartDate)).toBe('2027-01-01');
+    });
+});
+
+describe('CanceledTermCoverageEnd', () => {
+    const termEnd = '2026-12-31T00:00:00Z';
+    const day = (d: Date | null) => (d ? d.toISOString().slice(0, 10) : null);
+
+    it('is the cancelled subscription\'s access end when that cut the term short', () => {
+        expect(day(CanceledTermCoverageEnd({ EndDate: termEnd, Status: 'Canceled' }, { Status: 'Canceled', EndDate: '2026-02-01T00:00:00Z' }))).toBe('2026-02-01');
+    });
+
+    it('is the term end when the term ran its length (cancelled at end of term)', () => {
+        expect(day(CanceledTermCoverageEnd({ EndDate: termEnd, Status: 'Completed' }, { Status: 'Canceled', EndDate: termEnd }))).toBe('2026-12-31');
+        expect(day(CanceledTermCoverageEnd({ EndDate: termEnd, Status: 'Active' }, { Status: 'Canceled', EndDate: '2026-02-01T00:00:00Z' }))).toBe('2026-12-31');
+    });
+
+    it('never runs past the term: an access end with grace beyond it is capped', () => {
+        expect(day(CanceledTermCoverageEnd({ EndDate: termEnd, Status: 'Canceled' }, { Status: 'Canceled', EndDate: '2027-01-30T00:00:00Z' }))).toBe('2026-12-31');
+    });
+
+    it('is the term end when the subscription is not Canceled or carries no end', () => {
+        expect(day(CanceledTermCoverageEnd({ EndDate: termEnd, Status: 'Canceled' }, { Status: 'Active', EndDate: '2026-02-01T00:00:00Z' }))).toBe('2026-12-31');
+        expect(day(CanceledTermCoverageEnd({ EndDate: termEnd, Status: 'Canceled' }, { Status: 'Canceled', EndDate: null }))).toBe('2026-12-31');
+    });
+
+    it('is null when there is no term', () => {
+        expect(CanceledTermCoverageEnd(null, { Status: 'Canceled', EndDate: '2026-02-01T00:00:00Z' })).toBeNull();
     });
 });
 

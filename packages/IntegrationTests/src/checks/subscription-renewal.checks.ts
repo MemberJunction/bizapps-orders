@@ -264,6 +264,7 @@ import {
     TxQuery,
     upsertViaEntity,
 } from '../fixture.js';
+import { World } from '../world/world.js';
 import {
     CHECKOUT_WIDGET_DISTRIBUTION_ENTITY,
     CHECKOUT_WIDGET_ENTITY,
@@ -4086,8 +4087,7 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     const zone = BusinessTimeZoneEngine.Instance.Zone;
                     let priceFlagged = false;
 
-                    // What is credited against THIS renewal (the latest one booked): part 3 sells part 1's customer again,
-                    // and Orders reactivates the same subscription (Q5), so the subscription alone does not pick it.
+                    // What is credited against THIS renewal (the latest one booked on the subscription).
                     const credited = async (subscriptionID: string) =>
                         Math.round(
                             Number(
@@ -4182,12 +4182,13 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
 
                     // 3. The cancel door LOCKS FIRST: the refund door has read the gateway and waits; the cancel reverses
                     //    the 200 and commits; the refund door then locks, re-reads, and credits nothing more.
-                    // The fixture has two customers, each holding one of these subscriptions: part 1's is ended (recorded
-                    // as the gateway's end) so part 3 can sell its customer a new one.
-                    a.end();
-                    const ca = await a.cancelDoor();
-                    Assert(ca.Success && ca.Output?.Success, `part 1's subscription recorded as ended: ${ca.Output?.Message ?? ca.ErrorMessage}`);
-                    const c = await renewed(f.Customers.OrganizationID, 'd20rc', true);
+                    // On a third customer, who holds no subscription yet. Selling part 1's customer again would make
+                    // this part depend on where a re-purchase is placed after a cancellation, which is not what it is
+                    // about: dated before that cancellation, it continues the cancelled coverage, and the gateway
+                    // will not take a first charge that far out.
+                    const thirdCustomer = World().Organizations.SUM;
+                    Assert(!!thirdCustomer, 'precondition: a third ORD-WORLD organization');
+                    const c = await renewed(thirdCustomer, 'd20rc', true);
                     const g2 = gate();
                     const refunding = c.refundDoor(1);
                     await g2.atGate;
