@@ -110,6 +110,7 @@ import {
 import {
     DayAfter,
     EffectiveLeadDays,
+    LineFirstTermStartSql,
     NonSubscriptionSuccessorRefusal,
     RenewalPricer,
     type PricedRenewal,
@@ -273,7 +274,8 @@ const SUBJECT_COLUMNS = `
                 l.EndDate             AS TermEndDate,
                 l.Status              AS TermStatus,
                 l.Quantity            AS TermQuantity,
-                l.OrderLineID`;
+                l.OrderLineID,
+                ${LineFirstTermStartSql('l')} AS LineFirstTermStartDate`;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.SpawnRenewals')
 export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
