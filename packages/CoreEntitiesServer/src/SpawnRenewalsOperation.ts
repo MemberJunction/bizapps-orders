@@ -181,10 +181,26 @@ export interface RenewalCandidate {
     /** The product the renewal is placed on: the subscription's own, or its successor. */
     RenewalProductID?: string;
     /**
-     * The renewal's unit price before the increase. When the line that bought the expiring term bought
-     * several terms (a 24-month line on a 12-month type), one term's share of that line's price.
+     * The renewal's unit price before the increase. When the line that bought the expiring term was
+     * longer than the renewal term (a 24-month line renewing for 12), the term's share of that line's
+     * price: renewal months over line months (golive #338, golive #468).
      */
     BasePrice?: number;
+    /**
+     * The prior line's price, before it was cut to the renewal term's share. Set only when the line
+     * that bought the expiring term was longer than the renewal term (golive #468).
+     */
+    PriorUnitPrice?: number;
+    /** The months the prior line covered. Set when it differs from the renewal term's length (golive #468). */
+    PriorLineMonths?: number;
+    /** The months the renewal term covers. Set alongside `PriorLineMonths`. */
+    RenewalTermMonths?: number;
+    /**
+     * Why a person should check this renewal's price before it bills (golive #468). Set when the prior
+     * line was shorter than the renewal term: it renews at the short line's price, unscaled, since
+     * that price may be a part-year price or a full-year price sold over a short first period.
+     */
+    PriceReview?: string;
     /** Where the base price came from: the prior term's price, its list price, or the successor's list. */
     BasePriceSource?: 'PriorPrice' | 'PriorList' | 'SuccessorList';
     /** The increase applied, in percent: 0 when none is set or the new term crosses no anniversary. */
@@ -211,6 +227,36 @@ export interface RenewalCandidate {
      * expired or out of its dates, or its other rules not met. The renewal is placed without them.
      */
     UnusableRenewalPromotionCodes?: UnusableRenewalPromotionCode[];
+}
+
+/**
+ * What a candidate reports about the prior line's length against the renewal term (golive #468):
+ * the unscaled price and both lengths when the line was cut to the term's share, and a review note
+ * when the line was shorter than the term and renews at its own price. Empty when the lengths match.
+ */
+export function RenewalScaleReport(
+    priced: Pick<PricedRenewal, 'PriorLineScale' | 'PriorUnitPrice' | 'Price'>,
+): Pick<RenewalCandidate, 'PriorUnitPrice' | 'PriorLineMonths' | 'RenewalTermMonths' | 'PriceReview'> {
+    const scale = priced.PriorLineScale;
+    const round = (n: number | null) => Math.round(Number(n) * 100) / 100;
+    if (scale.ScaledDown && priced.Price.BaseSource === 'PriorPrice') {
+        return {
+            PriorUnitPrice: priced.PriorUnitPrice,
+            PriorLineMonths: round(scale.LineMonths),
+            RenewalTermMonths: round(scale.TermMonths),
+        };
+    }
+    if (scale.ShorterThanTerm && priced.Price.BaseSource === 'PriorPrice') {
+        return {
+            PriorLineMonths: round(scale.LineMonths),
+            RenewalTermMonths: round(scale.TermMonths),
+            PriceReview:
+                `Check the price: the prior line covered ${round(scale.LineMonths)} months and this renewal covers ` +
+                `${round(scale.TermMonths)}. Its price was renewed as it stood, not scaled up, because the line does not ` +
+                `say whether it was a part-year price or a full-year price.`,
+        };
+    }
+    return {};
 }
 
 export interface SpawnRenewalsOutput {
@@ -380,6 +426,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             candidate.UnitPrice = priced.Price.UnitPrice;
             candidate.DiscountPct = priced.Price.DiscountPct;
             candidate.Quantity = priced.Quantity;
+            Object.assign(candidate, RenewalScaleReport(priced));
             if (priced.Term) {
                 candidate.RenewalTermStart = priced.Term.Start;
                 candidate.RenewalTermEnd = priced.Term.End;
@@ -854,21 +901,25 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
         selectedByPerson: boolean,
     ): string {
         const money = (n: number) => n.toFixed(2);
+        const months = (n: number | null) => String(Math.round(Number(n) * 100) / 100);
         const how = selectedByPerson ? (placeAs === 'Draft' ? 'Renewal draft' : 'Renewal') : 'Automatic renewal';
         const lines = members.map(({ due, priced }) => {
             const p = priced.Price;
             const base = { PriorPrice: 'prior price', PriorList: 'prior list price', SuccessorList: 'list price' }[p.BaseSource];
-            // A multi-term prior line: say the base is one term's share, so the figure reads against the line.
+            // A prior line longer than the term: say the base is the term's share, so the figure reads
+            // against the line. One shorter than the term: say it was not scaled and needs checking.
+            const scale = priced.PriorLineScale;
             const share =
-                p.BaseSource === 'PriorPrice' && priced.PriorLineMonths != null
-                    ? ` (one term of a ${Math.round(priced.PriorLineMonths * 100) / 100}-month line)`
+                p.BaseSource === 'PriorPrice' && scale.ScaledDown
+                    ? ` (${months(scale.TermMonths)} months of a ${months(scale.LineMonths)}-month line at ${money(Number(priced.PriorUnitPrice))})`
                     : '';
+            const review = RenewalScaleReport(priced).PriceReview;
             const parts = [`${how} of ${due.SubscriptionNumber} (term ${due.TermNumber + 1})`];
             if (selectedByPerson) parts.push('placed from the Renewals page');
             if (priced.MovesToSuccessor) parts.push(`onto successor product ${priced.ProductName}`);
             const increase = p.IncreasePercent > 0 ? ` + ${p.IncreasePercent}% annual increase (${p.IncreaseSource.toLowerCase()})` : '';
             const discount = p.DiscountPct > 0 ? `, discount ${Math.round(p.DiscountPct * 10000) / 100}% continued` : '';
-            return `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${share}${increase}${discount}.`;
+            return `${parts.join(' ')}. Unit price ${money(p.UnitPrice)}: ${base} ${money(p.BasePrice)}${share}${increase}${discount}.${review ? ` ${review}` : ''}`;
         });
         const head = members.length > 1 ? [`${members.length} subscriptions renewed together: same customer, same term end.`] : [];
         const promotionNote = promotions ? RenewalPromotionNote(promotions) : '';
@@ -928,7 +979,7 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 IncreaseSource: priced.Price.IncreaseSource,
                 UnitPrice: priced.Price.UnitPrice,
                 DiscountPct: priced.Price.DiscountPct,
-                ...(priced.PriorLineMonths != null ? { PriorLineMonths: priced.PriorLineMonths } : {}),
+                ...RenewalScaleReport(priced),
                 ...(priced.Term ? { RenewalTermStart: priced.Term.Start, RenewalTermEnd: priced.Term.End } : {}),
                 ...(promotions
                     ? { RenewalPromotionCodes: promotions.Applied, UnusableRenewalPromotionCodes: promotions.Unusable }
