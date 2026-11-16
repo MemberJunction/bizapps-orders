@@ -1383,6 +1383,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             true,
             this.ProviderToUse as unknown as IMetadataProvider,
             user,
+            { PaymentTermsTypeID: this.PaymentTermsTypeID ?? null },
         );
     }
 
@@ -1508,6 +1509,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ProductPriceID: line.ProductPriceID,
             DiscountPct: line.DiscountPct,
             RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
+            ServicePeriodStart: line.ServicePeriodStart ?? null,
             // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
             PriceStated:
                 !this.isUneditedRenewalPrice(line) &&

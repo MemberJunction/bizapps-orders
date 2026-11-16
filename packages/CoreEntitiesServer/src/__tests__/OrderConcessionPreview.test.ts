@@ -73,6 +73,7 @@ function order(opts: { user?: { ID: string } | null; linesLoaded?: boolean } = {
         IsSaved: true,
         ID: ORDER_ID,
         OrderNumber: 'ORD-1',
+        PaymentTermsTypeID: null,
         ContextCurrentUser: opts.user === undefined ? { ID: 'user-1' } : opts.user,
         ProviderToUse: {},
         Lines: lines,

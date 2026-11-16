@@ -2235,7 +2235,7 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * SQL Data Type: uniqueidentifier
         * * Related Entity/Foreign Key: MJ_BizApps_Orders: Subscription Terms (vwSubscriptionTerms.ID)
         * * Description: The subscription term a Duration concession extends.`),
-    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Shift'), z.literal('Shorten'), z.literal('Terms')]).describe(`
+    DeliveryForm: z.union([z.literal('Duration'), z.literal('Price'), z.literal('Scope'), z.literal('Seats'), z.literal('Shift'), z.literal('Shorten'), z.literal('Terms'), z.literal('Timing')]).describe(`
         * * Field Name: DeliveryForm
         * * Display Name: Delivery Form
         * * SQL Data Type: nvarchar(20)
@@ -2248,7 +2248,8 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
     *   * Shift
     *   * Shorten
     *   * Terms
-        * * Description: How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).`),
+    *   * Timing
+        * * Description: How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier), Timing (a new sale's payment timing departs from due on receipt at confirm: a delayed service start, an instalment due after the service starts, or payment terms other than due on receipt).`),
     ReasonCategory: z.union([z.literal('Dispute'), z.literal('Other'), z.literal('Referral'), z.literal('Retention')]).describe(`
         * * Field Name: ReasonCategory
         * * Display Name: Reason Category
@@ -2432,6 +2433,11 @@ export const mjBizAppsOrdersOrderConcessionSchema = z.object({
         * * Display Name: Withdrawn At
         * * SQL Data Type: datetimeoffset
         * * Description: When the concession was withdrawn. Set only when Status is Withdrawn.`),
+    TimingFacts: z.string().nullable().describe(`
+        * * Field Name: TimingFacts
+        * * Display Name: Timing Facts
+        * * SQL Data Type: nvarchar(2000)
+        * * Description: For a Timing concession, the order's payment timing when the concession was recorded: the service start of each line that is not a renewal, the payment terms, and each live instalment's due date and amount. An approved Timing concession covers the order at confirm only while the order still has exactly these facts. NULL on every other form.`),
     OrderHeader: z.string().describe(`
         * * Field Name: OrderHeader
         * * Display Name: Order Header
@@ -6276,7 +6282,7 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
         * * Display Name: Rule Name
         * * SQL Data Type: nvarchar(200)
         * * Description: Display name of the rule.`),
-    RuleType: z.union([z.literal('ConcessionLimit'), z.literal('CreditLimit'), z.literal('Custom'), z.literal('DiscountLimit'), z.literal('PaymentTermsRequired'), z.literal('ProductAuthorization')]).describe(`
+    RuleType: z.union([z.literal('ConcessionLimit'), z.literal('CreditLimit'), z.literal('Custom'), z.literal('DiscountLimit'), z.literal('PaymentTermsRequired'), z.literal('PaymentTiming'), z.literal('ProductAuthorization')]).describe(`
         * * Field Name: RuleType
         * * Display Name: Rule Type
         * * SQL Data Type: nvarchar(40)
@@ -6287,8 +6293,9 @@ export const mjBizAppsOrdersSalesRuleSchema = z.object({
     *   * Custom
     *   * DiscountLimit
     *   * PaymentTermsRequired
+    *   * PaymentTiming
     *   * ProductAuthorization
-        * * Description: DiscountLimit | ConcessionLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority.`),
+        * * Description: DiscountLimit | ConcessionLimit | PaymentTiming | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority. PaymentTiming names the role that approves a new sale's payment timing when it departs from due on receipt at confirm (a Timing concession); with no active PaymentTiming rule that confirm check is off.`),
     Scope: z.union([z.literal('Global'), z.literal('PerCustomer'), z.literal('PerProduct'), z.literal('PerSalesRep')]).describe(`
         * * Field Name: Scope
         * * Display Name: Scope
@@ -14123,12 +14130,13 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     *   * Shift
     *   * Shorten
     *   * Terms
-    * * Description: How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier).
+    *   * Timing
+    * * Description: How the value was given: Price (a lower price than the price engine's, or a booked term's amount lowered when NewAmount is set), Duration (a term extended at no charge), Scope (a product added at no charge), Seats (quantity added at no charge), Terms (a confirmed order's payment terms changed), Shift (a booked term's start and end moved by the same number of days), Shorten (a booked term started later or ended earlier), Timing (a new sale's payment timing departs from due on receipt at confirm: a delayed service start, an instalment due after the service starts, or payment terms other than due on receipt).
     */
-    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms' {
+    get DeliveryForm(): 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms' | 'Timing' {
         return this.Get('DeliveryForm');
     }
-    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms') {
+    set DeliveryForm(value: 'Duration' | 'Price' | 'Scope' | 'Seats' | 'Shift' | 'Shorten' | 'Terms' | 'Timing') {
         this.Set('DeliveryForm', value);
     }
 
@@ -14563,6 +14571,19 @@ export class mjBizAppsOrdersOrderConcessionEntity extends BaseEntity<mjBizAppsOr
     }
     set WithdrawnAt(value: Date | null) {
         this.Set('WithdrawnAt', value);
+    }
+
+    /**
+    * * Field Name: TimingFacts
+    * * Display Name: Timing Facts
+    * * SQL Data Type: nvarchar(2000)
+    * * Description: For a Timing concession, the order's payment timing when the concession was recorded: the service start of each line that is not a renewal, the payment terms, and each live instalment's due date and amount. An approved Timing concession covers the order at confirm only while the order still has exactly these facts. NULL on every other form.
+    */
+    get TimingFacts(): string | null {
+        return this.Get('TimingFacts');
+    }
+    set TimingFacts(value: string | null) {
+        this.Set('TimingFacts', value);
     }
 
     /**
@@ -26072,13 +26093,14 @@ export class mjBizAppsOrdersSalesRuleEntity extends BaseEntity<mjBizAppsOrdersSa
     *   * Custom
     *   * DiscountLimit
     *   * PaymentTermsRequired
+    *   * PaymentTiming
     *   * ProductAuthorization
-    * * Description: DiscountLimit | ConcessionLimit | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority.
+    * * Description: DiscountLimit | ConcessionLimit | PaymentTiming | PaymentTermsRequired | ProductAuthorization | CreditLimit | Custom. ConcessionLimit names the role that approves a concession outside a rep's SalesAuthority. PaymentTiming names the role that approves a new sale's payment timing when it departs from due on receipt at confirm (a Timing concession); with no active PaymentTiming rule that confirm check is off.
     */
-    get RuleType(): 'ConcessionLimit' | 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization' {
+    get RuleType(): 'ConcessionLimit' | 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'PaymentTiming' | 'ProductAuthorization' {
         return this.Get('RuleType');
     }
-    set RuleType(value: 'ConcessionLimit' | 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'ProductAuthorization') {
+    set RuleType(value: 'ConcessionLimit' | 'CreditLimit' | 'Custom' | 'DiscountLimit' | 'PaymentTermsRequired' | 'PaymentTiming' | 'ProductAuthorization') {
         this.Set('RuleType', value);
     }
 

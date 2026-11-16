@@ -41,7 +41,10 @@ function database(concessions: Row[], lines: Row[], authorities: Row[] = [], adj
               ? authorities
               : params.EntityName.endsWith('Order Adjustments')
                 ? adjustments
-                : lines,
+                : // No PaymentTiming rule: the payment timing check (5) is off here; ConcessionGateTiming.test.ts covers it.
+                  params.EntityName.endsWith('Sales Rules')
+                  ? []
+                  : lines,
     }));
 }
 
@@ -110,10 +113,13 @@ describe('FindUnapprovedConcessions — line prices', () => {
     it('tells the rep to save first when the order has no ID to record a concession against', async () => {
         const unsaved = { ...apiLine, ID: null, OrderHeaderID: null, PriceStated: true };
 
+        // Only the payment timing check's rule is read (none is active); nothing about the order, which has no row yet.
+        mockRunView.mockResolvedValue({ Success: true, Results: [] });
         const problems = await FindUnapprovedConcessions(null, [unsaved], true, provider, user);
 
         expect(problems).toEqual([expect.stringMatching(/Save the order without confirming it first/)]);
-        expect(mockRunView).not.toHaveBeenCalled();
+        const read = mockRunView.mock.calls.map((c) => (c[0] as { EntityName: string }).EntityName);
+        expect(read).toEqual(['MJ_BizApps_Orders: Sales Rules']);
     });
 
     it('skips a bundle component, whose price is its share of the bundle price', async () => {
@@ -415,7 +421,7 @@ describe('FindUnapprovedConcessions — products that always need approval (goli
             const name = params.EntityName;
             const results = name.endsWith('Order Concessions')
                 ? opts.concessions ?? []
-                : name.endsWith('Order Adjustments')
+                : name.endsWith('Order Adjustments') || name.endsWith('Sales Rules')
                   ? []
                   : name.endsWith('Product Categories')
                   ? [
