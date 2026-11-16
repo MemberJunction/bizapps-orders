@@ -104,8 +104,8 @@
  * A rep's share limit rises with the order's product mix (golive #281):
  *
  *   CS41      a mix tier raises the share limit on an order spanning two product types, so 8% is approved on
- *             authority; removing one product type drops the limit back, holds the confirm, and the concession
- *             recorded again is Pending
+ *             authority; when the order comes to span one type the limit drops back, the confirm is held, and the
+ *             concession recorded again is Pending
  *
  * An approved Duration concession now extends its term (golive #221, the term-extension bundle), so the
  * checks that record one first configure who acknowledges it.
@@ -1928,17 +1928,20 @@ export const ConcessionChecks: NamedCheck[] = [
 
         const c = await recordConcession(ctx, { DeliveryForm: "Seats", OrderLineID: seatsLine.ID, AddedQuantity: 8 });
         Assert(c.Saved, `recording failed: ${c.Message}`);
-        AssertEqual(c.Entity.Status, "Approved", `800 is 8% of a 10000 order spanning two product types: ${c.Message}`);
+        const share = Number(c.Entity.CumulativeShare);
+        Assert(share >= 0.05 && share < 0.1, `the check needs a share between the 5% base and the 10% tier, got ${share}`);
+        AssertEqual(c.Entity.Status, "Approved", `over the 5% base limit, under the 10% two-type tier: ${c.Message}`);
 
-        // The service line goes: 800 is now 8.9% of 9000, under the tier but over the 5% the authority holds alone.
+        // The service line becomes a second physical good: the order now spans one product type, so the
+        // share is over the 5% the authority holds alone.
         const service = built.Order.Lines.Items.find((l) => l.ProductID === f.Products.DiscountedA);
         Assert(service != null, "the service line is not on the order");
-        built.Order.Lines.Remove(service);
-        Assert(await built.Order.Save(), `removing the line must save: ${built.Order.LatestResult?.CompleteMessage}`);
+        service.ProductID = f.Products.WidgetB;
+        Assert(await built.Order.Save(), `changing the line's product must save: ${built.Order.LatestResult?.CompleteMessage}`);
 
         built.Order.Status = "Confirmed";
         Assert(!(await built.Order.Save()), "with one product type the approval on authority no longer covers the order");
-        Assert(/8\.9% of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
+        Assert(/of its net total, at or above the 5\.0% limit.*Withdraw them and record them again/.test(built.Order.LatestResult?.CompleteMessage ?? ""),
           `the refusal should give the base limit, got: ${built.Order.LatestResult?.CompleteMessage}`);
 
         built.Order.Status = "Draft";
