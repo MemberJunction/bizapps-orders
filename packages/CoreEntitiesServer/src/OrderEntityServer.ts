@@ -137,6 +137,7 @@ const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 import {
     SubscriptionBehavior,
     ResolveSubscriptionTypeID,
+    CanceledTermCoverageEnd,
     SubscriptionTypeRulesFrom,
     type SubscriberIdentity,
     type SubscriberMatch,
@@ -4961,6 +4962,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{
             ID: string;
             Status: string;
+            EndDate: string | null;
             HolderOrganizationID: string | null;
             BeneficiaryPersonID: string | null;
             ProviderSubscriptionID: string | null;
@@ -4969,7 +4971,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             {
                 EntityName: SUBSCRIPTION_ENTITY,
                 ExtraFilter: filter,
-                Fields: ['ID', 'Status', 'HolderOrganizationID', 'BeneficiaryPersonID', 'ProviderSubscriptionID', 'SubscriptionNumber'],
+                Fields: ['ID', 'Status', 'EndDate', 'HolderOrganizationID', 'BeneficiaryPersonID', 'ProviderSubscriptionID', 'SubscriptionNumber'],
                 OrderBy: '__mj_CreatedAt DESC',
                 ResultType: 'simple',
                 BypassCache: true,
@@ -4987,11 +4989,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const sub = rows[0];
         if (!sub) return null;
 
-        const terms = await rv.RunView<{ EndDate: string; TermNumber: number }>(
+        const terms = await rv.RunView<{ EndDate: string; TermNumber: number; Status: string }>(
             {
                 EntityName: SUBSCRIPTION_TERM_ENTITY,
                 ExtraFilter: `SubscriptionID='${sub.ID}'`,
-                Fields: ['EndDate', 'TermNumber'],
+                Fields: ['EndDate', 'TermNumber', 'Status'],
                 OrderBy: 'TermNumber DESC',
                 MaxRows: 1,
                 ResultType: 'simple',
@@ -5006,6 +5008,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             HolderOrganizationID: sub.HolderOrganizationID,
             BeneficiaryPersonID: sub.BeneficiaryPersonID,
             LatestTermEnd: latest?.EndDate ? new Date(latest.EndDate) : null,
+            LatestCoverageEnd: CanceledTermCoverageEnd(latest ?? null, sub),
             LatestTermNumber: latest?.TermNumber ?? 0,
             ProviderSubscriptionID: sub.ProviderSubscriptionID,
             SubscriptionNumber: sub.SubscriptionNumber,

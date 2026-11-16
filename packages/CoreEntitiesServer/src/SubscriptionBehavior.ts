@@ -88,11 +88,39 @@ export interface ExistingSubscription {
     BeneficiaryPersonID?: string | null;
     /** End of the latest term, if any. */
     LatestTermEnd?: Date | null;
+    /**
+     * The last day the latest term's coverage actually runs. Earlier than `LatestTermEnd` when a
+     * cancellation cut the term short: the term keeps the end it was sold with, and the
+     * subscription's access ends sooner. Absent, coverage runs to `LatestTermEnd`.
+     */
+    LatestCoverageEnd?: Date | null;
     LatestTermNumber?: number | null;
     /** The gateway's id when a payment gateway bills it (E2b): another order must not change it unseen. */
     ProviderSubscriptionID?: string | null;
     /** Member-facing number, for messages. */
     SubscriptionNumber?: string | null;
+}
+
+/**
+ * The last day the latest term's coverage runs, for {@link ExistingSubscription.LatestCoverageEnd}.
+ *
+ * A term stamped Canceled was cut short: its `EndDate` is still the end it was sold with, and the
+ * coverage ended on the day the cancelled subscription's access ended (`Subscription.EndDate`,
+ * which the cancellation stamps). That day is used when it falls before the term's end. Every other
+ * case is the term's own end: a term that ran or is running, a Canceled term on a subscription that
+ * is not Canceled or carries no end, or an access end past the term (a grace period).
+ *
+ * Pure and exported for unit tests. Null when there is no term.
+ */
+export function CanceledTermCoverageEnd(
+    term: { EndDate: Date | string; Status: string } | null,
+    subscription: { Status: string; EndDate?: Date | string | null },
+): Date | null {
+    if (!term?.EndDate) return null;
+    const termEnd = new Date(term.EndDate);
+    if (term.Status !== 'Canceled' || subscription.Status !== 'Canceled' || !subscription.EndDate) return termEnd;
+    const accessEnd = new Date(subscription.EndDate);
+    return accessEnd.getTime() < termEnd.getTime() ? accessEnd : termEnd;
 }
 
 /** One term a purchase buys. */
@@ -545,7 +573,11 @@ export class SubscriptionBehavior {
             RequestedStartDate: rawContext.RequestedStartDate ? utcDay(rawContext.RequestedStartDate) : null,
             RequestedEndDate: rawContext.RequestedEndDate ? utcDay(rawContext.RequestedEndDate) : null,
             Existing: rawContext.Existing
-                ? { ...rawContext.Existing, LatestTermEnd: rawContext.Existing.LatestTermEnd ? utcDay(rawContext.Existing.LatestTermEnd) : null }
+                ? {
+                      ...rawContext.Existing,
+                      LatestTermEnd: rawContext.Existing.LatestTermEnd ? utcDay(rawContext.Existing.LatestTermEnd) : null,
+                      LatestCoverageEnd: rawContext.Existing.LatestCoverageEnd ? utcDay(rawContext.Existing.LatestCoverageEnd) : null,
+                  }
                 : rawContext.Existing,
         };
 
@@ -574,11 +606,17 @@ export class SubscriptionBehavior {
         // too, rather than starting a second term over the same dates (#737). A gateway renewal of a
         // cancelled subscription continues it even after it lapsed: the gateway charged for the
         // period right after the last term, not one starting on the day the charge was booked.
-        const extending =
-            action === 'ExtendExisting' ||
-            (action === 'Reactivate' &&
-                (this.CanceledCoverageRunning(ctx) || (!!ctx.GatewayRenewal && !!ctx.Existing?.LatestTermEnd)));
-        const existingCoverageEnd = extending ? (ctx.Existing?.LatestTermEnd ?? null) : null;
+        const gatewayContinues = action === 'Reactivate' && !!ctx.GatewayRenewal && !!ctx.Existing?.LatestTermEnd;
+        const continuesCanceled = action === 'Reactivate' && !gatewayContinues && this.CanceledCoverageRunning(ctx);
+        const extending = action === 'ExtendExisting' || gatewayContinues || continuesCanceled;
+        // A canceled subscription is continued from the day its coverage ends, which a cancellation
+        // that cut the term short put before the term's own end. A live one, and a gateway renewal,
+        // continue from the end of the latest term.
+        const existingCoverageEnd = !extending
+            ? null
+            : continuesCanceled
+              ? this.CanceledCoverageEnd(ctx)
+              : (ctx.Existing?.LatestTermEnd ?? null);
         const start = existingCoverageEnd
             ? addDays(existingCoverageEnd, 1)
             : utcDay(this.ComputeStartDate(ctx));
@@ -878,13 +916,28 @@ export class SubscriptionBehavior {
     }
 
     /**
-     * True when the existing subscription is Canceled but its latest term has not ended by the
-     * purchase date: a cancellation at end of term keeps the paid coverage running (#737).
+     * True when the existing subscription is Canceled but its coverage has not ended by the purchase
+     * date: a cancellation at end of term keeps the paid coverage running (#737).
      */
     protected CanceledCoverageRunning(ctx: SubscriptionPurchaseContext): boolean {
+        const end = this.CanceledCoverageEnd(ctx);
+        return end != null && end.getTime() >= ctx.PurchaseDate.getTime();
+    }
+
+    /**
+     * The last day a Canceled subscription's coverage runs, or null when it is not Canceled or has
+     * no term.
+     *
+     * Not the latest term's end when the cancellation cut that term short. An immediate
+     * cancellation ends coverage on its own day and leaves the term the end it was sold with;
+     * reading that end would count the rest of the cancelled term as coverage the customer still
+     * holds, and a purchase made after the cancellation would be placed after a period nobody is
+     * covered for.
+     */
+    protected CanceledCoverageEnd(ctx: SubscriptionPurchaseContext): Date | null {
         const existing = ctx.Existing;
-        if (!existing || existing.Status !== 'Canceled' || !existing.LatestTermEnd) return false;
-        return utcDay(existing.LatestTermEnd).getTime() >= ctx.PurchaseDate.getTime();
+        if (!existing || existing.Status !== 'Canceled' || !existing.LatestTermEnd) return null;
+        return utcDay(existing.LatestCoverageEnd ?? existing.LatestTermEnd);
     }
 
     /**
