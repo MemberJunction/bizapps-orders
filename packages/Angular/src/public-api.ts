@@ -56,6 +56,16 @@ export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/wi
 export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
 export { BizAppsProductSubscriptionWidgetComponent } from './lib/custom/Product/widgets/product-subscription-widget.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
+/**
+ * The order lines editor, for other apps that edit an order's lines inside their own form (golive #331:
+ * the sales deal form). Standalone: bind `Order`, `EditMode` and optionally `Provider`; it prices the
+ * order itself and emits `PricingChanged` and `Navigate`. The host saves the order.
+ */
+export {
+    MJOOrderLinesEditorComponent,
+    type MJODiscountDraft,
+    type MJODiscountMode,
+} from './lib/custom/OrderHeader/order-lines-editor.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 
 export { OrdersPartyHeadersModule } from './lib/form-panels/party-headers.module';
