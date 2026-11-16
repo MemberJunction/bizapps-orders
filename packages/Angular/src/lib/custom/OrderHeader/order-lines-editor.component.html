@@ -9,7 +9,7 @@
         <div class="mjo-ol-card">
             <div class="mjo-ol-card__top">
                 <div class="mjo-ol-card__id">
-                    <button type="button" class="mjo-ol-card__name" (click)="OpenProduct(line, $event)">
+                    <button type="button" class="mjo-ol-card__name" [mjRecordLink]="line" FieldName="ProductID" [HandleClick]="false" (click)="OpenProduct(line, $event)">
                         {{ ProductFor(line)?.Name ?? 'Product' }}
                     </button>
                     <div class="mjo-ol-card__meta">
