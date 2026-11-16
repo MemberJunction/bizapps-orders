@@ -129,6 +129,10 @@ also rebuilds every open `Unmatched` payment from its stored BILL record, and ca
 have all since been loaded, however long ago BILL last changed it (bc-aidp-next-golive#446). Capture
 runs `Orders.CapturePayment` for the provider's company with `IdempotencyKey` `billcom:<payment id>`
 and the tender from BILL's `receivablesType` (`OTHER` means a wire, by agreement with Finance). A
+payment that would apply more to an order or instalment than Orders still shows open is `Held`, not
+captured, with a reason saying it is already paid here (golive #148): it is usually the same receipt
+also recorded by hand in Orders. It is re-decided every pass, so voiding the duplicate in Orders lets
+the next pass capture it; **Set aside** keeps the one recorded in Orders. A
 payment voided (`ReversalNeeded`) or re-applied (`Reapplied`) on BILL after capture is flagged, not
 corrected. A live pass that leaves flagged, `Unmatched` or `Refused` rows succeeds with `ATTENTION`.
 Each payment that pass moved into one of those states (or from one to another) gets one
@@ -208,8 +212,10 @@ On `next`, with the connector (0.3.2) and integration engine (6.1.5) this repo i
 - **Payments left for a person:** a currency other than the company's functional one (`Refused`), an
   invoice Orders did not send (`Unmatched`), an invoice sent before 5.27.0 by a product company other
   than the order's (`Refused` by `Orders.CapturePayment`; #333), and a void or re-application after capture.
-- **Double entry is a process rule** (design §12 Q4): a BILL payment also recorded by hand in Orders is
-  booked twice, since `Orders.CapturePayment` accepts over-payment.
+- **Double entry is caught only by balance** (design §12 Q4; golive #148): a BILL payment also recorded
+  by hand in Orders is held when the order or instalment has nothing left open for it. A partial hand-recorded
+  payment that leaves enough open for the BILL one is not caught, and Orders never marks the BILL
+  invoice paid. A held payment raises no `Payment Needs Review` notice.
 - **Smaller gaps.** Retries are decided from error text (`BILLCOM_TRANSIENT`), not the HTTP status.
   After a capture covering several invoices, BILL's status and due amount can be stored on the wrong
   `ExternalInvoice` row (`refreshInvoices` pairs by position; cancel reads BILL directly). The

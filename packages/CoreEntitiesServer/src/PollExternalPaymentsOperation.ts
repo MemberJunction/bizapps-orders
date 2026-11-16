@@ -12,7 +12,8 @@
  *   2. upsert an `ExternalPayment` row per payment (the audit trail and the exceptions worklist);
  *   3. decide (`DecideExternalPayment`): Capture / Hold / Ignore / ReversalNeeded;
  *   4. for Capture, match `invoicePayments[]` to `ExternalInvoice` rows by the rail's invoice id — ALL
- *      of them, or the payment is Unmatched and nothing is captured;
+ *      of them, or the payment is Unmatched and nothing is captured; a payment that would take an
+ *      order or instalment past what is still open is Held for a person (golive #148);
  *   5. call `Orders.CapturePayment` with `IdempotencyKey = 'billcom:<0rp id>'`, so the unique index on
  *      `PaymentHeader.IdempotencyKey` is the guarantee even if this table is wrong;
  *   6. advance the watermark only when the pass completed without a fault.
@@ -58,6 +59,7 @@ import type { BaseInvoiceRail, RailPaymentRecord } from './BaseInvoiceRail.js';
 import {
     EXTERNAL_PAYMENT_ENTITY,
     ORDER_HEADER_ENTITY,
+    ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
     PAYMENT_LINE_ENTITY,
     PAYMENT_PROVIDER_SYNC_STATE_ENTITY,
 } from './entity-names.js';
@@ -560,6 +562,20 @@ export class PollExternalPaymentsOperation extends OrdersPollExternalPaymentsOpe
             return { ...base, Disposition: 'Refused', Reason: reason };
         }
 
+        // ALREADY PAID HERE (golive #148). Bill.com does not hear about a payment recorded in Orders, so
+        // a receipt keyed here and then marked paid on the invoice in Bill.com came back through this
+        // poll as a second payment, and the cash was booked twice. The idempotency key cannot see it:
+        // the two payments have different origins. A payment that would take an order or instalment
+        // past what is still open waits for a person instead of being captured. It is re-decided every
+        // pass, so voiding the duplicate here lets the next pass capture it; setting it aside keeps the
+        // payment recorded here.
+        const schedules = await loadScheduleBalances(allocation.Allocations.map((a) => a.OrderHeaderPaymentScheduleID).filter((id): id is string => !!id), provider, user);
+        const alreadyPaid = AlreadyPaidReason(p.ExternalPaymentRef, vocabulary.RailName, allocation.Allocations, orders, schedules);
+        if (alreadyPaid) {
+            await record('Held', alreadyPaid, null);
+            return { ...base, Disposition: 'Held', Reason: alreadyPaid };
+        }
+
         const notes = [vocabulary.ReportsInvoiceApplications ? `${vocabulary.RailName} receivable payment ${p.ExternalPaymentRef}` : `${vocabulary.RailName} payment ${p.ExternalPaymentRef}`];
         if (p.UnappliedAmount > 0) notes.push(`${money(p.UnappliedAmount).toFixed(2)} left unapplied on the rail (customer credit there, not here).`);
 
@@ -790,16 +806,112 @@ async function upsertExternalPayment(
     if (!(await entity.Save())) throw new Error(entity.LatestResult?.CompleteMessage ?? `External payment ${p.ExternalPaymentRef} could not be saved.`);
 }
 
-async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, { BillToOrganizationID: string | null; BillToPersonID: string | null }>> {
-    const map = new Map<string, { BillToOrganizationID: string | null; BillToPersonID: string | null }>();
+/** What the poll reads about each order a payment lands on. `Balance` is what is still open on it. */
+interface PollOrderRow {
+    BillToOrganizationID: string | null;
+    BillToPersonID: string | null;
+    OrderNumber?: string | null;
+    Balance?: number | null;
+}
+
+async function loadOrders(orderIDs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, PollOrderRow>> {
+    const map = new Map<string, PollOrderRow>();
     if (!orderIDs.length) return map;
     const rv = new RunView(provider as unknown as IRunViewProvider);
-    const r = await rv.RunView<{ ID: string; BillToOrganizationID: string | null; BillToPersonID: string | null }>(
-        { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID IN (${orderIDs.map((id) => `'${RequireUUID(id, 'OrderHeaderID')}'`).join(',')})`, Fields: ['ID', 'BillToOrganizationID', 'BillToPersonID'], ResultType: 'simple' },
+    const r = await rv.RunView<PollOrderRow & { ID: string }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY,
+            ExtraFilter: `ID IN (${orderIDs.map((id) => `'${RequireUUID(id, 'OrderHeaderID')}'`).join(',')})`,
+            Fields: ['ID', 'OrderNumber', 'BillToOrganizationID', 'BillToPersonID', 'Balance'],
+            ResultType: 'simple',
+            // The balance decides whether this payment is captured, so it is read fresh.
+            BypassCache: true,
+        },
         user,
     );
-    for (const o of r.Results ?? []) map.set(String(o.ID).toLowerCase(), { BillToOrganizationID: o.BillToOrganizationID, BillToPersonID: o.BillToPersonID });
+    for (const o of r.Results ?? []) {
+        map.set(String(o.ID).toLowerCase(), { BillToOrganizationID: o.BillToOrganizationID, BillToPersonID: o.BillToPersonID, OrderNumber: o.OrderNumber ?? null, Balance: o.Balance ?? null });
+    }
     return map;
+}
+
+/** What is still open on each instalment a payment lands on. */
+export interface PollScheduleRow {
+    InstallmentNumber?: number | null;
+    Balance?: number | null;
+}
+
+async function loadScheduleBalances(scheduleIDs: readonly string[], provider: IMetadataProvider, user: UserInfo): Promise<Map<string, PollScheduleRow>> {
+    const map = new Map<string, PollScheduleRow>();
+    const ids = [...new Set(scheduleIDs.map((id) => String(id).toLowerCase()))];
+    if (!ids.length) return map;
+    const rv = new RunView(provider as unknown as IRunViewProvider);
+    const r = await rv.RunView<PollScheduleRow & { ID: string }>(
+        {
+            EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+            ExtraFilter: `ID IN (${ids.map((id) => `'${RequireUUID(id, 'OrderHeaderPaymentScheduleID')}'`).join(',')})`,
+            Fields: ['ID', 'InstallmentNumber', 'Balance'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        user,
+    );
+    for (const s of r.Results ?? []) map.set(String(s.ID).toLowerCase(), { InstallmentNumber: s.InstallmentNumber ?? null, Balance: s.Balance ?? null });
+    return map;
+}
+
+/** `ExternalPayment.DispositionReason` is NVARCHAR(500). */
+const REASON_MAX = 500;
+
+/**
+ * Why a payment must wait because it would pay more than is open, or null when it fits (golive #148).
+ *
+ * Summed per order and per instalment, since one payment can carry several applications to the same
+ * one. An order or instalment whose balance was not read is not judged: an unknown balance is no
+ * evidence of a duplicate, and holding on it would stop every capture whenever the read came back
+ * short.
+ */
+export function AlreadyPaidReason(
+    ref: string,
+    railName: string,
+    allocations: ReadonlyArray<{ OrderHeaderID: string; Amount: number; OrderHeaderPaymentScheduleID?: string | null }>,
+    orders: ReadonlyMap<string, Pick<PollOrderRow, 'OrderNumber' | 'Balance'>>,
+    schedules: ReadonlyMap<string, PollScheduleRow>,
+): string | null {
+    const perOrder = new Map<string, number>();
+    const perSchedule = new Map<string, { OrderID: string; Amount: number }>();
+    for (const a of allocations) {
+        const orderID = String(a.OrderHeaderID).toLowerCase();
+        perOrder.set(orderID, money((perOrder.get(orderID) ?? 0) + Number(a.Amount)));
+        if (a.OrderHeaderPaymentScheduleID) {
+            const key = String(a.OrderHeaderPaymentScheduleID).toLowerCase();
+            const prev = perSchedule.get(key);
+            perSchedule.set(key, { OrderID: orderID, Amount: money((prev?.Amount ?? 0) + Number(a.Amount)) });
+        }
+    }
+
+    const over: string[] = [];
+    for (const [orderID, amount] of perOrder) {
+        const order = orders.get(orderID);
+        if (order?.Balance == null) continue;
+        const open = money(Math.max(0, Number(order.Balance)));
+        if (amount > open + 0.005) over.push(`${amount.toFixed(2)} to ${order.OrderNumber ?? 'an order'}, which has ${open.toFixed(2)} open`);
+    }
+    for (const [scheduleID, { OrderID, Amount }] of perSchedule) {
+        const s = schedules.get(scheduleID);
+        if (s?.Balance == null) continue;
+        const open = money(Math.max(0, Number(s.Balance)));
+        if (Amount > open + 0.005) {
+            const order = orders.get(OrderID)?.OrderNumber ?? 'its order';
+            over.push(`${Amount.toFixed(2)} to installment ${s.InstallmentNumber ?? '?'} of ${order}, which has ${open.toFixed(2)} open`);
+        }
+    }
+    if (!over.length) return null;
+
+    const reason =
+        `Already paid in Orders: ${ref} would apply ${over.join('; ')}. It may duplicate a payment recorded here as well as on ${railName}. ` +
+        `Not captured. Void the duplicate here and the next poll captures this one, or set this one aside.`;
+    return reason.length > REASON_MAX ? `${reason.slice(0, REASON_MAX - 1)}…` : reason;
 }
 
 /**
