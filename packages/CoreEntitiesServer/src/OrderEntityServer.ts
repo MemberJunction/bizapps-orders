@@ -82,7 +82,8 @@ import { StampSubscriptionCanceled, StampTerm } from './CancelSubscriptionOperat
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
-import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolveAccountingOperation, ResolverEntities } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolveAccountingOperation, ResolverEntities, VoidPendingJournalEntries } from './AccountingBridge.js';
+import { LoadOriginRecognition, PlanRecognitionVoids, type PlannedVoid } from './RecognitionVoids.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
 import { InstalmentsToCancel, RefuseCancellingPaidInstalments, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
@@ -3948,15 +3949,21 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // the origin sits on a different order, so the factory would have to query for it. Empty
         // for an order that reverses nothing.
         const creditMemoByLine = this.creditMemosForReversals(unbooked, reversals);
-        const drafts = await factory.BuildDrafts(
+        const built = await factory.BuildDrafts(
             this, unbooked, subs?.TermsByLine, subs?.RecognitionMonthsByLine, scheduleRows, creditMemoByLine,
         );
         const creditMemos = factory.DrainCreditMemos();
+        // A REVERSAL VOIDS WHAT IT WOULD ONLY MIRROR (golive #378, D14 as amended). A recognition
+        // mirror that exactly cancels an origin entry still Pending in no batch is dropped, and that
+        // entry is voided instead; every other mirror is booked as before (./RecognitionVoids.ts).
+        const plan = PlanRecognitionVoids(built, await LoadOriginRecognition(unbooked, provider, user));
+        const drafts = plan.Kept;
         // An order can legitimately produce NO entries: every line fully comped, so nothing to
         // debit or credit. Accounting refuses an empty draft set, quite correctly, so the call is
         // skipped rather than the order being refused for having no ledger impact. A return that
         // credits nothing still records that it credited nothing.
         if (drafts.length === 0) {
+            await this.voidTakenBackRecognition(plan.Voids, unbooked, provider, user);
             await this.stampCreditMemos(creditMemos, lines, options);
             return;
         }
@@ -3976,6 +3983,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             throw new Error(`The order could not be booked, and nothing was posted. ${DescribeBookingErrors(result.Errors, lineFor)}`);
         }
 
+        await this.voidTakenBackRecognition(plan.Voids, unbooked, provider, user);
         await this.stampJournalEntryIDs(lines, drafts, result, options);
         await this.stampCreditMemos(creditMemos, lines, options);
 
@@ -4010,6 +4018,28 @@ export class OrderEntityServer extends OrderHeaderEntity {
                         `The running totals could not be advanced on order line ${orderLineID}.`,
                 );
             }
+        }
+    }
+
+    /**
+     * Void the origin recognition entries this booking takes back instead of mirroring them (golive
+     * #378). Inside the booking transaction, so a refused void rolls the whole booking back and the
+     * mirrors it replaced are never missing on their own. Each entry's reason names the reversing line.
+     */
+    private async voidTakenBackRecognition(
+        voids: PlannedVoid[],
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<void> {
+        const byLine = new Map<string, string[]>();
+        for (const v of voids) byLine.set(v.OrderLineID, [...(byLine.get(v.OrderLineID) ?? []), v.JournalEntryID]);
+        for (const [lineID, ids] of byLine) {
+            const line = lines.find((l) => UUIDsEqual(l.ID, lineID));
+            const reason =
+                `Taken back by order ${this.OrderNumber ?? this.ID} line ${line?.LineNumber ?? '?'} before it was batched, ` +
+                `so it is voided instead of offset (golive #378).`;
+            await VoidPendingJournalEntries(ids, reason, provider, user);
         }
     }
 

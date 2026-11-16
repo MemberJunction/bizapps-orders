@@ -7,9 +7,10 @@ const ORIGIN_LINE = '33333333-3333-3333-3333-333333333333';
 const RETURN_LINE = '44444444-4444-4444-4444-444444444444';
 
 /** A recognition entry of `amount`, as the factory books one: one line each side. */
-function je(id: string, linked: string, day: string, amount: number, description = 'recognize Sidecar'): mjBizAppsAccountingJournalEntryEntity {
+function je(id: string, linked: string, day: string, amount: number, description = 'recognize Sidecar', status = 'Pending'): mjBizAppsAccountingJournalEntryEntity {
     return {
         ID: id,
+        Status: status,
         LinkedRecordID: linked,
         EffectiveDate: new Date(`${day}T00:00:00Z`),
         Description: `Order ORD-1 line 1 — ${description}`,
@@ -73,5 +74,24 @@ describe('NetReversedRecognition (golive #474)', () => {
         const out = NetReversedRecognition(entries, new Map(), originTerms);
         expect(out.Entries).toEqual(entries);
         expect(out.OffsetMonths).toBe(0);
+    });
+
+    it('leaves voided months out and counts them as taken back, with no mirror to net (golive #378)', () => {
+        const entries = [
+            je('oct', TERM, '2026-10-12', 1000, 'recognize Sidecar', 'GLPosted'),
+            je('oct-r', RETURN_LINE, '2026-10-12', 1000, 'unrecognize Sidecar'),
+            je('nov', TERM, '2026-11-12', 1000, 'recognize Sidecar', 'Voided'),
+            je('dec', TERM, '2026-12-12', 1000, 'recognize Sidecar', 'Voided'),
+        ];
+        const out = NetReversedRecognition(entries, reversals, originTerms);
+        expect(out.Entries).toEqual([]);
+        expect(out.OffsetMonths).toBe(3);
+        expect(out.PartlyOffsetMonths).toBe(0);
+    });
+
+    it('leaves a voided entry out even when nothing reverses the subscription', () => {
+        const entries = [je('nov', TERM, '2026-11-12', 1000), je('dec', TERM, '2026-12-12', 1000, 'recognize Sidecar', 'Voided')];
+        const out = NetReversedRecognition(entries, new Map(), originTerms);
+        expect(out.Entries.map((e) => e.ID)).toEqual(['nov']);
     });
 });

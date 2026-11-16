@@ -345,7 +345,10 @@ export async function TermRecognition(
     return { Driver: driver, PeriodMonths: behavior.RecognitionMonths(rules) };
 }
 
-/** Every `RevenueRecognition` entry linked to the term, with its lines and their dimensions. */
+/**
+ * Every `RevenueRecognition` entry linked to the term, with its lines and their dimensions. A voided
+ * entry (golive #378) is not staged: it will never post, so nothing nets against it or moves it.
+ */
 export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTaskContext): Promise<StagedEntry[]> {
     const type = (
         await ReadRows<{ ID: string }>(ctx, {
@@ -361,7 +364,7 @@ export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTask
         EntityName: JE_ENTITY,
         ExtraFilter:
             `LinkedEntityID = '${EntityIDFor(SUBSCRIPTION_TERM_ENTITY)}' AND LinkedRecordID = '${RequireUUID(termID, 'SubscriptionTermID')}' ` +
-            `AND EntryTypeID = '${RequireUUID(type.ID, 'EntryTypeID')}'`,
+            `AND EntryTypeID = '${RequireUUID(type.ID, 'EntryTypeID')}' AND Status <> 'Voided'`,
         Fields: ['ID', 'EntryNumber', 'EffectiveDate', 'Status', 'JournalEntryBatchID'],
         ResultType: 'simple',
     });

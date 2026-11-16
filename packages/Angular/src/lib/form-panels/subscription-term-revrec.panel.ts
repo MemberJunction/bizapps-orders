@@ -5,6 +5,7 @@ import { BaseFormPanel } from '@memberjunction/ng-base-forms';
 import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/accounting-entities';
 import type { mjBizAppsOrdersSubscriptionTermEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ACCOUNTING_ENTITIES } from '../data/entity-names';
+import { IsVoided } from '../data/revrec-netting';
 
 const SECTION_KEY = 'revRec';
 
@@ -86,7 +87,8 @@ async function LoadTermJournals(
         ResultType: 'entity_object',
         MaxRows: 200,
     }, provider.CurrentUser);
-    const rows = res.Success && res.Results ? res.Results : [];
+    // A voided entry (golive #378) recognizes nothing: it stays in the journal grid, not in the schedule.
+    const rows = (res.Success && res.Results ? res.Results : []).filter((je) => !IsVoided(je));
     await Promise.all(rows.map(async (je) => {
         try {
             if (je.Lines && typeof je.Lines.Load === 'function') {

@@ -500,3 +500,43 @@ export async function RedatePaymentJournalEntries(
     }
     return outcomes;
 }
+
+// ─── Voiding staged entries (bc-aidp-next-golive#378) ───────────────────────────────────────────
+//
+// A reversal that would mirror an origin entry still Pending in no batch voids it instead (D14 as
+// amended; ./RecognitionVoids.ts). Resolved by key like the other accounting operations, so this
+// package builds against an accounting release without it; calling it there throws, naming the
+// operation, and the booking rolls back.
+
+/** What `Accounting.VoidPendingJournalEntries` answers with (the parts orders reads). */
+export interface VoidPendingJournalEntriesOutcome {
+    Voided: Array<{ JournalEntryID: string; EntryNumber: string }>;
+}
+
+/**
+ * Void `journalEntryIDs` with `reason`, all or nothing, and return what was voided.
+ *
+ * SIDE EFFECT, DELIBERATELY NAMED: this voids journal entries. It joins the CALLER'S transaction, so
+ * the voids stand only if the booking that replaces the mirrors commits. Accounting refuses, with its
+ * own message, any entry that is batched, posted, reversed or already voided.
+ *
+ * @throws when the operation is unregistered, the call fails, or accounting refuses the void
+ */
+export async function VoidPendingJournalEntries(
+    journalEntryIDs: string[],
+    reason: string,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<VoidPendingJournalEntriesOutcome> {
+    if (journalEntryIDs.length === 0) return { Voided: [] };
+    const key = 'Accounting.VoidPendingJournalEntries';
+    const op = ResolveAccountingOperation<{ JournalEntryIDs: string[]; Reason: string }, VoidPendingJournalEntriesOutcome>(
+        key,
+        'void staged recognition entries a reversal takes back',
+    );
+    const result = await op.Execute({ JournalEntryIDs: journalEntryIDs, Reason: reason }, { provider, user });
+    if (!result.Success || !result.Output) {
+        throw new Error(`The staged entries were not voided. ${result.ErrorMessage ?? result.ResultCode ?? `${key} returned no result.`}`);
+    }
+    return result.Output;
+}

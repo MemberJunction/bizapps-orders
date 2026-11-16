@@ -877,6 +877,12 @@ export interface OrderJournalData {
     SharedPaymentOrderCounts: Record<string, number>;
 }
 
+/**
+ * Leaves out voided journal entries (golive #378): cancelled before they left the subledger, they
+ * recognize nothing and net to nothing. Harmless against an accounting release without the status.
+ */
+const VOIDED_EXCLUDED = `Status <> 'Voided'`;
+
 const EMPTY_DATA: OrderJournalData = {
     Journals: [],
     Lines: [],
@@ -911,9 +917,11 @@ export async function LoadOrderJournalData(
     const list = uuidList(origins.IDs);
     if (!list) return EMPTY_DATA;
 
+    // A voided entry (golive #378) never posts and nets to nothing, so it is not in the rollup; the
+    // order's journal list still shows it.
     const Journals = await runRows<JournalHeaderRow>(
         MJO_ACCOUNTING_ENTITIES.JournalEntry,
-        [`LinkedRecordID IN (${list})`],
+        [`LinkedRecordID IN (${list})`, VOIDED_EXCLUDED],
         'EffectiveDate',
         500,
         user,
@@ -1389,7 +1397,7 @@ export async function LoadRevRecJournalEntries(
 
     const entries = await run<mjBizAppsAccountingJournalEntryEntity>(
         MJO_ACCOUNTING_ENTITIES.JournalEntry,
-        [`LinkedRecordID IN (${list})`],
+        [`LinkedRecordID IN (${list})`, VOIDED_EXCLUDED],
         'EffectiveDate',
         500,
         user,
