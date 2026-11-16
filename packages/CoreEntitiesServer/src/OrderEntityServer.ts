@@ -77,6 +77,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { ApplyAccountCreditOperation, PlanReturnNetting, type ReversalCredit } from './ApplyAccountCreditOperation.js';
+import { WithReturnSettlement } from './ReversalAuthority.js';
 import { StampSubscriptionCanceled, StampTerm } from './CancelSubscriptionOperation.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { ResolveLineParty } from './LineParty.js';
@@ -3132,7 +3133,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * already saved this order's header and lines under their own permissions; the payment rows are
      * the confirm's bookkeeping, not a payment the caller is taking, and a role that may book a return
      * (Account Director) holds no rights on Payment Headers, Lines or Details. The caller is named in
-     * the payment's reason.
+     * the payment's reason. The finance gate on moving credit is passed the same way
+     * (`WithReturnSettlement`, ./ReversalAuthority.ts): this moves only the return's own credit, only
+     * to the orders it reverses.
+     *
+     * NOT ON A MONEY-ONLY REVERSAL: the credit for a gateway refund of a renewal is applied to that
+     * renewal by `ApplyGatewayCredit`, under its own locks and with its own notice.
      *
      * Throws when an application is refused, which rolls the whole confirm back rather than booking
      * half a return.
@@ -3142,6 +3148,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         reversals: Map<string, ReversalContext>,
     ): Promise<void> {
         if (!this.ReversesOrderHeaderID && reversals.size === 0) return;
+        if (IsMoneyOnlyReversal(this)) return;
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const caller = this.ContextCurrentUser as UserInfo;
 
@@ -3164,14 +3171,16 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const system = UserCache.Instance.GetSystemUser();
         if (!system) throw new Error(`The credit from ${this.OrderNumber} cannot be applied: the MJ system user is not in the user cache.`);
         for (const step of plan) {
-            const result = await new ApplyAccountCreditOperation().ExecuteServer(
-                {
-                    SourceOrderHeaderID: this.ID,
-                    TargetOrderHeaderID: RequireUUID(step.OriginOrderID, 'OriginOrderID'),
-                    Amount: step.Amount,
-                    Reason: `Settled by ${this.OrderNumber}, which reverses it (confirmed by ${caller?.Name ?? caller?.ID ?? 'unknown user'})`,
-                },
-                { provider, user: system, emitProgress: () => undefined },
+            const result = await WithReturnSettlement(() =>
+                new ApplyAccountCreditOperation().ExecuteServer(
+                    {
+                        SourceOrderHeaderID: this.ID,
+                        TargetOrderHeaderID: RequireUUID(step.OriginOrderID, 'OriginOrderID'),
+                        Amount: step.Amount,
+                        Reason: `Settled by ${this.OrderNumber}, which reverses it (confirmed by ${caller?.Name ?? caller?.ID ?? 'unknown user'})`,
+                    },
+                    { provider, user: system, emitProgress: () => undefined },
+                ),
             );
             if (!result.Success || !result.Output?.Success) {
                 throw new Error(

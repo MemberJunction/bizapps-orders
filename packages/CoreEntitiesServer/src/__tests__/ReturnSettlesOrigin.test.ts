@@ -37,6 +37,8 @@ import { UserCache } from '@memberjunction/generic-database-provider';
 import { ApplyAccountCreditOperation } from '../ApplyAccountCreditOperation.js';
 import { OrderEntityServer } from '../OrderEntityServer.js';
 import { PaymentLineEntityServer } from '../PaymentLineEntityServer.js';
+import { ReversalGate } from '../ReversalAuthority.js';
+import { SanctionMoneyOnlyReversal } from '../SubscriptionEntityServer.js';
 
 const here = import.meta.dirname;
 
@@ -244,6 +246,32 @@ describe('confirming a return settles the order it reverses', () => {
         const context = apply.mock.calls[0][1] as { user: unknown };
         expect(context.user).toBe(SYSTEM_USER);
         expect((apply.mock.calls[0][0] as { Reason: string }).Reason).toContain('Account Director');
+    });
+
+    it('applies it past the finance gate on moving credit, and only for the length of that call', async () => {
+        owes({ [ORIGIN]: 3000 });
+        const noOneMayReverse = { Authorizations: [{ Name: 'MJ.BizApps.Orders.Order.Reverse' }] } as never;
+        const during: Array<string | null> = [];
+        spyOnApply().mockImplementation(async () => {
+            during.push(ReversalGate('Moving an account credit to another order', noOneMayReverse, null as never));
+            return { Success: true, Output: { Success: true } } as never;
+        });
+
+        await reversal([{ origin: ORIGIN, credit: 3000 }]).run();
+
+        expect(during).toEqual([null]);
+        expect(ReversalGate('Moving an account credit to another order', noOneMayReverse, null as never)).toMatch(/needs the/);
+    });
+
+    it('leaves a money-only reversal’s credit to the gateway-refund door', async () => {
+        owes({ [ORIGIN]: 3000 });
+        const apply = spyOnApply();
+        const { order, run } = reversal([{ origin: ORIGIN, credit: 3000 }]);
+        SanctionMoneyOnlyReversal(order);
+
+        await run();
+
+        expect(apply).not.toHaveBeenCalled();
     });
 
     it('refuses rather than writing as the caller when there is no system user', async () => {
