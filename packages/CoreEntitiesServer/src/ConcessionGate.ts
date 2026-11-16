@@ -503,7 +503,7 @@ export async function OrderNetTotal(
     return Math.round(total * 100) / 100;
 }
 
-/** What every concession on the order that is not Rejected comes to, in currency. */
+/** What every concession on the order still standing (Pending or Approved) comes to, in currency. */
 export async function OrderConcessionTotal(
     orderHeaderID: string,
     provider: IMetadataProvider,
@@ -561,7 +561,10 @@ async function loadShareLimits(authorityIDs: string[], provider: IMetadataProvid
 }
 
 function concessionTotal(rows: readonly ConcessionRow[]): number {
-    const active = rows.filter((r) => r.Status !== 'Rejected');
+    // Rejected and Withdrawn concessions give nothing away (golive #403).
+    const active = rows.filter((r) => r.Status === 'Pending' || r.Status === 'Approved');
+    // A line's price concessions are alternatives for the same give-away, not additions to it: a
+    // resent save can leave two rows on one line, so each line counts once, at its largest (#387).
     const linePriceMax = new Map<string, number>();
     let otherTotal = 0;
     for (const r of active) {

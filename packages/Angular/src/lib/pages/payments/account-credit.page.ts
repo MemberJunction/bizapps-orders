@@ -5,7 +5,7 @@ import { EntityViewerModule, type RecordSelectedEvent, type RecordOpenedEvent } 
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { PresetViewRef } from '../../data/preset-view';
-import { OrdersApplyAccountCreditOperation, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrdersApplyAccountCreditOperation, ORDER_REVERSE_AUTH, UserCanReverse, type mjBizAppsOrdersOrderHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJOStatedValueComponent } from '../../panels/chips.component';
 import { MJOMoneyPipe, FormatMoney } from '../../panels/money-format';
 import { CrossesLegalEntities } from '../../panels/allocation-math';
@@ -30,6 +30,9 @@ import { GetOrders } from '../../data/orders-queries';
  * the credit order, minus on the target. No new cash entered the business, so
  * zero is the truth rather than a degenerate case — and the
  * payment-equals-its-lines rule is satisfied exactly.
+ *
+ * FINANCE MOVES CREDIT. Without MJ.BizApps.Orders.Order.Reverse (the Finance role) the page lists the
+ * credits and does not offer to apply one; the operation refuses it anyway (bc-aidp-next-golive#454).
  *
  * When the two orders belong to different companies the intercompany legs are
  * REQUIRED rather than convenient: a single Dr A/R / Cr A/R spanning two legal
@@ -139,6 +142,9 @@ import { GetOrders } from '../../data/orders-queries';
                     {{ Busy ? 'Applying…' : 'Apply credit' }}
                 </button>
                 <span class="small muted">No cash changes hands.</span>
+                @if (!MayReverse) {
+                    <span class="small muted">Credits are moved by finance ({{ ReverseAuth }}).</span>
+                }
                 @if (Error) {
                     <span class="small mjo-cr__error">{{ Error }}</span>
                 }
@@ -251,9 +257,13 @@ export class MJOAccountCreditPageComponent implements OnInit {
     public Amount = 0;
     public Busy = false;
     public Error: string | null = null;
+    /** Whether the viewer holds the finance reversal authorization (bc-aidp-next-golive#454). */
+    public MayReverse = false;
+    public readonly ReverseAuth = ORDER_REVERSE_AUTH;
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
+        this.MayReverse = UserCanReverse(md.CurrentUser, md);
         this.OrderEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.OrderHeader) || null;
         await this.load();
         this.cdr.detectChanges();
@@ -297,7 +307,7 @@ export class MJOAccountCreditPageComponent implements OnInit {
     }
 
     public get CanApply(): boolean {
-        return !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
+        return this.MayReverse && !!this.Source && !!this.Target && (this.Amount ?? 0) > 0;
     }
 
     public get TotalDisplay(): string {
