@@ -203,6 +203,15 @@ export abstract class MJOSectionBaseComponent extends BaseResourceComponent impl
                 // scheduled a check for it — without this the input lands and nothing repaints.
                 cached.changeDetectorRef.detectChanges();
             }
+
+            // A PAGE THAT MUST RE-READ ON EVERY VISIT says so by exposing `OnShown()`, the same
+            // opt-in shape as `Reset()` below. Most cached pages are fine showing what they loaded;
+            // one that lists money a later act can change (Account credits after a return, golive
+            // #475) is not, and recreating every page on every visit would lose part-typed work.
+            const page = cached.instance as { OnShown?: () => unknown };
+            if (typeof page.OnShown === 'function') {
+                void Promise.resolve(page.OnShown()).finally(() => cached.changeDetectorRef.detectChanges());
+            }
             return;
         }
 
