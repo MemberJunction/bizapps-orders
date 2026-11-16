@@ -29,6 +29,7 @@
     "queries",
     "template-categories",
     "templates",
+    "notification-types",
     "authorizations",
     "roles",
     "entities",

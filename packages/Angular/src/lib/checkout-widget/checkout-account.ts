@@ -87,3 +87,23 @@ export function MayRedirect(account: CheckoutAccountView | null, dismissed = fal
 export function IsAccountSettled(account: CheckoutAccountView | null): boolean {
     return !account || (account.Outcome !== 'Failed' && !account.CanSetPassword);
 }
+
+/** The confirmed order and the widget's post-sale settings, as `/account` returns them (#858). */
+export interface CheckoutConfirmationView {
+    OrderNumber: string | null;
+    RedirectUrl: string | null;
+    SuccessMessage: string | null;
+}
+
+/** Reads `/account`'s `Confirmation`; null when absent or not an object. */
+export function ReadCheckoutConfirmation(raw: unknown): CheckoutConfirmationView | null {
+    if (!raw || typeof raw !== 'object') return null;
+    const c = raw as Record<string, unknown>;
+    const text = (value: unknown): string | null => (typeof value === 'string' && value.trim() ? value.trim() : null);
+    return { OrderNumber: text(c['OrderNumber']), RedirectUrl: text(c['RedirectUrl']), SuccessMessage: text(c['SuccessMessage']) };
+}
+
+/** The success screen's message: the widget's own, else one naming the order when its number is known. */
+export function ConfirmationMessage(successMessage: string | null | undefined, orderNumber: string | null): string {
+    return successMessage || (orderNumber ? `Thank you. Order ${orderNumber} is confirmed.` : 'Thank you. Your order is confirmed.');
+}

@@ -63,7 +63,7 @@ interface Callable {
 }
 const cancel = () =>
     (new CancelExternalInvoiceOperation() as unknown as Callable).InternalExecute(
-        { ExternalInvoiceID: INVOICE, Reason: 'Returned in full on ORD-002504: Pricing error' },
+        { ExternalInvoiceID: INVOICE, Reason: 'Returned in full on ORD-000002: Pricing error' },
         provider,
         {} as UserInfo,
     );

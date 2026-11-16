@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { RankCatalogMatches } from '../orders-queries';
+import { CompareProductNames, RankCatalogMatches } from '../orders-queries';
 import type { MJOProductOption } from '../orders-queries';
 
 const OWN_COMPANY = '11111111-1111-1111-1111-111111111111';
@@ -84,6 +84,18 @@ describe('RankCatalogMatches', () => {
         expect(names(ranked)).toEqual(['Summit Dinner', 'Summit Ticket', 'Summit Workshop']);
     });
 
+    it('orders numbers in names by value, so revenue bands climb', () => {
+        const ranked = RankCatalogMatches(
+            [
+                option({ ID: 'a', Name: 'Membership $10M-$15M' }),
+                option({ ID: 'b', Name: 'Membership $2M-$5M' }),
+                option({ ID: 'c', Name: 'Membership $1M-$2M' }),
+            ],
+            'membership',
+        );
+        expect(names(ranked)).toEqual(['Membership $1M-$2M', 'Membership $2M-$5M', 'Membership $10M-$15M']);
+    });
+
     it('keeps another company’s products in the results', () => {
         const ranked = RankCatalogMatches(
             [option({ ID: 'a', Name: 'SoundPost Journal', CompanyID: OTHER_COMPANY, CompanyName: 'SoundPost' })],
@@ -134,5 +146,43 @@ describe('RankCatalogMatches', () => {
             'EVT',
         );
         expect(names(ranked)).toEqual(['Summit Ticket']);
+    });
+
+    it('reads a decimal in a name as one number', () => {
+        const ranked = RankCatalogMatches(
+            [
+                option({ ID: 'a', Name: 'Band $1.5M' }),
+                option({ ID: 'b', Name: 'Band $10M' }),
+                option({ ID: 'c', Name: 'Band $1.25M' }),
+                option({ ID: 'd', Name: 'Band $2M' }),
+            ],
+            'band',
+        );
+        expect(names(ranked)).toEqual(['Band $1.25M', 'Band $1.5M', 'Band $2M', 'Band $10M']);
+    });
+});
+
+describe('CompareProductNames', () => {
+    const sorted = (list: string[]): string[] => [...list].sort(CompareProductNames);
+
+    it('orders decimals by value', () => {
+        expect(sorted(['1.10', '1.2', '1.5M'])).toEqual(['1.10', '1.2', '1.5M']);
+        expect(sorted(['1.5', '1.25', '1.05'])).toEqual(['1.05', '1.25', '1.5']);
+    });
+
+    it('orders whole numbers by value, leading zeros and long runs included', () => {
+        expect(sorted(['Item 10', 'Item 2', 'Item 007'])).toEqual(['Item 2', 'Item 007', 'Item 10']);
+        expect(sorted(['N 90071992547409930', 'N 90071992547409920'])).toEqual([
+            'N 90071992547409920',
+            'N 90071992547409930',
+        ]);
+    });
+
+    it('lets the number decide before letter case does', () => {
+        expect(sorted(['Item 10', 'item 2'])).toEqual(['item 2', 'Item 10']);
+    });
+
+    it('treats a trailing dot as text, not a decimal point', () => {
+        expect(sorted(['Version 2. Beta', 'Version 10. Alpha'])).toEqual(['Version 2. Beta', 'Version 10. Alpha']);
     });
 });

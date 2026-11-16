@@ -72,6 +72,15 @@ describe('product sellability on every priced line', () => {
         expect(w.resolveRetryingStaleCatalog).not.toHaveBeenCalled();
     });
 
+    it('prices a product that may not be sold when the caller ignores sellability', async () => {
+        // The product form's Activate check asks whether a Draft product has a price.
+        const w = walk({ ...PRODUCT, Status: 'Draft', AvailableFrom: new Date('2030-01-01') });
+        w.ctx.IgnoreSellability = true;
+        const l = line(false);
+        await w.applyResolvedPrice(l);
+        expect(l.UnitPrice).toBe(25);
+    });
+
     it('refuses a stated line even when the caller asked only for the default to compare against', async () => {
         // The default lookup swallows its own errors; the refusal must not be inside it.
         const w = walk({ ...PRODUCT, Status: 'Inactive' }, '2026-09-25', true);

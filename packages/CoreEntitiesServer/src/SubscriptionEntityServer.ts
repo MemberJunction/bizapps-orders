@@ -5,17 +5,28 @@
  * (`PROVIDER_BILLED_FIELDS`), on every tier. The server writes that keep Orders and the gateway in step are
  * the exceptions, each sanctioned where the subscription is loaded for it:
  *   · CancelSubscriptionOperation, after the gateway confirmed the cancel;
- *   · the order save that reactivates a cancelled one as a fresh start, retiring its old gateway id.
+ *   · the order save that reactivates a cancelled one as a fresh start, retiring its old gateway id;
+ *   · the order save of a renewal the gateway already charged (E4), which reactivates a cancelled one
+ *     keeping its gateway id (`SanctionGatewayRenewal`).
  * The sanction is a module-private set rather than a property, so nothing outside this server can grant
  * it: a client that set a flag on its own object would still be refused.
  *
+ * ON CREATE, THE CONTRACT'S INCREASE. A new subscription with no `RenewalIncreasePercent` of its own
+ * takes the negotiated annual increase from the contract behind its birth order (the deal on that
+ * order names the contract; `ContractIncrease.ts`). Copied once, here, so every path that creates a
+ * subscription (confirm, migration, a hand-entered one with a line) gets it, and so the pricer keeps
+ * reading one column. Nothing happens on a host without the Sales and Contracts apps.
+ *
  * CONNECTS TO:
- *   CALLERS: ./CancelSubscriptionOperation.ts · ./OrderEntityServer.ts (touchExistingSubscription)
+ *   CALLERS: ./ProviderSubscriptions.ts (the hand-over records the gateway id) · ./CancelSubscriptionOperation.ts ·
+ *            ./OrderEntityServer.ts (touchExistingSubscription, createSubscription) · ./ProviderSubscriptionSync.ts · ./LinkProviderSubscription.ts
+ *   READS:   ./ContractIncrease.ts
  *   BASE:    @mj-biz-apps/orders-entities SubscriptionEntity
  */
-import { BaseEntity } from '@memberjunction/core';
+import { BaseEntity, type EntitySaveOptions, type IMetadataProvider } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { SubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { ApplyContractIncreaseOnCreate } from './ContractIncrease.js';
 
 const SANCTIONED = new WeakSet<object>();
 
@@ -23,6 +34,14 @@ const SANCTIONED = new WeakSet<object>();
 export class SubscriptionEntityServer extends SubscriptionEntity {
     protected override ProviderBilledChangeSanctioned(): boolean {
         return SANCTIONED.has(this);
+    }
+
+    public override async Save(options?: EntitySaveOptions): Promise<boolean> {
+        // Before the save, so the rate lands in the same INSERT as the subscription and the row is
+        // never seen without it. The hook refuses nothing and never throws: a contract that cannot be
+        // read leaves the rate empty, which is what the row would have held anyway.
+        await ApplyContractIncreaseOnCreate(this, this.ProviderToUse as unknown as IMetadataProvider, this.ContextCurrentUser);
+        return super.Save(options);
     }
 }
 
@@ -55,6 +74,38 @@ export function SanctionCancellationReversal(order: object): void {
 /** True for the reversal order a gateway-confirmed cancel books. Only this server can mark one. */
 export function IsCancellationReversal(order: object): boolean {
     return CANCELLATION_REVERSALS.has(order);
+}
+
+const MONEY_ONLY_REVERSALS = new WeakSet<object>();
+
+/**
+ * Mark a reversal order that credits MONEY only (D20: the gateway refunded a renewal it charged): its lines reverse
+ * part of the sale's amount, but no grant is reduced and no term changes, because a refund is not a cancel.
+ */
+export function SanctionMoneyOnlyReversal(order: object): void {
+    MONEY_ONLY_REVERSALS.add(order);
+}
+
+/** True for a money-only reversal order (no access is taken away). Only this server can mark one. */
+export function IsMoneyOnlyReversal(order: object): boolean {
+    return MONEY_ONLY_REVERSALS.has(order);
+}
+
+const GATEWAY_RENEWALS = new WeakSet<object>();
+
+/**
+ * Mark the order E4 books for a renewal the payment gateway already charged (`BookProviderRenewal`). Its
+ * renewal line may extend, or reactivate, the subscription the gateway bills, keeping the gateway id; any
+ * other order that would renew it is refused (`ProviderBilledPurchaseVerdict`). Only this server can mark
+ * one: a client building its own order object cannot.
+ */
+export function SanctionGatewayRenewal(order: object): void {
+    GATEWAY_RENEWALS.add(order);
+}
+
+/** True for an order `SanctionGatewayRenewal` marked. */
+export function IsGatewayRenewal(order: object): boolean {
+    return GATEWAY_RENEWALS.has(order);
 }
 
 /** Tree-shaking anchor — call from the server bootstrap so @RegisterClass is retained. */

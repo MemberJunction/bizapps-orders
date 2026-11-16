@@ -11,6 +11,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
 import { GetDashboardOrders, type MJODashboardOrderRow } from '../../data/orders-queries';
+import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
 import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
@@ -634,7 +635,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 presetName = 'Draft & Quoted Orders';
                 break;
             case 'credits':
-                whereClause = `Balance < 0 AND Status NOT IN ('Draft','Quoted','Voided')`;
+                whereClause = CREDITS_HELD_WHERE;
                 presetName = 'Credit Balance Orders';
                 break;
             default:

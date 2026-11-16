@@ -64,6 +64,7 @@
  */
 import { GL_ROLE, IsRoleNotLinked, RefuseUnlinkedCustomerDeposits, type GLAccountResolver } from './GLAccountResolver.js';
 import { SplitExactly } from './BundleBehavior.js';
+import { CustomerPart } from './JournalEntryCustomer.js';
 import type { PaymentJEDraft, PaymentJELine, PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 
 /** One order line's contribution, as far as allocation is concerned. */
@@ -135,6 +136,12 @@ export interface PaymentLineAllocationContext {
     PaymentLineID: string;
     PaymentNumber: string;
     OrderNumber: string;
+    /**
+     * The order's customer (billing organization, else billing person), named in each entry's
+     * description so accounting's batch view shows whose cash it is (bc-aidp-next-golive#452).
+     * Absent or null, the description names the payment and order only.
+     */
+    CustomerName?: string | null;
     /** What this payment line applies to the order. Always positive; `IsReversal` sets direction. */
     Amount: number;
     /** Where the cash landed. */
@@ -635,7 +642,9 @@ export class PaymentAllocationFactory {
             EffectiveDate: isoDate(ctx.PaymentDate),
             // Accounting's own vocabulary, not ours to extend (D-ENTRYTYPE).
             EntryType: ctx.IsReversal ? 'Refund' : 'PaymentReceipt',
-            Description: `${ctx.IsReversal ? 'Refund' : 'Payment'} ${ctx.PaymentNumber} — order ${ctx.OrderNumber} (company ${companyID})`,
+            Description:
+                `${ctx.IsReversal ? 'Refund' : 'Payment'} ${ctx.PaymentNumber}${CustomerPart(ctx.CustomerName)} — ` +
+                `order ${ctx.OrderNumber} (company ${companyID})`,
             // D25 provenance: the PAYMENT LINE is the causal record, so an auditor can walk from
             // any of these entries back to the one allocation that produced them.
             LinkedEntityID: this._paymentLineEntityID,

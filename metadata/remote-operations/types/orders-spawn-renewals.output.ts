@@ -15,14 +15,26 @@ export interface RenewalCandidate {
     CurrentTermEnd: string;
     /** Lead days actually applied, after the subscription's override of the type's default. */
     LeadDays: number;
+    /** `Subscription.AutoRenew`. */
+    AutoRenew?: boolean;
+    /** How the order was, or would be, left. */
+    OrderStatus?: 'Confirmed' | 'Draft';
     /** Set when the renewal was placed (absent on a preview, or when placing failed). */
     OrderID?: string;
     OrderNumber?: string;
+    /**
+     * Which renewal order of this pass the subscription renews on, 1-based. Members with the same number
+     * share one order: same selling company, customer, term end, placement and renewal card.
+     */
+    OrderGroup?: number;
     /** Set when this candidate was skipped, with the reason. */
     SkippedReason?: string;
     /** The product the renewal is placed on: the subscription's own, or its successor. */
     RenewalProductID?: string;
-    /** The renewal's unit price before the increase. */
+    /**
+     * The renewal's unit price before the increase. When the line that bought the expiring term bought
+     * several terms (a 24-month line on a 12-month type), one term's share of that line's price.
+     */
     BasePrice?: number;
     /** Where the base price came from: the prior term's price, its list price, or the successor's list. */
     BasePriceSource?: 'PriorPrice' | 'PriorList' | 'SuccessorList';
@@ -34,6 +46,12 @@ export interface RenewalCandidate {
     UnitPrice?: number;
     /** The renewal line's discount, as a fraction: 0 unless the subscription carries its discount into renewals. */
     DiscountPct?: number;
+    /** Seats the renewal buys. */
+    Quantity?: number;
+    /** First day of the term the renewal buys, `YYYY-MM-DD`, as the confirm will set it. */
+    RenewalTermStart?: string;
+    /** Last day of the term the renewal buys, `YYYY-MM-DD`, as the confirm will set it. */
+    RenewalTermEnd?: string;
     /**
      * Promotion codes that carried into the renewal and discounted it: codes recorded on the line that
      * bought the expiring term whose promotion has `AppliesToRenewals` set. Absent when none were presented.
@@ -51,6 +69,7 @@ export interface SpawnRenewalsOutput {
     Message?: string;
     /** Every subscription considered due, whether or not an order was placed. */
     Candidates: RenewalCandidate[];
+    /** Renewal ORDERS placed; a candidate with an `OrderID` is a subscription renewed on one of them. */
     Placed: number;
     Skipped: number;
 }

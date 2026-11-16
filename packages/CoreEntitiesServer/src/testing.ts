@@ -10,3 +10,7 @@
 // Lets isolated work join the transaction an integration check holds. Calling it in production would
 // bring back the shared-provider rollback #927 fixed.
 export { JoinCallerTransactionForTests } from './isolatedProvider.js';
+
+// Runs a cancel as the RECORD of an end the payment gateway already made (what the sync does), so a race check can
+// drive the cancel door alone, at a chosen moment, against the refund door.
+export { WithGatewayEndRecorded } from './CancelSubscriptionOperation.js';

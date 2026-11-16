@@ -51,11 +51,31 @@ const uuidKey = (id: string | null | undefined): string => (id ?? '').trim().toL
 export function IsLinePriceOverridden(
     line: mjBizAppsOrdersOrderLineEntity,
     engine: LineEngineDefault | null | undefined,
+    applicable?: readonly ApplicablePrice[],
 ): boolean {
     const flag = line.GetFieldByName('PriceOverridden');
     if (flag && (flag.Value === true || flag.Value === 1 || flag.Value === '1')) return true;
     if (!anyFieldIsDirty(line, ['UnitPrice', 'ProductPriceID'])) return false;
-    return engine ? !isEnginePrice(line, engine) : true;
+    if (engine) return !isEnginePrice(line, engine);
+    return !IsLineOnUndecidedBand(line, engine, applicable ?? []);
+}
+
+/**
+ * The line is on a revenue band the rules could not choose because the buyer's revenue is unknown.
+ * Choosing that band is the rep's job, not a deviation from the rules: it needs no override grant
+ * and no reason. Once the revenue is known the engine picks the band, and choosing another one is
+ * an ordinary override.
+ */
+export function IsLineOnUndecidedBand(
+    line: Pick<mjBizAppsOrdersOrderLineEntity, 'UnitPrice' | 'ProductPriceID'>,
+    engine: LineEngineDefault | null | undefined,
+    applicable: readonly ApplicablePrice[],
+): boolean {
+    if (engine) return false;
+    const id = uuidKey(line.ProductPriceID);
+    if (!id) return false;
+    const band = applicable.find((p) => p.BandUndecided === true && uuidKey(p.ID) === id);
+    return !!band && moneyEqual(Number(line.UnitPrice ?? 0), band.UnitPrice);
 }
 
 /**
@@ -158,7 +178,10 @@ export function PinLineToNamedPrice(
     }
     stamp(line, 'ProductPriceID', price.ID);
     stamp(line, 'UnitPrice', price.UnitPrice);
-    stamp(line, 'PriceOverridden', true);
+    // A band chosen because the rules could not choose one is the rules' price, not an override.
+    const bandPick = !engine && price.BandUndecided === true;
+    stamp(line, 'PriceOverridden', !bandPick);
+    if (bandPick) stamp(line, 'PriceOverrideReason', null);
     return 'pinned';
 }
 
@@ -199,8 +222,9 @@ export function LinePriceOverrideReason(line: mjBizAppsOrdersOrderLineEntity): s
 export function LineNeedsOverrideReason(
     line: mjBizAppsOrdersOrderLineEntity,
     engine: LineEngineDefault | null | undefined,
+    applicable?: readonly ApplicablePrice[],
 ): boolean {
-    return IsLinePriceOverridden(line, engine) && LinePriceOverrideReason(line).trim() === '';
+    return IsLinePriceOverridden(line, engine, applicable) && LinePriceOverrideReason(line).trim() === '';
 }
 
 /** Record why the price left the rules. Whitespace is not a reason, so it is stored as none. */

@@ -10,8 +10,15 @@
  *      stated on the subscription (`CarryDiscountOnRenewal`).
  *   2. A product with a successor renews AS the successor, priced from the successor's current list.
  *   3. An annual increase applies on top, from the start of the renewal term, when that term crosses
- *      an anniversary of the subscription's start. Every invoice in a term carries one price, so the
- *      increase belongs to a term, never to part of one.
+ *      an anniversary of the subscription's start that has passed since the price being renewed
+ *      began. Every invoice in a term carries one price, so the increase belongs to a term, never to
+ *      part of one. A line that bought several terms set its price once, at the first of them, so
+ *      the price began there and not at its last term (golive #478). See {@link RenewalPriceStart}.
+ *   4. A renewal buys one term. A line that bought several terms at once (24 months sold as one line
+ *      on a 12-month type) with a typed price (`PriceOverridden`) has a price covering all of them, so
+ *      the prior price is cut to one term's share of it before the rules above apply (golive #338).
+ *      An engine-priced line carries one term's price whatever period it states, and is not cut.
+ *      See {@link PriorTermShare}.
  *
  * Pure: the caller resolves the prices and the increase levels, and this decides.
  *
@@ -52,8 +59,32 @@ export function ResolveRenewalIncrease(levels: RenewalIncreaseLevels): ResolvedR
 }
 
 /**
+ * The day the price being renewed began: the start of the earliest term the expiring term's order
+ * line bought (golive #478).
+ *
+ * One line buys one term in the ordinary case, and this is that term's start. A line booked as
+ * several terms (24 months sold as one line, or a 13-month line booked as a year and a remainder)
+ * set its price once, at the first of them. Measured from the last term instead, a remainder that
+ * starts on the anniversary looks as though it had already taken the increase, and the renewal
+ * after it is priced flat.
+ *
+ * `lineFirstTermStart` absent, or later than the expiring term's start, leaves the term's own start.
+ */
+export function RenewalPriceStart(expiringTermStart: Date | string, lineFirstTermStart: Date | string | null | undefined): Date | string {
+    if (lineFirstTermStart == null || lineFirstTermStart === '') return expiringTermStart;
+    return dayNumber(lineFirstTermStart) < dayNumber(expiringTermStart) ? lineFirstTermStart : expiringTermStart;
+}
+
+function dayNumber(value: Date | string): number {
+    const d = calendarDay(value);
+    return Date.UTC(d.y, d.m, d.d);
+}
+
+/**
  * Whether a renewal term starting on `newTermStart` crosses an anniversary of `anchor` (the
- * subscription's start) that the term being renewed, starting on `priorTermStart`, had not.
+ * subscription's start) that had not passed on `priorTermStart`, the day the price being renewed
+ * began: the expiring term's start, or the start of the first term its line bought when that line
+ * bought several ({@link RenewalPriceStart}).
  *
  * An annual term crosses one on every renewal. A monthly or quarterly term crosses one once a year,
  * so its price rises once a year rather than on every renewal. A short first term into a calendar
@@ -82,9 +113,31 @@ function calendarDay(value: Date | string): { y: number; m: number; d: number } 
     return { y: d.getUTCFullYear(), m: d.getUTCMonth(), d: d.getUTCDate() };
 }
 
+/**
+ * The fraction of a line's price that one renewal term is worth: the type's term length over the
+ * months the line covered, capped at 1 (golive #338).
+ *
+ * A 24-month line on a 12-month type is worth half its price per term, and a 13-month line 12/13. A
+ * line no longer than the term is worth its whole price: a 6-month line sold at the full-year price
+ * renews at that price, since the short first period was the concession, not the price.
+ *
+ * 1 when either length is missing or not positive, so a line with no stated period renews as before.
+ */
+export function PriorTermShare(lineMonths: number | null | undefined, termMonths: number | null | undefined): number {
+    const line = Number(lineMonths);
+    const term = Number(termMonths);
+    if (!Number.isFinite(line) || !Number.isFinite(term) || line <= 0 || term <= 0) return 1;
+    return Math.min(1, term / line);
+}
+
 export interface RenewalPriceInput {
     /** The unit price on the line that bought the expiring term, before its discount. */
     PriorUnitPrice: number;
+    /**
+     * The share of `PriorUnitPrice` one renewal term is worth, from {@link PriorTermShare}. Absent
+     * means 1: the line bought one term.
+     */
+    PriorTermShare?: number;
     /** As a fraction, as `OrderLine.DiscountPct` stores it. */
     PriorDiscountPct: number | null;
     /** The prior line's price was typed rather than taken from the engine. */
@@ -109,6 +162,15 @@ export interface RenewalPrice {
     /** The increase actually applied: 0 when none is set or the term crosses no anniversary. */
     IncreasePercent: number;
     IncreaseSource: RenewalIncreaseSource;
+    /**
+     * The increase that IS set, whether or not this term applied it: the resolved ladder value and its
+     * level. Lets a screen say "2% is set, and this renewal crosses no anniversary, so it was not
+     * applied" rather than showing no increase as if none existed.
+     */
+    IncreaseSetPercent: number;
+    IncreaseSetSource: RenewalIncreaseSource;
+    /** Whether the new term crosses an anniversary, so the set increase was applied. */
+    IncreaseApplied: boolean;
     UnitPrice: number;
     DiscountPct: number;
 }
@@ -121,6 +183,14 @@ export interface RenewalPrice {
  */
 export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
     const discount = input.CarryDiscount ? Number(input.PriorDiscountPct ?? 0) : 0;
+    // One term's worth of the prior price, for a price someone typed. The engine prices a product
+    // per term whatever period a line states, so an engine-priced multi-term line already carries one
+    // term's price and is not scaled; only a typed price can cover the whole period. The list price is
+    // not scaled either, for the same reason: comparing it with the scaled typed price is what tells a
+    // multi-term line sold below list from one sold at it.
+    const share = input.PriorTermShare ?? 1;
+    const priorPrice =
+        share < 1 && input.PriorPriceOverridden ? cents(Number(input.PriorUnitPrice) * share) : Number(input.PriorUnitPrice);
 
     let base: number;
     let source: RenewalBaseSource;
@@ -134,14 +204,14 @@ export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
         input.PriorPriceOverridden &&
         !input.CarryDiscount &&
         input.PriorListPrice != null &&
-        Number(input.PriorUnitPrice) < Number(input.PriorListPrice)
+        priorPrice < Number(input.PriorListPrice)
     ) {
         // A price typed BELOW list is a discount by another name and lapses like one. One typed
         // above list is what the customer agreed to pay, and carries forward.
         base = Number(input.PriorListPrice);
         source = 'PriorList';
     } else {
-        base = Number(input.PriorUnitPrice);
+        base = priorPrice;
         source = 'PriorPrice';
     }
 
@@ -151,7 +221,14 @@ export function PriceRenewal(input: RenewalPriceInput): RenewalPrice {
         BaseSource: source,
         IncreasePercent: percent,
         IncreaseSource: input.ApplyIncrease ? input.Increase.Source : 'None',
-        UnitPrice: Math.round(base * (1 + percent / 100) * 100) / 100,
+        IncreaseSetPercent: Number(input.Increase.Percent),
+        IncreaseSetSource: input.Increase.Source,
+        IncreaseApplied: input.ApplyIncrease,
+        UnitPrice: cents(base * (1 + percent / 100)),
         DiscountPct: discount,
     };
+}
+
+function cents(v: number): number {
+    return Math.round(v * 100) / 100;
 }

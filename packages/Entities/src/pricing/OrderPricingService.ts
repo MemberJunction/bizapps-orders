@@ -133,6 +133,12 @@ export interface OrderPricingContext {
     /** PreviewPrice fee-type filter; omitted means the resolver default (Standard). */
     FeeType?: string;
     /**
+     * Skip the check that each product may be sold (Status Active, inside its availability window).
+     * PreviewPrice sets it for the product form's Activate check, which asks whether a Draft product
+     * has a price. Off for every walk that books or quotes an order.
+     */
+    IgnoreSellability?: boolean;
+    /**
      * Also resolve what the rules WOULD say for a line whose price the caller stated.
      *
      * A stated price pins the line and the walk normally stops there — the engine fills a blank and
@@ -343,9 +349,13 @@ export class OrderPricingService {
             // zero, where the net silently floors and the discount stops being visible anywhere.
             // `PerLine` holds both what is already stored and what this loop has granted so far, so
             // the first discount on a fresh line sees exactly the base it always saw.
+            // The order-level base is the same remainder summed over the lines (#824): judging "10%
+            // off the order" against nets that ignore the lines' own discounts resolved to more money
+            // and checked the authority cap against an inflated base.
+            const remainders = lines.map((l) => Math.max(0, Money(l.Net - (run.PerLine.get(l.ID) ?? 0))));
             const base = target
                 ? Money(target.Net - (run.PerLine.get(target.ID) ?? 0))
-                : lines.reduce((sum, l) => sum + l.Net, 0);
+                : Money(remainders.reduce((sum, r) => sum + r, 0));
             // A rate becomes money against the SAME base the authorization judges it on, so "20%"
             // and "$240 off a $1,200 line" are one request expressed two ways rather than two paths.
             const amount = ManualDiscountAmount(md, base);
@@ -373,7 +383,8 @@ export class OrderPricingService {
             } else {
                 // An order-level manual discount allocates exactly like an order-level promotion —
                 // it must reach the lines or tax and GL see the wrong base.
-                const parts = AllocateProRata(amount, lines.map((l) => l.Net));
+                // Pro rata on what each line has left, so no line's share exceeds its remainder.
+                const parts = AllocateProRata(amount, remainders);
                 lines.forEach((l, i) => {
                     if (parts[i] <= 0) return;
                     run.Applications.push({
@@ -612,7 +623,7 @@ export class OrderPricingService {
         // draft whose product was retired since. Refusing here aborts the confirm before any line is
         // written.
         const product = await this.loadProductForPricing(line.ProductID);
-        if (product) this.assertProductSellable(line, product);
+        if (product && !this.ctx.IgnoreSellability) this.assertProductSellable(line, product);
 
         // A stated price ends it. `UnitPrice` is NOT NULL with no sentinel, so "not stated" has to
         // be read from the field's dirty state rather than from its value — 0 is a legitimate price

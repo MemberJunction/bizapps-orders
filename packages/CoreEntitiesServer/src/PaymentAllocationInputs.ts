@@ -20,7 +20,7 @@ import type { GiftCardSaleLine, OrderLineShare } from './PaymentAllocationFactor
 import type { PaymentJELineDimension } from './PaymentJournalEntryFactory.js';
 import { CompanySlices, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_DIMENSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
-import { RequireUUID } from './sql-guards.js';
+import { RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const PAYMENT_DETAIL_ENTITY = 'MJ_BizApps_Orders: Payment Details';
 const STORED_VALUE_ACCOUNT_ENTITY = 'MJ_BizApps_Orders: Stored Value Accounts';
@@ -55,11 +55,12 @@ export async function LoadOrderLineShares(
     user: UserInfo,
     orderHeaderID: string,
 ): Promise<OrderLineShare[]> {
+    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
     const rv = new RunView(provider);
     const res = await rv.RunView<OrderLineRow>(
         {
             EntityName: ORDER_LINE_ENTITY,
-            ExtraFilter: `OrderHeaderID='${orderHeaderID}'`,
+            ExtraFilter: `OrderHeaderID='${orderID}'`,
             Fields: ['ID', 'CompanyID', 'ProductID', 'LineTotalGross'],
             ResultType: 'simple',
             BypassCache: true,
@@ -112,11 +113,12 @@ async function loadLineDimensions(
     const map = new Map<string, PaymentJELineDimension[]>();
     if (lineIDs.length === 0) return map;
 
+    const ids = RequireUUIDs(lineIDs, 'OrderLineID');
     const rv = new RunView(provider);
     const res = await rv.RunView<OrderLineDimensionRow>(
         {
             EntityName: ORDER_LINE_DIMENSION_ENTITY,
-            ExtraFilter: `OrderLineID IN (${lineIDs.map((id) => `'${id}'`).join(',')})`,
+            ExtraFilter: `OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`,
             Fields: ['OrderLineID', 'DimensionID', 'DimensionValueID'],
             ResultType: 'simple',
             BypassCache: true,

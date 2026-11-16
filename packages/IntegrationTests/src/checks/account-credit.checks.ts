@@ -44,6 +44,8 @@ import {
   Fx,
   InRolledBackTransaction,
   ORDERS_SCHEMA,
+  OutsideTransaction,
+  PurgeCheckoutRun,
   TeardownOrdersFixture,
   TxOne,
   TxQuery,
@@ -595,6 +597,59 @@ export const AccountCreditChecks: NamedCheck[] = [
         const row = await orderRow(ctx, order.Order.ID as string);
         AssertEqual(Number(row.Balance), 150, "the order's balance reopens by the refunded amount");
       }),
+  },
+  // ── two spends of one credit at once (D20 round 5: the floor now lets credit orders be spent) ──────
+  {
+    Id: "account-credit.AC-OT1",
+    Name: "AC-OT1: outside the harness transaction, two spends of one 60 credit at the same instant, each on its own provider (two workers), spend it once",
+    RequiresMutation: true,
+    Fn: async (ctx) => {
+      // Committed rows, deleted afterwards. They book on the world's company, which the fixture teardown does NOT
+      // sweep, so the check purges its own three orders and every payment on them (#989 review round 1: each run
+      // had left 3 orders and 2 payments behind).
+      const made: string[] = [];
+      return OutsideTransaction(
+        async () => {
+          // A 60 credit (100 paid 160) and two orders of the same customer owing 60 each.
+          const source = await confirmOrder(ctx, 100);
+          made.push(source.Order.ID as string);
+          const paid = await payToCoA(ctx, source.Order.ID as string, 160);
+          Assert(paid.Saved, `precondition: the over-payment saved: ${paid.Message}`);
+          const t1 = await confirmOrder(ctx, 60);
+          made.push(t1.Order.ID as string);
+          const t2 = await confirmOrder(ctx, 60);
+          made.push(t2.Order.ID as string);
+          const db = ctx.Provider as unknown as { CreateIndependentInstance: () => Promise<unknown> };
+          const workers = await Promise.all([db.CreateIndependentInstance(), db.CreateIndependentInstance()]);
+          let outcomes: Array<{ Success: boolean; Message?: string }> = [];
+          try {
+            outcomes = await Promise.all(
+              [t1, t2].map(async (t, i) => {
+                const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<Record<string, unknown>, CreditOutput>>(
+                  BaseRemotableOperation,
+                  "Orders.ApplyAccountCredit",
+                )!;
+                const out = await op.Execute(
+                  { SourceOrderHeaderID: source.Order.ID, TargetOrderHeaderID: t.Order.ID, Amount: 60 },
+                  { provider: workers[i] as never, user: ctx.User },
+                );
+                return (out.Output as CreditOutput) ?? { Success: false, Message: out.ErrorMessage };
+              }),
+            );
+          } finally {
+            for (const w of workers) await (w as { ReleaseIndependentInstance: () => Promise<void> }).ReleaseIndependentInstance().catch(() => undefined);
+          }
+          AssertEqual(outcomes.filter((o) => o.Success).length, 1, `one spend applies, the other is refused: ${JSON.stringify(outcomes)}`);
+          const after = await orderRow(ctx, source.Order.ID as string);
+          AssertEqual(Number(after.Balance), 0, "the 60 credit is spent once (balance 0, never -60 + 120)");
+          const owed = [Number((await orderRow(ctx, t1.Order.ID as string)).Balance), Number((await orderRow(ctx, t2.Order.ID as string)).Balance)].sort();
+          AssertEqual(JSON.stringify(owed), JSON.stringify([0, 60]), "one order settled, the other still owes 60");
+        },
+        async () => {
+          if (made.length) await PurgeCheckoutRun(ctx, { OrderIDs: made, SubscriptionIDs: [] });
+        },
+      );
+    },
   },
 ];
 

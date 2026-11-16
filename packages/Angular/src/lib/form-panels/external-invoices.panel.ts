@@ -69,7 +69,8 @@ const SECTION_KEY = 'externalInvoices';
  * registers the button next to Confirm order, so it sits where the eye already goes; the panel keeps
  * the rows, the warning that blocks a send, and the acts on one selected invoice. The button shows on
  * every order the rail applies to and is greyed out, with the reason as its tooltip, until the order
- * is confirmed and saved.
+ * is confirmed and saved. It is not shown at all on an order with nothing left to bill — paid in full
+ * or free — because invoicing one is never the next step (bc-aidp-next-golive#457).
  *
  * IT HIDES ITSELF when no company on the order has an active rail, so the overwhelming majority of
  * orders — the ones invoiced natively — look exactly as they did before this feature existed.
@@ -314,20 +315,11 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      * A voided order is never invoiced, so it gets no button rather than one that waits forever.
      */
     public get SendShown(): boolean {
-        return this.Record?.Status !== 'Voided' && this.hasBalanceDue && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule, this.Record?.Balance);
     }
 
     public get Sendable(): boolean {
-        return this.hasBalanceDue && CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
-    }
-
-    /**
-     * Nothing to invoice without a balance due (golive #379), the same test the scheduled send's
-     * worklist makes. A return holds credit, and an original its return settled owes nothing; sending
-     * the settled original was refused as part-paid and left a permanent Failed row.
-     */
-    private get hasBalanceDue(): boolean {
-        return Number(this.Record?.Balance ?? 0) > 0;
+        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule, this.Record?.Balance);
     }
 
     /** What the panel says when nothing has gone to the rail yet. */
@@ -505,14 +497,14 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
         try {
             const result = await new OrdersCancelExternalInvoiceOperation().Execute({
                 ExternalInvoiceID: row.ID,
-                Reason: `Cancelled from the order form for ${this.Record.OrderNumber}.`,
+                Reason: `Canceled from the order form for ${this.Record.OrderNumber}.`,
             });
             const out = result.Output;
             if (!result.Success || !out?.Success) {
-                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be cancelled.' };
+                this.Notice = { Tone: 'error', Text: out?.Message?.trim() || result.ErrorMessage?.trim() || 'The invoice could not be canceled.' };
                 return;
             }
-            this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was cancelled.' };
+            this.Notice = { Tone: 'success', Text: out.Message ?? 'The invoice was canceled.' };
             this.Selected = null;
             await this.load();
         } finally {

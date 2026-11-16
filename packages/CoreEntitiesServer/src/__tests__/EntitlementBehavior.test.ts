@@ -30,6 +30,18 @@ import {
     type PolicyTypeDefaults,
 } from '../EntitlementBehavior.js';
 
+/**
+ * The evaluator with the business zone these tests read in: UTC, so a day's instants are the familiar
+ * 00:00Z ones. A term's last day is covered in full: through 00:00 UTC on the NEXT day.
+ */
+const ZONE = 'UTC';
+const evaluate = (
+    g: Parameters<typeof EvaluateGrantAccess>[0],
+    asOf: Date,
+    sub?: Parameters<typeof EvaluateGrantAccess>[2],
+    term?: Parameters<typeof EvaluateGrantAccess>[3],
+) => EvaluateGrantAccess(g, asOf, sub, term, ZONE);
+
 const product = (
     over: Partial<{
         EntitlementGrantTiming: 'OnConfirm' | 'OnPaidInFull' | 'OnActivation' | null;
@@ -220,14 +232,14 @@ describe('ResolveValidityWindow — Perpetual and FixedDuration', () => {
     const granted = new Date('2026-03-01T12:00:00Z');
 
     it('Perpetual has no end, and that is a fact rather than a missing value', () => {
-        const r = ResolveValidityWindow('Perpetual', { GrantedOn: granted });
+        const r = ResolveValidityWindow('Perpetual', { BusinessZone: ZONE, GrantedOn: granted });
         expect(r.ValidFrom).toEqual(granted);
         expect(r.ValidTo).toBeNull();
         expect(r.ModeApplied).toBe('Perpetual');
     });
 
     it('FixedDuration counts days from the grant', () => {
-        const r = ResolveValidityWindow('FixedDuration', { GrantedOn: granted, DurationDays: 90 });
+        const r = ResolveValidityWindow('FixedDuration', { BusinessZone: ZONE, GrantedOn: granted, DurationDays: 90 });
         expect(r.ValidTo!.toISOString()).toBe('2026-05-30T12:00:00.000Z');
         expect(r.ModeApplied).toBe('FixedDuration');
     });
@@ -235,7 +247,7 @@ describe('ResolveValidityWindow — Perpetual and FixedDuration', () => {
     it('FixedDuration with no duration falls back to Perpetual AND SAYS SO', () => {
         // The fallback matters less than the admission. A grant that silently claimed to be
         // FixedDuration while lasting forever is how a misconfiguration survives an audit.
-        const r = ResolveValidityWindow('FixedDuration', { GrantedOn: granted, DurationDays: null });
+        const r = ResolveValidityWindow('FixedDuration', { BusinessZone: ZONE, GrantedOn: granted, DurationDays: null });
         expect(r.ValidTo).toBeNull();
         expect(r.ModeApplied).toBe('Perpetual');
     });
@@ -249,7 +261,7 @@ describe('ResolveValidityWindow — EventWindow, the online-event case', () => {
     it('follows the EVENT, not the order date', () => {
         // A ticket bought in March for a June event grants access in June. Anchoring to the purchase
         // would open the stream three months early.
-        const r = ResolveValidityWindow('EventWindow', {
+        const r = ResolveValidityWindow('EventWindow', { BusinessZone: ZONE,
             GrantedOn: granted,
             EventStartsAt: starts,
             EventEndsAt: ends,
@@ -259,7 +271,7 @@ describe('ResolveValidityWindow — EventWindow, the online-event case', () => {
     });
 
     it('opens early and closes late, independently', () => {
-        const r = ResolveValidityWindow('EventWindow', {
+        const r = ResolveValidityWindow('EventWindow', { BusinessZone: ZONE,
             GrantedOn: granted,
             EventStartsAt: starts,
             EventEndsAt: ends,
@@ -273,7 +285,7 @@ describe('ResolveValidityWindow — EventWindow, the online-event case', () => {
     it('with no event dates, falls back to Perpetual and says so', () => {
         // A product configured as an event window that is not actually an event. The customer bought
         // something, so refusing the order would be wrong; claiming an event window would be a lie.
-        const r = ResolveValidityWindow('EventWindow', { GrantedOn: granted, EventStartsAt: null, EventEndsAt: null });
+        const r = ResolveValidityWindow('EventWindow', { BusinessZone: ZONE, GrantedOn: granted, EventStartsAt: null, EventEndsAt: null });
         expect(r.ValidTo).toBeNull();
         expect(r.ModeApplied).toBe('Perpetual');
     });
@@ -281,7 +293,7 @@ describe('ResolveValidityWindow — EventWindow, the online-event case', () => {
     it('never produces a window that ends before it starts', () => {
         // A backwards event, which the database CHECK would reject at insert with an error naming
         // neither the product nor the event.
-        const r = ResolveValidityWindow('EventWindow', {
+        const r = ResolveValidityWindow('EventWindow', { BusinessZone: ZONE,
             GrantedOn: granted,
             EventStartsAt: ends,
             EventEndsAt: starts,
@@ -293,19 +305,42 @@ describe('ResolveValidityWindow — EventWindow, the online-event case', () => {
 describe('ResolveValidityWindow — SubscriptionTerm', () => {
     const granted = new Date('2026-03-01T12:00:00Z');
 
-    it('follows the term window exactly', () => {
-        const r = ResolveValidityWindow('SubscriptionTerm', {
+    it('covers the term\'s days in full: from the first day\'s start to the start of the day after the last', () => {
+        const r = ResolveValidityWindow('SubscriptionTerm', { BusinessZone: ZONE,
             GrantedOn: granted,
             TermStartDate: new Date('2026-01-01T00:00:00Z'),
             TermEndDate: new Date('2026-12-31T00:00:00Z'),
         });
         expect(r.ValidFrom.toISOString()).toBe('2026-01-01T00:00:00.000Z');
-        expect(r.ValidTo!.toISOString()).toBe('2026-12-31T00:00:00.000Z');
+        // 31 Dec is covered in full: the grant ends at 00:00 on 1 Jan, not at 00:00 on 31 Dec.
+        expect(r.ValidTo!.toISOString()).toBe('2027-01-01T00:00:00.000Z');
+    });
+
+    it('in Chicago, the term\'s days are Chicago days: 00:00 Central (06:00Z in winter) at both ends', () => {
+        const r = ResolveValidityWindow('SubscriptionTerm', { BusinessZone: 'America/Chicago',
+            GrantedOn: granted,
+            TermStartDate: new Date('2026-01-01T00:00:00Z'),
+            TermEndDate: new Date('2026-12-31T00:00:00Z'),
+        });
+        expect(r.ValidFrom.toISOString()).toBe('2026-01-01T06:00:00.000Z');
+        // Before: 2026-12-31T00:00Z, which is 6 pm Central on 30 Dec, so the last day was cut short.
+        expect(r.ValidTo!.toISOString()).toBe('2027-01-01T06:00:00.000Z');
+    });
+
+    it('refuses a term grant with no business zone rather than guess one', () => {
+        expect(() =>
+            ResolveValidityWindow('SubscriptionTerm', {
+                BusinessZone: '',
+                GrantedOn: granted,
+                TermStartDate: new Date('2026-01-01T00:00:00Z'),
+                TermEndDate: new Date('2026-12-31T00:00:00Z'),
+            }),
+        ).toThrow(/business time zone is required/);
     });
 
     it('with no term, falls back to Perpetual and says so', () => {
         // A non-subscription product configured as though it were one.
-        const r = ResolveValidityWindow('SubscriptionTerm', { GrantedOn: granted });
+        const r = ResolveValidityWindow('SubscriptionTerm', { BusinessZone: ZONE, GrantedOn: granted });
         expect(r.ValidTo).toBeNull();
         expect(r.ModeApplied).toBe('Perpetual');
     });
@@ -376,76 +411,76 @@ const grant = (over: Partial<GrantAccessFacts> = {}): GrantAccessFacts => ({
 
 describe('EvaluateGrantAccess — Status is not the answer', () => {
     it('Active + inside the window is Granted', () => {
-        const r = EvaluateGrantAccess(grant(), asOf);
+        const r = evaluate(grant(), asOf);
         expect(r.HasAccess).toBe(true);
         expect(r.Decision).toBe('Granted');
     });
 
     it('holds at the exact ValidFrom and ValidTo instants (inclusive)', () => {
-        expect(EvaluateGrantAccess(grant(), new Date('2026-01-01T00:00:00Z')).HasAccess).toBe(true);
-        expect(EvaluateGrantAccess(grant(), new Date('2026-12-31T00:00:00Z')).HasAccess).toBe(true);
+        expect(evaluate(grant(), new Date('2026-01-01T00:00:00Z')).HasAccess).toBe(true);
+        expect(evaluate(grant(), new Date('2026-12-31T00:00:00Z')).HasAccess).toBe(true);
     });
 
     it('before ValidFrom is NotYetValid, even though Status is Active', () => {
-        const r = EvaluateGrantAccess(grant(), new Date('2025-12-31T23:59:59Z'));
+        const r = evaluate(grant(), new Date('2025-12-31T23:59:59Z'));
         expect(r).toMatchObject({ HasAccess: false, Decision: 'NotYetValid' });
     });
 
     it('after ValidTo is Expired, even though Status is still Active (no sweeper)', () => {
         // This is the whole reason the check cannot be a poll of Status.
-        const r = EvaluateGrantAccess(grant(), new Date('2027-01-01T00:00:01Z'));
+        const r = evaluate(grant(), new Date('2027-01-01T00:00:01Z'));
         expect(r).toMatchObject({ HasAccess: false, Decision: 'Expired' });
     });
 
     it('Revoked wins even inside the window', () => {
-        expect(EvaluateGrantAccess(grant({ Status: 'Revoked' }), asOf).Decision).toBe('Revoked');
+        expect(evaluate(grant({ Status: 'Revoked' }), asOf).Decision).toBe('Revoked');
     });
 
     it('Suspended wins even inside the window (OnPaidInFull, unpaid)', () => {
-        expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).Decision).toBe('Suspended');
+        expect(evaluate(grant({ Status: 'Suspended' }), asOf).Decision).toBe('Suspended');
     });
 
     it('a Suspended decision carries the row\'s reason, or null when it records none (#269)', () => {
         for (const reason of ['AwaitingPayment', 'PastDue', 'AwaitingActivation'] as const) {
-            expect(EvaluateGrantAccess(grant({ Status: 'Suspended', SuspensionReason: reason }), asOf)).toMatchObject({
+            expect(evaluate(grant({ Status: 'Suspended', SuspensionReason: reason }), asOf)).toMatchObject({
                 Decision: 'Suspended',
                 SuspensionReason: reason,
             });
         }
-        expect(EvaluateGrantAccess(grant({ Status: 'Suspended' }), asOf).SuspensionReason).toBeNull();
+        expect(evaluate(grant({ Status: 'Suspended' }), asOf).SuspensionReason).toBeNull();
     });
 
     it('a pending suspension reports its own reason; other decisions carry none (#269)', () => {
         const pending = grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } });
-        expect(EvaluateGrantAccess(pending, asOf)).toMatchObject({ Decision: 'Suspended', SuspensionReason: 'PastDue' });
-        expect(EvaluateGrantAccess(grant(), asOf).SuspensionReason).toBeUndefined();
-        expect(EvaluateGrantAccess(grant({ Status: 'Revoked' }), asOf).SuspensionReason).toBeUndefined();
+        expect(evaluate(pending, asOf)).toMatchObject({ Decision: 'Suspended', SuspensionReason: 'PastDue' });
+        expect(evaluate(grant(), asOf).SuspensionReason).toBeUndefined();
+        expect(evaluate(grant({ Status: 'Revoked' }), asOf).SuspensionReason).toBeUndefined();
     });
 
     it('stored Status=Expired is Expired even if ValidTo is still in the future', () => {
-        expect(EvaluateGrantAccess(grant({ Status: 'Expired' }), asOf).Decision).toBe('Expired');
+        expect(evaluate(grant({ Status: 'Expired' }), asOf).Decision).toBe('Expired');
     });
 
     it('an unknown Status fails closed', () => {
-        expect(EvaluateGrantAccess(grant({ Status: 'Pending' }), asOf).Decision).toBe('NoGrant');
+        expect(evaluate(grant({ Status: 'Pending' }), asOf).Decision).toBe('NoGrant');
     });
 
     it('a perpetual grant (null ValidTo) stays Granted', () => {
-        expect(EvaluateGrantAccess(grant({ ValidTo: null }), asOf).HasAccess).toBe(true);
+        expect(evaluate(grant({ ValidTo: null }), asOf).HasAccess).toBe(true);
     });
 
     it('an Active row with a pending past-due suspension is Suspended (#287)', () => {
-        const r = EvaluateGrantAccess(grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }), asOf);
+        const r = evaluate(grant({ PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }), asOf);
         expect(r).toMatchObject({ HasAccess: false, Decision: 'Suspended' });
     });
 
     it('a pending decision that is not a suspension leaves access alone', () => {
-        expect(EvaluateGrantAccess(grant({ PendingSuspension: { Status: 'Active', Reason: null } }), asOf).HasAccess).toBe(true);
-        expect(EvaluateGrantAccess(grant({ PendingSuspension: null }), asOf).HasAccess).toBe(true);
+        expect(evaluate(grant({ PendingSuspension: { Status: 'Active', Reason: null } }), asOf).HasAccess).toBe(true);
+        expect(evaluate(grant({ PendingSuspension: null }), asOf).HasAccess).toBe(true);
     });
 
     it('a written Revoked still outranks a pending suspension', () => {
-        const r = EvaluateGrantAccess(
+        const r = evaluate(
             grant({ Status: 'Revoked', PendingSuspension: { Status: 'Suspended', Reason: 'PastDue' } }),
             asOf,
         );
@@ -462,7 +497,7 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
 
     it('immediate cancel with access-through already passed is SubscriptionInactive, not Expired', () => {
         // ValidTo is still 12/31; Status is still Active. The lie the poll would believe.
-        const r = EvaluateGrantAccess(
+        const r = evaluate(
             grant({ LinkedToSubscription: true, LinkedToTerm: true }),
             asOf,
             { Status: 'Canceled', EndDate: new Date('2026-06-30T00:00:00Z') },
@@ -473,7 +508,7 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
 
     it('grace (EndDate still ahead) remains Granted even though the term is Canceled', () => {
         const accessThrough = new Date('2026-07-15T00:00:00Z');
-        const r = EvaluateGrantAccess(
+        const r = evaluate(
             grant({ LinkedToSubscription: true, LinkedToTerm: true }),
             asOf,
             { Status: 'Canceled', EndDate: accessThrough },
@@ -481,26 +516,27 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
         );
         expect(r.HasAccess).toBe(true);
         expect(r.Decision).toBe('Granted');
-        // Reported ValidTo is access-through, not the original term end (12/31).
-        expect(r.ValidTo).toEqual(accessThrough);
+        // Reported ValidTo is the end of the access-through DAY (15 Jul covered in full), not the term end.
+        expect(r.ValidTo).toEqual(new Date('2026-07-16T00:00:00Z'));
     });
 
     it('grace can EXTEND past the original ValidTo', () => {
         // End-of-term cancel + grace days: grant ValidTo is 12/31, access-through is 1/7.
         const accessThrough = new Date('2027-01-07T00:00:00Z');
-        const r = EvaluateGrantAccess(
+        const r = evaluate(
             grant({ LinkedToSubscription: true }),
             new Date('2027-01-03T12:00:00Z'),
             { Status: 'Canceled', EndDate: accessThrough },
         );
         expect(r.HasAccess).toBe(true);
-        expect(r.ValidTo).toEqual(accessThrough);
+        // 7 Jan covered in full: access ends at 00:00 on 8 Jan.
+        expect(r.ValidTo).toEqual(new Date('2027-01-08T00:00:00Z'));
     });
 
     it('holds at the exact access-through instant', () => {
         const end = new Date('2026-07-15T00:00:00Z');
         expect(
-            EvaluateGrantAccess(grant({ LinkedToSubscription: true }), end, {
+            evaluate(grant({ LinkedToSubscription: true }), end, {
                 Status: 'Canceled',
                 EndDate: end,
             }).HasAccess,
@@ -508,7 +544,7 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
     });
 
     it('Canceled with no EndDate fails closed', () => {
-        const r = EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+        const r = evaluate(grant({ LinkedToSubscription: true }), asOf, {
             Status: 'Canceled',
             EndDate: null,
         });
@@ -516,7 +552,7 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
     });
 
     it('Paused refuses immediately, even with a future EndDate', () => {
-        const r = EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+        const r = evaluate(grant({ LinkedToSubscription: true }), asOf, {
             Status: 'Paused',
             EndDate: new Date('2026-12-31T00:00:00Z'),
         });
@@ -525,7 +561,7 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
 
     it('Migrated refuses', () => {
         expect(
-            EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+            evaluate(grant({ LinkedToSubscription: true }), asOf, {
                 Status: 'Migrated',
                 EndDate: new Date('2026-12-31T00:00:00Z'),
             }).Decision,
@@ -534,7 +570,7 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
 
     it('Trialing is still accessing, same as Active', () => {
         expect(
-            EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, {
+            evaluate(grant({ LinkedToSubscription: true }), asOf, {
                 Status: 'Trialing',
                 EndDate: null,
             }).HasAccess,
@@ -542,12 +578,12 @@ describe('EvaluateGrantAccess — cancelled subscription + grace', () => {
     });
 
     it('a grant pointing at a subscription we could not load fails closed', () => {
-        const r = EvaluateGrantAccess(grant({ LinkedToSubscription: true }), asOf, null);
+        const r = evaluate(grant({ LinkedToSubscription: true }), asOf, null);
         expect(r.Decision).toBe('SubscriptionInactive');
     });
 
     it('a grant pointing at a term we could not load fails closed', () => {
-        const r = EvaluateGrantAccess(grant({ LinkedToTerm: true }), asOf, undefined, null);
+        const r = evaluate(grant({ LinkedToTerm: true }), asOf, undefined, null);
         expect(r.Decision).toBe('SubscriptionInactive');
     });
 });

@@ -14,6 +14,9 @@
  *
  * Refusals come back INSIDE the output as `Success: false`. Ambiguous rules and unpriced products
  * are refusals, not faults.
+ *
+ * `IgnoreSellability` prices a product that may not be sold yet, such as a Draft. It is passed to
+ * the same walk, which then skips its Status and availability check and nothing else.
  */
 import {
     BaseRemotableOperation,
@@ -45,6 +48,12 @@ export interface PreviewPriceInput {
     /** Force a specific list, ignoring the customer's assignment — for "what if" comparisons. */
     PriceListID?: string | null;
     FeeType?: string;
+    /**
+     * Price the product whatever its Status and availability window. For the product form's
+     * Activate check, which asks whether a Draft product has a price before it is sold. Order
+     * pricing never sets it, so a product that may not be sold still cannot be booked.
+     */
+    IgnoreSellability?: boolean;
 }
 
 /** One line of the explanation. */
@@ -147,6 +156,7 @@ export class PreviewPriceOperation extends OrdersPreviewPriceOperationBase {
                 Charges: [],
                 ...(input.PriceListID !== undefined ? { PriceListID: input.PriceListID } : {}),
                 ...(input.FeeType ? { FeeType: input.FeeType } : {}),
+                ...(input.IgnoreSellability === true ? { IgnoreSellability: true } : {}),
             });
 
             const resolved = result.PriceComponents.get(line);

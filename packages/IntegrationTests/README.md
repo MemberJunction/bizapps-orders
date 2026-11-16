@@ -178,6 +178,19 @@ field lengths when the database has none, since a send refuses names it cannot c
 itself returns is probed by hand against a sandbox with `test-harnesses/billcom-live.mjs`, which
 never runs in CI; see [`docs/billcom-invoice-rail.md`](../../docs/billcom-invoice-rail.md).
 
+`orders-isa` covers MemberJunction's IS-A machinery against a real database, which MJ cannot do itself — it
+has no IS-A entity of its own and tests the machinery with mocks. It drives both of Orders' disjoint pairs
+through save, view, load, promotion (`AttachToParent`), `EnsureISAChild` and delete. Three things differ
+from the other bundles:
+
+- **Its name carries the app.** Accounting and Sales have IS-A bundles too, and the check registry
+  silently replaces a check or lifecycle registered under a name it already holds, so a plain `isa`
+  could swap one app's checks for another's in a shared process.
+- **IS7 runs under `OutsideTransaction`**, because the rollback it proves has to be MJ's own rather
+  than the check's, and it deletes the draft order it commits.
+- **The deletes in IS8/IS9 race a 30-second deadline**, so a return of MJ#4850 (a parent `Delete()`
+  that never returned) fails one check instead of hanging the run.
+
 ## Drift guards
 
 `pnpm test` in this package is not an integration run — it is the wiring check, and

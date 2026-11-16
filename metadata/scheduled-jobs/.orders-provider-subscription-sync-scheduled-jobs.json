@@ -1,0 +1,42 @@
+[
+  {
+    "_comments": [
+      "THE NIGHTLY PROVIDER SUBSCRIPTION SYNC (option E, E3 + E4 + E6): the backstop of the gateway's webhooks.",
+      "",
+      "IT SHIPS DISABLED AND SET TO PREVIEW, the same gate as the other subscription jobs. A preview reads the gateway and Orders and reports",
+      "every difference and what a run would do; it writes nothing. Enable it, read one preview run's Results, then set Preview to false.",
+      "A host whose gateway bills subscriptions (option E) needs it Active with Preview off: it is what catches a missed webhook (a renewal",
+      "not booked means the learner's access ends while the gateway charged them).",
+      "",
+      "04:30 UTC: after the gateway's overnight renewals and before the business day. ConcurrencyMode Skip: two passes would book the same",
+      "renewal twice but for the row lock and the intent's unique key; Skip keeps it to one. MissedRunPolicy RunOnce. RunImmediatelyIfNeverRun",
+      "false. MaxRuntimeMinutes 60: about two gateway reads per subscription, one subscription at a time.",
+      "",
+      "OwnerUserID / NotifyUserID are unset: they name people, which differ per environment."
+    ],
+    "fields": {
+      "Name": "Orders — Sync Provider Subscriptions (nightly)",
+      "Description": "Reads every gateway-billed subscription from the payment gateway and brings Orders in line: books the renewals the gateway was paid for, records failed attempts and keeps access while the gateway retries, follows cancels made at the gateway, and raises one alert Task for anything a person must decide. Reports every difference it found and what it did. Ships disabled and set to Preview: enable it, read one preview run's Results, then set Preview to false. Required wherever a gateway bills subscriptions: it catches a missed webhook within a day.",
+      "JobTypeID": "3B94DD43-E961-4D85-B7F4-B6783D748766",
+      "CronExpression": "0 30 4 * * *",
+      "Timezone": "UTC",
+      "Status": "Disabled",
+      "ConcurrencyMode": "Skip",
+      "MissedRunPolicy": "RunOnce",
+      "RunImmediatelyIfNeverRun": false,
+      "MaxRuntimeMinutes": 60,
+      "NotifyOnSuccess": false,
+      "NotifyOnFailure": true,
+      "NotifyViaEmail": false,
+      "NotifyViaInApp": true,
+      "Configuration": "{\"ActionID\":\"23AB340D-13FE-4BFC-B65D-7789D0D9588D\",\"Params\":[{\"ActionParamID\":\"EB0EF949-4949-419A-BD3A-2D0B6078DD8E\",\"ValueType\":\"Static\",\"Value\":\"true\"}]}"
+    },
+    "primaryKey": {
+      "ID": "911AEAB6-65D7-463C-B9F4-755B2C80C7F7"
+    },
+    "sync": {
+      "lastModified": "2026-10-29T21:20:42.604Z",
+      "checksum": "e0f01fa45a8277be1b5a8eb19be5b60d42e33479ef9c48fd19c4cba1c9aac593"
+    }
+  }
+]

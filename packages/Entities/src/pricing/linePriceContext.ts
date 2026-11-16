@@ -10,8 +10,15 @@
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { loadApplicabilityContext } from './applicability.js';
 import { isEnginePrice, isNamedListPick } from './priceOverride.js';
-import { ListApplicablePrices, ResolvePrice, type PriceResolutionContext, type ResolvedPrice } from './PriceResolver.js';
+import {
+    ListApplicablePrices,
+    NoApplicablePriceRuleError,
+    ResolvePrice,
+    type PriceResolutionContext,
+    type ResolvedPrice,
+} from './PriceResolver.js';
 import { LoadOrdersEngine, OrdersEngine } from './OrdersEngine.js';
+import { RequireUUID } from '../sql-guards.js';
 import { AsDateValue, TodayAsDateValue } from '../date-cell';
 
 /** The line fields the context depends on. */
@@ -87,6 +94,11 @@ export interface LinePriceStanding {
  * Where a line's stated price stands against its engine price. Null when no context can be built.
  * A named list pick is a configured price, not a concession; only a typed amount below the engine's
  * is one.
+ *
+ * Price rules that exist but are not in force on the order date give no engine price, as a product
+ * with no price does (bc-aidp-next-golive#437): a price entered today for a product sold on an
+ * earlier-dated order has nothing to measure a stated price against. Every other refusal still
+ * throws, and the pricing pass for a line with no stated price still refuses.
  */
 export async function ResolveLinePriceStanding(
     line: PricedLineFacts,
@@ -95,7 +107,7 @@ export async function ResolveLinePriceStanding(
 ): Promise<LinePriceStanding | null> {
     const ctx = await BuildLinePriceContext(line, provider, user);
     if (!ctx) return null;
-    const engine: ResolvedPrice | null = await ResolvePrice(ctx, provider, user);
+    const engine = await resolveEngineForStatedPrice(ctx, provider, user);
     if (engine && isEnginePrice(line, engine)) {
         return { EngineUnitPrice: engine.UnitPrice, IsEnginePrice: true, IsNamedListPick: false };
     }
@@ -105,6 +117,19 @@ export async function ResolveLinePriceStanding(
         IsEnginePrice: false,
         IsNamedListPick: isNamedListPick(line, applicable),
     };
+}
+
+async function resolveEngineForStatedPrice(
+    ctx: PriceResolutionContext,
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ResolvedPrice | null> {
+    try {
+        return await ResolvePrice(ctx, provider, user);
+    } catch (err) {
+        if (err instanceof NoApplicablePriceRuleError && err.NoneInForce) return null;
+        throw err;
+    }
 }
 
 async function loadHeader(
@@ -117,7 +142,10 @@ async function loadHeader(
     const res = await rv.RunView<HeaderPricingFacts>(
         {
             EntityName: 'MJ_BizApps_Orders: Order Headers',
-            ExtraFilter: `ID = '${orderHeaderID}'`,
+            // The id can come from an UNSAVED, client-populated line during ValidateAsync. A non-UUID
+            // throws `InvalidOperationInputError` (reject, don't escape — see sql-guards.ts); the
+            // price-override gate's catch defers the line, and the FK refuses the bad id at save.
+            ExtraFilter: `ID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
             Fields: [
                 'CompanyID',
                 'OrderDate',

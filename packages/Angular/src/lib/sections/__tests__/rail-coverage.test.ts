@@ -51,7 +51,7 @@ describe('rail coverage', () => {
         // Ids only need to be unique per rail — 'dashboard' and 'list' legitimately
         // appear in several — so uniqueness is checked per declared array.
         const arrays = [...navSource.matchAll(/const (\w+_SUB_PAGES)[^=]*=\s*\[([\s\S]*?)\n\];/g)];
-        expect(arrays.length).toBe(4);
+        expect(arrays.length).toBe(5);
         for (const [, name, body] of arrays) {
             const ids = [...body.matchAll(/Id: '([a-z-]+)'/g)].map((m) => m[1]);
             expect(new Set(ids).size, `${name} has duplicate ids`).toBe(ids.length);

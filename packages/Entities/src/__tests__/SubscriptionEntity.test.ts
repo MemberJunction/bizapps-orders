@@ -3,7 +3,7 @@ import { SubscriptionEntity } from '../SubscriptionEntity';
 import { IsProviderBilled, PROVIDER_BILLED_FIELDS, ProviderBilledChangeRefusal, ProviderLinkRefusal } from '../provider-billed';
 
 /**
- * The gateway-billed columns, WRITTEN OUT rather than read from `PROVIDER_BILLED_FIELDS` (Robert, R2).
+ * The gateway-billed columns, WRITTEN OUT rather than read from `PROVIDER_BILLED_FIELDS`.
  * A test that loops over the constant cannot notice a field dropped from it: the loop just gets shorter.
  * These names are the contract; the constant is checked against them.
  */
@@ -141,10 +141,19 @@ describe('SubscriptionEntity — a gateway-billed subscription changes only wher
         expect(validate({ saved: true, loadedID: null, dirty: ['ProviderSubscriptionID'], newID: null }).Success).toBe(true);
     });
 
-    it('lets a NEW subscription be written with a gateway id (the importer bringing over what a gateway already bills)', () => {
+    it('REFUSES creating a NEW subscription that carries a gateway id unsanctioned: any role that can create could type another customer\'s id', () => {
         const result = validate({ saved: false, loadedID: null, dirty: ['ProviderSubscriptionID', 'PaymentProviderID', 'Status'] });
-        expect(result.Success).toBe(true);
-        expect(result.Errors).toHaveLength(0);
+        expect(result.Success).toBe(false);
+        expect(result.Errors[0].Source).toBe('ProviderSubscriptionID');
+    });
+
+    it('lets a sanctioned server door create a subscription carrying a gateway id', () => {
+        expect(validate({ saved: false, loadedID: null, dirty: ['ProviderSubscriptionID', 'PaymentProviderID'], sanctioned: true }).Success).toBe(true);
+    });
+
+    it('control: a NEW subscription with no gateway id (every order confirm) is unaffected, and an empty id is no id', () => {
+        expect(validate({ saved: false, loadedID: null, dirty: ['Status', 'PaymentProviderID'] }).Success).toBe(true);
+        expect(validate({ saved: false, loadedID: null, dirty: ['ProviderSubscriptionID'], newID: '   ' }).Success).toBe(true);
     });
 
     it('nothing on this tier can sanction a write: the base answer is no', () => {

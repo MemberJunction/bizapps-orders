@@ -1,11 +1,12 @@
 /**
  * golive #379: a full return closes out the order it reverses.
  *
- * Jeremy returned unpaid ORD-002474 in full (return ORD-002481). The original kept a $3,000 balance,
- * stayed queued for Bill.com, and SUB-000104 stayed Active; applying the return's credit by hand was
- * refused, because the allocation guard would not let an order's applied total go below zero, and a
- * return's own total is negative. These pin the three pieces: the guard's floor, the netting the
- * confirm now does, and the subscription stamp a full return now makes.
+ * An unpaid order returned in full kept its whole balance, stayed queued for the billing rail, and
+ * its subscription stayed Active; applying the return's credit by hand was refused, because the
+ * allocation guard would not let an order's applied total go below zero, and a return's own total is
+ * negative. These pin the three pieces: the guard's floor (an order may go below zero by the credit
+ * it carries itself, Balance + AmountPaid), the netting the confirm now does, and the subscription
+ * stamp a full return now makes.
  */
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -65,8 +66,10 @@ beforeEach(() => {
 
 type GuardedLine = { checkApplicationTotal(): Promise<string | null> };
 
-function allocation(amount: number, totalGross: number, existing: number[] = []): GuardedLine {
-    mocks.rows['Order Headers'] = [{ TotalGross: totalGross, OrderNumber: 'ORD-002481' }];
+/** An allocation of `amount` against an order worth `value` (Balance + AmountPaid) with `existing` lines applied. */
+function allocation(amount: number, value: number, existing: number[] = []): GuardedLine {
+    const paid = existing.reduce((s, a) => s + a, 0);
+    mocks.rows['Order Headers'] = [{ Balance: value - paid, AmountPaid: paid, OrderNumber: 'ORD-000002' }];
     mocks.rows['Payment Lines'] = existing.map((Amount, i) => ({ ID: `line-${i}`, Amount }));
     return withFields(PaymentLineEntityServer.prototype, {
         OrderHeaderID: RETURN,
@@ -78,17 +81,23 @@ function allocation(amount: number, totalGross: number, existing: number[] = [])
 }
 
 describe('the allocation guard lets a return’s credit be spent', () => {
-    it('accepts applying a return’s whole negative total', async () => {
+    it('accepts applying a return’s whole negative value', async () => {
         expect(await allocation(-3000, -3000).checkApplicationTotal()).toBeNull();
     });
 
-    it('still refuses going below the return’s total, and names the floor', async () => {
+    it('still refuses going below the return’s value, and names the credit it carries', async () => {
         const refusal = await allocation(-3000.01, -3000).checkApplicationTotal();
-        expect(refusal).toMatch(/-3000 here/);
+        expect(refusal).toMatch(/carries 3000 of credit/);
+    });
+
+    it('refuses a second spend of a credit already spent', async () => {
+        expect(await allocation(-1, -3000, [-3000]).checkApplicationTotal()).toMatch(/carries 3000 of credit/);
     });
 
     it('still refuses taking an ordinary order below zero', async () => {
-        expect(await allocation(-1, 3000).checkApplicationTotal()).toMatch(/: 0 here/);
+        const refusal = await allocation(-1, 3000).checkApplicationTotal();
+        expect(refusal).toMatch(/nothing more to un-apply/);
+        expect(refusal).not.toMatch(/of credit/);
     });
 });
 
@@ -108,7 +117,7 @@ function reversal(
     const own = -lines.reduce((s, l) => s + l.credit, 0);
     const order = withFields(OrderEntityServer.prototype, {
         ID: RETURN,
-        OrderNumber: 'ORD-002481',
+        OrderNumber: 'ORD-000002',
         ReversesOrderHeaderID: ORIGIN,
         ProviderToUse: {},
         ContextCurrentUser: CALLER,
@@ -287,7 +296,7 @@ function stampingProvider() {
 function returnOf(quantity: number | number[], originQuantity: number, alreadyReversed = 0, orderType = 'Sale') {
     const { provider, saved } = stampingProvider();
     const order = withFields(OrderEntityServer.prototype, {
-        OrderNumber: 'ORD-002481',
+        OrderNumber: 'ORD-000002',
         OrderType: orderType,
         OrderDate: RETURN_DAY,
         ProviderToUse: provider,

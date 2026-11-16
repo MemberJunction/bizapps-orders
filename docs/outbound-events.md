@@ -1,6 +1,6 @@
 # Outbound events
 
-Orders tells registered consumers when a **sale confirms** (renewals included) and when an **entitlement grant is created or its status changes**. A CRM can create a deal per purchase; a downstream system that keeps its own copy of access can provision and revoke without polling.
+Orders tells registered consumers when a **sale confirms** (renewals included) and when an **entitlement grant is created, or its status or validity dates change**. A CRM can create a deal per purchase; a downstream system that keeps its own copy of access can provision and revoke without polling.
 
 ## Registering a consumer
 
@@ -24,12 +24,14 @@ export class CrmDealsConsumer extends OrdersOutboundConsumer {
 
 Reference the class from the server bootstrap so the decorator is not tree-shaken away. For one key, the highest-priority registration wins. With no consumer registered for an event type, nothing is recorded.
 
+**The error you throw is shown to people. Keep it free of secrets.** A failed `Deliver`'s message is stored as the delivery's `LastError` (up to 2,000 characters) and, once the delivery is dead-lettered, copied into the alert Task's description, which the `AlertTaskRole` holders and anyone who can read Tasks see. Throw a status and a short reason (`"Learning Hub returned 503"`, a GraphQL error message). Never throw a response body, a request URL carrying a token or key, a header, or a connection string.
+
 ## Events
 
 | `EventType` | When | `Payload` |
 |---|---|---|
 | `OrderConfirmed` | The first save that confirms a `Sale` order, renewals included. Returns, cancellations, amendments and account credits do not fire it; their effect on access arrives as `GrantStatusChanged`. A later save of a confirmed order does not fire again. | `OrderID`, `OrderNumber`, `OrderType`, `OrderDate`, `CompanyID`, `Origin`, `BillToPersonID`, `BillToOrganizationID`, `TotalGross`, `IsRenewal`, `Lines[]` (`OrderLineID`, `ProductID`, `Quantity`, `UnitPrice`, `LineTotalGross`, `RenewsSubscriptionID`, `ReversesOrderLineID`, `ShipToPersonID`, `ShipToOrganizationID`), `CheckoutAnswers[]` (`QuestionKey`, `QuestionLabel`, `Answer`, `OtherText`; the buyer's answers to the checkout widget's questions, ordered by `QuestionKey`, empty when none were asked) |
-| `GrantStatusChanged` | A grant is created, or a save changes its `Status` — whoever wrote it (booking, payment gating, a return or cancellation, an access override, a person). | `GrantID`, `Code`, `FromStatus` (null when new), `ToStatus`, `SuspensionReason`, `OrderLineID`, `SubscriptionID`, `SubscriptionTermID`, `BeneficiaryPersonID`, `BeneficiaryOrganizationID`, `ValidFrom`, `ValidTo` |
+| `GrantStatusChanged` | A grant is created, or a save changes its `Status`, `ValidFrom` or `ValidTo` — whoever wrote it (booking, payment gating, a return or cancellation, a term extension or shift, a cancel that moves the end of access, an access override, a person). A save that changes none of the three records nothing. The name is kept from when only the status counted; a consumer that keeps a copy of access re-reads the grant on any of them. | `GrantID`, `Code`, `FromStatus` (null when new), `ToStatus`, `SuspensionReason`, `OrderLineID`, `SubscriptionID`, `SubscriptionTermID`, `BeneficiaryPersonID`, `BeneficiaryOrganizationID`, `ValidFrom`, `ValidTo`, `ChangedFields` (`Status` / `ValidFrom` / `ValidTo`; empty when new), `FromValidFrom`, `FromValidTo` (null when new). A term grant's `ValidFrom` / `ValidTo` cover its term's days in full in the business zone: `ValidTo` is 00:00 business time on the day after the last day |
 
 The envelope is `{ EventID, EventType, OccurredAt, OrderHeaderID, EntitlementGrantID, Payload }`. `EventID` is stable across retries.
 
@@ -41,7 +43,7 @@ A term that lapses without renewal changes nothing on the grant, so it fires no 
 2. **Sent after it.** The `Orders — Dispatch Outbound Events (every minute)` scheduled job runs `DispatchOutboundDeliveries`. The checkout edge also dispatches a completed order's events right after `/complete`, so a buyer does not wait for the clock.
 3. **Claimed once, oldest first.** A pass claims due `Pending` rows in one statement under a 5-minute lease, so two passes never send the same row at the same time.
 4. **Bounded.** A `Deliver` call that has not settled after 30 seconds counts as a failed attempt. A pass that runs short of lease hands its unsent rows back for the next pass instead of sending them.
-5. **Retried, then dead-lettered.** A consumer that throws or times out is tried again after 1, 5, 15 and 60 minutes, then every 4 hours, until 24 hours after the event; then the row is `DeadLettered`. `LastError` keeps the consumer's message.
+5. **Retried, then dead-lettered.** A consumer that throws or times out is tried again after 1, 5, 15 and 60 minutes, then every 4 hours, until 24 hours after the event; then the row is `DeadLettered`. `LastError` keeps the consumer's message (which is why it must be secret-free, above), and an alert Task ("Outbound delivery failed: …", one per event) tells a person: it is assigned to the active holders of the role the `AlertTaskRole` setting names, as every Orders alert Task is. With no role set, the Task is raised unassigned; the log carries `[ORDERS-OUTBOUND-DEAD-LETTER]` either way. An assignment that fails, or a role set only later, is caught up by the scheduled pass on the next quarter hour (UTC minute 0, 15, 30 or 45; the job runs every minute, the sweep 96 times a day), which assigns up to 25 open alert Tasks that have no assignment at all, newest first. Whether a pass sweeps is decided when it starts, so a pass that begins on the quarter hour and overruns (a hanging consumer) still sweeps. One that cannot be assigned is logged and skipped; newest first means such Tasks collect at the old end and cannot crowd out the alerts raised since. A Task a person unassigns completely while it is still Open is assigned again by the next sweep; to retire an alert, close it. A re-raise of an alert already closed notifies nobody. The alert never fails the pass, but it is written inside it: about 6 round trips plus 2 per role holder for each dead-lettered event, so an outage of N events adds N Tasks and their writes to the pass that dead-letters them (capping that is a follow-up).
 6. **At least once.** A consumer can see an event twice (a timed-out call that later succeeded, a crash between its success and the write). Dedupe on `EventID`.
 
 ## Access status on the checkout's success screen
@@ -68,7 +70,7 @@ Each change is also dispatched as a bubbling, composed `checkout-access-state` D
 |---|---|
 | Consumer base class, envelope, recording, dispatch, and the retry, lease and timeout constants | [`packages/CoreEntitiesServer/src/OutboundEvents.ts`](../packages/CoreEntitiesServer/src/OutboundEvents.ts) |
 | `OrderConfirmed`, recorded in the booking transaction | `recordOrderConfirmedEvent` in [`packages/CoreEntitiesServer/src/OrderEntityServer.ts`](../packages/CoreEntitiesServer/src/OrderEntityServer.ts) |
-| `GrantStatusChanged`, recorded when a grant is created or a save changes its `Status` | [`packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts`](../packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts) |
+| `GrantStatusChanged`, recorded when a grant is created or a save changes its `Status`, `ValidFrom` or `ValidTo` | [`packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts`](../packages/CoreEntitiesServer/src/EntitlementGrantEntityServer.ts) |
 | The `Orders.DispatchOutboundEvents` action the scheduled job runs | [`packages/Server/src/custom/dispatch-outbound-events.action.ts`](../packages/Server/src/custom/dispatch-outbound-events.action.ts) |
 | The action and job metadata | [`metadata/actions/.orders-outbound-actions.json`](../metadata/actions/.orders-outbound-actions.json), [`metadata/scheduled-jobs/.orders-outbound-scheduled-jobs.json`](../metadata/scheduled-jobs/.orders-outbound-scheduled-jobs.json) |
 | The dispatch after `/complete`, and `POST /checkout/access-status` | [`packages/Server/src/CheckoutServerExtension.ts`](../packages/Server/src/CheckoutServerExtension.ts) |

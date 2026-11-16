@@ -1,5 +1,5 @@
 /**
- * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC11).
+ * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC13).
  *
  * `Orders.CancelSubscription` is where the `SubscriptionType` cancellation columns finally do
  * something. The user picks a DATE; the operation applies `CancellationMode` /
@@ -19,10 +19,19 @@
  *   SC10  an unknown subscription fails as OUTPUT, not as a thrown fault
  *   SC11  a later term sold and invoiced on the same order is canceled, and under NoRefund its
  *         invoiced amount is kept: nothing is reversed (#406, #560)
+ *   SC12  a cancel whose access ends later (the type's 30-day grace) moves the standing grants' end to
+ *         the end of the access-through day, still Active, so a copy of access ends when Orders does
+ *   SC13  control: an Immediate cancel still revokes the grants at once, their dates untouched
+ *   SC14  an end-of-term cancel made ON the term's last day keeps the grants Active to 00:00 business time
+ *         after it, in Chicago and in Auckland (it used to revoke from 00:00 UTC on that day)
+ *   SC15  control, same last day in Chicago: an Immediate cancel revokes at once
+ *   SC16  an Immediate cancel requested for two days from now does not revoke now: access runs through that day
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { BaseRemotableOperation, Metadata } from '@memberjunction/core';
+import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { TermDayEnd } from '@mj-biz-apps/orders-core-entities-server';
 import {
     Assert,
     AssertEqual,
@@ -41,6 +50,7 @@ import {
     TeardownOrdersFixture,
     TxOne,
     TxQuery,
+    WithBusinessZone,
 } from '../fixture.js';
 import { ConfirmOrder } from '../order-builder.js';
 
@@ -115,6 +125,50 @@ async function buyAndFindSubscription(ctx: IntegrationCheckContext, productKey: 
 }
 
 const isoDate = (v: string | Date) => new Date(v).toISOString().slice(0, 10);
+
+/** Buy a subscription product on a given day; returns its subscription and term. */
+async function buyOn(ctx: IntegrationCheckContext, productKey: string, price: number, day: Date) {
+    const f = Fx();
+    const result = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        OrderDate: day,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products[productKey], Quantity: 1, UnitPrice: price }],
+    });
+    Assert(result.Saved, `confirm failed: ${result.Message}`);
+    const term = await TxOne<{ ID: string; SubscriptionID: string }>(
+        ctx,
+        `SELECT st.ID, st.SubscriptionID FROM ${ORDERS_SCHEMA}.SubscriptionTerm st
+         JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = st.OrderLineID WHERE ol.OrderHeaderID = '${result.Order.ID}'`,
+    );
+    return { OrderID: result.Order.ID as string, SubscriptionID: term.SubscriptionID };
+}
+
+/**
+ * A 12-month SubRolling term that ENDS on the business zone's today: bought on the day after today, a year
+ * ago. The cancel then runs on the term's last day at whatever instant the suite runs, which is exactly the
+ * window where an end-of-term cancel used to revoke at once (from 00:00 UTC on that day).
+ */
+async function buyEndingToday(ctx: IntegrationCheckContext): Promise<{ SubscriptionID: string; LastDay: string }> {
+    const lastDay = BusinessTimeZoneEngine.Instance.Today();
+    const bought = new Date(`${lastDay}T00:00:00Z`);
+    bought.setUTCFullYear(bought.getUTCFullYear() - 1);
+    bought.setUTCDate(bought.getUTCDate() + 1);
+    const { SubscriptionID } = await buyOn(ctx, 'SubRolling', 1200, bought);
+    const term = await TxOne<{ EndDate: Date }>(
+        ctx,
+        `SELECT TOP 1 EndDate FROM ${ORDERS_SCHEMA}.SubscriptionTerm WHERE SubscriptionID = '${SubscriptionID}' ORDER BY TermNumber DESC`,
+    );
+    AssertEqual(isoDate(term.EndDate), lastDay, `precondition: the term's last day is today in ${BusinessTimeZoneEngine.Instance.Zone}`);
+    return { SubscriptionID, LastDay: lastDay };
+}
+
+const grantsOf = (ctx: IntegrationCheckContext, subscriptionID: string) =>
+    TxQuery<{ ID: string; Status: string; ValidTo: Date | null }>(
+        ctx,
+        `SELECT ID, Status, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant
+          WHERE SubscriptionID = '${subscriptionID}' AND ValidityModeApplied = 'SubscriptionTerm'`,
+    );
 
 export const SubscriptionCancellationChecks: NamedCheck[] = [
     {
@@ -514,6 +568,123 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                     `SELECT BilledToDate FROM ${ORDERS_SCHEMA}.OrderLine WHERE ID = '${sold[1].OrderLineID}'`,
                 );
                 AssertEqual(Number(billed.BilledToDate), 1200, "term 2's invoiced amount stays billed, so it stays on AR");
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC12',
+        Name: "SC12: a cancel whose access ends later moves the standing grants' end to the end of the access-through day",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Bought today, so the access-through day (the type's rule plus SubCalendar's 30-day grace) is
+                // in the future whatever day the suite runs.
+                const today = new Date(`${BusinessTimeZoneEngine.Instance.Today()}T00:00:00Z`); // business today, as a date column holds it
+                const { SubscriptionID } = await buyOn(ctx, 'SubCalendar', 1200, today);
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: isoDate(today) });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+                const accessThrough = isoDate(out.Decision!.AccessThroughDate);
+                Assert(accessThrough > isoDate(today), `precondition: access ends later (${accessThrough})`);
+
+                const grants = await TxQuery<{ ID: string; Status: string; ValidTo: Date | null }>(
+                    ctx,
+                    `SELECT ID, Status, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID = '${SubscriptionID}'`,
+                );
+                Assert(grants.length > 0, 'precondition: the subscription granted access');
+                const end = TermDayEnd(accessThrough, BusinessTimeZoneEngine.Instance.Zone).toISOString();
+                for (const g of grants) {
+                    AssertEqual(g.Status, 'Active', 'the grant stays in force until access ends');
+                    AssertEqual(g.ValidTo ? new Date(g.ValidTo).toISOString() : null, end, `its end is the end of ${accessThrough} (grace included)`);
+                }
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC13',
+        Name: 'SC13: control: an Immediate cancel still revokes the grants at once, their dates untouched',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const today = new Date(`${BusinessTimeZoneEngine.Instance.Today()}T00:00:00Z`); // business today, as a date column holds it
+                const { SubscriptionID } = await buyOn(ctx, 'SubCalendar', 1200, today);
+                const before = await TxQuery<{ ID: string; ValidTo: Date | null }>(
+                    ctx,
+                    `SELECT ID, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID = '${SubscriptionID}'`,
+                );
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: isoDate(today), Timing: 'Immediate' });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+                const after = await TxQuery<{ ID: string; Status: string; ValidTo: Date | null }>(
+                    ctx,
+                    `SELECT ID, Status, ValidTo FROM ${ORDERS_SCHEMA}.EntitlementGrant WHERE SubscriptionID = '${SubscriptionID}'`,
+                );
+                Assert(after.length > 0 && after.every((g) => g.Status === 'Revoked'), 'every grant is revoked at once');
+                for (const g of after) {
+                    const was = before.find((b) => SameID(b.ID, g.ID));
+                    AssertEqual(
+                        g.ValidTo ? new Date(g.ValidTo).toISOString() : null,
+                        was?.ValidTo ? new Date(was.ValidTo).toISOString() : null,
+                        'and its dates are left as they were',
+                    );
+                }
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC14',
+        Name: "SC14: an end-of-term cancel made on the term's last day keeps the grants to 00:00 business time after it (Chicago, Auckland)",
+        RequiresMutation: true,
+        Fn: async (ctx) => {
+            for (const [iana, sqlName] of [
+                ['America/Chicago', 'Central Standard Time'],
+                ['Pacific/Auckland', 'New Zealand Standard Time'],
+            ]) {
+                await WithBusinessZone(ctx, iana, sqlName, async () => {
+                    const { SubscriptionID, LastDay } = await buyEndingToday(ctx);
+                    const out = await cancel(ctx, { SubscriptionID, RequestDate: LastDay, Timing: 'EndOfTerm' });
+                    Assert(out.Success, `cancel failed: ${out.Message}`);
+                    AssertEqual(isoDate(out.Decision!.AccessThroughDate), LastDay, `precondition: access runs through ${LastDay} (grace 0)`);
+                    const end = TermDayEnd(LastDay, iana);
+                    Assert(end.getTime() > Date.now(), `precondition: it is still ${LastDay} in ${iana}`);
+                    const grants = await grantsOf(ctx, SubscriptionID);
+                    Assert(grants.length > 0, 'precondition: the term granted access');
+                    for (const g of grants) {
+                        AssertEqual(g.Status, 'Active', `${iana}: the grant is still in force on the last day`);
+                        AssertEqual(g.ValidTo ? new Date(g.ValidTo).toISOString() : null, end.toISOString(), `${iana}: it ends at 00:00 business time after ${LastDay}`);
+                    }
+                });
+            }
+        },
+    },
+    {
+        Id: 'subscription-cancellation.SC15',
+        Name: "SC15: control: on the same last day in Chicago, an Immediate cancel revokes the grants at once",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            WithBusinessZone(ctx, 'America/Chicago', 'Central Standard Time', async () => {
+                const { SubscriptionID, LastDay } = await buyEndingToday(ctx);
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: LastDay, Timing: 'Immediate' });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+                const grants = await grantsOf(ctx, SubscriptionID);
+                Assert(grants.length > 0 && grants.every((g) => g.Status === 'Revoked'), 'every term grant is revoked at once');
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC16',
+        Name: 'SC16: an Immediate cancel requested for two days from now leaves the grants Active, ending at 00:00 business time after that day',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const todayDay = BusinessTimeZoneEngine.Instance.Today();
+                const today = new Date(`${todayDay}T00:00:00Z`);
+                const { SubscriptionID } = await buyOn(ctx, 'SubCalendar', 1200, today);
+                const later = new Date(today.getTime() + 2 * 86_400_000);
+                const out = await cancel(ctx, { SubscriptionID, RequestDate: isoDate(later), Timing: 'Immediate' });
+                Assert(out.Success, `cancel failed: ${out.Message}`);
+                AssertEqual(isoDate(out.Decision!.AccessThroughDate), isoDate(later), 'precondition: access runs through the requested day');
+                const end = TermDayEnd(isoDate(later), BusinessTimeZoneEngine.Instance.Zone).toISOString();
+                const grants = await grantsOf(ctx, SubscriptionID);
+                Assert(grants.length > 0, 'precondition: the term granted access');
+                for (const g of grants) {
+                    AssertEqual(g.Status, 'Active', 'not revoked now: the cancel was asked for a later day');
+                    AssertEqual(g.ValidTo ? new Date(g.ValidTo).toISOString() : null, end, `it ends at 00:00 business time after ${isoDate(later)}`);
+                }
             }),
     },
 ];

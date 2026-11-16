@@ -6,12 +6,16 @@
  * Code. TypeID is NOT NULL with no default; writing a Task without it always fails.
  *
  * Reads and writes go through the generated Tasks subclasses, not `.Get()` / `.Set()`.
+ *
+ * Every alert Task is assigned to the holders of the `AlertTaskRole` role (`AssignAlertTask`), so the
+ * tasks app tells a person; with no role configured it stays unassigned, as before.
  */
 import { LogError, Metadata, RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import type {
     mjBizAppsTasksTaskEntity,
     mjBizAppsTasksTaskTypeEntity,
 } from '@mj-biz-apps/tasks-entities';
+import { AssignAlertTask, ORDERS_ALERT_TASK_PREFIX } from './AlertTaskAssignment.js';
 import { CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER } from './checkoutCaptureRetry.js';
 import { OPEN_TASK_SQL } from './ConcessionApprovalTask.js';
 import { EscapeText } from './sql-guards.js';
@@ -32,7 +36,7 @@ export async function raiseCheckoutCaptureTerminalAlert(
             `${sessionID ? ` session=${sessionID}` : ''}: ${reason}`,
     );
     await raiseAlertTask(
-        `Checkout capture not booked: ${orderID}`,
+        `${ORDERS_ALERT_TASK_PREFIX.CheckoutCaptureNotBooked}${orderID}`,
         `A Stripe payment settled and the checkout order is Confirmed, but Orders.CapturePayment was refused and will not succeed on retry.\n\nOrder: ${orderID}\nSession: ${sessionID ?? '(unknown)'}\nReason: ${reason}`,
         contextUser,
     );
@@ -56,22 +60,72 @@ export async function raiseCheckoutSettledNotBookedAlert(
         `${CHECKOUT_CAPTURE_TERMINAL_LOG_MARKER} Settled payment for checkout session ${sessionID} was refused at completion; no order was booked: ${reason}`,
     );
     await raiseAlertTask(
-        `Checkout payment settled with no order: session ${sessionID}`,
+        `${ORDERS_ALERT_TASK_PREFIX.CheckoutSettledNoOrder}session ${sessionID}`,
         `A payment settled for a checkout session, but completing the checkout refused it, so no order was created. Refund the payment or book the order by hand.\n\nSession: ${sessionID}\nPayment intent: ${paymentIntentID ?? '(unknown)'}\nReason: ${reason}`,
         contextUser,
         { OncePerName: true },
     );
 }
 
+/** Log marker for a dead-lettered outbound delivery; the alert floor when no tasks app is installed. */
+export const OUTBOUND_DEAD_LETTER_LOG_MARKER = '[ORDERS-OUTBOUND-DEAD-LETTER]';
+
+/**
+ * An outbound delivery was retried until its deadline and gave up: the consumer (the Learning Hub, a CRM)
+ * never heard of a change Orders made. Its copy is now wrong until a person re-sends it.
+ *
+ * One Task per dead-lettered EVENT: the event id is in the name, so a second delivery failure for the same
+ * event (another pass, a replay) raises nothing new, while a later change to the same grant that also
+ * fails is a new Task, because it is a different change nobody heard of.
+ *
+ * Example: the Learning Hub is down for a day; Jane's access change (Status Active, until 31 Dec) is never
+ * delivered. "Outbound delivery failed: sidecar-lxp, GrantStatusChanged, grant 6F1…" is raised, assigned to
+ * the alert role, naming the last error.
+ */
+export async function raiseOutboundDeadLetterAlert(
+    delivery: { ID: string; ConsumerKey: string; Attempts: number | null; LastError: string | null },
+    event: { ID: string; EventType: string; OrderHeaderID: string | null; EntitlementGrantID: string | null } | null,
+    contextUser?: UserInfo,
+    provider?: IMetadataProvider,
+): Promise<void> {
+    const subject = event?.EntitlementGrantID ? `grant ${event.EntitlementGrantID}` : event?.OrderHeaderID ? `order ${event.OrderHeaderID}` : 'an unreadable event';
+    LogError(
+        `${OUTBOUND_DEAD_LETTER_LOG_MARKER} delivery ${delivery.ID} to '${delivery.ConsumerKey}' (${event?.EventType ?? 'unknown event'}, ${subject}) ` +
+            `was dead-lettered after ${delivery.Attempts ?? 0} attempts: ${delivery.LastError ?? 'no error recorded'}`,
+    );
+    await raiseAlertTask(
+        `${ORDERS_ALERT_TASK_PREFIX.OutboundDeliveryFailed}${delivery.ConsumerKey}, ${event?.EventType ?? 'unknown event'}, ${subject} (event ${event?.ID ?? delivery.ID})`,
+        `Orders could not tell '${delivery.ConsumerKey}' about a change after retrying until the delivery's deadline, so that ` +
+            `system's copy is out of date (for the Learning Hub, the person's access).
+
+` +
+            `Event: ${event?.EventType ?? '(unknown)'} ${event?.ID ?? ''}
+` +
+            `About: ${subject}${event?.OrderHeaderID ? ` (order ${event.OrderHeaderID})` : ''}
+` +
+            `Attempts: ${delivery.Attempts ?? 0}
+Last error: ${delivery.LastError ?? '(none recorded)'}
+
+` +
+            `Once '${delivery.ConsumerKey}' answers again, re-send this change to it.`,
+        contextUser,
+        { OncePerName: true, Provider: provider },
+    );
+}
+
 /** The log marker of a gateway subscription Orders could not create or record (option E, E2). */
 export const PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER = '[ProviderSubscriptionAlert]';
 
-const PROVIDER_SUBSCRIPTION_ALERT_TITLE = 'Gateway subscription needs attention: ';
+const PROVIDER_SUBSCRIPTION_ALERT_TITLE = ORDERS_ALERT_TASK_PREFIX.GatewaySubscription;
 const URGENT_PREFIX = 'URGENT: ';
+const UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE = ORDERS_ALERT_TASK_PREFIX.UnknownGatewaySubscription;
 
-/** The alert Task's name: one per subscription and problem, which is what makes it the dedupe key. */
-export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: string, urgent = false): string {
-    return `${urgent ? URGENT_PREFIX : ''}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}${subscriptionNumber} (${code})`;
+/**
+ * The alert Task's name: one per subscription and problem, which is what makes it the dedupe key. A `key` makes it one
+ * per occurrence instead (each gateway refund credited is its own notice, never swallowed by an earlier open one).
+ */
+export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: string, urgent = false, key?: string): string {
+    return `${urgent ? URGENT_PREFIX : ''}${PROVIDER_SUBSCRIPTION_ALERT_TITLE}${subscriptionNumber} (${code})${key ? ` ${key}` : ''}`;
 }
 
 /**
@@ -87,7 +141,7 @@ export function ProviderSubscriptionAlertName(subscriptionNumber: string, code: 
  *          Task for this subscription and problem is already open, so nobody needs telling again.
  */
 export async function raiseProviderSubscriptionAlert(
-    alert: { SubscriptionID: string; SubscriptionNumber: string; Code: string; Reason: string; Urgent?: boolean; Linked?: boolean },
+    alert: { SubscriptionID: string; SubscriptionNumber: string; Code: string; Reason: string; Urgent?: boolean; Linked?: boolean; Key?: string },
     contextUser?: UserInfo,
     provider?: IMetadataProvider,
 ): Promise<boolean> {
@@ -106,10 +160,34 @@ export async function raiseProviderSubscriptionAlert(
           `an account has BillsSubscriptions on) tries again; or run that action for this subscription, or record the ` +
           `gateway's id by hand.`;
     const outcome = await raiseAlertTask(
-        ProviderSubscriptionAlertName(alert.SubscriptionNumber, alert.Code, alert.Urgent),
+        ProviderSubscriptionAlertName(alert.SubscriptionNumber, alert.Code, alert.Urgent, alert.Key),
         `Subscription ${alert.SubscriptionNumber} is sold on an account whose payment gateway bills renewals, and its gateway ` +
             `subscription needs a person.\n\nSubscription: ${alert.SubscriptionNumber} (${alert.SubscriptionID})\nProblem: ${alert.Code}\n` +
             `Reason: ${alert.Reason}\n\n${consequence}`,
+        contextUser,
+        { OncePerOpenName: true, Provider: provider },
+    );
+    return outcome !== 'AlreadyRaised';
+}
+
+/**
+ * A gateway subscription on a price Orders sells, which no Orders subscription records (E3): a subscriber
+ * the import missed or held back, or one someone created at the gateway. Nothing is booked until a person
+ * links it (`LinkProviderSubscription`); one open Task per gateway subscription.
+ */
+export async function raiseUnknownGatewaySubscriptionAlert(
+    alert: { ProviderSubscriptionID: string; Reason: string },
+    contextUser?: UserInfo,
+    provider?: IMetadataProvider,
+): Promise<boolean> {
+    LogError(`${PROVIDER_SUBSCRIPTION_ALERT_LOG_MARKER} Unknown gateway subscription ${alert.ProviderSubscriptionID}: ${alert.Reason}`);
+    const outcome = await raiseAlertTask(
+        `${UNKNOWN_GATEWAY_SUBSCRIPTION_TITLE}${alert.ProviderSubscriptionID} (UnknownGatewaySubscription)`,
+        `The payment gateway bills subscription ${alert.ProviderSubscriptionID} on a price Orders sells, but no Orders ` +
+            `subscription records it, so nothing it charges is booked and the customer's access is not managed by Orders.\n\n` +
+            `Reason: ${alert.Reason}\n\nIf it is a real subscriber, link it to their Orders subscription with the ` +
+            `Link Provider Subscription action; Orders then books everything the gateway charged since that subscription's term ` +
+            `ended. If it is not one of ours, close this Task.`,
         contextUser,
         { OncePerOpenName: true, Provider: provider },
     );
@@ -125,9 +203,10 @@ export async function ReadOpenProviderSubscriptionAlerts(
     provider?: IMetadataProvider,
 ): Promise<{ Ok: true; Open: Map<string, Set<string>> } | { Ok: false; Reason: string }> {
     const open = new Map<string, Set<string>>();
-    const md: IMetadataProvider = provider ?? (new Metadata() as unknown as IMetadataProvider);
+    // The caller's provider, else the global one; never a `Metadata` facade (the same rule as `raiseAlertTask`).
+    const md: IMetadataProvider = provider ?? (Metadata.Provider as unknown as IMetadataProvider);
     if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) return { Ok: true, Open: open };
-    const rv = provider ? new RunView(provider as unknown as IRunViewProvider) : new RunView();
+    const rv = new RunView(md as unknown as IRunViewProvider);
     const tasks = await rv.RunView<{ ID: string; Name: string }>(
         {
             EntityName: CHECKOUT_CAPTURE_TASK_ENTITY,
@@ -147,7 +226,7 @@ export async function ReadOpenProviderSubscriptionAlerts(
         return { Ok: false, Reason: reason };
     }
     // The inverse of `ProviderSubscriptionAlertName`, built from the same parts so a reworded title cannot drift.
-    const pattern = new RegExp(`^(?:${escapeRegExp(URGENT_PREFIX)})?${escapeRegExp(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}(.+) \\(([A-Za-z]+)\\)$`);
+    const pattern = new RegExp(`^(?:${escapeRegExp(URGENT_PREFIX)})?${escapeRegExp(PROVIDER_SUBSCRIPTION_ALERT_TITLE)}(.+?) \\(([A-Za-z]+)\\)(?: .+)?$`);
     for (const task of tasks.Results ?? []) {
         const match = pattern.exec(task.Name);
         if (!match) continue;
@@ -180,11 +259,15 @@ function escapeRegExp(text: string): string {
 /**
  * Writes the human-visible Tasks row; the caller has already logged the marker.
  *   · `OncePerName` skips the write when a Task with this name exists in any status: for a one-off
- *     event (a session, an order) that staff resolve once.
+ *     event (a session, an order, a dead-lettered delivery) that staff resolve once. A Task found still
+ *     Open is made sure to be assigned (its first assignment may have failed); a closed one is left alone.
  *   · `OncePerOpenName` skips it only while a Task with this name is still open (`OPEN_TASK_SQL`):
- *     for a condition that can come back after staff closed it.
- * `Provider` is the one to read and write through, for a caller working on its own provider; the
- * global one otherwise.
+ *     for a condition that can come back after staff closed it. The open Task is made sure to be assigned.
+ * A written Task is assigned to the alert role's holders (`AssignAlertTask`), which never fails the alert.
+ *
+ * `Provider` is the one to read and write through, for a caller working on its own provider (the Task
+ * then joins that caller's transaction and nobody else's); the global provider otherwise. Never a
+ * `Metadata` facade: it has no RunView, so every read in the assignment would fail (OB10).
  */
 async function raiseAlertTask(
     name: string,
@@ -196,24 +279,28 @@ async function raiseAlertTask(
         return 'NotRaised';
     }
     try {
-        const md: IMetadataProvider = options?.Provider ?? (new Metadata() as unknown as IMetadataProvider);
-        if (!md.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) {
+        const p = options?.Provider ?? (Metadata.Provider as unknown as IMetadataProvider);
+        if (!p.EntityByName(CHECKOUT_CAPTURE_TASK_ENTITY)) {
             return 'NotRaised';
         }
 
-        const rv = options?.Provider ? new RunView(options.Provider as unknown as IRunViewProvider) : new RunView();
+        const rv = new RunView(p as unknown as IRunViewProvider);
         if (options?.OncePerName) {
-            const existing = await rv.RunView<{ ID: string }>(
+            const existing = await rv.RunView<{ ID: string; Status: string }>(
                 {
                     EntityName: CHECKOUT_CAPTURE_TASK_ENTITY,
                     ExtraFilter: `Name = '${EscapeText(name)}'`,
-                    Fields: ['ID'],
+                    Fields: ['ID', 'Status'],
                     ResultType: 'simple',
                     MaxRows: 1,
                 },
                 contextUser,
             );
             if (existing.Success && existing.Results.length > 0) {
+                // Raised before. Still open: make sure it is assigned (its first assignment may have failed);
+                // idempotent. Closed (someone dealt with it): leave it, and notify nobody again.
+                const raised = existing.Results[0];
+                if (raised.Status === 'Open') await AssignAlertTask(raised.ID, p, contextUser);
                 return 'AlreadyRaised';
             }
         } else if (options?.OncePerOpenName) {
@@ -229,6 +316,8 @@ async function raiseAlertTask(
                 contextUser,
             );
             if (existing.Success && existing.Results.length > 0) {
+                // Still open: make sure it is assigned, as above; nobody is told twice (idempotent).
+                await AssignAlertTask(existing.Results[0].ID, p, contextUser);
                 return 'AlreadyRaised';
             }
         }
@@ -247,7 +336,7 @@ async function raiseAlertTask(
             return 'NotRaised';
         }
 
-        const task = await md.GetEntityObject<mjBizAppsTasksTaskEntity>(
+        const task = await p.GetEntityObject<mjBizAppsTasksTaskEntity>(
             CHECKOUT_CAPTURE_TASK_ENTITY,
             contextUser,
         );
@@ -262,6 +351,8 @@ async function raiseAlertTask(
             );
             return 'NotRaised';
         }
+        // Told to a person, not left in a list: the tasks app notifies an assignee.
+        await AssignAlertTask(task.ID, p, contextUser);
         return 'Raised';
     } catch (err) {
         LogError(
