@@ -258,6 +258,12 @@
     border-bottom: 0;
 }
 
+.mjo-ov-table .num {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+}
+
 .mjo-ov-row {
     display: flex;
     align-items: center;

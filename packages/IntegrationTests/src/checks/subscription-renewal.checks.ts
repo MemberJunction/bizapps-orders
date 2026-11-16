@@ -203,6 +203,18 @@
  *   SR100  a 24-month line typed at 20,000 on a 12-month type renews for one 12-month term at 10,000, and the
  *         preview reports that term's dates, which the live renewal then books
  *
+ *   The Renewals page's way in (PR #1059): subscriptions chosen by id, grouped on one order per customer
+ *   per renewal date, left as drafts or confirmed:
+ *   SR101  two subscriptions for one customer ending the same day renew on ONE draft with a line each at
+ *          the prior price; readiness asked from a FRESH object lists no concession, and that object
+ *          confirms it, booking term 2 on both (the order form's path, not the pass's)
+ *   SR102  a product change is refused while a renewal draft is pending, naming the draft, and leaves the
+ *          subscription as it was; once the draft is voided the same change goes through
+ *   SR103  a group whose order fails on one member is retried a member at a time: the healthy one renews
+ *          on an order of its own, the broken one alone is skipped with its own reason
+ *   SR104  the worklist says a term with auto-renew off has Ended once its last day is past (WillEnd on the
+ *          day itself), and that the same term with auto-renew on Lapsed
+ *
  *   Outside the harness transaction (#950):
  *   SR46-OT  SR46's payment, committed, so the capture runs on its own provider as in production
  *
@@ -221,7 +233,14 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { OrdersEngine, Today, type CustomerPaymentMethodEntity } from '@mj-biz-apps/orders-entities';
+import {
+    OrdersEngine,
+    Today,
+    type CustomerPaymentMethodEntity,
+    type OrdersChangeSubscriptionProductOutput,
+    type OrdersGetRenewalWorklistOutput,
+    type mjBizAppsOrdersOrderHeaderEntity,
+} from '@mj-biz-apps/orders-entities';
 import { AddDays, BusinessTimeZoneEngine, DayStartUtc } from '@mj-biz-apps/common-entities';
 import { RegisterClass } from '@memberjunction/global';
 import {
@@ -252,6 +271,7 @@ import {
     GL_ACCOUNT_LINK_ENTITY,
     ORDER_COMPANY_POLICY_ENTITY,
     ORDER_CONCESSION_ENTITY,
+    ORDER_HEADER_ENTITY,
     PAYMENT_INTENT_ENTITY,
     PAYMENT_PROVIDER_ENTITY,
     PAYMENT_PROVIDER_PRICE_ENTITY,
@@ -336,6 +356,7 @@ interface RenewalOutput {
         LeadDays: number;
         OrderID?: string;
         OrderNumber?: string;
+        OrderGroup?: number;
         SkippedReason?: string;
         RenewalProductID?: string;
         BasePrice?: number;
@@ -369,6 +390,27 @@ async function spawnRenewals(
     );
     Assert(result.Output != null, 'the operation returned no payload');
     return result.Output as RenewalOutput;
+}
+
+/** A remote operation through the ClassFactory, as every caller resolves it; its output, or a failed assert. */
+async function runOperation<TIn extends Record<string, unknown>, TOut>(ctx: IntegrationCheckContext, name: string, input: TIn): Promise<TOut> {
+    const op = MJGlobal.Instance.ClassFactory.CreateInstance<BaseRemotableOperation<TIn, TOut>>(BaseRemotableOperation, name);
+    Assert(op != null, `'${name}' is not registered`);
+    const result = await op!.Execute(input, { provider: ctx.Provider, user: ctx.User });
+    Assert(result.Success, `${name} did not execute: ${result.ErrorMessage ?? result.ResultCode ?? 'unknown'}`);
+    Assert(result.Output != null, `${name} returned no payload`);
+    return result.Output as TOut;
+}
+
+/** `Orders.ConfirmReadiness`, as the order form asks it: the concession problems a confirm would refuse on. */
+async function confirmReadiness(ctx: IntegrationCheckContext, orderID: string): Promise<string[]> {
+    const out = await runOperation<{ OrderHeaderID: string }, { ConcessionProblems?: string[] }>(ctx, 'Orders.ConfirmReadiness', { OrderHeaderID: orderID });
+    return out.ConcessionProblems ?? [];
+}
+
+/** The Renewals page's rows, as `Orders.GetRenewalWorklist` decides them on `asOf`. */
+async function renewalWorklist(ctx: IntegrationCheckContext, asOf: string): Promise<OrdersGetRenewalWorklistOutput> {
+    return runOperation(ctx, 'Orders.GetRenewalWorklist', { AsOfDate: asOf, WindowDays: 30, LookbackDays: 30, MaxCount: 1000 });
 }
 
 /** Buy a subscription on Jan 1 and return its ID and first term. */
@@ -4248,6 +4290,142 @@ export const SubscriptionRenewalChecks: NamedCheck[] = [
                     notes.Notes.includes('one term of a 24-month line'),
                     `the notes say the base is one term of the line: ${notes.Notes}`,
                 );
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR101',
+        Name: 'SR101: two subscriptions renew on one draft, which a fresh object confirms without a concession hold',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                // One holder, both bought Jan 1 and ending Dec 31: one renewal group (RenewalGroupKey).
+                const a = await buySubscription(ctx, 'SubRolling', 1200);
+                const b = await buySubscription(ctx, 'SubCalendar', 1200);
+                AssertEqual(isoDate(a.Term.EndDate), isoDate(b.Term.EndDate), 'precondition: both terms end on the same day');
+                // The list rises past what the customer pays, so every renewal line sits below the engine price.
+                await CreateProductPrice(ctx, f.Products.SubRolling, 2000);
+                await CreateProductPrice(ctx, f.Products.SubCalendar, 2000);
+                // The gate prices against the engine's catalog cache, refreshed here so it sees 2000.
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+
+                const out = await spawnRenewals(ctx, { SubscriptionIDs: [a.SubscriptionID, b.SubscriptionID], PlaceAs: 'Draft' });
+                AssertEqual(out.Placed, 1, `one order for both: ${out.Message}; ${out.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                const orderID = out.Candidates[0].OrderID!;
+                AssertEqual(out.Candidates[1].OrderID, orderID, 'both candidates name the same order');
+                AssertEqual(out.Candidates[0].OrderGroup, out.Candidates[1].OrderGroup, 'and the same group');
+                const lines = await TxQuery<{ RenewsSubscriptionID: string; UnitPrice: number }>(
+                    ctx,
+                    `SELECT RenewsSubscriptionID, UnitPrice FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}'`,
+                );
+                AssertEqual(lines.length, 2, 'a line each');
+                Assert(lines.every((l) => Number(l.UnitPrice) === 1200), `each at the prior price: ${JSON.stringify(lines)}`);
+                const status = (await TxOne<{ Status: string }>(ctx, `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${orderID}'`)).Status;
+                AssertEqual(status, 'Draft', 'left as a draft');
+
+                // The order form asks readiness of a FRESH object with no price marks in memory. It reads the
+                // pass's RenewalOrderSpawned events back and lists nothing; without that read the form's
+                // Confirm stayed disabled on every renewal priced below list (PR #1059 review, issue 1).
+                const problems = await confirmReadiness(ctx, orderID);
+                AssertEqual(problems.length, 0, `the pass's own prices are not concessions: ${JSON.stringify(problems)}`);
+
+                const fresh = await new Metadata().GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ctx.User);
+                Assert(await fresh.Load(orderID), 'the draft did not load');
+                fresh.Status = 'Confirmed';
+                Assert(await fresh.Save(), `a fresh object confirms the draft: ${fresh.LatestResult?.CompleteMessage}`);
+                AssertEqual((await termsOf(ctx, a.SubscriptionID)).length, 2, 'A has term 2');
+                AssertEqual((await termsOf(ctx, b.SubscriptionID)).length, 2, 'B has term 2');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR102',
+        Name: 'SR102: a product change is refused while a renewal draft is pending, naming it, and goes through once the draft is voided',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                const draft = await draftRenewal(ctx, SubscriptionID, Term.EndDate);
+                const input = { SubscriptionIDs: [SubscriptionID], ProductID: f.Products.SubCalendar, AdoptProductType: true };
+
+                // Confirming the draft moves the subscription onto the draft line's product, so a change
+                // made meanwhile would be undone without a word (PR #1059 review, issue 2).
+                const refused = await runOperation<typeof input, OrdersChangeSubscriptionProductOutput>(ctx, 'Orders.ChangeSubscriptionProduct', input);
+                AssertEqual(refused.Failed, 1, `refused: ${refused.Message}`);
+                AssertEqual(refused.Updated, 0, 'nothing updated');
+                const change = refused.Changes[0];
+                Assert(
+                    new RegExp(`renewal order ${draft.OrderNumber} \\(Draft\\) is pending`).test(change.Error ?? ''),
+                    `the refusal names the draft: ${change.Error}`,
+                );
+                const before = await TxOne<{ ProductID: string }>(ctx, `SELECT ProductID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${SubscriptionID}'`);
+                Assert(SameID(before.ProductID, f.Products.SubRolling), 'the subscription keeps its product');
+
+                draft.Status = 'Voided';
+                Assert(await draft.Save(), `voiding the draft failed: ${draft.LatestResult?.CompleteMessage}`);
+                const allowed = await runOperation<typeof input, OrdersChangeSubscriptionProductOutput>(ctx, 'Orders.ChangeSubscriptionProduct', input);
+                AssertEqual(allowed.Updated, 1, `with no draft pending the change goes through: ${allowed.Changes[0]?.Error ?? allowed.Message}`);
+                const after = await TxOne<{ ProductID: string }>(ctx, `SELECT ProductID FROM ${ORDERS_SCHEMA}.Subscription WHERE ID = '${SubscriptionID}'`);
+                Assert(SameID(after.ProductID, f.Products.SubCalendar), 'the subscription is on the new product');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR103',
+        Name: 'SR103: a group whose order fails on one member is retried a member at a time, so the healthy one still renews',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const f = Fx();
+                const a = await buySubscription(ctx, 'SubRolling', 1200);
+                const b = await buySubscription(ctx, 'SubCalendar', 1200);
+                // B's product is recognised at sale with no Unbilled Receivable linked (SR17's refusal), so
+                // the group's one order rolls back on B's line. Before the retry, A was skipped with B's
+                // reason every night until someone fixed B (PR #1059 review, issue 3).
+                const out = await withUnbilledUnlinked(ctx, () =>
+                    withUpFrontRecognition(ctx, f.Products.SubCalendar, () =>
+                        spawnRenewals(ctx, { SubscriptionIDs: [a.SubscriptionID, b.SubscriptionID], PlaceAs: 'Confirmed' }),
+                    ),
+                );
+                AssertEqual(out.Placed, 1, `A places on its own: ${out.Message}; ${out.Candidates.map((c) => c.SkippedReason ?? '').join('; ')}`);
+                AssertEqual(out.Skipped, 1, 'B alone is skipped');
+                const byID = new Map(out.Candidates.map((c) => [c.SubscriptionID.toLowerCase(), c]));
+                const ca = byID.get(a.SubscriptionID.toLowerCase())!;
+                const cb = byID.get(b.SubscriptionID.toLowerCase())!;
+                Assert(!!ca.OrderID && !ca.SkippedReason, `A renewed: ${ca.SkippedReason ?? ''}`);
+                Assert(!cb.OrderID, 'B did not');
+                Assert((cb.SkippedReason ?? '').includes('Unbilled Receivable'), `B carries its own reason: ${cb.SkippedReason}`);
+                Assert(ca.OrderGroup !== cb.OrderGroup, 'they no longer share an order');
+                AssertEqual((await termsOf(ctx, a.SubscriptionID)).length, 2, 'A has term 2');
+                AssertEqual((await termsOf(ctx, b.SubscriptionID)).length, 1, 'B does not');
+                const lines = await TxQuery<{ RenewsSubscriptionID: string }>(ctx, `SELECT RenewsSubscriptionID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${ca.OrderID}'`);
+                AssertEqual(lines.length, 1, "A's order carries A's line only");
+                const bLines = await TxOne<{ N: number }>(ctx, `SELECT COUNT(*) AS N FROM ${ORDERS_SCHEMA}.OrderLine WHERE RenewsSubscriptionID = '${b.SubscriptionID}'`);
+                AssertEqual(Number(bLines.N), 0, 'no renewal line for B survives');
+            }),
+    },
+    {
+        Id: 'subscription-renewal.SR104',
+        Name: 'SR104: the worklist says a term with auto-renew off has Ended once its last day is past, and Lapsed with it on',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const { SubscriptionID, Term } = await buySubscription(ctx, 'SubRolling', 1200);
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { AutoRenew: false });
+                const rowOn = async (asOf: string) => {
+                    const out = await renewalWorklist(ctx, asOf);
+                    Assert(out.Success, `the worklist ran: ${out.Message}`);
+                    const row = out.Rows.find((r) => SameID(r.SubscriptionID, SubscriptionID));
+                    Assert(row != null, `the subscription is listed as of ${asOf}`);
+                    return row!;
+                };
+                const lastDay = isoDate(Term.EndDate);
+                AssertEqual((await rowOn(lastDay)).State, 'WillEnd', 'on its last day the term will end');
+                const later = await rowOn(daysBefore(lastDay, -12));
+                AssertEqual(later.State, 'Ended', 'twelve days on, it has ended (PR #1059 review, issue 4)');
+                AssertEqual(Number(later.DaysUntilEnd), -12, 'and the row says how long ago');
+
+                await upsertViaEntity(ctx, SUBSCRIPTION_ENTITY, SubscriptionID, { AutoRenew: true });
+                AssertEqual((await rowOn(daysBefore(lastDay, -12))).State, 'Lapsed', 'with auto-renew on, the same term lapsed past the pass');
             }),
     },
 ];

@@ -16,6 +16,11 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
+vi.mock('@memberjunction/generic-database-provider', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@memberjunction/generic-database-provider')>();
+    return { ...actual, UserCache: { Instance: { GetSystemUser: () => ({ ID: 'system' }) } } };
+});
+
 const { OrderEntityServer } = await import('../OrderEntityServer.js');
 const { OrderHeaderEntity } = await import('@mj-biz-apps/orders-entities');
 
@@ -57,6 +62,7 @@ function draftOrder(status: string, log: string[]) {
         ContextCurrentUser: { ID: 'user-1' },
         GetFieldByName: () => ({ OldValue: status }),
         RegisterResultHistoryEntry: (r: { Message: string }) => history.push(r),
+        CheckPermissions: () => true,
         deleteLineDependents: vi.fn(async (line: { LineNumber: number }) => log.push(`dependents:${line.LineNumber}`)),
     })) {
         Object.defineProperty(order, k, { value: v, writable: true });

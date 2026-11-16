@@ -7,6 +7,22 @@
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const renewalEvents = vi.hoisted(() => ({ rows: [] as Array<{ SubscriptionID: string; EventData: string | null }>, reads: 0 }));
+
+vi.mock('@memberjunction/core', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@memberjunction/core')>();
+    return {
+        ...actual,
+        LogError: vi.fn(),
+        RunView: class {
+            RunView = vi.fn(async () => {
+                renewalEvents.reads++;
+                return { Success: true, Results: renewalEvents.rows };
+            });
+        },
+    };
+});
+
 vi.mock('../ConcessionGate.js', async (importOriginal) => ({
     ...(await importOriginal<typeof import('../ConcessionGate.js')>()),
     FindUnapprovedConcessions: vi.fn(async () => [] as string[]),
@@ -70,7 +86,11 @@ function order(opts: { user?: { ID: string } | null; linesLoaded?: boolean } = {
     return { o, failures, lines };
 }
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+    vi.clearAllMocks();
+    renewalEvents.rows = [];
+    renewalEvents.reads = 0;
+});
 
 describe('PreviewConcessionProblems', () => {
     it('returns the clauses confirm refuses with, and the refusal carries the same clauses', async () => {
@@ -100,6 +120,30 @@ describe('PreviewConcessionProblems', () => {
         await o.PreviewConcessionProblems();
         expect(lines.Load).toHaveBeenCalledTimes(1);
         expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][1]).toHaveLength(1);
+    });
+
+    it('judges a draft the renewal pass left on the pass\'s own prices, as confirm does', async () => {
+        // The pass priced this line at 142.14 against a 150.00 engine price and recorded it in a
+        // RenewalOrderSpawned event. A fresh object (the order form) has no mark in memory, so the
+        // preview reads the event back; without that read the form's Confirm stays disabled.
+        const SUB = 'S0000000-0000-4000-8000-000000000001';
+        renewalEvents.rows = [{ SubscriptionID: SUB, EventData: JSON.stringify({ UnitPrice: 142.14 }) }];
+        const { o, lines } = order();
+        Object.assign(lines.Items[0], { RenewsSubscriptionID: SUB, UnitPrice: 142.14, DiscountPct: 0 });
+        await o.PreviewConcessionProblems();
+        expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][1][0]).toMatchObject({ RenewsSubscriptionID: SUB, PriceStated: false });
+        // Read once per object: a second preview asks nothing more of the database.
+        await o.PreviewConcessionProblems();
+        expect(renewalEvents.reads).toBe(1);
+    });
+
+    it('keeps a renewal line a person re-priced as a stated price', async () => {
+        const SUB = 'S0000000-0000-4000-8000-000000000001';
+        renewalEvents.rows = [{ SubscriptionID: SUB, EventData: JSON.stringify({ UnitPrice: 142.14 }) }];
+        const { o, lines } = order();
+        Object.assign(lines.Items[0], { RenewsSubscriptionID: SUB, UnitPrice: 120, DiscountPct: 0 });
+        await o.PreviewConcessionProblems();
+        expect(vi.mocked(FindUnapprovedConcessions).mock.calls[0][1][0]).toMatchObject({ RenewsSubscriptionID: SUB, PriceStated: true });
     });
 
     it('reports nothing without a context user, as the gate passes without one', async () => {

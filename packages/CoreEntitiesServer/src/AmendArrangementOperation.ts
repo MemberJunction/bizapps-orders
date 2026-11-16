@@ -59,6 +59,7 @@ import {
 import { ORDER_CONCESSION_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { RequireOptionalDay, RequireUUID } from './sql-guards.js';
 import { CheckAmountChange } from './AmountChange.js';
+import { ReversalGate } from './ReversalAuthority.js';
 import { CheckTermsChange } from './PaymentTermsChange.js';
 import { CheckReferralProgram, type ReferralProgramVerdict } from './ReferralProgram.js';
 import { AsDay, CheckTermExtension, IsoDay } from './TermExtension.js';
@@ -228,6 +229,11 @@ export class AmendArrangementOperation extends OrdersAmendArrangementOperationBa
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<AmendArrangementOutput> {
+        // FIRST, BEFORE ANY READ OR WRITE: lowering an agreed amount credits the customer, which is
+        // finance's (bc-aidp-next-golive#454). Extensions, shifts and payment terms are not reversals and
+        // keep their own approval routing.
+        const refusal = ReversalGate('Changing an agreed amount', provider, user);
+        if (refusal) return { Success: false, Message: refusal };
         let checked: Awaited<ReturnType<typeof CheckAmountChange>>;
         try {
             checked = await CheckAmountChange(
