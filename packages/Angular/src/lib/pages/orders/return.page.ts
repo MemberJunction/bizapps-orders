@@ -17,6 +17,7 @@ import {
     OrderHeaderEntity,
     OrdersCancelExternalInvoiceOperation,
     OrdersGetPriorReturnsOperation,
+    RETURN_REASONS,
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { Metadata, RunView } from '@memberjunction/core';
@@ -437,14 +438,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
-    /** The reasons the select used to hard-code, as data. */
-    public readonly ReturnReasons: readonly string[] = [
-        'Damaged in transit',
-        'Wrong item shipped',
-        'Customer changed mind',
-        'Duplicate order',
-        'Pricing error',
-    ];
+    /** The shared return vocabulary (`RETURN_REASONS`), so every caller that books a reversal names it alike. */
+    public readonly ReturnReasons: readonly string[] = RETURN_REASONS;
 
     public Reason = DEFAULT_RETURN_REASON;
 

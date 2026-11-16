@@ -74,7 +74,12 @@ export interface SubscriptionTypeRules {
     AutoRenewDefault: boolean;
     RenewalLeadDays: number;
     CancellationMode: 'Immediate' | 'EndOfTerm' | 'EndOfBillingPeriod';
-    CancellationRefundMode: 'NoRefund' | 'ProrateUnused' | 'FullRefundWithinWindow';
+    /**
+     * `FullRefund` is not a value a subscription type stores. It is reached only when the person
+     * cancelling chose it for one cancellation (`RulesForRefund`): the whole term comes back whatever
+     * was used and whatever the window.
+     */
+    CancellationRefundMode: 'NoRefund' | 'ProrateUnused' | 'FullRefundWithinWindow' | 'FullRefund';
     CancellationWindowDays?: number | null;
     GracePeriodDays: number;
 }
@@ -170,6 +175,16 @@ export interface CancellableTerm {
 export type CancellationTiming = 'Immediate' | 'EndOfTerm';
 
 export const CANCELLATION_TIMINGS: readonly CancellationTiming[] = ['Immediate', 'EndOfTerm'];
+
+/**
+ * What the person cancelling chose to give back, overriding the type's `CancellationRefundMode` for
+ * this one cancellation. `Full` reverses the whole of the term being cut short; `ProrateUnused`
+ * reverses the part after coverage ends. Either way a later term is reversed in full. Absent, the
+ * type decides.
+ */
+export type CancellationRefund = 'Full' | 'ProrateUnused';
+
+export const CANCELLATION_REFUNDS: readonly CancellationRefund[] = ['Full', 'ProrateUnused'];
 
 export interface CancellationContext {
     Rules: SubscriptionTypeRules;
@@ -1035,8 +1050,8 @@ export class SubscriptionBehavior {
      * day for `Immediate`, the term's last day for `EndOfTerm`. Grace is the type's allowance for a
      * term that runs out unrenewed; keeping it here would leave the holder in for `GracePeriodDays`
      * past the day the person cancelling chose, and past the grant's own end, which is where a
-     * system that provisions from the grant stops access. Refund mode is never changed here; a
-     * refund the type does not give is a separate decision, made with `Orders.RefundPayment`.
+     * system that provisions from the grant stops access. Refund mode is never changed here: what to
+     * give back is a separate choice, `RulesForRefund`.
      */
     public RulesForTiming(rules: SubscriptionTypeRules, timing?: CancellationTiming | null): SubscriptionTypeRules {
         switch (timing) {
@@ -1044,6 +1059,27 @@ export class SubscriptionBehavior {
                 return { ...rules, CancellationMode: 'Immediate', GracePeriodDays: 0 };
             case 'EndOfTerm':
                 return { ...rules, CancellationMode: 'EndOfTerm', GracePeriodDays: 0 };
+            default:
+                return rules;
+        }
+    }
+
+    /**
+     * The rules a cancellation runs under when the person cancelling chose what to give back. The
+     * type's own refund mode stands when `refund` is absent.
+     *
+     * A subscription type states what a customer who cancels is owed. An agreed early end is a
+     * different event: the two sides settled what comes back, and the type's rule would either keep
+     * money the agreement returns or return money the agreement keeps. The choice is made per
+     * cancellation and by a caller who has passed the finance gate, so the type's rule stays the
+     * default for every cancellation nobody decided otherwise.
+     */
+    public RulesForRefund(rules: SubscriptionTypeRules, refund?: CancellationRefund | null): SubscriptionTypeRules {
+        switch (refund) {
+            case 'Full':
+                return { ...rules, CancellationRefundMode: 'FullRefund' };
+            case 'ProrateUnused':
+                return { ...rules, CancellationRefundMode: 'ProrateUnused' };
             default:
                 return rules;
         }
@@ -1209,6 +1245,14 @@ export class SubscriptionBehavior {
                     explanation:
                         `Coverage ends ${isoDay(effective)} (${rules.CancellationMode}). This subscription ` +
                         `type does not refund, so nothing is reversed.`,
+                };
+
+            case 'FullRefund':
+                return {
+                    amount: term.Amount,
+                    explanation:
+                        `Coverage ends ${isoDay(effective)} (${rules.CancellationMode}). A full refund was ` +
+                        `chosen for this cancellation, so the term's full ${term.Amount} is reversed.`,
                 };
 
             case 'FullRefundWithinWindow': {

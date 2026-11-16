@@ -84,7 +84,9 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { RevokeGrantsForCanceledSubscription, type CancelAccessEnd } from './EntitlementEngine.js';
 import {
     SubscriptionBehavior,
+    CANCELLATION_REFUNDS,
     CANCELLATION_TIMINGS,
+    type CancellationRefund,
     type CancellableTerm,
     type CancellationDecision,
     type CancellationTiming,
@@ -158,6 +160,14 @@ export interface CancelSubscriptionInput {
      * `SubscriptionBehavior.RulesForTiming`.
      */
     Timing?: CancellationTiming;
+    /**
+     * What to give back, chosen by the person cancelling: `Full` reverses the whole of the term
+     * being cut short, `ProrateUnused` the part after coverage ends. Absent, the type's
+     * `CancellationRefundMode` decides. See `SubscriptionBehavior.RulesForRefund`. A renewal the
+     * payment gateway charged and refunded is not affected: what the gateway gave back is what is
+     * reversed.
+     */
+    Refund?: CancellationRefund;
     /**
      * Compute and return the decision WITHOUT writing anything — for a confirmation screen that
      * shows "you will be refunded $X, coverage ends Y" before the user commits.
@@ -323,6 +333,14 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             };
         }
 
+        // The same for a refund choice: an unknown value would silently run the type's rule.
+        if (input.Refund != null && !CANCELLATION_REFUNDS.includes(input.Refund)) {
+            return {
+                Success: false,
+                Message: `Refund must be one of ${CANCELLATION_REFUNDS.join(', ')}; got '${input.Refund}'.`,
+            };
+        }
+
         let requestDate = await CalendarDayOrToday(requestedDay, provider, user);
         // The business day now, to tell a cancel that ends access at once from one that ends it later. Taken
         // before the gateway path can move requestDate, so it is always the real day.
@@ -451,7 +469,7 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
         }
 
         const behavior = this.behaviorFor(typeRules);
-        const rules = behavior.RulesForTiming(typeRules, input.Timing);
+        const rules = behavior.RulesForRefund(behavior.RulesForTiming(typeRules, input.Timing), input.Refund);
         // END OF TERM, ON A SUBSCRIPTION THE GATEWAY STILL BILLS, IS THE END OF THE LATEST BOOKED TERM (Ethan,
         // 30 Oct, D19). Orders books a gateway term only once the gateway was paid for it (E4), so a later booked term
         // is coverage the customer has paid for, and the gateway's own "cancel at period end" ends with it. The
@@ -1119,6 +1137,8 @@ export class CancelSubscriptionOperation extends OrdersCancelSubscriptionOperati
             // Which timing the person cancelling chose, so a reader can tell an override from the
             // type's own rule. Null when the type decided.
             Timing: input.Timing ?? null,
+            // Likewise the refund the person cancelling chose over the type's own. Null when the type decided.
+            Refund: input.Refund ?? null,
             Reason: input.Reason ?? null,
             // What the payment gateway did, when one bills it: the evidence that it stopped billing.
             Gateway: gateway ?? null,
