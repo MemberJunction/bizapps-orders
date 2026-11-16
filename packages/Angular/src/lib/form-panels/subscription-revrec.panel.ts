@@ -35,6 +35,12 @@ export class SubscriptionRevRecPanel extends BaseFormPanel<mjBizAppsOrdersSubscr
     public Entries: mjBizAppsAccountingJournalEntryEntity[] = [];
     public TermLookup: SubscriptionTermLookup = {};
     public TermIDs: string[] = [];
+    /** Lines reversing the terms (returns, cancellations): their entries are listed in the journal grid too. */
+    public ReversalLineIDs: string[] = [];
+    /** Months a return or cancellation took back in full, and so left out of the waterfall (golive #474). */
+    public OffsetMonths = 0;
+    /** Months taken back in part, still drawn at the full amount until the waterfall can net them. */
+    public PartlyOffsetMonths = 0;
 
     public async ngOnInit(): Promise<void> {
         await this.loadSchedule();
@@ -42,7 +48,7 @@ export class SubscriptionRevRecPanel extends BaseFormPanel<mjBizAppsOrdersSubscr
 
     public get JournalParams() {
         if (!this.Record.IsSaved) return null;
-        const ids = [...this.TermIDs, this.Record.ID];
+        const ids = [...this.TermIDs, this.Record.ID, ...this.ReversalLineIDs];
         if (this.Record.OrderLineID) ids.push(this.Record.OrderLineID);
         const quoted = ids.map((id) => `'${id}'`).join(',');
         return {
@@ -69,6 +75,9 @@ export class SubscriptionRevRecPanel extends BaseFormPanel<mjBizAppsOrdersSubscr
             this.Entries = loaded.Entries;
             this.TermLookup = loaded.TermLookup;
             this.TermIDs = loaded.TermIDs;
+            this.ReversalLineIDs = loaded.ReversalLineIDs;
+            this.OffsetMonths = loaded.OffsetMonths;
+            this.PartlyOffsetMonths = loaded.PartlyOffsetMonths;
             this.FormComponent.SetSectionRowCount(SECTION_KEY, this.Entries.length);
         } finally {
             this.Loading = false;

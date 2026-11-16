@@ -2,12 +2,14 @@ import { ChangeDetectorRef, Component, EventEmitter, Input, Output, inject } fro
 import type { IMetadataProvider } from '@memberjunction/core';
 import {
     OrdersCancelSubscriptionOperation,
+    Today,
     ToISODate,
     UserCanReverse,
     type CancelSubscriptionInput,
     type CancelSubscriptionOutput,
     type mjBizAppsOrdersSubscriptionEntity,
 } from '@mj-biz-apps/orders-entities';
+import { LoadCancelRefundDefault, type MJOCancelRefundDefault } from '../data/cancel-refund-default';
 
 /**
  * What the person cancelling picks: the subscription type's own rule (`Type`, which sends no timing),
@@ -16,16 +18,22 @@ import {
  */
 export type MJOCancelTiming = 'Type' | NonNullable<CancelSubscriptionInput['Timing']>;
 
+/**
+ * What to give back: the subscription type's own refund rule (`Type`, which sends no refund), or one
+ * of the two choices that override it for this cancellation (golive #384).
+ */
+export type MJOCancelRefund = 'Type' | NonNullable<CancelSubscriptionInput['Refund']>;
+
 /** Statuses a subscription can be cancelled from. The operation refuses `Canceled` itself. */
 const CANCELLABLE_STATUSES = new Set(['Active', 'Trialing', 'Paused']);
 
 /**
- * `mjo-subscription-cancel` — cancel a subscription from its form: choose when coverage ends,
- * preview what that does, then confirm.
+ * `mjo-subscription-cancel` — cancel a subscription from its form: choose when coverage ends and what
+ * is given back, preview what that does, then confirm.
  *
  * The decision is the server's. Preview and confirm are the same `Orders.CancelSubscription` call,
  * the first with `Preview: true`, so what the person confirms is what the operation computed, not a
- * second calculation done here. Changing the timing or the reason throws the preview away, so a
+ * second calculation done here. Changing the timing, the refund or the reason throws the preview away, so a
  * stale preview can never be confirmed.
  *
  * Offered only to a viewer who may update subscriptions and holds MJ.BizApps.Orders.Order.Reverse
@@ -63,6 +71,14 @@ export class MJOSubscriptionCancelComponent {
      * `EndOfBillingPeriod` type ends at its billing period, not the term. A timing is an override.
      */
     public Timing: MJOCancelTiming = 'Type';
+    /**
+     * The type's own rule, except on a term that has not started and whose order has received no money:
+     * that one starts on `Full` (see `PickCancelRefundDefault`), so cancelling it takes back the unbilled
+     * receivable and the revenue still scheduled, and refunds nothing.
+     */
+    public Refund: MJOCancelRefund = 'Type';
+    /** Why `Refund` started on `Full`, for the hint; null when it started on the type's rule. */
+    public RefundDefault: MJOCancelRefundDefault | null = null;
     public Reason = '';
     public Preview: CancelSubscriptionOutput | null = null;
 
@@ -100,18 +116,23 @@ export class MJOSubscriptionCancelComponent {
         return ToISODate(value) ?? '—';
     }
 
-    public Start(): void {
+    public async Start(): Promise<void> {
         if (this.EditMode) return;
         this.Open = true;
         this.Timing = 'Type';
+        this.Refund = 'Type';
+        this.RefundDefault = null;
         this.Reason = '';
         this.Preview = null;
         this.Error = null;
+        await this.applyRefundDefault();
     }
 
     public Close(): void {
         this.Open = false;
         this.Timing = 'Type';
+        this.Refund = 'Type';
+        this.RefundDefault = null;
         this.Reason = '';
         this.Preview = null;
         this.Error = null;
@@ -136,6 +157,24 @@ export class MJOSubscriptionCancelComponent {
         this.Canceled.emit(output);
     }
 
+    /**
+     * Start on `Full` when the term a cancellation today would cut has not started and nothing was paid
+     * on its order. A failed read leaves the type's rule, which the preview then shows.
+     */
+    private async applyRefundDefault(): Promise<void> {
+        let found: MJOCancelRefundDefault | null = null;
+        try {
+            found = await LoadCancelRefundDefault(this.Record.ID, this.Provider, Today());
+        } catch {
+            found = null;
+        }
+        // The person may have chosen, or closed the panel, while the read was out.
+        if (!this.Open || this.Refund !== 'Type' || this.Preview) return;
+        this.RefundDefault = found;
+        if (found) this.Refund = found.Refund;
+        this.cdr.detectChanges();
+    }
+
     private async execute(preview: boolean): Promise<CancelSubscriptionOutput | null> {
         this.Busy = true;
         this.Error = null;
@@ -143,6 +182,7 @@ export class MJOSubscriptionCancelComponent {
             const result = await new OrdersCancelSubscriptionOperation().Execute({
                 SubscriptionID: this.Record.ID,
                 Timing: this.Timing === 'Type' ? undefined : this.Timing,
+                Refund: this.Refund === 'Type' ? undefined : this.Refund,
                 Reason: this.Reason.trim() || undefined,
                 Preview: preview,
             }, { provider: this.Provider });

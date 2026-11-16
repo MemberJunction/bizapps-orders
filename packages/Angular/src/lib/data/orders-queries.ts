@@ -86,6 +86,7 @@ import type {
 import { MJO_ACCOUNTING_ENTITIES, MJO_COMMON_ENTITIES, MJO_ENTITIES } from './entity-names';
 import { FormatDate } from '../panels/money-format';
 import { CREDITS_HELD_WHERE } from './credit-statuses';
+import { NetReversedRecognition } from './revrec-netting';
 
 /** Ids reach filter strings as SQL text, so they are shape-checked first. */
 const UUID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
@@ -2103,6 +2104,23 @@ export async function GetSubscriptionEvents(
 /** Subscription term id (either case) → the label the recognition waterfall colours it by. */
 export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label: string }>;
 
+/** What `LoadSubscriptionRevRec` needs of a term. Callers holding entity objects pass them as they are. */
+export interface MJORevRecTerm {
+    ID: string;
+    TermNumber?: number | null;
+    /** The line that sold the term; the lines reversing it are found through it (golive #474). */
+    OrderLineID?: string | null;
+    Status?: string | null;
+}
+
+/**
+ * A term's label in the waterfall. A canceled term says so, so a schedule cut short by a return or a
+ * cancellation does not read as one still running (golive #474).
+ */
+export function RevRecTermLabel(termNumber: number, status?: string | null): string {
+    return status === 'Canceled' ? `Term ${termNumber} (canceled)` : `Term ${termNumber}`;
+}
+
 /**
  * A subscription's revenue recognition journal entries, with their lines loaded.
  *
@@ -2110,6 +2128,12 @@ export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label:
  * over the subscription's terms as well as the subscription and its originating order line. The
  * subscription form and the Receivables subscription panel both read the schedule through here, so
  * the two cannot disagree about what is scheduled.
+ *
+ * RETURNS AND CANCELLATIONS ARE NETTED IN (golive #474). Either one is an order line that reverses a
+ * term's line (`ReversesOrderLineID`), and its mirror entries are linked to that reversal line, not
+ * to the term. They are loaded too, and a month they take back in full is left out with them
+ * (`NetReversedRecognition`): without this, a returned or canceled subscription kept showing every
+ * month still to come as Scheduled.
  *
  * Pass `terms` when the caller has already loaded them, so they are not read a second time. Lines
  * for every entry come back in one batched query (`IncludeRelatedRecords`), not one per entry.
@@ -2120,11 +2144,17 @@ export type SubscriptionTermLookup = Record<string, { TermNumber: number; Label:
 export async function LoadSubscriptionRevRec(
     record: { ID: string; OrderLineID?: string | null },
     provider: IMetadataProvider,
-    terms?: ReadonlyArray<{ ID: string; TermNumber?: number | null }>,
+    terms?: ReadonlyArray<MJORevRecTerm>,
 ): Promise<{
     Entries: mjBizAppsAccountingJournalEntryEntity[];
     TermLookup: SubscriptionTermLookup;
     TermIDs: string[];
+    /** The lines reversing the subscription's terms: their entries belong in its journal list too. */
+    ReversalLineIDs: string[];
+    /** Months a return or cancellation took back in full, left out of `Entries`. */
+    OffsetMonths: number;
+    /** Months taken back only in part, still shown at the full amount. */
+    PartlyOffsetMonths: number;
     CanRead: boolean;
 }> {
     const rv = RunView.FromMetadataProvider(provider);
@@ -2134,7 +2164,7 @@ export async function LoadSubscriptionRevRec(
     const lookup: SubscriptionTermLookup = {};
     loadedTerms.forEach((term, index) => {
         const num = term.TermNumber ?? index + 1;
-        const label = `Term ${num}`;
+        const label = RevRecTermLabel(num, term.Status);
         lookup[term.ID.toLowerCase()] = { TermNumber: num, Label: label };
         lookup[term.ID.toUpperCase()] = { TermNumber: num, Label: label };
     });
@@ -2142,10 +2172,22 @@ export async function LoadSubscriptionRevRec(
     const journalEntity = provider.Entities?.find((e) => e.Name === MJO_ACCOUNTING_ENTITIES.JournalEntry);
     const canRead = !journalEntity || !user || journalEntity.GetUserPermisions(user).CanRead;
     if (!canRead) {
-        return { Entries: [], TermLookup: lookup, TermIDs: termIds, CanRead: false };
+        return { Entries: [], TermLookup: lookup, TermIDs: termIds, ReversalLineIDs: [], OffsetMonths: 0, PartlyOffsetMonths: 0, CanRead: false };
     }
 
-    const targets = [...termIds, record.ID];
+    // The line each term was sold on, and the subscription's own originating line.
+    const originTerms = new Map<string, string[]>();
+    for (const t of loadedTerms) {
+        if (!t.OrderLineID || !UUID_PATTERN.test(t.OrderLineID)) continue;
+        const k = t.OrderLineID.toLowerCase();
+        originTerms.set(k, [...(originTerms.get(k) ?? []), t.ID.toLowerCase()]);
+    }
+    if (record.OrderLineID && UUID_PATTERN.test(record.OrderLineID) && !originTerms.has(record.OrderLineID.toLowerCase())) {
+        originTerms.set(record.OrderLineID.toLowerCase(), []);
+    }
+    const reversals = await loadReversingLines(rv, [...originTerms.keys()], user);
+
+    const targets = [...termIds, record.ID, ...reversals.keys()];
     if (record.OrderLineID) targets.push(record.OrderLineID);
     const quoted = targets.map((id) => `'${id}'`).join(',');
     const jeRes = await rv.RunView<mjBizAppsAccountingJournalEntryEntity>({
@@ -2158,24 +2200,57 @@ export async function LoadSubscriptionRevRec(
     }, user);
     const all = jeRes.Success && jeRes.Results ? jeRes.Results : [];
     const recognized = FilterRecognitionEntries(all, termIds);
+    const netted = NetReversedRecognition(recognized, reversals, originTerms);
+    // A schedule a reversal took back in full shows as empty, never as the booking entries behind it.
+    const entries =
+        recognized.length > 0 ? netted.Entries : all.filter((je) => !reversals.has(String(je.LinkedRecordID).toLowerCase()));
     return {
-        Entries: recognized.length > 0 ? recognized : all,
+        Entries: entries,
         TermLookup: lookup,
         TermIDs: termIds,
+        ReversalLineIDs: [...reversals.keys()],
+        OffsetMonths: netted.OffsetMonths,
+        PartlyOffsetMonths: netted.PartlyOffsetMonths,
         CanRead: true,
     };
+}
+
+/** Lines reversing any of `originLineIDs`, as lower-cased reversal line ID → lower-cased origin line ID. */
+async function loadReversingLines(
+    rv: RunView,
+    originLineIDs: string[],
+    user: UserInfo | undefined,
+): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    if (originLineIDs.length === 0) return map;
+    const res = await rv.RunView<{ ID: string; ReversesOrderLineID: string | null }>({
+        EntityName: MJO_ENTITIES.OrderLine,
+        ExtraFilter: `ReversesOrderLineID IN (${originLineIDs.map((id) => `'${id}'`).join(',')})`,
+        Fields: ['ID', 'ReversesOrderLineID'],
+        ResultType: 'simple',
+        MaxRows: 500,
+    }, user);
+    if (!res.Success) {
+        // Read as "nothing reversed", the schedule is the one shown before golive #474: no worse.
+        console.error(`[orders-queries] lines reversing the subscription could not be read: ${res.ErrorMessage}`);
+        return map;
+    }
+    for (const row of res.Results ?? []) {
+        if (row.ReversesOrderLineID) map.set(String(row.ID).toLowerCase(), String(row.ReversesOrderLineID).toLowerCase());
+    }
+    return map;
 }
 
 async function loadTermKeys(
     rv: RunView,
     subscriptionID: string,
     user: UserInfo | undefined,
-): Promise<Array<{ ID: string; TermNumber?: number }>> {
-    const termsRes = await rv.RunView<{ ID: string; TermNumber?: number }>({
+): Promise<MJORevRecTerm[]> {
+    const termsRes = await rv.RunView<MJORevRecTerm>({
         EntityName: MJO_ENTITIES.SubscriptionTerm,
         ExtraFilter: `SubscriptionID = '${subscriptionID}'`,
         OrderBy: 'TermNumber ASC',
-        Fields: ['ID', 'TermNumber'],
+        Fields: ['ID', 'TermNumber', 'OrderLineID', 'Status'],
         ResultType: 'simple',
         MaxRows: 200,
     }, user);

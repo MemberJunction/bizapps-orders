@@ -186,6 +186,16 @@ export type CancellationRefund = 'Full' | 'ProrateUnused';
 
 export const CANCELLATION_REFUNDS: readonly CancellationRefund[] = ['Full', 'ProrateUnused'];
 
+/**
+ * What a cancellation preview says about deferred revenue, beside what it says about money (golive
+ * #474). "Nothing is reversed" read as a statement about refunds only; the person cancelling also
+ * needs to know whether the revenue still to recognize stays scheduled.
+ */
+const KEPT_REVENUE =
+    "the term's amount stays on the order, and its deferred revenue is still recognized on its schedule.";
+const REVERSED_REVENUE =
+    'The reversal credits that amount to the order and takes back the matching deferred revenue not yet recognized.';
+
 export interface CancellationContext {
     Rules: SubscriptionTypeRules;
     /** When the customer asked to cancel. */
@@ -1177,7 +1187,7 @@ export class SubscriptionBehavior {
                 RefundAmount: 0,
                 ReversalFraction: 0,
                 TermStatus: 'Canceled',
-                Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept.`,
+                Explanation: `${coverage}. This subscription type does not refund, so what was invoiced for it is kept, and its revenue is still recognized on its schedule.`,
                 Coverage: `${coverage}.`,
             };
         }
@@ -1191,8 +1201,8 @@ export class SubscriptionBehavior {
             TermStatus: 'Canceled',
             Explanation:
                 rawContext.Rules.CancellationRefundMode === 'NoRefund'
-                    ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed and its instalments withdrawn.`
-                    : `${coverage} and its full ${amount} reversed.`,
+                    ? `${coverage}. Nothing has been invoiced for it yet, so its full ${amount} is reversed, its instalments withdrawn and its scheduled revenue taken back.`
+                    : `${coverage} and its full ${amount} reversed, with its scheduled revenue.`,
             Coverage: `${coverage}.`,
         };
     }
@@ -1244,7 +1254,7 @@ export class SubscriptionBehavior {
                     amount: 0,
                     explanation:
                         `Coverage ends ${isoDay(effective)} (${rules.CancellationMode}). This subscription ` +
-                        `type does not refund, so nothing is reversed.`,
+                        `type does not refund, so nothing is reversed: ${KEPT_REVENUE}`,
                 };
 
             case 'FullRefund':
@@ -1252,7 +1262,7 @@ export class SubscriptionBehavior {
                     amount: term.Amount,
                     explanation:
                         `Coverage ends ${isoDay(effective)} (${rules.CancellationMode}). A full refund was ` +
-                        `chosen for this cancellation, so the term's full ${term.Amount} is reversed.`,
+                        `chosen for this cancellation, so the term's full ${term.Amount} is reversed. ${REVERSED_REVENUE}`,
                 };
 
             case 'FullRefundWithinWindow': {
@@ -1263,14 +1273,14 @@ export class SubscriptionBehavior {
                         amount: term.Amount,
                         explanation:
                             `Cancelled ${elapsed} day(s) into the term, within the ${window}-day refund ` +
-                            `window — the full ${term.Amount} is refunded and reversed.`,
+                            `window — the full ${term.Amount} is refunded and reversed. ${REVERSED_REVENUE}`,
                     };
                 }
                 return {
                     amount: 0,
                     explanation:
                         `Cancelled ${elapsed} day(s) into the term, past the ${window}-day refund window. ` +
-                        `Coverage ends ${isoDay(effective)} with no refund.`,
+                        `Coverage ends ${isoDay(effective)} with no refund: ${KEPT_REVENUE}`,
                 };
             }
 
@@ -1290,7 +1300,7 @@ export class SubscriptionBehavior {
                     amount: term.Amount * fraction,
                     explanation:
                         `Coverage ends ${isoDay(effective)}; ${unusedDays} of ${totalDays} day(s) go ` +
-                        `unused, so ${Math.round(fraction * 1000) / 10}% of the term is refunded.`,
+                        `unused, so ${Math.round(fraction * 1000) / 10}% of the term is refunded. ${REVERSED_REVENUE}`,
                 };
             }
         }

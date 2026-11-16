@@ -131,7 +131,7 @@ describe('Cancel subscription — payment gateway (E2b)', () => {
         expect(notice).not.toBeNull();
         expect(squash(notice?.textContent)).toBe(
             'The payment gateway bills this subscription (sub_1Abc). Cancelling here also cancels it there, first: if the gateway does not confirm, nothing changes. Refunds of what the gateway charged are made at the gateway; ' +
-                'the Refund below is a credit on the order and moves no money.',
+                'the Reversed amount below is a credit on the order and moves no money.',
         );
         // Placed directly under the title, before the timing choice.
         expect(el.querySelector('#mjo-sc-title')?.nextElementSibling).toBe(notice);
@@ -143,7 +143,7 @@ describe('Cancel subscription — payment gateway (E2b)', () => {
         expect(el.textContent).not.toContain(NOTICE);
         // Control: the rest of the panel is still there.
         expect(el.querySelector('#mjo-sc-title')?.textContent).toContain('Cancel subscription');
-        expect(el.querySelectorAll('input[type="radio"]')).toHaveLength(3);
+        expect(el.querySelectorAll('input[type="radio"]')).toHaveLength(6); // three timings, three refunds (golive #384)
         expect(el.querySelector('textarea[name="reason"]')).not.toBeNull();
         expect([...el.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual(['Keep subscription', 'Preview']);
     });
@@ -180,7 +180,7 @@ describe('Cancel subscription — payment gateway (E2b)', () => {
         expect(Object.keys(r)).not.toContain('Payment gateway');
         expect(r['Coverage ends']).toBe('2026-12-31');
         expect(r['Access ends']).toBe('2027-01-30');
-        expect(Object.keys(r)).toEqual(['Coverage ends', 'Access ends', 'Refund']);
+        expect(Object.keys(r)).toEqual(['Coverage ends', 'Access ends', 'Reversed']);
         expect([...el.querySelectorAll('button')].map((b) => b.textContent?.trim())).toEqual(['Keep subscription', 'Confirm cancellation']);
     });
 
