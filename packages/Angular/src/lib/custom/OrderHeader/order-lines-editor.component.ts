@@ -59,6 +59,7 @@ import {
     GetDiscountAuthority,
     GetExistingHolding,
     GetSubscriptionContinuation,
+    KeepSellingCompanyProducts,
     RankCatalogMatches,
     type MJODimensionOption,
     type MJODiscountAuthority,
@@ -191,6 +192,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     private pickerCache: { Key: string; Results: MJOProductOption[] } | null = null;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
     public ProductQuery = '';
+    /**
+     * "Only selling company products". Checked on open, so a user sees their own company's catalog
+     * first; unchecking it offers every company's products for a multi-company deal.
+     */
+    public SellingCompanyOnly = true;
+    /** Search matches the checkbox hides, so the list can say they exist. */
+    public PickerHiddenByCompany = 0;
     public PickerCursor = 0;
     public PickerOpen = false;
     /** True when the catalog list would overflow the viewport below the search box. */
@@ -229,18 +237,20 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     public get PickerResults(): MJOProductOption[] {
         const query = this.ProductQuery.trim().toLowerCase();
         const companyID = String(this._order?.CompanyID ?? '');
-        const key = `${this.catalogVersion}|${companyID}|${query}`;
+        const key = `${this.catalogVersion}|${companyID}|${this.SellingCompanyOnly}|${query}`;
         if (this.pickerCache?.Key !== key) {
+            const sellable = this.Catalog.filter((p) => !p.NotSellableNew);
+            const offered = this.SellingCompanyOnly ? KeepSellingCompanyProducts(sellable, companyID) : sellable;
+            const ranked = RankCatalogMatches(offered, query, companyID || null);
+            // Counted only for a typed search: with nothing typed, "N other products" says nothing
+            // about what the user is looking for.
+            this.PickerHiddenByCompany =
+                query && offered.length < sellable.length
+                    ? RankCatalogMatches(sellable, query, null).length - ranked.length
+                    : 0;
             this.pickerCache = {
                 Key: key,
-                Results: RankCatalogMatches(
-                    this.Catalog.filter((p) => !p.NotSellableNew),
-                    query,
-                    companyID || null,
-                ).slice(
-                    0,
-                    PICKER_RESULT_LIMIT,
-                ),
+                Results: ranked.slice(0, PICKER_RESULT_LIMIT),
             };
         }
         return this.pickerCache.Results;
@@ -256,6 +266,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         // Back to the top on every edit. The list is RANKED now, so row 0 is the best match for what
         // was just typed — leaving the cursor where it was points it at whatever happens to occupy
         // that position in a different result set, which is what Enter would then add.
+        this.PickerCursor = 0;
+        if (this.PickerOpen) this.updatePickerFlip();
+    }
+
+    /** True when the order has a selling company the checkbox can narrow to. */
+    public get HasSellingCompany(): boolean {
+        return !!this._order?.CompanyID;
+    }
+
+    public OnSellingCompanyOnlyChange(): void {
         this.PickerCursor = 0;
         if (this.PickerOpen) this.updatePickerFlip();
     }

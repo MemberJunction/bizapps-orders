@@ -73,6 +73,8 @@ import {
     HostOrderLineEditVeto,
     ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
+    IsProductReplacedWithoutPriceEdit,
+    MarkLinePriceStated,
     InitialPaymentDay,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
@@ -115,7 +117,7 @@ import {
     type OrderRollups,
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
-import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { AddDays, ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
 import { ExplainShortfalls, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { LowerInstalments } from './AmountChange.js';
@@ -312,6 +314,13 @@ interface CreateJournalEntriesResult {
     Errors?: Array<{ Code: string; Message: string; DraftIndex?: number; LineIndex?: number }>;
 }
 
+/** One confirmation-stamp field's value and baseline, captured before a booking save. */
+interface ConfirmationStampState {
+    Name: string;
+    Value: unknown;
+    OldValue: unknown;
+}
+
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends OrderHeaderEntity {
     /** An approved Terms concession, applied by ./PaymentTermsChange.ts, is the only change to a confirmed order's terms. */
@@ -335,6 +344,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     public MarkRenewalPriced(line: mjBizAppsOrdersOrderLineEntity): void {
         this._renewalPricedLines.set(line, Number(line.UnitPrice));
+        MarkLinePriceStated(line);
+    }
+
+    /**
+     * When `Orders.SpawnRenewals` places a renewal as of a specific day, it records that day here so
+     * `issueDueInstalments` measures the renewal lead window from the pass's as-of day.
+     */
+    private _renewalAsOfDay: string | null = null;
+
+    public SetRenewalAsOfDay(day: string | null): void {
+        this._renewalAsOfDay = day;
     }
 
     /** Whether the marks the renewal pass persisted for this order have been read into the map above. */
@@ -726,6 +746,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // review exempts the system origins (golive #320 §5), so a writable Origin was a way round it.
         if (!this.passesOriginGuard()) return false;
 
+        // CONFIRMEDAT AND CONFIRMEDBYUSERID ARE WRITTEN ONLY BY THE BOOKING SAVE (#915, #969).
+        if (!this.passesConfirmationStampGuard()) return false;
+
         // A CHANGE THAT SENDS THE ORDER TO REVIEW (golive #320 §5) is read before the party defaults
         // below fill anything in, so it sees only what the caller changed. It raises the review before
         // the write: a spare task for a save that then fails is the safe side of the trade.
@@ -823,6 +846,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // entity object can be re-saved, and a stale latch would make a later ordinary update
         // re-run the booking-only rules. See `bookingInFlight`.
         this.bookingInFlight = booking;
+        const priorConfirmationStamp = this.captureConfirmationStamp();
 
         try {
             await dbProvider.BeginTransaction();
@@ -840,7 +864,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             //
             // It runs HERE rather than inside `savePendingLines` for two reasons: `expandBundles`
             // renumbers the survivors just below, so the numbers must already be free; and a
-            // successful `super.Save()` can call `AcceptChanges()` on the collection, which empties
+            // successful `super.Save()` can call `AcceptChanges()` on the collection (when an embed
+            // makes it a graph save; otherwise the commit below does it), which empties
             // `Removed` — by the time the line writers run there may be nothing left to read.
             // AND THE ROW'S TOTALS NOW WIN, because the delete just moved them.
             //
@@ -1083,6 +1108,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // charge again and booking credited it twice. Cleared only once committed, so a save
             // that rolls back can be retried with the same requests.
             this._charges = [];
+            // A REMOVED LINE IS CONSUMED BY THE SAVE THAT DELETED IT. `deleteRemovedLines` issued the
+            // deletes itself, and the header save skips collections, so MJ clears `Lines.Removed` only
+            // when an embed happens to turn that save into a graph save. Left in place, the removal
+            // kept `Lines.Dirty` true: every later save of this object took the full line walk, and a
+            // confirm on a collection that was built rather than loaded asked `Lines.Load()` to
+            // discard it, which MJ refuses (#1045). Cleared only once committed, so a save that rolls
+            // back can be retried with the same removals.
+            this.Lines.AcceptChanges();
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
@@ -1095,10 +1128,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // holds the header's SUCCESSFUL save — so a subscription rule rejection or an
             // unresolvable GL account reads as "it just didn't work". The UI, the API and the
             // integration suite all need the reason; the log is not a return value.
+            if (booking) {
+                this.restoreConfirmationStamp(priorConfirmationStamp);
+            }
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         } finally {
             this.bookingInFlight = false;
+            this.confirmationStamped = false;
             this.addressSnapshotsStamped = false;
         }
     }
@@ -1404,6 +1441,40 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * Refuse caller writes to `ConfirmedAt` or `ConfirmedByUserID` before any booking or review work runs (#915, #969).
+     * On a booking save, `ConfirmedByUserID` sent by a graph payload is overwritten by `stampConfirmation()`,
+     * whereas `ConfirmedAt` set by a caller is always refused.
+     */
+    private passesConfirmationStampGuard(): boolean {
+        if (this.confirmationStamped) return true;
+        const booking = this.willBookOnThisSave();
+        for (const name of ['ConfirmedAt', 'ConfirmedByUserID'] as const) {
+            if (name === 'ConfirmedByUserID' && (booking || this.MoneyLocked)) continue;
+            if (this.safeFieldDirty(name)) {
+                this.RegisterResultHistoryEntry(
+                    this.buildFailureResult(
+                        new Error(`${name} is stamped by the server when the order is confirmed and cannot be set directly.`),
+                    ),
+                );
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private safeFieldDirty(name: string): boolean {
+        if (Array.isArray((this as { Fields?: unknown }).Fields)) {
+            const found = this.Fields.find((f) => f.Name === name);
+            if (found) return found.Dirty === true;
+        }
+        try {
+            return this.GetFieldByName(name)?.Dirty === true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Refuse the confirm while the order's review is outstanding, and send an order that hit a review
      * trigger with no review to one (golive #320 §5). Like the concession gate, a refusal refuses the
      * whole save, not only the move to Confirmed: nothing else the save carried is written either. A
@@ -1509,8 +1580,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             DiscountPct: line.DiscountPct,
             RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
             // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
+            // A saved line whose product changed without a price edit is about to be re-priced (#907).
             PriceStated:
                 !this.isUneditedRenewalPrice(line) &&
+                !IsProductReplacedWithoutPriceEdit(line) &&
                 (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
             LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
         }));
@@ -1627,8 +1700,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * (ORDER_HEADER_MONEY_FIELDS) and by trigger 51017.
      */
     protected stampConfirmation(): void {
+        this.confirmationStamped = true;
         this.ConfirmedAt = new Date();
         this.ConfirmedByUserID = this.ContextCurrentUser?.ID ?? null;
+    }
+
+    /** Restore pre-stamp confirmation fields if the booking save throws and rolls back (#969). */
+    private restoreConfirmationStamp(prior: ConfirmationStampState[]): void {
+        // Value AND OldValue: the booking save may have re-baselined OldValue before it threw, and a
+        // restored field left dirty would make a retry on this object fail the caller-stamp guard.
+        for (const state of prior) {
+            const field = this.Fields.find((f) => f.Name === state.Name);
+            if (!field) continue;
+            field.Value = state.Value;
+            field.RestoreOldValue(state.OldValue);
+        }
+    }
+
+    /** The two stamp fields as they stand before the booking save, for {@link restoreConfirmationStamp}. */
+    private captureConfirmationStamp(): ConfirmationStampState[] {
+        const fields = Array.isArray((this as { Fields?: unknown }).Fields) ? this.Fields : [];
+        return fields
+            .filter((f) => f.Name === 'ConfirmedAt' || f.Name === 'ConfirmedByUserID')
+            .map((f) => ({ Name: f.Name, Value: f.Value, OldValue: f.OldValue }));
     }
 
     /**
@@ -5484,33 +5578,77 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async issueDueInstalments(scheduleRows: ScheduleTimingFacts[]): Promise<void> {
         if (!scheduleRows.length) return;
-        // The order's own day, or today's BUSINESS day (#209). This decides which instalments are
-        // due — it is compared against `DueDate`, a `date` column — and `toISOString()` reads the
-        // UTC day, so an evening confirm would bill tomorrow's instalment a day early.
-        const effectiveDate = ToISODate(
-            await CalendarDayOrToday(
-                this.OrderDate,
-                this.ProviderToUse as unknown as IMetadataProvider,
-                this.ContextCurrentUser as UserInfo,
-            ),
-        ) as string;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const cutoffDate = await this.instalmentIssueCutoffDate(provider, user);
 
         const due = scheduleRows
-            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= effectiveDate)
+            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= cutoffDate)
             .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0));
         if (!due.length) return;
 
-        const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const user = this.ContextCurrentUser as UserInfo;
         for (const row of due) {
             const outcome = await IssueInstalment(String(row.ID), provider, user, this.InstalmentInvoiceDay);
             if (!outcome.Success) {
                 throw new Error(
                     `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +
-                        `due on or before the order date: ${outcome.Message}`,
+                        `due on or before ${cutoffDate}: ${outcome.Message}`,
                 );
             }
         }
+    }
+
+    /**
+     * Latest `DueDate` (`YYYY-MM-DD`) that confirm issues immediately (#963).
+     *
+     * For a renewal order, `OrderDate` is the next term's start date — often months in the future —
+     * so comparing against `OrderDate` issued instalments long before their due window. Instead, a
+     * renewal issues instalments due on or before today (or the renewal pass's as-of day) plus the
+     * subscription's renewal lead days (`Subscription.RenewalLeadDays ?? SubscriptionType.RenewalLeadDays ?? 0`).
+     * For a non-renewal order, `OrderDate` (capped at today when forward-dated) is the cutoff with 0 lead days.
+     */
+    private async instalmentIssueCutoffDate(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+        const today = await BusinessDay(provider, user);
+        const orderDay = ToISODate(await CalendarDayOrToday(this.OrderDate, provider, user)) as string;
+        const renewalSubIDs = [
+            ...new Set(
+                this.Lines.Items.map((l) => l.RenewsSubscriptionID).filter((id): id is string => !!id),
+            ),
+        ];
+        if (renewalSubIDs.length === 0) {
+            return orderDay <= today ? orderDay : today;
+        }
+        const baseDay = this._renewalAsOfDay ?? today;
+        const leadDays = await this.renewalLeadDaysFor(renewalSubIDs, provider, user);
+        return AddDays(baseDay, leadDays) ?? baseDay;
+    }
+
+    private async renewalLeadDaysFor(
+        subscriptionIDs: string[],
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<number> {
+        const ids = RequireUUIDs(subscriptionIDs, 'RenewsSubscriptionID');
+        if (!ids.length) return 0;
+        await LoadOrdersEngine(provider, user);
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string; SubscriptionTypeID: string; RenewalLeadDays: number | null }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+                Fields: ['ID', 'SubscriptionTypeID', 'RenewalLeadDays'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        if (!res?.Success) return 0;
+        let maxLead = 0;
+        for (const sub of res.Results ?? []) {
+            const typeLead = OrdersEngine.Instance.SubscriptionTypeByID(sub.SubscriptionTypeID)?.RenewalLeadDays ?? 0;
+            const effective = Math.max(0, Number(sub.RenewalLeadDays ?? typeLead ?? 0));
+            if (effective > maxLead) maxLead = effective;
+        }
+        return maxLead;
     }
 
     /** The `OrderConfirmed` outbound event: the order as consumers need it, lines included. */
