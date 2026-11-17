@@ -6,7 +6,7 @@ import { RegisterClass, UUIDsEqual } from '@memberjunction/global';
 import { BaseFormComponent, type FormNavigationEvent } from '@memberjunction/ng-base-forms';
 import { NavigationService } from '@memberjunction/ng-shared';
 import type { ExportDialogConfig } from '@memberjunction/ng-export-service';
-import type { TabConfig } from '@memberjunction/ng-ui-components';
+import { MJConfirmService, type TabConfig } from '@memberjunction/ng-ui-components';
 import {
     AsDateValue,
     CanOfferConfirm,
@@ -15,6 +15,7 @@ import {
     LoadOrdersEngine,
     OrderHeaderEntity,
     OrdersConfirmReadinessOperation,
+    OrdersPollExternalPaymentsOperation,
     ToISODate,
     type DateCell,
     type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
@@ -150,6 +151,8 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public AccountingExportConfig: ExportDialogConfig | null = null;
 
     public Confirming = false;
+    public CheckingExternalPayments = false;
+    public ExternalPaymentNotice: string | null = null;
     public StatusError: string | null = null;
     /**
      * One sentence per subscription line whose stated start the confirm replaced (golive #299).
@@ -192,6 +195,7 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     }
 
     protected navigationService = inject(NavigationService, { optional: true });
+    private readonly confirmService = inject(MJConfirmService);
 
     override OnFormNavigate(event: FormNavigationEvent): void {
         this.Navigate.emit(event);
@@ -419,6 +423,51 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         this.recordEvents?.unsubscribe();
         this.recordEvents = null;
         super.ngOnDestroy();
+    }
+
+    /** True when this booked order has an external invoice document number and an open balance waiting on payment. */
+    public get ShowCheckExternalPayments(): boolean {
+        return (
+            !!this.record?.IsSaved &&
+            !!this.record?.IsBookedOrder &&
+            Number(this.record?.Balance ?? 0) > 0 &&
+            !!this.record?.ExternalDocumentNumber?.trim()
+        );
+    }
+
+    /** Run the external payment poll from the order's Payment tab and refresh the order if money arrived. */
+    public async CheckExternalPaymentsNow(): Promise<void> {
+        if (!this.record?.IsSaved || this.CheckingExternalPayments) return;
+        // The poll is not scoped to this order, so it asks first, as the invoicing queue does.
+        if (!(await this.confirmService.Confirm({
+                title: 'Check the rail for payments now?',
+                message: 'This reads every payment the rail reported since the last poll, for all orders on it, not only this one, and records each cleared one as cash against its order.',
+                detail: 'The scheduled poll would do this on its own at its next run.',
+                type: 'warning',
+                confirmText: 'Check and record',
+                cancelText: 'Not yet',
+            }))) return;
+        this.CheckingExternalPayments = true;
+        this.ExternalPaymentNotice = null;
+        this.StatusError = null;
+        this.cdr?.detectChanges();
+        try {
+            const result = await new OrdersPollExternalPaymentsOperation().Execute({ Preview: false });
+            const out = result.Output;
+            if (!result.Success || !out) {
+                this.StatusError = result.ErrorMessage?.trim() || 'The payment check could not run.';
+                return;
+            }
+            this.ExternalPaymentNotice = out.Message ?? `${out.Captured} payment(s) recorded.`;
+            if (out.Captured > 0) {
+                await this.RefreshRecord();
+            }
+        } catch (error) {
+            this.StatusError = error instanceof Error ? error.message : String(error);
+        } finally {
+            this.CheckingExternalPayments = false;
+            this.cdr?.detectChanges();
+        }
     }
 
     /** Void or reopen. A refusal leaves the previous status in place and shows the reason. */
