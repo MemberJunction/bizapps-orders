@@ -5467,6 +5467,31 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * receivable. One read, at the one place that already owns the transaction — the factory is
      * handed the facts rather than querying for them.
      */
+    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(
+            {
+                EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
+                ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'ID')}'`,
+                Fields: ['ID', 'CompanyID', 'Company', 'Amount', 'Status', 'DueDate', 'InstallmentNumber'],
+                ResultType: 'simple',
+                BypassCache: true,
+            },
+            this.ContextCurrentUser,
+        );
+        if (!rows.Success) {
+            throw new Error(`Could not read the payment schedule for order ${this.OrderNumber}: ${rows.ErrorMessage ?? 'unknown error'}`);
+        }
+        const shortfalls = ScheduleShortfalls(
+            rows.Results ?? [],
+            lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
+            String(this.CompanyID ?? ''),
+        );
+        if (!shortfalls.length) return rows.Results ?? [];
+        const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
+        throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
+    }
+
     /**
      * Refuse the confirm while a subscription line for a product its subscriber already holds has
      * not said whether it extends that subscription or starts a new one (golive #467).
@@ -5504,13 +5529,18 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * The schedule is the order's, so the confirm does not move it: on an order with several lines
      * there is no single shift that is right, and changing money dates unseen is the defect. The test
      * is `FindInstalmentsBeforeMovedTerms`, which the order screen also runs to warn before confirm.
-     * An order with no schedule rows, or no moved start, passes untouched.
+     * An order with no schedule rows, or no moved start, passes untouched, and so does a system-origin
+     * order or a reversal.
      */
     private refuseInstalmentsBeforeMovedTerms(
         lines: mjBizAppsOrdersOrderLineEntity[],
         decisions: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
         scheduleRows: ScheduleTimingFacts[],
     ): void {
+        // A checkout or provider-payment order has no person who could choose a new subscription on
+        // the line, which is what the refusal asks for; such orders keep the type's rule, as in
+        // `refuseUnansweredHeldLines`.
+        if (IsSystemOrderOrigin(this.Origin) || this.ReversesOrderHeaderID) return;
         if (!scheduleRows.length || !decisions.size) return;
         const byLineID = new Map<string, SubscriptionDecisionForLine>();
         for (const [pending, decided] of decisions) {
@@ -5550,31 +5580,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
         );
         if (found.length === 0) return;
         throw new Error(ExplainInstalmentsBeforeMovedTerms(this.OrderNumber ?? null, found));
-    }
-
-    private async verifyScheduleTies(lines: mjBizAppsOrdersOrderLineEntity[]): Promise<ScheduleTimingFacts[]> {
-        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const rows = await rv.RunView<ScheduleTimingFacts & { Company?: string }>(
-            {
-                EntityName: ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
-                ExtraFilter: `OrderHeaderID='${RequireUUID(this.ID, 'ID')}'`,
-                Fields: ['ID', 'CompanyID', 'Company', 'Amount', 'Status', 'DueDate', 'InstallmentNumber'],
-                ResultType: 'simple',
-                BypassCache: true,
-            },
-            this.ContextCurrentUser,
-        );
-        if (!rows.Success) {
-            throw new Error(`Could not read the payment schedule for order ${this.OrderNumber}: ${rows.ErrorMessage ?? 'unknown error'}`);
-        }
-        const shortfalls = ScheduleShortfalls(
-            rows.Results ?? [],
-            lines.map((l) => ({ CompanyID: String(l.CompanyID), LineTotalGross: Number(l.LineTotalGross ?? 0) })),
-            String(this.CompanyID ?? ''),
-        );
-        if (!shortfalls.length) return rows.Results ?? [];
-        const names = new Map((rows.Results ?? []).map((r) => [String(r.CompanyID).toLowerCase(), r.Company ?? r.CompanyID]));
-        throw new Error(ExplainShortfalls(this.OrderNumber ?? '', shortfalls, (id) => String(names.get(id) ?? id)));
     }
 
     /**

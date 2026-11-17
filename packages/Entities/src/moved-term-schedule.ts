@@ -9,13 +9,22 @@
  *
  * Confirm refuses such an order instead of moving the instalments itself. The schedule covers the
  * whole order, so on an order with several lines there is no single shift that is right, and moving
- * money dates without the person seeing it is the failure being fixed. The order screen runs the same
- * test to warn before confirm.
+ * money dates without the person seeing it is the failure being fixed. The order screen runs this
+ * function to warn before confirm, over every moved line and the gross of the lines it holds, as
+ * confirm does. It cannot reproduce one confirm input: when two lines extend the same subscription,
+ * confirm starts the second a term after the first, and the screen starts both at the
+ * subscription's current end, so the screen can stay silent on the second line where confirm refuses.
  *
  * WHAT COUNTS AS EARLY. Money due before a moved line's new start can still pay for the other lines
  * of the order, so a moved line is reported only when the live instalments due before its new start
  * add up to more than the order's lines that start no later than that. On an order whose only line
  * moved, that is any instalment due before the new start.
+ *
+ * The arithmetic is order-wide. The schedule tie check (`verifyScheduleTies`) compares rows and lines
+ * per covering company; this does not, so on an order whose lines belong to more than one company a
+ * late row of one company can offset early money owed by another, and a line can pass that a
+ * per-company test would report. That errs toward accepting, never toward a wrong refusal, and
+ * grouping by company here would need the server's coverage rule on the order screen as well.
  *
  * @module @mj-biz-apps/orders-entities
  */
@@ -114,6 +123,6 @@ export function ExplainInstalmentsBeforeMovedTerms(orderNumber: string | null, f
     const order = orderNumber ? `Order ${orderNumber}` : 'The order';
     return (
         `${order} was not confirmed. ${found.map(DescribeInstalmentsBeforeMovedTerm).join(' ')} ` +
-        `Move those instalments into the new term, or choose "New subscription" on the line to keep the dates entered.`
+        `Move those instalments into the new term, or choose "Create new subscription" on the line to keep the dates entered.`
     );
 }
