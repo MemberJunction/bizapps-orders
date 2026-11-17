@@ -171,7 +171,7 @@
                         <tr [class.muted]="!row.Active">
                             <td class="mjo-gl-links__role">{{ row.RoleName }}</td>
                             <td>
-                                <button type="button" class="mjo-acct-link mjo-acct-account" title="Open the assignment record" (click)="OpenLink(row)">
+                                <button type="button" class="mjo-acct-link mjo-acct-account" title="Open the assignment record" mjRecordLink [EntityName]="LinkEntity" [RecordID]="row.ID" [DisplayName]="row.AccountCode + ' ' + row.AccountName" [HandleClick]="false" (click)="OpenLink(row)">
                                     <span class="mjo-acct-code">{{ row.AccountCode }}</span>
                                     <span class="mjo-acct-name">{{ row.AccountName }}</span>
                                 </button>
