@@ -1,5 +1,5 @@
 /**
- * @fileoverview The four Explorer tabs.
+ * @fileoverview The five Explorer tabs.
  *
  * Each class is registered with `@RegisterClass(BaseResourceComponent, '<DriverClass>')`
  * under the name the Application's `DefaultNavItems` reference
@@ -53,7 +53,8 @@ import { MJOBillingPageComponent } from '../pages/receivables/billing.page';
 import { MJOExternalInvoicingQueuePageComponent } from '../pages/receivables/external-invoicing-queue.page';
 import { MJOProgressPageComponent } from '../pages/receivables/progress.page';
 import { MJOCustomerARPageComponent } from '../pages/receivables/customer-ar.page';
-import { MJOSubscriptionsPageComponent } from '../pages/receivables/subscriptions.page';
+import { MJOSubscriptionsPageComponent } from '../pages/subscriptions/subscriptions.page';
+import { MJORenewalsPageComponent } from '../pages/subscriptions/renewals.page';
 import { MJOProductsPageComponent, MJOChargesTaxPageComponent } from '../pages/catalog/products.page';
 import { MJOPricingPageComponent, MJOPromotionsPageComponent } from '../pages/catalog/pricing.page';
 import { MJOReturnPageComponent } from '../pages/orders/return.page';
@@ -80,12 +81,13 @@ import {
     ORDERS_SUB_PAGES,
     PAYMENTS_SUB_PAGES,
     RECEIVABLES_SUB_PAGES,
+    SUBSCRIPTIONS_SUB_PAGES,
     type OrdersNavBadges,
     type OrdersSubPage,
 } from './section-nav.model';
 
 /**
- * Shared behaviour for the four sections: rail construction, active-page state,
+ * Shared behaviour for the five sections: rail construction, active-page state,
  * per-user persistence of where someone was, and cached sub-page mounting.
  *
  * A `@Directive` rather than a plain class so Angular's compiler accepts the
@@ -94,7 +96,7 @@ import {
  */
 @Directive()
 export abstract class MJOSectionBaseComponent extends BaseResourceComponent implements OnInit {
-    /** Where a sub-page is created. Declared once, inherited by all four sections. */
+    /** Where a sub-page is created. Declared once, inherited by all five sections. */
     @ViewChild('pageHost', { read: ViewContainerRef, static: false })
     protected pageHost?: ViewContainerRef;
 
@@ -805,11 +807,12 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
  * ──────────────────────────────────────────────────────────────────────────── */
 
 /**
- * The Receivables tab — A/R, collections and subscriptions.
+ * The Receivables tab — A/R and collections.
  *
- * Its own section rather than a "Reports" folder: aging and renewals are
+ * Its own section rather than a "Reports" folder: aging and billing are
  * operational work with worklists and actions, and filing them under Reports
- * would tell the accounting team their work is read-only.
+ * would tell the accounting team their work is read-only. Subscriptions and
+ * renewals have their own tab (below).
  */
 @RegisterClass(BaseResourceComponent, 'ReceivablesSectionResource')
 @Component({
@@ -820,7 +823,7 @@ export class PaymentsSectionResource extends MJOSectionBaseComponent {
         <mjo-section-shell
             Title="Receivables"
             Icon="fa-solid fa-chart-column"
-            Subtitle="Customer balances, aging and subscriptions"
+            Subtitle="Customer balances, aging and collections"
             [NavSections]="NavSections"
             [ActivePageId]="ActivePageId"
             [Loading]="IsLoading"
@@ -878,7 +881,83 @@ export class ReceivablesSectionResource extends MJOSectionBaseComponent {
                 return MJOProgressPageComponent;
             case 'aging':
                 return MJOCustomerARPageComponent;
-            case 'subscriptions':
+            default:
+                return null;
+        }
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+ * Subscriptions
+ * ──────────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The Subscriptions tab — what ends soon, what renews, and the full register.
+ *
+ * Its own tab rather than a page on the Receivables rail: accounting and the
+ * product teams both work renewals, from different sides, and neither of them
+ * would look for a worklist with an action under "Receivables".
+ */
+@RegisterClass(BaseResourceComponent, 'SubscriptionsSectionResource')
+@Component({
+    selector: 'mjo-subscriptions-section',
+    standalone: true,
+    imports: [MJButtonDirective, CommonModule, MJOSectionShellComponent],
+    template: `
+        <mjo-section-shell
+            Title="Subscriptions"
+            Icon="fa-solid fa-rotate"
+            Subtitle="Renewals, auto-renew and the subscription register"
+            [NavSections]="NavSections"
+            [ActivePageId]="ActivePageId"
+            [Loading]="IsLoading"
+            [Error]="LoadError"
+            (PageSelected)="OnPageSelected($event)">
+
+            <div meta>
+                @if (LoadedAtDisplay) {
+                    <span class="mjo-chip mjo-chip--outline" title="When this screen last read the database">
+                        as of {{ LoadedAtDisplay }}
+                    </span>
+                }
+            </div>
+
+            <div actions>
+                <button
+                    type="button"
+                    mjButton variant="outline"
+                    (click)="RefreshActivePage()"
+                    aria-label="Refresh this page">
+                    <i class="fa-solid fa-arrow-rotate-right" aria-hidden="true"></i>
+                </button>
+                @if (primaryAction; as action) {
+                    <button type="button" mjButton variant="primary" (click)="StartPrimary()">
+                        <i [class]="action.Icon" aria-hidden="true"></i> {{ action.Label }}
+                    </button>
+                }
+            </div>
+            <ng-container #pageHost />
+        </mjo-section-shell>
+    `,
+})
+export class SubscriptionsSectionResource extends MJOSectionBaseComponent {
+    protected get subPages(): OrdersSubPage[] {
+        return SUBSCRIPTIONS_SUB_PAGES;
+    }
+    protected get preferenceKey(): string {
+        return 'mjOrders.section.subscriptions.page';
+    }
+    protected get sectionTitle(): string {
+        return 'Subscriptions';
+    }
+    protected get sectionIcon(): string {
+        return 'fa-solid fa-rotate';
+    }
+    protected resolvePage(pageId: string): Type<unknown> | null {
+        switch (pageId) {
+            case 'renewals':
+                return MJORenewalsPageComponent;
+            case 'list':
                 return MJOSubscriptionsPageComponent;
             default:
                 return null;

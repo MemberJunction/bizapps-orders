@@ -28,6 +28,11 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
     };
 });
 
+vi.mock('@memberjunction/generic-database-provider', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@memberjunction/generic-database-provider')>();
+    return { ...actual, UserCache: { Instance: { GetSystemUser: () => ({ ID: 'system' }) } } };
+});
+
 const { OrderEntityServer } = await import('../OrderEntityServer.js');
 const { OrderHeaderEntity } = await import('@mj-biz-apps/orders-entities');
 
@@ -255,6 +260,8 @@ function savableOrder(removed: FakeLine[], retained: FakeLine[], log: string[]) 
     const instance = orderWith(removed, retained);
     Object.assign(instance, {
         passesStatusTransition: () => true,
+        // The signed-in user's right to remove a line is its own subject (RemovalCleanupUser.test.ts).
+        passesCleanupRight: () => true,
         // Order review and the Origin guard are their own subject (OrderReviewThroughEntity.test.ts).
         passesOriginGuard: () => true,
         passesOrderReviewOnChange: vi.fn().mockResolvedValue(true),

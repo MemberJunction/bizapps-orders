@@ -24,6 +24,7 @@ The files in this folder describe the system as it is built. Plans for work not 
 | [orders-api-and-ui-architecture.md](orders-api-and-ui-architecture.md) | How the browser composes an order, every remote operation, and the section rails and tabs. |
 | [checkout-widget-and-session-architecture.md](checkout-widget-and-session-architecture.md) | The embeddable checkout: widgets, distributions, sessions, the public endpoints and configuration keys. |
 | [workflows.md](workflows.md) | For business users and administrators: the moments in Orders worth automating, the conditions that catch them, the invoice-on-confirmation automation Orders ships, and the rules Orders adds. Builds on MemberJunction's workflow guides. |
+| [finance-reversals.md](finance-reversals.md) | For finance: early terminations, settlements, refunds and credit moves with today's operations, and the authorization that makes them finance's. |
 | [outbound-events.md](outbound-events.md) | Events Orders sends to registered consumers when a sale confirms or a grant changes. |
 | [billcom-invoice-rail.md](billcom-invoice-rail.md) | Sending invoices to Bill.com and recording the payments made there. |
 | [hubspot-payments.md](hubspot-payments.md) | Reading the payments a company's HubSpot portal collects, before the payout. |

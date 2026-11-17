@@ -168,6 +168,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
     /** After a link is added, edited, retired or removed, so the Effective accounts block re-reads. */
     @Output() public LinksChanged = new EventEmitter<void>();
 
+    public readonly LinkEntity = LINK_ENTITY;
     public Rows: ProductGLLinkRow[] = [];
     public Loading = true;
     /** Set when the links cannot be read at all. Shown instead of an empty list, which would lie. */
@@ -277,14 +278,14 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
      */
     public StatusLabel(row: ProductGLLinkRow): string {
         if (row.Active) {
-            return 'In force';
+            return 'Active';
         }
         if (row.Status !== 'Active') {
             // Disabled or Pending — the row's own status is the honest answer.
             return row.Status;
         }
         // Active, but not the winner. Which of the two remaining reasons applies is a date question.
-        return this.HasApplied(row) ? 'Superseded' : 'Not started';
+        return this.HasApplied(row) ? 'Superseded' : 'Scheduled';
     }
 
     /**
@@ -305,10 +306,9 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
      */
     public RemoveWarning(row: ProductGLLinkRow): string {
         return row.Active
-            ? 'Remove this link permanently. It is IN FORCE today, so orders booked today may already '
-                + 'have resolved through it. It cannot be retired instead, because a link cannot end on '
-                + 'the day it starts.'
-            : 'Remove this link permanently. It has not started yet, so nothing has booked through it.';
+            ? 'Delete this assignment. It is active today, so orders posted today may already have used it. '
+                + 'It cannot be ended instead, because an assignment cannot end on the day it starts.'
+            : 'Delete this assignment. It has not started, so nothing has posted through it.';
     }
 
     /** Opens accounting's Account Links screen, which is where a link is created or retired. */

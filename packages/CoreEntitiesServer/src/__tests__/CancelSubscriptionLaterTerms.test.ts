@@ -19,6 +19,8 @@ const mocks = vi.hoisted(() => ({
     schedules: new Map<string, { Status: string; DocumentNumber: string | null }[]>(),
 }));
 
+// The finance gate (bc-aidp-next-golive#454) has its own tests; these drive what comes after it.
+vi.mock('../ReversalAuthority.js', () => ({ ReversalGate: () => null, WithGatewayRecord: (fn: () => Promise<unknown>) => fn() }));
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();
     return {

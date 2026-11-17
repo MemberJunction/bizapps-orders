@@ -1,73 +1,89 @@
-<div class="mjo-eff-gl">
-    <div class="mjo-eff-gl__head">
-        <span class="mjo-eff-gl__title">
-            <i class="fa-solid fa-diagram-project"></i>
-            Effective accounts
-        </span>
-        <span class="mjo-eff-gl__actions">
-            <label class="mjo-eff-gl__company">
-                <span>Company</span>
-                <select
-                    [ngModel]="SelectedCompany"
-                    (ngModelChange)="OnCompanyChange($event)"
-                    [disabled]="Loading || !CanExplain"
-                    aria-label="Company to explain the accounts for">
-                    @if (!Companies.length && CompanyID) {
-                        <option [value]="CompanyID">{{ Product.Company }} (product's company)</option>
-                    }
-                    @for (c of Companies; track c.ID) {
-                        <option [value]="c.ID">{{ c.Name }}{{ IsOwnCompany(c.ID) ? " (product's company)" : '' }}</option>
-                    }
-                </select>
-            </label>
-            <button
-                type="button"
-                class="mjo-eff-gl__refresh"
-                title="Re-read where each role's account comes from"
-                [disabled]="Loading || !CanExplain"
-                (click)="Refresh()">
-                <i class="fa-solid fa-rotate"></i>
-            </button>
-        </span>
+<header class="mjo-acct-card__head">
+    <div class="mjo-acct-card__titles">
+        <h3 class="mjo-acct-card__title"><i class="fa-solid fa-diagram-project"></i>Accounts used when an order is confirmed</h3>
+        <p class="mjo-acct-card__sub">
+            A role with no direct assignment inherits from the product's category (or a parent category), then its
+            product type, then the company default.
+        </p>
     </div>
+    <div class="mjo-acct-card__actions">
+        <button
+            type="button"
+            class="mjo-acct-btn mjo-acct-btn--icon"
+            title="Refresh"
+            aria-label="Refresh"
+            [disabled]="Loading || !CanExplain"
+            (click)="Refresh()">
+            <i class="fa-solid fa-rotate"></i>
+        </button>
+    </div>
+</header>
 
-    <!--
-        Read from the walk confirm books through (Orders.ExplainProductGLAccounts), in order:
-        product, category and its parents, product type, company default. Nothing here is resolved in
-        the browser.
-    -->
-    <p class="mjo-eff-gl__hint">
-        Where each role's account comes from: the product, its category and parent categories, its
-        product type, then the company default. The most specific link is used.
-        @if (AsOf) {
-            <span>Links in force on {{ AsOf }}.</span>
-        }
-    </p>
-
+<!--
+    Read from the walk confirm books through (Orders.ExplainProductGLAccounts), in order:
+    product, category and its parents, product type, company default. Nothing here is resolved in
+    the browser. Which roles are REQUIRED is decided here from what the posting code resolves
+    (see RequiredGLRoleNames); the server reports every role it knows.
+-->
+<div class="mjo-acct-card__body">
     @if (!CanExplain) {
-        <p class="mjo-eff-gl__muted">Save the product to see the accounts it books to.</p>
+        <p class="mjo-acct-note">Save the product to see the accounts it posts to.</p>
     } @else if (Loading && !Roles.length) {
-        <p class="mjo-eff-gl__muted">Reading the accounts…</p>
+        <p class="mjo-acct-note">Loading accounts…</p>
     } @else if (LoadError) {
-        <p class="mjo-eff-gl__error">
+        <p class="mjo-acct-alert mjo-acct-alert--error">
             <i class="fa-solid fa-triangle-exclamation"></i>
-            {{ LoadError }}
+            <span>{{ LoadError }}</span>
         </p>
     } @else {
-        @if (Unresolved.length) {
-            <p class="mjo-eff-gl__warn" role="status">
+        @if (MissingRequired.length) {
+            <p class="mjo-acct-alert" role="status">
                 <i class="fa-solid fa-triangle-exclamation"></i>
-                {{ Unresolved.length === 1 ? '1 role resolves' : Unresolved.length + ' roles resolve' }} to no account,
-                so confirm refuses an order line for this product that books to it: {{ Unresolved.join(', ') }}.
+                <span>
+                    No account assigned for {{ MissingRequired.join(' and ') }}. Orders for this product cannot be
+                    confirmed until {{ MissingRequired.length === 1 ? 'it is' : 'they are' }} assigned.
+                </span>
             </p>
         }
-        @for (role of Roles; track role.Role) {
-            <div class="mjo-eff-gl__role">
-                <mj-gl-resolution-preview [Result]="role"></mj-gl-resolution-preview>
-                @if (role.Message) {
-                    <p class="mjo-eff-gl__refusal">{{ role.Message }}</p>
-                }
-            </div>
+        <div class="mjo-acct-tablewrap">
+            <table class="mjo-acct-table">
+                <thead>
+                    <tr>
+                        <th>Role</th>
+                        <th>GL account</th>
+                        <th>Assigned on</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (role of Roles; track role.Role) {
+                        <tr [class.muted]="!role.ResolvedGLAccountID">
+                            <td class="mjo-eff-gl__role">{{ role.Role }}</td>
+                            <td>
+                                @if (role.ResolvedGLAccountID) {
+                                    <span class="mjo-acct-account">
+                                        <span class="mjo-acct-code">{{ role.ResolvedCode }}</span>
+                                        <span class="mjo-acct-name">{{ role.ResolvedName }}</span>
+                                    </span>
+                                } @else {
+                                    <span class="mjo-acct-chip" [class.mjo-acct-chip--warn]="IsRequired(role)" [title]="role.Message || ''">{{ FailureText(role) }}</span>
+                                }
+                            </td>
+                            <td>
+                                @if (role.ResolvedGLAccountID) {
+                                    {{ SourceText(role) }}
+                                } @else if (IsRequired(role)) {
+                                    <span class="mjo-eff-gl__required">Required</span>
+                                } @else {
+                                    {{ OptionalNote(role) }}
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @if (AsOf) {
+            <p class="mjo-acct-note mjo-eff-gl__asof">Assignments as of {{ AsOf }}.</p>
         }
     }
 </div>

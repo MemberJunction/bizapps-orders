@@ -1,8 +1,17 @@
+/*
+ * The Accounting tab: three cards with one look. The two child components (accounts in use,
+ * product-level links) render their own header inside their card; the shared `.mjo-acct-*`
+ * rules below reach them through ::ng-deep, so the tab reads as one surface rather than three
+ * bolted-on widgets.
+ */
+
 .mjo-acct-widget-wrap {
     display: flex;
     flex-direction: column;
-    gap: var(--mj-space-4, 16px);
+    gap: var(--mj-space-5, 20px);
     width: 100%;
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 .mjo-acct-card {
@@ -12,11 +21,24 @@
     overflow: hidden;
 }
 
-.mjo-card-head {
-    padding: 12px 16px;
-    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.1));
+/* ── Card header: title, one-line subtitle, actions on the right ───────────────── */
+
+:host ::ng-deep .mjo-acct-card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 16px 20px 14px;
     border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.1));
-    font-size: 13.5px;
+}
+
+:host ::ng-deep .mjo-acct-card__titles {
+    min-width: 0;
+}
+
+:host ::ng-deep .mjo-acct-card__title {
+    margin: 0;
+    font-size: 15px;
     font-weight: 700;
     color: var(--mj-text-primary, #0f172a);
     display: flex;
@@ -24,17 +46,297 @@
     gap: 8px;
 }
 
-.mjo-card-head i {
+:host ::ng-deep .mjo-acct-card__title i {
+    color: var(--mj-brand-primary, #0284c7);
+    font-size: 14px;
+}
+
+:host ::ng-deep .mjo-acct-card__sub {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: var(--mj-text-muted, #94a3b8);
+    max-width: 72ch;
+}
+
+:host ::ng-deep .mjo-acct-card__actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+:host ::ng-deep .mjo-acct-card__body {
+    padding: 16px 20px 20px;
+}
+
+/* ── Buttons ───────────────────────────────────────────────────────────────────── */
+
+:host ::ng-deep .mjo-acct-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.15));
+    background: transparent;
+    color: var(--mj-text-primary, #0f172a);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+:host ::ng-deep .mjo-acct-btn:hover:not(:disabled) {
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.08));
+}
+
+:host ::ng-deep .mjo-acct-btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
+:host ::ng-deep .mjo-acct-btn--primary {
+    background: var(--mj-brand-primary, #0284c7);
+    border-color: var(--mj-brand-primary, #0284c7);
+    color: #fff;
+}
+
+:host ::ng-deep .mjo-acct-btn--primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+    background: var(--mj-brand-primary, #0284c7);
+}
+
+:host ::ng-deep .mjo-acct-btn--icon {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    justify-content: center;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+:host ::ng-deep .mjo-acct-btn--link {
+    border: none;
+    padding: 2px 4px;
+    font-weight: 600;
     color: var(--mj-brand-primary, #0284c7);
 }
 
-.mjo-card-body {
+:host ::ng-deep .mjo-acct-btn:focus-visible {
+    outline: 2px solid var(--mj-brand-primary, #0284c7);
+    outline-offset: 2px;
+}
+
+/* ── Tables ────────────────────────────────────────────────────────────────────── */
+
+:host ::ng-deep .mjo-acct-tablewrap {
+    overflow-x: auto;
+}
+
+:host ::ng-deep .mjo-acct-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13.5px;
+    font-variant-numeric: tabular-nums;
+}
+
+:host ::ng-deep .mjo-acct-table th {
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--mj-text-muted, #94a3b8);
+    padding: 0 12px 10px 0;
+    border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.12));
+    white-space: nowrap;
+}
+
+:host ::ng-deep .mjo-acct-table td {
+    padding: 10px 12px 10px 0;
+    border-bottom: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.08));
+    vertical-align: middle;
+}
+
+:host ::ng-deep .mjo-acct-table tr:last-child td {
+    border-bottom: none;
+}
+
+:host ::ng-deep .mjo-acct-table th:last-child,
+:host ::ng-deep .mjo-acct-table td:last-child {
+    padding-right: 0;
+}
+
+:host ::ng-deep .mjo-acct-table .actions {
+    text-align: right;
+    white-space: nowrap;
+}
+
+:host ::ng-deep .mjo-acct-table tr.muted td {
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+:host ::ng-deep .mjo-acct-account {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+}
+
+:host ::ng-deep .mjo-acct-code {
+    font-family: var(--mj-font-family-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+    font-weight: 700;
+}
+
+:host ::ng-deep .mjo-acct-name {
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+:host ::ng-deep .mjo-acct-link {
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+}
+
+:host ::ng-deep .mjo-acct-link:hover .mjo-acct-code {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* ── Status chips ──────────────────────────────────────────────────────────────── */
+
+:host ::ng-deep .mjo-acct-chip {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 999px;
+    border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.2));
+    color: var(--mj-text-muted, #94a3b8);
+    white-space: nowrap;
+}
+
+:host ::ng-deep .mjo-acct-chip--ok {
+    color: var(--mj-status-success-text, #15803d);
+    border-color: color-mix(in srgb, var(--mj-status-success-text, #15803d) 40%, transparent);
+    background: color-mix(in srgb, var(--mj-status-success-text, #15803d) 10%, transparent);
+}
+
+:host ::ng-deep .mjo-acct-chip--warn {
+    color: var(--mj-status-warning-text, #b45309);
+    border-color: color-mix(in srgb, var(--mj-status-warning-text, #b45309) 40%, transparent);
+    background: color-mix(in srgb, var(--mj-status-warning-text, #b45309) 10%, transparent);
+}
+
+/* ── Notes and alerts ──────────────────────────────────────────────────────────── */
+
+:host ::ng-deep .mjo-acct-note {
+    margin: 0;
+    font-size: 13.5px;
+    color: var(--mj-text-muted, #94a3b8);
+    max-width: 72ch;
+}
+
+:host ::ng-deep .mjo-acct-alert {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 0 0 14px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    color: var(--mj-status-warning-text, #b45309);
+    background: color-mix(in srgb, var(--mj-status-warning-text, #b45309) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--mj-status-warning-text, #b45309) 30%, transparent);
+}
+
+:host ::ng-deep .mjo-acct-alert i {
+    margin-top: 3px;
+}
+
+:host ::ng-deep .mjo-acct-alert--error {
+    color: var(--mj-status-error-text, #b91c1c);
+    background: color-mix(in srgb, var(--mj-status-error-text, #b91c1c) 10%, transparent);
+    border-color: color-mix(in srgb, var(--mj-status-error-text, #b91c1c) 30%, transparent);
+}
+
+/* ── Inline forms (add / edit a link) ──────────────────────────────────────────── */
+
+:host ::ng-deep .mjo-acct-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px 16px;
+    align-items: end;
+    margin: 0 0 16px;
     padding: 16px;
+    border-radius: 8px;
+    background: var(--mj-bg-surface-sunken, rgba(0, 0, 0, 0.08));
+    border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.1));
+}
+
+:host ::ng-deep .mjo-acct-form__title {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 700;
+}
+
+:host ::ng-deep .mjo-acct-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+:host ::ng-deep .mjo-acct-field > span {
+    font-size: 12.5px;
+    font-weight: 600;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+:host ::ng-deep .mjo-acct-field select,
+:host ::ng-deep .mjo-acct-field input {
+    font: inherit;
+    font-size: 13.5px;
+    padding: 7px 10px;
+    border: 1px solid var(--mj-border-default, rgba(255, 255, 255, 0.2));
+    border-radius: 6px;
+    background: var(--mj-bg-surface, transparent);
+    color: inherit;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+:host ::ng-deep .mjo-acct-field select:disabled,
+:host ::ng-deep .mjo-acct-field input:disabled {
+    opacity: 0.55;
+}
+
+:host ::ng-deep .mjo-acct-form__actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+:host ::ng-deep .mjo-acct-form__note {
+    grid-column: 1 / -1;
+    margin: 0;
+    font-size: 13px;
+    color: var(--mj-text-muted, #94a3b8);
+}
+
+/* ── The projected fields ──────────────────────────────────────────────────────── */
+
+.mjo-acct-fields {
     display: grid;
     /* 380px, not 260px: MJ's own `.mj-forms-field` is a `200px 1fr` label/value grid, so a
        narrower cell leaves the value ~79px and wraps it mid-word. See the note below. */
     grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
-    gap: 16px;
+    gap: 12px 24px;
 }
 
 /*
@@ -45,12 +347,9 @@
  * puts each field back in one cell; `min-width: 0` lets that cell shrink instead of overflowing.
  * The cell then has to be wide enough for MJ's internal `200px 1fr` label/value grid, which is why
  * the columns above widened to 380px at the same time.
- */
-/*
+ *
  * `::ng-deep` because the fields are projected from the panel template (see the .html), so
- * they carry the panel's encapsulation attribute, not this widget's — a scoped
- * `.mjo-card-body > mj-form-field` stops matching them. `.mjo-acct-fields` keeps the rule off
- * the GL-links card body below.
+ * they carry the panel's encapsulation attribute, not this widget's.
  */
 :host ::ng-deep .mjo-acct-fields > mj-form-field {
     display: block;

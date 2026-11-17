@@ -69,3 +69,21 @@ describe('External invoices panel — overlapping loads', () => {
         expect(p.Rows.map((r) => r.ID)).toEqual(['new']);
     });
 });
+
+describe('External invoices panel — Send on an order with nothing to bill (#457)', () => {
+    const shown = (p: ExternalInvoicesPanel, balance: number | null) => {
+        Object.assign(p, { Visible: true });
+        (p as unknown as { Record: { Balance: number | null } }).Record.Balance = balance;
+        return p.SendShown;
+    };
+
+    it('hides Send once the order is paid in full or was free', () => {
+        expect(shown(panel(), 0)).toBe(false);
+    });
+
+    it('keeps Send on an order that still owes, on a credit, and when the balance is not loaded', () => {
+        expect(shown(panel(), 350)).toBe(true);
+        expect(shown(panel(), -20)).toBe(true);
+        expect(shown(panel(), null)).toBe(true);
+    });
+});
