@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CompareProductNames, RankCatalogMatches } from '../orders-queries';
+import { CompareProductNames, KeepSellingCompanyProducts, RankCatalogMatches } from '../orders-queries';
 import type { MJOProductOption } from '../orders-queries';
 
 const OWN_COMPANY = '11111111-1111-1111-1111-111111111111';
@@ -184,5 +184,22 @@ describe('CompareProductNames', () => {
 
     it('treats a trailing dot as text, not a decimal point', () => {
         expect(sorted(['Version 2. Beta', 'Version 10. Alpha'])).toEqual(['Version 2. Beta', 'Version 10. Alpha']);
+    });
+});
+
+describe('KeepSellingCompanyProducts', () => {
+    const catalog = [
+        option({ ID: 'own', Name: 'Own Product', CompanyID: OWN_COMPANY }),
+        option({ ID: 'other', Name: 'Other Product', CompanyID: OTHER_COMPANY }),
+        option({ ID: 'none', Name: 'No Company', CompanyID: '' }),
+    ];
+
+    it("keeps only the selling company's products, matching ids regardless of case", () => {
+        expect(names(KeepSellingCompanyProducts(catalog, OWN_COMPANY.toUpperCase()))).toEqual(['Own Product']);
+    });
+
+    it('returns every product when there is no selling company to narrow to', () => {
+        expect(KeepSellingCompanyProducts(catalog, null)).toHaveLength(3);
+        expect(KeepSellingCompanyProducts(catalog, '')).toHaveLength(3);
     });
 });
