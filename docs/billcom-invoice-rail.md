@@ -48,8 +48,9 @@ BILL has no payment-received event; a verified BILL invoice event only starts th
 One BILL invoice is one billing unit: an order, the company that bills it, and an instalment or none.
 
 - **An order with no payment schedule** is one unit, sent through the rail of the order's company
-  (`OrderHeader.CompanyID`) whatever company owns each product. It is invoiceable once `Confirmed` and
-  numbered as the order. Its BILL invoice has one line per printed invoice row plus `Charges` and
+  (`OrderHeader.CompanyID`) whatever company owns each product. It is invoiceable once `Confirmed` with
+  a balance above zero, and numbered as the order; a paid-in-full or free order is not on the worklist,
+  and the order form shows no Send button for it (bc-aidp-next-golive#457). Its BILL invoice has one line per printed invoice row plus `Charges` and
   `Tax`, totalling the order's gross to the cent (`TIE_FAILED` otherwise). An order with money already
   applied is refused (`PART_PAID`), since the invoice would bill that money again.
 - **An order with a payment schedule** has one unit per `OrderHeaderPaymentSchedule` row, sent through
@@ -167,7 +168,7 @@ Added by migrations `V202609291000` to `V202609291002`:
 |---|---|
 | `ExternalInvoice` | One row per attempt to put a unit on a rail (`Sending`, `Sent`, `Canceled`, `Failed`), with BILL's invoice and customer ids, BILL's last-seen total, due amount and status, and the last error. `UQ_ExternalInvoice_LiveUnit` allows one `Sending` or `Sent` row per provider and unit. Payments are matched on this table, never on `OrderHeader.ExternalDocumentNumber`. |
 | `ExternalCustomer` | A bill-to organisation or person and its BILL customer id, per provider. Our party id goes to BILL as the account number. |
-| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person sets `Ignored` to close a row. |
+| `ExternalPayment` | Every payment the poll has seen: `Disposition` (`Captured`, `Held`, `Unmatched`, `Refused`, `Ignored`, `Reapplied`, `ReversalNeeded`), the reason, the `PaymentHeader` it created, BILL's record as JSON. A person closes a `Held`, `Unmatched` or `Refused` row with **Set aside** on the invoicing queue's payment exceptions tab: it becomes `Ignored` with their reason, and is never captured afterwards. A set-aside of several rows leaves out `Unmatched` rows not dated before the chosen "paid before" day, since those may be waiting for an invoice still to be loaded. |
 | `PaymentProviderSyncState` | The watermark per provider and BILL object, with the last run's times and error. |
 
 `PaymentProvider.CompanyIntegrationID` points a provider row at its `MJ: Company Integrations` row. A

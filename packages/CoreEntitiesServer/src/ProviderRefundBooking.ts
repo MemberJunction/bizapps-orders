@@ -51,6 +51,7 @@ import {
 import type { BasePaymentProvider, GatewayRefund, WebhookEvent } from './BasePaymentProvider.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { RefundPaymentOperation, type RefundPaymentOutput } from './RefundPaymentOperation.js';
+import { WithGatewayRecord } from './ReversalAuthority.js';
 import { EscapeSQLString, RequireUUID } from './sql-guards.js';
 import { CreditGatewayRenewalRefund } from './GatewayRenewalCredit.js';
 import { WithIsolatedProvider } from './isolatedProvider.js';
@@ -318,14 +319,17 @@ async function bookOne(
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<RefundPaymentOutput> {
-    const result = await new RefundPaymentOperation().ExecuteServer(
-        {
-            PaymentHeaderID: payment.ID,
-            Amount: refund.Amount,
-            ProviderRefundID: refund.ProviderRefundID,
-            Reason: `Refunded at the payment gateway (${refund.ProviderRefundID}).`,
-        },
-        { provider, user, emitProgress: () => undefined },
+    // A refund the gateway already made is booked as its record, past the finance gate (./ReversalAuthority.ts).
+    const result = await WithGatewayRecord(() =>
+        new RefundPaymentOperation().ExecuteServer(
+            {
+                PaymentHeaderID: payment.ID,
+                Amount: refund.Amount,
+                ProviderRefundID: refund.ProviderRefundID,
+                Reason: `Refunded at the payment gateway (${refund.ProviderRefundID}).`,
+            },
+            { provider, user, emitProgress: () => undefined },
+        ),
     );
     if (!result.Success || !result.Output) {
         return { Success: false, Message: result.ErrorMessage ?? 'Orders.RefundPayment returned no result.' };

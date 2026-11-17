@@ -69,7 +69,8 @@ const SECTION_KEY = 'externalInvoices';
  * registers the button next to Confirm order, so it sits where the eye already goes; the panel keeps
  * the rows, the warning that blocks a send, and the acts on one selected invoice. The button shows on
  * every order the rail applies to and is greyed out, with the reason as its tooltip, until the order
- * is confirmed and saved.
+ * is confirmed and saved. It is not shown at all on an order with nothing left to bill — paid in full
+ * or free — because invoicing one is never the next step (bc-aidp-next-golive#457).
  *
  * IT HIDES ITSELF when no company on the order has an active rail, so the overwhelming majority of
  * orders — the ones invoiced natively — look exactly as they did before this feature existed.
@@ -314,11 +315,11 @@ export class ExternalInvoicesPanel extends BaseFormPanel<mjBizAppsOrdersOrderHea
      * A voided order is never invoiced, so it gets no button rather than one that waits forever.
      */
     public get SendShown(): boolean {
-        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule);
+        return this.Record?.Status !== 'Voided' && SendApplies(this.Rows, this.Visible, this.BilledOnSchedule, this.Record?.Balance);
     }
 
     public get Sendable(): boolean {
-        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule);
+        return CanSend(this.Record?.Status, this.Rows, this.Visible, this.BilledOnSchedule, this.Record?.Balance);
     }
 
     /** What the panel says when nothing has gone to the rail yet. */
