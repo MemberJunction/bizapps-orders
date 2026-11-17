@@ -409,7 +409,10 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             // Carried promotion codes are presented at ORDER level, where the engine applies each to
             // every line it targets. A line that carried a code therefore renews alone, so a code one
             // purchase earned never discounts a sibling that did not carry it.
-            const key = priced.PromotionCodes.length ? `${baseKey}|codes|${due.SubscriptionID}` : baseKey;
+            // One order has one currency (golive #492): a subscription sold in another currency renews
+            // on an order of its own currency, never beside one in the functional currency.
+            const currencyKey = priced.CurrencyCode ? `${baseKey}|currency|${priced.CurrencyCode}` : baseKey;
+            const key = priced.PromotionCodes.length ? `${currencyKey}|codes|${due.SubscriptionID}` : currencyKey;
             const members = groups.get(key) ?? [];
             members.push({ due, priced, candidate, placeAs });
             groups.set(key, members);
@@ -640,6 +643,9 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
             order.CompanyID = first.CompanyID;
             order.BillToOrganizationID = first.HolderOrganizationID;
             order.BillToPersonID = first.BeneficiaryPersonID;
+            // The source order's currency (golive #492); every member shares it (the group key). The
+            // booking rate is not copied: the renewal's own confirm reads the rate for its own day.
+            order.CurrencyCode = members[0].priced.CurrencyCode;
             order.Notes = this.renewalNotes(members, null, placeAs, selectedByPerson);
 
             const codes = [...new Set(members.flatMap((m) => m.priced.PromotionCodes.map((c) => c.Code)))];
@@ -727,7 +733,10 @@ export class SpawnRenewalsOperation extends OrdersSpawnRenewalsOperationBase {
                 // it; confirm then sees the date already set and leaves it. A subscription with a renewal
                 // card is due on the order date, the day `ChargeRenewals` first charges the card (#289).
                 await order.resolveDueDate();
-                const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, !!first.DefaultCustomerPaymentMethodID);
+                // A renewal in another currency is not charged to the card (RenewalCharging), so it is due
+                // on its terms like any invoiced renewal.
+                const cardCharged = !!first.DefaultCustomerPaymentMethodID && !members[0].priced.ForeignCurrency;
+                const rowDueDate = RenewalDueDate(invoiceDay, order.OrderDate, order.DueDate, cardCharged);
                 await this.addRenewalSchedule(provider, user, order.ID, String(order.CompanyID), order.Lines.Items, rowDueDate);
 
                 order.Status = 'Confirmed';

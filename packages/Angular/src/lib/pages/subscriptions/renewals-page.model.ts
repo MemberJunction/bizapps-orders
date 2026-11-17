@@ -174,10 +174,20 @@ export function EndsNote(daysUntilEnd: number): string {
     return `in ${daysUntilEnd}d`;
 }
 
+/**
+ * An amount in the currency it is in (golive #492): `$1,234.00` for the functional currency, which
+ * is what a null code means, and `1,234.00 AUD` for an order contracted in another currency. The code
+ * goes after the figure rather than a symbol before it, since several currencies share `$`.
+ */
+export function MoneyIn(value: number | null | undefined, currencyCode: string | null | undefined): string {
+    if (value == null) return '—';
+    return currencyCode ? `${FormatMoney(value, { Symbol: '' })} ${currencyCode}` : FormatMoney(value);
+}
+
 /** The renewal price column: the placed order's price when there is one, else the projection, else a dash. */
 export function RenewalPriceDisplay(row: RenewalWorklistRow): string {
-    if (row.RenewalOrderID && row.RenewalUnitPrice != null) return FormatMoney(row.RenewalUnitPrice);
-    if (row.ProjectedUnitPrice != null) return FormatMoney(row.ProjectedUnitPrice);
+    if (row.RenewalOrderID && row.RenewalUnitPrice != null) return MoneyIn(row.RenewalUnitPrice, row.CurrencyCode);
+    if (row.ProjectedUnitPrice != null) return MoneyIn(row.ProjectedUnitPrice, row.CurrencyCode);
     return '—';
 }
 
@@ -548,6 +558,7 @@ export function BuildRenewalsExport(rows: ReadonlyArray<RenewalWorklistRow>): Re
         { name: 'CurrentQuantity', displayName: 'Current qty', dataType: 'number' },
         { name: 'CurrentTotal', displayName: 'Current total', dataType: 'number', numberFormat: MONEY },
         { name: 'CurrentBalance', displayName: 'Still owed', dataType: 'number', numberFormat: MONEY },
+        { name: 'Currency', displayName: 'Currency', dataType: 'string' },
         { name: 'RenewalOrder', displayName: 'Renewal order', dataType: 'string' },
         { name: 'RenewalOrderDate', displayName: 'Renewal order date', dataType: 'dateonly' },
         { name: 'RenewalOrderStatus', displayName: 'Renewal order status', dataType: 'string' },
@@ -594,6 +605,8 @@ export function BuildRenewalsExport(rows: ReadonlyArray<RenewalWorklistRow>): Re
             CurrentQuantity: r.CurrentQuantity ?? null,
             CurrentTotal: r.CurrentLineTotal ?? null,
             CurrentBalance: r.CurrentOrderBalance ?? null,
+            // Every amount on the row is in this currency; blank is the functional currency (golive #492).
+            Currency: r.CurrencyCode ?? null,
             RenewalOrder: r.RenewalOrderNumber ?? null,
             RenewalOrderDate: r.RenewalOrderDate ?? null,
             RenewalOrderStatus: r.RenewalOrderStatus ?? null,
@@ -640,7 +653,7 @@ export function ProjectionLines(row: RenewalWorklistRow): ProjectionLine[] | nul
               ? `${TrimPercent(row.ProjectedIncreaseSetPercent)}% set on the ${level(row.ProjectedIncreaseSetSource)} · not applied: no anniversary this term`
               : 'none set';
     const out: ProjectionLine[] = [
-        { Label: 'Base', Text: `${FormatMoney(row.ProjectedBasePrice)} · ${base}` },
+        { Label: 'Base', Text: `${MoneyIn(row.ProjectedBasePrice, row.CurrencyCode)} · ${base}` },
         { Label: 'Increase', Text: increase },
     ];
     if (row.ProjectedTermStart && row.ProjectedTermEnd) {
@@ -664,23 +677,45 @@ export interface PlacementSummary {
     Orders: number;
     /** Candidates the preview skipped, with their reasons. */
     Skipped: RenewalCandidate[];
-    /** Sum of unit price times seats over what will be placed. Before tax and promotions. */
+    /** Sum of unit price times seats over what will be placed in the functional currency. Before tax and promotions. */
     Total: number;
+    /**
+     * The same sum per currency, functional (null) first (golive #492): amounts in different currencies
+     * are never added together.
+     */
+    Totals: Array<{ CurrencyCode: string | null; Amount: number }>;
+    /** `Totals` written out, e.g. "$2,450.00 and 13,230.00 AUD". */
+    TotalText: string;
     Message: string;
     Detail: string;
 }
 
-export function SummarizePlacement(candidates: ReadonlyArray<RenewalCandidate>, placeAs: RenewalPlacement = 'Draft'): PlacementSummary {
+export function SummarizePlacement(
+    candidates: ReadonlyArray<RenewalCandidate>,
+    placeAs: RenewalPlacement = 'Draft',
+    /** The currency each subscription renews in, from the worklist rows; absent reads as functional. */
+    currencyOf: (subscriptionID: string) => string | null | undefined = () => null,
+): PlacementSummary {
     const placeable = candidates.filter((c) => !c.SkippedReason);
     const skipped = candidates.filter((c) => !!c.SkippedReason);
-    const total = placeable.reduce((s, c) => s + Number(c.UnitPrice ?? 0) * Number(c.Quantity ?? 1) * (1 - Number(c.DiscountPct ?? 0)), 0);
+    const byCurrency = new Map<string | null, number>();
+    for (const c of placeable) {
+        const code = currencyOf(c.SubscriptionID) ?? null;
+        byCurrency.set(code, (byCurrency.get(code) ?? 0) + Number(c.UnitPrice ?? 0) * Number(c.Quantity ?? 1) * (1 - Number(c.DiscountPct ?? 0)));
+    }
+    if (byCurrency.size === 0) byCurrency.set(null, 0);
+    const totals = [...byCurrency.entries()]
+        .sort(([a], [b]) => (a === null ? -1 : b === null ? 1 : a.localeCompare(b)))
+        .map(([code, amount]) => ({ CurrencyCode: code, Amount: Math.round(amount * 100) / 100 }));
+    const total = byCurrency.get(null) ?? 0;
+    const totalText = totals.map((t) => MoneyIn(t.Amount, t.CurrencyCode)).join(' and ');
     const n = placeable.length;
     const orders = new Set(placeable.map((c, i) => (c.OrderGroup == null ? `own-${i}` : `group-${c.OrderGroup}`))).size;
     const how = placeAs === 'Confirmed' ? 'confirmed' : 'drafts';
     const message = n
         ? orders === n
-            ? `${n} renewal order${n === 1 ? '' : 's'} will be created as ${n === 1 && how === 'drafts' ? 'a draft' : how}, ${FormatMoney(total)} before tax.`
-            : `${n} subscriptions will renew on ${orders} renewal order${orders === 1 ? '' : 's'}, created as ${how}, ${FormatMoney(total)} before tax.`
+            ? `${n} renewal order${n === 1 ? '' : 's'} will be created as ${n === 1 && how === 'drafts' ? 'a draft' : how}, ${totalText} before tax.`
+            : `${n} subscriptions will renew on ${orders} renewal order${orders === 1 ? '' : 's'}, created as ${how}, ${totalText} before tax.`
         : 'Nothing can be placed for the rows you ticked.';
     const detail = skipped.length
         ? `${skipped.length} will be skipped: ${skipped
@@ -688,7 +723,7 @@ export function SummarizePlacement(candidates: ReadonlyArray<RenewalCandidate>, 
               .map((c) => `${c.SubscriptionNumber} (${c.SkippedReason})`)
               .join('; ')}${skipped.length > 3 ? `, and ${skipped.length - 3} more` : ''}.`
         : '';
-    return { Placeable: placeable, Orders: orders, Skipped: skipped, Total: Math.round(total * 100) / 100, Message: message, Detail: detail };
+    return { Placeable: placeable, Orders: orders, Skipped: skipped, Total: Math.round(total * 100) / 100, Totals: totals, TotalText: totalText, Message: message, Detail: detail };
 }
 
 /**

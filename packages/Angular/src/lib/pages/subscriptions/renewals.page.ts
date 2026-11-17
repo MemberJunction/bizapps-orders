@@ -47,6 +47,7 @@ import {
     RENEWALS_DATE,
     RENEWAL_WINDOWS,
     RemoveFacet,
+    MoneyIn,
     RenewalPriceDisplay,
     RenewalPriceNote,
     RenewalStateChipClass,
@@ -393,11 +394,11 @@ const LOOKBACK_DAYS = 30;
                             @if (row.CurrentOrderID) {
                                 <mjo-stated-value Label="Placed">{{ date(row.CurrentOrderDate) }} <span class="mjo-chip mjo-chip--outline">{{ row.CurrentOrderStatus }}</span></mjo-stated-value>
                                 <mjo-stated-value Label="Price">
-                                    {{ money(row.CurrentUnitPrice) }}
-                                    @if (row.CurrentQuantity && row.CurrentQuantity !== 1) { <span class="small muted">× {{ row.CurrentQuantity }} = {{ money(row.CurrentLineTotal) }}</span> }
+                                    {{ rowMoney(row, row.CurrentUnitPrice) }}
+                                    @if (row.CurrentQuantity && row.CurrentQuantity !== 1) { <span class="small muted">× {{ row.CurrentQuantity }} = {{ rowMoney(row, row.CurrentLineTotal) }}</span> }
                                 </mjo-stated-value>
                                 @if (row.CurrentOrderBalance) {
-                                    <mjo-stated-value Label="Still owed">{{ money(row.CurrentOrderBalance) }}</mjo-stated-value>
+                                    <mjo-stated-value Label="Still owed">{{ rowMoney(row, row.CurrentOrderBalance) }}</mjo-stated-value>
                                 }
                             } @else {
                                 <div class="small muted">The order line that bought this term no longer exists.</div>
@@ -419,8 +420,8 @@ const LOOKBACK_DAYS = 30;
                             @if (row.RenewalOrderID) {
                                 <mjo-stated-value Label="Placed">{{ date(row.RenewalOrderDate) }} <span class="mjo-chip mjo-chip--outline">{{ row.RenewalOrderStatus }}</span></mjo-stated-value>
                                 <mjo-stated-value Label="Price">
-                                    {{ money(row.RenewalUnitPrice) }}
-                                    @if (row.RenewalQuantity && row.RenewalQuantity !== 1) { <span class="small muted">× {{ row.RenewalQuantity }} = {{ money(row.RenewalLineTotal) }}</span> }
+                                    {{ rowMoney(row, row.RenewalUnitPrice) }}
+                                    @if (row.RenewalQuantity && row.RenewalQuantity !== 1) { <span class="small muted">× {{ row.RenewalQuantity }} = {{ rowMoney(row, row.RenewalLineTotal) }}</span> }
                                 </mjo-stated-value>
                                 @if (row.RenewalBooked) {
                                     <mjo-stated-value Label="New term">{{ date(row.RenewalTermStart) }} → {{ date(row.RenewalTermEnd) }}</mjo-stated-value>
@@ -435,8 +436,8 @@ const LOOKBACK_DAYS = 30;
                             } @else if (projectionLines(row); as lines) {
                                 @if (row.ProjectedUnitPrice != null) {
                                     <mjo-stated-value Label="Projected price">
-                                        {{ money(row.ProjectedUnitPrice) }}
-                                        @if (row.ProjectedQuantity && row.ProjectedQuantity !== 1) { <span class="small muted">× {{ row.ProjectedQuantity }} = {{ money(row.ProjectedLineTotal) }}</span> }
+                                        {{ rowMoney(row, row.ProjectedUnitPrice) }}
+                                        @if (row.ProjectedQuantity && row.ProjectedQuantity !== 1) { <span class="small muted">× {{ row.ProjectedQuantity }} = {{ rowMoney(row, row.ProjectedLineTotal) }}</span> }
                                     </mjo-stated-value>
                                 }
                                 @for (line of lines; track line.Label) {
@@ -517,7 +518,7 @@ const LOOKBACK_DAYS = 30;
                     </dd>
                     @if (summary.Placeable.length) {
                         <dt>Total</dt>
-                        <dd>{{ money(summary.Total) }} <span class="small muted">before tax</span></dd>
+                        <dd>{{ summary.TotalText }} <span class="small muted">before tax</span></dd>
                     }
                     @if (PlaceExcluded) {
                         <dt>Excluded</dt>
@@ -882,7 +883,7 @@ export class MJORenewalsPageComponent implements OnInit {
         { Key: 'AutoRenew', Label: 'Auto-renew', Kind: 'chip', Width: '96px', Sortable: true, Format: (r) => (r.AutoRenew ? 'On' : 'Off'), ChipClass: (r) => (r.AutoRenew ? 'mjo-chip--success' : 'mjo-chip--outline') },
         { Key: 'State', Label: 'Renewal', Kind: 'chip', Width: '140px', Sortable: true, Format: (r) => RenewalStateLabel(r.State), ChipClass: (r) => RenewalStateChipClass(r.State), Secondary: (r) => RenewalStateNote(r) },
         { Key: 'CurrentOrderNumber', Label: 'Current order', Kind: 'mono', Width: '140px', HideBelow: 760, Sortable: true, Format: (r) => r.CurrentOrderNumber ?? '—', Secondary: (r) => (r.CurrentOrderDate ? `${FormatDate(r.CurrentOrderDate, RENEWALS_DATE)} · ${r.CurrentOrderStatus}` : null) },
-        { Key: 'CurrentUnitPrice', Label: 'Current price', Kind: 'money', Width: '110px', Sortable: true, Format: (r) => (r.CurrentUnitPrice == null ? '—' : FormatMoney(r.CurrentUnitPrice)), Secondary: (r) => (r.CurrentQuantity && r.CurrentQuantity !== 1 ? `× ${r.CurrentQuantity}` : null) },
+        { Key: 'CurrentUnitPrice', Label: 'Current price', Kind: 'money', Width: '110px', Sortable: true, Format: (r) => MoneyIn(r.CurrentUnitPrice, r.CurrencyCode), Secondary: (r) => (r.CurrentQuantity && r.CurrentQuantity !== 1 ? `× ${r.CurrentQuantity}` : null) },
         { Key: 'RenewalOrderNumber', Label: 'Renewal order', Kind: 'mono', Width: '140px', HideBelow: 760, Sortable: true, Format: (r) => r.RenewalOrderNumber ?? '—', Secondary: (r) => (r.RenewalOrderDate ? `${FormatDate(r.RenewalOrderDate, RENEWALS_DATE)} · ${r.RenewalOrderStatus}` : null) },
         { Key: 'RenewalPrice', Label: 'Renewal price', Kind: 'money', Width: '120px', Sortable: true, Format: (r) => RenewalPriceDisplay(r), Secondary: (r) => RenewalPriceNote(r) },
     ];
@@ -1110,7 +1111,7 @@ export class MJORenewalsPageComponent implements OnInit {
                 this.PlaceSummary = SummarizePlacement([], this.PlaceAs);
                 return;
             }
-            this.PlaceSummary = SummarizePlacement(preview.Output.Candidates, this.PlaceAs);
+            this.PlaceSummary = SummarizePlacement(preview.Output.Candidates, this.PlaceAs, (id) => this.currencyOfSubscription(id));
         } finally {
             this.Placing = false;
             this.cdr.detectChanges();
@@ -1409,7 +1410,12 @@ export class MJORenewalsPageComponent implements OnInit {
     protected date(value: string | null | undefined): string {
         return value ? FormatDate(value, RENEWALS_DATE) : '—';
     }
-    protected money(value: number | null | undefined): string {
-        return value == null ? '—' : FormatMoney(value);
+    /** The currency a listed subscription renews in; null for the functional currency or one not listed. */
+    private currencyOfSubscription(subscriptionID: string): string | null {
+        return this.AllRows.find((r) => r.SubscriptionID === subscriptionID)?.CurrencyCode ?? null;
+    }
+    /** An amount on a row, in the row's currency (golive #492). */
+    protected rowMoney(row: RenewalWorklistRow, value: number | null | undefined): string {
+        return MoneyIn(value, row.CurrencyCode);
     }
 }

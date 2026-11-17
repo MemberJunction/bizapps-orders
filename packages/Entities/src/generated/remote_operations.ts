@@ -1715,6 +1715,11 @@ export interface RenewalWorklistRow {
     CurrentLineTotal?: number | null;
     /** What is still owed on the current order. */
     CurrentOrderBalance?: number | null;
+    /**
+     * The currency of every amount on this row: the current order's, which its renewal is placed in
+     * too. Null is the selling company's functional currency.
+     */
+    CurrencyCode?: string | null;
 
     /**
      * The renewal order, when one exists: the order whose line bought the following term

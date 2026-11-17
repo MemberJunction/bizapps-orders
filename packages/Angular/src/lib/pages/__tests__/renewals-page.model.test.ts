@@ -9,6 +9,7 @@ import {
     EndsNote,
     MatchesPreset,
     MatchesSearch,
+    MoneyIn,
     NeedsAttention,
     ProjectionLines,
     RenewalPriceDisplay,
@@ -541,5 +542,27 @@ describe('ExclusionNote', () => {
         expect(PendingRenewalWarning([pending, second], 'They keep their prices.')).toBe(
             '2 of the selected subscriptions have a renewal order pending: ORD-000030 (Draft), ORD-000032 (Draft). They keep their prices.',
         );
+    });
+});
+
+describe('amounts in a subscription\'s own currency (golive #492)', () => {
+    it('writes a foreign-currency amount with its code after the figure, and a functional one as before', () => {
+        expect(MoneyIn(13230, 'AUD')).toBe('13,230.00 AUD');
+        expect(MoneyIn(13230, null)).toBe('$13,230.00');
+        expect(MoneyIn(null, 'AUD')).toBe('—');
+    });
+
+    it('shows the renewal price in the row\'s currency', () => {
+        expect(RenewalPriceDisplay({ ProjectedUnitPrice: 13230, CurrencyCode: 'AUD' } as RenewalWorklistRow)).toBe('13,230.00 AUD');
+    });
+
+    it('never adds amounts in different currencies in the placement total', () => {
+        const candidate = (id: string, price: number): RenewalCandidate => ({
+            SubscriptionID: id, SubscriptionNumber: id, ProductID: 'p', CurrentTermEnd: '2027-03-31', LeadDays: 90, UnitPrice: price, Quantity: 1, DiscountPct: 0,
+        });
+        const summary = SummarizePlacement([candidate('a', 13230), candidate('b', 1000), candidate('c', 500)], 'Draft', (id) => (id === 'a' ? 'AUD' : null));
+        expect(summary.Total).toBe(1500);
+        expect(summary.Totals).toEqual([{ CurrencyCode: null, Amount: 1500 }, { CurrencyCode: 'AUD', Amount: 13230 }]);
+        expect(summary.Message).toBe('3 renewal orders will be created as drafts, $1,500.00 and 13,230.00 AUD before tax.');
     });
 });

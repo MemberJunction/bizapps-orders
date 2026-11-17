@@ -795,6 +795,9 @@ async function findCandidates(
           AND oh.NextDueDate IS NOT NULL
           AND oh.NextDueDate <= '${asOf}'
           AND (${chargeable} OR ${settledUnbooked})
+          -- An order booked in another currency (golive #492) is never charged to the card: the
+          -- gateway charges in the functional currency only, and its balance is in the order's.
+          AND oh.BookingExchangeRate IS NULL
           AND pd.PaymentProviderID IS NOT NULL
           AND pd.ProviderInstrumentRef IS NOT NULL
           -- Outside the group above on purpose: settledUnbooked selects without AutoRenew, and a

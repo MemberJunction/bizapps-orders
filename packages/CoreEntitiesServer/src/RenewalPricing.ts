@@ -47,6 +47,7 @@ import {
 import { SelectRenewalPromotionCodes } from './RenewalPromotions.js';
 
 const ORDER_LINE_ENTITY = 'MJ_BizApps_Orders: Order Lines';
+const ORDER_HEADER_ENTITY = 'MJ_BizApps_Orders: Order Headers';
 const ORDER_COMPANY_POLICY_ENTITY = 'MJ_BizApps_Orders: Order Company Policies';
 
 /**
@@ -101,6 +102,13 @@ export interface RenewalSourceLineRow {
     /** The coverage the line bought, start of its first term to end of its last (golive #338). */
     ServicePeriodStart: string | null;
     ServicePeriodEnd: string | null;
+    /**
+     * The currency of the line's order (golive #492): its amounts, `UnitPrice` included, are in it.
+     * Null is the selling company's functional currency. The renewal is placed in the same currency.
+     */
+    CurrencyCode: string | null;
+    /** The order's booking rate; set only on an order booked in a currency other than its company's functional one. */
+    BookingExchangeRate: number | null;
 }
 
 /** A product on the subscription's successor chain, the subscription's own product first. */
@@ -136,6 +144,10 @@ export interface PricedRenewal {
     Term: { Start: string; End: string } | null;
     /** The codes the renewal presents (see `RenewalPromotions.ts`), with their PromotionCode IDs. */
     PromotionCodes: RecordedCodeRow[];
+    /** The currency the renewal is placed in: the source order's (golive #492). Null is functional. */
+    CurrencyCode: string | null;
+    /** The source order was booked in a currency other than its company's functional one. */
+    ForeignCurrency: boolean;
 }
 
 export interface RenewalPriceOptions {
@@ -247,6 +259,19 @@ export class RenewalPricer {
         if (notSubscription) throw new Error(notSubscription);
         const product = chain[chain.length - 1];
         const movesToSuccessor = chain.length > 1;
+        // A SUBSCRIPTION SOLD IN ANOTHER CURRENCY (golive #492) renews from its own price, which is in
+        // that currency, and the increase applies to that figure. List prices are kept in the functional
+        // currency, so a rule that needs one cannot price it: moving to a successor is refused, and a
+        // price typed below list is not compared with the list (the contract price carries forward).
+        const foreign = source.BookingExchangeRate != null;
+        const currencyCode = source.CurrencyCode ? source.CurrencyCode.trim().toUpperCase() : null;
+        if (foreign && movesToSuccessor) {
+            throw new Error(
+                `${due.SubscriptionNumber} is billed in ${currencyCode} and moves to ${product.Name} at renewal, but product ` +
+                    `prices are in the functional currency, so there is no ${currencyCode} price to renew at. Place this ` +
+                    `renewal by hand at the agreed ${currencyCode} price.`,
+            );
+        }
         const quantity = Math.max(1, Number(due.TermQuantity));
         const renewalDay = DayAfter(due.TermEndDate);
         const carry = !!due.CarryDiscountOnRenewal;
@@ -260,7 +285,7 @@ export class RenewalPricer {
             ? await this.listPrice({ ...source, ProductID: product.ID, Quantity: quantity, UnitPrice: null, ProductPriceID: null }, renewalDay)
             : undefined;
         const priorList =
-            !movesToSuccessor && source.PriceOverridden && !carry ? await this.listPrice({ ...source, Quantity: quantity }, null) : null;
+            !foreign && !movesToSuccessor && source.PriceOverridden && !carry ? await this.listPrice({ ...source, Quantity: quantity }, null) : null;
 
         const increase = ResolveRenewalIncrease({
             Subscription: due.SubscriptionIncreasePercent,
@@ -306,6 +331,8 @@ export class RenewalPricer {
             PriorLineMonths: share < 1 && source.PriceOverridden ? priorLineMonths : null,
             Term: this.RenewalTerm(due, product),
             PromotionCodes: options.IncludePromotions === false ? [] : await this.loadRenewalPromotionCodes(source),
+            CurrencyCode: currencyCode,
+            ForeignCurrency: foreign,
         };
     }
 
@@ -325,7 +352,7 @@ export class RenewalPricer {
         const rv = new RunView(this.provider as unknown as IRunViewProvider);
         for (let i = 0; i < ids.length; i += 500) {
             const chunk = ids.slice(i, i + 500);
-            const result = await rv.RunView<RenewalSourceLineRow>(
+            const result = await rv.RunView<Omit<RenewalSourceLineRow, 'CurrencyCode' | 'BookingExchangeRate'>>(
                 {
                     EntityName: ORDER_LINE_ENTITY,
                     ExtraFilter: `ID IN (${chunk.map((id) => `'${id}'`).join(',')})`,
@@ -335,7 +362,30 @@ export class RenewalPricer {
                 },
                 this.user,
             );
-            for (const row of result?.Results ?? []) out.set(String(row.ID).toLowerCase(), row);
+            for (const row of result?.Results ?? []) out.set(String(row.ID).toLowerCase(), { ...row, CurrencyCode: null, BookingExchangeRate: null });
+        }
+        // Each line's order currency (golive #492): a renewal is priced and placed in it.
+        const orderIDs = [...new Set([...out.values()].map((l) => RequireUUID(String(l.OrderHeaderID), 'OrderHeaderID').toLowerCase()))];
+        for (let i = 0; i < orderIDs.length; i += 500) {
+            const chunk = orderIDs.slice(i, i + 500);
+            const result = await rv.RunView<{ ID: string; CurrencyCode: string | null; BookingExchangeRate: number | null }>(
+                {
+                    EntityName: ORDER_HEADER_ENTITY,
+                    ExtraFilter: `ID IN (${chunk.map((id) => `'${id}'`).join(',')})`,
+                    Fields: ['ID', 'CurrencyCode', 'BookingExchangeRate'],
+                    ResultType: 'simple',
+                    BypassCache: true,
+                },
+                this.user,
+            );
+            if (!result.Success) throw new Error(`Could not read the currency of the orders being renewed: ${result.ErrorMessage ?? 'unknown error'}`);
+            const byOrder = new Map((result.Results ?? []).map((o) => [String(o.ID).toLowerCase(), o]));
+            for (const line of out.values()) {
+                const order = byOrder.get(String(line.OrderHeaderID).toLowerCase());
+                if (!order) continue;
+                line.CurrencyCode = order.CurrencyCode ?? null;
+                line.BookingExchangeRate = order.BookingExchangeRate == null ? null : Number(order.BookingExchangeRate);
+            }
         }
         return out;
     }

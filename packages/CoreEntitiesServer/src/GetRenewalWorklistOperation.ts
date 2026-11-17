@@ -105,7 +105,8 @@ interface LineRow extends RenewalSourceLineRow {
 const LINE_COLUMNS = `
             ol.ID, ol.OrderHeaderID, ol.ProductID, ol.Quantity, ol.UnitPrice, ol.DiscountPct, ol.LineTotalNet,
             ol.PriceOverridden, ol.ProductPriceID, ol.ServicePeriodStart, ol.ServicePeriodEnd, ol.RenewsSubscriptionID,
-            oh.OrderNumber, oh.OrderDate, oh.Status AS OrderStatus, oh.Balance AS OrderBalance`;
+            oh.OrderNumber, oh.OrderDate, oh.Status AS OrderStatus, oh.Balance AS OrderBalance,
+            oh.CurrencyCode, oh.BookingExchangeRate`;
 
 @RegisterClass(BaseRemotableOperation, 'Orders.GetRenewalWorklist')
 export class GetRenewalWorklistOperation extends OrdersGetRenewalWorklistOperationBase {
@@ -234,6 +235,9 @@ export class GetRenewalWorklistOperation extends OrdersGetRenewalWorklistOperati
                 CurrentQuantity: current ? Number(current.Quantity) : null,
                 CurrentLineTotal: money(current?.LineTotalNet),
                 CurrentOrderBalance: money(current?.OrderBalance),
+                // The currency of every amount on the row (golive #492): the current order's, which the
+                // renewal is placed in too. Null is the selling company's functional currency.
+                CurrencyCode: current?.CurrencyCode ?? renewal?.CurrencyCode ?? null,
                 RenewalOrderID: renewal?.OrderHeaderID ?? null,
                 RenewalOrderNumber: renewal?.OrderNumber ?? null,
                 RenewalOrderDate: renewal ? ToISODate(renewal.OrderDate) : null,
