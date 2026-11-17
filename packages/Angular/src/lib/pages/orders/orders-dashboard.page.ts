@@ -10,9 +10,9 @@ import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabCon
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { GetDashboardOrders, type MJODashboardOrderRow } from '../../data/orders-queries';
+import { FunctionalCurrencyOf, GetDashboardOrders, GetFunctionalCurrencies, type MJODashboardOrderRow } from '../../data/orders-queries';
 import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
-import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
+import { ForeignCurrencyOf, OverdueFilter, SumInFunctional, Today, ToISODate, UnconvertedNote, type FunctionalTotal } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
@@ -31,8 +31,19 @@ export interface MJOTopCustomerItem {
     ID?: string;
     Name: string;
     OrderCount: number;
+    /** In the functional currency (golive #492). */
     TotalGross: number;
     FormattedTotal: string;
+    /** Foreign orders left out of the total because they have no exchange rate yet. */
+    Unconverted: number;
+}
+
+/**
+ * The order's own currency for an amount quoted from one order; null prints the functional symbol
+ * (golive #492). A free function so it reads the same with or without the loaded currencies.
+ */
+function currencyFor(order: MJODashboardOrderRow, functional: ReadonlyMap<string, string> | undefined): string | null {
+    return ForeignCurrencyOf(order, FunctionalCurrencyOf(functional ?? new Map<string, string>(), order.CompanyID));
 }
 
 /** A queue worth someone's attention, with where it leads. */
@@ -96,7 +107,7 @@ interface MJOAttentionItem {
                         Label="Open balance"
                         Icon="fa-solid fa-scale-balanced"
                         [Value]="OpenBalanceDisplay"
-                        Detail="Unpaid balance on confirmed orders"
+                        [Detail]="OpenBalanceDetail"
                         (Clicked)="OpenExplorerPreset('unpaid')" />
 
                     <mjo-stat-tile
@@ -180,7 +191,7 @@ interface MJOAttentionItem {
                                     <span class="mjo-dash__rank">{{ idx + 1 }}</span>
                                     <div class="mjo-dash__leader-info">
                                         <span class="mjo-dash__leader-name" [title]="org.Name">{{ org.Name }}</span>
-                                        <span class="small muted">{{ org.OrderCount }} order{{ org.OrderCount === 1 ? '' : 's' }}</span>
+                                        <span class="small muted">{{ org.OrderCount }} order{{ org.OrderCount === 1 ? '' : 's' }}@if (org.Unconverted) { · {{ org.Unconverted }} not in total (no exchange rate yet)}</span>
                                     </div>
                                     <b class="mj-num mjo-dash__leader-amount">{{ org.FormattedTotal }}</b>
                                     <i class="fa-solid fa-chevron-right muted tiny" aria-hidden="true"></i>
@@ -203,7 +214,7 @@ interface MJOAttentionItem {
                                     <span class="mjo-dash__rank">{{ idx + 1 }}</span>
                                     <div class="mjo-dash__leader-info">
                                         <span class="mjo-dash__leader-name" [title]="person.Name">{{ person.Name }}</span>
-                                        <span class="small muted">{{ person.OrderCount }} order{{ person.OrderCount === 1 ? '' : 's' }}</span>
+                                        <span class="small muted">{{ person.OrderCount }} order{{ person.OrderCount === 1 ? '' : 's' }}@if (person.Unconverted) { · {{ person.Unconverted }} not in total (no exchange rate yet)}</span>
                                     </div>
                                     <b class="mj-num mjo-dash__leader-amount">{{ person.FormattedTotal }}</b>
                                     <i class="fa-solid fa-chevron-right muted tiny" aria-hidden="true"></i>
@@ -578,6 +589,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     public ViewError: string | null = null;
 
     private orders: MJODashboardOrderRow[] = [];
+    /** Each selling company's functional currency, so totals convert foreign orders (golive #492). */
+    private functional: ReadonlyMap<string, string> = new Map();
     /** Bumped per preset request, so a slow earlier request cannot land after a later one. */
     private presetRequest = 0;
 
@@ -590,7 +603,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     private async loadOrders(): Promise<void> {
-        this.orders = await GetDashboardOrders();
+        [this.orders, this.functional] = await Promise.all([GetDashboardOrders(), GetFunctionalCurrencies()]);
         this.cdr.detectChanges();
     }
 
@@ -689,67 +702,46 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get TopOrganizations(): MJOTopCustomerItem[] {
-        const orgMap = new Map<string, { ID?: string; Name: string; OrderCount: number; TotalGross: number }>();
-        for (const order of this.orders) {
-            if (order.Status === 'Voided') continue;
-            const orgId = order.BillToOrganizationID;
-            const orgName = order.BillToOrganization;
-            if (orgId || orgName) {
-                const key = orgId || orgName!;
-                const existing = orgMap.get(key);
-                const gross = order.TotalGross ?? 0;
-                if (existing) {
-                    existing.OrderCount++;
-                    existing.TotalGross += gross;
-                } else {
-                    orgMap.set(key, {
-                        ID: orgId ?? undefined,
-                        Name: orgName || 'Unknown Organization',
-                        OrderCount: 1,
-                        TotalGross: gross
-                    });
-                }
-            }
-        }
-        return Array.from(orgMap.values())
-            .sort((a, b) => b.TotalGross - a.TotalGross || b.OrderCount - a.OrderCount)
-            .slice(0, 5)
-            .map(item => ({
-                ...item,
-                FormattedTotal: FormatMoney(item.TotalGross, { Round: true })
-            }));
+        return this.topCustomers((o) => o.BillToOrganizationID, (o) => o.BillToOrganization, 'Unknown Organization');
     }
 
     public get TopPeople(): MJOTopCustomerItem[] {
-        const personMap = new Map<string, { ID?: string; Name: string; OrderCount: number; TotalGross: number }>();
+        return this.topCustomers((o) => o.BillToPersonID, (o) => o.BillToPerson, 'Unknown Person');
+    }
+
+    /**
+     * The five customers with the largest order total, in the functional currency (golive #492).
+     * A foreign order with no exchange rate yet is counted as an order but left out of the total.
+     */
+    private topCustomers(
+        idOf: (o: MJODashboardOrderRow) => string | null,
+        nameOf: (o: MJODashboardOrderRow) => string | null,
+        unknownName: string,
+    ): MJOTopCustomerItem[] {
+        const byCustomer = new Map<string, { ID?: string; Name: string; Orders: MJODashboardOrderRow[] }>();
         for (const order of this.orders) {
             if (order.Status === 'Voided') continue;
-            const personId = order.BillToPersonID;
-            const personName = order.BillToPerson;
-            if (personId || personName) {
-                const key = personId || personName!;
-                const existing = personMap.get(key);
-                const gross = order.TotalGross ?? 0;
-                if (existing) {
-                    existing.OrderCount++;
-                    existing.TotalGross += gross;
-                } else {
-                    personMap.set(key, {
-                        ID: personId ?? undefined,
-                        Name: personName || 'Unknown Person',
-                        OrderCount: 1,
-                        TotalGross: gross
-                    });
-                }
-            }
+            const id = idOf(order);
+            const name = nameOf(order);
+            if (!id && !name) continue;
+            const key = id || name!;
+            const existing = byCustomer.get(key);
+            if (existing) existing.Orders.push(order);
+            else byCustomer.set(key, { ID: id ?? undefined, Name: name || unknownName, Orders: [order] });
         }
-        return Array.from(personMap.values())
+        return Array.from(byCustomer.values())
+            .map((c) => {
+                const total = this.sum(c.Orders, (o) => o.TotalGross);
+                return { ID: c.ID, Name: c.Name, OrderCount: c.Orders.length, TotalGross: total.Total, Unconverted: total.Unconverted };
+            })
             .sort((a, b) => b.TotalGross - a.TotalGross || b.OrderCount - a.OrderCount)
             .slice(0, 5)
-            .map(item => ({
-                ...item,
-                FormattedTotal: FormatMoney(item.TotalGross, { Round: true })
-            }));
+            .map((item) => ({ ...item, FormattedTotal: FormatMoney(item.TotalGross, { Round: true }) }));
+    }
+
+    /** One amount summed across orders in the functional currency (golive #492). */
+    private sum(orders: readonly MJODashboardOrderRow[], amountOf: (o: MJODashboardOrderRow) => number | null): FunctionalTotal {
+        return SumInFunctional(orders, amountOf, (o) => FunctionalCurrencyOf(this.functional, o.CompanyID));
     }
 
     public OnCustomerClick(kind: 'Organization' | 'Person', id?: string): void {
@@ -774,19 +766,19 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
                 Tone: 'error',
                 Icon: 'fa-solid fa-hourglass-half',
                 Headline: `${worst.OrderNumber} is ${days} days past due.`,
-                Detail: `${FormatMoney((worst.Balance ?? 0))} from ${this.customerOf(worst)}.`,
+                Detail: `${FormatMoney(worst.Balance ?? 0, { Currency: currencyFor(worst, this.functional) })} from ${this.customerOf(worst)}.`,
             });
         }
 
         const biggestCredit = this.credits
             .slice()
-            .sort((a, b) => (a.Balance ?? 0) - (b.Balance ?? 0))[0];
+            .sort((a, b) => (this.sum([a], (o) => o.Balance).Total) - (this.sum([b], (o) => o.Balance).Total))[0];
         if (biggestCredit) {
             items.push({
                 Order: biggestCredit,
                 Tone: 'info',
                 Icon: 'fa-solid fa-piggy-bank',
-                Headline: `${this.customerOf(biggestCredit)} has ${FormatMoney(Math.abs((biggestCredit.Balance ?? 0)))} credit on account.`,
+                Headline: `${this.customerOf(biggestCredit)} has ${FormatMoney(Math.abs(biggestCredit.Balance ?? 0), { Currency: currencyFor(biggestCredit, this.functional) })} credit on account.`,
                 Detail: 'Apply it to their next open order.',
             });
         }
@@ -837,16 +829,28 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return String(this.open.length);
     }
 
+    /**
+     * The money tiles sum in the functional currency (golive #492). A confirmed foreign order always
+     * has its booking rate, so these leave nothing out unless a rate is missing; when one is, the
+     * tile says so rather than adding foreign amounts as functional.
+     */
     public get OpenValueDisplay(): string {
-        return `Total order value ${FormatMoney(this.open.reduce((s, o) => s + (o.TotalGross ?? 0), 0), { Round: true })}`;
+        const total = this.sum(this.open, (o) => o.TotalGross);
+        const note = UnconvertedNote(total);
+        return `Total order value ${FormatMoney(total.Total, { Round: true })}${note ? ` · ${note}` : ''}`;
     }
 
     public get OpenBalanceDisplay(): string {
-        return FormatMoney(this.owing.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+        return FormatMoney(this.sum(this.owing, (o) => o.Balance).Total, { Round: true });
+    }
+
+    /** Unpaid balance detail, naming any order left out of the figure. */
+    public get OpenBalanceDetail(): string {
+        return UnconvertedNote(this.sum(this.owing, (o) => o.Balance)) ?? 'Unpaid balance on confirmed orders';
     }
 
     public get OverdueValueDisplay(): string {
-        return FormatMoney(this.overdue.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+        return FormatMoney(this.sum(this.overdue, (o) => o.Balance).Total, { Round: true });
     }
 
     public get OverdueDetail(): string {
@@ -855,8 +859,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     public get CreditsDisplay(): string {
-        const total = this.credits.reduce((s, o) => s + Math.abs((o.Balance ?? 0)), 0);
-        return FormatMoney(total, { Zero: '—' });
+        return FormatMoney(this.sum(this.credits, (o) => Math.abs(o.Balance ?? 0)).Total, { Zero: '—' });
     }
 
     /**
@@ -875,7 +878,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         const today = Today();
         const buckets = EmptyAgingBuckets();
         for (const order of this.owing) {
-            buckets[AgingBucketOf(order.DueDate, today)] += order.Balance ?? 0;
+            // In the functional currency (golive #492); an order with no rate yet adds nothing.
+            buckets[AgingBucketOf(order.DueDate, today)] += this.sum([order], (o) => o.Balance).Total;
         }
         return buckets;
     }

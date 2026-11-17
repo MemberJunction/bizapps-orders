@@ -8,6 +8,7 @@ import {
     OrdersGetOverdueWorklistOperation,
     OverdueFilter,
     Today,
+    UnconvertedNote,
     type OverdueWorklistRow,
 } from '@mj-biz-apps/orders-entities';
 import { MJOAgingBarComponent, type MJOAgingBuckets } from '../../panels/aging-bar.component';
@@ -221,13 +222,17 @@ export class MJOOverduePageComponent implements OnInit {
 
     /* ── Tiles ──────────────────────────────────────────────────────────── */
 
+    /** In the functional currency: each row's balance at its order's booking rate (golive #492). */
     public get TotalDisplay(): string {
-        return FormatMoney(this.AllRows.reduce((s, r) => s + r.Balance, 0), { Round: true });
+        return FormatMoney(this.AllRows.reduce((s, r) => s + (r.FunctionalBalance ?? 0), 0), { Round: true });
     }
 
     public get TotalDetail(): string {
         const customers = new Set(this.AllRows.map((r) => r.CustomerName)).size;
-        return `${this.AllRows.length} order${this.AllRows.length === 1 ? '' : 's'} across ${customers} customer${customers === 1 ? '' : 's'}`;
+        const counts = `${this.AllRows.length} order${this.AllRows.length === 1 ? '' : 's'} across ${customers} customer${customers === 1 ? '' : 's'}`;
+        const left = this.AllRows.filter((r) => r.FunctionalBalance === null);
+        const note = UnconvertedNote({ Unconverted: left.length, UnconvertedCurrencies: [...new Set(left.map((r) => r.CurrencyCode ?? ''))].filter(Boolean).sort() });
+        return note ? `${counts} · ${note}` : counts;
     }
 
     public get OldestDisplay(): string {

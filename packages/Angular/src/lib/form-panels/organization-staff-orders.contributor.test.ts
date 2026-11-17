@@ -66,6 +66,22 @@ describe('BuildStaffOrderContribution with the shapes the providers really send'
     });
 });
 
+describe('BuildStaffOrderContribution with foreign-currency orders (golive #492)', () => {
+    it('adds a booked foreign order at its rate and leaves out one with no rate yet', () => {
+        const rows: StaffOrderRow[] = [
+            { ...order(A, 100, 0, false, '2026-01-01'), FunctionalCurrencyCode: 'USD' },
+            { ...order(A, 200, 0, false, '2026-02-01'), CurrencyCode: 'AUD', BookingExchangeRate: 0.5, FunctionalCurrencyCode: 'USD' },
+            { ...order(B, 999, 0, false, '2026-03-01'), CurrencyCode: 'AUD', BookingExchangeRate: null, FunctionalCurrencyCode: 'USD' },
+            { ...order(B, 10, 0, false, '2026-03-02'), CurrencyCode: 'USD', BookingExchangeRate: null, FunctionalCurrencyCode: 'USD' },
+        ];
+        const res = BuildStaffOrderContribution(staff, rows, []);
+        expect(res.Figures[0].Value).toBe('$210');
+        expect(res.Figures[0].Detail).toBe('2 of 3 staff have bought · Leaves out 1 AUD order with no exchange rate yet');
+        expect(res.Cells.get(A)?.['ltv']).toEqual({ Text: '$200' });
+        expect(res.Cells.get(B)?.['ltv']).toEqual({ Text: '$10' });
+    });
+});
+
 describe('QuotedStaffIDs', () => {
     it('quotes UUIDs for an IN list and refuses anything else', () => {
         expect(QuotedStaffIDs(staff.slice(0, 2))).toBe(`'${A}','${B}'`);

@@ -356,3 +356,15 @@ describe('FormatCompact', () => {
         expect(FormatCompact(-40)).toBe('-$40');
     });
 });
+
+describe('FormatMoney with a foreign currency (golive #492)', () => {
+    it('writes the code in place of the symbol', () => {
+        expect(FormatMoney(13230, { Currency: 'AUD' })).toBe('AUD 13,230.00');
+        expect(FormatMoney(-85, { Currency: 'AUD' })).toBe('−AUD 85.00');
+        expect(FormatMoney(0, { Currency: 'AUD', Round: true })).toBe('AUD 0');
+    });
+
+    it('keeps the symbol when the order has no currency of its own', () => {
+        expect(FormatMoney(1621.57, { Currency: null })).toBe('$1,621.57');
+    });
+});

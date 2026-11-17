@@ -11,6 +11,7 @@ import type { mjBizAppsAccountingJournalEntryEntity } from '@mj-biz-apps/account
 import {
     GetSubscriptionEvents,
     GetSubscriptionTerms,
+    GetTermCurrencies,
     GetSubscriptionTypeRenewalLeadDays,
     LoadSubscriptionRevRec,
     type SubscriptionTermLookup,
@@ -173,7 +174,7 @@ interface MJOSubscriptionRow extends Record<string, unknown> {
                                                     <span class="mjo-chip mjo-chip--outline">prorated</span>
                                                 }
                                             </td>
-                                            <td class="num">{{ moneyOf(term['Amount']) }}</td>
+                                            <td class="num">{{ moneyOf(term['Amount'], termCurrencyOf(term)) }}</td>
                                             <td>
                                                 <span class="mjo-chip" [class]="termClass(term)">
                                                     {{ isCurrentTerm(term) ? 'current' : (term['Status'] ?? '—') }}
@@ -340,6 +341,8 @@ export class MJOSubscriptionsPageComponent implements OnInit {
     }
 
     public Terms: mjBizAppsOrdersSubscriptionTermEntity[] = [];
+    /** Each term's order currency by order line ID; absent or null is functional (golive #492). */
+    private TermCurrencies: ReadonlyMap<string, string | null> = new Map();
     public Events: mjBizAppsOrdersSubscriptionEventEntity[] = [];
     public RecognitionEntries: mjBizAppsAccountingJournalEntryEntity[] = [];
     public RecognitionTermLookup: SubscriptionTermLookup = {};
@@ -366,23 +369,27 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         const row = this.AllRows.find((r) => r.ID === subscriptionID);
         const termsAndRecognition = (async () => {
             const terms = await GetSubscriptionTerms(subscriptionID);
-            const recognition = await LoadSubscriptionRevRec(
-                { ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null },
-                Metadata.Provider,
-                terms,
-            );
-            return { terms, recognition };
+            const [recognition, currencies] = await Promise.all([
+                LoadSubscriptionRevRec(
+                    { ID: subscriptionID, OrderLineID: row?.OrderLineID ?? null },
+                    Metadata.Provider,
+                    terms,
+                ),
+                GetTermCurrencies(terms),
+            ]);
+            return { terms, recognition, currencies };
         })();
         const typeLeadDays = row?.RenewalLeadDays == null && row?.SubscriptionTypeID
             ? GetSubscriptionTypeRenewalLeadDays(row.SubscriptionTypeID)
             : Promise.resolve(null);
-        const [{ terms, recognition }, events, leadDays] = await Promise.all([
+        const [{ terms, recognition, currencies }, events, leadDays] = await Promise.all([
             termsAndRecognition,
             GetSubscriptionEvents(subscriptionID),
             typeLeadDays,
         ]);
         if (this.SelectedID !== subscriptionID) return;
         this.Terms = terms;
+        this.TermCurrencies = currencies;
         this.Events = events;
         this.RecognitionEntries = recognition.Entries;
         this.RecognitionTermLookup = recognition.TermLookup;
@@ -459,8 +466,13 @@ export class MJOSubscriptionsPageComponent implements OnInit {
         return ends[ends.length - 1] ?? null;
     }
 
-    protected moneyOf(value: unknown): string {
-        return FormatMoney(Number(value ?? 0));
+    protected moneyOf(value: unknown, currency: string | null = null): string {
+        return FormatMoney(Number(value ?? 0), { Currency: currency });
+    }
+
+    /** The currency a term's amount is in, when it is not the functional currency (golive #492). */
+    protected termCurrencyOf(term: mjBizAppsOrdersSubscriptionTermEntity): string | null {
+        return this.TermCurrencies.get(String(term.OrderLineID ?? '').toLowerCase()) ?? null;
     }
 
     public OnPreset(preset: string): void {

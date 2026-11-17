@@ -21,7 +21,10 @@ interface PartyLifetimeRow {
     OpenCount: number;
     OverdueCount: number;
     ActiveSubCount: number;
+    /** In the functional currency: each order at its booking rate (golive #492). */
     LifetimeValue: number;
+    /** Foreign orders left out of `LifetimeValue` because they have no exchange rate yet. */
+    UnconvertedOrderCount?: number;
     FirstOrderDate: Date | string | null;
     YearsAsCustomer: number | null;
 }
@@ -47,12 +50,17 @@ export async function LoadPartyOrderFigures(
 }
 
 export function FiguresFromLifetimeRow(row: PartyLifetimeRow): MJOSummaryFigure[] {
+    const unconverted = row.UnconvertedOrderCount ?? 0;
+    const notInLtv: MJOSummaryFigure[] = unconverted
+        ? [{ Label: 'Not in LTV', Value: `${unconverted} order${unconverted === 1 ? '' : 's'}, no exchange rate yet`, Tone: 'muted' }]
+        : [];
     return [
         { Label: 'Orders', Value: formatCount(row.OrderCount) },
         { Label: 'Open', Value: formatCount(row.OpenCount) },
         { Label: 'Overdue', Value: formatCount(row.OverdueCount), Tone: 'muted' },
         { Label: 'Active subs', Value: formatCount(row.ActiveSubCount) },
         { Label: 'LTV', Value: FormatMoney(row.LifetimeValue, { Round: true, Zero: '$0' }) },
+        ...notInLtv,
         { Label: 'Customer', Value: formatTenure(row.FirstOrderDate, row.YearsAsCustomer) },
     ];
 }
@@ -100,6 +108,7 @@ function readLifetimeRow(raw: object): PartyLifetimeRow | null {
         OverdueCount: toNumber(rec['OverdueCount']) ?? 0,
         ActiveSubCount: toNumber(rec['ActiveSubCount']) ?? 0,
         LifetimeValue: toNumber(rec['LifetimeValue']) ?? 0,
+        UnconvertedOrderCount: toNumber(rec['UnconvertedOrderCount']) ?? 0,
         FirstOrderDate: toDateOrString(rec['FirstOrderDate']),
         YearsAsCustomer: toNumber(rec['YearsAsCustomer']),
     };

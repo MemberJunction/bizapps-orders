@@ -23,7 +23,7 @@ import {
 } from '@memberjunction/core';
 import { RegisterClass } from '@memberjunction/global';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
-import { OverdueFilter } from '@mj-biz-apps/orders-entities';
+import { ForeignCurrencyOf, OverdueFilter, ToFunctionalAmount } from '@mj-biz-apps/orders-entities';
 import {
     OrdersGetOverdueWorklistOperation as OrdersGetOverdueWorklistOperationBase,
     type OrdersGetOverdueWorklistInput,
@@ -32,6 +32,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { LoadFunctionalCurrencies } from './OrderBookingRate.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
@@ -85,6 +86,8 @@ interface OrderShape extends Record<string, unknown> {
     TotalGross: number;
     AmountPaid: number;
     Balance: number;
+    CurrencyCode?: string | null;
+    BookingExchangeRate?: number | null;
     Description?: string | null;
     SalesRepUserID?: string | null;
     BillToOrganizationID?: string | null;
@@ -161,11 +164,16 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
             .map((row) => ({ row, days: daysBetween(toISODate(row.NextDueDate ?? row.DueDate) ?? asOf, asOf) }))
             .filter(({ days }) => days >= minDays);
 
-        const credits = await this.creditsByCustomer(aged.map((a) => a.row), provider, user);
+        // Totals, buckets and credits are in the functional currency at each order's booking rate
+        // (golive #492). An overdue order has been confirmed, so a foreign one has its rate; one
+        // that somehow does not is left out of the totals and counted rather than added as functional.
+        const functional = await LoadFunctionalCurrencies(rows.map((r) => r.CompanyID), provider, user);
+        const credits = await this.creditsByCustomer(aged.map((a) => a.row), functional, provider, user);
         const grace = await this.graceByOrder(aged, asOf, provider, user);
 
         const worklist: OverdueWorklistRow[] = aged.map(({ row, days }) => {
             const customerKey = row.BillToOrganizationID ?? row.BillToPersonID ?? '';
+            const functionalCurrency = functional.get(String(row.CompanyID).toLowerCase()) ?? null;
             return {
                 OrderHeaderID: row.ID,
                 OrderNumber: row.OrderNumber,
@@ -180,6 +188,8 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
                 TotalGross: money(row.TotalGross),
                 AmountPaid: money(row.AmountPaid),
                 Balance: money(row.Balance),
+                CurrencyCode: ForeignCurrencyOf(row, functionalCurrency),
+                FunctionalBalance: ToFunctionalAmount(row.Balance, row, functionalCurrency),
                 Description: row.Description ?? null,
                 SalesRepUserID: row.SalesRepUserID ?? null,
                 SalesRepName: null,
@@ -191,17 +201,19 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
 
         const buckets = { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 };
         for (const row of worklist) {
-            if (row.DaysOverdue <= 0) buckets.Current += row.Balance;
-            else if (row.DaysOverdue <= 30) buckets.Days1To30 += row.Balance;
-            else if (row.DaysOverdue <= 60) buckets.Days31To60 += row.Balance;
-            else buckets.Days61Plus += row.Balance;
+            const balance = row.FunctionalBalance ?? 0;
+            if (row.DaysOverdue <= 0) buckets.Current += balance;
+            else if (row.DaysOverdue <= 30) buckets.Days1To30 += balance;
+            else if (row.DaysOverdue <= 60) buckets.Days31To60 += balance;
+            else buckets.Days61Plus += balance;
         }
         (Object.keys(buckets) as Array<keyof typeof buckets>).forEach((k) => (buckets[k] = money(buckets[k])));
 
         return {
             Success: true,
             Rows: worklist,
-            TotalOverdue: money(worklist.reduce((s, r) => s + r.Balance, 0)),
+            TotalOverdue: money(worklist.reduce((s, r) => s + (r.FunctionalBalance ?? 0), 0)),
+            UnconvertedCount: worklist.filter((r) => r.FunctionalBalance === null).length,
             RowCount: worklist.length,
             Truncated: truncated,
             Buckets: buckets,
@@ -265,6 +277,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
      */
     private async creditsByCustomer(
         rows: OrderShape[],
+        functional: ReadonlyMap<string, string>,
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<Map<string, number>> {
@@ -287,9 +300,15 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
             user,
         );
 
+        // The credit orders' companies may not be on the worklist, so their currencies are read too.
+        const missing = (result.Results ?? []).map((r) => r.CompanyID).filter((id) => id && !functional.has(String(id).toLowerCase()));
+        const more = missing.length ? await LoadFunctionalCurrencies(missing, provider, user) : new Map<string, string>();
         for (const row of result.Results ?? []) {
             const key = row.BillToOrganizationID ?? row.BillToPersonID ?? '';
-            credits.set(key, money((credits.get(key) ?? 0) + Math.abs(row.Balance)));
+            const company = String(row.CompanyID ?? '').toLowerCase();
+            const amount = ToFunctionalAmount(Math.abs(row.Balance), row, functional.get(company) ?? more.get(company) ?? null);
+            if (amount === null) continue;
+            credits.set(key, money((credits.get(key) ?? 0) + amount));
         }
         return credits;
     }
@@ -300,6 +319,7 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
             Message: message,
             Rows: [],
             TotalOverdue: 0,
+            UnconvertedCount: 0,
             RowCount: 0,
             Truncated: false,
             Buckets: { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 },

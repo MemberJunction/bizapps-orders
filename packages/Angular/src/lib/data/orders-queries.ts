@@ -47,14 +47,17 @@ import { UUIDsEqual } from '@memberjunction/global';
 import { NetLines, type NetGroup, type NettableLine } from '@mj-biz-apps/accounting-engine-base';
 import {
     FindExistingHolding,
+    ForeignCurrencyOf,
     IsBefore,
     LoadOrdersEngine,
     OrdersEngine,
     OverdueFilter,
     ResolveSubscriptionTypeID,
+    SumInFunctional,
     Today,
     ToISODate,
     type DateCell,
+    type FunctionalTotal,
 } from '@mj-biz-apps/orders-entities';
 import type {
     HoldingReactivation,
@@ -96,13 +99,20 @@ export interface MJOCompanyOption {
     Name: string;
 }
 
-/** Counts and totals for the orders list header. */
+/**
+ * Counts and totals for the orders list header.
+ *
+ * Every money figure is in the functional currency: each order converts at its booking rate, and a
+ * foreign order with no rate yet is left out and counted in `Unconverted` (golive #492).
+ */
 export interface MJOOrderSummary {
     Total: number;
     TotalValue: number;
     OpenBalance: number;
     /** A positive magnitude — the strip renders the direction, not the sign. */
     CreditsHeld: number;
+    /** What each money figure left out, for {@link UnconvertedNote}. */
+    Unconverted: { TotalValue: FunctionalTotal; OpenBalance: FunctionalTotal; CreditsHeld: FunctionalTotal };
     /** Keyed by preset, for the chip pills. */
     Counts: Record<string, number>;
 }
@@ -226,6 +236,9 @@ interface MJOSummaryRow {
     Balance?: number;
     TotalGross?: number;
     DueDate?: DateCell;
+    CompanyID?: string;
+    CurrencyCode?: string | null;
+    BookingExchangeRate?: number | null;
 }
 
 /**
@@ -418,10 +431,12 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
         'OrderDate DESC',
         5000,
         user,
-        // Four columns, because that is what the arithmetic reads. Fetching fifty to sum three is
-        // work with no answer attached.
-        ['Status', 'Balance', 'TotalGross', 'DueDate'],
+        // The columns the arithmetic reads. Fetching fifty to sum three is work with no answer
+        // attached. Currency, rate and company convert each order to the functional currency.
+        ['Status', 'Balance', 'TotalGross', 'DueDate', 'CompanyID', 'CurrencyCode', 'BookingExchangeRate'],
     );
+    const functional = await GetFunctionalCurrencies(user);
+    const functionalOf = (o: MJOSummaryRow): string | null => FunctionalCurrencyOf(functional, o.CompanyID);
     // The operator's calendar day, not a UTC instant: an order due today is not overdue at 8pm in
     // New York just because it is already tomorrow in London.
     const today = Today();
@@ -430,11 +445,16 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
     const credits = rows.filter((o) => settleable(o) && Number(o.Balance ?? 0) < 0);
     const owing = rows.filter((o) => settleable(o) && Number(o.Balance ?? 0) > 0);
 
+    const totalValue = SumInFunctional(rows, (o) => Number(o.TotalGross ?? 0), functionalOf);
+    const openBalance = SumInFunctional(owing, (o) => Number(o.Balance ?? 0), functionalOf);
+    const creditsHeld = SumInFunctional(credits, (o) => Math.abs(Number(o.Balance ?? 0)), functionalOf);
+
     return {
         Total: rows.length,
-        TotalValue: rows.reduce((sum, o) => sum + Number(o.TotalGross ?? 0), 0),
-        OpenBalance: owing.reduce((sum, o) => sum + Number(o.Balance ?? 0), 0),
-        CreditsHeld: Math.abs(credits.reduce((sum, o) => sum + Number(o.Balance ?? 0), 0)),
+        TotalValue: totalValue.Total,
+        OpenBalance: openBalance.Total,
+        CreditsHeld: creditsHeld.Total,
+        Unconverted: { TotalValue: totalValue, OpenBalance: openBalance, CreditsHeld: creditsHeld },
         Counts: {
             all: rows.length,
             overdue: owing.filter((o) => IsBefore(o.DueDate, today)).length,
@@ -466,6 +486,9 @@ export type MJODashboardOrderRow = Pick<
     | 'BillToOrganization'
     | 'BillToPersonID'
     | 'BillToPerson'
+    | 'CompanyID'
+    | 'CurrencyCode'
+    | 'BookingExchangeRate'
 >;
 
 const DASHBOARD_ORDER_FIELDS: Array<keyof MJODashboardOrderRow & string> = [
@@ -481,6 +504,9 @@ const DASHBOARD_ORDER_FIELDS: Array<keyof MJODashboardOrderRow & string> = [
     'BillToOrganization',
     'BillToPersonID',
     'BillToPerson',
+    'CompanyID',
+    'CurrencyCode',
+    'BookingExchangeRate',
 ];
 
 /**
@@ -499,6 +525,35 @@ export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardO
         user,
         DASHBOARD_ORDER_FIELDS,
     );
+}
+
+/**
+ * Each selling company's functional currency, keyed by company ID in lower case (golive #492).
+ *
+ * An accounting company profile shares its company's ID. An order whose `CurrencyCode` names its
+ * company's functional currency is a functional-currency order, needs no booking rate, and prints
+ * without a code; this is what lets a total or a grid tell the two apart. The table holds one row per
+ * selling company, so it is read whole.
+ */
+export async function GetFunctionalCurrencies(user?: UserInfo): Promise<Map<string, string>> {
+    const rows = await runRows<{ ID: string; FunctionalCurrencyCode: string | null }>(
+        MJO_ACCOUNTING_ENTITIES.AccountingCompanyProfile,
+        [],
+        'ID',
+        0,
+        user,
+        ['ID', 'FunctionalCurrencyCode'],
+    );
+    const map = new Map<string, string>();
+    for (const row of rows) {
+        if (row.FunctionalCurrencyCode) map.set(row.ID.toLowerCase(), row.FunctionalCurrencyCode.trim().toUpperCase());
+    }
+    return map;
+}
+
+/** One company's functional currency from {@link GetFunctionalCurrencies}, or null when it has none. */
+export function FunctionalCurrencyOf(functional: ReadonlyMap<string, string>, companyID: string | null | undefined): string | null {
+    return companyID ? (functional.get(companyID.toLowerCase()) ?? null) : null;
 }
 
 /**
@@ -1970,6 +2025,44 @@ export async function GetSubscriptionTerms(
         undefined,
         user,
     );
+}
+
+/**
+ * The currency each term's amount is in, keyed by the term's order line ID in lower case: the
+ * order's contract currency when it is not its company's functional currency, otherwise null, which
+ * prints as functional (golive #492). Two reads plus the functional currencies, for any number of terms.
+ */
+export async function GetTermCurrencies(
+    terms: ReadonlyArray<Pick<mjBizAppsOrdersSubscriptionTermEntity, 'OrderLineID'>>,
+    user?: UserInfo,
+): Promise<Map<string, string | null>> {
+    const result = new Map<string, string | null>();
+    const lineList = uuidList(terms.map((t) => t.OrderLineID).filter(Boolean));
+    if (!lineList) return result;
+    const lines = await runRows<{ ID: string; OrderHeaderID: string }>(
+        MJO_ENTITIES.OrderLine,
+        [`ID IN (${lineList})`],
+        'ID',
+        0,
+        user,
+        ['ID', 'OrderHeaderID'],
+    );
+    const headerList = uuidList(lines.map((l) => l.OrderHeaderID));
+    if (!headerList) return result;
+    const [headers, functional] = await Promise.all([
+        runRows<{ ID: string; CompanyID: string; CurrencyCode: string | null }>(
+            MJO_ENTITIES.OrderHeader,
+            [`ID IN (${headerList})`],
+            'ID',
+            0,
+            user,
+            ['ID', 'CompanyID', 'CurrencyCode'],
+        ),
+        GetFunctionalCurrencies(user),
+    ]);
+    const currencyByHeader = new Map(headers.map((h) => [h.ID.toLowerCase(), ForeignCurrencyOf(h, FunctionalCurrencyOf(functional, h.CompanyID))]));
+    for (const line of lines) result.set(line.ID.toLowerCase(), currencyByHeader.get(line.OrderHeaderID.toLowerCase()) ?? null);
+    return result;
 }
 
 /**

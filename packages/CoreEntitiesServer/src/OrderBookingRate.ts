@@ -101,6 +101,36 @@ export async function LoadFunctionalCurrency(companyID: string, provider: IMetad
 }
 
 /**
+ * Several selling companies' functional currencies in one read, keyed by company ID in lower case.
+ * A company with no profile, or none set, is absent.
+ */
+export async function LoadFunctionalCurrencies(
+    companyIDs: readonly string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<Map<string, string>> {
+    const map = new Map<string, string>();
+    const ids = [...new Set(companyIDs.filter(Boolean).map((id) => id.toLowerCase()))];
+    if (!ids.length) return map;
+    const list = ids.map((id) => `'${RequireUUID(id, 'CompanyID')}'`).join(',');
+    const result = await RunView.FromMetadataProvider(provider).RunView<{ ID: string; FunctionalCurrencyCode: string | null }>(
+        {
+            EntityName: ACCOUNTING_COMPANY_PROFILE_ENTITY,
+            ExtraFilter: `ID IN (${list})`,
+            Fields: ['ID', 'FunctionalCurrencyCode'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!result.Success) throw new Error(`Could not read the selling companies' accounting profiles: ${result.ErrorMessage ?? 'unknown error'}`);
+    for (const row of result.Results ?? []) {
+        const code = NormalizeCurrencyCode(row.FunctionalCurrencyCode);
+        if (code) map.set(row.ID.toLowerCase(), code);
+    }
+    return map;
+}
+
+/**
  * The latest active spot rate from `fromCode` to `toCode` on or before `day`.
  *
  * Two sources can record a rate for the same day; the source name breaks the tie, so the answer

@@ -40,3 +40,16 @@ describe('FiguresFromLifetimeRow', () => {
     });
 });
 
+
+describe('FiguresFromLifetimeRow with foreign orders left out (golive #492)', () => {
+    const base = { OrderCount: 3, OpenCount: 0, OverdueCount: 0, ActiveSubCount: 0, LifetimeValue: 100, FirstOrderDate: '2021-06-01', YearsAsCustomer: 5 };
+
+    it('adds no figure when every order converted', () => {
+        expect(FiguresFromLifetimeRow({ ...base, UnconvertedOrderCount: 0 }).some((f) => f.Label === 'Not in LTV')).toBe(false);
+    });
+
+    it('names the orders left out of LTV', () => {
+        const figure = FiguresFromLifetimeRow({ ...base, UnconvertedOrderCount: 2 }).find((f) => f.Label === 'Not in LTV');
+        expect(figure).toEqual({ Label: 'Not in LTV', Value: '2 orders, no exchange rate yet', Tone: 'muted' });
+    });
+});

@@ -1192,6 +1192,7 @@ export {
     CURRENCY_SPOT_RATE_ENTITY,
     DecideBookingRate,
     LoadFunctionalCurrency,
+    LoadFunctionalCurrencies,
     LoadSpotRate,
     NormalizeCurrencyCode,
     ResolveBookingRate,

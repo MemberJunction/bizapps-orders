@@ -6,7 +6,7 @@
       "UserQuestion": "What is this person or organization's complete order overview — counts, LTV, monthly trajectory, recent orders, and active subscriptions?",
       "Description": "Single-query optimization for the Person and Organization form Overview section. Returns all figures, 6-month spend trajectory, top 6 recent orders, and top 4 active subscriptions in one round trip using JSON aggregation.",
       "SQL": "@file:SQL/party-orders-overview.sql",
-      "TechnicalDescription": "Nunjucks-parameterized. PartyKind (person|organization) selects the bill-to / subscription join column; PartyID is the party UUID and is always passed through the sqlString filter. Aggregates __mj_BizAppsOrders.vwOrderHeaders and vwSubscriptions with nested JSON arrays for RecentOrdersJson, ActiveSubscriptionsJson, and MonthlyTrajectoryJson.",
+      "TechnicalDescription": "Nunjucks-parameterized. PartyKind (person|organization) selects the bill-to / subscription join column; PartyID is the party UUID and is always passed through the sqlString filter. Aggregates __mj_BizAppsOrders.vwOrderHeaders and vwSubscriptions with nested JSON arrays for RecentOrdersJson, ActiveSubscriptionsJson, and MonthlyTrajectoryJson. Money is in the selling company's functional currency at each order's booking rate (golive #492): LifetimeValue, AvgOrderValue and the trajectory leave out foreign orders with no rate yet (counted in UnconvertedOrderCount); recent orders carry ForeignCurrencyCode and FunctionalTotalGross.",
       "Status": "Approved",
       "QualityRank": 9,
       "ExecutionCostRank": 2,

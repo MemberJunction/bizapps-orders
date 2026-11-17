@@ -8,19 +8,23 @@ import { PresetViewRef } from '../../data/preset-view';
 import { MJOMoneyStripComponent } from '../../panels/money-strip.component';
 import { DaysSince, FormatDate, FormatMoney, Initials } from '../../panels/money-format';
 import { MJAlertComponent, MJEmptyStateComponent } from '@memberjunction/ng-ui-components';
-import { GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
+import { FunctionalCurrencyOf, GetFunctionalCurrencies, GetOpenBalanceOrders, GetPaymentsForCustomer, GetSubscriptionsForCustomer } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import { MJO_ORDER_HEADER_GRID_STATE } from '../../data/orders-grid-state';
-import { Today, type DateCell, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
+import { ForeignCurrencyOf, Today, ToFunctionalAmount, UnconvertedNote, type DateCell, type mjBizAppsOrdersOrderHeaderEntity, type mjBizAppsOrdersPaymentHeaderEntity, type mjBizAppsOrdersSubscriptionEntity } from '@mj-biz-apps/orders-entities';
 
 /** A customer with a balance, as the left rail lists them. */
 interface MJOCustomerSummary {
     Key: string;
     Name: string;
     IsOrganization: boolean;
+    /** In the functional currency, as are `Credit` and `Buckets` (golive #492). */
     Open: number;
     Credit: number;
     Buckets: MJOAgingBuckets;
+    /** Foreign orders left out of the figures because they have no exchange rate yet. */
+    Unconverted: number;
+    UnconvertedCurrencies: string[];
     Orders: mjBizAppsOrdersOrderHeaderEntity[];
 }
 
@@ -61,7 +65,8 @@ interface MJOCustomerSummary {
                     <div class="mj-card-pad">
                         <mjo-aging-bar [Buckets]="TotalBuckets" />
                         <div class="small muted mjo-ar__note">
-                            All customers with an open balance.
+                            All customers with an open balance, in the functional currency.
+                            @if (TotalUnconvertedNote) { {{ TotalUnconvertedNote }}. }
                         </div>
                     </div>
                 </div>
@@ -113,6 +118,9 @@ interface MJOCustomerSummary {
                                     <div class="small muted">
                                         {{ Selected.IsOrganization ? 'Organization' : 'Individual' }} ·
                                         {{ Selected.Orders.length }} order{{ Selected.Orders.length === 1 ? '' : 's' }}
+                                        @if (Selected.Unconverted) {
+                                            · {{ Selected.Unconverted }} not in these figures (no exchange rate yet)
+                                        }
                                     </div>
                                 </div>
                             </div>
@@ -170,7 +178,7 @@ interface MJOCustomerSummary {
                                     <div class="mjo-ar__row">
                                         <span class="mono small">{{ credit.OrderNumber }}</span>
                                         <b class="mj-num mj-money--credit">
-                                            {{ money(-Math.abs((credit.Balance ?? 0))) }}
+                                            {{ money(-Math.abs((credit.Balance ?? 0)), currencyOf(credit)) }}
                                         </b>
                                     </div>
                                 } @empty {
@@ -475,6 +483,12 @@ export class MJOCustomerARPageComponent implements OnInit {
         return Math.round(this.Customers.reduce((sum, c) => sum + c.Open, 0) * 100) / 100;
     }
 
+    /** Orders the A/R figures leave out because they have no exchange rate yet, as a sentence; null when none. */
+    public get TotalUnconvertedNote(): string | null {
+        const currencies = [...new Set(this.Customers.flatMap((c) => c.UnconvertedCurrencies))].sort();
+        return UnconvertedNote({ Unconverted: this.Customers.reduce((n, c) => n + c.Unconverted, 0), UnconvertedCurrencies: currencies });
+    }
+
     /** Orders this customer has OVER-paid — their spendable credit. */
     public get CreditItems(): mjBizAppsOrdersOrderHeaderEntity[] {
         return (this.Selected?.Orders ?? []).filter((o) => (o.Balance ?? 0) < 0);
@@ -529,9 +543,18 @@ export class MJOCustomerARPageComponent implements OnInit {
         return Initials(name);
     }
 
-    protected money(value: number): string {
-        return FormatMoney(value);
+    /** An amount, with the order's currency code when it is not the functional currency (golive #492). */
+    protected money(value: number, currency: string | null = null): string {
+        return FormatMoney(value, { Currency: currency });
     }
+
+    /** The currency one order's own amounts are in; null when functional. */
+    protected currencyOf(order: mjBizAppsOrdersOrderHeaderEntity): string | null {
+        return ForeignCurrencyOf(order, FunctionalCurrencyOf(this.functional, order.CompanyID));
+    }
+
+    /** Each selling company's functional currency (golive #492). */
+    private functional: ReadonlyMap<string, string> = new Map();
 
     private ageLabel(row: mjBizAppsOrdersOrderHeaderEntity): string {
         if (!row.DueDate || (row.Balance ?? 0) <= 0) return 'Current';
@@ -554,7 +577,8 @@ export class MJOCustomerARPageComponent implements OnInit {
      * order billed to their employer is the employer's receivable.
      */
     private async load(): Promise<void> {
-        const orders = await GetOpenBalanceOrders();
+        const [orders, functional] = await Promise.all([GetOpenBalanceOrders(), GetFunctionalCurrencies()]);
+        this.functional = functional;
         const open = orders.filter((o) => !['Draft', 'Quoted', 'Voided'].includes(o.Status) && (o.Balance ?? 0) !== 0);
 
         const byCustomer = new Map<string, MJOCustomerSummary>();
@@ -574,19 +598,29 @@ export class MJOCustomerARPageComponent implements OnInit {
                     Open: 0,
                     Credit: 0,
                     Buckets: EmptyAgingBuckets(),
+                    Unconverted: 0,
+                    UnconvertedCurrencies: [],
                     Orders: [],
                 } satisfies MJOCustomerSummary);
 
             existing.Orders.push(order);
 
-            if ((order.Balance ?? 0) < 0) {
+            // Summed in the functional currency at each order's booking rate (golive #492). A foreign
+            // order with no rate is left out and counted, never added as if it were functional.
+            const functionalCurrency = FunctionalCurrencyOf(functional, order.CompanyID);
+            const balance = ToFunctionalAmount(order.Balance, order, functionalCurrency);
+            if (balance === null) {
+                existing.Unconverted++;
+                const code = ForeignCurrencyOf(order, functionalCurrency);
+                if (code && !existing.UnconvertedCurrencies.includes(code)) existing.UnconvertedCurrencies.push(code);
+            } else if (balance < 0) {
                 // A negative balance IS the credit — no separate instrument.
-                existing.Credit += Math.abs((order.Balance ?? 0));
+                existing.Credit += Math.abs(balance);
             } else {
-                existing.Open += (order.Balance ?? 0);
+                existing.Open += balance;
                 // The age rule lives beside the bucket type, so this page and the Orders dashboard
                 // cannot drift apart about what "current" means (golive#361).
-                existing.Buckets[AgingBucketOf(order.DueDate, today)] += (order.Balance ?? 0);
+                existing.Buckets[AgingBucketOf(order.DueDate, today)] += balance;
             }
 
             byCustomer.set(key, existing);

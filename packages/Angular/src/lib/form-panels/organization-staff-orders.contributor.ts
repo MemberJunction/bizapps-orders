@@ -7,7 +7,8 @@ import {
     type StaffCell,
     type StaffContribution,
 } from '@mj-biz-apps/common-ng';
-import { MJO_ENTITIES } from '../data/entity-names';
+import { SumInFunctional, UnconvertedNote } from '@mj-biz-apps/orders-entities';
+import { MJO_ACCOUNTING_ENTITIES, MJO_ENTITIES } from '../data/entity-names';
 import { FormatMoney } from '../panels/money-format';
 
 /** One order billed to a staff member, as read for the roll-up. */
@@ -19,6 +20,10 @@ export interface StaffOrderRow {
     IsOverdue: boolean | number | null;
     /** The browser provider hands dates back as Date objects; the server as ISO strings. */
     OrderDate: Date | string | null;
+    /** The order's currency and booking rate, and its company's functional currency (golive #492). */
+    CurrencyCode?: string | null;
+    BookingExchangeRate?: number | null;
+    FunctionalCurrencyCode?: string | null;
 }
 
 function IsFlagSet(value: boolean | number | null): boolean {
@@ -46,15 +51,20 @@ export function BuildStaffOrderContribution(
     orders: StaffOrderRow[],
     subscriptions: StaffSubscriptionRow[],
 ): StaffContribution {
-    const byPerson = new Map<string, { Orders: number; Ltv: number }>();
+    // LTV is in the functional currency at each order's booking rate; a foreign order with no rate
+    // yet is counted as an order but left out of LTV, and the figure says so (golive #492).
+    const ltvOf = (rows: StaffOrderRow[]) => SumInFunctional(rows, (o) => o.TotalGross ?? 0, (o) => o.FunctionalCurrencyCode);
+    const byPerson = new Map<string, { Orders: number; Rows: StaffOrderRow[] }>();
     for (const o of orders) {
         const key = o.BillToPersonID.toUpperCase();
-        const agg = byPerson.get(key) ?? { Orders: 0, Ltv: 0 };
+        const agg = byPerson.get(key) ?? { Orders: 0, Rows: [] };
         agg.Orders += 1;
-        agg.Ltv += o.TotalGross ?? 0;
+        agg.Rows.push(o);
         byPerson.set(key, agg);
     }
-    const totalLtv = orders.reduce((sum, o) => sum + (o.TotalGross ?? 0), 0);
+    const total = ltvOf(orders);
+    const totalLtv = total.Total;
+    const unconverted = UnconvertedNote(total);
     const open = orders.filter(o => IsFlagSet(o.IsOverdue) || (o.Balance ?? 0) > 0).length;
     const overdue = orders.filter(o => IsFlagSet(o.IsOverdue)).length;
     const buyers = byPerson.size;
@@ -66,13 +76,13 @@ export function BuildStaffOrderContribution(
         const agg = byPerson.get(member.PersonID.toUpperCase());
         cells.set(member.PersonID.toUpperCase(), {
             orders: agg ? { Text: String(agg.Orders) } : { Text: '0', Tone: 'muted' },
-            ltv: agg ? { Text: FormatMoney(agg.Ltv, { Round: true, Zero: '$0' }) } : { Text: '$0', Tone: 'muted' },
+            ltv: agg ? { Text: FormatMoney(ltvOf(agg.Rows).Total, { Round: true, Zero: '$0' }) } : { Text: '$0', Tone: 'muted' },
         });
     }
 
     return {
         Figures: [
-            { Label: 'Staff LTV', Value: FormatMoney(totalLtv, { Round: true, Zero: '$0' }), Icon: 'fa-solid fa-sack-dollar', Detail: buyers > 0 ? `${buyers} of ${staff.length} staff have bought` : 'No staff purchases yet' },
+            { Label: 'Staff LTV', Value: FormatMoney(totalLtv, { Round: true, Zero: '$0' }), Icon: 'fa-solid fa-sack-dollar', Detail: [buyers > 0 ? `${buyers} of ${staff.length} staff have bought` : 'No staff purchases yet', unconverted].filter(Boolean).join(' · ') },
             { Label: 'Staff orders', Value: orders.length, Icon: 'fa-solid fa-cart-shopping', Detail: `${open} open · ${overdue} overdue`, Tone: overdue > 0 ? 'warn' : 'none' },
             { Label: 'Active subs', Value: subscriptions.length, Icon: 'fa-solid fa-rotate' },
             { Label: 'Last staff order', Value: lastOrder ? FormatDateOnly(lastOrder) : '—', Icon: 'fa-solid fa-calendar-check' },
@@ -115,11 +125,11 @@ export class OrdersStaffContributor extends OrganizationStaffContributor {
     public async Load(request: OrganizationStaffRequest): Promise<StaffContribution> {
         const rv = request.Provider ? RunView.FromMetadataProvider(request.Provider) : new RunView();
         const ids = QuotedStaffIDs(request.Staff);
-        const [orders, subs] = await rv.RunViews([
+        const [orders, subs, profiles] = await rv.RunViews([
             {
                 EntityName: MJO_ENTITIES.OrderHeader,
                 ExtraFilter: `BillToPersonID IN (${ids}) AND Status <> 'Voided'`,
-                Fields: ['BillToPersonID', 'TotalGross', 'Balance', 'IsOverdue', 'OrderDate'],
+                Fields: ['BillToPersonID', 'TotalGross', 'Balance', 'IsOverdue', 'OrderDate', 'CompanyID', 'CurrencyCode', 'BookingExchangeRate'],
                 ResultType: 'simple',
             },
             {
@@ -128,12 +138,25 @@ export class OrdersStaffContributor extends OrganizationStaffContributor {
                 Fields: ['BeneficiaryPersonID'],
                 ResultType: 'simple',
             },
+            {
+                // Each selling company's functional currency: an order coded in it needs no rate.
+                EntityName: MJO_ACCOUNTING_ENTITIES.AccountingCompanyProfile,
+                Fields: ['ID', 'FunctionalCurrencyCode'],
+                ResultType: 'simple',
+            },
         ]);
         if (!orders.Success) throw new Error(orders.ErrorMessage || 'Could not read staff orders.');
         if (!subs.Success) throw new Error(subs.ErrorMessage || 'Could not read staff subscriptions.');
+        const functional = new Map(
+            ((profiles?.Success ? profiles.Results ?? [] : []) as Array<{ ID: string; FunctionalCurrencyCode: string | null }>).map((p) => [p.ID.toLowerCase(), p.FunctionalCurrencyCode]),
+        );
+        const rows = ((orders.Results ?? []) as Array<StaffOrderRow & { CompanyID?: string | null }>).map((o) => ({
+            ...o,
+            FunctionalCurrencyCode: o.CompanyID ? (functional.get(o.CompanyID.toLowerCase()) ?? null) : null,
+        }));
         return BuildStaffOrderContribution(
             request.Staff,
-            (orders.Results ?? []) as StaffOrderRow[],
+            rows,
             (subs.Results ?? []) as StaffSubscriptionRow[],
         );
     }

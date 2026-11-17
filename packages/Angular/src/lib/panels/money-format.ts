@@ -39,8 +39,14 @@ export interface MJOMoneyOptions {
      * a header trio that is all whole dollars.
      */
     Round?: boolean;
-    /** Default `'$'`. Currency is single-currency today; this is the seam. */
+    /** Default `'$'`. */
     Symbol?: string;
+    /**
+     * A foreign order's currency code (golive #492). When set, the amount is written with the code
+     * in place of the symbol, `AUD 13,230.00`, so it cannot be read as functional currency. Null or
+     * absent keeps the symbol, which is how functional-currency amounts have always printed.
+     */
+    Currency?: string | null;
 }
 
 /**
@@ -59,7 +65,7 @@ export interface MJOMoneyOptions {
 export function FormatMoney(value: number | null | undefined, options: MJOMoneyOptions = {}): string {
     if (value === null || value === undefined || Number.isNaN(value)) return '—';
 
-    const symbol = options.Symbol ?? '$';
+    const symbol = options.Currency ? `${options.Currency} ` : (options.Symbol ?? '$');
     const digits = options.Round ? 0 : 2;
     const zeroText = options.Zero ?? `${symbol}${digits === 0 ? '0' : '0.00'}`;
     if (value === 0) return zeroText;

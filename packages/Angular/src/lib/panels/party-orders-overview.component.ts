@@ -14,7 +14,7 @@ import {
 import { SharedGenericModule } from '@memberjunction/ng-shared-generic';
 import { MJO_ENTITIES } from '../data/entity-names';
 import { FormatDate, FormatMoney } from './money-format';
-import { Today, ToISODate } from '@mj-biz-apps/orders-entities';
+import { ForeignCurrencyOf, SumInFunctional, ToFunctionalAmount, Today, ToISODate, UnconvertedNote } from '@mj-biz-apps/orders-entities';
 import type { PartyKind } from '../form-panels/party-order-stats';
 
 interface OrderRow {
@@ -27,6 +27,16 @@ interface OrderRow {
     TotalGross: number;
     AmountPaid: number;
     Balance: number;
+    /**
+     * The order's currency when it is not its company's functional currency, as the overview query
+     * returns it; null for a functional-currency order (golive #492).
+     */
+    ForeignCurrencyCode?: string | null;
+    /** `TotalGross` in the functional currency; null for a foreign order with no exchange rate yet. */
+    FunctionalTotalGross?: number | null;
+    /** On a fallback read, the raw columns the currency is derived from. */
+    CurrencyCode?: string | null;
+    BookingExchangeRate?: number | null;
 }
 
 interface SubRow {
@@ -120,6 +130,9 @@ interface TimelineItem {
                             <div class="mjo-chart__metric">
                                 <span class="mjo-chart__metric-label">Lifetime Value</span>
                                 <span class="mjo-chart__metric-val mjo-chart__metric-val--success">{{ FormatCurrency(LifetimeValue) }}</span>
+                                @if (UnconvertedLabel) {
+                                    <span class="mjo-chart__metric-label">{{ UnconvertedLabel }}</span>
+                                }
                             </div>
                             <div class="mjo-chart__metric">
                                 <span class="mjo-chart__metric-label">Payment Terms</span>
@@ -213,7 +226,7 @@ interface TimelineItem {
                                             <tr mjRecordLink [EntityName]="OrderHeaderEntity" [RecordID]="ord.ID" [DisplayName]="ord.OrderNumber" [HandleClick]="false" (click)="OnOrderClick(ord.ID)">
                                                 <td class="mjo-table__order-num" [title]="ord.OrderNumber">{{ ord.OrderNumber }}</td>
                                                 <td>{{ FormatDate(ord.OrderDate) }}</td>
-                                                <td class="mjo-table__amount">{{ FormatCurrency(ord.TotalGross) }}</td>
+                                                <td class="mjo-table__amount">{{ FormatOrderAmount(ord, ord.TotalGross) }}</td>
                                                 <td>
                                                     <span [class]="GetPaymentBadgeClass(GetPaymentStatus(ord))">
                                                         {{ GetPaymentStatus(ord) }}
@@ -732,7 +745,10 @@ export class PartyOrdersOverviewComponent implements OnInit {
     public Subscriptions: SubRow[] = [];
     public SpendMonths: MonthSpend[] = [];
     public AvgOrderValue = 0;
+    /** In the functional currency, as is {@link AvgOrderValue} (golive #492). */
     public LifetimeValue = 0;
+    /** Foreign orders left out of the lifetime figures because they have no exchange rate yet. */
+    public UnconvertedLabel: string | null = null;
     public Timeline: TimelineItem[] = [];
 
     public async ngOnInit(): Promise<void> {
@@ -770,6 +786,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
 
                     this.LifetimeValue = Number(getField('LifetimeValue')) || 0;
                     this.AvgOrderValue = Number(getField('AvgOrderValue')) || 0;
+                    this.UnconvertedLabel = UnconvertedNote({ Unconverted: Number(getField('UnconvertedOrderCount')) || 0, UnconvertedCurrencies: [] });
 
                     // Parse Recent Orders JSON
                     this.Orders = this.ParseJsonArray<OrderRow>(getField('RecentOrdersJson'));
@@ -825,11 +842,15 @@ export class PartyOrdersOverviewComponent implements OnInit {
             ]);
 
             if (ordersRes.Success && ordersRes.Results) {
-                this.Orders = ordersRes.Results;
-                let total = 0;
-                this.Orders.forEach(o => { total += Number(o.TotalGross) || 0; });
-                this.LifetimeValue = total;
-                this.AvgOrderValue = this.Orders.length > 0 ? total / this.Orders.length : 0;
+                this.Orders = ordersRes.Results.map((o) => ({ ...o, ForeignCurrencyCode: ForeignCurrencyOf(o), FunctionalTotalGross: ToFunctionalAmount(o.TotalGross, o) }));
+                // Functional currency at each order's booking rate (golive #492). This fallback does not
+                // read the company's functional currency, so an order coded in it without a rate is
+                // left out and named rather than guessed.
+                const total = SumInFunctional(this.Orders, (o) => Number(o.TotalGross) || 0);
+                const converted = this.Orders.length - total.Unconverted;
+                this.LifetimeValue = total.Total;
+                this.AvgOrderValue = converted > 0 ? total.Total / converted : 0;
+                this.UnconvertedLabel = UnconvertedNote(total);
             }
 
             if (subsRes.Success && subsRes.Results) {
@@ -902,7 +923,8 @@ export class PartyOrdersOverviewComponent implements OnInit {
                 if (!key) return;
                 const found = monthMap.get(key);
                 if (found) {
-                    const amt = Number(o.TotalGross) || 0;
+                    // The chart is in the functional currency (golive #492); an order with no rate adds nothing.
+                    const amt = Number(o.FunctionalTotalGross ?? (o.ForeignCurrencyCode ? 0 : o.TotalGross)) || 0;
                     if (found.Amount < amt) {
                         found.Amount = amt;
                     }
@@ -936,7 +958,7 @@ export class PartyOrdersOverviewComponent implements OnInit {
                 const status = ord.Status || 'Confirmed';
                 list.push({
                     Title: `Order (${status})`,
-                    Subtitle: `${this.FormatCurrency(ord.TotalGross)} • ${this.GetPaymentStatus(ord)}`,
+                    Subtitle: `${this.FormatOrderAmount(ord, ord.TotalGross)} • ${this.GetPaymentStatus(ord)}`,
                     TimeAgo: this.FormatDate(ord.OrderDate),
                     Icon: 'fa-solid fa-cart-shopping',
                     Tone: 'success',
@@ -1024,6 +1046,12 @@ export class PartyOrdersOverviewComponent implements OnInit {
 
     public FormatCurrency(val: number | null | undefined): string {
         return FormatMoney(val || 0, { Round: true, Zero: '$0' });
+    }
+
+    /** One order's amount, with its currency code when it is not the functional currency (golive #492). */
+    public FormatOrderAmount(ord: OrderRow, val: number | null | undefined): string {
+        const currency = ord.ForeignCurrencyCode ?? null;
+        return FormatMoney(val || 0, { Round: true, Currency: currency, Zero: currency ? `${currency} 0` : '$0' });
     }
 
     public FormatDate(d: Date | string | null | undefined): string {

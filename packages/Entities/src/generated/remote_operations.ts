@@ -1477,9 +1477,20 @@ export interface OverdueWorklistRow {
     CustomerName: string;
     BillToOrganizationID?: string | null;
     BillToPersonID?: string | null;
+    /** `TotalGross`, `AmountPaid` and `Balance` are in the order's own currency, {@link CurrencyCode}. */
     TotalGross: number;
     AmountPaid: number;
     Balance: number;
+    /**
+     * The order's contract currency when it is not its selling company's functional currency;
+     * null when the order is in the functional currency (golive #492).
+     */
+    CurrencyCode?: string | null;
+    /**
+     * `Balance` in the functional currency at the order's booking rate. Null for a foreign order
+     * with no rate yet, which the totals and buckets leave out (golive #492).
+     */
+    FunctionalBalance: number | null;
     Description?: string | null;
     SalesRepUserID?: string | null;
     SalesRepName?: string | null;
@@ -1487,7 +1498,8 @@ export interface OverdueWorklistRow {
     OriginChannel?: string | null;
     /**
      * Credit this customer already holds, as a positive magnitude, summed from their
-     * negative-balance orders. Offering it is almost always the cheapest collection.
+     * negative-balance orders in the functional currency. Offering it is almost always the
+     * cheapest collection.
      */
     AvailableCredit: number;
     /**
@@ -1505,12 +1517,14 @@ export interface OrdersGetOverdueWorklistOutput {
     Message?: string;
     /** Oldest first — the order a person should work them in. */
     Rows: OverdueWorklistRow[];
-    /** Totals over the returned set, for the header chips. */
+    /** Totals over the returned set, for the header chips, in the functional currency (golive #492). */
     TotalOverdue: number;
+    /** Rows left out of `TotalOverdue` and `Buckets` because they have no exchange rate yet. */
+    UnconvertedCount: number;
     RowCount: number;
     /** True when `MaxCount` clipped the result, so the UI can say so rather than imply completeness. */
     Truncated: boolean;
-    /** Aging buckets over the returned set. */
+    /** Aging buckets over the returned set, in the functional currency. */
     Buckets: { Current: number; Days1To30: number; Days31To60: number; Days61Plus: number };
 }
 

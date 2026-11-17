@@ -14,6 +14,11 @@ import { type ViewGridState } from '@memberjunction/ng-entity-viewer';
  * raw number. Declaring the state here formats every money column the same way, regardless of
  * field name.
  *
+ * `Currency` sits beside the money columns (golive #492): blank for an order in its company's
+ * functional currency, the contract currency's code otherwise. The grid formats a column with one
+ * currency for every row, so Total and Balance keep the functional symbol and the code beside them
+ * says which rows are in another currency.
+ *
  * Mirrors the shared "Orders: Working" saved view in `metadata/user-views`; keep the two in step.
  */
 export const MJO_ORDER_HEADER_GRID_STATE: ViewGridState = {
@@ -44,6 +49,7 @@ export const MJO_ORDER_HEADER_GRID_STATE: ViewGridState = {
                 conditionalRules: [{ condition: 'greaterThan', value: 0, style: { color: '#b45309', bold: true } }],
             },
         },
-        { Name: 'Company', DisplayName: 'Company', orderIndex: 7, width: 140 },
+        { Name: 'CurrencyCode', DisplayName: 'Currency', orderIndex: 7, width: 90 },
+        { Name: 'Company', DisplayName: 'Company', orderIndex: 8, width: 140 },
     ],
 };

@@ -1,11 +1,14 @@
 -- Single-query party orders overview bundle for Person and Organization forms (PostgreSQL).
+-- Money is in the selling company's FUNCTIONAL currency (golive #492): a foreign order converts at its
+-- BookingExchangeRate; one with no rate yet is left out of the sums and counted in UnconvertedOrderCount.
 SELECT
     COALESCE(o.OrderCount, 0)::int AS "OrderCount",
     COALESCE(o.OpenCount, 0)::int AS "OpenCount",
     COALESCE(o.OverdueCount, 0)::int AS "OverdueCount",
     COALESCE(o.LifetimeValue, 0)::numeric AS "LifetimeValue",
-    CASE 
-        WHEN COALESCE(o.OrderCount, 0) > 0 THEN (COALESCE(o.LifetimeValue, 0) / o.OrderCount)::numeric
+    COALESCE(o.UnconvertedOrderCount, 0)::int AS "UnconvertedOrderCount",
+    CASE
+        WHEN COALESCE(o.ConvertedOrderCount, 0) > 0 THEN (COALESCE(o.LifetimeValue, 0) / o.ConvertedOrderCount)::numeric
         ELSE 0::numeric
     END AS "AvgOrderValue",
     o.FirstOrderDate AS "FirstOrderDate",
@@ -25,11 +28,16 @@ SELECT
             'IsOverdue', h.IsOverdue,
             'TotalGross', COALESCE(h.TotalGross, 0),
             'AmountPaid', COALESCE(h.AmountPaid, 0),
-            'Balance', COALESCE(h.Balance, 0)
+            'Balance', COALESCE(h.Balance, 0),
+            'ForeignCurrencyCode', h.ForeignCurrencyCode,
+            'FunctionalTotalGross', ROUND(COALESCE(h.TotalGross, 0) * h.FunctionalRate, 2)
         ))::text
         FROM (
-            SELECT h.*
+            SELECT h.*,
+                CASE WHEN h.CurrencyCode IS NULL OR h.CurrencyCode = acp.FunctionalCurrencyCode THEN NULL ELSE h.CurrencyCode END AS ForeignCurrencyCode,
+                CASE WHEN h.CurrencyCode IS NULL OR h.CurrencyCode = acp.FunctionalCurrencyCode THEN 1::numeric ELSE h.BookingExchangeRate END AS FunctionalRate
             FROM __mj_bizappsorders.vwOrderHeaders h
+            LEFT JOIN __mj_bizappsaccounting.AccountingCompanyProfile acp ON acp.ID = h.CompanyID
             WHERE h.Status <> 'Voided'
               {% if PartyKind == "person" %}
               AND h.BillToPersonID = {{ PartyID | sqlString }}
@@ -84,8 +92,9 @@ SELECT
             UNION ALL SELECT 5, to_char(CURRENT_TIMESTAMP - interval '5 month', 'YYYY-MM'), to_char(CURRENT_TIMESTAMP - interval '5 month', 'FMMonth YYYY'), to_char(CURRENT_TIMESTAMP - interval '5 month', 'Mon')
         ) m
         LEFT JOIN (
-            SELECT to_char(h.OrderDate, 'YYYY-MM') AS MonthKey, SUM(COALESCE(h.TotalGross, 0)) AS Amount
+            SELECT to_char(h.OrderDate, 'YYYY-MM') AS MonthKey, ROUND(SUM(COALESCE(h.TotalGross, 0) * (CASE WHEN h.CurrencyCode IS NULL OR h.CurrencyCode = acp.FunctionalCurrencyCode THEN 1::numeric ELSE h.BookingExchangeRate END)), 2) AS Amount
             FROM __mj_bizappsorders.vwOrderHeaders h
+            LEFT JOIN __mj_bizappsaccounting.AccountingCompanyProfile acp ON acp.ID = h.CompanyID
             WHERE h.Status <> 'Voided'
               {% if PartyKind == "person" %}
               AND h.BillToPersonID = {{ PartyID | sqlString }}
@@ -102,9 +111,12 @@ LEFT JOIN LATERAL (
         COUNT(*)::int AS OrderCount,
         SUM(CASE WHEN COALESCE(h.IsOverdue, false) OR COALESCE(h.Balance, 0) > 0 THEN 1 ELSE 0 END)::int AS OpenCount,
         SUM(CASE WHEN COALESCE(h.IsOverdue, false) THEN 1 ELSE 0 END)::int AS OverdueCount,
-        SUM(COALESCE(h.TotalGross, 0))::numeric AS LifetimeValue,
+        ROUND(SUM(COALESCE(h.TotalGross, 0) * (CASE WHEN h.CurrencyCode IS NULL OR h.CurrencyCode = acp.FunctionalCurrencyCode THEN 1::numeric ELSE h.BookingExchangeRate END)), 2)::numeric AS LifetimeValue,
+        SUM(CASE WHEN (CASE WHEN h.CurrencyCode IS NULL OR h.CurrencyCode = acp.FunctionalCurrencyCode THEN 1::numeric ELSE h.BookingExchangeRate END) IS NULL THEN 1 ELSE 0 END)::int AS UnconvertedOrderCount,
+        COUNT(CASE WHEN h.CurrencyCode IS NULL OR h.CurrencyCode = acp.FunctionalCurrencyCode THEN 1::numeric ELSE h.BookingExchangeRate END)::int AS ConvertedOrderCount,
         MIN(h.OrderDate) AS FirstOrderDate
     FROM __mj_bizappsorders.vwOrderHeaders h
+    LEFT JOIN __mj_bizappsaccounting.AccountingCompanyProfile acp ON acp.ID = h.CompanyID
     WHERE h.Status <> 'Voided'
       {% if PartyKind == "person" %}
       AND h.BillToPersonID = {{ PartyID | sqlString }}
