@@ -108,6 +108,7 @@ import { MergeLineDimensions } from './LineDimensionMerge.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { CustomerPart, OrderCustomerName } from './JournalEntryCustomer.js';
 import type { InstalmentLineFacts } from './InstalmentInvoiceEntry.js';
+import { ConvertDraftsToFunctional, PostingCurrencyOf, type PostingCurrency } from './OrderCurrencyPosting.js';
 
 /** Mirrors accounting's `JournalEntryLineDraft`. */
 export interface JELineDraft {
@@ -115,6 +116,15 @@ export interface JELineDraft {
     DebitAmount?: number;
     CreditAmount?: number;
     Description?: string;
+    /**
+     * Set only on a line converted from an order in another currency (./OrderCurrencyPosting.ts):
+     * the amount in the order's currency, on the same side, and the booking rate it was converted at.
+     * `DebitAmount` / `CreditAmount` are then the functional amounts.
+     */
+    OriginalCurrencyCode?: string;
+    OriginalDebitAmount?: number;
+    OriginalCreditAmount?: number;
+    ExchangeRateUsed?: number;
     Dimensions?: Array<{ DimensionID: string; DimensionValueID: string }>;
 }
 
@@ -493,6 +503,10 @@ export class OrderJournalEntryFactory {
             }
         }
 
+        // AN ORDER IN ANOTHER CURRENCY (golive #492) is built in that currency, like any order, and each
+        // line's entries are converted at the order's booking rate as the last step of building them.
+        const currency = PostingCurrencyOf(order);
+
         const drafts: OrderLineDraft[] = [];
         for (const line of lines) {
             this._resolver.TakeResolved();
@@ -501,6 +515,7 @@ export class OrderJournalEntryFactory {
                 scheduledCompanies,
                 termsByLine?.get(line.ID), recognitionMonthsByLine?.get(line.ID),
                 creditMemoByLine?.get(String(line.ID)),
+                currency,
             );
             // A LINK THAT REQUIRES A DIMENSION IS OBEYED HERE (#417), on the finished lines, after
             // Dimension Defaults, derived tags and the line's own tag have all been merged.
@@ -579,6 +594,8 @@ export class OrderJournalEntryFactory {
         recognitionMonths?: number,
         /** Present when this line reverses a line billed by instalment (D92 §6). */
         creditMemo?: CreditMemoForLine,
+        /** The order's currency and booking rate; null when the order is in functional currency. */
+        currency: PostingCurrency | null = null,
     ): Promise<OrderLineDraft[]> {
         const product = products.get(line.ProductID.toLowerCase());
         if (!product) {
@@ -1036,7 +1053,35 @@ export class OrderJournalEntryFactory {
             }
         }
 
-        return out;
+        return this.toFunctional(out, currency, revRec.IsDeferred && !isGiftCard ? bookingCreditAccount : null, order, line);
+    }
+
+    /**
+     * Convert one line's drafts from the order's currency (golive #492); unchanged for a functional order.
+     *
+     * The line's Deferred Revenue is a running balance: booking credits it and every staged release
+     * debits it, so those lines convert cumulatively and Deferred empties exactly in functional
+     * currency when it empties in the order's (see ./OrderCurrencyPosting.ts). Every other line
+     * converts on its own, and the rounding cent of an entry goes on one of those.
+     */
+    private toFunctional(
+        drafts: OrderLineDraft[],
+        currency: PostingCurrency | null,
+        deferredAccountID: string | null,
+        order: mjBizAppsOrdersOrderHeaderEntity,
+        line: mjBizAppsOrdersOrderLineEntity,
+    ): OrderLineDraft[] {
+        if (!currency || drafts.length === 0) return drafts;
+        const deferred = deferredAccountID?.toLowerCase() ?? null;
+        const converted = ConvertDraftsToFunctional(
+            drafts.map((d) => d.Draft),
+            currency,
+            {
+                RunningKey: (l) => (deferred && l.GLAccountID.toLowerCase() === deferred ? `deferred:${line.ID}` : null),
+                Label: `Order ${order.OrderNumber} line ${line.LineNumber}`,
+            },
+        );
+        return drafts.map((d, i) => ({ ...d, Draft: converted[i] }));
     }
 
     /**
@@ -1214,9 +1259,11 @@ export class OrderJournalEntryFactory {
         const discountShare = money(discountThrough(money(recognizedBefore + delta)) - discountThrough(recognizedBefore));
 
         const debits: JELineDraft[] = [];
+        let deferredAccountID: string | null = null;
         if (legs.Deferred !== 0) {
+            deferredAccountID = await resolve(GL_ROLE.DeferredRevenue);
             debits.push({
-                GLAccountID: await resolve(GL_ROLE.DeferredRevenue),
+                GLAccountID: deferredAccountID,
                 DebitAmount: Math.abs(legs.Deferred),
                 Description: `Release deferred — ${product.Name}`,
                 Dimensions: lineDims,
@@ -1262,7 +1309,7 @@ export class OrderJournalEntryFactory {
         this.assertBalanced(lines, order, line, 'progress recognition');
         RefuseUntaggedLines(`Order ${order.OrderNumber} line ${line.LineNumber}`, this._resolver.TakeResolved(), lines);
 
-        return {
+        const draft: JEDraft = {
             EffectiveDate: measurementDate,
             EntryType: 'RevenueRecognition',
             Description:
@@ -1272,6 +1319,15 @@ export class OrderJournalEntryFactory {
             LinkedRecordID: line.ID,
             Lines: lines,
         };
+        // AN ORDER IN ANOTHER CURRENCY (golive #492) releases Deferred at its booking rate, cumulatively
+        // from where the line's Deferred stands (billed less recognised, both signed by the line), so the
+        // attestation that reaches 100% empties it in functional currency too.
+        const deferred = deferredAccountID?.toLowerCase() ?? null;
+        return ConvertDraftsToFunctional([draft], PostingCurrencyOf(order), {
+            RunningKey: (l) => (deferred && l.GLAccountID.toLowerCase() === deferred ? 'deferred' : null),
+            RunningStart: () => Number(line.BilledToDate ?? 0) - Number(line.RecognizedToDate ?? 0),
+            Label: `Order ${order.OrderNumber} line ${line.LineNumber}`,
+        })[0];
     }
 
     /** Resolve the driver through MJ's ClassFactory so subclasses registered on the same key win. */

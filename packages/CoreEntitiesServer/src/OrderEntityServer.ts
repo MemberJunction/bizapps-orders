@@ -92,7 +92,13 @@ import { ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js'
 import { IsCancellationReversal, IsGatewayRenewal, IsMoneyOnlyReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
-import { ResolveBookingRate, type BookingRateDecision } from './OrderBookingRate.js';
+import {
+    DecideReversalCurrency,
+    LoadReversalOrigins,
+    ResolveBookingRate,
+    type BookingRateDecision,
+    type ReversalCurrencyDecision,
+} from './OrderBookingRate.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
@@ -1352,6 +1358,32 @@ export class OrderEntityServer extends OrderHeaderEntity {
     private async passesBookingRate(): Promise<boolean> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const user = this.ContextCurrentUser as UserInfo;
+
+        // A REVERSAL books at the rate of what it reverses (a return, a credit memo, a gateway refund's
+        // credit), never at today's: see DecideReversalCurrency.
+        const reversed = this.Lines.Items.map((l) => l.ReversesOrderLineID).filter((id): id is string => !!id);
+        if (reversed.length) {
+            let inherited: ReversalCurrencyDecision;
+            try {
+                inherited = DecideReversalCurrency(
+                    { OrderNumber: this.OrderNumber ?? null, CurrencyCode: this.CurrencyCode ?? null },
+                    await LoadReversalOrigins(reversed, provider, user),
+                );
+            } catch (err) {
+                inherited = { Kind: 'Refused', Message: `Order ${this.OrderNumber ?? ''} was not confirmed: ${err instanceof Error ? err.message : String(err)}` };
+            }
+            if (inherited.Kind === 'Refused') {
+                this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(inherited.Message)));
+                return false;
+            }
+            if (inherited.Kind === 'Inherit') {
+                if ((this.CurrencyCode ?? null) !== inherited.CurrencyCode) this.CurrencyCode = inherited.CurrencyCode;
+                this.BookingExchangeRate = inherited.Rate;
+                this.BookingRateDate = inherited.RateDate ? new Date(`${inherited.RateDate}T00:00:00Z`) : null;
+                return true;
+            }
+        }
+
         let decision: BookingRateDecision;
         try {
             decision = await ResolveBookingRate(

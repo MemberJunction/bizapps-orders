@@ -1191,9 +1191,15 @@ export {
     ACCOUNTING_COMPANY_PROFILE_ENTITY,
     CURRENCY_SPOT_RATE_ENTITY,
     DecideBookingRate,
+    DecideReversalCurrency,
     LoadFunctionalCurrency,
+    LoadPostingCurrency,
+    LoadReversalOrigins,
     LoadSpotRate,
     NormalizeCurrencyCode,
     ResolveBookingRate,
 } from './OrderBookingRate.js';
-export type { BookingRateDecision, SpotRateFacts } from './OrderBookingRate.js';
+export type { BookingRateDecision, ReversalCurrencyDecision, ReversalOriginCurrency, SpotRateFacts } from './OrderBookingRate.js';
+// Posting an order in a foreign currency at its booking rate (golive #492).
+export { ConvertDraftsToFunctional, IsConverted, PostingCurrencyOf, ToFunctional } from './OrderCurrencyPosting.js';
+export type { ConvertOptions, PostingCurrency } from './OrderCurrencyPosting.js';

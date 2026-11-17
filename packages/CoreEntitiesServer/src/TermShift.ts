@@ -40,6 +40,9 @@ import type {
     mjBizAppsOrdersSubscriptionEventEntity,
 } from '@mj-biz-apps/orders-entities';
 import { EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
+import { LoadPostingCurrency } from './OrderBookingRate.js';
+import { ConvertDraftsToFunctional } from './OrderCurrencyPosting.js';
+import { DeferredRunningKey } from './TermExtensionPlan.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import type { ApprovalTaskContext } from './ConcessionApprovalTask.js';
 import { ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
@@ -244,7 +247,13 @@ export async function ApplyTermShift(concession: ApprovedShiftConcession, ctx: A
     }
 
     const plan = checked.Plan;
-    const drafts = [...plan.Offsets, ...(plan.Correction ? [plan.Correction] : []), ...plan.Schedule];
+    // An order in another currency (golive #492): the offsets mirror posted lines as posted, and the
+    // correction and new schedule convert at the order's booking rate.
+    const drafts = ConvertDraftsToFunctional(
+        [...plan.Offsets, ...(plan.Correction ? [plan.Correction] : []), ...plan.Schedule],
+        await LoadPostingCurrency(checked.OrderHeaderID, ctx.Provider, ctx.User),
+        { RunningKey: DeferredRunningKey(plan.Targets), Label: `The move of ${label(checked)}` },
+    );
     const written = drafts.length
         ? await SubmitJournalEntryDrafts(drafts, `the move of ${label(checked)}`, ctx.Provider, ctx.User)
         : { Success: true, Results: [] };

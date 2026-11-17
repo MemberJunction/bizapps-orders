@@ -50,6 +50,9 @@
 import { RunView, type EntitySaveOptions, type IRunViewProvider } from '@memberjunction/core';
 import type { mjBizAppsOrdersOrderLineEntity, mjBizAppsOrdersSubscriptionEventEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
+import { LoadPostingCurrency } from './OrderBookingRate.js';
+import { ConvertDraftsToFunctional } from './OrderCurrencyPosting.js';
+import { DeferredRunningKey } from './TermExtensionPlan.js';
 import {
     CreditMemoEntry,
     CreditMemoNumber,
@@ -416,7 +419,13 @@ export async function ApplyAmountChange(concession: ApprovedAmountChange, ctx: A
     }
 
     const memoEntry = concession.CreditMemoNumber && checked.CreditMemo.Gross > 0 ? await creditMemoDraft(checked, concession.CreditMemoNumber, ctx) : null;
-    const drafts = [...(plan.CatchUpEntry ? [plan.CatchUpEntry] : []), ...plan.Offsets, ...plan.Respread, ...(memoEntry ? [memoEntry] : [])];
+    // An order in another currency (golive #492): the offsets mirror posted lines as posted, and the
+    // catch-up, new schedule and credit memo convert at the order's booking rate.
+    const drafts = ConvertDraftsToFunctional(
+        [...(plan.CatchUpEntry ? [plan.CatchUpEntry] : []), ...plan.Offsets, ...plan.Respread, ...(memoEntry ? [memoEntry] : [])],
+        await LoadPostingCurrency(checked.OrderHeaderID, ctx.Provider, ctx.User),
+        { RunningKey: DeferredRunningKey(plan.Targets), Label: `The amount change of ${changeLabel(checked)}` },
+    );
     const written = drafts.length
         ? await SubmitJournalEntryDrafts(drafts, `the amount change of ${changeLabel(checked)}`, ctx.Provider, ctx.User)
         : { Success: true, Results: [] };

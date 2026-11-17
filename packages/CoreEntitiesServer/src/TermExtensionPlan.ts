@@ -34,13 +34,28 @@ export interface StagedDimension {
     DimensionValueID: string;
 }
 
-/** One line of a staged recognition entry, as stored. */
+/**
+ * One line of a staged recognition entry, as stored.
+ *
+ * A line posted from an order in another currency (golive #492) is read in THAT currency:
+ * `DebitAmount` / `CreditAmount` are its original amounts, so a plan's arithmetic runs in the same
+ * currency as the term's amount, and `Posted` keeps what the ledger holds in functional currency.
+ */
 export interface StagedLine {
     GLAccountID: string;
     DebitAmount: number | null;
     CreditAmount: number | null;
     Description: string | null;
     Dimensions: StagedDimension[];
+    Posted?: StagedPostedAmounts;
+}
+
+/** The functional amounts and conversion of a staged line posted from another currency. */
+export interface StagedPostedAmounts {
+    DebitAmount: number | null;
+    CreditAmount: number | null;
+    OriginalCurrencyCode: string;
+    ExchangeRateUsed: number;
 }
 
 /** A staged `RevenueRecognition` entry linked to the term, as stored. */
@@ -203,15 +218,45 @@ export function SideKey(line: StagedLine): string {
     return `${line.GLAccountID.toLowerCase()}|${dims}`;
 }
 
-/** A staged line with debit and credit swapped: the line that cancels it. */
+/**
+ * A staged line with debit and credit swapped: the line that cancels it.
+ *
+ * A line posted from another currency is mirrored as posted, functional and original amounts both,
+ * so the pair nets to zero in the ledger exactly; it is never converted again.
+ */
 export function MirrorLine(line: StagedLine): JELineDraft {
     const debit = Number(line.CreditAmount ?? 0);
     const credit = Number(line.DebitAmount ?? 0);
-    return {
+    const posted = line.Posted;
+    const common = {
         GLAccountID: line.GLAccountID,
-        ...(debit > 0 ? { DebitAmount: debit } : {}),
-        ...(credit > 0 ? { CreditAmount: credit } : {}),
         ...(line.Description ? { Description: line.Description } : {}),
         ...(line.Dimensions.length ? { Dimensions: line.Dimensions } : {}),
     };
+    if (!posted) {
+        return { ...common, ...(debit > 0 ? { DebitAmount: debit } : {}), ...(credit > 0 ? { CreditAmount: credit } : {}) };
+    }
+    const postedDebit = Number(posted.CreditAmount ?? 0);
+    const postedCredit = Number(posted.DebitAmount ?? 0);
+    return {
+        ...common,
+        ...(postedDebit > 0 ? { DebitAmount: postedDebit } : {}),
+        ...(postedCredit > 0 ? { CreditAmount: postedCredit } : {}),
+        OriginalCurrencyCode: posted.OriginalCurrencyCode,
+        ...(debit > 0 ? { OriginalDebitAmount: debit } : {}),
+        ...(credit > 0 ? { OriginalCreditAmount: credit } : {}),
+        ExchangeRateUsed: posted.ExchangeRateUsed,
+    };
+}
+
+/**
+ * The running-balance key for converting a plan's new entries from the order's currency (golive #492):
+ * the term's deferred account, as its staged entries release it, converts cumulatively so the new
+ * schedule's functional amounts add up the way its order-currency amounts do. Null for every line
+ * when the entries do not net to one release.
+ */
+export function DeferredRunningKey(entries: StagedEntry[]): (line: JELineDraft) => string | null {
+    const release = entries.length ? NetRelease(entries) : null;
+    const deferred = release && typeof release !== 'string' && release.Amount !== 0 ? release.Debit.GLAccountID.toLowerCase() : null;
+    return (line) => (deferred && line.GLAccountID.toLowerCase() === deferred ? 'deferred' : null);
 }

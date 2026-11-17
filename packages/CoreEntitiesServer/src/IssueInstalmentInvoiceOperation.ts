@@ -49,6 +49,7 @@ import {
 import { ReduceLineAmounts } from './AmountChangePlan.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { BuildGLAccountResolver, EntityIDFor } from './AccountingBridge.js';
+import { PostingCurrencyOf } from './OrderCurrencyPosting.js';
 import { EmitInstalmentInvoiceEntry, type InstalmentBilledPart, type InstalmentLineFacts, type InstalmentSibling } from './InstalmentInvoiceEntry.js';
 import { BilledSoFar, ReadInstalmentLineBillings, RecordInstalmentLineBillings } from './InstalmentBilledSoFar.js';
 import { BeginInstalmentIssue, EndInstalmentIssue } from './instalmentIssueGuard.js';
@@ -130,8 +131,20 @@ export async function IssueInstalment(
         const row = rowResult.Results?.[0];
         if (!row) return refuse(`No instalment with ID ${scheduleID}.`);
 
-        const orderResult = await rv.RunView<{ ID: string; OrderNumber: string; Status: string; CompanyID: string }>(
-            { EntityName: ORDER_HEADER_ENTITY, ExtraFilter: `ID = '${RequireUUID(row.OrderHeaderID, 'OrderHeaderID')}'`, Fields: ['ID', 'OrderNumber', 'Status', 'CompanyID'], ResultType: 'simple' },
+        const orderResult = await rv.RunView<{
+            ID: string;
+            OrderNumber: string;
+            Status: string;
+            CompanyID: string;
+            CurrencyCode: string | null;
+            BookingExchangeRate: number | null;
+        }>(
+            {
+                EntityName: ORDER_HEADER_ENTITY,
+                ExtraFilter: `ID = '${RequireUUID(row.OrderHeaderID, 'OrderHeaderID')}'`,
+                Fields: ['ID', 'OrderNumber', 'Status', 'CompanyID', 'CurrencyCode', 'BookingExchangeRate'],
+                ResultType: 'simple',
+            },
             user,
         );
         const order = orderResult.Results?.[0];
@@ -357,6 +370,7 @@ export async function IssueInstalment(
                         Siblings: billing.Siblings,
                         Lines: billing.Lines,
                         BilledSoFar: billing.BilledSoFar,
+                        Currency: PostingCurrencyOf(order),
                     },
                     provider,
                     user,

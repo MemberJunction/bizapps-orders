@@ -19,7 +19,10 @@
 import { RunView, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import { EscapeSQLString } from '@memberjunction/global';
 
+import { PostingCurrencyOf, type PostingCurrency } from './OrderCurrencyPosting.js';
 import { RequireUUID } from './sql-guards.js';
+
+const ORDER_HEADER_ENTITY_NAME = 'MJ_BizApps_Orders: Order Headers';
 
 export const ACCOUNTING_COMPANY_PROFILE_ENTITY = 'MJ_BizApps_Accounting: Accounting Company Profiles';
 export const CURRENCY_SPOT_RATE_ENTITY = 'MJ_BizApps_Accounting: Currency Spot Rates';
@@ -151,4 +154,136 @@ export async function ResolveBookingRate(
         ConfirmDay: input.ConfirmDay,
         SpotRate: spotRate,
     });
+}
+
+/**
+ * The posting currency of a booked order: its currency and booking rate, or null for an order in
+ * functional currency. Read by the acts that post against an order after it was booked (term moves,
+ * amount changes, instalment invoices), which convert at the rate its confirm stored.
+ */
+export async function LoadPostingCurrency(orderHeaderID: string, provider: IMetadataProvider, user: UserInfo): Promise<PostingCurrency | null> {
+    const result = await RunView.FromMetadataProvider(provider).RunView<{ CurrencyCode: string | null; BookingExchangeRate: number | null }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY_NAME,
+            ExtraFilter: `ID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
+            Fields: ['CurrencyCode', 'BookingExchangeRate'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!result.Success) throw new Error(`Could not read the order's currency: ${result.ErrorMessage ?? 'unknown error'}`);
+    const row = result.Results?.[0];
+    if (!row) throw new Error(`Order ${orderHeaderID} was not found, so its currency cannot be read.`);
+    return PostingCurrencyOf(row);
+}
+
+// ─── Reversals keep the currency and rate of what they reverse ─────────────────────────────────
+
+/** The currency facts of an order a reversal line points back to. */
+export interface ReversalOriginCurrency {
+    OrderNumber: string | null;
+    CurrencyCode: string | null;
+    BookingExchangeRate: number | null;
+    /** `YYYY-MM-DD`, or null with no rate. */
+    BookingRateDate: string | null;
+}
+
+export type ReversalCurrencyDecision =
+    /** No line reverses anything: the order takes its own rate. */
+    | { Kind: 'None' }
+    | { Kind: 'Inherit'; CurrencyCode: string | null; Rate: number | null; RateDate: string | null }
+    | { Kind: 'Refused'; Message: string };
+
+/**
+ * The currency and booking rate of an order whose lines reverse lines of other orders (a return, a
+ * credit memo, a gateway refund's credit).
+ *
+ * A reversal gives back what the origin booked, so it is in the origin's currency at the origin's
+ * rate: the mirrored entries then take back exactly the functional amounts the origin posted, and
+ * the credit memo prints in the currency the customer was invoiced in. Reading today's spot rate
+ * instead would book the return at a different value than the sale, with nothing to say why.
+ *
+ * Refused when the order states another currency than its origin's, or when its lines reverse
+ * orders in different currencies or at different rates: one order has one rate.
+ */
+export function DecideReversalCurrency(
+    order: { OrderNumber: string | null; CurrencyCode: string | null },
+    origins: ReversalOriginCurrency[],
+): ReversalCurrencyDecision {
+    if (origins.length === 0) return { Kind: 'None' };
+    const label = `Order ${order.OrderNumber ?? ''}`.trimEnd();
+    const describe = (o: ReversalOriginCurrency) =>
+        o.BookingExchangeRate == null
+            ? `${NormalizeCurrencyCode(o.CurrencyCode) ?? 'the functional currency'}`
+            : `${NormalizeCurrencyCode(o.CurrencyCode)} at ${Number(o.BookingExchangeRate)}`;
+    const distinct = new Map<string, ReversalOriginCurrency>();
+    for (const o of origins) {
+        const key = o.BookingExchangeRate == null ? 'functional' : `${NormalizeCurrencyCode(o.CurrencyCode)}@${Number(o.BookingExchangeRate)}`;
+        if (!distinct.has(key)) distinct.set(key, o);
+    }
+    if (distinct.size > 1) {
+        return {
+            Kind: 'Refused',
+            Message:
+                `${label} reverses lines of orders booked in different currencies or at different rates ` +
+                `(${[...distinct.values()].map(describe).join('; ')}). Reverse each order's lines on an order of their own.`,
+        };
+    }
+    const origin = [...distinct.values()][0];
+    const originCode = NormalizeCurrencyCode(origin.CurrencyCode);
+    const stated = NormalizeCurrencyCode(order.CurrencyCode);
+    if (stated && stated !== originCode) {
+        return {
+            Kind: 'Refused',
+            Message:
+                `${label} is in ${stated}, but it reverses order ${origin.OrderNumber ?? ''}, which is in ` +
+                `${originCode ?? 'the functional currency'}. A reversal is in the currency of the order it reverses.`,
+        };
+    }
+    if (origin.BookingExchangeRate == null) return { Kind: 'Inherit', CurrencyCode: originCode, Rate: null, RateDate: null };
+    return { Kind: 'Inherit', CurrencyCode: originCode, Rate: Number(origin.BookingExchangeRate), RateDate: origin.BookingRateDate };
+}
+
+/** The currency facts of the orders `reversedLineIDs` belong to, one row per order. */
+export async function LoadReversalOrigins(
+    reversedLineIDs: string[],
+    provider: IMetadataProvider,
+    user: UserInfo,
+): Promise<ReversalOriginCurrency[]> {
+    if (reversedLineIDs.length === 0) return [];
+    const rv = RunView.FromMetadataProvider(provider);
+    const ids = [...new Set(reversedLineIDs.map((id) => RequireUUID(id, 'ReversesOrderLineID').toLowerCase()))];
+    const lines = await rv.RunView<{ OrderHeaderID: string }>(
+        {
+            EntityName: 'MJ_BizApps_Orders: Order Lines',
+            ExtraFilter: `ID IN (${ids.map((id) => `'${id}'`).join(', ')})`,
+            Fields: ['OrderHeaderID'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!lines.Success) throw new Error(`Could not read the lines being reversed: ${lines.ErrorMessage ?? 'unknown error'}`);
+    const orderIDs = [...new Set((lines.Results ?? []).map((l) => RequireUUID(l.OrderHeaderID, 'OrderHeaderID').toLowerCase()))];
+    if (orderIDs.length === 0) return [];
+    const orders = await rv.RunView<{ OrderNumber: string | null; CurrencyCode: string | null; BookingExchangeRate: number | null; BookingRateDate: string | Date | null }>(
+        {
+            EntityName: ORDER_HEADER_ENTITY_NAME,
+            ExtraFilter: `ID IN (${orderIDs.map((id) => `'${id}'`).join(', ')})`,
+            Fields: ['OrderNumber', 'CurrencyCode', 'BookingExchangeRate', 'BookingRateDate'],
+            ResultType: 'simple',
+        },
+        user,
+    );
+    if (!orders.Success) throw new Error(`Could not read the orders being reversed: ${orders.ErrorMessage ?? 'unknown error'}`);
+    return (orders.Results ?? []).map((o) => ({
+        OrderNumber: o.OrderNumber,
+        CurrencyCode: o.CurrencyCode,
+        BookingExchangeRate: o.BookingExchangeRate == null ? null : Number(o.BookingExchangeRate),
+        BookingRateDate:
+            o.BookingRateDate == null
+                ? null
+                : o.BookingRateDate instanceof Date
+                  ? o.BookingRateDate.toISOString().slice(0, 10)
+                  : String(o.BookingRateDate).slice(0, 10),
+    }));
 }

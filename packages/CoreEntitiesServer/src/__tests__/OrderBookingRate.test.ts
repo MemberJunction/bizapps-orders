@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
     profiles: [] as Array<{ FunctionalCurrencyCode: string | null }>,
     rates: [] as Array<{ Rate: number; RateDate: string }>,
     rateFilters: [] as string[],
+    originLines: [] as Array<{ OrderHeaderID: string }>,
+    originOrders: [] as Array<{ OrderNumber: string; CurrencyCode: string | null; BookingExchangeRate: number | null; BookingRateDate: string | null }>,
 }));
 
 vi.mock('@memberjunction/core', async (importOriginal) => {
@@ -26,6 +28,12 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
                     RunView: (params: { EntityName: string; ExtraFilter: string }) => {
                         if (params.EntityName.endsWith('Accounting Company Profiles')) {
                             return Promise.resolve({ Success: true, Results: mocks.profiles });
+                        }
+                        if (params.EntityName.endsWith('Order Lines')) {
+                            return Promise.resolve({ Success: true, Results: mocks.originLines });
+                        }
+                        if (params.EntityName.endsWith('Order Headers')) {
+                            return Promise.resolve({ Success: true, Results: mocks.originOrders });
                         }
                         if (params.EntityName.endsWith('Currency Spot Rates')) {
                             mocks.rateFilters.push(params.ExtraFilter);
@@ -56,7 +64,7 @@ type Confirmable = {
     BookingRateDate: Date | null;
 };
 
-function order(currency: string | null): { order: Confirmable; refusals: string[] } {
+function order(currency: string | null, reverses: string[] = []): { order: Confirmable; refusals: string[] } {
     const refusals: string[] = [];
     const o = Object.create(OrderEntityServer.prototype) as Confirmable;
     const define = (name: string, value: unknown) => Object.defineProperty(o, name, { value, writable: true, configurable: true });
@@ -69,6 +77,7 @@ function order(currency: string | null): { order: Confirmable; refusals: string[
     define('ContextCurrentUser', { ID: 'user' });
     define('BookingExchangeRate', null);
     define('BookingRateDate', null);
+    define('Lines', { Items: reverses.map((id) => ({ ReversesOrderLineID: id })) });
     define('RegisterResultHistoryEntry', (r: BaseEntityResult) => refusals.push(r.Message));
     return { order: o, refusals };
 }
@@ -77,6 +86,8 @@ beforeEach(() => {
     mocks.profiles = [{ FunctionalCurrencyCode: 'USD' }];
     mocks.rates = [];
     mocks.rateFilters = [];
+    mocks.originLines = [];
+    mocks.originOrders = [];
 });
 
 describe('confirming an order in a foreign currency', () => {
@@ -134,5 +145,33 @@ describe('DecideBookingRate', () => {
     it('treats a non-positive rate as no rate', () => {
         const decision = DecideBookingRate({ ...base, OrderCurrency: 'AUD', FunctionalCurrency: 'USD', SpotRate: { Rate: 0, RateDate: '2026-11-17' } });
         expect(decision.Kind).toBe('Refused');
+    });
+});
+
+describe('confirming a reversal of an order in a foreign currency', () => {
+    const ORIGIN_LINE = 'a1b2c3d4-0000-4000-8000-0000000000aa';
+    const ORIGIN_ORDER = 'a1b2c3d4-0000-4000-8000-0000000000bb';
+
+    it('takes the origin currency and booking rate, and reads no spot rate', async () => {
+        mocks.originLines = [{ OrderHeaderID: ORIGIN_ORDER }];
+        mocks.originOrders = [{ OrderNumber: 'ORD-0', CurrencyCode: 'AUD', BookingExchangeRate: 0.6543, BookingRateDate: '2026-10-01' }];
+        mocks.rates = [{ Rate: 0.7, RateDate: '2026-11-14' }];
+        const { order: o, refusals } = order(null, [ORIGIN_LINE]);
+
+        expect(await o.passesBookingRate()).toBe(true);
+        expect(refusals).toEqual([]);
+        expect((o as unknown as { CurrencyCode: string }).CurrencyCode).toBe('AUD');
+        expect(o.BookingExchangeRate).toBe(0.6543);
+        expect(o.BookingRateDate?.toISOString().slice(0, 10)).toBe('2026-10-01');
+        expect(mocks.rateFilters).toEqual([]);
+    });
+
+    it('refuses a reversal stated in a different currency from its origin', async () => {
+        mocks.originLines = [{ OrderHeaderID: ORIGIN_ORDER }];
+        mocks.originOrders = [{ OrderNumber: 'ORD-0', CurrencyCode: 'AUD', BookingExchangeRate: 0.6543, BookingRateDate: '2026-10-01' }];
+        const { order: o, refusals } = order('GBP', [ORIGIN_LINE]);
+
+        expect(await o.passesBookingRate()).toBe(false);
+        expect(refusals[0]).toContain('A reversal is in the currency of the order it reverses');
     });
 });

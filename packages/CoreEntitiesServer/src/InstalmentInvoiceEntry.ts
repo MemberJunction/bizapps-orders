@@ -52,6 +52,7 @@ import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
 import { ToISODate, type mjBizAppsOrdersOrderHeaderPaymentScheduleEntity } from '@mj-biz-apps/orders-entities';
 
 import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, SubmitJournalEntryDrafts } from './AccountingBridge.js';
+import { ConvertDraftsToFunctional, type PostingCurrency } from './OrderCurrencyPosting.js';
 import { SplitExactly } from './BundleBehavior.js';
 import {
     GL_ROLE,
@@ -201,6 +202,11 @@ export interface InstalmentInvoiceContext {
      * sliced against what each line has left to bill (#681).
      */
     BilledSoFar: number[];
+    /**
+     * The order's currency and booking rate when it is not in functional currency (golive #492). Every
+     * amount above is then in the order's currency, and the entry is converted at that rate.
+     */
+    Currency?: PostingCurrency | null;
 }
 
 /** This row's index among its siblings. */
@@ -533,7 +539,7 @@ export async function EmitInstalmentInvoiceEntry(
     assertBalanced(posted, context);
 
     const outcome = await SubmitJournalEntryDrafts(
-        [
+        ConvertDraftsToFunctional([
             {
                 EffectiveDate: ToISODate(asOf) as string,
                 EntryType: await ResolveInstalmentEntryType(provider, user),
@@ -546,7 +552,7 @@ export async function EmitInstalmentInvoiceEntry(
                 LinkedRecordID: context.OrderHeaderPaymentScheduleID,
                 Lines: posted,
             },
-        ],
+        ], context.Currency ?? null, { Label: `Order ${context.OrderNumber} instalment ${context.InstallmentNumber}` }),
         `the billing entry for instalment ${context.InstallmentNumber} of order ${context.OrderNumber}`,
         provider,
         user,

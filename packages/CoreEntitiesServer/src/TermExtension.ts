@@ -46,6 +46,8 @@ import {
     type mjBizAppsOrdersSubscriptionEventEntity,
 } from '@mj-biz-apps/orders-entities';
 import { EntityIDFor, SubmitJournalEntryDrafts } from './AccountingBridge.js';
+import { LoadPostingCurrency } from './OrderBookingRate.js';
+import { ConvertDraftsToFunctional } from './OrderCurrencyPosting.js';
 import { CalendarDayOrToday } from './calendar-day.js';
 import {
     ActiveRoleHolderIDs,
@@ -65,7 +67,7 @@ import { RevenueRecognitionDriver } from './RevenueRecognition.js';
 import { EscapeText, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { SubscriptionBehavior, SubscriptionTypeRulesFrom } from './SubscriptionBehavior.js';
 import { SanctionTermAmendment, SubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
-import { PlanTermExtension, type StagedEntry, type TermExtensionPlan } from './TermExtensionPlan.js';
+import { DeferredRunningKey, PlanTermExtension, type StagedEntry, type TermExtensionPlan } from './TermExtensionPlan.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
@@ -242,7 +244,13 @@ export async function ApplyTermExtension(concession: ApprovedDurationConcession,
     );
     if (typeof checked === 'string') throw new Error(`The term extension cannot be applied: ${checked}`);
 
-    const drafts = [...checked.Plan.Offsets, ...checked.Plan.Respread];
+    // An order in another currency (golive #492): the offsets mirror posted lines as posted, and the
+    // new schedule converts at the order's booking rate.
+    const drafts = ConvertDraftsToFunctional(
+        [...checked.Plan.Offsets, ...checked.Plan.Respread],
+        await LoadPostingCurrency(checked.OrderHeaderID, ctx.Provider, ctx.User),
+        { RunningKey: DeferredRunningKey(checked.Plan.Targets), Label: `The extension of ${label(checked)}` },
+    );
     const written = drafts.length
         ? await SubmitJournalEntryDrafts(drafts, `the extension of ${label(checked)}`, ctx.Provider, ctx.User)
         : { Success: true, Results: [] };
@@ -368,10 +376,25 @@ export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTask
     if (entries.length === 0) return [];
 
     const entryIDs = RequireUUIDs(entries.map((e) => e.ID), 'JournalEntryID');
-    const lines = await ReadRows<{ ID: string; JournalEntryID: string; LineNumber: number; GLAccountID: string; DebitAmount: number | null; CreditAmount: number | null; Description: string | null }>(ctx, {
+    const lines = await ReadRows<{
+        ID: string;
+        JournalEntryID: string;
+        LineNumber: number;
+        GLAccountID: string;
+        DebitAmount: number | null;
+        CreditAmount: number | null;
+        Description: string | null;
+        OriginalCurrencyCode: string | null;
+        OriginalDebitAmount: number | null;
+        OriginalCreditAmount: number | null;
+        ExchangeRateUsed: number | null;
+    }>(ctx, {
         EntityName: JE_LINE_ENTITY,
         ExtraFilter: `JournalEntryID IN (${entryIDs.map((id) => `'${id}'`).join(', ')})`,
-        Fields: ['ID', 'JournalEntryID', 'LineNumber', 'GLAccountID', 'DebitAmount', 'CreditAmount', 'Description'],
+        Fields: [
+            'ID', 'JournalEntryID', 'LineNumber', 'GLAccountID', 'DebitAmount', 'CreditAmount', 'Description',
+            'OriginalCurrencyCode', 'OriginalDebitAmount', 'OriginalCreditAmount', 'ExchangeRateUsed',
+        ],
         OrderBy: 'LineNumber',
         ResultType: 'simple',
     });
@@ -395,8 +418,23 @@ export async function StagedRecognitionEntries(termID: string, ctx: ApprovalTask
             .filter((l) => UUIDsEqual(l.JournalEntryID, e.ID))
             .map((l) => ({
                 GLAccountID: l.GLAccountID,
-                DebitAmount: l.DebitAmount == null ? null : Number(l.DebitAmount),
-                CreditAmount: l.CreditAmount == null ? null : Number(l.CreditAmount),
+                // A line posted from the order's own currency is read in that currency (golive #492),
+                // with what the ledger holds kept beside it; see StagedLine.
+                ...(l.OriginalCurrencyCode
+                    ? {
+                          DebitAmount: l.OriginalDebitAmount == null ? null : Number(l.OriginalDebitAmount),
+                          CreditAmount: l.OriginalCreditAmount == null ? null : Number(l.OriginalCreditAmount),
+                          Posted: {
+                              DebitAmount: l.DebitAmount == null ? null : Number(l.DebitAmount),
+                              CreditAmount: l.CreditAmount == null ? null : Number(l.CreditAmount),
+                              OriginalCurrencyCode: l.OriginalCurrencyCode,
+                              ExchangeRateUsed: Number(l.ExchangeRateUsed),
+                          },
+                      }
+                    : {
+                          DebitAmount: l.DebitAmount == null ? null : Number(l.DebitAmount),
+                          CreditAmount: l.CreditAmount == null ? null : Number(l.CreditAmount),
+                      }),
                 Description: l.Description,
                 Dimensions: dims
                     .filter((d) => UUIDsEqual(d.JournalEntryLineID, l.ID))
