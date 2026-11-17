@@ -62,6 +62,8 @@ import {
     ResolveRequiresSaleApproval,
     ConcessionValue,
     Money,
+    OrdersEngine,
+    OrdersEngineReady,
     PickConcessionTier,
     ResolveLinePriceStanding,
     ShareBreach,
@@ -410,14 +412,37 @@ export async function ProductsRequiringSaleApproval(
         Fields: ['ID', 'ProductTypeID', 'ProductCategoryID', 'RequiresSaleApproval'],
     });
     if (products.length === 0) return new Set();
-    const categories = await read<{ ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null }>({
-        EntityName: PRODUCT_CATEGORY_ENTITY,
-        Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
-    });
-    const types = await read<{ ID: string; RequiresSaleApproval: boolean | null }>({
-        EntityName: PRODUCT_TYPE_ENTITY,
-        Fields: ['ID', 'RequiresSaleApproval'],
-    });
+    let categories: { ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null }[];
+    let types: { ID: string; RequiresSaleApproval: boolean | null }[];
+    const engineReady = OrdersEngine.Instance.Loaded || (await OrdersEngineReady(provider, user));
+    if (engineReady) {
+        const hasMissing = products.some(
+            (p) =>
+                (p.ProductCategoryID && !OrdersEngine.Instance.ProductCategoryByID(p.ProductCategoryID)) ||
+                (p.ProductTypeID && !OrdersEngine.Instance.ProductTypeByID(p.ProductTypeID)),
+        );
+        if (hasMissing && typeof (provider as { RunViews?: unknown })?.RunViews === 'function') {
+            await OrdersEngine.Instance.Config(true, user, provider);
+        }
+        categories = OrdersEngine.Instance.ProductCategories.map((c) => ({
+            ID: c.ID,
+            ParentProductCategoryID: c.ParentProductCategoryID ?? null,
+            RequiresSaleApproval: c.RequiresSaleApproval ?? null,
+        }));
+        types = OrdersEngine.Instance.ProductTypes.map((t) => ({
+            ID: t.ID,
+            RequiresSaleApproval: t.RequiresSaleApproval ?? null,
+        }));
+    } else {
+        categories = await read<{ ID: string; ParentProductCategoryID: string | null; RequiresSaleApproval: boolean | null }>({
+            EntityName: PRODUCT_CATEGORY_ENTITY,
+            Fields: ['ID', 'ParentProductCategoryID', 'RequiresSaleApproval'],
+        });
+        types = await read<{ ID: string; RequiresSaleApproval: boolean | null }>({
+            EntityName: PRODUCT_TYPE_ENTITY,
+            Fields: ['ID', 'RequiresSaleApproval'],
+        });
+    }
     const category = new Map(categories.map((c) => [c.ID.toLowerCase(), c]));
     const type = new Map(types.map((t) => [t.ID.toLowerCase(), t]));
     const required = new Set<string>();
@@ -537,7 +562,23 @@ async function loadShareLimits(authorityIDs: string[], provider: IMetadataProvid
 
 function concessionTotal(rows: readonly ConcessionRow[]): number {
     // Rejected and Withdrawn concessions give nothing away (golive #403).
-    return rows.filter((r) => r.Status === 'Pending' || r.Status === 'Approved').reduce((sum, r) => sum + Number(r.ComputedValue ?? 0), 0);
+    const active = rows.filter((r) => r.Status === 'Pending' || r.Status === 'Approved');
+    // A line's price concessions are alternatives for the same give-away, not additions to it: a
+    // resent save can leave two rows on one line, so each line counts once, at its largest (#387).
+    const linePriceMax = new Map<string, number>();
+    let otherTotal = 0;
+    for (const r of active) {
+        const val = Number(r.ComputedValue ?? 0);
+        if (r.OrderLineID && (r.DeliveryForm === 'Price' || r.DeliveryForm === 'Scope')) {
+            const key = r.OrderLineID.toLowerCase();
+            linePriceMax.set(key, Math.max(linePriceMax.get(key) ?? 0, val));
+        } else {
+            otherTotal += val;
+        }
+    }
+    let lineTotal = 0;
+    for (const val of linePriceMax.values()) lineTotal += val;
+    return otherTotal + lineTotal;
 }
 
 /** A line that gives away more, by price or `DiscountPct`, than any approved concession covers. */

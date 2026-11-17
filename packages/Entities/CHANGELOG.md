@@ -1,5 +1,11 @@
 # @mj-biz-apps/orders-entities
 
+## 5.50.2
+
+### Patch Changes
+
+- 543e594: The order line prompt for a product the customer already has is reworded as a question (golive #480): "Is this line a renewal of that subscription, or a new one?" The choices are now "Renew <subscription>" and "Create new subscription", each showing the dates it gives the line, and the hint under them says when renewing will run on different dates from the ones entered. Wording only: what confirm does with each answer is unchanged.
+
 ## 5.50.1
 
 ### Patch Changes
@@ -978,8 +984,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                                                        The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                                                        "FK_EntityFieldValue_EntityField"
+                                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

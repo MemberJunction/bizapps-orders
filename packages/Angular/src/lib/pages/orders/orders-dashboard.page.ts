@@ -16,6 +16,7 @@ import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
 import { MJO_COMMON_ENTITIES } from '../../data/entity-names';
 import { LoadOrdersWorkingView, NewPresetView } from '../../data/order-views';
+import { MJOOrderReviewQueueComponent } from '../../panels/order-review-queue.component';
 
 /**
  * The payload `mj-view-workspace` emits from `OpenRecordRequested`.
@@ -73,7 +74,8 @@ interface MJOAttentionItem {
         MJEmptyStateComponent,
         MJOStatTileComponent,
         MJOBarListComponent,
-        MJODayBarsComponent
+        MJODayBarsComponent,
+        MJOOrderReviewQueueComponent
     ],
     template: `
         <div class="mjo-dashboard-container">
@@ -112,6 +114,9 @@ interface MJOAttentionItem {
                         Detail="Customer credit available to apply"
                         (Clicked)="OpenExplorerPreset('credits')" />
                 </div>
+
+                <!-- Order Review tasks waiting on the signed-in user (bc-aidp-next-golive#442). -->
+                <mjo-order-review-queue />
 
                 <div class="mjo-dash__split">
                     <div class="mj-card">
