@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import type { CRUDResult, ExternalRecord, FetchBatchResult } from '@memberjunction/integration-engine';
 import { BillComInvoiceRail, NormalizeReceivablePayment } from '../BillComInvoiceRail.js';
 import { UseBillComGatewaySeams, environmentFrom, type BillComGatewaySeams, type RailEnvironment } from '../BillComGateway.js';
+import { ORDERS_SETTING, OrdersSettings } from '../OrdersSettings.js';
 
 interface Call { verb: string; object: string; attrs?: Record<string, unknown>; id?: string; watermark?: string | null }
 const calls: Call[] = [];
@@ -188,6 +189,87 @@ describe('BillComInvoiceRail.EnsureCustomer', () => {
         expect(r?.Reason).toContain('Placeholder Co');
         expect(rail().CheckCustomer({ ...facts, Email: 'ap@placeholder.test' })).toBeNull();
         expect(calls).toHaveLength(0);
+    });
+
+    it('reuses a single existing Bill.com customer matched by accountNumber without creating a duplicate (#741, #970)', async () => {
+        UseBillComGatewaySeams({
+            ...seams(),
+            findCustomersByAccountNumber: async (_ci, acct) => [
+                { ExternalID: '0cu-existing', ObjectType: 'customers', Fields: { id: '0cu-existing', name: 'Existing Co', accountNumber: acct } },
+            ],
+        });
+        const r = await rail().EnsureCustomer({
+            PartyKind: 'Organization',
+            PartyID: 'org-1',
+            AccountNumber: 'ACCT-42',
+            Name: 'Existing Co',
+            Email: 'ap@existing.test',
+            AddressLines: [],
+            City: null,
+            State: null,
+            PostalCode: null,
+            Country: null,
+        });
+        expect(r).toEqual({ Success: true, Value: { ExternalCustomerRef: '0cu-existing' } });
+        expect(calls.filter((c) => c.verb === 'create')).toHaveLength(0);
+    });
+
+    it('refuses when multiple Bill.com customers share the same accountNumber, naming the candidates (#741)', async () => {
+        UseBillComGatewaySeams({
+            ...seams(),
+            findCustomersByAccountNumber: async (_ci, acct) => [
+                { ExternalID: '0cu-a', ObjectType: 'customers', Fields: { id: '0cu-a', name: 'Candidate A', accountNumber: acct } },
+                { ExternalID: '0cu-b', ObjectType: 'customers', Fields: { id: '0cu-b', name: 'Candidate B', accountNumber: acct } },
+            ],
+        });
+        const r = await rail().EnsureCustomer({
+            PartyKind: 'Organization',
+            PartyID: 'org-1',
+            AccountNumber: 'ACCT-DUP',
+            Name: 'Dup Co',
+            Email: 'ap@dup.test',
+            AddressLines: [],
+            City: null,
+            State: null,
+            PostalCode: null,
+            Country: null,
+        });
+        expect(r.Success).toBe(false);
+        if (!r.Success) {
+            expect(r.Reason).toContain('0cu-a');
+            expect(r.Reason).toContain('0cu-b');
+            expect(r.Transient).toBe(false);
+        }
+    });
+
+    it('refuses creating a new Bill.com customer when BillComCreateCustomerOnSend is false (#970)', async () => {
+        OrdersSettings.SetOverride(ORDERS_SETTING.BillComCreateCustomerOnSend, 'false');
+        try {
+            UseBillComGatewaySeams({
+                ...seams(),
+                findCustomersByAccountNumber: async () => [],
+            });
+            const r = await rail().EnsureCustomer({
+                PartyKind: 'Organization',
+                PartyID: 'org-1',
+                AccountNumber: 'ACCT-MISS',
+                Name: 'Unmapped Co',
+                Email: 'ap@unmapped.test',
+                AddressLines: [],
+                City: null,
+                State: null,
+                PostalCode: null,
+                Country: null,
+            });
+            expect(r.Success).toBe(false);
+            if (!r.Success) {
+                expect(r.Reason).toContain('BillComCreateCustomerOnSend');
+                expect(r.Transient).toBe(false);
+            }
+            expect(calls.filter((c) => c.verb === 'create')).toHaveLength(0);
+        } finally {
+            OrdersSettings.ClearOverrides();
+        }
     });
 });
 
