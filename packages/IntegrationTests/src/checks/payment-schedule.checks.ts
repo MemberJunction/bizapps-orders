@@ -39,6 +39,7 @@
  *   PS-G  Scenario 3: an UpFront line earns in full at confirm, the unbilled part to the contract asset
  *   PS-H  a line carrying an Unbilled balance is invoiced against Unbilled FIRST, then Deferred
  *   PS-I  a discount spanning a due AND a future instalment is booked ONCE, at recognition
+ *   PS-L  an order whose lines another app has frozen still issues its instalments, at confirm and after
  *   PS-V  a two-company order's schedule is the order company's; each instalment takes one number
  *         and books one billing entry per product company, each in its own books (golive #311)
  *
@@ -61,7 +62,7 @@ import {
     type NamedCheck,
 } from '@memberjunction/testing-integration';
 import { AccountingEngineBase } from '@mj-biz-apps/accounting-engine-base';
-import { OrderHeaderEntity } from '@mj-biz-apps/orders-entities';
+import { OrderHeaderEntity, RegisterOrderLineEditVeto } from '@mj-biz-apps/orders-entities';
 import { BuildInvoiceDocuments, type OrderHeaderPaymentScheduleEntityServer } from '@mj-biz-apps/orders-core-entities-server';
 import {
     CreateProductPrice,
@@ -168,6 +169,8 @@ export async function scheduledOrder(
         discountPct?: number;
         /** `YYYY-MM-DD` coverage window, for a product whose recognition needs one (EvenOverTime). */
         servicePeriod?: { Start: string; End: string };
+        /** Runs once the draft and its schedule are saved, just before the confirm. */
+        beforeConfirm?: () => void;
     } = {},
 ) {
     const f = Fx();
@@ -197,6 +200,7 @@ export async function scheduledOrder(
     // A discounted line is a concession the confirm gate holds; this fixture is about schedules.
     if (over.discountPct) await ApproveLineDiscounts(ctx.User, orderID);
     const ids = await addInstalments(ctx, orderID, rows);
+    over.beforeConfirm?.();
     const confirmed = await confirm(ctx, orderID);
     return { orderID, ids, order: confirmed.order, saved: confirmed.saved, message: confirmed.message };
 }
@@ -1015,6 +1019,48 @@ export const PaymentScheduleChecks: NamedCheck[] = [
                 const totals = await lineTotals(ctx, orderID);
                 AssertEqual(Number(totals[0].BilledToDate), 900, 'BilledToDate is net, not gross');
                 AssertEqual(Number(totals[0].RecognizedToDate), 900, 'and it has caught up to recognition');
+            }),
+    },
+    {
+        Id: 'payment-schedule.PS-L',
+        Name: 'PS-L: an order whose lines another app has frozen still issues its instalments, at confirm and after',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A deal closed Won freezes its order's lines through the line-edit veto. Issuing an
+                // instalment advances the line's BilledToDate, which is Orders' own bookkeeping and
+                // not an edit to what was sold. Before this was marked as such, an order behind a
+                // closed deal could not confirm when an instalment was already due, and could not
+                // invoice a later one either.
+                //
+                // The veto goes on only once the draft and its schedule exist, the way a deal closes
+                // after its lines are entered, and it refuses everything it is asked.
+                let asked = 0;
+                try {
+                    const { orderID, ids, saved, message } = await scheduledOrder(ctx, THREE, {
+                        beforeConfirm: () =>
+                            RegisterOrderLineEditVeto({
+                                MayEdit: async () => {
+                                    asked++;
+                                    return 'This deal is closed. Set the status back to Open before changing what was sold.';
+                                },
+                            }),
+                    });
+                    Assert(saved, `the confirm must go through with the lines frozen: ${message}`);
+
+                    let rows = await schedule(ctx, orderID);
+                    AssertEqual(rows[0].Status, 'Invoiced', 'the instalment due on the order date was issued by the confirm');
+                    AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 100, 'and the line carries what it billed');
+
+                    const later = await issue(ctx, ids[1]);
+                    Assert(later.Success, `a later instalment must issue with the lines still frozen: ${later.Message ?? ''}`);
+                    rows = await schedule(ctx, orderID);
+                    AssertEqual(rows[1].Status, 'Invoiced', 'the second instalment was issued');
+                    AssertEqual(Number((await lineTotals(ctx, orderID))[0].BilledToDate), 200, 'and BilledToDate advanced again');
+                    AssertEqual(asked, 0, 'the veto was never asked: none of these writes is an edit to what was sold');
+                } finally {
+                    RegisterOrderLineEditVeto(null);
+                }
             }),
     },
     {
