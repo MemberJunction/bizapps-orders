@@ -9,6 +9,9 @@
                 <span class="mjo-doc-chip">{{ Record.SKU || 'SKU TBD' }}</span>
                 <span class="mjo-doc-chip">{{ TypeName }}</span>
                 <span [class]="StatusClass">{{ Record.Status || 'Draft' }}</span>
+                @if (Record.Company) {
+                    <span class="mjo-doc-chip mjo-doc-chip--info" [title]="'Sold by ' + Record.Company">{{ Record.Company }}</span>
+                }
             </div>
         </div>
     </div>
@@ -59,21 +62,34 @@
     @if (!EditMode && Record.Description) {
         <p class="mjo-doc-hero__description">{{ Record.Description }}</p>
     }
+    <!-- The product's key facts in one strip, so the Overview below can give its width to the prices. -->
     <div class="mjo-doc-hero__stats">
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">List price</span>
             <span class="mjo-doc-stat__value">{{ Price }}</span>
         </div>
         <div class="mjo-doc-stat">
-            <span class="mjo-doc-stat__label">Rev-rec</span>
-            <span class="mjo-doc-stat__value">{{ RevRec }}</span>
+            <span class="mjo-doc-stat__label">Product type</span>
+            <span class="mjo-doc-stat__value" [title]="TypeName">{{ TypeName }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Category</span>
+            <span class="mjo-doc-stat__value" [title]="Category">{{ Category }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Available</span>
+            <span class="mjo-doc-stat__value" [title]="Availability">{{ Availability }}</span>
+        </div>
+        <div class="mjo-doc-stat">
+            <span class="mjo-doc-stat__label">Revenue recognition</span>
+            <span class="mjo-doc-stat__value" [title]="RevRec">{{ RevRec }}</span>
             @if (RevRecSource) {
                 <span class="mjo-doc-stat__sub">{{ RevRecSource }}</span>
             }
         </div>
         <div class="mjo-doc-stat">
             <span class="mjo-doc-stat__label">Tax</span>
-            <span class="mjo-doc-stat__value">{{ Record.IsTaxable ? 'Taxable' : 'Exempt' }}</span>
+            <span class="mjo-doc-stat__value">{{ Record.IsTaxable ? 'Taxable' : 'Tax exempt' }}</span>
         </div>
     </div>
     <!-- This panel claims the generated `productIdentification` section, so it OWNS

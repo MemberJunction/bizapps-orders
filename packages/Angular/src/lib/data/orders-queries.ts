@@ -184,7 +184,7 @@ async function run<T>(
     // ONLY the implicit default is reported. A caller that passed its own `maxRows` chose a short
     // list on purpose — the typeahead asks for a handful of products out of hundreds and is right
     // to. Flagging those buries the real signal under noise.
-    if (maxRows === undefined && result.TotalRowCount > result.RowCount) {
+    if (maxRows === undefined && (result.TotalRowCount ?? 0) > result.RowCount) {
         truncated.add(entityName);
         console.error(
             `[orders-queries] TRUNCATED read of "${entityName}" — returned ${result.RowCount} of ` +
@@ -384,10 +384,11 @@ export async function GetOrders(
         if (options.BillToOrganizationID) filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
     }
     if (options.Search?.trim()) {
-        const escaped = likeText(options.Search);
+        const escaped = likeText(options.Search.trim());
         filters.push(
             `(OrderNumber LIKE '%${escaped}%' OR Description LIKE '%${escaped}%' ` +
-                `OR ExternalDocumentNumber LIKE '%${escaped}%')`,
+                `OR ExternalDocumentNumber LIKE '%${escaped}%' ` +
+                `OR BillToOrganization LIKE '%${escaped}%' OR BillToPerson LIKE '%${escaped}%')`,
         );
     }
 

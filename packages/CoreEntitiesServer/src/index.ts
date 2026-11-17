@@ -233,8 +233,15 @@ export { AmendArrangementOperation, LoadAmendArrangementOperation } from './Amen
 export type { AmendArrangementInput, AmendArrangementOutput } from '@mj-biz-apps/orders-entities';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
-export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
-export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation, SelectedRenewalRefusal, RenewalGroupKey } from './SpawnRenewalsOperation.js';
+export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate, RenewalPlacement } from './SpawnRenewalsOperation.js';
+export { RenewalPricer, NonSubscriptionSuccessorRefusal, DayAfter, EffectiveLeadDays } from './RenewalPricing.js';
+export type { RenewalSubjectRow, RenewalSourceLineRow, PricedRenewal, RenewalPriceOptions } from './RenewalPricing.js';
+export { GetRenewalWorklistOperation, LoadGetRenewalWorklistOperation } from './GetRenewalWorklistOperation.js';
+export { SetRenewalSettingsOperation, LoadSetRenewalSettingsOperation, RequireIncreasePercent } from './SetRenewalSettingsOperation.js';
+export { ChangeSubscriptionProductOperation, LoadChangeSubscriptionProductOperation } from './ChangeSubscriptionProductOperation.js';
+export { LoadRenewalPass, ReadPassMode, RENEWAL_JOB_ID, RENEWAL_PREVIEW_PARAM_ID, type RenewalPass, type RenewalPassMode } from './RenewalPassMode.js';
+export { ContractIncreaseForOrder, ContractIncreaseForOrderLine, ContractsReadable, ApplyContractIncreaseOnCreate, DEALS_ENTITY, CONTRACTS_ENTITY, type ContractIncrease, type IncreaseOnCreateSubject } from './ContractIncrease.js';
 
 // Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
 export { NotProviderBilledSql, ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';

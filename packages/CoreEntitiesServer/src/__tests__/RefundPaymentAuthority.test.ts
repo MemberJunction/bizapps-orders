@@ -14,6 +14,8 @@ const h = vi.hoisted(() => ({
     beginTransaction: vi.fn(async () => undefined),
 }));
 
+// The finance gate (bc-aidp-next-golive#454) has its own tests; these drive what comes after it.
+vi.mock('../ReversalAuthority.js', () => ({ ReversalGate: () => null, WithGatewayRecord: (fn: () => Promise<unknown>) => fn() }));
 vi.mock('../RefundAuthority.js', () => ({
     CheckRefundAuthority: vi.fn(async (request: (typeof h.authorityCalls)[number]) => {
         h.authorityCalls.push(request);

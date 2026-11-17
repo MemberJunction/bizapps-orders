@@ -33,6 +33,7 @@ import {
     type RailResult,
 } from './BaseInvoiceRail.js';
 import { BillComGateway, type BillComGatewaySeams } from './BillComGateway.js';
+import { OrdersSettings } from './OrdersSettings.js';
 import type { MJCompanyIntegrationEntity } from '@memberjunction/core-entities';
 import type { ExternalFieldTarget } from '@mj-biz-apps/common-entities';
 
@@ -132,14 +133,41 @@ export class BillComInvoiceRail extends BaseInvoiceRail {
 
     public override async EnsureCustomer(f: RailCustomerFacts): Promise<RailResult<{ ExternalCustomerRef: string }>> {
         try {
+            const { gw, ci } = await this.session();
+            const candidateKeys = [f.AccountNumber, f.PartyID].filter((k): k is string => !!k?.trim());
+            if (typeof gw.findCustomersByAccountNumber === 'function' && candidateKeys.length > 0) {
+                const matches = await gw.findCustomersByAccountNumber(ci, candidateKeys, this.User!);
+                if (matches.length === 1) {
+                    return { Success: true, Value: { ExternalCustomerRef: matches[0].ExternalID } };
+                }
+                if (matches.length > 1) {
+                    const list = matches.map((m) => `${m.ExternalID}${m.Name ? ` (${m.Name})` : ''}`).join(', ');
+                    return {
+                        Success: false,
+                        Transient: false,
+                        Reason:
+                            `Bill.com holds ${matches.length} active customers with accountNumber matching ${f.Name} (${candidateKeys.join(' / ')}): ${list}. ` +
+                            `Record the intended ExternalCustomer mapping row or archive the duplicate in Bill.com before sending.`,
+                    };
+                }
+            }
+            if (!OrdersSettings.BillComCreateCustomerOnSend) {
+                return {
+                    Success: false,
+                    Transient: false,
+                    Reason:
+                        `No ExternalCustomer mapping or matching Bill.com customer was found for ${f.Name} (${f.PartyID}), ` +
+                        `and BillComCreateCustomerOnSend is disabled. Load the Bill.com customer mapping (scripts/load-billcom-customer-map.mjs) ` +
+                        `or set BillComCreateCustomerOnSend to true to allow creating new customers on send.`,
+                };
+            }
             const missing = this.CheckCustomer(f);
             if (missing) return this.fail(missing.Reason);
-            const { gw, ci } = await this.session();
             const attrs: Record<string, unknown> = {
                 name: f.Name,
                 email: f.Email,
-                // Our party id, so the link survives even if our mapping row is lost.
-                accountNumber: f.PartyID,
+                // Our party id (or explicit account number), so the link survives even if our mapping row is lost.
+                accountNumber: f.AccountNumber?.trim() || f.PartyID,
             };
             if (f.AddressLines.length || f.City || f.PostalCode) {
                 attrs.billingAddress = {

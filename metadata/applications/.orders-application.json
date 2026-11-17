@@ -4,14 +4,14 @@
       "The BizApps Orders Application — what makes this app a first-class citizen of MJ Explorer",
       "rather than a set of loose dashboards.",
       "",
-      "DefaultNavItems is the top tab bar, and it is the information architecture: four sections",
+      "DefaultNavItems is the top tab bar, and it is the information architecture: five sections",
       "organised by JOB rather than by entity. Fifty-one tables would otherwise be fifty-one",
       "destinations, leaving the user to assemble the workflow in their head.",
       "",
       "Each item is ResourceType 'Custom' pointing at a DriverClass registered with",
       "@RegisterClass(BaseResourceComponent, '<DriverClass>') in @mj-biz-apps/orders-ng. Each of those",
       "components owns a LEFT navigation rail over its own sub-pages — MJ's rule is top nav across",
-      "sections, left nav within one, and these four are the sections.",
+      "sections, left nav within one, and these five are the sections.",
       "",
       "Orders is the default tab because taking an order is the job most people open this app to do.",
       "",
@@ -22,7 +22,7 @@
     ],
     "fields": {
       "Name": "Orders",
-      "Description": "Order entry, payments, receivables and the product catalog. The confirmed order is the receivable — there is no separate invoice — so billing, collections and revenue recognition all read the same record the order taker created.",
+      "Description": "Order entry, payments, receivables, subscriptions and the product catalog. The confirmed order is the receivable — there is no separate invoice — so billing, collections and revenue recognition all read the same record the order taker created.",
       "Icon": "fa-solid fa-cart-shopping",
       "DefaultForNewUser": true,
       "DefaultNavItems": [
@@ -45,6 +45,13 @@
           "Icon": "fa-solid fa-chart-column",
           "ResourceType": "Custom",
           "DriverClass": "ReceivablesSectionResource",
+          "isDefault": false
+        },
+        {
+          "Label": "Subscriptions",
+          "Icon": "fa-solid fa-rotate",
+          "ResourceType": "Custom",
+          "DriverClass": "SubscriptionsSectionResource",
           "isDefault": false
         },
         {
