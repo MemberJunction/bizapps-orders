@@ -534,6 +534,13 @@
     color: var(--mj-text-muted);
 }
 
+.mjo-oh-subhead-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--mj-space-2);
+}
+
 .mjo-oh-subhead {
     margin: var(--mj-space-4) 0 var(--mj-space-2);
     font-size: var(--mj-text-sm);

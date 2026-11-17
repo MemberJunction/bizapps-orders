@@ -53,7 +53,8 @@ interface CallableOperation {
 
 function runWorklist(input: OrdersGetOverdueWorklistInput = {}): Promise<OrdersGetOverdueWorklistOutput> {
     const op = new GetOverdueWorklistOperation() as unknown as CallableOperation;
-    return op.InternalExecute(input, {} as unknown as IMetadataProvider, {} as unknown as UserInfo);
+    // A finance user: the Receivables worklists scope everyone else to their employee's company (#813).
+    return op.InternalExecute(input, {} as unknown as IMetadataProvider, { UserRoles: [{ Role: 'Finance' }] } as unknown as UserInfo);
 }
 
 // Pin the MACHINE zone to one that disagrees with the business zone at the chosen instant — see

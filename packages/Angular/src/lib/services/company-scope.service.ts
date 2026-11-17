@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { IMetadataProvider, Metadata, RunView, UserInfo } from '@memberjunction/core';
 import { IsValidUUID } from '@memberjunction/global';
+import { RECEIVABLES_ALL_COMPANIES_ROLES, RECEIVABLES_NO_COMPANY_NOTE } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../data/entity-names';
 
 const COMPANIES_ENTITY = 'MJ: Companies';
@@ -8,20 +9,11 @@ const EMPLOYEES_ENTITY = 'MJ: Employees';
 const ROLES_ENTITY = 'MJ: Roles';
 
 /**
- * Roles that see all companies across Receivables surfaces. Users without one of these roles are
- * scoped to the companies their employee record belongs to.
+ * Roles that see all companies across Receivables surfaces: the same list the server worklist
+ * operations enforce (#813). Users without one of these roles are scoped to the company of their
+ * employee record, and to none when they have no such record.
  */
-export const ORDERS_FINANCE_ROLES = [
-    'Senior Finance (AR)',
-    'CFO',
-    'CEO Approver',
-    'Orders Revenue Supervisor',
-    'Finance',
-    'Developer',
-    'Integration',
-    'Administrator',
-    'UI',
-] as const;
+export const ORDERS_FINANCE_ROLES = RECEIVABLES_ALL_COMPANIES_ROLES;
 
 const FINANCE_ROLE_SET = new Set<string>(ORDERS_FINANCE_ROLES.map((r) => r.toLowerCase()));
 
@@ -124,6 +116,14 @@ export class CompanyScopeService {
     }
 
     /**
+     * Why a Receivables page shows nothing, when the user is scoped to no company (#813); null
+     * otherwise. A blank page with no reason reads as "nothing owed", which is the wrong conclusion.
+     */
+    public get ScopeNote(): string | null {
+        return this.allowedCompanyIDs !== null && this.allowedCompanyIDs.length === 0 ? RECEIVABLES_NO_COMPANY_NOTE : null;
+    }
+
+    /**
      * Effective company IDs to pass to server operations and RunView filters, or `undefined` when all
      * companies are in scope.
      */
@@ -153,6 +153,7 @@ export class CompanyScopeService {
             const roleNames = await this.loadRoleNamesIfNeeded(rv, user);
             this.isFinanceUser = UserHoldsFinanceRole(user, roleNames);
 
+            // Fails closed: a user with no finance role and no employee company is scoped to none.
             const employeeCompanies = this.isFinanceUser ? null : await this.loadEmployeeCompanies(rv, user);
             this.allowedCompanyIDs = employeeCompanies;
             if (employeeCompanies && employeeCompanies.length > 0 && this.selectedIDs.length === 0) {
@@ -178,8 +179,9 @@ export class CompanyScopeService {
                 }
             }
         } catch {
-            // Degrade gracefully when metadata or RunView is not wired (e.g., unit tests).
-            this.allowedCompanyIDs = null;
+            // A scope that cannot be worked out shows nothing rather than everything, unless the user
+            // is already known to hold an all-companies role.
+            this.allowedCompanyIDs = this.isFinanceUser ? null : [];
         }
     }
 
@@ -270,10 +272,10 @@ export class CompanyScopeService {
         return new Map(res.Results.map((r) => [String(r.ID).toLowerCase(), r.Name]));
     }
 
-    private async loadEmployeeCompanies(rv: RunView, user: UserInfo): Promise<string[] | null> {
+    private async loadEmployeeCompanies(rv: RunView, user: UserInfo): Promise<string[]> {
         const employeeID = user.EmployeeID ? String(user.EmployeeID).trim() : '';
         if (!IsValidUUID(employeeID)) {
-            return null;
+            return [];
         }
         const res = await rv.RunView<{ CompanyID: string | null }>(
             {
@@ -285,8 +287,7 @@ export class CompanyScopeService {
             },
             user,
         );
-        if (!res?.Success) return null;
-        const companyIDs = cleanUUIDs((res.Results ?? []).map((r) => String(r.CompanyID ?? '')));
-        return companyIDs.length > 0 ? companyIDs : null;
+        if (!res?.Success) return [];
+        return cleanUUIDs((res.Results ?? []).map((r) => String(r.CompanyID ?? '')));
     }
 }

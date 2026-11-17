@@ -45,7 +45,13 @@ export class SendExternalInvoicesOperation extends OrdersSendExternalInvoicesOpe
         let failed = 0;
         let skipped = 0;
         try {
-            const worklist = await BuildExternalInvoicingWorklist({ CompanyIDs: input?.CompanyIDs ?? null, IncludeFailed: retryTransient }, provider, user);
+            // The scheduled send runs as a job user that may be linked to no employee; it still sweeps every
+            // company (#813). A caller placed in a company is still kept to it.
+            const worklist = await BuildExternalInvoicingWorklist(
+                { CompanyIDs: input?.CompanyIDs ?? null, IncludeFailed: retryTransient, UnplacedUserSeesAll: true },
+                provider,
+                user,
+            );
             const eligible = worklist.filter((row) => {
                 if (row.State === 'Unsent') return true;
                 if (row.State === 'Failed') return retryTransient && ClassifyIssueFailure(row.LastError) === 'Transient';

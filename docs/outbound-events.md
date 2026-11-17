@@ -1,6 +1,6 @@
 # Outbound events
 
-Orders tells registered consumers when a **sale confirms** (renewals included) and when an **entitlement grant is created, or its status or validity dates change**. A CRM can create a deal per purchase; a downstream system that keeps its own copy of access can provision and revoke without polling.
+Orders tells registered consumers when a **sale confirms** (renewals included) and when an **entitlement grant is created, its status or validity dates change, or its validity runs out**. A CRM can create a deal per purchase; a downstream system that keeps its own copy of access can provision and revoke without polling.
 
 ## Registering a consumer
 
@@ -35,7 +35,7 @@ Reference the class from the server bootstrap so the decorator is not tree-shake
 
 The envelope is `{ EventID, EventType, OccurredAt, OrderHeaderID, EntitlementGrantID, Payload }`. `EventID` is stable across retries.
 
-A term that lapses without renewal changes nothing on the grant, so it fires no event.
+A term that lapses without renewal changes nothing on the grant, so no save fires an event. The scheduled dispatch pass covers it instead (#857): on its quarter-hour sweep it records one `GrantStatusChanged` for each `Active` grant whose `ValidTo` passed in the last 7 days with no event for that grant since, with `FromStatus` `Active`, `ToStatus` `Expired` (what an access check answers once `ValidTo` is behind it), `ChangedFields` empty and `Lapsed: true`. The grant row is not changed. A grant whose `ValidTo` is later moved and passes again is announced again. At most 200 lapses are recorded per pass; the rest go in the next. Code: [`packages/CoreEntitiesServer/src/GrantLapseEvents.ts`](../packages/CoreEntitiesServer/src/GrantLapseEvents.ts).
 
 ## How delivery works
 

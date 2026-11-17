@@ -64,6 +64,9 @@ const RAIL_TYPE_CODES = ['BillCom'];
                 Detail="Scheduled installments only" />
         </div>
 
+        @if (ScopeNote) {
+            <mj-alert Variant="info" Icon="fa-solid fa-circle-info" class="mjo-bl__note">{{ ScopeNote }}</mj-alert>
+        }
         @if (LoadError) {
             <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-bl__note">
                 <strong>The billing worklist did not load.</strong>
@@ -135,6 +138,11 @@ export class MJOBillingPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly confirm = inject(MJConfirmService);
     private readonly companyScope = inject(CompanyScopeService);
+
+    /** Why this page is empty when the user is scoped to no company (#813). */
+    public get ScopeNote(): string | null {
+        return this.companyScope.ScopeNote;
+    }
 
     @Output() OrderOpened = new EventEmitter<{ ID: string }>();
 

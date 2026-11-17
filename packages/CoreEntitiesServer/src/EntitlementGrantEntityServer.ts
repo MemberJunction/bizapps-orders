@@ -76,6 +76,21 @@ export class EntitlementGrantEntityServer extends mjBizAppsOrdersEntitlementGran
         }
     }
 
+    /** The order the grant's event names: its order line's order, or null for a grant with no line. */
+    public async OrderHeaderIDForEvent(): Promise<string | null> {
+        return this.orderHeaderID();
+    }
+
+    /**
+     * The payload of a lapse (#857, ./GrantLapseEvents.ts): the grant is unchanged and still `Active`, but
+     * its `ValidTo` has passed, so access has ended. `ToStatus` is `Expired`, what the access evaluator
+     * answers, and `Lapsed` is true so a consumer can tell it from a saved status change.
+     */
+    public async LapsePayload(): Promise<Record<string, unknown>> {
+        const payload = await this.eventPayload(this.Status, { ChangedFields: [], FromValidFrom: null, FromValidTo: null });
+        return { ...payload, ToStatus: 'Expired', Lapsed: true };
+    }
+
     private async orderHeaderID(): Promise<string | null> {
         if (!this.OrderLineID) return null;
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);

@@ -24,6 +24,8 @@ import type { mjBizAppsOrdersOutboundDeliveryEntity, mjBizAppsOrdersOutboundEven
 import { RequireUUID } from './sql-guards.js';
 import { raiseOutboundDeadLetterAlert } from './checkoutCaptureAlert.js';
 import { AlertSweepDue, AssignUnassignedAlertTasks } from './AlertTaskAssignment.js';
+import { RecordLapsedGrantEvents } from './GrantLapseEvents.js';
+import { ResyncConcessionApprovalAssignees } from './ConcessionApprovalResync.js';
 
 export const OUTBOUND_EVENT_ENTITY = 'MJ_BizApps_Orders: Outbound Events';
 export const OUTBOUND_DELIVERY_ENTITY = 'MJ_BizApps_Orders: Outbound Deliveries';
@@ -193,6 +195,10 @@ interface ClaimedRow {
  * The scheduled pass (no `OrderHeaderID`) on the quarter hours (`AlertSweepDue`) then assigns any open
  * alert Task nobody holds yet (`AssignUnassignedAlertTasks`): a dead-letter alert whose first assignment
  * failed, or one raised before the alert role was set. A checkout's kick skips it, so a buyer never waits on it.
+ * Before claiming, that same quarter-hour pass records a `GrantStatusChanged` for each grant whose
+ * `ValidTo` passed with nothing else said about it (`RecordLapsedGrantEvents`, #857), and after the
+ * alert sweep it re-assigns open concession approval tasks to the approving role's current holders
+ * (`ResyncConcessionApprovalAssignees`, #844).
  */
 export async function DispatchOutboundDeliveries(
     input: DispatchOutboundInput,
@@ -202,8 +208,24 @@ export async function DispatchOutboundDeliveries(
     // Decided when the pass STARTS: a pass that begins at :15 and overruns (a hanging consumer, 30 s per row)
     // still sweeps, and that is exactly when dead-letter alerts are being raised.
     const sweepDue = !input.OrderHeaderID && !!user && AlertSweepDue(new Date());
+    // Lapses are recorded first so their deliveries go out in this pass (#857).
+    if (sweepDue && user) {
+        try {
+            await RecordLapsedGrantEvents(provider, user);
+        } catch (err) {
+            LogError(`[BizAppsOrders] The grant lapse sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
     const out = await dispatchDue(input, provider, user);
-    if (sweepDue && user) await AssignUnassignedAlertTasks(provider, user);
+    if (sweepDue && user) {
+        await AssignUnassignedAlertTasks(provider, user);
+        // Open concession approval tasks follow the approving role's membership (#844).
+        try {
+            await ResyncConcessionApprovalAssignees(provider, user);
+        } catch (err) {
+            LogError(`[BizAppsOrders] The approval task re-assignment sweep failed: ${err instanceof Error ? err.message : String(err)}`);
+        }
+    }
     return out;
 }
 

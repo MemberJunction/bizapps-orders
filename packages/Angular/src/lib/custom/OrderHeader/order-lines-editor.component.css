@@ -129,6 +129,15 @@
     background: var(--mj-bg-surface-hover);
 }
 
+.mjo-ol-price__locked-note {
+    display: flex;
+    gap: var(--mj-space-1);
+    align-items: baseline;
+    max-width: 22rem;
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
 .mjo-ol-override {
     display: flex;
     flex-direction: column;

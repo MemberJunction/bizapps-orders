@@ -66,7 +66,8 @@ const ORDER = 'aaaaaaaa-2222-4333-8444-555555555555';
 const COMPANY = 'bbbbbbbb-2222-4333-8444-555555555555';
 
 const provider = { EntityByName: () => undefined } as unknown as IMetadataProvider;
-const user = {} as UserInfo;
+// A finance user: the Receivables worklists scope everyone else to their employee's company (#813).
+const user = { UserRoles: [{ Role: 'Finance' }] } as unknown as UserInfo;
 
 beforeEach(() => {
     mocks.failing = [];

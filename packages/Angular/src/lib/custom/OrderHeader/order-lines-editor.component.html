@@ -63,6 +63,13 @@
                     @if (HasDiscount(line)) {
                         <span class="mjo-ol-discpill" title="Discount on this line">−{{ AppliedDiscount(line) | mjoMoney }}</span>
                     }
+                    <!-- No pencil: say why, or the missing control reads as a missing feature (#1013). -->
+                    @if (PriceLockedReason(line); as why) {
+                        <div class="mjo-ol-price__locked-note">
+                            <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                            <span>{{ why }}</span>
+                        </div>
+                    }
                     @if (PricedLine(line)?.Error; as why) {
                         <div class="mjo-ol-card__err">{{ why }}</div>
                     }

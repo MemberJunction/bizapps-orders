@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FormatInstantDate } from '../../../panels/money-format';
-import { InstalmentARLabel, NoScheduleARNote } from '../order-payment-schedule';
+import { InstalmentARLabel, NoScheduleARNote, NewInstalmentDefaults } from '../order-payment-schedule';
 
 describe('NoScheduleARNote', () => {
     it('says AR was raised in full for a confirmed order', () => {
@@ -39,5 +39,22 @@ describe('InstalmentARLabel', () => {
         expect(InstalmentARLabel({ Status: 'Canceled', InvoicedAt: invoicedAt, JournalEntryID: 'je-1' })).toBe(
             `Raised ${FormatInstantDate(invoicedAt)}`,
         );
+    });
+});
+
+describe('NewInstalmentDefaults (#801)', () => {
+    const order = { ID: 'order-1', CompanyID: 'co-1' };
+
+    it('numbers the new instalment after the highest one, in the order and its company, Scheduled', () => {
+        expect(NewInstalmentDefaults(order, [{ InstallmentNumber: 1 }, { InstallmentNumber: 3 }, { InstallmentNumber: 2 }])).toEqual({
+            OrderHeaderID: 'order-1',
+            InstallmentNumber: 4,
+            CompanyID: 'co-1',
+            Status: 'Scheduled',
+        });
+    });
+
+    it('starts at 1 on an order with no schedule', () => {
+        expect(NewInstalmentDefaults(order, []).InstallmentNumber).toBe(1);
     });
 });

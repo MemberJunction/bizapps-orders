@@ -263,7 +263,16 @@
                     <div class="mjo-oh-hint">Intent only — the payment is created when the order is confirmed.</div>
                 }
                 @if (record.IsSaved) {
-                    <h3 class="mjo-oh-subhead">Payment schedule</h3>
+                    <div class="mjo-oh-subhead-row">
+                        <h3 class="mjo-oh-subhead">Payment schedule</h3>
+                        @if (Instalments !== null) {
+                            <!-- #801: instalments are added from the order. Invoiced rows stay frozen by the
+                                 schedule's own trigger; a Scheduled row opens for editing on click. -->
+                            <button type="button" class="mjo-oh-linkbtn" (click)="AddInstalment()">
+                                <i class="fa-solid fa-plus" aria-hidden="true"></i> Add instalment
+                            </button>
+                        }
+                    </div>
                     @if (InstalmentsError) {
                         <div class="mjo-oh-hint">{{ InstalmentsError }}</div>
                     } @else if (Instalments === null) {
@@ -277,6 +286,8 @@
                                     <th>Instalment</th>
                                     <th>Due</th>
                                     <th class="is-num">Amount</th>
+                                    <th class="is-num">Paid</th>
+                                    <th class="is-num">Balance</th>
                                     <th>Status</th>
                                     <th>Invoice</th>
                                     <th>AR raised</th>
@@ -288,6 +299,8 @@
                                         <td>{{ row.InstallmentNumber }}</td>
                                         <td>{{ InstalmentDue(row) }}</td>
                                         <td class="is-num">{{ InstalmentAmount(row) }}</td>
+                                        <td class="is-num">{{ InstalmentPaid(row) }}</td>
+                                        <td class="is-num">{{ InstalmentBalance(row) }}</td>
                                         <td>{{ row.Status }}</td>
                                         <td>{{ row.DocumentNumber || '—' }}</td>
                                         <td>

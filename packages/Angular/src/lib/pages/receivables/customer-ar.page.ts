@@ -50,6 +50,9 @@ interface MJOCustomerSummary {
     standalone: true,
     imports: [CommonModule, EntityViewerModule, MJOAgingBarComponent, MJOMoneyStripComponent, MJAlertComponent, MJEmptyStateComponent],
     template: `
+        @if (ScopeNote) {
+            <mj-alert Variant="info" Icon="fa-solid fa-circle-info">{{ ScopeNote }}</mj-alert>
+        }
         @if (LoadError) {
             <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">
                 {{ LoadError }}
@@ -375,6 +378,11 @@ interface MJOCustomerSummary {
 export class MJOCustomerARPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly companyScope = inject(CompanyScopeService);
+
+    /** Why this page is empty when the user is scoped to no company (#813). */
+    public get ScopeNote(): string | null {
+        return this.companyScope.ScopeNote;
+    }
 
     @Output() OrderOpened = new EventEmitter<mjBizAppsOrdersOrderHeaderEntity>();
 

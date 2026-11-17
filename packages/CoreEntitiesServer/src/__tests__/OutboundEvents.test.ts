@@ -9,6 +9,18 @@ const mocks = vi.hoisted(() => ({
     events: [] as Array<Record<string, unknown>>,
     deadLetterAlert: vi.fn(),
     sweep: vi.fn(),
+    lapse: vi.fn(),
+    resync: vi.fn(),
+}));
+
+// The approval re-assignment's behaviour is ConcessionApprovalResync's (its own tests); here: which passes run it.
+vi.mock('../ConcessionApprovalResync.js', () => ({
+    ResyncConcessionApprovalAssignees: (...args: unknown[]) => mocks.resync(...args),
+}));
+
+// The lapse sweep's behaviour is GrantLapseEvents' (its own tests); here: which passes run it, and in what order.
+vi.mock('../GrantLapseEvents.js', () => ({
+    RecordLapsedGrantEvents: (...args: unknown[]) => mocks.lapse(...args),
 }));
 
 // The dead-letter alert's content is checkoutCaptureAlert's (its own tests); here: when it is raised.
@@ -328,6 +340,8 @@ describe('outbound events', () => {
         it('the scheduled pass on a quarter hour assigns unassigned alerts through its provider; a checkout kick does not', async () => {
             const jobUser = { ID: 'job-user' };
             mocks.sweep.mockReset().mockResolvedValue({ Assigned: 0 });
+            mocks.lapse.mockReset().mockResolvedValue(0);
+            mocks.resync.mockReset().mockResolvedValue({ Checked: 0, Changed: 0, Failed: 0 });
             vi.useFakeTimers({ toFake: ['Date'] });
             vi.setSystemTime(new Date('2026-11-01T10:15:05Z'));
             const scheduled = setUp('crm');
@@ -335,11 +349,20 @@ describe('outbound events', () => {
             expect(mocks.sweep).toHaveBeenCalledTimes(1);
             expect(mocks.sweep.mock.calls[0][0]).toBe(scheduled.provider);
             expect(mocks.sweep.mock.calls[0][1]).toBe(jobUser);
+            // The lapse sweep runs on the same passes, through the same provider (#857).
+            expect(mocks.lapse).toHaveBeenCalledTimes(1);
+            expect(mocks.lapse.mock.calls[0][0]).toBe(scheduled.provider);
+            // So does the approval task re-assignment (#844).
+            expect(mocks.resync).toHaveBeenCalledTimes(1);
 
             mocks.sweep.mockClear();
+            mocks.lapse.mockClear();
+            mocks.resync.mockClear();
             const kick = setUp('crm');
             await DispatchOutboundDeliveries({ OrderHeaderID: ORDER_ID }, kick.provider as never, jobUser as never);
             expect(mocks.sweep).not.toHaveBeenCalled();
+            expect(mocks.lapse).not.toHaveBeenCalled();
+            expect(mocks.resync).not.toHaveBeenCalled();
 
             // A pass with nothing due still sweeps: an unassigned alert does not wait for traffic.
             const idle = fakeProvider([]);
@@ -364,6 +387,17 @@ describe('outbound events', () => {
             await DispatchOutboundDeliveries({}, fakeProvider([]).provider as never, jobUser as never);
             expect(mocks.sweep).not.toHaveBeenCalled();
             vi.useRealTimers();
+        });
+
+        it('a lapse sweep that throws never fails the pass (#857)', async () => {
+            mocks.lapse.mockReset().mockRejectedValue(new Error('database busy'));
+            mocks.sweep.mockReset().mockResolvedValue({ Assigned: 0 });
+            vi.useFakeTimers({ toFake: ['Date'] });
+            vi.setSystemTime(new Date('2026-11-01T10:30:01Z'));
+            const out = await DispatchOutboundDeliveries({}, fakeProvider([]).provider as never, { ID: 'job-user' } as never);
+            vi.useRealTimers();
+            expect(out.Success).toBe(true);
+            expect(mocks.lapse).toHaveBeenCalledTimes(1);
         });
 
         it('an alert that throws never fails the pass: the dead letter is still recorded and counted', async () => {
