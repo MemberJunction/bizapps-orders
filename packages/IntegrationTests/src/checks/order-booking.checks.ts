@@ -41,6 +41,11 @@
  *   OB31 a paid line beside a line at its $0 catalog price is refused at the confirm checklist and by
  *        the save, before journal booking, naming the line once (golive #328)
  *   OB32 a checkout order is not held by that rule; the same lines entered by hand are
+ *   OB33 an order in another currency books every line at its booking rate, in functional currency,
+ *        with the original amount, code and rate on the line; every entry balances and Deferred Revenue
+ *        empties exactly over the term (golive #492)
+ *   OB34 …and a return of it takes the order's currency and booking rate, not the day's, so it takes
+ *        back exactly what the sale posted
  *
  * Deterministic (no model calls). Every check runs inside a rolled-back transaction.
  */
@@ -1251,7 +1256,116 @@ export const OrderBookingChecks: NamedCheck[] = [
                 AssertEqual(built.Order.UnpricedLines().length, 0, 'no line is held on a checkout order');
             }),
     },
+    {
+        Id: 'order-booking.OB33',
+        Name: 'OB33: an order in another currency books at its booking rate, with the original amounts on every line',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const sale = await confirmForeignOrder(ctx);
+                const lines = await foreignEntryLines(ctx, sale.OrderID);
+                Assert(lines.length > 2, `the sale posted entries: ${lines.length} lines`);
+                for (const l of lines) {
+                    AssertEqual(l.OriginalCurrencyCode, 'AUD', `line ${l.LineNumber} of ${l.EntryNumber} states its original currency`);
+                    AssertEqual(Number(l.ExchangeRateUsed), FOREIGN_RATE, `line ${l.LineNumber} of ${l.EntryNumber} states the booking rate`);
+                    const original = Number(l.OriginalDebitAmount ?? l.OriginalCreditAmount);
+                    const functional = Number(l.DebitAmount ?? l.CreditAmount);
+                    Assert(Math.abs(original * FOREIGN_RATE - functional) <= 0.010000001, `${original} AUD at ${FOREIGN_RATE} posted as ${functional}`);
+                }
+                const byEntry = new Map<string, number>();
+                for (const l of lines) byEntry.set(l.EntryNumber, Math.round(((byEntry.get(l.EntryNumber) ?? 0) + Number(l.DebitAmount ?? 0) - Number(l.CreditAmount ?? 0)) * 100) / 100);
+                for (const [entry, net] of byEntry) AssertEqual(net, 0, `${entry} balances in functional currency`);
+                const ar = lines.filter((l) => l.Role === 'AR').reduce((t, l) => t + Number(l.DebitAmount ?? 0), 0);
+                AssertEqual(Math.round(ar * 100) / 100, Math.round(FOREIGN_NET * FOREIGN_RATE * 100) / 100, 'AR is the order total at the booking rate');
+                const deferred = lines.filter((l) => l.Role === 'Deferred').reduce((t, l) => t + Number(l.CreditAmount ?? 0) - Number(l.DebitAmount ?? 0), 0);
+                AssertEqual(Math.round(deferred * 100) / 100, 0, 'Deferred Revenue empties over the term in functional currency');
+            }),
+    },
+    {
+        Id: 'order-booking.OB34',
+        Name: 'OB34: a return of an order in another currency takes its currency and booking rate, and takes back exactly what it posted',
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                const sale = await confirmForeignOrder(ctx);
+                // A later, different rate: the return must not read it.
+                await TxQuery(
+                    ctx,
+                    `INSERT INTO ${ACCT_SCHEMA}.CurrencySpotRate (FromCurrencyCode, ToCurrencyCode, RateDate, Rate, Source)
+                     VALUES ('AUD', '${Fx().CurrencyCode}', CAST(GETDATE() AS DATE), 0.9, 'IT-later')`,
+                );
+                const f = Fx();
+                const ret = await ConfirmOrder(ctx.User, {
+                    CompanyID: f.CoA.ID,
+                    OrderType: 'Return',
+                    Lines: [{ ProductID: f.Products.EventA, Quantity: -1, ReversesOrderLineID: sale.LineID }],
+                });
+                Assert(ret.Saved, `the return confirms: ${ret.Message}`);
+                const header = await TxOne<{ CurrencyCode: string | null; BookingExchangeRate: number | null }>(
+                    ctx,
+                    `SELECT CurrencyCode, BookingExchangeRate FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${ret.Order.ID}'`,
+                );
+                AssertEqual(header.CurrencyCode, 'AUD', 'the return is in the sale\'s currency');
+                AssertEqual(Number(header.BookingExchangeRate), FOREIGN_RATE, 'the return books at the sale\'s rate');
+                const all = [...(await foreignEntryLines(ctx, sale.OrderID)), ...(await foreignEntryLines(ctx, ret.Order.ID as string))];
+                for (const role of ['AR', 'Deferred', 'Sales'] as const) {
+                    const net = all.filter((l) => l.Role === role).reduce((t, l) => t + Number(l.DebitAmount ?? 0) - Number(l.CreditAmount ?? 0), 0);
+                    AssertEqual(Math.round(net * 100) / 100, 0, `${role} nets to zero after the full return`);
+                }
+            }),
+    },
 ];
+
+/** The booking rate OB33–OB34 confirm at, and the order's net in AUD. 1,234.57 × 0.6543 rounds. */
+const FOREIGN_RATE = 0.6543;
+const FOREIGN_NET = 1234.57;
+
+/** Confirm a deferred event line in AUD, with an AUD → functional rate on file for today. */
+async function confirmForeignOrder(ctx: IntegrationCheckContext): Promise<{ OrderID: string; LineID: string }> {
+    const f = Fx();
+    await TxQuery(
+        ctx,
+        `INSERT INTO ${ACCT_SCHEMA}.CurrencySpotRate (FromCurrencyCode, ToCurrencyCode, RateDate, Rate, Source)
+         VALUES ('AUD', '${f.CurrencyCode}', DATEADD(DAY, -1, CAST(GETDATE() AS DATE)), ${FOREIGN_RATE}, 'IT')`,
+    );
+    const sale = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        CurrencyCode: 'AUD',
+        Lines: [{ ProductID: f.Products.EventA, Quantity: 1, UnitPrice: FOREIGN_NET, ServicePeriodStart: '2026-08-01', ServicePeriodEnd: '2027-01-31' }],
+    });
+    Assert(sale.Saved, `the AUD order confirms: ${sale.Message}`);
+    const line = await TxOne<{ ID: string }>(ctx, `SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${sale.Order.ID}'`);
+    return { OrderID: sale.Order.ID as string, LineID: line.ID };
+}
+
+interface ForeignEntryLine {
+    EntryNumber: string;
+    LineNumber: number;
+    Role: 'AR' | 'Deferred' | 'Sales' | 'Other';
+    DebitAmount: number | null;
+    CreditAmount: number | null;
+    OriginalCurrencyCode: string | null;
+    OriginalDebitAmount: number | null;
+    OriginalCreditAmount: number | null;
+    ExchangeRateUsed: number | null;
+}
+
+/** Every journal-entry line an order's lines and terms produced, with the role its account plays. */
+async function foreignEntryLines(ctx: IntegrationCheckContext, orderID: string): Promise<ForeignEntryLine[]> {
+    return TxQuery<ForeignEntryLine>(
+        ctx,
+        `SELECT je.EntryNumber, jel.LineNumber,
+                CASE WHEN jel.Description LIKE 'AR %' THEN 'AR'
+                     WHEN jel.Description LIKE 'Deferred%' OR jel.Description LIKE 'Release deferred%' THEN 'Deferred'
+                     WHEN jel.Description LIKE 'Revenue%' OR jel.Description LIKE 'Sales%' THEN 'Sales'
+                     ELSE 'Other' END AS Role,
+                jel.DebitAmount, jel.CreditAmount, jel.OriginalCurrencyCode, jel.OriginalDebitAmount,
+                jel.OriginalCreditAmount, jel.ExchangeRateUsed
+         FROM ${ACCT_SCHEMA}.JournalEntryLine jel
+         JOIN ${ACCT_SCHEMA}.JournalEntry je ON je.ID = jel.JournalEntryID
+         WHERE je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')`,
+    );
+}
 
 for (const check of OrderBookingChecks) {
     IntegrationCheckRegistry.Instance.Register(check);
