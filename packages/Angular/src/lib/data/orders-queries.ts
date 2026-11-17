@@ -2428,6 +2428,21 @@ export function RankCatalogMatches<T extends RankableProduct>(
         .map((r) => r.option);
 }
 
+/**
+ * The products a picker offers when "Only selling company products" is checked.
+ *
+ * The picker opens with the box checked, so a user sees their own company's catalog by default and
+ * unchecks it to sell another company's product on a multi-company deal. With no selling company there
+ * is nothing to narrow to, so every product is returned rather than none.
+ */
+export function KeepSellingCompanyProducts<T extends RankableProduct>(
+    options: readonly T[],
+    sellingCompanyID: string | null | undefined,
+): T[] {
+    if (!sellingCompanyID) return [...options];
+    return options.filter((option) => !!option.CompanyID && UUIDsEqual(option.CompanyID, sellingCompanyID));
+}
+
 /** A number in a product name: digits, with an optional decimal part ("10", "1.25"). */
 const NAME_NUMBER = /(\d+(?:\.\d+)?)/;
 
