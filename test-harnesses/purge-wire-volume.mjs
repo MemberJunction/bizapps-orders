@@ -39,6 +39,9 @@ const orderScope = `SELECT ID FROM ${ORDERS}.OrderHeader WHERE Notes LIKE '${lik
 
 const statements = [
     `DISABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
+    // 51019 / 51020: a Confirmed header and its last schedule row refuse DELETE.
+    `DISABLE TRIGGER ${ORDERS}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS}.OrderHeader`,
+    `DISABLE TRIGGER ${ORDERS}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS}.OrderHeaderPaymentSchedule`,
     `DISABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
     `DISABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
     `DISABLE TRIGGER ${ORDERS}.trg_PaymentDetail_Immutable ON ${ORDERS}.PaymentDetail`,
@@ -114,6 +117,8 @@ const statements = [
     `DELETE FROM ${ORDERS}.OrderHeader WHERE Notes LIKE '${like}'`,
 
     `ENABLE TRIGGER ${ORDERS}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS}.OrderLine`,
+    `ENABLE TRIGGER ${ORDERS}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS}.OrderHeader`,
+    `ENABLE TRIGGER ${ORDERS}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS}.OrderHeaderPaymentSchedule`,
     `ENABLE TRIGGER ${ORDERS}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS}.PaymentLine`,
     `ENABLE TRIGGER ${ORDERS}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS}.PaymentHeader`,
     `ENABLE TRIGGER ${ORDERS}.trg_PaymentDetail_Immutable ON ${ORDERS}.PaymentDetail`,

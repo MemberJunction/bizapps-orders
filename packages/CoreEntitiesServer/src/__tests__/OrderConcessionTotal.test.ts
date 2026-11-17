@@ -10,8 +10,8 @@ const ORDER_ID = '0b9a6c2e-4f3d-4a1b-9c8e-7d6f5e4a3b2c';
 const USER = { ID: 'user-1' } as UserInfo;
 const PROVIDER = {} as IMetadataProvider;
 
-function row(Status: string, ComputedValue: number) {
-    return { Status, ComputedValue, DeliveryForm: 'Price', ReasonCategory: 'Retention', OrderLineID: 'line-1', AuthorizedBySalesAuthorityID: null, SalesRuleID: null };
+function row(Status: string, ComputedValue: number, OrderLineID = `line-${Status}`) {
+    return { Status, ComputedValue, DeliveryForm: 'Price', ReasonCategory: 'Retention', OrderLineID, AuthorizedBySalesAuthorityID: null, SalesRuleID: null };
 }
 
 afterEach(() => vi.restoreAllMocks());
@@ -24,5 +24,14 @@ describe('OrderConcessionTotal', () => {
         } as Awaited<ReturnType<RunView['RunView']>>);
 
         expect(await OrderConcessionTotal(ORDER_ID, PROVIDER, USER)).toBe(500);
+    });
+
+    it('counts one price concession per line, at its largest: two on one line are the same give-away (golive #387)', async () => {
+        vi.spyOn(RunView.prototype, 'RunView').mockResolvedValue({
+            Success: true,
+            Results: [row('Pending', 300, 'line-1'), row('Approved', 200, 'line-1'), row('Approved', 50, 'line-2')],
+        } as Awaited<ReturnType<RunView['RunView']>>);
+
+        expect(await OrderConcessionTotal(ORDER_ID, PROVIDER, USER)).toBe(350);
     });
 });
