@@ -1362,6 +1362,26 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // A REVERSAL books at the rate of what it reverses (a return, a credit memo, a gateway refund's
         // credit), never at today's: see DecideReversalCurrency.
         const reversed = this.Lines.Items.map((l) => l.ReversesOrderLineID).filter((id): id is string => !!id);
+        // A confirm of a saved draft may arrive with its lines not loaded (order-booking OB15); its
+        // saved lines say what it reverses then.
+        if (!reversed.length && this.IsSaved && this.ID) {
+            const saved = await RunView.FromMetadataProvider(provider).RunView<{ ReversesOrderLineID: string }>(
+                {
+                    EntityName: ORDER_LINE_ENTITY,
+                    ExtraFilter: `OrderHeaderID = '${RequireUUID(this.ID, 'OrderHeaderID')}' AND ReversesOrderLineID IS NOT NULL`,
+                    Fields: ['ReversesOrderLineID'],
+                    ResultType: 'simple',
+                },
+                user,
+            );
+            if (!saved.Success) {
+                this.RegisterResultHistoryEntry(
+                    this.buildFailureResult(new Error(`Order ${this.OrderNumber ?? ''} was not confirmed: its lines could not be read (${saved.ErrorMessage ?? 'unknown error'}).`)),
+                );
+                return false;
+            }
+            reversed.push(...(saved.Results ?? []).map((r) => r.ReversesOrderLineID));
+        }
         if (reversed.length) {
             let inherited: ReversalCurrencyDecision;
             try {
