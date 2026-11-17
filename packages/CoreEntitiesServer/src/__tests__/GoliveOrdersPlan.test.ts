@@ -1,6 +1,4 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import { ValidationResult, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
 import {
     ORDER_HEADER_MONEY_FIELDS,
@@ -269,10 +267,36 @@ describe('Group 05 — the guards are wired into Validate and Save', () => {
         expect(result.Errors.map((e) => e.Message).join(' ')).toContain('ConfirmedAt is stamped by the server');
     });
 
-    it('a failed booking save puts the confirmation stamp back (#969)', () => {
-        // The rollback catch is deep inside the booking transaction; the source is the stable thing to pin.
-        const source = readFileSync(join(import.meta.dirname, '..', 'OrderEntityServer.ts'), 'utf8');
-        expect(source).toMatch(/catch \(err\) \{[\s\S]{0,1500}?if \(booking\) \{\s*this\.restoreConfirmationStamp\(priorConfirmationStamp\);/);
+    it('a failed booking save puts the confirmation stamp back through Save (#969)', async () => {
+        const order = Object.create(OrderEntityServer.prototype) as Record<string, unknown> & { Save: () => Promise<boolean> };
+        const define = (name: string, value: unknown) => Object.defineProperty(order, name, { value, configurable: true, writable: true });
+        // Every gate ahead of the transaction passes; the booking then fails as the transaction opens.
+        for (const gate of ['passesStatusTransition', 'passesOriginGuard', 'passesConfirmationStampGuard', 'passesCleanupRight']) {
+            define(gate, () => true);
+        }
+        for (const gate of ['passesOrderReviewOnChange', 'passesConcessionGate', 'passesNoDealConfirmGate', 'passesOrderReviewGate']) {
+            define(gate, async () => true);
+        }
+        for (const step of ['ApplySavePartyDefaults', 'loadPersistedRenewalMarks', 'resolveDueDate']) define(step, async () => undefined);
+        define('willBookOnThisSave', () => true);
+        define('IsSaved', true);
+        define('Lines', { IsLoaded: true });
+        define('OrderNumber', 'ORD-TEST');
+        define('Fields', []);
+        define('ProviderToUse', {
+            BeginTransaction: async () => {
+                throw new Error('booking failed');
+            },
+            RollbackTransaction: async () => undefined,
+        });
+        define('RegisterResultHistoryEntry', () => undefined);
+        const prior = [{ Name: 'ConfirmedAt', Value: null, OldValue: null }];
+        define('captureConfirmationStamp', () => prior);
+        const restore = vi.fn();
+        define('restoreConfirmationStamp', restore);
+
+        expect(await order.Save()).toBe(false);
+        expect(restore).toHaveBeenCalledWith(prior);
     });
 
     it('a line saved as the parent leg of an IS-A leaf save does not save its extension again', async () => {
