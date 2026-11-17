@@ -174,6 +174,8 @@ Every order line books **its own complete, single-company journal entry**. There
 
 A deferred line books its discount as it earns, not at booking. Booking credits Deferred Revenue with the net. Each revenue release, or progress catch-up on a percentage-of-completion line, debits Deferred for its slice, debits Sales Discounts for its share of the discount and credits Sales for both, so Deferred clears to zero. With no Sales Discounts account linked, the discount nets into the revenue (plan D11). The instalment invoice follows the same rule.
 
+An order can be contracted in a currency other than its selling company's functional currency (golive #492, design D24). `OrderHeader.CurrencyCode` names it; NULL means the functional currency, which every earlier order is. The order's amounts are in that currency, and its invoice, quote and credit memo print in it (`DocumentCurrencyCode`). The currency changes only while the order is Draft or Quoted and has never been confirmed (`CurrencyChangeRefusal`, from `OrderHeaderEntity.Validate()`). At the first confirm `OrderEntityServer` reads the latest active `CurrencySpotRate` from that currency to the functional one on or before the business day, and stores it in `BookingExchangeRate` with its date in `BookingRateDate` (`OrderBookingRate.ts`); with no rate the confirm is refused, naming the currency and the day. An order in the functional currency stores neither. Converting the booked journal entries, renewals and payments by that rate is later work: until it lands, those still read the order's amounts as functional.
+
 A fully-comped order can produce **no** JEs. Accounting refuses an empty draft set, so `bookLines` skips the call rather than failing the order. A fully discounted deferred line books nothing: its booking credit is zero, and its schedule would be built from a zero net, so no releases are staged either (golive #328).
 
 ---
@@ -375,7 +377,7 @@ Not documented here yet: the steps that register a local checkout in a running M
 - **Approvals inbox** — sales rules can name an approver role; the Task exists; there is no Orders UI for it.
 - **Contracts / Inventory** — future sibling apps. Do not put their columns here.
 - **Event capacity enforcement** — not implemented; cannot be correct from these tables alone.
-- **Multi-currency** — deferred (D24).
+- **Multi-currency** — in progress (golive #492): orders record a currency and a booking rate, and documents print in it; posting journal entries, renewals and payments in it is not built yet.
 - **Graph view** — owned elsewhere (MJ `@memberjunction/ng-graph-view` + Common relationship graph). Do not edit those trees from this app's work.
 
 ---

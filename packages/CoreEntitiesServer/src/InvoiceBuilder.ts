@@ -329,6 +329,7 @@ export async function BuildInvoiceDocuments(
         Description: str(order.Description),
         PaymentTermsName: str(order.PaymentTermsType),
         PaymentTermsNetDays: terms?.NetDays != null ? Number(terms.NetDays) : null,
+        CurrencyCode: str(order.CurrencyCode),
     };
 
     const lines: InvoiceLineFacts[] = lineRows.map((l) => {

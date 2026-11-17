@@ -68,6 +68,7 @@ import {
     ORDER_HEADER_SET_ONCE_FIELDS,
     ORDER_LINE_MONEY_FIELDS,
 } from './booked-money';
+import { CurrencyChangeRefusal, ORDER_BOOKING_RATE_FIELDS } from './order-currency';
 
 /** The order editor's sections, in the order the screen shows them. */
 /**
@@ -314,6 +315,8 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         this.refuseBookedAddressEdits(result);
         this.refuseBookedPaymentTermsEdit(result);
         this.refuseCallerConfirmationStamp(result);
+        this.refuseLockedCurrencyEdit(result);
+        this.refuseCallerBookingRate(result);
 
         const verdict = this.statusTransitionVerdict();
         if (!verdict.Allowed) {
@@ -522,6 +525,53 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
                 ValidationErrorType.Failure,
             ),
         );
+    }
+
+    /** True when this order's currency can no longer change: it is past Draft or Quoted, or was confirmed (golive #492). */
+    public get CurrencyLocked(): boolean {
+        return this.currencyChangeRefusal() !== null;
+    }
+
+    /** Why the currency cannot change now, judged against the saved row; null for an unsaved order or one still in negotiation. */
+    private currencyChangeRefusal(): string | null {
+        if (!this.IsSaved) return null;
+        return CurrencyChangeRefusal({
+            OrderNumber: this.OrderNumber ?? null,
+            SavedStatus: (this.GetFieldByName('Status')?.OldValue as string | undefined) ?? null,
+            WasConfirmed: this.GetFieldByName('ConfirmedAt')?.OldValue != null,
+        });
+    }
+
+    /**
+     * Refuse a change to the currency of an order that is past negotiation (golive #492): its
+     * amounts are in that currency, and once confirmed it has booked at that currency's rate.
+     */
+    private refuseLockedCurrencyEdit(result: ValidationResult): void {
+        if (!this.FieldIsDirty('CurrencyCode')) return;
+        const message = this.currencyChangeRefusal();
+        if (!message) return;
+        result.Success = false;
+        result.Errors.push(new ValidationErrorInfo('CurrencyCode', message, this.CurrencyCode, ValidationErrorType.Failure));
+    }
+
+    /**
+     * `BookingExchangeRate` and `BookingRateDate` are read from accounting's spot rates by the
+     * server's booking save (golive #492); a caller cannot set them.
+     */
+    private refuseCallerBookingRate(result: ValidationResult): void {
+        if (this.bookingInFlight) return;
+        for (const name of ORDER_BOOKING_RATE_FIELDS) {
+            if (!this.FieldIsDirty(name)) continue;
+            result.Success = false;
+            result.Errors.push(
+                new ValidationErrorInfo(
+                    name,
+                    `${name} is read from the exchange rates when the order is confirmed and cannot be set directly.`,
+                    this.GetFieldByName(name)?.Value,
+                    ValidationErrorType.Failure,
+                ),
+            );
+        }
     }
 
     /**

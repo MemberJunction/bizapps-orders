@@ -73,6 +73,11 @@ export interface InvoiceOrderFacts {
     /** Net days from the terms record, used only when the header carries no due date. */
     PaymentTermsName: string | null;
     PaymentTermsNetDays: number | null;
+    /**
+     * The currency the order is contracted in, and so the currency of every amount on it (golive #492).
+     * Null or absent means the selling company's functional currency, the issuer's `CurrencyCode`.
+     */
+    CurrencyCode?: string | null;
 }
 
 /** One order line. Amounts are the engine's, already discounted and already taxed. */
@@ -149,9 +154,8 @@ export interface InvoicePartyFacts {
 }
 
 /**
- * Who is asking to be paid: the order's company. `CurrencyCode` belongs here rather than on the
- * order: it is the selling company's functional currency, which is a property of the seller and not
- * of the sale.
+ * Who is asking to be paid: the order's company. `CurrencyCode` is the selling company's functional
+ * currency: what an order with no currency of its own is in (golive #492).
  */
 export interface InvoiceIssuerFacts {
     CompanyID: string;
@@ -275,6 +279,8 @@ export interface InvoiceDocument {
     CompanyID: string;
     CompanyName: string;
     Issuer: InvoiceIssuerFacts;
+    /** The order's own currency (golive #492); null when it is in the issuer's functional currency. See {@link DocumentCurrencyCode}. */
+    OrderCurrencyCode: string | null;
 
     BillTo: InvoicePartyFacts;
     ShipTo: InvoicePartyFacts | null;
@@ -308,6 +314,17 @@ export interface InvoiceDocument {
 }
 
 // ── Decisions ────────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The currency a document prints its amounts in (golive #492).
+ *
+ * The order's own currency when it has one: its amounts are stored in it, so printing them under any
+ * other code would state a different price. Otherwise a caller's requested code, then the issuer's
+ * functional currency, then USD.
+ */
+export function DocumentCurrencyCode(doc: Pick<InvoiceDocument, 'OrderCurrencyCode' | 'Issuer'>, requested?: string | null): string {
+    return doc.OrderCurrencyCode || requested || doc.Issuer.CurrencyCode || 'USD';
+}
 
 /**
  * Whether an order can be rendered as a customer-facing document at all, and what it is if so.
@@ -951,6 +968,8 @@ export function BuildDocuments(input: {
                 TaxID: null,
                 CurrencyCode: null,
             },
+
+            OrderCurrencyCode: order.CurrencyCode?.trim().toUpperCase() || null,
 
             BillTo: input.BillTo,
             ShipTo: input.ShipTo,

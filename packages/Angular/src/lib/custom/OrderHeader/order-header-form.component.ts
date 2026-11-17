@@ -194,6 +194,11 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         return this.EditMode && !this.record?.MoneyLocked;
     }
 
+    /** The order's currency is editable while the order is Draft or Quoted and has never been confirmed (golive #492). */
+    public get CurrencyEditMode(): boolean {
+        return this.EditMode && !!this.record && !this.record.CurrencyLocked;
+    }
+
     protected navigationService = inject(NavigationService, { optional: true });
     private readonly confirmService = inject(MJConfirmService);
 

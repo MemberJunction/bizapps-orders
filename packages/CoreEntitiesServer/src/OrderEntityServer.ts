@@ -92,6 +92,7 @@ import { ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js'
 import { IsCancellationReversal, IsGatewayRenewal, IsMoneyOnlyReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
+import { ResolveBookingRate, type BookingRateDecision } from './OrderBookingRate.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
@@ -839,6 +840,11 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // else and remain atomic with the booking.
         if (booking) await this.resolveDueDate();
 
+        // THE EXCHANGE RATE AN ORDER IN A FOREIGN CURRENCY BOOKS AT (golive #492), read before the
+        // transaction for the same reason as the due date: it is a lookup, and it lands on `this` so
+        // the header save below persists it atomically with the booking. No rate refuses the confirm.
+        if (booking && !(await this.passesBookingRate())) return false;
+
         const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
 
         // Latch it BEFORE ConfirmedAt is stamped, so the validation that runs inside the
@@ -1337,6 +1343,44 @@ export class OrderEntityServer extends OrderHeaderEntity {
         return false;
     }
 
+
+    /**
+     * Store the spot rate an order in a foreign currency books at, or clear it for an order in its
+     * company's functional currency (golive #492). Refuses the confirm, naming the currency and the
+     * day, when no rate is recorded on or before the confirm day.
+     */
+    private async passesBookingRate(): Promise<boolean> {
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        let decision: BookingRateDecision;
+        try {
+            decision = await ResolveBookingRate(
+                {
+                    OrderNumber: this.OrderNumber ?? null,
+                    CurrencyCode: this.CurrencyCode ?? null,
+                    CompanyID: this.CompanyID ?? null,
+                    ConfirmDay: await BusinessDay(provider, user),
+                },
+                provider,
+                user,
+            );
+        } catch (err) {
+            decision = { Kind: 'Refused', Message: `Order ${this.OrderNumber ?? ''} was not confirmed: ${err instanceof Error ? err.message : String(err)}` };
+        }
+
+        if (decision.Kind === 'Refused') {
+            this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(decision.Message)));
+            return false;
+        }
+        if (decision.Kind === 'Rate') {
+            this.BookingExchangeRate = decision.Rate;
+            this.BookingRateDate = new Date(`${decision.RateDate}T00:00:00Z`);
+        } else {
+            this.BookingExchangeRate = null;
+            this.BookingRateDate = null;
+        }
+        return true;
+    }
 
     /**
      * Refuse the confirm while a concession on this order awaits a decision, or a line's typed price

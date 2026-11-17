@@ -1024,6 +1024,7 @@ export {
     DaysBetween,
     DeriveDocumentKind,
     DiscountTotalOf,
+    DocumentCurrencyCode,
     DocumentNumber,
     DueDateFor,
     ImplicitInstalment,
@@ -1184,3 +1185,15 @@ export { EscapeText, InvalidOperationInputError, RequireDate, RequireOptionalUUI
 export { CalendarDayOrToday } from './calendar-day.js';
 
 // The integration harness's test seam (#947) is NOT exported here: it lives on the `./testing` subpath.
+
+// The exchange rate an order in a foreign currency books at (golive #492).
+export {
+    ACCOUNTING_COMPANY_PROFILE_ENTITY,
+    CURRENCY_SPOT_RATE_ENTITY,
+    DecideBookingRate,
+    LoadFunctionalCurrency,
+    LoadSpotRate,
+    NormalizeCurrencyCode,
+    ResolveBookingRate,
+} from './OrderBookingRate.js';
+export type { BookingRateDecision, SpotRateFacts } from './OrderBookingRate.js';

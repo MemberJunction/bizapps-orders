@@ -6953,6 +6953,16 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true, description: "The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself."}) 
     InitialPaymentReceivedDate?: Date;
         
+    @Field({nullable: true, description: "ISO 4217 code of the currency the order is contracted and billed in; its amounts are in this currency. NULL means the selling company's functional currency. Can change only while the order is Draft or Quoted."}) 
+    @MaxLength(3)
+    CurrencyCode?: string;
+        
+    @Field(() => Float, {nullable: true, description: "Units of the selling company's functional currency per one unit of CurrencyCode, read from accounting's spot rates when the order is first confirmed (the most recent rate on or before the confirm date). NULL when the order is in the functional currency or not yet confirmed. Set by the server, never by hand."}) 
+    BookingExchangeRate?: number;
+        
+    @Field({nullable: true, description: "The date of the spot rate stored in BookingExchangeRate. Set together with it."}) 
+    BookingRateDate?: Date;
+        
     @Field({nullable: true}) 
     @MaxLength(50)
     Company?: string;
@@ -7012,6 +7022,10 @@ export class mjBizAppsOrdersOrderHeader_ {
     @Field({nullable: true}) 
     @MaxLength(100)
     ConfirmedByUser?: string;
+        
+    @Field({nullable: true}) 
+    @MaxLength(80)
+    CurrencyCode_Virtual?: string;
         
     @Field(() => Float, {nullable: true}) 
     _mj__Latitude_BillToAddressID?: number;
@@ -7161,6 +7175,15 @@ export class CreatemjBizAppsOrdersOrderHeaderInput {
     @Field({ nullable: true })
     InitialPaymentReceivedDate: Date | null;
 
+    @Field({ nullable: true })
+    CurrencyCode: string | null;
+
+    @Field(() => Float, { nullable: true })
+    BookingExchangeRate: number | null;
+
+    @Field({ nullable: true })
+    BookingRateDate: Date | null;
+
     @Field(() => RestoreContextInput, { nullable: true })
     RestoreContext___?: RestoreContextInput;
 }
@@ -7290,6 +7313,15 @@ export class UpdatemjBizAppsOrdersOrderHeaderInput {
 
     @Field({ nullable: true })
     InitialPaymentReceivedDate?: Date | null;
+
+    @Field({ nullable: true })
+    CurrencyCode?: string | null;
+
+    @Field(() => Float, { nullable: true })
+    BookingExchangeRate?: number | null;
+
+    @Field({ nullable: true })
+    BookingRateDate?: Date | null;
 
     @Field(() => [KeyValuePairInput], { nullable: true })
     OldValues___?: KeyValuePairInput[];

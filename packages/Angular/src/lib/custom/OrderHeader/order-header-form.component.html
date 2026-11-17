@@ -60,6 +60,9 @@
             <div class="mjo-oh-fact">
                 <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="OrderDate" Type="datepicker" [EditMode]="ComposeMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
             </div>
+            <div class="mjo-oh-fact">
+                <mj-form-field [Record]="record" [ShowLabel]="true" FieldName="CurrencyCode" Type="textbox" [EditMode]="CurrencyEditMode" [FormContext]="formContext" (Navigate)="OnFormNavigate($event)"></mj-form-field>
+            </div>
         </div>
         @if (EditMode && record.MoneyLocked) {
             <div class="mjo-oh-hint"><i class="fa-solid fa-lock" aria-hidden="true"></i> This order is booked, so its type, selling company, order date and bill-to are locked. Corrections go through a reversal order.</div>

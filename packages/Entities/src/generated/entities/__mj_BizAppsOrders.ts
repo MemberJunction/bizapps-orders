@@ -2848,6 +2848,22 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Display Name: Initial Payment Received Date
         * * SQL Data Type: date
         * * Description: The day the initial payment's money arrived, when it differs from the order's date (for example a wire received before the order was entered). The payment created at confirm is dated from this day, and from OrderDate when it is NULL. Read only at confirm; changing it afterwards does not move the payment, whose date finance corrects on the payment itself.`),
+    CurrencyCode: z.string().nullable().describe(`
+        * * Field Name: CurrencyCode
+        * * Display Name: Currency Code
+        * * SQL Data Type: char(3)
+        * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Currencies (vwCurrencies.Code)
+        * * Description: ISO 4217 code of the currency the order is contracted and billed in; its amounts are in this currency. NULL means the selling company's functional currency. Can change only while the order is Draft or Quoted.`),
+    BookingExchangeRate: z.number().nullable().describe(`
+        * * Field Name: BookingExchangeRate
+        * * Display Name: Booking Exchange Rate
+        * * SQL Data Type: decimal(18, 8)
+        * * Description: Units of the selling company's functional currency per one unit of CurrencyCode, read from accounting's spot rates when the order is first confirmed (the most recent rate on or before the confirm date). NULL when the order is in the functional currency or not yet confirmed. Set by the server, never by hand.`),
+    BookingRateDate: z.date().nullable().describe(`
+        * * Field Name: BookingRateDate
+        * * Display Name: Booking Rate Date
+        * * SQL Data Type: date
+        * * Description: The date of the spot rate stored in BookingExchangeRate. Set together with it.`),
     Company: z.string().describe(`
         * * Field Name: Company
         * * Display Name: Company Name
@@ -2908,6 +2924,10 @@ export const mjBizAppsOrdersOrderHeaderSchema = z.object({
         * * Field Name: ConfirmedByUser
         * * Display Name: Confirmed By User
         * * SQL Data Type: nvarchar(100)`),
+    CurrencyCode_Virtual: z.string().nullable().describe(`
+        * * Field Name: CurrencyCode_Virtual
+        * * Display Name: Currency Code Virtual
+        * * SQL Data Type: nvarchar(80)`),
     __mj_Latitude_BillToAddressID: z.number().nullable().describe(`
         * * Field Name: __mj_Latitude_BillToAddressID
         * * Display Name: Billing Address Latitude
@@ -15853,6 +15873,46 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     }
 
     /**
+    * * Field Name: CurrencyCode
+    * * Display Name: Currency Code
+    * * SQL Data Type: char(3)
+    * * Related Entity/Foreign Key: MJ_BizApps_Accounting: Currencies (vwCurrencies.Code)
+    * * Description: ISO 4217 code of the currency the order is contracted and billed in; its amounts are in this currency. NULL means the selling company's functional currency. Can change only while the order is Draft or Quoted.
+    */
+    get CurrencyCode(): string | null {
+        return this.Get('CurrencyCode');
+    }
+    set CurrencyCode(value: string | null) {
+        this.Set('CurrencyCode', value);
+    }
+
+    /**
+    * * Field Name: BookingExchangeRate
+    * * Display Name: Booking Exchange Rate
+    * * SQL Data Type: decimal(18, 8)
+    * * Description: Units of the selling company's functional currency per one unit of CurrencyCode, read from accounting's spot rates when the order is first confirmed (the most recent rate on or before the confirm date). NULL when the order is in the functional currency or not yet confirmed. Set by the server, never by hand.
+    */
+    get BookingExchangeRate(): number | null {
+        return this.Get('BookingExchangeRate');
+    }
+    set BookingExchangeRate(value: number | null) {
+        this.Set('BookingExchangeRate', value);
+    }
+
+    /**
+    * * Field Name: BookingRateDate
+    * * Display Name: Booking Rate Date
+    * * SQL Data Type: date
+    * * Description: The date of the spot rate stored in BookingExchangeRate. Set together with it.
+    */
+    get BookingRateDate(): Date | null {
+        return this.Get('BookingRateDate');
+    }
+    set BookingRateDate(value: Date | null) {
+        this.Set('BookingRateDate', value);
+    }
+
+    /**
     * * Field Name: Company
     * * Display Name: Company Name
     * * SQL Data Type: nvarchar(50)
@@ -15985,6 +16045,15 @@ export class mjBizAppsOrdersOrderHeaderEntity extends BaseEntity<mjBizAppsOrders
     */
     get ConfirmedByUser(): string | null {
         return this.Get('ConfirmedByUser');
+    }
+
+    /**
+    * * Field Name: CurrencyCode_Virtual
+    * * Display Name: Currency Code Virtual
+    * * SQL Data Type: nvarchar(80)
+    */
+    get CurrencyCode_Virtual(): string | null {
+        return this.Get('CurrencyCode_Virtual');
     }
 
     /**

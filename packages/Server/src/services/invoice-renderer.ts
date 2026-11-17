@@ -23,7 +23,7 @@
  *   ACTIONS: ../custom/generate-invoice.action.ts · ../custom/send-document.action.ts
  */
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import { BuildCreditMemoDocuments, BuildInvoiceDocuments, CalendarDayOrToday, DecorateInvoice, RequireDate, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
+import { BuildCreditMemoDocuments, BuildInvoiceDocuments, CalendarDayOrToday, DecorateInvoice, DocumentCurrencyCode, RequireDate, type DisplayInvoice } from '@mj-biz-apps/orders-core-entities-server';
 import { ToISODate } from '@mj-biz-apps/orders-entities';
 import { TemplateEngineServer } from '@memberjunction/templates';
 
@@ -59,7 +59,7 @@ export interface RenderInvoiceOptions {
     AsOfDate?: string | null;
     TemplateName?: string | null;
     Locale?: string | null;
-    /** Overrides the selling company's functional currency. Only for a caller who genuinely knows better. */
+    /** Overrides the selling company's functional currency for an order with no currency of its own; an order's own currency always wins. */
     CurrencyCode?: string | null;
     /** `HTML` for rendered markup, `DATA` for the figures alone. */
     Format?: 'HTML' | 'DATA';
@@ -156,9 +156,9 @@ export async function RenderInvoiceDocuments(
 
     const documents: RenderedInvoice[] = [];
     for (const doc of built.Documents) {
-        // Currency comes from the SELLING COMPANY's accounting profile, because it is a property of the
-        // seller and not of the sale.
-        const currency = options.CurrencyCode ?? doc.Issuer.CurrencyCode ?? 'USD';
+        // The order's own currency when it has one, since its amounts are in it (golive #492); otherwise
+        // the requested code, then the selling company's functional currency.
+        const currency = DocumentCurrencyCode(doc, options.CurrencyCode);
         const decorated = DecorateInvoice(doc, { Locale: locale, Currency: currency, GeneratedOn: generatedOn });
 
         let html: string | null = null;
