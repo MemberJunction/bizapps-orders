@@ -29,9 +29,10 @@
 import {
     BaseEntity,
     BaseEntityResult,
-    BaseRemotableOperation,
     CompositeKey,
     DatabaseProviderBase,
+    EntityDeleteOptions,
+    EntityPermissionType,
     EntitySaveOptions,
     IMetadataProvider,
     IRunViewProvider,
@@ -45,6 +46,7 @@ import {
     ValidationResult,
 } from '@memberjunction/core';
 import { MJGlobal, RegisterClass, UUIDsEqual } from '@memberjunction/global';
+import { UserCache } from '@memberjunction/generic-database-provider';
 import {
     ADDRESS_SNAPSHOT_FIELDS,
     BuildAddressSnapshot,
@@ -68,32 +70,37 @@ import {
     type OrderReviewChangeFacts,
     HostOrderConfirmVeto,
     ResolveOrderConfirmRefusal,
+    HostOrderLineEditVeto,
+    ResolveOrderLineEditRefusal,
     RunAlongsideRefusal,
+    IsProductReplacedWithoutPriceEdit,
+    MarkLinePriceStated,
+    InitialPaymentDay,
 } from '@mj-biz-apps/orders-entities';
 import { CalendarDayOrToday } from './calendar-day.js';
 import { PaymentHeaderEntityServer } from './PaymentHeaderEntityServer.js';
 import { ResolveLineParty } from './LineParty.js';
 import { GLAccountResolver } from './GLAccountResolver.js';
-import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolverEntities } from './AccountingBridge.js';
+import { BuildGLAccountResolver, EntityIDFor, LoadAccountingEngine, ResolveAccountingOperation, ResolverEntities } from './AccountingBridge.js';
 import { MarkAsOrdersOwnWrite, OrderLineEntityServer } from './OrderLineEntityServer.js';
-import { InstalmentsToCancel, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
+import { InstalmentsToCancel, RefuseCancellingPaidInstalments, RefuseEarlierThanPriorReversal, RefuseEarnedNotBilled } from './ContractBalance.js';
 import { InheritedTerms, MirroredTaxCharges, RefreshedDiscountAmount, ValidateReversal, type MirroredTaxCharge } from './ReversalBehavior.js';
 import { IsWholeOrderReversed, LoadOriginTaxCharges, LoadReversalContext, type ReversalContext } from './ReversalResolver.js';
 import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CreateEntitlementGrants, RevokeGrantsForReturn } from './EntitlementEngine.js';
 import { ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';
-import { IsCancellationReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
+import { IsCancellationReversal, IsGatewayRenewal, IsMoneyOnlyReversal, SanctionProviderBilledChange } from './SubscriptionEntityServer.js';
 import { HasOutboundConsumers, RecordOutboundEvent } from './OutboundEvents.js';
 import { BusinessDay, LoadOrderPaymentFacts } from './PaymentGatedAccess.js';
 import { IssueGiftCards } from './GiftCardEngine.js';
 import { ExpandBundleLines, type ExpandableLine } from './BundleEngine.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { OrderJournalEntryFactory, type CreditMemoForLine, type OrderLineDraft } from './OrderJournalEntryFactory.js';
-import { RequireUUID, RequireUUIDs } from './sql-guards.js';
+import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 import { ExplainMissingAttendees, LoadLinesWithAttendee, LoadProductsRequiringAttendees } from './AttendeeRequirement.js';
 import { FindUnapprovedConcessions, type ConcessionLineFacts } from './ConcessionGate.js';
 import { RaisePriceBelowEngineExceptions } from './PriceBelowEngineExceptions.js';
-import { CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
+import { CheckNoDealConfirm, CheckOrderReviewAtConfirm, CheckOrderReviewOnChange, type ReviewOrderInput } from './OrderReview.js';
 import { IsSystemOriginWrite, OriginWriteRefusal } from './SystemOrderOrigin.js';
 import { RaiseTermLengthExceptions, type StatedLengthLine } from './TermLengthExceptions.js';
 import { DimensionDefaultResolver } from './DimensionDefaultResolver.js';
@@ -101,6 +108,7 @@ import { DeriveLineDimensions, type DimensionVocabulary } from './LineDimensionR
 import { MergeDerivedTags, MergeLineDimensions, type LineDimensionTag } from './LineDimensionMerge.js';
 import type { mjBizAppsOrdersOrderLineDimensionEntity } from '@mj-biz-apps/orders-entities';
 import type { DisplacedTermStartEventData } from '@mj-biz-apps/orders-entities';
+import { ChildLinesFirst, DescendantLines } from '@mj-biz-apps/orders-entities';
 import { DisplacedStartEventData } from './displaced-start-event.js';
 import { ORDER_LINE_DIMENSION_ENTITY } from './entity-names.js';
 import {
@@ -109,7 +117,7 @@ import {
     type OrderRollups,
     type ResolvedOrderRollups,
 } from './OrderRollupBehavior.js';
-import { ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
+import { AddDays, ResolveDueDate, type CustomerTermsFacts } from './PaymentTermsBehavior.js';
 import { PaymentTermsChangeGranted } from './PaymentTermsSanction.js';
 import { ExplainShortfalls, ScheduleCoverage, ScheduleShortfalls, type ScheduleTimingFacts } from './PaymentScheduleBehavior.js';
 import { LowerInstalments } from './AmountChange.js';
@@ -276,6 +284,11 @@ interface SubscriptionDecisionForLine {
      */
     RetireGatewaySubscriptionID?: string;
     /**
+     * True when this line books a renewal the payment gateway already charged (E4): reactivating a
+     * cancelled gateway-billed subscription is then sanctioned, and its gateway id is kept.
+     */
+    GatewayRenewal?: boolean;
+    /**
      * Seats the line bought, from its quantity BEFORE `prepareLines` prorates it (#589). Written on
      * the term, where entitlement grants and renewals read it.
      */
@@ -301,6 +314,13 @@ interface CreateJournalEntriesResult {
     Errors?: Array<{ Code: string; Message: string; DraftIndex?: number; LineIndex?: number }>;
 }
 
+/** One confirmation-stamp field's value and baseline, captured before a booking save. */
+interface ConfirmationStampState {
+    Name: string;
+    Value: unknown;
+    OldValue: unknown;
+}
+
 @RegisterClass(BaseEntity, ORDER_ENTITY)
 export class OrderEntityServer extends OrderHeaderEntity {
     /** An approved Terms concession, applied by ./PaymentTermsChange.ts, is the only change to a confirmed order's terms. */
@@ -324,6 +344,66 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     public MarkRenewalPriced(line: mjBizAppsOrdersOrderLineEntity): void {
         this._renewalPricedLines.set(line, Number(line.UnitPrice));
+        MarkLinePriceStated(line);
+    }
+
+    /**
+     * When `Orders.SpawnRenewals` places a renewal as of a specific day, it records that day here so
+     * `issueDueInstalments` measures the renewal lead window from the pass's as-of day.
+     */
+    private _renewalAsOfDay: string | null = null;
+
+    public SetRenewalAsOfDay(day: string | null): void {
+        this._renewalAsOfDay = day;
+    }
+
+    /** Whether the marks the renewal pass persisted for this order have been read into the map above. */
+    private _persistedRenewalMarksLoaded = false;
+
+    /**
+     * Read back the marks for a renewal order saved by an EARLIER object: the pass leaves a draft for a
+     * person to confirm from the order form, and that confirm runs in a fresh entity whose map is
+     * empty. Without this, the pass's own price reads as a typed one and the concession gate refuses
+     * the confirm the pass would have made without question (golive #304 would have come back).
+     *
+     * The persisted record is the `RenewalOrderSpawned` event the pass writes per renewed subscription
+     * in the same transaction as the order, carrying the unit price it placed. A line that renews that
+     * subscription at that price is the pass's line, unedited. A read that fails leaves the line
+     * unmarked, which is the cautious side: the gate then judges it as a stated price.
+     */
+    private async loadPersistedRenewalMarks(): Promise<void> {
+        if (this._persistedRenewalMarksLoaded || !this.IsSaved) return;
+        this._persistedRenewalMarksLoaded = true;
+        const lines = this.Lines.Items.filter((line) => !!line.RenewsSubscriptionID && !this._renewalPricedLines.has(line));
+        if (!lines.length) return;
+        try {
+            const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+            const result = await rv.RunView<{ SubscriptionID: string; EventData: string | null }>(
+                {
+                    EntityName: SUBSCRIPTION_EVENT_ENTITY,
+                    ExtraFilter: `RelatedOrderHeaderID='${RequireUUID(String(this.ID), 'OrderHeaderID')}' AND EventType='RenewalOrderSpawned'`,
+                    Fields: ['SubscriptionID', 'EventData'],
+                    ResultType: 'simple',
+                },
+                this.ContextCurrentUser,
+            );
+            if (!result.Success) throw new Error(result.ErrorMessage || 'the renewal events could not be read');
+            const placed = new Map<string, number>();
+            for (const row of result.Results) {
+                try {
+                    const data = JSON.parse(row.EventData ?? '{}') as { UnitPrice?: number };
+                    if (data.UnitPrice != null && Number.isFinite(Number(data.UnitPrice))) placed.set(String(row.SubscriptionID).toLowerCase(), Number(data.UnitPrice));
+                } catch {
+                    /* an event without readable data marks nothing */
+                }
+            }
+            for (const line of lines) {
+                const price = placed.get(String(line.RenewsSubscriptionID).toLowerCase());
+                if (price != null) this._renewalPricedLines.set(line, price);
+            }
+        } catch (err) {
+            LogError(`Order ${this.OrderNumber ?? this.ID}: the renewal pass's price marks could not be read: ${err instanceof Error ? err.message : String(err)}`);
+        }
     }
 
     /** True for a line the renewal pass priced whose price is unchanged; matched by entity or saved ID. */
@@ -364,6 +444,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * it now lives. Left null, nothing changes.
      */
     public ExpectedGrossTotal: number | null = null;
+
+    /**
+     * The business day the instalments this confirm issues are invoiced on, `YYYY-MM-DD` (#831).
+     * Left null they are invoiced today. `Orders.SpawnRenewals` sets its as-of day, so a catch-up
+     * run dates the instalment entry on the day the schedule row's due date was counted from.
+     */
+    public InstalmentInvoiceDay: string | null = null;
 
     /**
      * Promotion and charge decisions made by `prepareLines` and consumed by `savePendingLines`.
@@ -659,6 +746,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // review exempts the system origins (golive #320 §5), so a writable Origin was a way round it.
         if (!this.passesOriginGuard()) return false;
 
+        // CONFIRMEDAT AND CONFIRMEDBYUSERID ARE WRITTEN ONLY BY THE BOOKING SAVE (#915, #969).
+        if (!this.passesConfirmationStampGuard()) return false;
+
         // A CHANGE THAT SENDS THE ORDER TO REVIEW (golive #320 §5) is read before the party defaults
         // below fill anything in, so it sees only what the caller changed. It raises the review before
         // the write: a spare task for a save that then fails is the safe side of the trade.
@@ -668,12 +758,27 @@ export class OrderEntityServer extends OrderHeaderEntity {
 
         const booking = this.willBookOnThisSave();
 
+        // A form that saved the draft and then confirmed reloads the HEADER only. Booking needs the
+        // collection before the gates below, which read the lines (a renewal-only order is exempt from
+        // review and the no-deal check), and before it decides subscriptions.
+        if (booking && this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        // A renewal draft the pass left: its price marks live in the event it wrote, not in this object.
+        if (booking && this.IsSaved) await this.loadPersistedRenewalMarks();
+
         // NO CONFIRM AHEAD OF A CONCESSION'S APPROVAL. Checked before anything is priced or booked,
         // for the same reason as the status move above: a refused confirm must change nothing.
         if (booking && !(await this.passesConcessionGate())) return false;
 
+        // A REMOVAL ANOTHER APP REFUSES FAILS THE SAVE, before anything is written (#799).
+        if (!booking && !(await this.passesRemovalVeto())) return false;
+        // AND ONE THE PERSON MAY NOT MAKE, before the cleanup runs as the system user (golive #461).
+        if (!this.passesCleanupRight('remove lines from', EntityPermissionType.Update)) return false;
+
         // NO CONFIRM AHEAD OF AN ORDER REVIEW (golive #320 §5), once concessions are decided, so the
         // reviewer sees the order as it will book. Off until a host switches a trigger on.
+        // ONLY THE ROLES THE NoDealConfirmRoles SETTING NAMES CONFIRM AN ORDER NO DEAL CREATED (golive
+        // #390), ahead of the review so a confirm the user may not make raises no review. Off by default.
+        if (booking && !(await this.passesNoDealConfirmGate())) return false;
         if (booking && !(await this.passesOrderReviewGate())) return false;
 
         // ORDINARY PATH — no booking, and no line work to do.
@@ -741,6 +846,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         // entity object can be re-saved, and a stale latch would make a later ordinary update
         // re-run the booking-only rules. See `bookingInFlight`.
         this.bookingInFlight = booking;
+        const priorConfirmationStamp = this.captureConfirmationStamp();
 
         try {
             await dbProvider.BeginTransaction();
@@ -758,7 +864,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
             //
             // It runs HERE rather than inside `savePendingLines` for two reasons: `expandBundles`
             // renumbers the survivors just below, so the numbers must already be free; and a
-            // successful `super.Save()` can call `AcceptChanges()` on the collection, which empties
+            // successful `super.Save()` can call `AcceptChanges()` on the collection (when an embed
+            // makes it a graph save; otherwise the commit below does it), which empties
             // `Removed` — by the time the line writers run there may be nothing left to read.
             // AND THE ROW'S TOTALS NOW WIN, because the delete just moved them.
             //
@@ -816,12 +923,6 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // lines, subscription decisions settle the quantities, and each line is priced. None of
             // it writes a row, and none of it needs the header's key — the collection stamps the
             // foreign key itself.
-            // A form that saved the draft and then confirmed reloads the HEADER only.
-            // Booking is the only caller that MUST have the collection before it decides subscriptions.
-            if (booking && this.IsSaved && !this.Lines.IsLoaded) {
-                await this.Lines.Load();
-            }
-
             await this.expandBundles();
             // EVERY LINE'S PRODUCT IN THE CATALOG CACHE, reloaded once if any is missing (golive #301).
             // Subscription decisions, the company stamp, dimension tags and booking all read the
@@ -956,8 +1057,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 // back rather than being logged and shrugged at.
                 await this.grantEntitlements(lines, subs, options);
 
-                // And the mirror: a returned line takes its access with it.
-                await this.revokeEntitlementsForReversals(lines, reversals, options);
+                // And the mirror: a returned line takes its access with it, unless the reversal credits money only
+                // (D20: a gateway refund of a renewal, which is not a cancel).
+                await this.settleAccessForReversals(lines, reversals, options);
 
                 // What a return had not yet been invoiced for comes off the origin's instalments
                 // (#661). Before the cancel below, which withdraws them all on a whole-order return:
@@ -1006,6 +1108,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // charge again and booking credited it twice. Cleared only once committed, so a save
             // that rolls back can be retried with the same requests.
             this._charges = [];
+            // A REMOVED LINE IS CONSUMED BY THE SAVE THAT DELETED IT. `deleteRemovedLines` issued the
+            // deletes itself, and the header save skips collections, so MJ clears `Lines.Removed` only
+            // when an embed happens to turn that save into a graph save. Left in place, the removal
+            // kept `Lines.Dirty` true: every later save of this object took the full line walk, and a
+            // confirm on a collection that was built rather than loaded asked `Lines.Load()` to
+            // discard it, which MJ refuses (#1045). Cleared only once committed, so a save that rolls
+            // back can be retried with the same removals.
+            this.Lines.AcceptChanges();
             return true;
         } catch (err) {
             LogError(`OrderEntityServer.Save failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
@@ -1018,10 +1128,14 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // holds the header's SUCCESSFUL save — so a subscription rule rejection or an
             // unresolvable GL account reads as "it just didn't work". The UI, the API and the
             // integration suite all need the reason; the log is not a return value.
+            if (booking) {
+                this.restoreConfirmationStamp(priorConfirmationStamp);
+            }
             this.RegisterResultHistoryEntry(this.buildFailureResult(err));
             return false;
         } finally {
             this.bookingInFlight = false;
+            this.confirmationStamped = false;
             this.addressSnapshotsStamped = false;
         }
     }
@@ -1230,16 +1344,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * the move to Confirmed waits, so the work is kept and the concession stays visible as a queue.
      */
     private async passesConcessionGate(): Promise<boolean> {
-        const user = this.ContextCurrentUser;
-        if (!user) return true;
-        const lines = this.concessionLineFacts();
-        const problems = await FindUnapprovedConcessions(
-            this.IsSaved ? this.ID : null,
-            lines,
-            true,
-            this.ProviderToUse as unknown as IMetadataProvider,
-            user,
-        );
+        const problems = await this.concessionGateProblems();
         if (problems.length === 0) return true;
 
         this.RegisterResultHistoryEntry(
@@ -1251,6 +1356,71 @@ export class OrderEntityServer extends OrderHeaderEntity {
             ),
         );
         return false;
+    }
+
+    /**
+     * Ask the host's order-line edit veto about every saved line this save would delete (#799).
+     *
+     * The line's own `Delete()` asks too, but it runs inside the save's transaction, where a refusal
+     * could only surface as a thrown "Failed to delete removed order line" with the vetoer's words
+     * buried in it. Asking here, before the transaction, fails the save with those words as its
+     * message. A bundle's components count: `deleteRemovedLines` deletes them with the bundle.
+     *
+     * Not while booking: that is Orders confirming its own order, which the line loop exempts too.
+     */
+    private async passesRemovalVeto(): Promise<boolean> {
+        const veto = HostOrderLineEditVeto();
+        if (!veto || !this.ID || !this.Lines.Removed.length) return true;
+
+        const removed = new Set(this.Lines.Removed);
+        for (const parent of this.Lines.Removed) {
+            for (const child of DescendantLines(parent, this.Lines.Items)) removed.add(child);
+        }
+        const refusals: string[] = [];
+        for (const line of removed) {
+            if (!line.IsSaved || !line.ID) continue;
+            const refusal = await ResolveOrderLineEditRefusal(
+                veto,
+                {
+                    OrderHeaderID: this.ID,
+                    OrderLineID: line.ID,
+                    Kind: 'delete',
+                    ContextUser: this.ContextCurrentUser ?? null,
+                },
+                'Nothing was deleted.',
+            );
+            if (refusal) refusals.push(`Line ${line.LineNumber ?? ''}: ${refusal}`);
+        }
+        if (!refusals.length) return true;
+
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusals.join('; '))));
+        return false;
+    }
+
+    /**
+     * What the concession gate would refuse this order's confirm for, without confirming (golive #340).
+     * Writes nothing. Loads the saved lines first when they are not in memory, so a freshly loaded
+     * order is judged on the lines confirm would book. `Orders.ConfirmReadiness` answers with this.
+     */
+    public async PreviewConcessionProblems(): Promise<string[]> {
+        if (this.IsSaved && !this.Lines.IsLoaded) await this.Lines.Load();
+        // The same marks confirm reads: a draft the renewal pass left is judged on the pass's own
+        // prices here too, or the form's Confirm stays disabled on an order the save would book.
+        await this.loadPersistedRenewalMarks();
+        return this.concessionGateProblems();
+    }
+
+    /** The gate's problems, one clause each as `FindUnapprovedConcessions` words them. None without a context user. */
+    private async concessionGateProblems(): Promise<string[]> {
+        const user = this.ContextCurrentUser;
+        if (!user) return [];
+        return FindUnapprovedConcessions(
+            this.IsSaved ? this.ID : null,
+            this.concessionLineFacts(),
+            true,
+            this.ProviderToUse as unknown as IMetadataProvider,
+            user,
+        );
     }
 
     /**
@@ -1271,6 +1441,40 @@ export class OrderEntityServer extends OrderHeaderEntity {
     }
 
     /**
+     * Refuse caller writes to `ConfirmedAt` or `ConfirmedByUserID` before any booking or review work runs (#915, #969).
+     * On a booking save, `ConfirmedByUserID` sent by a graph payload is overwritten by `stampConfirmation()`,
+     * whereas `ConfirmedAt` set by a caller is always refused.
+     */
+    private passesConfirmationStampGuard(): boolean {
+        if (this.confirmationStamped) return true;
+        const booking = this.willBookOnThisSave();
+        for (const name of ['ConfirmedAt', 'ConfirmedByUserID'] as const) {
+            if (name === 'ConfirmedByUserID' && (booking || this.MoneyLocked)) continue;
+            if (this.safeFieldDirty(name)) {
+                this.RegisterResultHistoryEntry(
+                    this.buildFailureResult(
+                        new Error(`${name} is stamped by the server when the order is confirmed and cannot be set directly.`),
+                    ),
+                );
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private safeFieldDirty(name: string): boolean {
+        if (Array.isArray((this as { Fields?: unknown }).Fields)) {
+            const found = this.Fields.find((f) => f.Name === name);
+            if (found) return found.Dirty === true;
+        }
+        try {
+            return this.GetFieldByName(name)?.Dirty === true;
+        } catch {
+            return false;
+        }
+    }
+
+    /**
      * Refuse the confirm while the order's review is outstanding, and send an order that hit a review
      * trigger with no review to one (golive #320 §5). Like the concession gate, a refusal refuses the
      * whole save, not only the move to Confirmed: nothing else the save carried is written either. A
@@ -1281,6 +1485,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const user = this.ContextCurrentUser;
         if (!user) return true;
         const refusal = await CheckOrderReviewAtConfirm(this.reviewOrderInput(), {
+            Provider: this.ProviderToUse as unknown as IMetadataProvider,
+            User: user,
+        });
+        if (!refusal) return true;
+        this.RegisterResultHistoryEntry(this.buildFailureResult(new Error(refusal)));
+        return false;
+    }
+
+    /** Refuse a confirm of an order with no deal by a user outside the NoDealConfirmRoles setting (golive #390). */
+    private async passesNoDealConfirmGate(): Promise<boolean> {
+        const user = this.ContextCurrentUser;
+        if (!user) return true;
+        const refusal = await CheckNoDealConfirm(this.reviewOrderInput(), {
             Provider: this.ProviderToUse as unknown as IMetadataProvider,
             User: user,
         });
@@ -1363,8 +1580,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             DiscountPct: line.DiscountPct,
             RenewsSubscriptionID: line.RenewsSubscriptionID ?? null,
             // A renewal line's price is the renewal pass's own decision (golive #304), not a stated one.
+            // A saved line whose product changed without a price edit is about to be re-priced (#907).
             PriceStated:
                 !this.isUneditedRenewalPrice(line) &&
+                !IsProductReplacedWithoutPriceEdit(line) &&
                 (line.IsSaved || line.GetFieldByName('UnitPrice')?.Dirty === true || (line.UnitPrice ?? 0) > 0),
             LineTotalNet: line.IsRollupParent ? 0 : this.pendingLineNet(line),
         }));
@@ -1481,8 +1700,29 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * (ORDER_HEADER_MONEY_FIELDS) and by trigger 51017.
      */
     protected stampConfirmation(): void {
+        this.confirmationStamped = true;
         this.ConfirmedAt = new Date();
         this.ConfirmedByUserID = this.ContextCurrentUser?.ID ?? null;
+    }
+
+    /** Restore pre-stamp confirmation fields if the booking save throws and rolls back (#969). */
+    private restoreConfirmationStamp(prior: ConfirmationStampState[]): void {
+        // Value AND OldValue: the booking save may have re-baselined OldValue before it threw, and a
+        // restored field left dirty would make a retry on this object fail the caller-stamp guard.
+        for (const state of prior) {
+            const field = this.Fields.find((f) => f.Name === state.Name);
+            if (!field) continue;
+            field.Value = state.Value;
+            field.RestoreOldValue(state.OldValue);
+        }
+    }
+
+    /** The two stamp fields as they stand before the booking save, for {@link restoreConfirmationStamp}. */
+    private captureConfirmationStamp(): ConfirmationStampState[] {
+        const fields = Array.isArray((this as { Fields?: unknown }).Fields) ? this.Fields : [];
+        return fields
+            .filter((f) => f.Name === 'ConfirmedAt' || f.Name === 'ConfirmedByUserID')
+            .map((f) => ({ Name: f.Name, Value: f.Value, OldValue: f.OldValue }));
     }
 
     /**
@@ -1709,8 +1949,185 @@ export class OrderEntityServer extends OrderHeaderEntity {
         options?: EntitySaveOptions,
         decisions?: Map<mjBizAppsOrdersOrderLineEntity, SubscriptionDecisionForLine>,
     ): Promise<void> {
+        // Before the lines save: saving them writes this save's zero-tax reason components, which a
+        // later delete would take with the superseded rows.
+        await this.deleteSupersededPriceComponents();
         await this.savePendingLines(options, decisions);
         await this.savePriceComponents(options);
+    }
+
+    /**
+     * Delete a Draft or Quoted order with its lines and the rows its draft saves wrote (#843).
+     *
+     * `spDeleteOrderHeader` deletes only the header, and none of the foreign keys into it cascades,
+     * so a draft with lines failed on FK_OrderLine_OrderHeader. The lines go the way a removed draft
+     * line goes (`deleteLineDependents`, then the line, components before their bundle), then the
+     * order-level rows a draft's save writes, then the header, in one transaction.
+     *
+     * A Confirmed or Voided order is refused: a booked order is corrected by a reversal order, and a
+     * voided one is the record of that decision. Rows only booking or checkout writes (payment
+     * intents, a checkout session's draft link, access overrides) are not deleted here; an order that
+     * has them still fails on that row's foreign key.
+     */
+    public override async Delete(options?: EntityDeleteOptions): Promise<boolean> {
+        const status = String(this.GetFieldByName('Status')?.OldValue ?? this.Status ?? '');
+        if (this.IsSaved && !IsEditable(status)) {
+            this.RegisterResultHistoryEntry(
+                this.buildDeleteFailure(
+                    `Order ${this.OrderNumber ?? ''} is ${status}, so it cannot be deleted. Only a Draft or ` +
+                        `Quoted order can be deleted; a confirmed order is corrected with a reversal order.`,
+                ),
+            );
+            return false;
+        }
+        if (!this.IsSaved) return super.Delete(options);
+        if (!this.passesCleanupRight('delete', EntityPermissionType.Delete)) return false;
+
+        const dbProvider = this.ProviderToUse as unknown as DatabaseProviderBase;
+        try {
+            await dbProvider.BeginTransaction();
+            await this.deleteDraftOrderRows();
+            if (!(await super.Delete(options))) {
+                await dbProvider.RollbackTransaction();
+                return false;
+            }
+            await dbProvider.CommitTransaction();
+            return true;
+        } catch (err) {
+            LogError(`OrderEntityServer.Delete failed for order ${this.OrderNumber ?? this.ID}: ${err}`);
+            try {
+                await dbProvider.RollbackTransaction();
+            } catch (rollbackErr) {
+                LogError(`Rollback failed after OrderEntityServer.Delete error: ${rollbackErr}`);
+            }
+            this.RegisterResultHistoryEntry(this.buildDeleteFailure(err instanceof Error ? err.message : String(err)));
+            return false;
+        }
+    }
+
+    /** {@link buildFailureResult}, typed as a delete. */
+    private buildDeleteFailure(message: string): BaseEntityResult {
+        const result = this.buildFailureResult(new Error(message));
+        result.Type = 'delete';
+        return result;
+    }
+
+    /** Every row a draft order's saves wrote that points at it, children before parents. See {@link Delete}. */
+    private async deleteDraftOrderRows(): Promise<void> {
+        const orderID = RequireUUID(this.ID, 'OrderHeaderID');
+        const byOrder = `OrderHeaderID='${orderID}'`;
+
+        const lines = await this.loadRowsForDelete<mjBizAppsOrdersOrderLineEntity>('MJ_BizApps_Orders: Order Lines', byOrder);
+        for (const line of ChildLinesFirst(lines)) {
+            await this.deleteLineDependents(line);
+            if (!(await this.deleteAsCleanupUser(line))) {
+                throw new Error(`Failed to delete order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`);
+            }
+        }
+
+        // Order-level rows: concessions (payment terms), adjustments and charges with their
+        // allocations, checkout answers and the payment schedule.
+        await this.deleteRowsForDelete('MJ_BizApps_Orders: Order Concessions', byOrder);
+        const adjustments = await this.loadRowsForDelete<BaseEntity>('MJ_BizApps_Orders: Order Adjustments', byOrder);
+        if (adjustments.length) {
+            await this.deleteRowsForDelete(
+                'MJ_BizApps_Orders: Order Adjustment Allocations',
+                `OrderAdjustmentID IN (${adjustments.map((a) => `'${RequireUUID(String(a.Get('ID')), 'OrderAdjustmentID')}'`).join(',')})`,
+            );
+            await this.deleteEach('MJ_BizApps_Orders: Order Adjustments', adjustments);
+        }
+        const charges = await this.loadRowsForDelete<BaseEntity>('MJ_BizApps_Orders: Order Charges', byOrder);
+        if (charges.length) {
+            await this.deleteRowsForDelete(
+                'MJ_BizApps_Orders: Order Charge Allocations',
+                `OrderChargeID IN (${charges.map((c) => `'${RequireUUID(String(c.Get('ID')), 'OrderChargeID')}'`).join(',')})`,
+            );
+            await this.deleteEach('MJ_BizApps_Orders: Order Charges', charges);
+        }
+        await this.deleteRowsForDelete('MJ_BizApps_Orders: Order Checkout Answers', byOrder);
+        await this.deleteRowsForDelete('MJ_BizApps_Orders: Order Header Payment Schedules', byOrder);
+    }
+
+    private async loadRowsForDelete<T extends BaseEntity>(entityName: string, filter: string): Promise<T[]> {
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<T>(
+            { EntityName: entityName, ExtraFilter: filter, ResultType: 'entity_object', MaxRows: DEPENDENT_ROW_CAP },
+            this.cleanupUser(),
+        );
+        if (!result?.Success) {
+            throw new Error(`Failed to read ${entityName} for order ${this.OrderNumber ?? ''}: ${result?.ErrorMessage ?? 'unknown error'}`);
+        }
+        const rows = result.Results ?? [];
+        // A guard, not a page size: deleting the first thousand would fail the header's delete later.
+        if (rows.length >= DEPENDENT_ROW_CAP) {
+            throw new Error(
+                `Order ${this.OrderNumber ?? ''} has ${DEPENDENT_ROW_CAP} or more ${entityName} rows; ` +
+                    `refusing to delete it rather than clearing only part of them.`,
+            );
+        }
+        return rows;
+    }
+
+    private async deleteRowsForDelete(entityName: string, filter: string): Promise<void> {
+        await this.deleteEach(entityName, await this.loadRowsForDelete<BaseEntity>(entityName, filter));
+    }
+
+    private async deleteEach(entityName: string, rows: BaseEntity[]): Promise<void> {
+        for (const row of rows) {
+            // A concession goes with its draft order, decided or not, as it goes with a draft line.
+            if ('WithdrawWithDraftLine' in row) (row as { WithdrawWithDraftLine: boolean }).WithdrawWithDraftLine = true;
+            if (!(await row.Delete())) {
+                throw new Error(
+                    `Failed to delete ${entityName} for order ${this.OrderNumber ?? ''}: ${ExtractEntityErrorMessage(row)}`,
+                );
+            }
+        }
+    }
+
+    /**
+     * The user a draft's cleanup reads and deletes as, once {@link passesCleanupRight} has passed.
+     *
+     * The rows a removed draft line or a deleted draft order leaves behind — the line itself, its
+     * price components, dimensions, concessions, adjustments and allocations — are written by
+     * Orders' own saves and never edited by hand, so the business roles hold Create and Update on
+     * them and not Delete. Deleting them as the signed-in user refused every line removal for those
+     * roles (golive #461). The person's right is checked once, at the order, and the deletes that
+     * follow are Orders' own. The change log names the system user as the deleter; the order's own
+     * save names the person.
+     */
+    private cleanupUser(): UserInfo {
+        const system = UserCache.Instance.GetSystemUser();
+        if (!system) throw new Error('Deleting a draft order line needs the MJ system user, and the user cache does not hold it.');
+        return system;
+    }
+
+    /** Delete `row` as {@link cleanupUser}, then give it back its own user. */
+    private async deleteAsCleanupUser(row: BaseEntity): Promise<boolean> {
+        const own = row.ContextCurrentUser;
+        row.ContextCurrentUser = this.cleanupUser();
+        try {
+            return await row.Delete();
+        } finally {
+            row.ContextCurrentUser = own;
+        }
+    }
+
+    /**
+     * Whether the signed-in user may make this change at all, asked before the cleanup runs as the
+     * system user. Removing a line needs Update on the order and on its lines; deleting a draft
+     * order needs Delete on the order. A save with no saved line removed asks nothing.
+     */
+    private passesCleanupRight(verb: string, onOrder: EntityPermissionType): boolean {
+        const removing = onOrder === EntityPermissionType.Update;
+        if (removing && !this.Lines.Removed.some((line) => line.IsSaved)) return true;
+        const user = this.ContextCurrentUser;
+        const lineRight = () =>
+            !!(this.ProviderToUse as unknown as IMetadataProvider).EntityByName(ORDER_LINE_ENTITY)?.GetUserPermisions(user!).CanUpdate;
+        const allowed = !!user && this.CheckPermissions(onOrder, false) && (!removing || lineRight());
+        if (allowed) return true;
+        const message = `You do not have permission to ${verb} order ${this.OrderNumber ?? ''}. Nothing was changed.`;
+        this.RegisterResultHistoryEntry(removing ? this.buildFailureResult(new Error(message)) : this.buildDeleteFailure(message));
+        return false;
     }
 
     /**
@@ -1728,7 +2145,15 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * because the delete moved them on the row. See the call site.
      */
     private async deleteRemovedLines(): Promise<boolean> {
-        const removed = this.Lines.Removed.filter((line) => line.IsSaved);
+        if (!this.Lines.Removed.length) return false;
+        // A REMOVED BUNDLE TAKES ITS COMPONENTS WITH IT (#793). `OrderHeaderEntity.RemoveLine` does
+        // this for the editor; a caller that removed only the bundle through `Lines.Remove` left its
+        // components in the collection, still naming it through the non-cascading
+        // FK_OrderLine_ParentOrderLine. They are removed here too, and every delete runs child first.
+        for (const parent of [...this.Lines.Removed]) {
+            for (const child of DescendantLines(parent, this.Lines.Items)) this.Lines.Remove(child);
+        }
+        const removed = ChildLinesFirst(this.Lines.Removed.filter((line) => line.IsSaved));
         if (!removed.length) return false;
 
         for (const line of removed) {
@@ -1739,13 +2164,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
              * Orders itself — so the veto is asked. While booking it is Orders confirming its own
              * order, and a refusal there would block the close that creates the record being protected.
              *
-             * The refused case still surfaces as a THROW rather than a validation refusal, which the
-             * review called out and called non-blocking. Left as-is deliberately: changing the shape of
-             * a failed removal is a different change from deciding who may make one.
+             * `passesRemovalVeto` has already asked before the transaction opened and failed the save
+             * with the vetoer's words (#799); a refusal here is only a vetoer that changed its answer
+             * in between, and that throws.
              */
             const serverLine = line as unknown as { BypassExternalEditVeto?: boolean };
             serverLine.BypassExternalEditVeto = this.bookingInFlight;
-            if (!(await line.Delete())) {
+            if (!(await this.deleteAsCleanupUser(line))) {
                 throw new Error(
                     `Failed to delete removed order line ${line.LineNumber}: ${ExtractEntityErrorMessage(line)}`,
                 );
@@ -1767,8 +2192,9 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * `EventOrderLine` is an IS-A child rather than a dependent row, and `BaseEntity.Delete()`
      * already walks that chain itself.
      *
-     * Deletes go through the entity so row-level security and the change log see them; the repo has
-     * no raw-DELETE precedent and this is not the place to start one.
+     * Deletes go through the entity so the change log sees them; the repo has no raw-DELETE
+     * precedent and this is not the place to start one. They run as the system user — see
+     * {@link cleanupUser}.
      */
     private async deleteLineDependents(line: mjBizAppsOrdersOrderLineEntity): Promise<void> {
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
@@ -1782,7 +2208,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                     ResultType: 'entity_object',
                     MaxRows: DEPENDENT_ROW_CAP,
                 },
-                this.ContextCurrentUser,
+                this.cleanupUser(),
             );
             const rows = result?.Results ?? [];
             // The cap is a guard, not a page size: silently deleting the first thousand and leaving
@@ -2094,7 +2520,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         const res = await rv.RunView<{ ID: string; Code: string }>(
             {
                 EntityName: CHARGE_TYPE_ENTITY,
-                ExtraFilter: `ID IN (${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')})`,
+                ExtraFilter: `ID IN (${unique.map((id) => `'${EscapeSQLString(id)}'`).join(',')})`,
                 ResultType: 'simple',
             },
             this.ContextCurrentUser as UserInfo,
@@ -2220,6 +2646,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 ProductID: l.ProductID,
                 Quantity: Number(l.Quantity ?? 0),
                 UnitPrice: Number(l.UnitPrice ?? 0),
+                LineTotalNet: Number(l.LineTotalNet ?? 0),
+                LineNumber: l.LineNumber ?? null,
                 ReversesOrderLineID:
                     l.ReversesOrderLineID ?? null,
                 ShipToPersonID: l.ShipToPersonID ?? null,
@@ -2454,6 +2882,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RecognizedToDate: Number(context.Origin.RecognizedToDate ?? 0),
                 RemainingQuantity: context.Origin.Quantity - context.AlreadyReversed,
                 OriginNet: Number(context.Origin.LineTotalNet ?? 0),
+                OriginServicePeriodStart: context.Origin.ServicePeriodStart ?? null,
+                OriginServicePeriodEnd: context.Origin.ServicePeriodEnd ?? null,
                 PriorReversals: context.PriorReversals,
                 ScheduleRows: context.ScheduleRows,
                 OriginOrderNumber: context.Origin.OrderNumber ?? null,
@@ -2685,6 +3115,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
             seen.add(originOrder);
             if (!(await IsWholeOrderReversed(originOrder, provider, user))) continue;
 
+            const toCancel: OrderHeaderPaymentScheduleEntityServer[] = [];
             for (const scheduleID of InstalmentsToCancel(context.ScheduleRows)) {
                 const row = await provider.GetEntityObject<OrderHeaderPaymentScheduleEntityServer>(
                     ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY,
@@ -2693,6 +3124,17 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 if (!(await row.Load(scheduleID))) {
                     throw new Error(`Instalment ${scheduleID} could not be loaded to cancel it for the reversal.`);
                 }
+                toCancel.push(row);
+            }
+            // A deposit paid ahead of an instalment would be stranded by cancelling it (#840).
+            const depositRefusal = RefuseCancellingPaidInstalments(
+                toCancel.map((r) => ({ InstallmentNumber: Number(r.InstallmentNumber), AmountPaid: Number(r.AmountPaid ?? 0) })),
+                `order ${context.Origin.OrderNumber ?? originOrder}`,
+            );
+            if (depositRefusal) throw new Error(depositRefusal);
+
+            for (const row of toCancel) {
+                const scheduleID = row.ID;
                 row.Status = 'Canceled';
                 if (!(await row.Save(options))) {
                     throw new Error(
@@ -2715,6 +3157,19 @@ export class OrderEntityServer extends OrderHeaderEntity {
      * origin's quantity is what the proportion is taken against, so it is read from the origin rather
      * than inferred from the reversal.
      */
+    /**
+     * A returned line takes its access with it (`revokeEntitlementsForReversals`), except on a reversal Orders marked
+     * money-only (`SanctionMoneyOnlyReversal`, D20: a gateway refund of a renewal credits money and is not a cancel).
+     */
+    protected async settleAccessForReversals(
+        lines: mjBizAppsOrdersOrderLineEntity[],
+        reversals: Map<string, ReversalContext>,
+        options?: EntitySaveOptions,
+    ): Promise<void> {
+        if (IsMoneyOnlyReversal(this)) return;
+        await this.revokeEntitlementsForReversals(lines, reversals, options);
+    }
+
     private async revokeEntitlementsForReversals(
         lines: mjBizAppsOrdersOrderLineEntity[],
         reversals: Map<string, ReversalContext>,
@@ -3091,6 +3546,42 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
         }
         this._priceComponents.clear();
+    }
+
+    /**
+     * Delete the price breakdown a re-priced line carries from an earlier save, so the one written
+     * now replaces it (#794).
+     *
+     * A saved line priced above zero counts as stated and is not re-priced, which kept this rare;
+     * a line the engine prices at zero is re-priced on every save, and each save appended another
+     * full set of components. One read covers every line priced in this save; a line inserted by
+     * this save has no rows yet and matches nothing.
+     */
+    private async deleteSupersededPriceComponents(): Promise<void> {
+        const ids = RequireUUIDs(
+            [...new Set([...this._priceComponents.keys()].map((line) => line.ID).filter(Boolean))],
+            'OrderLineID',
+        );
+        if (!ids.length) return;
+        const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
+        const result = await rv.RunView<mjBizAppsOrdersOrderLinePriceComponentEntity>(
+            {
+                EntityName: 'MJ_BizApps_Orders: Order Line Price Components',
+                ExtraFilter: `OrderLineID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+                ResultType: 'entity_object',
+            },
+            this.ContextCurrentUser,
+        );
+        if (!result.Success) {
+            throw new Error(`Failed to read the earlier price breakdown: ${result.ErrorMessage}`);
+        }
+        for (const row of result.Results ?? []) {
+            if (!(await row.Delete())) {
+                throw new Error(
+                    `Failed to replace the price breakdown for an order line: ${ExtractEntityErrorMessage(row)}`,
+                );
+            }
+        }
     }
 
     /**
@@ -3474,16 +3965,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
         provider: IMetadataProvider,
         user: UserInfo,
     ): Promise<CreateJournalEntriesResult> {
-        const op = MJGlobal.Instance.ClassFactory.CreateInstance<
-            BaseRemotableOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>
-        >(BaseRemotableOperation, 'Accounting.CreateJournalEntries');
-
-        if (!op) {
-            throw new Error(
-                `The 'Accounting.CreateJournalEntries' operation is not registered. The BizApps ` +
-                    `Accounting server package must be loaded before orders can book journal entries.`,
-            );
-        }
+        const op = ResolveAccountingOperation<{ Drafts: unknown[] }, CreateJournalEntriesResult>(
+            'Accounting.CreateJournalEntries',
+            'book journal entries',
+        );
 
         const result = await op.Execute({ Drafts: drafts.map((d) => d.Draft) }, { provider, user });
 
@@ -3704,6 +4189,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                           DisplacedStartEventData(line.ID, decided.Decision, decided.RequestedStart, decided.RequestedEnd),
                           line.RenewsSubscriptionID ? { ProductID: product.ID, SubscriptionTypeID: rules.ID } : undefined,
                           decided.RetireGatewaySubscriptionID,
+                          decided.GatewayRenewal,
                       );
 
             // Remember it so a later line for the same subscription resolves above.
@@ -3958,6 +4444,8 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RequestedEndDate: requestedEnd,
                 // The line's answer to "the subscriber already holds this product" (golive #299).
                 RequestedAction: line.SubscriptionAction,
+                // A renewal the payment gateway already charged for (E4): continue the subscription it names.
+                GatewayRenewal: !!line.RenewsSubscriptionID && IsGatewayRenewal(this),
             });
 
             if (decision.Action === 'Reject') {
@@ -3973,7 +4461,12 @@ export class OrderEntityServer extends OrderHeaderEntity {
             // move it while the gateway keeps charging on its own schedule. A cancelled one may come
             // back as a fresh start: its old gateway id is retired, and the checkout hand-over gives
             // it a new gateway subscription once paid.
-            const gatewayVerdict = ProviderBilledPurchaseVerdict(decision.Action, existing, !!line.RenewsSubscriptionID);
+            const gatewayVerdict = ProviderBilledPurchaseVerdict(
+                decision.Action,
+                existing,
+                !!line.RenewsSubscriptionID,
+                !!line.RenewsSubscriptionID && IsGatewayRenewal(this),
+            );
             if (gatewayVerdict.Kind === 'Refuse') {
                 if (preview) continue;
                 throw new Error(`Order line ${line.LineNumber} (${product.Name}) cannot be confirmed: ${gatewayVerdict.Message}`);
@@ -4097,6 +4590,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
                 RequestedStart: requestedStart,
                 RequestedEnd: requestedEnd,
                 RetireGatewaySubscriptionID: gatewayVerdict.Kind === 'FreshStart' ? (existing?.ProviderSubscriptionID ?? undefined) : undefined,
+                GatewayRenewal: !!line.RenewsSubscriptionID && IsGatewayRenewal(this),
                 Seats: seats.Seats + (conceded.get(String(line.ID ?? '').toLowerCase()) ?? 0),
             });
         }
@@ -4194,7 +4688,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         if (types.length === 0) return null;
 
         const rv = new RunView(this.ProviderToUse as unknown as IRunViewProvider);
-        const quoted = types.map((t) => `'${t.replace(/'/g, "''")}'`).join(',');
+        const quoted = types.map((t) => `'${EscapeSQLString(t)}'`).join(',');
         const date = asOf.toISOString().slice(0, 10);
 
         const result = await rv.RunView<{ ToOrganizationID: string; StartDate: string }>(
@@ -4726,6 +5220,7 @@ export class OrderEntityServer extends OrderHeaderEntity {
         displacedStart?: DisplacedTermStartEventData,
         renewedOnto?: { ProductID: string; SubscriptionTypeID: string },
         retireGatewaySubscriptionID?: string,
+        gatewayRenewal?: boolean,
     ): Promise<string> {
         const provider = this.ProviderToUse as unknown as IMetadataProvider;
         const sub = await provider.GetEntityObject<mjBizAppsOrdersSubscriptionEntity>(
@@ -4759,6 +5254,10 @@ export class OrderEntityServer extends OrderHeaderEntity {
             }
         }
         if (decision.Action === 'Reactivate') {
+            // A renewal the gateway already charged for (E4, Andrew's rule): the gateway is billing this
+            // subscription again, so it comes back with its gateway id. The one write that lets a cancelled
+            // gateway-billed subscription become Active without a fresh start.
+            if (gatewayRenewal) SanctionProviderBilledChange(sub);
             sub.Status = 'Active';
             sub.CanceledAt = null;
             sub.EndDate = null;
@@ -4929,12 +5428,13 @@ export class OrderEntityServer extends OrderHeaderEntity {
         payment.ReceivingCompanyID = this.CompanyID;
         payment.BillToOrganizationID = this.BillToOrganizationID;
         payment.BillToPersonID = this.BillToPersonID;
-        // The order's own day, or today's business day when it has none (#209). `OrderDate` is
-        // defaulted at `NewRecord()` since #168, so the fallback is very likely unreachable — but a
-        // `DATE` column fed `new Date()` is dated tomorrow for the whole American evening, and the
-        // next caller to reach this method with no order date should not discover that. Keeping the
-        // stated day matters just as much: a backdated order's payment must carry the same date.
-        payment.PaymentDate = await CalendarDayOrToday(this.OrderDate, provider, user);
+        // The day the money arrived when finance gave one (bc-aidp-next-golive#448), else the order's
+        // own day, else today's business day (#209). `OrderDate` is defaulted at `NewRecord()` since
+        // #168, so the last fallback is very likely unreachable — but a `DATE` column fed `new Date()`
+        // is dated tomorrow for the whole American evening, and the next caller to reach this method
+        // with no order date should not discover that. Keeping the stated day matters just as much:
+        // a backdated order's payment must carry the same date, and so must its cash entry.
+        payment.PaymentDate = await CalendarDayOrToday(InitialPaymentDay(this.OrderDate, this.InitialPaymentReceivedDate), provider, user);
         payment.PaymentTypeID = this.InitialPaymentTypeID;
         payment.Amount = amount;
         payment.PaymentDetailID = paymentDetailID;
@@ -5078,33 +5578,77 @@ export class OrderEntityServer extends OrderHeaderEntity {
      */
     private async issueDueInstalments(scheduleRows: ScheduleTimingFacts[]): Promise<void> {
         if (!scheduleRows.length) return;
-        // The order's own day, or today's BUSINESS day (#209). This decides which instalments are
-        // due — it is compared against `DueDate`, a `date` column — and `toISOString()` reads the
-        // UTC day, so an evening confirm would bill tomorrow's instalment a day early.
-        const effectiveDate = ToISODate(
-            await CalendarDayOrToday(
-                this.OrderDate,
-                this.ProviderToUse as unknown as IMetadataProvider,
-                this.ContextCurrentUser as UserInfo,
-            ),
-        ) as string;
+        const provider = this.ProviderToUse as unknown as IMetadataProvider;
+        const user = this.ContextCurrentUser as UserInfo;
+        const cutoffDate = await this.instalmentIssueCutoffDate(provider, user);
 
         const due = scheduleRows
-            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= effectiveDate)
+            .filter((r) => r.Status === 'Scheduled' && ToISODate(r.DueDate) !== null && ToISODate(r.DueDate)! <= cutoffDate)
             .sort((a, b) => Number(a.InstallmentNumber ?? 0) - Number(b.InstallmentNumber ?? 0));
         if (!due.length) return;
 
-        const provider = this.ProviderToUse as unknown as IMetadataProvider;
-        const user = this.ContextCurrentUser as UserInfo;
         for (const row of due) {
-            const outcome = await IssueInstalment(String(row.ID), provider, user);
+            const outcome = await IssueInstalment(String(row.ID), provider, user, this.InstalmentInvoiceDay);
             if (!outcome.Success) {
                 throw new Error(
                     `Order ${this.OrderNumber} could not issue instalment ${row.InstallmentNumber}, which is ` +
-                        `due on or before the order date: ${outcome.Message}`,
+                        `due on or before ${cutoffDate}: ${outcome.Message}`,
                 );
             }
         }
+    }
+
+    /**
+     * Latest `DueDate` (`YYYY-MM-DD`) that confirm issues immediately (#963).
+     *
+     * For a renewal order, `OrderDate` is the next term's start date — often months in the future —
+     * so comparing against `OrderDate` issued instalments long before their due window. Instead, a
+     * renewal issues instalments due on or before today (or the renewal pass's as-of day) plus the
+     * subscription's renewal lead days (`Subscription.RenewalLeadDays ?? SubscriptionType.RenewalLeadDays ?? 0`).
+     * For a non-renewal order, `OrderDate` (capped at today when forward-dated) is the cutoff with 0 lead days.
+     */
+    private async instalmentIssueCutoffDate(provider: IMetadataProvider, user: UserInfo): Promise<string> {
+        const today = await BusinessDay(provider, user);
+        const orderDay = ToISODate(await CalendarDayOrToday(this.OrderDate, provider, user)) as string;
+        const renewalSubIDs = [
+            ...new Set(
+                this.Lines.Items.map((l) => l.RenewsSubscriptionID).filter((id): id is string => !!id),
+            ),
+        ];
+        if (renewalSubIDs.length === 0) {
+            return orderDay <= today ? orderDay : today;
+        }
+        const baseDay = this._renewalAsOfDay ?? today;
+        const leadDays = await this.renewalLeadDaysFor(renewalSubIDs, provider, user);
+        return AddDays(baseDay, leadDays) ?? baseDay;
+    }
+
+    private async renewalLeadDaysFor(
+        subscriptionIDs: string[],
+        provider: IMetadataProvider,
+        user: UserInfo,
+    ): Promise<number> {
+        const ids = RequireUUIDs(subscriptionIDs, 'RenewsSubscriptionID');
+        if (!ids.length) return 0;
+        await LoadOrdersEngine(provider, user);
+        const rv = new RunView(provider as unknown as IRunViewProvider);
+        const res = await rv.RunView<{ ID: string; SubscriptionTypeID: string; RenewalLeadDays: number | null }>(
+            {
+                EntityName: SUBSCRIPTION_ENTITY,
+                ExtraFilter: `ID IN (${ids.map((id) => `'${id}'`).join(',')})`,
+                Fields: ['ID', 'SubscriptionTypeID', 'RenewalLeadDays'],
+                ResultType: 'simple',
+            },
+            user,
+        );
+        if (!res?.Success) return 0;
+        let maxLead = 0;
+        for (const sub of res.Results ?? []) {
+            const typeLead = OrdersEngine.Instance.SubscriptionTypeByID(sub.SubscriptionTypeID)?.RenewalLeadDays ?? 0;
+            const effective = Math.max(0, Number(sub.RenewalLeadDays ?? typeLead ?? 0));
+            if (effective > maxLead) maxLead = effective;
+        }
+        return maxLead;
     }
 
     /** The `OrderConfirmed` outbound event: the order as consumers need it, lines included. */

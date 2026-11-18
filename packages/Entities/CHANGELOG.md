@@ -1,5 +1,224 @@
 # @mj-biz-apps/orders-entities
 
+## 5.50.2
+
+### Patch Changes
+
+- 543e594: The order line prompt for a product the customer already has is reworded as a question (golive #480): "Is this line a renewal of that subscription, or a new one?" The choices are now "Renew <subscription>" and "Create new subscription", each showing the dates it gives the line, and the hint under them says when renewing will run on different dates from the ones entered. Wording only: what confirm does with each answer is unchanged.
+
+## 5.50.1
+
+### Patch Changes
+
+- c8eedb2: A renewal takes its annual increase when the expiring term is not the first term its order line bought (golive #478). The anniversary test now measures from the start of the earliest term that line bought, where its price began, instead of from the expiring term's start. A 13-month line booked as a year and a remainder, or an annual line with a one-day last term, used to renew flat because the last term already started on the anniversary. A line that bought one term renews as before: annual on every renewal, quarterly and monthly once a year.
+
+## 5.50.0
+
+### Minor Changes
+
+- f950cc2: A concession is withdrawn by setting its Status to `Withdrawn`, and stays on the order as a record (golive #403). `OrderConcession` gains `WithdrawnByUserID` and `WithdrawnAt`, set exactly when it is Withdrawn; a concession withdrawn after approval keeps its approver and decision date. A Pending concession can be withdrawn, and so can an Approved one while its order is not confirmed and it names no booked term. Its requester may withdraw it without Update permission on Order Concessions, so a role with Create and Read only can replace one; anyone else needs Update. Withdrawing closes the concession's open tasks. A Withdrawn concession counts toward nothing: not the order's concession share, not the confirm gate, not the order's totals. Withdrawn is final. Deleting a concession works as before.
+
+## 5.49.0
+
+### Minor Changes
+
+- b3089be: Release seed for the Subscriptions tab: `V…__v5.49.x__Metadata_Sync` creates the Orders.ChangeSubscriptionProduct, Orders.SetRenewalSettings and Orders.GetRenewalWorklist remote operations (create-only, guarded on ID or OperationKey), updates Orders.SpawnRenewals' type definitions, and updates the Orders application's description and nav items to add the Subscriptions tab. Rows resolve by OperationKey or name, the shipped ID first, and the Subscriptions category by its ID first. It has a Postgres counterpart.
+- d5579c3: A Subscriptions tab with a Renewals page. Every subscription whose coverage ends inside a chosen window (30 days to 12 months ahead, plus terms that ended in the last 30 days without renewing), soonest first, with the customer, account, company, product, start and end dates, status, the auto-renew switch, the order that bought the current term and its price, and the renewal: the renewal order where one exists (number, date, status, price, booked or still a draft), otherwise the price a renewal would be placed at and the day the nightly pass will place it. Tick rows and create their renewal orders: the page previews through the renewal pass, shows what will be placed and skipped, and asks whether to leave the orders as drafts (the default) or confirmed and invoiced at once. It warns when a sibling from the same original order was left out.
+
+  "Change product" corrects the product on the ticked subscriptions through the new `Orders.ChangeSubscriptionProduct` (the subscription is what the customer has now; booked orders and deals keep what was sold; a different subscription type is refused unless the dialog's "also move" is ticked). The next renewal carries the corrected product at the current price plus increase. A subscription with a renewal order pending is refused, naming the order, since confirming that order would move the subscription back onto its line's product; the dialog says so before the save.
+
+  `Orders.SpawnRenewals` now places ONE renewal order per customer per renewal date: subscriptions with the same selling company, holder and beneficiary, expiring term end, placement and renewal card go on one order with a line each (`RenewalGroupKey`), inside one transaction; a group whose order fails is retried one member at a time, so one subscription that cannot be booked holds back only itself. A product added mid-term joins only when co-terminated; a line carrying promotion codes renews alone. `MaxCount` and `Placed` count orders; each candidate reports its `OrderGroup`. The scheduled pass produces fewer, combined orders for customers who bought several products together. Company and Product dropdowns (`mjo-multi-select`, new) narrow the list to what is in the window, with counts; the increase sits under every renewal price (projected, or actual against the current price once placed); and Export downloads the rows shown as Excel or CSV in one click through MJ's export service. Every row can be ticked: "Create renewal orders" acts on the ticked rows that can renew, "Auto-renew" turns the switch on or off for all of them, and "Update increase %" sets `RenewalIncreasePercent`, both through the new `Orders.SetRenewalSettings`, which writes subscriptions only and never an order (the dialog warns when a chosen subscription has a renewal draft pending, which keeps its price). A term with auto-renew off that has already ended shows as "Ended" (new `RenewalWorklistState`), not "Will end". The side panel shows each subscription's own rate or what it inherits, with the same dialog for one. Dates on the page are MM/DD/YYYY (`FormatDate` gains a `Numeric` option).
+
+  A new subscription with no rate of its own takes the negotiated annual increase from the contract behind its birth order (`SubscriptionEntityServer` on create, through order line → order → deal → contract; `ContractIncrease.ts`). The lookup is optional: nothing happens on a host without the Sales and Contracts apps, and a failed lookup is logged and never blocks a confirm.
+
+  New read-only operation `Orders.GetRenewalWorklist`. `Orders.SpawnRenewals` takes `SubscriptionIDs` (place renewals for the subscriptions a person chose, whatever the lead window or the switch say, with every ineligible choice reported) and `PlaceAs` (`Confirmed` or `Draft`); its pricing moved to a shared `RenewalPricer` so the page's projection and the pass's order are one figure. The scheduled pass itself is unchanged. The subscription register moved from the Receivables rail to the new tab, and `mjo-worklist-table` gained row ticking (`Selectable`, `SelectedKeys`, `SelectionChanged`).
+
+  The Orders application's `DefaultNavItems` gain the Subscriptions tab (`metadata/applications/.orders-application.json`); like every metadata change this reaches a host through the release's metadata sync migration, not through this package alone.
+
+## 5.48.0
+
+### Minor Changes
+
+- c2060b4: Cancelling a subscription, refunding a payment, moving an account credit and lowering an agreed amount now need the new `MJ.BizApps.Orders.Order.Reverse` authorization, granted to the Finance and Developer roles; the matching screens hide or disable those actions for everyone else. Records of what the payment gateway already did are exempt, and returns stay open to whoever books orders.
+- f6c0da6: Release seed for the order reversal authorization: `V…__v5.48.x__Metadata_Sync` creates `MJ.BizApps.Orders.Order.Reverse` and grants it to Finance and Developer, so a host that upgrades by migration can still cancel subscriptions, refund payments, move account credits and lower agreed amounts. Every record is create-only, guarded on its ID or natural key. It has a Postgres counterpart.
+
+## 5.47.1
+
+### Patch Changes
+
+- d790722: The payment exceptions tab can set one or many Held, Unmatched or Refused payments aside with a required reason, and filter by payment date. A set-aside of several rows leaves out Unmatched payments not dated before the chosen day, and the External Payment entity refuses setting aside a row with cash recorded or without a reason. The tab now shows each row's reason, which it left blank before.
+
+## 5.47.0
+
+### Minor Changes
+
+- c0ea095: Revenue-band pricing can be set up and maintained from the product's Pricing panel, and two bands with
+  disjoint revenue ranges no longer collide (#1004).
+
+  - **Band editor.** The Pricing panel gains a "Revenue bands" view: one row per band of the bill-to
+    organization's annual revenue, with the edges in $M, the price, and the band's status. Edit an edge or
+    a price in place; add a band; start a whole ladder from a list of edges (ten bands from "Under $2M" to
+    "$250M+" proposed). The editor writes the band's `Applicability` and proposes its name, and reports
+    gaps and overlaps in the ladder. A banded product opens on this view. A proposed name carries the
+    price list's name on a list tab and a "(2)" suffix when the product already has a price of that name,
+    so the same ladder can exist on Standard and a list and a band can be re-added beside a deactivated
+    one (`UX_ProductPrice_Product_Name` is unique per product whatever the list or status). Emptying a
+    price field and clicking away keeps the old amount; it no longer saves $0.00.
+  - **Deactivate instead of delete.** Every price shows whether it is active, expires on a date, or has
+    expired; inactive prices are hidden until asked for. Deactivate sets the price inactive, so lines
+    already priced keep their price and new lines no longer get it; Activate undoes it. Status and
+    expiration date are editable on the card, and the card links to the full record.
+  - **Conditions.** The When builder is labelled "Conditions" and lists the handful of fields a price rule
+    tests (status, type, region, revenue) instead of every column of five entities; "Show all fields" shows
+    them all. A revenue band's conditions read as "Customer annual revenue $2M – $5M".
+  - **Currency fields.** Every price input shows and accepts money (`$12,500.00`), not a bare number
+    (`mjoCurrency`, exported from orders-ng). The parser reads a currency sign, thousands commas, one
+    decimal point, a minus sign or accounting parentheses, and refuses anything else (`12k`, `1.250,00`)
+    rather than guessing.
+  - **Simulate price** takes the sample customer's annual revenue, applies the resolver's own status, date
+    and quantity checks, reports a priority tie as the conflict it would be, and says why each price was
+    not applied; blank revenue shows what any price that tests revenue does when no figure is on file. On
+    a price-list tab it prices the way the resolver prices a customer on that list: the list's rows at one
+    priority higher, then the Standard rows, so a list that does not price the line shows the Standard
+    price it would fall back to.
+  - **Price lists.** The base tab is "Standard" (prices every customer can receive); a price list's tab
+    appears only when it prices this product, or in Edit. The grid shows the selected tab's rows, like the
+    other two views, and prices at one priority list lowest revenue band first.
+  - **One order everywhere.** The cards, the grid, the simulation and the product's Overview list prices
+    highest priority first, revenue bands lowest band first within a priority, then by name: one
+    comparator, `ComparePriceRows` in orders-entities. The Overview shows "Active prices" (name, who it
+    applies to, amount) from every price row of the product, not the first page of them, and counts the
+    inactive ones; its cards use plain labels (Sales summary, Entitlements, Event details).
+  - **Accounting tab.** Three cards with one look: Accounting setup (the product's own columns),
+    Accounts used when an order is confirmed (a Role / GL account / Assigned on table from the server's walk, with a
+    one-line warning naming only the roles confirm requires: Accounts Receivable and Sales, plus Deferred
+    Revenue for a deferred recognition type, re-read when the type or company changes on the form) and
+    Accounts assigned directly to this product (role, account, effective window, status, with Add
+    assignment, Edit, End and Delete as labelled forms rather than icon rows). Assignment statuses read
+    Active / Scheduled / Superseded.
+  - **Product form layout.** The header strip carries list price, type, category, availability, revenue
+    recognition and tax, with the selling company as a chip beside the status. A Details panel directly
+    under the header holds Company, Status, Sellable to new customers and the availability dates; it
+    replaces the Lifecycle panel and the empty generated Details section. The Overview's Active prices
+    table is full width with a right-aligned Amount column.
+  - **Server.** `ProductPriceEntityServer` reads both rows' Applicability through `ParseRevenueBand` and
+    lets two revenue bands with disjoint ranges share a priority; two bands that overlap are refused with a
+    message naming the other band. `pricing/revenueBands.ts` holds the band contract (parse, build, name,
+    overlap, ladder gaps) for both tiers.
+
+## 5.46.0
+
+### Minor Changes
+
+- bde9dcc: Move to MemberJunction's 6.2 LTS line: every `@memberjunction/*` range and the core/global overrides are `^6.2.1` (exact `6.2.1` devDependency anchors), and `mjVersionRange` is `>=6.2.1 <7.0.0`. Hosts must run MJ 6.2.1 or later to install this release.
+
+## 5.45.0
+
+### Minor Changes
+
+- 38ecc01: The 5.45 Metadata_Sync ships the empty NoDealConfirmRoles application setting, so a host that upgrades by migration has the setting to fill in, the same as one that ran `mj sync push`. It has a Postgres counterpart.
+
+## 5.44.0
+
+### Minor Changes
+
+- a4dba56: A payment can be dated the day its money arrived (bc-aidp-next-golive#448). The order's initial payment has an optional "Received on" day (new column `OrderHeader.InitialPaymentReceivedDate`); the payment created at confirm takes it, and the order's date when it is blank. Finance can change a captured payment's date from the payment form or the order's Payment tab: the save moves the payment's journal entries to the same day through accounting's `Accounting.RedatePendingJournalEntries`, and refuses with accounting's message once any of them is batched. Trigger 51005 no longer freezes `PaymentDate`; the new check 51033 refuses a date change once any of the payment's entries is batched or posted. Needs a bizapps-accounting release that has the operation.
+- a48a6e2: Percentage of Completion lines confirm without service dates: the revenue recognition type no longer requires a service period, since its revenue follows recorded progress. The order lines editor shows those dates as optional "Expected start" and "Expected end". The metadata change reaches hosts through the release's Metadata_Sync migration.
+- a17a7bf: `Product.IsSellableNew` gains its PostgreSQL migration (V202611061740). The field inherited on Event Products is placed in the Product Details section of its form.
+- fbf3ad4: The 5.44 Metadata_Sync ships the Explain Product GL Accounts remote operation, the Payment Needs Review notification and its email template, and the updated Poll External Payments, Preview Price and Record Progress type definitions, so a host that upgrades by migration gets the same metadata as one that ran `mj sync push`. It has a Postgres counterpart.
+- d2a22a0: The external payment poll no longer reports a failed run while payments wait for a person. A run that leaves unmatched, refused, re-applied or reversal-needed payments now succeeds with `ATTENTION`, and each payment the run moved into one of those states (or from one to another) gets one "Payment Needs Review" notification, in-app and email by default, sent to the poll job's notify user, else its owner, else the user running the poll. Payments already waiting from earlier runs are not announced again, so the hourly job stops sending the same failure notice every hour. A notice that cannot be sent is logged and does not fail the run. Adds the notification type, its email template and a template category in `metadata/`; the release's Metadata_Sync migration carries them.
+- 7b693a7: `Orders.PreviewPrice` takes `IgnoreSellability`, which prices a product whatever its Status and availability window. The product header's Activate check uses it, so a priced Draft product no longer reads as "could not be checked". Entering edit mode closes the readiness warning, and Activate refuses to save once the form is in edit mode.
+- cc62ad9: A product's Accounting tab now shows an "Effective accounts" block: for Sales, Deferred Revenue, Sales Discounts, Sales Returns and Allowances and Accounts Receivable, the account an order line books to and whether it comes from the product, its category or a parent category, its product type, or the company default, with roles that resolve nowhere flagged. It reads a new read-only remote operation, `Orders.ExplainProductGLAccounts`, which runs the same walk confirm books through.
+- de11edd: Progress attestation follows finance's books-closed-through date instead of posted batches (bc-aidp-next-golive#316). `Orders.RecordProgress` reads the line's company's `AccountingCompanyProfile.BooksClosedThroughDate` once per call and refuses a measurement date on or before it, on preview and post and on a supersede, with the message "This month has already been closed by finance. Please contact them to proceed." If that date cannot be read, the attestation is refused; a line with no company, no profile or no date has nothing closed. A supersede's reversal is dated on the replaced observation's own date, or on the first open day when finance has closed that month, and the message says why it moved. The replacement's catch-up always posts on the date entered, so `CatchUpDate` equals `MeasurementDate` whenever there is a catch-up. The supersede no longer reads journal entry batches. The attestation screen's supersede text matches. It needs accounting 0.24.0, the first release with `BooksClosedThroughDate` and the shared closed-books rule, so the accounting peer ranges and the `mj-app.json` dependency now start at 0.24.0.
+
+### Patch Changes
+
+- 3f9d524: A typed price on an order dated before the product's only price is in force now confirms, measured as a product with no price is; a line with no typed price is still refused. The add-price row on the product form shows Effective From, defaulting to today, so an earlier start can be chosen.
+
+## 5.43.0
+
+### Minor Changes
+
+- d45e6ae: Finance may type any unit price on an order line (MJ.BizApps.Orders.Price.OverrideAny), as Account Director can. Products with a single $0 price, such as the converted-pricing Betty products, had no way to set a price for anyone outside Account Director, so Finance users entering a new sale saw no price pencil. Metadata only; the release's Metadata_Sync migration carries the new authorization-role row.
+- 534b368: The 5.43 Metadata_Sync migration, with its Postgres counterpart, ships the Finance authorization role on MJ.BizApps.Orders.Price.OverrideAny.
+
+## 5.42.0
+
+### Minor Changes
+
+- 5529725: Bug sweep across checkout, payments, order entry, accounting, the Bill.com rail, access overrides and tooling. Adds four migrations (one open checkout session per widget and client key, a foreign key from OrderHeader.ApprovalTaskID to Tasks, an immutability guard on InstalmentLineBilling, and DiscountAmount/ChargeAmount in the confirmed-line freeze) and metadata changes (webhook delivery view filter, entity-permission pull filter, progress observation field descriptions, a revenue recognition type description).
+- 72787da: The 5.42 Metadata_Sync ships what metadata/ changed since 5.41: three progress-observation entity fields, the Record Progress remote operation's output type, the Percentage of Completion revenue recognition type, and the Payment Webhook Deliveries: Not Applied view, so a host that upgrades by migration gets the same metadata as one that ran `mj sync push`. It has a Postgres counterpart.
+
+## 5.41.0
+
+### Minor Changes
+
+- 0caaeb0: The 5.41 Metadata_Sync ships the Spawn Renewals remote operation's updated output type, so a host that upgrades by migration describes the operation's output the same way as one that ran `mj sync push`. It has a Postgres counterpart.
+- 0045f58: Spawn Renewals prices the renewal of a line that bought several terms at a typed price (`PriceOverridden`) at one term's share of that price, so a 24-month line typed at 20,000 on a 12-month type renews at 10,000 rather than 20,000. An engine-priced line already carries one term's price whatever period it states, and renews at it unchanged. A line no longer than the type's term renews at its own price as before. Each renewal candidate, preview included, now reports the renewal term's start and end (`RenewalTermStart`, `RenewalTermEnd`).
+
+## 5.40.0
+
+### Minor Changes
+
+- fb48fbb: A product that names no subscription type of its own but inherits one from its product type is now a subscription everywhere confirm treats it as one. `FindUnansweredHeldLines` asks the extend-or-new question for it, the order line screen shows its term start (and a bundle containing it shows one too), `OrdersEngine.ServicePeriodSource` takes its service period from the term, a bundle component of it inherits the start and subscription answer, and a checkout selling it saves the instrument for renewals. `orders-entities` exports `ResolveSubscriptionTypeID` (the product's own type, else its product type's default) and `OrdersEngine.ResolveSubscriptionTypeID(productID)`; `orders-core-entities-server` re-exports the function from there.
+- 78b298a: The order form now lists, under "Before this can be confirmed", each concession that still needs approval before confirm will go through: a concession awaiting a decision, or a line priced or discounted below catalog with no approved concession behind it. Confirm stays off until the list is empty. Before, Confirm looked available and the server then refused it. The list comes from a new read-only remote operation, `Orders.ConfirmReadiness`, which runs the same check confirm runs.
+- 1f58444: Release seed for 5.40: `V202611011530__v5.40.x__Metadata_Sync.sql` and its PostgreSQL counterpart carry this release's metadata to hosts, which install by migration and never read `metadata/`: the Confirm Readiness remote operation, the Sync Provider Subscriptions and Link Provider Subscription actions with their nine params each, and the nightly Sync Provider Subscriptions job (created Disabled). Creates are guarded on ID or their unique key, so a host that already pushed this metadata is unchanged.
+- ce26b74: Orders now hears what a gateway that bills a subscription did, and books it (option E, E3 + E4 + E6).
+
+  - **The sync.** `SyncProviderSubscription` reads the gateway subscription and its invoices since the latest term
+    began, plans with the pure `PlanProviderSubscriptionSync`, and brings Orders in line, reporting every difference.
+    Events only trigger a re-read; the gateway's records are the truth.
+  - **Renewals booked (E4).** A renewal the gateway charged becomes a confirmed renewal order on the subscription's own
+    product at what was charged, its payment captured keyed by the gateway charge (only for a period Orders has not
+    booked: an imported subscriber's current year is never booked again; a taxed renewal goes to a person), `PaymentSucceeded` and
+    `RenewalOrderSpawned` events, and the next term; any refund the gateway already made is booked after the capture.
+    Only this order may renew a gateway-billed subscription (`SanctionGatewayRenewal`); a cancelled one is reactivated,
+    keeping its gateway id, with a Task for support. A $0 renewal is booked at the last price, 100% off.
+  - **A gateway refund of a renewal (D20)** is a money-only credit order applied to the renewal (`Orders.ApplyAccountCredit`),
+    so the renewal owes nothing, full refund or partial; access is unchanged; a Task per credit. The refund door and a
+    cancel decide under one subscription lock and never credit one refund twice. **A cancel follows the same per-term
+    figure for every renewal the gateway charged and has refunded any of** (what it refunded less what Orders already
+    credited, applied to the renewal), on every path: a recorded gateway end, the term D19 skips, an `Immediate` cancel
+    and a backdated request alike; the type's refund rule no longer credits such a renewal on top of the gateway's refund.
+    A renewal the gateway refunded nothing of, and every term Orders billed, follow the type's rule as before. A $0
+    renewal (100% off) is never read as refunded in full.
+  - **Spending a return's credit.** An order's applied total may go below zero by the credit the order itself carries
+    (a return or cancellation), never by cash; `Orders.ApplyAccountCredit` now settles only the credit's own customer's
+    orders, only between CONFIRMED orders (a Draft, Quoted or Voided order holds no credit and owes nothing), and locks
+    both orders, so one credit is spent once. The Account Credit page lists the same (orders-ng: Credits Held and the
+    targets leave out Draft, Quoted and Voided orders).
+  - **End of term on a subscription the gateway still bills (D19)** ends with the latest booked term the gateway had
+    charged by the request day and has not refunded in full: a cancel on the renewal day keeps the paid year; a
+    request dated before the renewal (recorded later) and a fully refunded renewal keep the term covering the request,
+    the refunded term reversing what the gateway refunded. Terms ridden past are stamped Completed at their own end.
+  - **Failures and the end state.** Each failed attempt is a `PaymentFailed` event; no order until paid; access is kept
+    to the end of the gateway's next retry day (capped at 45 days past coverage). A portal cancel turns automatic renewal
+    off (and back on when withdrawn); a subscription the gateway ended is cancelled in Orders.
+  - **The webhook endpoint check** (at every server start, and the hourly job) now judges the subscription event kinds
+    too, so an endpoint that predates this release reports `Drift` with the ten kinds it does not send.
+  - **The webhook** routes the driver's subscription event kinds to the sync (500 on failure so the gateway redelivers);
+    a gateway subscription no Orders subscription records is classified (`not_ours`, `unknown_subscription` with one
+    Task); the third failed delivery for one subscription raises an urgent `GatewaySyncFailed` Task. The account's
+    `BillsSubscriptions` switch gates new hand-overs only; subscriptions the gateway already bills are always followed.
+  - **New actions:** `Orders.SyncProviderSubscriptions` (nightly job, ships Disabled and in Preview) and
+    `Orders.LinkProviderSubscription` (checked link of an existing subscription, then a sync: the account must be the
+    subscription's company's, the gateway subscription must not name another Orders subscription, an existing
+    provider is never overwritten, a customer e-mail that differs refuses and one that cannot be compared needs a person's `CustomerConfirmed`,
+    and an older price is linked with `AllowPriceOfAnotherProduct`).
+  - **Entity (orders-entities):** `Linking` now covers a NEW subscription created already carrying a gateway id (the
+    same write and the same guess as a saved one gaining it), so that too is refused from any form or API unless a
+    server door sanctioned it.
+  - **Driver:** `HandledSubscriptionEventKinds`, `ListProviderSubscriptionInvoices` and a richer
+    `DescribeProviderSubscription` (price, quantity, customer, e-mail, metadata, `EndedAt`); Stripe implements them.
+
+  No migration. Integration checks SR75–SR98-OT (subscription-renewal) and AC-OT1 (account-credit).
+
+- 367a402: Revenue-band pricing: an offering priced by the buyer's revenue is one product with a price row per band, instead of one product per band. A band row's Applicability tests the new `BillToOrganizationRevenue.AnnualRevenue` source, filled from the host's registered `BaseOrganizationRevenueProvider`; the price trail names the band and the revenue figure used. When the revenue is unknown, pricing refuses with `RevenueBandRequiredError` and `ListApplicablePrices` offers every band (`IsRevenueBand`, `BandUndecided`); the order line's price picker shows those bands to any user editing the order, and picking one is not an override. The product price "When" builder offers the revenue field. New exports: `BaseOrganizationRevenueProvider`, `LoadOrganizationRevenue`, `IsRevenueBandApplicability`, `ORGANIZATION_REVENUE_SOURCE`, `ProductHasRevenueBands`, `IsLineOnUndecidedBand`.
+
+### Patch Changes
+
+- 135f01f: The order form's Payment tab lists the order's payment schedule: each instalment's due date, amount, status, invoice number and when its AR was raised, linked to the journal entry. An order with no schedule says its full value is raised to AR at confirm. `OrderHeaderEntity.LoadPaymentSchedule()` reads the rows, and the form's Refresh reads them again, so rows added elsewhere appear without reopening the order.
+
 ## 5.39.0
 
 ### Minor Changes
@@ -765,8 +984,8 @@
   `EntityFieldID` `F04330BA-4A37-4674-A2FE-237CE04E2C52`. CodeGen mints EntityField IDs per host, so that
   GUID exists only on the authoring database. Everywhere else:
 
-                                                              The INSERT statement conflicted with the FOREIGN KEY constraint
-                                                              "FK_EntityFieldValue_EntityField"
+                                                                                          The INSERT statement conflicted with the FOREIGN KEY constraint
+                                                                                          "FK_EntityFieldValue_EntityField"
 
   which aborts the entire migration. On AIDP Next stage it killed the 5.15.0 upgrade at batch 19 of 30
   and left the app registered `Error`.

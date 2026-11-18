@@ -63,4 +63,63 @@ describe('the booking walk', () => {
         expect(source.match(/this\.ConfirmedAt\s*=/g)).toHaveLength(1);
         expect(source).toMatch(/if \(booking\) \{\s*this\.stampConfirmation\(\);\s*\}/);
     });
+
+    it('refuses caller writes to ConfirmedAt or ConfirmedByUserID before booking (#969)', () => {
+        const order = Object.create(OrderEntityServer.prototype) as {
+            passesConfirmationStampGuard: () => boolean;
+        };
+        let lastMessage = '';
+        Object.defineProperty(order, 'IsSaved', { value: false, configurable: true });
+        Object.defineProperty(order, 'Status', { value: 'Draft', configurable: true });
+        Object.defineProperty(order, 'ConfirmedAt', { value: null, configurable: true });
+        Object.defineProperty(order, 'Fields', {
+            value: [
+                { Name: 'Status', Value: 'Draft', OldValue: 'Draft', Dirty: false },
+                { Name: 'ConfirmedAt', Value: new Date(), OldValue: null, Dirty: true },
+            ],
+            configurable: true,
+        });
+        Object.defineProperty(order, 'RegisterResultHistoryEntry', {
+            value: (r: { Message: string }) => {
+                lastMessage = r.Message;
+            },
+            configurable: true,
+        });
+
+        expect(order.passesConfirmationStampGuard()).toBe(false);
+        expect(lastMessage).toContain('ConfirmedAt is stamped by the server');
+    });
+
+    it('restores ConfirmedAt and ConfirmedByUserID, value and baseline, when a booking save rolls back (#969)', () => {
+        const order = Object.create(OrderEntityServer.prototype) as {
+            captureConfirmationStamp: () => unknown;
+            restoreConfirmationStamp: (prior: unknown) => void;
+        };
+        const field = (Name: string) => {
+            const f = {
+                Name,
+                Value: null as unknown,
+                OldValue: null as unknown,
+                RestoreOldValue(v: unknown) {
+                    f.OldValue = v;
+                },
+            };
+            return f;
+        };
+        const fields = [field('ConfirmedAt'), field('ConfirmedByUserID'), field('Status')];
+        Object.defineProperty(order, 'Fields', { value: fields, configurable: true });
+        const prior = order.captureConfirmationStamp();
+
+        // The booking save stamps both and re-baselines them before it throws.
+        for (const f of fields.slice(0, 2)) {
+            f.Value = f.Name === 'ConfirmedAt' ? new Date() : 'user-1';
+            f.OldValue = f.Value;
+        }
+        order.restoreConfirmationStamp(prior);
+
+        for (const f of fields.slice(0, 2)) {
+            expect(f.Value).toBeNull();
+            expect(f.OldValue).toBeNull();
+        }
+    });
 });

@@ -6,7 +6,7 @@
  * these subclasses higher priority than the generated ones.
  */
 export { GLAccountResolver, GLAccountResolutionError, GL_ROLE } from './GLAccountResolver.js';
-export type { GLRole, ResolverEntityIDs } from './GLAccountResolver.js';
+export type { GLRole, GLRoleExplanation, GLWalkLevel, GLWalkStep, ResolverEntityIDs } from './GLAccountResolver.js';
 
 export { GetOverdueWorklistOperation, LoadGetOverdueWorklistOperation } from './GetOverdueWorklistOperation.js';
 
@@ -74,6 +74,7 @@ export {
     type ConcessionDecisionResult,
 } from './ConcessionApprovalListener.js';
 export {
+    ApplyShareLimitMixTiers,
     FindConcessionTier,
     LoadConcessionTiers,
     FindUnapprovedConcessions,
@@ -82,8 +83,10 @@ export {
     LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
+    LoadShareLimitMixTiers,
     OrderConcessionTotal,
     OrderNetTotal,
+    OrderProductTypeCount,
     type ConcessionLineFacts,
     type LineConcessionFacts,
     type LinePriceConcession,
@@ -125,7 +128,7 @@ export {
     UnattestedException,
 } from './DetectUnattestedProgressOperation.js';
 
-export { InstalmentsToCancel, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
+export { InstalmentsToCancel, RefuseCancellingPaidInstalments, ProratedCreditMemo, RefuseEarnedNotBilled, StagedEarnedThrough } from './ContractBalance.js';
 export type { ContractLineBalance, DatedRelease, ReversalPosition, ReversalScheduleRow } from './ContractBalance.js';
 export {
     BackDatedWarning,
@@ -174,6 +177,14 @@ export type { FulfillableLine, FulfillmentStatus, FlipRefusal, QueueGrouping } f
 export { GetFulfillmentQueueOperation, LoadGetFulfillmentQueueOperation } from './GetFulfillmentQueueOperation.js';
 export { GetPriorReturnsOperation, LoadGetPriorReturnsOperation } from './GetPriorReturnsOperation.js';
 export { CheckCoverageOverlapOperation, LoadCheckCoverageOverlapOperation } from './CheckCoverageOverlapOperation.js';
+export { ConfirmReadinessOperation, LoadConfirmReadinessOperation, ConcessionProblemSentence } from './ConfirmReadinessOperation.js';
+export {
+    ExplainProductGLAccountsOperation,
+    LoadExplainProductGLAccountsOperation,
+    PRODUCT_GL_ROLES,
+    RequireGLRoles,
+    ShapeRoleExplanation,
+} from './ExplainProductGLAccountsOperation.js';
 export { FulfillOrderLinesOperation, LoadFulfillOrderLinesOperation } from './FulfillOrderLinesOperation.js';
 
 export { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
@@ -225,8 +236,15 @@ export { AmendArrangementOperation, LoadAmendArrangementOperation } from './Amen
 export type { AmendArrangementInput, AmendArrangementOutput } from '@mj-biz-apps/orders-entities';
 export type { CancelSubscriptionInput, CancelSubscriptionOutput } from './CancelSubscriptionOperation.js';
 
-export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation } from './SpawnRenewalsOperation.js';
-export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate } from './SpawnRenewalsOperation.js';
+export { SpawnRenewalsOperation, LoadSpawnRenewalsOperation, SelectedRenewalRefusal, RenewalGroupKey } from './SpawnRenewalsOperation.js';
+export type { SpawnRenewalsInput, SpawnRenewalsOutput, RenewalCandidate, RenewalPlacement } from './SpawnRenewalsOperation.js';
+export { RenewalPricer, NonSubscriptionSuccessorRefusal, DayAfter, EffectiveLeadDays } from './RenewalPricing.js';
+export type { RenewalSubjectRow, RenewalSourceLineRow, PricedRenewal, RenewalPriceOptions } from './RenewalPricing.js';
+export { GetRenewalWorklistOperation, LoadGetRenewalWorklistOperation } from './GetRenewalWorklistOperation.js';
+export { SetRenewalSettingsOperation, LoadSetRenewalSettingsOperation, RequireIncreasePercent } from './SetRenewalSettingsOperation.js';
+export { ChangeSubscriptionProductOperation, LoadChangeSubscriptionProductOperation } from './ChangeSubscriptionProductOperation.js';
+export { LoadRenewalPass, ReadPassMode, RENEWAL_JOB_ID, RENEWAL_PREVIEW_PARAM_ID, type RenewalPass, type RenewalPassMode } from './RenewalPassMode.js';
+export { ContractIncreaseForOrder, ContractIncreaseForOrderLine, ContractsReadable, ApplyContractIncreaseOnCreate, DEALS_ENTITY, CONTRACTS_ENTITY, type ContractIncrease, type IncreaseOnCreateSubject } from './ContractIncrease.js';
 
 // Which subscriptions Orders renews and which a gateway bills (option E): the renewal jobs' one shared rule.
 export { NotProviderBilledSql, ProviderBilledPurchaseVerdict } from './ProviderBilledSubscriptions.js';
@@ -266,6 +284,30 @@ export type {
     ProviderSubscriptionOutcome,
     ProviderSubscriptionOutcomeCode,
 } from './ProviderSubscriptions.js';
+
+// Hearing the gateway that bills a subscription and booking what it does (option E, E3 + E4 + E6).
+export {
+    CoverageEndsAt,
+    PlanProviderSubscriptionSync,
+    RENEWAL_BILLING_REASON,
+    RETRY_ACCESS_CAP_DAYS,
+} from './ProviderSubscriptionSyncPlan.js';
+export type { SyncGatewayFacts, SyncNoticeCode, SyncOrdersFacts, SyncPlan, SyncStep } from './ProviderSubscriptionSyncPlan.js';
+export { SYNC_CANCELLED_LOOKBACK_DAYS, SyncProviderSubscription, SyncProviderSubscriptions } from './ProviderSubscriptionSync.js';
+export type {
+    SyncOutcome,
+    SyncProviderSubscriptionOptions,
+    SyncProviderSubscriptionResult,
+    SyncProviderSubscriptionsInput,
+    SyncProviderSubscriptionsResult,
+} from './ProviderSubscriptionSync.js';
+export { BookProviderRenewal } from './ProviderRenewalBooking.js';
+export type { RenewalBookingOutcome, RenewalSubscription } from './ProviderRenewalBooking.js';
+export { LinkProviderSubscription } from './LinkProviderSubscription.js';
+export type { LinkProviderSubscriptionCode, LinkProviderSubscriptionInput, LinkProviderSubscriptionResult } from './LinkProviderSubscription.js';
+export { raiseUnknownGatewaySubscriptionAlert } from './checkoutCaptureAlert.js';
+export { IsGatewayRenewal, SanctionGatewayRenewal } from './SubscriptionEntityServer.js';
+export { StripeEventSubscriptionID, StripeInvoiceFacts, StripeSubscriptionDetails } from './StripePaymentProvider.js';
 
 export { DetectOverlappingSubscriptionsOperation, LoadDetectOverlappingSubscriptionsOperation } from './DetectOverlappingSubscriptionsOperation.js';
 
@@ -477,6 +519,7 @@ export type {
 export {
     ACCESS_OVERRIDE_AUTH,
     ACCESS_OVERRIDE_TASK_TYPE_CODE,
+    AccessOverrideNotAppliedNote,
     ApplyAccessOverrideDecision,
     RecordAccessOverrideDecision,
     RequestAccessOverride,
@@ -517,6 +560,7 @@ export {
     IsGiftCardLine,
     PlanGiftCardIssuance,
     PlanGiftCardVoid,
+    GiftCardReturnRefusal,
 } from './GiftCardBehavior.js';
 export type {
     GiftCardLineFacts,
@@ -608,6 +652,8 @@ export type {
     CancelProviderSubscriptionRequest,
     CancelProviderSubscriptionResult,
     DescribeProviderSubscriptionResult,
+    GatewaySubscriptionInvoice,
+    ListProviderSubscriptionInvoicesResult,
     ProviderSubscriptionBillingState,
     CancelProviderSubscriptionOutcome,
     FindProviderSubscriptionsRequest,
@@ -1067,6 +1113,7 @@ export {
     type CheckoutAccountResult,
     type CheckoutAccountStatus,
     type CheckoutAccountResponse,
+    type CheckoutConfirmationView,
     type CheckoutPasswordResult,
 } from './CheckoutAccountStep.js';
 export {

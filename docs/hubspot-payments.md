@@ -52,7 +52,8 @@ row's Company Integration alone decides which portal is read.
 
 - **No order matching yet.** A HubSpot payment names its deal only through an association, and the
   published HubSpot connector has no call that reads one record's associations. Every succeeded payment
-  is therefore `Unmatched` and the poll reports `ATTENTION` while any are open.
+  is therefore `Unmatched`. The poll counts and lists them, but they raise neither `ATTENTION` nor a
+  `Payment Needs Review` notification on their own.
 - **The first poll reads the whole portal history** (the watermark starts at 1970). The connector's
   list endpoint reads a refused request as "no data", so the rail always reads through search, which
   raises instead.

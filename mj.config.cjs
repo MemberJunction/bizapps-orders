@@ -269,6 +269,15 @@ module.exports = {
     checkModules: ['@mj-biz-apps/orders-integration-tests'],
   },
 
+  /**
+   * Migrations source for `pnpm run mj:migrate`. The script passes no `--dir`, so `mj migrate`
+   * reads this location and, with `DB_PLATFORM=postgresql`, swaps it to `./migrations-pg`. An
+   * explicit `--dir` turns that swap off, which is how the script used to run the T-SQL set on
+   * PostgreSQL (#687). Leave `mjRepoVersion` unset: with it set and no `--dir`, `mj migrate`
+   * fetches MJ core's migrations instead of this repo's.
+   */
+  migrationsLocation: 'filesystem:./migrations',
+
   SQLOutput: {
     enabled: true,
     folderPath: './migrations/codegen/',

@@ -110,5 +110,34 @@
         }
       ]
     }
+  },
+  {
+    "fields": {
+      "Name": "Orders: Payment Needs Review - Email",
+      "Description": "The email body of the Payment Needs Review notification: an external payment the poll moved into a state that waits for a person (unmatched, refused, re-applied on the rail, or needing reversal). The subject is the notification's title.",
+      "CategoryID": "@lookup:MJ: Template Categories.Name=Orders: Notifications",
+      "UserPrompt": "Render the review notice. Variables: PaymentRef, Amount (formatted), RailName, Disposition, Why (one clause), Reason (the poll's full reason), WhereToAct.",
+      "UserID": "@lookup:MJ: Users.Name=System",
+      "IsActive": true
+    },
+    "primaryKey": {
+      "ID": "F33AE820-6566-41A0-B42D-F11FEC91C1C9"
+    },
+    "relatedEntities": {
+      "MJ: Template Contents": [
+        {
+          "fields": {
+            "TemplateID": "@parent:ID",
+            "TypeID": "@lookup:MJ: Template Content Types.Name=HTML",
+            "TemplateText": "@file:payment-needs-review.html",
+            "Priority": 1,
+            "IsActive": true
+          },
+          "primaryKey": {
+            "ID": "13A63457-4873-4CC4-9E97-729A95D48510"
+          }
+        }
+      ]
+    }
   }
 ]

@@ -20,6 +20,7 @@ const PRODUCT = '11111111-1111-4111-8111-111111111111';
 const ONE_TIME = '22222222-2222-4222-8222-222222222222';
 const ORG = '33333333-3333-4333-8333-333333333333';
 const SUB = '44444444-4444-4444-8444-444444444444';
+const TYPE = '55555555-5555-4555-8555-555555555555';
 
 const order: HoldingOrder = {
     ShipToOrganizationID: null,
@@ -168,6 +169,34 @@ describe('FindUnansweredHeldLines', () => {
         expect(found).toEqual([]);
     });
 
+    it('asks about a product that inherits its subscription type from its product type', async () => {
+        // Confirm builds a term from the product type's default, so the line is a subscription (golive #339).
+        const inherited: Rows = {
+            ...held,
+            'MJ_BizApps_Orders: Products': [{ ID: PRODUCT, SubscriptionTypeID: null, ProductTypeID: TYPE }],
+            'MJ_BizApps_Orders: Product Types': [{ ID: TYPE, DefaultSubscriptionTypeID: 'type-1' }],
+        };
+        const found = await FindUnansweredHeldLines(order, [line()], provider(inherited));
+        expect(found.map((f) => f.Holding.SubscriptionID)).toEqual([SUB]);
+    });
+
+    it('leaves out a product whose product type has no subscription default', async () => {
+        const merch: Rows = {
+            ...held,
+            'MJ_BizApps_Orders: Products': [{ ID: PRODUCT, SubscriptionTypeID: null, ProductTypeID: TYPE }],
+            'MJ_BizApps_Orders: Product Types': [{ ID: TYPE, DefaultSubscriptionTypeID: null }],
+        };
+        expect(await FindUnansweredHeldLines(order, [line()], provider(merch))).toEqual([]);
+    });
+
+    it('throws when the product types cannot be read rather than skipping the line', async () => {
+        const inherited: Rows = {
+            ...held,
+            'MJ_BizApps_Orders: Products': [{ ID: PRODUCT, SubscriptionTypeID: null, ProductTypeID: TYPE }],
+        };
+        await expect(FindUnansweredHeldLines(order, [line()], provider(inherited, 'MJ_BizApps_Orders: Product Types'))).rejects.toThrow(/boom/);
+    });
+
     it('reports nothing when the subscriber holds nothing', async () => {
         const found = await FindUnansweredHeldLines(order, [line()], provider({ ...held, 'MJ_BizApps_Orders: Subscriptions': [] }));
         expect(found).toEqual([]);
@@ -211,8 +240,8 @@ describe('a paused holding: what "extend" does (golive #339)', () => {
 
     it('an active holding is extended: next term from the day after coverage ends', () => {
         const text = ExtendChoiceTextFor(holding({ Status: 'Active' }), day);
-        expect(text.Choice).toBe('Add as next term (starts 2027-10-01)');
-        expect(text.Hint).toContain('adds a term to SUB-1');
+        expect(text.Choice).toBe('Renew SUB-1 (starts 2027-10-01)');
+        expect(text.Hint).toBe("Confirm adds this line to SUB-1 as its next term, at this line's price.");
     });
 
     it('a paused holding whose type reactivates is described as a reactivation, not a next term', () => {

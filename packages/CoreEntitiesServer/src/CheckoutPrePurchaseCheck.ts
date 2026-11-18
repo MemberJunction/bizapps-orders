@@ -4,7 +4,7 @@
  * Two layers, run in order:
  *   1. BUILT IN, two rules, the first that refuses wins:
  *      a. the draft sells a subscription product (one with a subscription type) and the resolved
- *         Person already holds an Active or Trialing subscription IN THIS COMPANY that their payment
+ *         Person already holds an Active, Trialing or Paused subscription IN THIS COMPANY that their payment
  *         gateway bills (`ProviderSubscriptionID` set, option E), whatever its product. Orders would
  *         extend or add a term for the new purchase that the gateway knows nothing about, and the
  *         gateway would still charge at its own renewal: the buyer would pay twice. An upgrade would
@@ -17,7 +17,7 @@
  *         KNOWN LIMIT: a buyer who cancelled in the gateway's own portal stays Active in Orders until
  *         Orders hears the gateway's events (E3/E4), so until then they are still refused, with a
  *         message that says their subscription renews.
- *      b. the resolved Person already holds an Active or Trialing subscription to a product on the
+ *      b. the resolved Person already holds an Active, Trialing or Paused subscription to a product on the
  *         draft. Buying it again would charge them for coverage they have.
  *   2. HOST — a `CheckoutPrePurchaseCheck` subclass registered through the ClassFactory. A host that
  *      also sells through another system is the only party that can see, for example, a

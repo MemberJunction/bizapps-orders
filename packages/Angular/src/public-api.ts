@@ -25,7 +25,7 @@ import './lib/form-panels/document-forms.module';
 import { CLASS_REGISTRATIONS } from './lib/generated/class-registrations-manifest';
 
 /**
- * The four Explorer sections. Importing them here is what makes the app's
+ * The five Explorer sections. Importing them here is what makes the app's
  * navigation work: the Orders Application's `DefaultNavItems` name a `DriverClass`
  * per tab, Explorer asks the class factory for it, and the factory only knows a
  * class whose `@RegisterClass` decorator has actually run — which means the module
@@ -36,6 +36,7 @@ import {
     OrdersSectionResource,
     PaymentsSectionResource,
     ReceivablesSectionResource,
+    SubscriptionsSectionResource,
 } from './lib/sections/orders-sections.component';
 
 // Re-export for consumers
@@ -49,11 +50,22 @@ export {
     EVENT_PRODUCT_EXTENSION_ENTITY,
 } from './lib/custom/Product/product-save-guard-form.component';
 export { BizAppsProductPricingWidgetComponent } from './lib/custom/Product/widgets/product-pricing-widget.component';
+export { MJOCurrencyInputDirective, ParseCurrencyInput } from './lib/custom/currency-input.directive';
 export { BizAppsProductPromotionsWidgetComponent } from './lib/custom/Product/widgets/product-promotions-widget.component';
 export { BizAppsProductAccountingWidgetComponent } from './lib/custom/Product/widgets/product-accounting-widget.component';
 export { BizAppsProductFulfillmentWidgetComponent } from './lib/custom/Product/widgets/product-fulfillment-widget.component';
 export { BizAppsProductSubscriptionWidgetComponent } from './lib/custom/Product/widgets/product-subscription-widget.component';
 export { BizAppsOrderHeaderFormComponent } from './lib/custom/OrderHeader/order-header-form.component';
+/**
+ * The order lines editor, for other apps that edit an order's lines inside their own form (golive #331:
+ * the sales deal form). Standalone: bind `Order`, `EditMode` and optionally `Provider`; it prices the
+ * order itself and emits `PricingChanged` and `Navigate`. The host saves the order.
+ */
+export {
+    MJOOrderLinesEditorComponent,
+    type MJODiscountDraft,
+    type MJODiscountMode,
+} from './lib/custom/OrderHeader/order-lines-editor.component';
 export { BizAppsPaymentHeaderFormComponent } from './lib/custom/PaymentHeader/payment-header-form.component';
 
 export { OrdersPartyHeadersModule } from './lib/form-panels/party-headers.module';
@@ -74,12 +86,13 @@ export {
 } from './lib/checkout-widget/checkout-public-host.component';
 export { buildCheckoutDraftLine, type CheckoutAlreadySubscribedDetail } from './lib/checkout-widget/checkout-draft-line';
 
-/** Explorer sections — the four top-level tabs of the Orders application. */
+/** Explorer sections — the five top-level tabs of the Orders application. */
 export {
     MJOSectionBaseComponent,
     OrdersSectionResource,
     PaymentsSectionResource,
     ReceivablesSectionResource,
+    SubscriptionsSectionResource,
     CatalogSectionResource,
 } from './lib/sections/orders-sections.component';
 
@@ -89,6 +102,7 @@ export { MJOSectionShellComponent } from './lib/sections/section-shell.component
 /** The panel library — the shared vocabulary every screen is assembled from. */
 export * from './lib/panels';
 export * from './lib/panels/worklist-table.component';
+export * from './lib/panels/multi-select.component';
 export * from './lib/panels/stat-tile.component';
 export * from './lib/panels/summary-strip.component';
 export * from './lib/panels/day-bars.component';
@@ -116,7 +130,9 @@ export * from './lib/form-panels/external-invoices.panel';
 export * from './lib/panels/external-invoice-view';
 export * from './lib/pages/receivables/progress.page';
 export * from './lib/pages/receivables/customer-ar.page';
-export * from './lib/pages/receivables/subscriptions.page';
+export * from './lib/pages/subscriptions/subscriptions.page';
+export * from './lib/pages/subscriptions/renewals.page';
+export * from './lib/pages/subscriptions/renewals-page.model';
 export * from './lib/pages/catalog/products.page';
 export * from './lib/pages/catalog/pricing.page';
 export * from './lib/pages/orders/return.page';
@@ -127,6 +143,7 @@ export {
     ORDERS_SUB_PAGES,
     PAYMENTS_SUB_PAGES,
     RECEIVABLES_SUB_PAGES,
+    SUBSCRIPTIONS_SUB_PAGES,
     CATALOG_SUB_PAGES,
 } from './lib/sections/section-nav.model';
 export type { OrdersSubPage, OrdersNavBadges } from './lib/sections/section-nav.model';
@@ -140,7 +157,7 @@ export type { OrdersSubPage, OrdersNavBadges } from './lib/sections/section-nav.
  * silently un-register the tabs.
  */
 export function LoadBizAppsOrdersClient(): void {
-    void [OrdersSectionResource, PaymentsSectionResource, ReceivablesSectionResource, CatalogSectionResource];
+    void [OrdersSectionResource, PaymentsSectionResource, ReceivablesSectionResource, SubscriptionsSectionResource, CatalogSectionResource];
     void CLASS_REGISTRATIONS;
     LoadCustomForms();
 }

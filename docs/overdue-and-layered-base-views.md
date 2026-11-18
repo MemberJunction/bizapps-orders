@@ -35,6 +35,16 @@ own `DueDate` when it has none. An order billed in instalments is overdue when a
 is past due, which is the same as its earliest one being past due. For an order with no schedule,
 `NextDueDate` is `DueDate`, so it reads as it always did.
 
+**Aging splits by instalment.** Overdue is a yes or no for the order; aging says how much of the
+balance is how late. The Customer A/R page and the Orders dashboard both age through
+`AddOrderToAgingBuckets` (`packages/Angular/src/lib/panels/aging-bar.component.ts`): each unpaid
+instalment lands in the bucket of its own due date, and whatever part of the order's balance no
+instalment accounts for ages on the header's `DueDate`. So one late instalment puts that instalment
+past due and leaves the rest in Current. The instalments are the ones `NextDueDate` counts, read by
+`GetOpenInstalments`. The dashboard's Overdue amount is the sum of the past-due buckets, not the
+whole balance of every overdue order, so it and the aging bar are the same money. Both screens sort
+and label by `NextDueDate` (`NextDueDayOf`), not the header date.
+
 **Today is the business day:** `bt.Today` from bizapps-common's `fnBusinessToday()`, the calendar day
 in the zone the business books in. `CAST(GETUTCDATE() AS date)` is already tomorrow for the whole
 American evening, so an order due today would read as overdue from 7 PM Central.

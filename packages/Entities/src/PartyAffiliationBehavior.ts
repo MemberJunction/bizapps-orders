@@ -4,6 +4,7 @@
  * @module @mj-biz-apps/orders-entities
  */
 import { RunView, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
+import { RequireUUID } from './sql-guards';
 import { ToISODate, TodayAsDateValue } from './date-cell';
 
 export type ActiveEmployerRow = {
@@ -46,7 +47,7 @@ export async function ResolveActiveEmployerOrganization(
             {
                 EntityName: 'MJ_BizApps_Common: Relationships',
                 ExtraFilter:
-                    `FromPersonID='${personID.replace(/'/g, "''")}' AND ToOrganizationID IS NOT NULL ` +
+                    `FromPersonID='${RequireUUID(personID, 'personID')}' AND ToOrganizationID IS NOT NULL ` +
                     `AND Status='Active' ` +
                     `AND (StartDate IS NULL OR StartDate <= '${date}') ` +
                     `AND (EndDate IS NULL OR EndDate >= '${date}') ` +

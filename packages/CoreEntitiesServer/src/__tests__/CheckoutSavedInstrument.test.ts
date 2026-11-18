@@ -185,6 +185,8 @@ describe('SnapshotSellsSubscription', () => {
         const productFilter = state.filters.find((f) => f.EntityName === 'MJ_BizApps_Orders: Products')!.ExtraFilter!;
         expect(productFilter).toContain(PRODUCT);
         expect(productFilter).toContain('SubscriptionTypeID IS NOT NULL');
+        // A product with no type of its own counts through its product type's default (golive #339).
+        expect(productFilter).toContain('ProductTypeID IN (SELECT ID FROM __mj_BizAppsOrders.ProductType WHERE DefaultSubscriptionTypeID IS NOT NULL)');
         // The order does not exist before payment, so its lines are never read.
         expect(state.filters.some((f) => f.EntityName === 'MJ_BizApps_Orders: Order Lines')).toBe(false);
     });

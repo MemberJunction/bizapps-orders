@@ -83,5 +83,70 @@
       "lastModified": "2026-09-28T23:39:40.118Z",
       "checksum": "56251a68272c994b9be95139244ae78ad500b6f16cf53a8f8d9a2ef8bc4b52d9"
     }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides",
+      "RoleID": "@lookup:MJ: Roles.Name=Account Director",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "A4098F01-3B5C-489E-9A41-19A0880E0001"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides",
+      "RoleID": "@lookup:MJ: Roles.Name=Finance",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "A4098F01-3B5C-489E-9A41-19A0880E0002"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides",
+      "RoleID": "@lookup:MJ: Roles.Name=Senior Finance (AR)",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "A4098F01-3B5C-489E-9A41-19A0880E0003"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides",
+      "RoleID": "@lookup:MJ: Roles.Name=CFO",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "A4098F01-3B5C-489E-9A41-19A0880E0004"
+    }
+  },
+  {
+    "fields": {
+      "EntityID": "@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Entitlement Access Overrides",
+      "RoleID": "@lookup:MJ: Roles.Name=CEO Approver",
+      "CanCreate": true,
+      "CanRead": true,
+      "CanUpdate": true,
+      "CanDelete": false
+    },
+    "primaryKey": {
+      "ID": "A4098F01-3B5C-489E-9A41-19A0880E0005"
+    }
   }
 ]
