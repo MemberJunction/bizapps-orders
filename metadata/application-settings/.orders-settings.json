@@ -227,6 +227,17 @@
   {
     "fields": {
       "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
+      "Name": "ReturnReasons",
+      "Value": "Booked in error,Customer terminated,Damaged in transit,Wrong item shipped,Customer changed mind,Duplicate order,Pricing error",
+      "Comments": "Comma-separated reasons offered when booking a return (bc-aidp-next-golive#380). Empty or unset falls back to the seeded list."
+    },
+    "primaryKey": {
+      "ID": "B4E62D81-7F19-4C0A-9E35-61D42A8B5C90"
+    }
+  },
+  {
+    "fields": {
+      "ApplicationID": "@lookup:MJ: Applications.Name=__mj_BizAppsOrders",
       "Name": "BillComCreateCustomerOnSend",
       "Value": "true",
       "Comments": "Whether Orders may create a new customer in Bill.com when sending an invoice for a bill-to party that has no ExternalCustomer mapping row and no matching accountNumber in Bill.com. True by default; set to false when existing Bill.com customers must be matched or mapped before an invoice is sent."

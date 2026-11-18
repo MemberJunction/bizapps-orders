@@ -8,7 +8,7 @@ import { FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
-import { GetPayments } from '../../data/orders-queries';
+import { GetPayments, RunOrdersPageLoad } from '../../data/orders-queries';
 import { ToISODate, type mjBizAppsOrdersPaymentHeaderEntity } from '@mj-biz-apps/orders-entities';
 import { MJO_ENTITIES } from '../../data/entity-names';
 
@@ -44,6 +44,9 @@ type OpenRecordRequest = { entity: EntityInfo; record: Record<string, unknown> }
         EntityViewerModule
     ],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ LoadError }}</mj-alert>
+        }
         <div class="mj-stat-grid">
             <mjo-stat-tile
                 Label="Cash received"
@@ -222,6 +225,7 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
 
     @Output() PaymentOpened = new EventEmitter<mjBizAppsOrdersPaymentHeaderEntity>();
 
+    public LoadError: string | null = null;
     public PaymentEntityInfo: EntityInfo | null = null;
     private payments: mjBizAppsOrdersPaymentHeaderEntity[] = [];
 
@@ -229,7 +233,12 @@ export class MJOPaymentsDashboardPageComponent implements OnInit {
         const md = new Metadata();
         this.PaymentEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.PaymentHeader) || null;
         this.cdr.detectChanges();
-        this.payments = await GetPayments({ Preset: 'all' });
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            this.payments = await GetPayments({ Preset: 'all' });
+        });
+        if (this.LoadError) {
+            this.payments = [];
+        }
         this.cdr.detectChanges();
     }
 

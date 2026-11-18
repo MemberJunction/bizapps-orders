@@ -125,6 +125,9 @@ export class StripeACHPaymentProvider extends StripePaymentProvider {
      * "Still processing" is the ordinary case — somebody captured too early, and they should wait for
      * the webhook — while a failure means the debit will not clear and waiting is pointless. Both come
      * back as refusals rather than exceptions, because neither is a fault: the gateway answered.
+     *
+     * Like {@link StripePaymentProvider}, `this.useStub` is false both on a live row (`IsLiveMode = 1`)
+     * and on a test row with `CredentialsRef` set (#386).
      */
     public override async Capture(request: CaptureRequest): Promise<CaptureResult> {
         if (this.useStub) {

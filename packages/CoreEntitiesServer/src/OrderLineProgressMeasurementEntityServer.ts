@@ -34,6 +34,7 @@ import { BaseEntity, BaseEntityResult, EntitySaveOptions } from '@memberjunction
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineProgressMeasurementEntity } from '@mj-biz-apps/orders-entities';
 import { ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
+import { CreateOperationWriteSignal } from './OperationWriteSignal.js';
 
 /**
  * Rows `Orders.RecordProgress` is posting right now, by NATURAL KEY — line plus measurement date.
@@ -43,22 +44,23 @@ import { ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from './entity-names.js';
  * that replace nothing, so a replacement may share its date with the row it replaces, which is already
  * saved — and it is known before the save, which is all this needs: the one row being saved now.
  *
- * Module-level rather than per-instance because the operation and the entity it saves are different
- * objects; the operation cannot hand a flag to a class it does not construct.
+ * Backed by {@link CreateOperationWriteSignal} on the global object store because the operation and
+ * the entity it saves are different objects and must share the same registry even if the package is
+ * resolved more than once (#808).
  */
-const posting = new Set<string>();
+const posting = CreateOperationWriteSignal('__MJ_BizAppsOrders_ProgressMeasurementPostSignal__');
 
 const key = (orderLineID: string, measurementDate: string): string =>
     `${String(orderLineID).toLowerCase()}|${measurementDate.slice(0, 10)}`;
 
 /** Announce the row the operation is about to save Posted. Always paired with {@link ReleaseOperationPost}. */
 export function RegisterOperationPost(orderLineID: string, measurementDate: string): void {
-    posting.add(key(orderLineID, measurementDate));
+    posting.Begin(key(orderLineID, measurementDate));
 }
 
 /** Clear the announcement. Called from a `finally`, so a throw cannot leave the door open. */
 export function ReleaseOperationPost(orderLineID: string, measurementDate: string): void {
-    posting.delete(key(orderLineID, measurementDate));
+    posting.End(key(orderLineID, measurementDate));
 }
 
 @RegisterClass(BaseEntity, ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY)
@@ -81,7 +83,7 @@ export class OrderLineProgressMeasurementEntityServer extends mjBizAppsOrdersOrd
         // 51030 refuses any change to it, and duplicating that here would report the wrong reason.
         if (this.IsSaved && this.GetFieldByName('Status')?.OldValue === 'Posted') return null;
         const date = this.MeasurementDate instanceof Date ? this.MeasurementDate.toISOString() : String(this.MeasurementDate ?? '');
-        if (this.OrderLineID && posting.has(key(this.OrderLineID, date))) return null;
+        if (this.OrderLineID && posting.Has(key(this.OrderLineID, date))) return null;
         return (
             `A progress observation can only be posted by Orders.RecordProgress. A Posted row carries a ` +
             `recognition amount and a journal entry id, and what makes those true is that the entry was ` +

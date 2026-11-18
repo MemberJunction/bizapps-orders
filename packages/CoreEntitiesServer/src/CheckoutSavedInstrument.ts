@@ -99,11 +99,39 @@ export async function FindReusableProviderCustomerRef(
     paymentProviderID: string,
     user: UserInfo,
 ): Promise<string | null> {
+    return findReusableProviderCustomerRefByFilter(
+        `OwnerPersonID = '${RequireUUID(personID, 'OwnerPersonID')}' AND IsActive = 1`,
+        paymentProviderID,
+        user,
+    );
+}
+
+/**
+ * The gateway customer this organization already has with this provider — the one its saved card
+ * belongs to — or null when it has none yet (#695).
+ */
+export async function FindReusableProviderCustomerRefForOrganization(
+    organizationID: string,
+    paymentProviderID: string,
+    user: UserInfo,
+): Promise<string | null> {
+    return findReusableProviderCustomerRefByFilter(
+        `OwnerOrganizationID = '${RequireUUID(organizationID, 'OwnerOrganizationID')}' AND IsActive = 1`,
+        paymentProviderID,
+        user,
+    );
+}
+
+async function findReusableProviderCustomerRefByFilter(
+    ownerFilter: string,
+    paymentProviderID: string,
+    user: UserInfo,
+): Promise<string | null> {
     const rv = new RunView();
     const wallet = await rv.RunView<{ PaymentDetailID: string }>(
         {
             EntityName: CUSTOMER_PAYMENT_METHOD_ENTITY,
-            ExtraFilter: `OwnerPersonID = '${RequireUUID(personID, 'OwnerPersonID')}' AND IsActive = 1`,
+            ExtraFilter: ownerFilter,
             Fields: ['PaymentDetailID'],
             ResultType: 'simple',
         },

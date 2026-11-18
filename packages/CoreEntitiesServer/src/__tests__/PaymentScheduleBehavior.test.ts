@@ -281,6 +281,32 @@ describe('CompanySlices (golive #311)', () => {
         const out = CompanySlices([row('r1', 1, 100)], lines, CO_C);
         expect(out.map((p) => p.Amount)).toEqual([80, 20]);
     });
+
+    it('uses recorded InstalmentLineBilling parts for already-invoiced rows instead of replaying against post-reduction company totals (#695)', () => {
+        // Originally CO_A was 600 and CO_B was 600; instalment 1 (600) billed 300 of each.
+        // Then CO_A was reduced by 200 (now 400 gross), lowering instalment 2 from 600 to 400.
+        const postReductionLines = [
+            { ID: 'line-a', CompanyID: CO_A, LineTotalGross: 600 },
+            { ID: 'line-a', CompanyID: CO_A, LineTotalGross: -200 },
+            { ID: 'line-b', CompanyID: CO_B, LineTotalGross: 600 },
+        ];
+        const rows = [
+            row('r1', 1, 600, { Status: 'Invoiced', DocumentNumber: 'ORD-1' }),
+            row('r2', 2, 400, { Status: 'Scheduled' }),
+        ];
+        const recorded = [
+            { OrderHeaderPaymentScheduleID: 'r1', OrderLineID: 'line-a', Amount: 300 },
+            { OrderHeaderPaymentScheduleID: 'r1', OrderLineID: 'line-b', Amount: 300 },
+        ];
+        const out = CompanySlices(rows, postReductionLines, CO_C, recorded);
+        const r1Parts = out.filter((p) => p.ID === 'r1');
+        const r2Parts = out.filter((p) => p.ID === 'r2');
+        expect(r1Parts.find((p) => p.CompanyID === CO_A)?.Amount).toBe(300);
+        expect(r1Parts.find((p) => p.CompanyID === CO_B)?.Amount).toBe(300);
+        // Instalment 2 takes what each company actually has left (400 - 300 = 100 for CO_A, 600 - 300 = 300 for CO_B).
+        expect(r2Parts.find((p) => p.CompanyID === CO_A)?.Amount).toBe(100);
+        expect(r2Parts.find((p) => p.CompanyID === CO_B)?.Amount).toBe(300);
+    });
 });
 
 describe('RenewalDueDate (#305 review)', () => {

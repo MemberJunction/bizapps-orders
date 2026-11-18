@@ -1,0 +1,16 @@
+{
+  "name": "@mj-biz-apps/orders-playwright-harness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Playwright GUI verification harness for bizapps-orders in MJExplorer",
+  "scripts": {
+    "auth": "PW_FORCE_LOGIN=1 playwright test --project=auth-setup",
+    "test": "playwright test --project=orders",
+    "test:headed": "PW_HEADLESS=0 playwright test --project=orders"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.8.0"
+  }
+}

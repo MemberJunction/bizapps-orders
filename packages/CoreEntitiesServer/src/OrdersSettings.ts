@@ -141,6 +141,11 @@ export const ORDERS_SETTING = {
      */
     RefundApproverRole: 'RefundApproverRole',
     /**
+     * Comma-separated reasons offered when booking a return (bc-aidp-next-golive#380). Unset or empty
+     * falls back to the seeded list (`DEFAULT_RETURN_REASONS`).
+     */
+    ReturnReasons: 'ReturnReasons',
+    /**
      * Whether Orders creates a new customer in Bill.com when sending an invoice for a party that has
      * neither an `ExternalCustomer` mapping row nor a matching `accountNumber` on the rail.
      */
@@ -170,6 +175,15 @@ const DEFAULTS = {
     RenewalChargeRetryDays: [3, 7, 11],
     OrderReviewServiceStartMonths: 13,
     OrderReviewLineTermMonths: 12,
+    ReturnReasons: [
+        'Booked in error',
+        'Customer terminated',
+        'Damaged in transit',
+        'Wrong item shipped',
+        'Customer changed mind',
+        'Duplicate order',
+        'Pricing error',
+    ],
     BillComCreateCustomerOnSend: true,
 } as const;
 
@@ -458,6 +472,12 @@ export class OrdersSettings {
     /** Days at or above which a term shift goes to finance review, or `null` to review every shift. */
     public static get TermShiftReviewDays(): number | null {
         return asDaysOrNull(this.raw(ORDERS_SETTING.TermShiftReviewDays));
+    }
+
+    /** Return reasons offered in the Returns picker (bc-aidp-next-golive#380); falls back to the seeded list when unset or empty. */
+    public static get ReturnReasons(): string[] {
+        const list = asList(this.raw(ORDERS_SETTING.ReturnReasons), DEFAULTS.ReturnReasons);
+        return list.length > 0 ? list : [...DEFAULTS.ReturnReasons];
     }
 
     /** Whether Bill.com customer creation on send is enabled when no existing customer matches. */

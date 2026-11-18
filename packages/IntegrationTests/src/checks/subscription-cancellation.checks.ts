@@ -1,5 +1,5 @@
 /**
- * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC13).
+ * subscription-cancellation.checks.ts — the `subscription-cancellation` bundle (SC1–SC17).
  *
  * `Orders.CancelSubscription` is where the `SubscriptionType` cancellation columns finally do
  * something. The user picks a DATE; the operation applies `CancellationMode` /
@@ -26,11 +26,13 @@
  *         after it, in Chicago and in Auckland (it used to revoke from 00:00 UTC on that day)
  *   SC15  control, same last day in Chicago: an Immediate cancel revokes at once
  *   SC16  an Immediate cancel requested for two days from now does not revoke now: access runs through that day
+ *   SC17  cancelling a Quarterly-recognition subscription slices the reversal into four releases on the sale's dates (#810)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
 import { BaseRemotableOperation, Metadata } from '@memberjunction/core';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { OrdersEngine } from '@mj-biz-apps/orders-entities';
 import { TermDayEnd } from '@mj-biz-apps/orders-core-entities-server';
 import {
     Assert,
@@ -46,10 +48,12 @@ import {
     Fx,
     InRolledBackTransaction,
     ORDERS_SCHEMA,
+    PRODUCT_ENTITY,
     SameID,
     TeardownOrdersFixture,
     TxOne,
     TxQuery,
+    upsertViaEntity,
     WithBusinessZone,
 } from '../fixture.js';
 import { ConfirmOrder } from '../order-builder.js';
@@ -684,6 +688,69 @@ export const SubscriptionCancellationChecks: NamedCheck[] = [
                 for (const g of grants) {
                     AssertEqual(g.Status, 'Active', 'not revoked now: the cancel was asked for a later day');
                     AssertEqual(g.ValidTo ? new Date(g.ValidTo).toISOString() : null, end, `it ends at 00:00 business time after ${isoDate(later)}`);
+                }
+            }),
+    },
+    {
+        Id: 'subscription-cancellation.SC17',
+        Name: "SC17: cancelling a Quarterly-recognition subscription slices the reversal into four releases on the sale's dates",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // Mirrors RT14 on the cancellation path (#810): QuarterlyRefundable recognizes quarterly and
+                // refunds on cancel (Immediate + ProrateUnused), so cancelling on the term's start date
+                // emits a full-year reversal order whose recognition entries must cut into the same four
+                // quarterly slices as the sale rather than twelve monthly ones.
+                const f = Fx();
+                const quarterlyRefundableID = f.SubscriptionTypeIDs.get('QuarterlyRefundable');
+                Assert(quarterlyRefundableID != null, 'QuarterlyRefundable fixture subscription type missing');
+
+                const wasTypeID = (
+                    await TxOne<{ SubscriptionTypeID: string }>(
+                        ctx,
+                        `SELECT SubscriptionTypeID FROM ${ORDERS_SCHEMA}.Product WHERE ID = '${f.Products.SubFiscal}'`,
+                    )
+                ).SubscriptionTypeID;
+                await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubFiscal, { SubscriptionTypeID: quarterlyRefundableID });
+                await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
+
+                try {
+                    const { OrderID, SubscriptionID } = await buyAndFindSubscription(ctx, 'SubFiscal', 1200);
+                    const recognitionDates = async (orderID: string): Promise<string[]> => {
+                        const rows = await TxQuery<{ On: string }>(
+                            ctx,
+                            `SELECT CONVERT(varchar(10), je.EffectiveDate, 23) AS [On]
+                               FROM ${ACCT_SCHEMA}.vwJournalEntries je
+                              WHERE (SELECT Code FROM ${ACCT_SCHEMA}.JournalEntryType WHERE ID = je.EntryTypeID) = 'RevenueRecognition'
+                                AND (
+                                      je.LinkedRecordID IN (SELECT ID FROM ${ORDERS_SCHEMA}.OrderLine WHERE OrderHeaderID = '${orderID}')
+                                   OR je.LinkedRecordID IN (
+                                        SELECT t.ID FROM ${ORDERS_SCHEMA}.SubscriptionTerm t
+                                          JOIN ${ORDERS_SCHEMA}.OrderLine ol ON ol.ID = t.OrderLineID
+                                         WHERE ol.OrderHeaderID = '${orderID}')
+                                )
+                              GROUP BY je.EffectiveDate
+                              ORDER BY je.EffectiveDate`,
+                        );
+                        return rows.map((r) => String(r.On));
+                    };
+
+                    const soldDates = await recognitionDates(OrderID);
+                    AssertEqual(soldDates.length, 4, `a quarterly cadence over a year is four releases — got ${soldDates.length}`);
+
+                    const out = await cancel(ctx, { SubscriptionID, RequestDate: '2026-07-01' });
+                    Assert(out.Success && out.ReversalOrderID != null, `cancel failed: ${out.Message}`);
+
+                    const reversalDates = await recognitionDates(out.ReversalOrderID!);
+                    AssertEqual(reversalDates.length, soldDates.length, 'the reversal is cut into four quarterly slices');
+                    AssertEqual(
+                        reversalDates.join(','),
+                        soldDates.join(','),
+                        'on the same dates as the sale — a monthly fallback would put twelve entries here',
+                    );
+                } finally {
+                    await upsertViaEntity(ctx, PRODUCT_ENTITY, f.Products.SubFiscal, { SubscriptionTypeID: wasTypeID });
+                    await OrdersEngine.Instance.Config(true, ctx.User, ctx.Provider);
                 }
             }),
     },

@@ -33,7 +33,11 @@ vi.mock('../PaymentProviderResolver.js', () => ({
     ResolvePaymentProvider: async () => ({ RetrieveIntent: state.retrieve }),
 }));
 
-import { SaveCheckoutInstrumentForRenewals, SnapshotSellsSubscription } from '../CheckoutSavedInstrument.js';
+import {
+    FindReusableProviderCustomerRefForOrganization,
+    SaveCheckoutInstrumentForRenewals,
+    SnapshotSellsSubscription,
+} from '../CheckoutSavedInstrument.js';
 
 const user = { ID: 'u-1' } as unknown as UserInfo;
 
@@ -258,6 +262,17 @@ describe('SaveCheckoutInstrumentForRenewals — replacing the renewal card (#289
     it('an organization owner is refused for a first purchase, which needs a person', async () => {
         const result = await SaveCheckoutInstrumentForRenewals({ ...input, OwnerPersonID: null, OwnerOrganizationID: ORG }, provider, user);
         expect(result.Saved).toBe(false);
+    });
+
+    it('finds an existing gateway customer ref for an organization-owned wallet (#695)', async () => {
+        state.views['MJ_BizApps_Orders: Customer Payment Methods'] = [{ PaymentDetailID: 'aaaaaaaa-0000-0000-0000-00000000000d' }];
+        state.views['MJ_BizApps_Orders: Payment Details'] = [{ ProviderCustomerRef: 'cus_org_1' }];
+
+        const customerRef = await FindReusableProviderCustomerRefForOrganization(ORG, PROVIDER, user, provider);
+
+        expect(customerRef).toBe('cus_org_1');
+        const cpmFilter = state.filters.find((f) => f.EntityName === 'MJ_BizApps_Orders: Customer Payment Methods')!.ExtraFilter!;
+        expect(cpmFilter).toContain(`OwnerOrganizationID = '${ORG}'`);
     });
 });
 

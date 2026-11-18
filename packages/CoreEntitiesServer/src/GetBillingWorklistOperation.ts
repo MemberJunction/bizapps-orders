@@ -23,6 +23,7 @@ import {
 
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY } from './entity-names.js';
 import { BusinessTimeZoneEngine } from '@mj-biz-apps/common-entities';
+import { CompanyScopeService } from './CompanyScopeService.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
 const money = (v: number): number => Math.round((Number(v) + Number.EPSILON) * 100) / 100;
@@ -81,9 +82,14 @@ export class GetBillingWorklistOperation extends OrdersGetBillingWorklistOperati
         const windowEnd = addDays(asOf, windowDays);
         const maxCount = input?.MaxCount ?? 500;
 
+        const scopedCompanyIDs = await CompanyScopeService.ResolveReceivablesCompanyIDs(input?.CompanyIDs, provider, user);
+        if (scopedCompanyIDs !== null && scopedCompanyIDs.length === 0) {
+            return { ...this.empty('', asOf, windowEnd), Success: true, Message: undefined };
+        }
+
         const filters = [`Status = 'Scheduled'`, `DueDate <= '${windowEnd}'`];
-        if (input?.CompanyIDs?.length) {
-            filters.push(`CompanyID IN (${input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',')})`);
+        if (scopedCompanyIDs?.length) {
+            filters.push(`CompanyID IN (${scopedCompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',')})`);
         }
 
         const rv = RunView.FromMetadataProvider(provider);

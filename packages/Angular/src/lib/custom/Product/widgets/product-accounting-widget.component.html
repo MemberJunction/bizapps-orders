@@ -44,4 +44,14 @@
             (LinksChanged)="effective.Refresh()">
         </bizapps-product-gl-links>
     </section>
+
+    <section class="mjo-acct-card">
+        <bizapps-dimension-defaults
+            [Record]="Product"
+            TargetEntityName="MJ_BizApps_Orders: Products"
+            [EditMode]="EditMode"
+            [FormContext]="FormContext"
+            (Navigate)="Navigate.emit($event)">
+        </bizapps-dimension-defaults>
+    </section>
 </div>

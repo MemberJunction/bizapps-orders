@@ -38,6 +38,7 @@ import { EscapeSQLString, RequireUUID, RequireUUIDs } from './sql-guards.js';
 
 const SUBSCRIPTION_ENTITY = 'MJ_BizApps_Orders: Subscriptions';
 const SUBSCRIPTION_TERM_ENTITY = 'MJ_BizApps_Orders: Subscription Terms';
+const PRODUCT_BUNDLE_ITEM_ENTITY = 'MJ_BizApps_Orders: Product Bundle Items';
 
 /**
  * Shown when the widget sets no `providerBilledSubscriptionMessage`. Neutral on purpose: a host's own
@@ -122,19 +123,78 @@ export class CheckoutPrePurchaseCheck {
 }
 
 /**
+ * Expands any bundle products in `lines` to also include their component products from
+ * `MJ_BizApps_Orders: Product Bundle Items` (#982), so pre-purchase subscription checks see both
+ * the bundle and its components.
+ */
+export async function ExpandPrePurchaseBundleLines(
+    lines: PrePurchaseLine[],
+    contextUser?: UserInfo,
+): Promise<PrePurchaseLine[]> {
+    const productIDs = [...new Set(lines.map((l) => l.ProductID).filter(Boolean))];
+    if (productIDs.length === 0) {
+        return lines;
+    }
+    const productList = productIDs.map((id) => `'${EscapeSQLString(id)}'`).join(', ');
+    const result = await new RunView().RunView<{ BundleProductID: string; ComponentProductID: string; Quantity: number }>(
+        {
+            EntityName: PRODUCT_BUNDLE_ITEM_ENTITY,
+            ExtraFilter: `BundleProductID IN (${productList})`,
+            Fields: ['BundleProductID', 'ComponentProductID', 'Quantity'],
+            ResultType: 'simple',
+            BypassCache: true,
+        },
+        contextUser,
+    );
+    if (!result.Success) {
+        throw new Error(`Could not read product bundle items: ${result.ErrorMessage ?? 'unknown error'}`);
+    }
+    const items = result.Results ?? [];
+    if (items.length === 0) {
+        return lines;
+    }
+    const byBundle = new Map<string, Array<{ ComponentProductID: string; Quantity: number }>>();
+    for (const item of items) {
+        if (!item.BundleProductID || !item.ComponentProductID) continue;
+        const key = item.BundleProductID.toLowerCase();
+        const group = byBundle.get(key) ?? [];
+        group.push({ ComponentProductID: item.ComponentProductID, Quantity: Number(item.Quantity) || 1 });
+        byBundle.set(key, group);
+    }
+    const expanded: PrePurchaseLine[] = [...lines];
+    for (const line of lines) {
+        const components = byBundle.get(line.ProductID.toLowerCase());
+        if (!components) continue;
+        for (const comp of components) {
+            expanded.push({
+                ProductID: comp.ComponentProductID,
+                Quantity: line.Quantity * comp.Quantity,
+            });
+        }
+    }
+    return expanded;
+}
+
+/**
  * Runs the built-in rule, then the registered host check.
  *
  * @returns null when the purchase may proceed, otherwise the refusal to report.
  */
 export async function RunPrePurchaseChecks(context: PrePurchaseContext): Promise<PrePurchaseRefusal | null> {
+    let effectiveContext = context;
     let builtIn: PrePurchaseRefusal | null;
     try {
-        builtIn = (await checkProviderBilledSubscriptions(context)) ?? (await checkHeldSubscriptions(context));
+        builtIn = await checkProviderBilledSubscriptions(context);
+        if (!builtIn && context.PersonID && context.Lines.length > 0) {
+            const expandedLines = await ExpandPrePurchaseBundleLines(context.Lines, context.ContextUser);
+            effectiveContext = expandedLines === context.Lines ? context : { ...context, Lines: expandedLines };
+            builtIn = await checkHeldSubscriptions(effectiveContext);
+        }
     } catch (err) {
         LogError(`[CheckoutPrePurchaseCheck] subscription check failed: ${err instanceof Error ? err.message : String(err)}`);
         return unverified('built-in');
     }
-    return builtIn ?? (await runHostCheck(context));
+    return builtIn ?? (await runHostCheck(effectiveContext));
 }
 
 /**
@@ -181,7 +241,18 @@ async function checkProviderBilledSubscriptions(context: PrePurchaseContext): Pr
     if (subscriptions.length === 0) {
         return null;
     }
-    if (!(await SellsSubscription(context.Lines.map((l) => l.ProductID), context.ContextUser))) {
+    const directProductIDs = context.Lines.map((l) => l.ProductID);
+    let sellsSub = await SellsSubscription(directProductIDs, context.ContextUser);
+    if (!sellsSub) {
+        const expandedLines = await ExpandPrePurchaseBundleLines(context.Lines, context.ContextUser);
+        const componentIDs = expandedLines
+            .map((l) => l.ProductID)
+            .filter((id) => !directProductIDs.some((d) => d.toLowerCase() === id.toLowerCase()));
+        if (componentIDs.length > 0) {
+            sellsSub = await SellsSubscription(componentIDs, context.ContextUser);
+        }
+    }
+    if (!sellsSub) {
         return null;
     }
 

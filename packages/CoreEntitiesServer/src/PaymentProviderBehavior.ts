@@ -531,3 +531,15 @@ export function ShouldHoldForLateSettlement(facts: CaptureTimingFacts): boolean 
     if (facts.IsSaved && facts.PersistedStatus === 'Pending') return false;
     return true;
 }
+
+/** A Stripe key's mode, read from its prefix. */
+export type StripeKeyMode = 'test' | 'live';
+
+/** `test` / `live` for a Stripe `pk_`, `sk_` or `rk_` key; null for anything else or nothing. */
+export function StripeKeyModeOf(key: string | null | undefined): StripeKeyMode | null {
+    if (!key) return null;
+    const match = /^(?:pk|sk|rk)_(test|live)_/.exec(key.trim());
+    if (!match) return null;
+    return match[1] === 'live' ? 'live' : 'test';
+}
+

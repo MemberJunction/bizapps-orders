@@ -33,6 +33,7 @@ export interface CheckoutStateChangeDetail {
 /** The `checkout-complete` detail. Shaped for GA4: `amount` in major units, `currency` upper-case. */
 export interface CheckoutCompleteDetail {
     sessionId: string;
+    orderNumber: string | null;
     productName: string | null;
     productId: string | null;
     amount: number | null;
@@ -59,6 +60,7 @@ export interface CheckoutErrorDetail {
 
 export interface CheckoutCompleteSource {
     sessionId: string;
+    orderNumber?: unknown;
     productName?: unknown;
     productId?: unknown;
     /** The order's charged total from `/complete`, already in major units. */
@@ -75,6 +77,7 @@ export function BuildCheckoutCompleteDetail(source: CheckoutCompleteSource): Che
     const currency = text(source.currency);
     return {
         sessionId: source.sessionId,
+        orderNumber: text(source.orderNumber),
         productName: text(source.productName),
         productId: text(source.productId),
         amount: amount === null ? null : Math.round(amount * 100) / 100,

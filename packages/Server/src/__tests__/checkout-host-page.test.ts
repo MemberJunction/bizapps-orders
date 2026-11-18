@@ -176,3 +176,18 @@ describe('the pay-renewal page (#289)', () => {
     });
 });
 
+describe('the fallback page billing location (#908)', () => {
+    it('collects country, state/province, and postal code and includes billingAddress in /draft and card confirmation', () => {
+        const html = renderCheckoutHostPage({ slug: 'annual', apiRoot: '/checkout', cspNonce: 'n' });
+        const script = html.slice(html.lastIndexOf('<script'), html.lastIndexOf('</script>'));
+        expect(script).toContain("addField('country', 'Country', 'text', true, 'US')");
+        expect(script).toContain("addField('stateProvince', 'State / Province', 'text', false, 'NY')");
+        expect(script).toContain("addField('postalCode', 'Postal / ZIP code', 'text', false, '10001')");
+        expect(script).toContain('billingAddress: billingAddress');
+        expect(script).toContain('country: billingAddress.Country');
+        expect(script).toContain('state: billingAddress.StateProvince');
+        expect(script).toContain('postal_code: billingAddress.PostalCode');
+    });
+});
+
+

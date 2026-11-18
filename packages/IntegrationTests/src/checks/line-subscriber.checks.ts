@@ -1,5 +1,5 @@
 /**
- * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS20).
+ * line-subscriber.checks.ts — the `line-subscriber` bundle (LS1–LS21).
  *
  * Subscriptions were a HEADER concern: the flow read `OrderHeader.HolderOrganizationID` and every
  * line on an order therefore had the same subscriber. An association buying ten memberships for ten
@@ -26,7 +26,7 @@
  *   LS12 the app setting governs it, including which relationship types qualify
  *   LS9  ACROSS orders the dedupe scope bites: a different person is new, the same person is refused
  *   LS13 an org-held subscription bought with a contact person is found again — a re-order extends it
- *   LS14 …and a RejectDuplicate org-held type refuses that re-order
+ *   LS14 …and a RejectDuplicate Holder type bought with no contact refuses a re-order naming one
  *   LS15 a Holder type keeps the person: two people at one org are two subscriptions, and each re-order extends its own
  *   LS16 …but an org's Holder subscription bought with no contact is found when a re-order names one
  *   LS17 …only when the org is stated: an org inferred from the person's employer is not the holder
@@ -35,6 +35,8 @@
  *   LS19 a paused subscription counts as held; a canceled one does not
  *   LS20 a product that inherits its subscription type from its product type is a subscription to
  *        the close's unanswered-line check, as it is at confirm (golive #339)
+ *   LS21 an org's no-contact order under a Holder type creates the org's own subscription rather
+ *        than extending a named person's seat (#845)
  *
  * Deterministic. Every check runs inside a rolled-back transaction.
  */
@@ -667,18 +669,18 @@ LineSubscriberChecks.push({
 
 LineSubscriberChecks.push({
   Id: "line-subscriber.LS14",
-  Name: "LS14: a RejectDuplicate org-held type refuses a re-order when the first purchase named a contact",
+  Name: "LS14: a RejectDuplicate Holder type bought with no contact refuses a re-order naming one",
   RequiresMutation: true,
   Fn: async (ctx) =>
     InRolledBackTransaction(ctx, async () => {
       const f = Fx();
-      // SubFiscal is Holder + RejectDuplicate. Held by an org, the contact is not part of who holds
-      // it, so the second purchase is the same subscription and must be refused (#317).
+      // SubFiscal is Holder + RejectDuplicate. Stored with no person, the subscription is the
+      // organization's, so a re-order naming a contact matches it via OrNoPerson and must be
+      // refused (#317, #845).
       const contact = await makePerson(ctx, "Contact");
       const first = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
-        BillToPersonID: contact,
         Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 1200 }],
         OrderDate: new Date("2026-07-01T00:00:00Z"),
       });
@@ -687,6 +689,7 @@ LineSubscriberChecks.push({
       const second = await ConfirmOrder(ctx.User, {
         CompanyID: f.CoA.ID,
         BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: contact,
         Lines: [{ ProductID: f.Products.SubFiscal, Quantity: 1, UnitPrice: 1200 }],
         OrderDate: new Date("2026-08-01T00:00:00Z"),
       });
@@ -937,6 +940,42 @@ LineSubscriberChecks.push({
       await TxQuery(ctx, `UPDATE ${ORDERS_SCHEMA}.ProductType SET DefaultSubscriptionTypeID = NULL WHERE ID = '${product.ProductTypeID}'`);
       const oneTime = await FindUnansweredHeldLines(order, [newLineFor(f.Products.SubRolling)], rv, ctx.User);
       AssertEqual(oneTime.length, 0, "a product with no subscription type anywhere is not asked");
+    }),
+});
+
+LineSubscriberChecks.push({
+  Id: "line-subscriber.LS21",
+  Name: "LS21: an org's no-contact order under a Holder type creates the org's own subscription rather than extending a named person's seat",
+  RequiresMutation: true,
+  Fn: async (ctx) =>
+    InRolledBackTransaction(ctx, async () => {
+      const f = Fx();
+      // SubRolling is Holder + ExtendExisting. When the first purchase names a person, that
+      // subscription is that person's seat; a later order for the organization with no contact
+      // person must create the organization's own subscription rather than extending the person's
+      // seat (#845).
+      const seatHolder = await makePerson(ctx, "SeatHolder");
+      const first = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        BillToPersonID: seatHolder,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-01-15T00:00:00Z"),
+      });
+      Assert(first.Saved, `first confirm failed: ${first.Message}`);
+      const [seatSub] = await subscriptionsOf(ctx, first.Order.ID as string);
+      Assert(SameID(seatSub.BeneficiaryPersonID, seatHolder), "the first subscription is stored for the named person");
+
+      const second = await ConfirmOrder(ctx.User, {
+        CompanyID: f.CoA.ID,
+        BillToOrganizationID: f.Customers.OrganizationID,
+        Lines: [{ ProductID: f.Products.SubRolling, Quantity: 1, UnitPrice: 1200 }],
+        OrderDate: new Date("2026-07-01T00:00:00Z"),
+      });
+      Assert(second.Saved, `second confirm failed: ${second.Message}`);
+      const [orgSub] = await subscriptionsOf(ctx, second.Order.ID as string);
+      Assert(!SameID(orgSub.ID, seatSub.ID), "the no-contact order creates the organization's own subscription");
+      Assert(orgSub.BeneficiaryPersonID == null, "the organization's subscription stores no person");
     }),
 });
 

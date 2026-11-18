@@ -414,10 +414,11 @@ tiered and volume models. The walk that reads all this is in §6.
 (per-campaign, per-partner, single-use), and `PromotionTarget` scopes what a promotion may apply to.
 `SalesAuthority` and `SalesRule` are the guardrails — who is allowed to give value away, and how much. A
 `SalesAuthorityMixTier` raises an authority's share limit on an order that spans several product types.
-`OrderConcession` records each concession on an order, whatever form it takes (price, duration, seats,
-scope or payment terms), with its computed value and the approval decision. An order cannot be
-confirmed, nor its documents sent, while a concession on it is `Pending`. A withdrawn concession stays on
-the order as `Withdrawn`, with who withdrew it and when, and counts toward nothing.
+`ReferralProgram` defines a company's published referral program and approves an in-program referral
+concession automatically. `OrderConcession` records each concession on an order, whatever form it takes
+(price, duration, seats, scope or payment terms), with its computed value and the approval decision. An
+order cannot be confirmed, nor its documents sent, while a concession on it is `Pending`. A withdrawn
+concession stays on the order as `Withdrawn`, with who withdrew it and when, and counts toward nothing.
 
 ```mermaid
 erDiagram
@@ -1121,8 +1122,9 @@ what stops a retried request from recording the same money twice.
 `PaymentIntent` is the provider handshake (Stripe and friends) held separately from the payment
 itself, so an abandoned intent leaves no payment behind, and `PaymentWebhookDelivery` records each
 verified webhook delivery from a provider and what was done with it. `PaymentProviderType` /
-`PaymentProvider` keep the app provider-agnostic, and `CustomerPaymentMethod` stores the customer's
-saved instrument — a token, never a card number.
+`PaymentProvider` keep the app provider-agnostic, `PaymentProviderPrice` maps a recurring product to
+its gateway price identifier on a subscription-billing provider, and `CustomerPaymentMethod` stores the
+customer's saved instrument — a token, never a card number.
 
 Immutability here is enforced by TRIGGERS, not by the application: see §5.
 
@@ -1302,7 +1304,8 @@ erDiagram
 instalment, each stamped with the order's company: a due date and an amount the customer agreed to. An
 order that had already issued an instalment, or aimed a payment at one, under the earlier per-company
 rows keeps those rows. Each row takes its own document number when it is invoiced; the ledger splits it
-into one billing entry per product company, and the row records the first. Each row keeps its own
+into one billing entry per product company, `InstalmentLineBilling` records each line's billed share on
+that instalment, and the row records the first entry. Each row keeps its own
 `AmountPaid` and `Balance`, and is frozen once `Invoiced` (§5). `PaymentLine.OrderHeaderPaymentScheduleID`
 aims a payment at one instalment; cash that names none counts against invoiced instalments before
 scheduled ones, oldest due first. That the instalments add up to the lines they bill is checked in

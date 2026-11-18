@@ -1,0 +1,227 @@
+<div class="mjo-dim-defaults">
+    <div class="mjo-dim-defaults__head">
+        <span class="mjo-dim-defaults__title">
+            <i class="fa-solid fa-sliders"></i>
+            Dimension Defaults
+        </span>
+        <span class="mjo-dim-defaults__actions">
+            @if (CanWrite && !Draft) {
+                <button
+                    type="button"
+                    class="mjo-dim-defaults__refresh"
+                    title="Add a dimension default to this record"
+                    (click)="OpenDraft()">
+                    <i class="fa-solid fa-plus"></i>
+                </button>
+            }
+            <button
+                type="button"
+                class="mjo-dim-defaults__refresh"
+                title="Re-read this record's dimension defaults"
+                (click)="Refresh()">
+                <i class="fa-solid fa-rotate"></i>
+            </button>
+        </span>
+    </div>
+
+    @if (WriteError) {
+        <p class="mjo-dim-defaults__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            {{ WriteError }}
+        </p>
+    }
+
+    @if (Draft) {
+        <div class="mjo-dim-defaults__draft">
+            <select
+                [(ngModel)]="Draft.DimensionID"
+                (ngModelChange)="OnDraftDimensionChange()"
+                [disabled]="Saving"
+                aria-label="Dimension">
+                <option value="">— dimension —</option>
+                @for (d of Dimensions; track d.ID) {
+                    <option [value]="d.ID">{{ d.Label }}</option>
+                }
+            </select>
+            @if (Draft.DimensionID && DraftValues.length === 0) {
+                <span class="mjo-dim-defaults__note">
+                    No active values exist for this dimension yet. They are maintained in Accounting.
+                </span>
+            }
+            <select
+                [(ngModel)]="Draft.DimensionValueID"
+                [disabled]="Saving || !Draft.DimensionID"
+                aria-label="Dimension value">
+                <option value="">— value —</option>
+                @for (v of DraftValues; track v.ID) {
+                    <option [value]="v.ID">{{ v.Label }}</option>
+                }
+            </select>
+            <input
+                type="date"
+                [(ngModel)]="Draft.StartedAt"
+                [disabled]="Saving"
+                aria-label="In force from" />
+            <button
+                type="button"
+                class="mjo-dim-defaults__btn"
+                [disabled]="Saving || !Draft.DimensionID || !Draft.DimensionValueID || !Draft.StartedAt"
+                (click)="AddDefault()">
+                {{ Saving ? 'Saving…' : 'Add' }}
+            </button>
+            <button
+                type="button"
+                class="mjo-dim-defaults__btn"
+                [disabled]="Saving"
+                (click)="CancelDraft()">
+                Cancel
+            </button>
+        </div>
+    }
+
+    @if (Editing) {
+        <div class="mjo-dim-defaults__draft">
+            <select
+                [(ngModel)]="Editing.DimensionID"
+                (ngModelChange)="OnEditDimensionChange()"
+                [disabled]="Saving || Editing.Applied"
+                aria-label="Dimension">
+                @for (d of EditDimensions; track d.ID) {
+                    <option [value]="d.ID" [disabled]="d.Disabled === true">{{ d.Label }}</option>
+                }
+            </select>
+            <select
+                [(ngModel)]="Editing.DimensionValueID"
+                [disabled]="Saving || Editing.Applied"
+                aria-label="Dimension value">
+                @for (v of EditValues; track v.ID) {
+                    <option [value]="v.ID" [disabled]="v.Disabled === true">{{ v.Label }}</option>
+                }
+            </select>
+            <select
+                [(ngModel)]="Editing.Status"
+                [disabled]="Saving"
+                aria-label="Status">
+                <option value="Active">Active</option>
+                <option value="Pending">Pending</option>
+                <option value="Disabled">Disabled</option>
+            </select>
+            <label class="mjo-dim-defaults__lbl">from
+                <input
+                    type="date"
+                    [(ngModel)]="Editing.StartedAt"
+                    [disabled]="Saving || Editing.Applied"
+                    aria-label="In force from" />
+            </label>
+            <label class="mjo-dim-defaults__lbl">to
+                <input
+                    type="date"
+                    [(ngModel)]="Editing.EndedAt"
+                    [disabled]="Saving"
+                    aria-label="In force to" />
+            </label>
+            <button
+                type="button"
+                class="mjo-dim-defaults__btn"
+                [disabled]="Saving || !Editing.DimensionID || !Editing.DimensionValueID"
+                (click)="SaveEdit()">
+                {{ Saving ? 'Saving…' : 'Save' }}
+            </button>
+            <button
+                type="button"
+                class="mjo-dim-defaults__btn"
+                [disabled]="Saving"
+                (click)="CancelEdit()">
+                Cancel
+            </button>
+            @if (Editing.Applied) {
+                <span class="mjo-dim-defaults__note">
+                    This default has been in force, so its dimension, value and start date are fixed. To switch
+                    values going forward, add a default with a later start date.
+                </span>
+            }
+        </div>
+    }
+
+    @if (Loading) {
+        <p class="mjo-dim-defaults__note">Loading…</p>
+    } @else if (LoadError) {
+        <p class="mjo-dim-defaults__error">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            The dimension defaults could not be read: {{ LoadError }}
+        </p>
+    } @else if (!Rows.length) {
+        <p class="mjo-dim-defaults__note">
+            No dimension defaults are set directly on this record. Order lines may still inherit defaults from
+            a category, product type, or company.
+        </p>
+    } @else {
+        <div class="mjo-dim-defaults__scroll">
+            <table class="mjo-dim-defaults__table">
+                <thead>
+                    <tr>
+                        <th>Dimension</th>
+                        <th>Value</th>
+                        <th>Status</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th><span class="mjo-dim-defaults__sr">Row actions</span></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @for (row of Rows; track row.ID) {
+                        <tr [class.mjo-dim-defaults__row--inactive]="!row.Active">
+                            <td>{{ row.DimensionName }}</td>
+                            <td>
+                                <button type="button" class="mjo-dim-defaults__link" (click)="OpenDefaultRecord(row)">
+                                    {{ row.ValueCode }}<span class="mjo-dim-defaults__name"> {{ row.ValueName }}</span>
+                                </button>
+                            </td>
+                            <td>
+                                <span
+                                    class="mjo-dim-defaults__chip"
+                                    [class.mjo-dim-defaults__chip--on]="row.Active">
+                                    {{ StatusLabel(row) }}
+                                </span>
+                            </td>
+                            <td>{{ row.StartedAt ? (row.StartedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                            <td>{{ row.EndedAt ? (row.EndedAt | date: 'yyyy-MM-dd' : 'UTC') : '—' }}</td>
+                            <td>
+                                @if (CanWrite && Editing?.ID !== row.ID) {
+                                    <button
+                                        type="button"
+                                        class="mjo-dim-defaults__btn"
+                                        [disabled]="Saving"
+                                        title="Edit this dimension default"
+                                        (click)="OpenEdit(row)">
+                                        Edit
+                                    </button>
+                                }
+                                @if (CanWrite && row.Active && HasApplied(row)) {
+                                    <button
+                                        type="button"
+                                        class="mjo-dim-defaults__btn"
+                                        [disabled]="Saving"
+                                        title="End this default's window as of today. It stops applying immediately, and the record stays as history."
+                                        (click)="RetireDefault(row)">
+                                        Retire
+                                    </button>
+                                }
+                                @if (CanWrite && !HasApplied(row)) {
+                                    <button
+                                        type="button"
+                                        class="mjo-dim-defaults__btn"
+                                        [disabled]="Saving"
+                                        [title]="RemoveWarning(row)"
+                                        (click)="RemoveDefault(row)">
+                                        Remove
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+</div>

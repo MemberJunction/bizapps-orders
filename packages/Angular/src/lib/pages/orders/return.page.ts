@@ -19,6 +19,7 @@ import {
     type mjBizAppsOrdersOrderHeaderEntity,
 } from '@mj-biz-apps/orders-entities';
 import { Metadata } from '@memberjunction/core';
+import { ApplicationSettingEngine } from '@memberjunction/core-entities';
 
 import { MJOPricingScheduler } from '../../services/pricing-scheduler.service';
 
@@ -28,6 +29,39 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 
 /** The reason a return opens with, and the one it returns to when the origin changes. */
 const DEFAULT_RETURN_REASON = 'Damaged in transit';
+
+/** Default return reasons when the `ReturnReasons` setting in `__mj_BizAppsOrders` is unset or empty (golive#380). */
+export const DEFAULT_RETURN_REASONS: readonly string[] = [
+    'Booked in error',
+    'Customer terminated',
+    'Damaged in transit',
+    'Wrong item shipped',
+    'Customer changed mind',
+    'Duplicate order',
+    'Pricing error',
+];
+
+/** Parse comma-separated return reasons from the `ReturnReasons` application setting, falling back to {@link DEFAULT_RETURN_REASONS}. */
+export function ParseReturnReasons(raw: string | null | undefined): string[] {
+    if (!raw?.trim()) return [...DEFAULT_RETURN_REASONS];
+    const reasons = raw
+        .split(',')
+        .map((r) => r.trim())
+        .filter((r) => r.length > 0);
+    return reasons.length > 0 ? reasons : [...DEFAULT_RETURN_REASONS];
+}
+
+function configuredReturnReasons(): string[] {
+    try {
+        const apps = new Metadata().Applications;
+        const appID = apps?.find(
+            (a) => a.Name === '__mj_BizAppsOrders' || a.Name === 'MJ_BizApps_Orders' || a.Name === 'Orders',
+        )?.ID;
+        return ParseReturnReasons(ApplicationSettingEngine.Instance.GetSetting('ReturnReasons', appID));
+    } catch {
+        return [...DEFAULT_RETURN_REASONS];
+    }
+}
 
 /** How an order reads in the origin picker: order number and bill-to customer name (#836). */
 export function ReturnOrderPickerLabel(order: {
@@ -100,7 +134,7 @@ interface MJOReturnLine {
             </mj-alert>
         }
 
-        <!-- Work this page discarded on the user's behalf, said out loud rather than done quietly. -->
+        <!-- Work this page discarded on the user's behalf. -->
         @if (Notice) {
             <mj-alert Variant="warning" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
                       data-testid="return-notice">
@@ -460,14 +494,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
-    /** The reasons the select used to hard-code, as data. */
-    public readonly ReturnReasons: readonly string[] = [
-        'Damaged in transit',
-        'Wrong item shipped',
-        'Customer changed mind',
-        'Duplicate order',
-        'Pricing error',
-    ];
+    /** Return reasons loaded from the `ReturnReasons` setting in `__mj_BizAppsOrders`, falling back to `DEFAULT_RETURN_REASONS` (golive#380). */
+    public ReturnReasons: readonly string[] = configuredReturnReasons();
 
     public Reason = DEFAULT_RETURN_REASON;
 
@@ -498,17 +526,23 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     /** The orders a return may be written against — see `PickerOrders`. */
     private async LoadReturnableOrders(search?: string): Promise<void> {
-        const orders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
-        for (const o of orders) {
-            if (o && typeof o === 'object' && !('PickerLabel' in o)) {
-                Object.defineProperty(o, 'PickerLabel', {
-                    get: () => ReturnOrderPickerLabel(o),
-                    enumerable: false,
-                    configurable: true,
-                });
+        this.ReturnReasons = configuredReturnReasons();
+        try {
+            const orders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
+            for (const o of orders) {
+                if (o && typeof o === 'object' && !('PickerLabel' in o)) {
+                    Object.defineProperty(o, 'PickerLabel', {
+                        get: () => ReturnOrderPickerLabel(o),
+                        enumerable: false,
+                        configurable: true,
+                    });
+                }
             }
+            this.PickerOrders = orders;
+        } catch (e) {
+            this.Error = `Orders could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.PickerOrders = [];
         }
-        this.PickerOrders = orders;
         this.PickerLoaded = true;
         this.cdr.detectChanges();
     }
@@ -606,7 +640,15 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             return;
         }
 
-        const lines = await GetOrderLines(this.Origin.ID);
+        let lines: Awaited<ReturnType<typeof GetOrderLines>>;
+        try {
+            lines = await GetOrderLines(this.Origin.ID);
+        } catch (e) {
+            if (!current()) return;
+            this.Error = `Order lines could not be loaded: ${e instanceof Error ? e.message : String(e)}`;
+            this.cdr.detectChanges();
+            return;
+        }
         if (!current()) return;
         // WHAT HAS ALREADY GONE BACK, from the server. The cap counts reversals across every order
         // and ignores Draft and Voided ones — the rule `ReversalResolver` refuses with at confirm

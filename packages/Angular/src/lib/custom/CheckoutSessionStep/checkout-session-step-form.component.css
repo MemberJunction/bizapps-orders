@@ -1,0 +1,49 @@
+.mjo-css-replay {
+    margin: 0 0 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #f8fafc;
+}
+
+.mjo-css-replay__bar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.mjo-css-replay__btn {
+    padding: 0.45rem 0.9rem;
+    border: 0;
+    border-radius: 0.375rem;
+    background: #2563eb;
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mjo-css-replay__btn[disabled] {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.mjo-css-replay__hint {
+    font-size: 0.875rem;
+    color: #475569;
+}
+
+.mjo-css-replay__message {
+    margin: 0.5rem 0 0;
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.mjo-css-replay__message--ok {
+    color: #0f7b3b;
+}
+
+.mjo-css-replay__message--error {
+    color: #b3261e;
+}

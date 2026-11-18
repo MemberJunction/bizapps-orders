@@ -149,7 +149,14 @@ describe('RenewalPayer and PayerOwnsRenewalCustomer — who pays through the lin
         expect(RenewalPayer({ ...order, RenewalCardOwnerPersonID: 'buyer' })).toEqual({ PersonID: 'buyer', OrganizationID: null });
     });
 
-    it('falls back to the order bill-to when no person owns the card', () => {
+    it('is the organization that owns the renewal card even when the order also names a bill-to person (#695)', () => {
+        expect(RenewalPayer({ ...order, RenewalCardOwnerOrganizationID: 'card-org' })).toEqual({
+            PersonID: null,
+            OrganizationID: 'card-org',
+        });
+    });
+
+    it('falls back to the order bill-to when no person or organization owns the card', () => {
         expect(RenewalPayer(order)).toEqual({ PersonID: 'beneficiary', OrganizationID: null });
         expect(RenewalPayer({ ...order, BillToPersonID: null })).toEqual({ PersonID: null, OrganizationID: 'org-1' });
     });

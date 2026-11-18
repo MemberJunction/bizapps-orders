@@ -27,3 +27,9 @@ test-harnesses/.integration.lock
 # Sample documents written by test-harnesses/invoice-live.mjs so somebody can LOOK at them.
 # Rendered from whatever is in the database at the time; never a source artefact.
 .invoice-samples/
+
+# Playwright harness session capture and diagnostic artifacts
+test-harnesses/playwright/.auth/
+test-harnesses/playwright/artifacts/
+test-harnesses/playwright/test-results/
+test-harnesses/playwright/playwright-report/

@@ -150,7 +150,6 @@ export * from './checkout-questions';
 export * from './checkout-attribution';
 export * from './checkout-tracking';
 export * from './checkout-choices';
-export * from './base-entity-augmentation';
 
 /**
  * `CheckBillingLocation` and the ISO country/subdivision lists — the one definition of a valid

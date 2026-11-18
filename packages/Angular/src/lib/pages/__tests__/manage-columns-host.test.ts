@@ -45,16 +45,9 @@ const sources = new Map(pageFiles().map((p) => [p, readFileSync(join(PAGES, p), 
  * This list may only SHRINK. It is a register of dead controls, not an exemption: every entry is
  * a menu item a user can press that has no effect, and a new entry means the pattern spread. The
  * catalog pages came off it when they moved to `mj-view-workspace`, and so did the payments list,
- * payments dashboard and subscriptions pages (#785). The four left pass a synthetic filtered view
- * (`[ViewEntity]`, plus `[GridState]` on the Order Headers ones); `mj-view-workspace` takes only a
- * saved view, so moving them needs those filters held another way first.
+ * payments dashboard and subscriptions pages (#785); the rest followed the same way.
  */
-const MANAGE_COLUMNS_DEAD = [
-    'orders/fulfillment.page.ts',
-    'payments/account-credit.page.ts',
-    'receivables/customer-ar.page.ts',
-    'receivables/overdue.page.ts',
-];
+const MANAGE_COLUMNS_DEAD: string[] = [];
 
 /** A page whose grids cannot reach a column-config UI: raw viewer, no `ConfigureRequested` binding. */
 function leavesManageColumnsDead(source: string): boolean {

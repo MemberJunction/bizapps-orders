@@ -4,7 +4,7 @@ import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { Metadata, type EntityInfo } from '@memberjunction/core';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { MJAlertComponent } from '@memberjunction/ng-ui-components';
-import { GetPriceLists, GetPriceTiers, GetProductPrices, GetPromotions } from '../../data/orders-queries';
+import { GetPriceLists, GetPriceTiers, GetProductPrices, GetPromotions, RunOrdersPageLoad } from '../../data/orders-queries';
 import { MJO_ENTITIES } from '../../data/entity-names';
 import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mjBizAppsOrdersProductPriceEntity, mjBizAppsOrdersPromotionEntity } from '@mj-biz-apps/orders-entities';
 
@@ -36,6 +36,11 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
     standalone: true,
     imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-pr__note" role="alert">
+                {{ LoadError }}
+            </mj-alert>
+        }
         <mj-alert Variant="info" Icon="fa-solid fa-tags" class="mjo-pr__note">
                 <strong>Each row is one price rule.</strong>
                 Quantity bands and seasonal prices are separate rules. Priority decides which rule
@@ -234,6 +239,7 @@ import type { mjBizAppsOrdersPriceListEntity, mjBizAppsOrdersPriceTierEntity, mj
 export class MJOPricingPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public LoadError: string | null = null;
     public ProductPriceEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersProductPriceEntity[] = [];
 
@@ -243,14 +249,19 @@ export class MJOPricingPageComponent implements OnInit {
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.ProductPriceEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.ProductPrice) || null;
-        const [rows, lists, tiers] = await Promise.all([
-            GetProductPrices(),
-            GetPriceLists(),
-            GetPriceTiers(),
-        ]);
-        this.Rows = rows;
-        this.PriceLists = lists;
-        this.Tiers = tiers;
+        let rows: mjBizAppsOrdersProductPriceEntity[] = [];
+        let lists: mjBizAppsOrdersPriceListEntity[] = [];
+        let tiers: mjBizAppsOrdersPriceTierEntity[] = [];
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            [rows, lists, tiers] = await Promise.all([
+                GetProductPrices(),
+                GetPriceLists(),
+                GetPriceTiers(),
+            ]);
+        });
+        this.Rows = this.LoadError ? [] : rows;
+        this.PriceLists = this.LoadError ? [] : lists;
+        this.Tiers = this.LoadError ? [] : tiers;
         this.cdr.detectChanges();
     }
 
@@ -339,6 +350,11 @@ export class MJOPricingPageComponent implements OnInit {
     standalone: true,
     imports: [CommonModule, EntityViewerModule, MJAlertComponent],
     template: `
+        @if (LoadError) {
+            <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" class="mjo-pr__note" role="alert">
+                {{ LoadError }}
+            </mj-alert>
+        }
         <mj-alert Variant="info" Icon="fa-solid fa-percent" class="mjo-pr__note">
                 <strong>A promotion is the offer; a code is a string pointing at it.</strong>
                 One offer can carry several codes — partner, conference, win-back — all reporting into the
@@ -392,13 +408,18 @@ export class MJOPricingPageComponent implements OnInit {
 export class MJOPromotionsPageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
 
+    public LoadError: string | null = null;
     public PromotionEntityInfo: EntityInfo | null = null;
     public Rows: mjBizAppsOrdersPromotionEntity[] = [];
 
     public async ngOnInit(): Promise<void> {
         const md = new Metadata();
         this.PromotionEntityInfo = md.Entities.find((e) => e.Name === MJO_ENTITIES.Promotion) || null;
-        this.Rows = await GetPromotions();
+        let rows: mjBizAppsOrdersPromotionEntity[] = [];
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            rows = await GetPromotions();
+        });
+        this.Rows = this.LoadError ? [] : rows;
         this.cdr.detectChanges();
     }
 }

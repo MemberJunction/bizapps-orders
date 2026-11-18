@@ -32,6 +32,7 @@ import {
 } from '@mj-biz-apps/orders-entities';
 
 import { ORDER_HEADER_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
+import { CompanyScopeService } from './CompanyScopeService.js';
 import { OrdersSettings } from './OrdersSettings.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 
@@ -111,13 +112,25 @@ export class GetOverdueWorklistOperation extends OrdersGetOverdueWorklistOperati
         const asOf = RequireDate(input?.AsOfDate ?? BusinessTimeZoneEngine.Instance.Today(), 'AsOfDate');
         const maxCount = input?.MaxCount ?? 500;
 
+        const scopedCompanyIDs = await CompanyScopeService.ResolveReceivablesCompanyIDs(input?.CompanyIDs, provider, user);
+        if (scopedCompanyIDs !== null && scopedCompanyIDs.length === 0) {
+            return {
+                Success: true,
+                Rows: [],
+                TotalOverdue: 0,
+                RowCount: 0,
+                Truncated: false,
+                Buckets: { Current: 0, Days1To30: 0, Days31To60: 0, Days61Plus: 0 },
+            };
+        }
+
         // ONE definition, shared with the layered base view's `IsOverdue` column. Retyping the
         // predicate here is how this repo ended up with three statements of it that disagreed about
         // voided orders — see the header of `overdue.ts`.
         const filters: string[] = [OverdueFilter(asOf)];
 
-        if (input?.CompanyIDs?.length) {
-            const list = input.CompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',');
+        if (scopedCompanyIDs?.length) {
+            const list = scopedCompanyIDs.map((id) => `'${RequireUUID(id, 'CompanyIDs')}'`).join(',');
             filters.push(`CompanyID IN (${list})`);
         }
         if (input?.BillToOrganizationID)

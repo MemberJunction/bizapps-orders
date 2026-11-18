@@ -10,7 +10,7 @@ import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabCon
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { GetDashboardOrders, GetOpenInstalments, type MJODashboardOrderRow, type MJOOpenInstalmentRow } from '../../data/orders-queries';
+import { GetDashboardOrders, GetOpenInstalments, RunOrdersPageLoad, type MJODashboardOrderRow, type MJOOpenInstalmentRow } from '../../data/orders-queries';
 import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
 import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
@@ -79,6 +79,9 @@ interface MJOAttentionItem {
     ],
     template: `
         <div class="mjo-dashboard-container">
+            @if (LoadError) {
+                <mj-alert Variant="error" Icon="fa-solid fa-triangle-exclamation" role="alert">{{ LoadError }}</mj-alert>
+            }
             <div class="mjo-tab-container">
                 <mj-tab-nav [Tabs]="Tabs" [ActiveKey]="ActiveTab" (TabChange)="OnTabChange($event)"></mj-tab-nav>
             </div>
@@ -576,6 +579,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     public FulfillmentQueueView: MJUserViewEntityExtended | null = null;
     /** Set when the working view cannot be loaded; the Order Headers grids show it instead. */
     public ViewError: string | null = null;
+    /** Set when the dashboard summary read fails. */
+    public LoadError: string | null = null;
 
     private orders: MJODashboardOrderRow[] = [];
     /**
@@ -595,9 +600,15 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     private async loadOrders(): Promise<void> {
-        const [orders, instalments] = await Promise.all([GetDashboardOrders(), GetOpenInstalments()]);
-        this.orders = orders;
-        this.instalmentsByOrder = GroupInstalmentsByOrder(instalments);
+        this.LoadError = await RunOrdersPageLoad(async () => {
+            const [orders, instalments] = await Promise.all([GetDashboardOrders(), GetOpenInstalments()]);
+            this.orders = orders;
+            this.instalmentsByOrder = GroupInstalmentsByOrder(instalments);
+        });
+        if (this.LoadError) {
+            this.orders = [];
+            this.instalmentsByOrder = undefined;
+        }
         this.cdr.detectChanges();
     }
 

@@ -19,6 +19,7 @@ import { MJOStatTileComponent } from '../../panels/stat-tile.component';
 import { MJOWorklistTableComponent, type MJOColumn, type MJOPreset } from '../../panels/worklist-table.component';
 import { FormatDate, FormatMoney } from '../../panels/money-format';
 import { DispositionChipClass, DispositionLabel } from '../../panels/external-invoice-view';
+import { CompanyScopeService } from '../../services/company-scope.service';
 
 /** An `ExternalPayment` row that needs a person, as this page reads it. */
 interface PaymentExceptionRow {
@@ -248,6 +249,7 @@ const EXCEPTION_DISPOSITIONS = ['Held', 'Unmatched', 'Refused', 'Reapplied', 'Re
 export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     private readonly cdr = inject(ChangeDetectorRef);
     private readonly confirm = inject(MJConfirmService);
+    private readonly companyScope = inject(CompanyScopeService);
 
     @Output() OrderOpened = new EventEmitter<{ ID: string }>();
 
@@ -480,7 +482,10 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
         if (!proceed) return;
 
         await this.run(async () => {
-            const result = await new OrdersSendExternalInvoicesOperation().Execute({ Preview: false });
+            const result = await new OrdersSendExternalInvoicesOperation().Execute({
+                Preview: false,
+                CompanyIDs: this.companyScope.EffectiveCompanyIDs,
+            });
             const out = result.Output;
             if (!result.Success || !out) {
                 return { Tone: 'error' as const, Text: result.ErrorMessage?.trim() || 'The sweep could not run.' };
@@ -545,12 +550,16 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     /* ── Loading ────────────────────────────────────────────────────────── */
 
     private async load(): Promise<void> {
+        await this.companyScope.Load();
         await Promise.all([this.loadInvoices(), this.loadExceptions(), this.loadPollJob()]);
         this.cdr.detectChanges();
     }
 
     private async loadInvoices(): Promise<void> {
-        const result = await new OrdersGetExternalInvoicingWorklistOperation().Execute({ IncludeFailed: true });
+        const result = await new OrdersGetExternalInvoicingWorklistOperation().Execute({
+            IncludeFailed: true,
+            CompanyIDs: this.companyScope.EffectiveCompanyIDs,
+        });
         const output = result.Output;
         if (!result.Success || !output?.Success) {
             // An empty queue and a broken one look identical, and "nothing waiting" is the most
@@ -575,12 +584,16 @@ export class MJOExternalInvoicingQueuePageComponent implements OnInit {
     private async loadExceptions(): Promise<void> {
         const rv = new RunView();
         const list = EXCEPTION_DISPOSITIONS.map((d) => `'${d}'`).join(',');
+        const filter = await this.companyScope.ExternalPaymentFilter(`Disposition IN (${list})`);
         const result = await rv.RunView<PaymentExceptionRow>({
             EntityName: EXTERNAL_PAYMENT_ENTITY,
-            ExtraFilter: `Disposition IN (${list})`,
+            ExtraFilter: filter,
             OrderBy: 'LastSeenAt DESC',
             ResultType: 'simple',
         });
+        if (!result.Success && !this.LoadError) {
+            this.LoadError = result.ErrorMessage?.trim() || 'Payment exceptions could not be loaded.';
+        }
         this.Exceptions = result.Success ? (result.Results ?? []) : [];
         this.applyExceptionFilter();
         this.cdr.detectChanges();

@@ -71,7 +71,7 @@
     "fields": {
       "Code": "InstalmentInvoice",
       "Name": "Instalment Invoice",
-      "Description": "Written when one instalment of an order's payment schedule is invoiced (orders D92): the value entry the order would have booked at confirm, raised instead for that instalment's share - debiting the receivable and crediting the contract asset then deferred revenue, with tax, charges and any discount in proportion. Distinct from Order Booking so a report can tell a booking from a bill, which matters once confirmation stops booking the whole contract. Seeded by bizapps-orders because the EVENT is an orders concept - accounting seeds only the ledger-mechanics types it originates itself.",
+      "Description": "Written when one instalment of an order's payment schedule is invoiced (orders D92): the value entry the order would have booked at confirm, raised instead for that instalment's share - debiting the receivable and crediting deferred revenue (or the contract asset where revenue was recognised first), with tax, charges and any discount in proportion. Distinct from Order Booking so a report can tell a booking from a bill, which matters once confirmation stops booking the whole contract. Seeded by bizapps-orders because the EVENT is an orders concept - accounting seeds only the ledger-mechanics types it originates itself.",
       "IsSystem": false,
       "IsJournalEntryBatchSummary": false,
       "IsActive": true

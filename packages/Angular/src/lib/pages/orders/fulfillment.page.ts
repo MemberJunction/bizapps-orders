@@ -85,12 +85,13 @@ import { MJO_ENTITIES } from '../../data/entity-names';
 
         <div class="mjo-fq__viewer-host">
             @if (OrderLineEntityInfo) {
-                <mj-entity-viewer
+                <mj-view-workspace
                     [Entity]="OrderLineEntityInfo"
-                    [ViewEntity]="FulfillmentQueueView"
+                    [SelectedView]="FulfillmentQueueView"
+                    [AutoSaveView]="true"
                     (RecordSelected)="OnRecordSelected($event)"
-                    (RecordOpened)="OnRecordOpened($event)">
-                </mj-entity-viewer>
+                    (OpenRecordRequested)="OnRecordOpened($event)">
+                </mj-view-workspace>
             } @else {
                 <div class="small muted" style="padding: 24px;">Loading fulfillment queue...</div>
             }
@@ -131,7 +132,7 @@ import { MJO_ENTITIES } from '../../data/entity-names';
                 display: flex;
                 flex-direction: column;
             }
-            mj-entity-viewer {
+            mj-view-workspace {
                 display: flex;
                 flex-direction: column;
                 flex: 1 1 auto;
@@ -199,7 +200,7 @@ export class MJOFulfillmentPageComponent implements OnInit {
         this.cdr.detectChanges();
     }
 
-    public OnRecordOpened(event: RecordOpenedEvent): void {
+    public OnRecordOpened(event: RecordOpenedEvent | { entity: EntityInfo; record: Record<string, unknown> }): void {
         const orderId = (event.record as Record<string, unknown> | null)?.['OrderHeaderID'] as string | undefined;
         if (orderId) {
             this.OrderOpened.emit(orderId);
