@@ -52,6 +52,9 @@
  *        month books its reversal on the first open day, while the replacement's catch-up posts on
  *        the date entered, and preview and post agree on the dates
  *
+ *   PM26 progress is recorded on a line another app has frozen (a closed deal's): the line's
+ *        RecognizedToDate is Orders' own running total, not an edit to what was sold
+ *
  * Every attestation here is made as an Engagement Lead-only user, never the System owner, so each
  * check also proves the role is enough on its own.
  *
@@ -84,7 +87,7 @@ import {
     TxOne,
     TxQuery,
 } from '../fixture.js';
-import { Today } from '@mj-biz-apps/orders-entities';
+import { RegisterOrderLineEditVeto, Today } from '@mj-biz-apps/orders-entities';
 import { ConfirmOrder } from '../order-builder.js';
 import { ORDER_LINE_PROGRESS_MEASUREMENT_ENTITY } from '../entity-names.js';
 import { issue, scheduledOrder, type Instalment } from './payment-schedule.checks.js';
@@ -1185,6 +1188,33 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 AssertEqual(JSON.stringify(on('2026-08-31')), JSON.stringify([300.01]), 'nothing new posts into closed August: only the typo is there');
                 AssertEqual(cents(entries.reduce((sum, e) => sum + Number(e.Signed), 0)), 550.01, 'the ledger holds exactly 55%');
                 AssertEqual(Number((await lineTotal(ctx, lineID)).RecognizedToDate), 550.01, "and so does the line's running total");
+            }),
+    },
+    {
+        Id: 'progress-measurement.PM26',
+        Name: "PM26: progress is recorded on a line another app has frozen, and the line's RecognizedToDate moves",
+        RequiresMutation: true,
+        Fn: async (ctx) =>
+            InRolledBackTransaction(ctx, async () => {
+                // A deal closed Won freezes its order's lines through the line-edit veto. Recording
+                // progress advances the line's RecognizedToDate, which is Orders' own bookkeeping. The
+                // veto goes on after the order books, and refuses everything it is asked.
+                const { lineID } = await bookedProjectLine(ctx);
+                let asked = 0;
+                RegisterOrderLineEditVeto({
+                    MayEdit: async () => {
+                        asked++;
+                        return 'This deal is closed. Set the status back to Open before changing what was sold.';
+                    },
+                });
+                try {
+                    const out = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 });
+                    Assert(out.Success, `progress must record with the line frozen: ${out.Message}`);
+                    AssertEqual(cents(Number((await lineTotals(ctx, lineID)).RecognizedToDate)), 400, 'the line carries what was recognised');
+                    AssertEqual(asked, 0, 'the veto was never asked: this is not an edit to what was sold');
+                } finally {
+                    RegisterOrderLineEditVeto(null);
+                }
             }),
     },
 ];

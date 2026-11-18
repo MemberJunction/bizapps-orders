@@ -428,6 +428,42 @@ function isClosed(status: string): boolean {
     return status === 'Completed' || status === 'Cancelled';
 }
 
+/** The newest open review task linked to `orderHeaderID` that already has at least one Person assignee (#916). */
+async function openAssignedReviewTask(
+    orderHeaderID: string,
+    typeID: string,
+    ctx: ApprovalTaskContext,
+): Promise<{ Task: { ID: string; Name: string; Status: string }; AssigneePersonIDs: string[] } | null> {
+    if (!ctx.Provider.EntityByName(TASK_LINK_ENTITY)) return null;
+    const orderID = RequireUUID(orderHeaderID, 'OrderHeaderID');
+    const links = await view<{ TaskID: string }>(ctx, {
+        EntityName: TASK_LINK_ENTITY,
+        ExtraFilter: `EntityID = '${entityID(ORDER_HEADER_ENTITY, ctx)}' AND RecordID = '${orderID}'`,
+        Fields: ['TaskID'],
+        ResultType: 'simple',
+    });
+    if (links.length === 0) return null;
+    const tasks = await view<{ ID: string; Name: string; Status: string }>(ctx, {
+        EntityName: TASK_ENTITY,
+        ExtraFilter:
+            `ID IN (${RequireUUIDs(links.map((l) => l.TaskID), 'TaskID').map((id) => `'${id}'`).join(', ')}) ` +
+            `AND TypeID = '${RequireUUID(typeID, 'TypeID')}'`,
+        Fields: ['ID', 'Name', 'Status'],
+        OrderBy: '__mj_CreatedAt DESC',
+        ResultType: 'simple',
+    });
+    const open = tasks.filter((t) => !isClosed(t.Status));
+    if (open.length === 0) return null;
+    const assignees = await personAssignees(open.map((t) => t.ID), ctx);
+    for (const candidate of open) {
+        const assigned = assignees.get(candidate.ID.toLowerCase()) ?? [];
+        if (assigned.length > 0) {
+            return { Task: candidate, AssigneePersonIDs: assigned };
+        }
+    }
+    return null;
+}
+
 /** Each task's Person assignees, by lower-cased task ID. */
 async function personAssignees(taskIDs: readonly string[], ctx: ApprovalTaskContext): Promise<Map<string, string[]>> {
     const rows = await view<{ TaskID: string; AssigneeRecordID: string }>(ctx, {
@@ -677,6 +713,29 @@ export async function RaiseOrderReview(
     }
     if (withoutPerson.length > 0) {
         LogStatus(`${LOG_PREFIX} ${withoutPerson.length} holder(s) of '${routed.Role}' have no active Person and were not assigned: ${withoutPerson.join(', ')}`);
+    }
+
+    const existing = await openAssignedReviewTask(order.OrderHeaderID, typeID, ctx);
+    if (existing) {
+        const personEntityID = entityID(PERSON_ENTITY, ctx);
+        const existingSet = new Set(existing.AssigneePersonIDs.map((id) => id.toLowerCase()));
+        for (const personID of personIDs) {
+            if (!existingSet.has(personID.toLowerCase())) {
+                await CreateTaskAssignment(existing.Task.ID, personEntityID, personID, ctx);
+            }
+        }
+        await RecordTaskActivity(
+            existing.Task.ID,
+            `Order review updated: ${reasons.join('; ')}.`,
+            ctx,
+        );
+        return {
+            TaskID: existing.Task.ID,
+            TaskName: existing.Task.Name,
+            Role: routed.Role,
+            Escalated: routed.Escalated,
+            AssigneeCount: new Set([...existingSet, ...personIDs.map((id) => id.toLowerCase())]).size,
+        };
     }
 
     const task = await ctx.Provider.GetEntityObject<mjBizAppsTasksTaskEntity>(TASK_ENTITY, ctx.User);

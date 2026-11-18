@@ -106,6 +106,7 @@ import { OrderJournalEntryFactory, type JEDraft } from './OrderJournalEntryFacto
 import { BackDatedWarning, ClosedBooksRefusal, EffectiveObservations, FutureDateWarning, PlanSupersede, ReversalDate, SupersedeRefusal } from './ProgressSupersede.js';
 import { RaiseProgressJudgmentCall } from './ProgressJudgmentCall.js';
 import { ComputeCatchUp, ProgressRecognitionDriver } from './RevenueRecognition.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { RequireDate, RequireUUID } from './sql-guards.js';
 import { ResolveRevenueRecognitionTypeID } from './SubscriptionBehavior.js';
 
@@ -160,6 +161,9 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         const supersedesID = input?.SupersedesMeasurementID ? RequireUUID(input.SupersedesMeasurementID, 'SupersedesMeasurementID') : null;
 
         const line = await provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ledger);
+        // The only write this makes to the line is its RecognizedToDate, Orders' own running total,
+        // so a freeze another app holds on the line (a closed deal's) does not refuse it.
+        MarkAsOrdersOwnWrite(line);
         if (!(await line.Load(lineID))) return this.refuse(preview, `No order line with ID ${lineID}.`);
         const order = await provider.GetEntityObject<mjBizAppsOrdersOrderHeaderEntity>(ORDER_HEADER_ENTITY, ledger);
         if (!(await order.Load(line.OrderHeaderID))) return this.refuse(preview, `Order line ${lineID} belongs to an order that could not be read.`);
