@@ -321,7 +321,11 @@ export class MJOPricingScheduler {
             // A STATED price — being edited, or saved as an override — PINS the line; an absent one
             // is what tells the engine to resolve. Assigning 0 would read as a deliberate free line.
             const stated = StatedLineUnitPrice(source);
-            if (stated != null) line.UnitPrice = stated;
+            if (stated != null) {
+                line.UnitPrice = stated;
+                // The rule the pinned price was picked from travels with it (golive #470).
+                if (source.ProductPriceID) line.ProductPriceID = source.ProductPriceID;
+            }
             line.DiscountPct = Number(source.DiscountPct ?? 0);
             // The discount the line ALREADY carries comes across too. Without it a saved order
             // reopened on screen priced as though its concessions had never been granted, and a new
@@ -356,6 +360,8 @@ export class MJOPricingScheduler {
             Charges: (await StagedCharges(order)).map((c) => ({ Code: c.Code, Amount: c.Amount, Rate: c.Rate })),
             // The editor needs the rules' answer for a pinned line too — see `MJOLinePrice.Default`.
             IncludeDefaultsForStatedLines: true,
+            // A band still to pick on one line leaves that line unpriced, not the order (golive #470).
+            LeaveUndecidedBandsUnpriced: true,
         });
 
         if (issued <= this.applied) return true; // overtaken, but it WAS handled
@@ -375,7 +381,8 @@ export class MJOPricingScheduler {
                 Amount: Number((c as { Amount?: number }).Amount ?? 0),
             })),
             TaxExemptReason: result.TaxReasons.get(i) ?? null,
-            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+            ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? line.ProductPriceID ?? null,
+            Error: result.LineErrors?.get(line) ?? null,
             Default: engineDefault(result.EngineDefaults.get(line)),
         }));
         const sum = (pick: (l: (typeof priced)[number]) => number) =>
@@ -411,6 +418,7 @@ export class MJOPricingScheduler {
                 Components?: Array<{ Kind: string; Label: string; Amount: number }>;
                 TaxExemptReason?: string | null;
                 ProductPriceID?: string | null;
+                Error?: string | null;
                 Default?: MJOEngineDefault | null;
             }>;
             Totals: { Net: number; Discount: number; Gross: number };
@@ -434,7 +442,7 @@ export class MJOPricingScheduler {
                 UnitPrice: Number(priced.UnitPrice),
                 NetAmount: Number(priced.LineTotalNet),
                 PriceListName: null,
-                Error: null,
+                Error: priced.Error ?? null,
                 // Null means "priced and found nothing", which the badge renders as *no price rule*.
                 // A resolved price with no list is base pricing, and must not read as unpriced.
                 PriceSource: priced.UnitPrice > 0 ? (overridden ? 'stated' : rule) : null,
