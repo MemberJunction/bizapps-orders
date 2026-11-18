@@ -28,6 +28,7 @@ export * from './booked-money';
 export * from './order-address-snapshot';
 export * from './field-dirty';
 export * from './line-quantity';
+export * from './return-reasons';
 export * from './attendee-seats';
 export * from './bundle-lines';
 export * from './order-line-edit-veto';
