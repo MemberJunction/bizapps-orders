@@ -51,9 +51,16 @@ function readJSON<T>(relativePath: string): T {
 
 const bindings = readJSON<MetadataRecord[]>('metadata/entity-actions/.orders-entity-actions.json');
 const actions = readJSON<MetadataRecord[]>('metadata/actions/.orders-actions.json');
+const actionFilters = readJSON<MetadataRecord[]>('metadata/action-filters/.orders-action-filters.json');
 
 /** The action names this app defines, which is what an `@lookup:MJ: Actions.Name=` can resolve to. */
 const actionNames = new Set(actions.map((a) => String(a.fields.Name)));
+
+/**
+ * The action filter IDs this app defines. `MJ: Action Filters` has no Name column, so a binding
+ * names its filter by the filter record's fixed primary key rather than an `@lookup:`.
+ */
+const actionFilterIDs = new Set(actionFilters.map((f) => String((f as { primaryKey?: { ID?: string } }).primaryKey?.ID ?? '').toUpperCase()));
 
 /** Every param name each action declares, so a binding cannot pass one the action never accepts. */
 const paramsByAction = new Map<string, Set<string>>(
@@ -173,14 +180,31 @@ describe('entity-action metadata', () => {
         }
     });
 
-    it('does not reference an ActionFilter by a column that does not exist', () => {
-        // `MJ: Action Filters` is keyed by ID and described by UserDescription; it has no Name. A
-        // `@lookup:...Name=` against it resolves to nothing, and the binding then runs unfiltered —
-        // which for an AfterUpdate send is the mail loop above.
+    it('attaches a transition ActionFilter defined in metadata/action-filters to every AfterUpdate binding', () => {
         for (const b of bindings) {
-            for (const f of b.relatedEntities?.['MJ: Entity Action Filters'] ?? []) {
-                expect(String(f.fields.ActionFilterID)).not.toMatch(/^@lookup:MJ: Action Filters\.Name=/);
+            const fires = (b.relatedEntities?.['MJ: Entity Action Invocations'] ?? []).map((i) =>
+                lookupValue(i.fields.InvocationTypeID),
+            );
+            if (!fires.includes('AfterUpdate')) continue;
+
+            const filters = b.relatedEntities?.['MJ: Entity Action Filters'] ?? [];
+            expect(filters.length, 'an AfterUpdate binding must carry a transition filter').toBeGreaterThan(0);
+            for (const f of filters) {
+                const filterID = String(f.fields.ActionFilterID).toUpperCase();
+                expect(actionFilterIDs, `no such ActionFilter in metadata/action-filters: ${filterID}`).toContain(filterID);
             }
+        }
+    });
+
+    it('defines each action filter with columns MJ: Action Filters has and Code the engine can run', () => {
+        // ActionEngine runs Code as `new Function('ActionFilterContext', Code)`: only that one name is
+        // in scope, so a bare helper call throws ReferenceError on the first save it is asked about.
+        const columns = new Set(['UserDescription', 'UserComments', 'Code', 'CodeExplanation']);
+        for (const f of actionFilters) {
+            for (const key of Object.keys(f.fields)) expect(columns, `MJ: Action Filters has no column ${key}`).toContain(key);
+            const code = String(f.fields.Code);
+            expect(code).toMatch(/ActionFilterContext\./);
+            expect(code).not.toMatch(/(^|[^.\w])DidFieldChangeToValue\(/);
         }
     });
 

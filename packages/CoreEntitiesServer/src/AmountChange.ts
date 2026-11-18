@@ -72,6 +72,7 @@ import { SanctionInstalmentCredit, type OrderHeaderPaymentScheduleEntityServer }
 import { ScheduleCoverage } from './PaymentScheduleBehavior.js';
 import { MirroredTaxCharges } from './ReversalBehavior.js';
 import { LoadOriginTaxCharges } from './ReversalResolver.js';
+import { MarkAsOrdersOwnWrite } from './OrderLineEntityServer.js';
 import { RequireUUID } from './sql-guards.js';
 import { SanctionTermAmendment, type SubscriptionTermEntityServer } from './SubscriptionTermEntityServer.js';
 import {
@@ -518,6 +519,8 @@ async function unbillLine(checked: CheckedAmountChange, ctx: ApprovalTaskContext
     if (!(checked.CreditMemo.Net > 0)) return;
     const line = await ctx.Provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
     if (!(await line.Load(checked.OrderLineID))) throw new Error(`Order line ${checked.OrderLineID} could not be loaded to lower its BilledToDate.`);
+    // Orders' own running total, so a freeze another app holds on the line does not refuse it.
+    MarkAsOrdersOwnWrite(line);
     line.BilledToDate = money(Number(line.BilledToDate ?? 0) - checked.CreditMemo.Net);
     if (!(await line.Save())) {
         throw new Error(`Order line ${checked.OrderLineID}'s BilledToDate could not be lowered: ${line.LatestResult?.CompleteMessage}`);

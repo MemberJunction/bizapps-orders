@@ -32,10 +32,16 @@ export interface PriceOrderOutput {
         /** Present when the line owes no tax, saying why (exempt, non-taxable, no nexus). */
         TaxExemptReason?: string | null;
         /**
-         * The rule that produced `UnitPrice`, or null when the caller pinned the price or no rule
-         * applied. This is what `OrderLine.ProductPriceID` would be stamped with.
+         * The rule that produced `UnitPrice`: the engine's choice, or for a pinned price the
+         * `ProductPriceID` the caller sent with it. Null when neither names one. This is what
+         * `OrderLine.ProductPriceID` would be stamped with.
          */
         ProductPriceID?: string | null;
+        /**
+         * Why this line has no price while the rest of the order does: a revenue band the rep still
+         * has to pick, because the buyer has no revenue on record (golive #470). Absent otherwise.
+         */
+        Error?: string | null;
         /**
          * What the rules say for this line REGARDLESS of any pinned price — the engine's default.
          *

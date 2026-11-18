@@ -6,6 +6,8 @@ import {
     DEFAULT_REVENUE_BAND_EDGES,
     DescribeRevenueLadder,
     DescribeRevenueLadderIssue,
+    OlderOrdersCutoff,
+    ORDER_CREATED_FIELD,
     ParseRevenueBand,
     REVENUE_BAND_FIELD,
     RevenueBandName,
@@ -271,5 +273,37 @@ describe('ApplicabilityNeedsRevenue', () => {
         expect(ApplicabilityNeedsRevenue(null)).toBe(false);
         expect(ApplicabilityNeedsRevenue('  ')).toBe(false);
         expect(ApplicabilityNeedsRevenue('{not json')).toBe(false);
+    });
+});
+
+describe('OlderOrdersCutoff', () => {
+    const cut = Date.UTC(2026, 10, 10, 19, 8);
+    const band = [
+        { field: REVENUE_BAND_FIELD, operator: 'gte', value: 2 * M },
+        { field: REVENUE_BAND_FIELD, operator: 'lt', value: 5 * M },
+    ];
+
+    it('reads the cutover from a band kept for older orders, and from a plain row', () => {
+        const kept = JSON.stringify({ logic: 'and', filters: [...band, { field: ORDER_CREATED_FIELD, operator: 'lt', value: cut }] });
+        expect(OlderOrdersCutoff(kept)?.getTime()).toBe(cut);
+        expect(ParseRevenueBand(kept)).toBeNull();
+        const plain = JSON.stringify({ logic: 'and', filters: [{ field: ORDER_CREATED_FIELD, operator: 'lt', value: cut }] });
+        expect(OlderOrdersCutoff(plain)?.getTime()).toBe(cut);
+        expect(OlderOrdersCutoff(JSON.stringify({ field: ORDER_CREATED_FIELD, operator: 'lt', value: '2026-11-10T19:08:00Z' }))?.getTime()).toBe(cut);
+    });
+
+    it('is null for a plain band, another operator, an or, an empty When and broken JSON', () => {
+        expect(OlderOrdersCutoff(BuildRevenueBandApplicability({ Min: 2 * M, Max: 5 * M }))).toBeNull();
+        expect(OlderOrdersCutoff(JSON.stringify({ logic: 'and', filters: [{ field: ORDER_CREATED_FIELD, operator: 'gte', value: cut }] }))).toBeNull();
+        expect(OlderOrdersCutoff(JSON.stringify({ logic: 'or', filters: [{ field: ORDER_CREATED_FIELD, operator: 'lt', value: cut }] }))).toBeNull();
+        expect(OlderOrdersCutoff(null)).toBeNull();
+        expect(OlderOrdersCutoff('{not json')).toBeNull();
+    });
+
+    it('matches what pricing applies: older orders yes, newer orders no', () => {
+        const kept = JSON.stringify({ logic: 'and', filters: [{ field: ORDER_CREATED_FIELD, operator: 'lt', value: cut }] });
+        expect(priceApplies(kept, { Order: { __mj_CreatedAt: new Date(cut - 1000) } })).toBe(true);
+        expect(priceApplies(kept, { Order: { __mj_CreatedAt: new Date(cut + 1000) } })).toBe(false);
+        expect(priceApplies(kept, { Order: null })).toBe(false);
     });
 });
