@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url';
 import { newestViewDefiner, sqlCode } from './helpers/view-definer';
 import { describe, it, expect } from 'vitest';
-import { DaysOverdue, IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
+import { DaysOverdue, IsOverdue, OverdueFilter, OverdueSQL, OverdueViewSQL, UnpaidInstalmentClauses, NON_OWING_STATUSES, type OverdueFacts } from '../overdue';
 
 /**
  * Tier 1 for the overdue rule.
@@ -96,6 +96,15 @@ describe('the SQL and the filter say what the function says', () => {
         expect(view).toContain('CROSS APPLY (');
         expect(view).toContain("AND s.Status IN ('Scheduled','Invoiced')");
         expect(view).toContain('CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt');
+    });
+
+    it('states which schedule rows are unpaid instalments once, for the view and for aging', () => {
+        // The aging screens read these rows through a RunView filter (golive#481); NextDueDate reads
+        // them inside the view. Both come from UnpaidInstalmentClauses, so they cannot disagree.
+        expect(UnpaidInstalmentClauses()).toEqual(["Status IN ('Scheduled','Invoiced')", 'Balance > 0']);
+        const view = OverdueViewSQL();
+        for (const clause of UnpaidInstalmentClauses('s')) expect(view).toContain(`            AND ${clause}`);
+        expect(view).toContain('            AND s.Balance > 0),\n        g.DueDate) AS NextDueDate');
     });
 
     it('the committed migration is byte-for-byte what OverdueViewSQL emits', () => {

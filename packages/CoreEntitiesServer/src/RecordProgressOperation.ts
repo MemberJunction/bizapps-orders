@@ -147,7 +147,7 @@ export class RecordProgressOperation extends OrdersRecordProgressOperationBase {
         // FIRST, BEFORE ANY READ OR WRITE. The attestation posts revenue, so who may make it is the
         // control; the entity permission on the observation row is only the second layer.
         if (!UserHasAuthorization(PROGRESS_ATTEST_AUTH, user, provider)) {
-            return this.refuse(!!input?.Preview, `Recording progress requires the ${PROGRESS_ATTEST_AUTH} authorization (the Engagement Lead role).`);
+            return this.refuse(!!input?.Preview, "You don't have permission to record progress. This is limited to the Engagement Lead role.");
         }
         // PAST THE GATE, THE OPERATION IS THE AUTHORITY. The attester holds create rights on the
         // observation entity and nothing in the ledger (Jeremy on #227: not a widened role), so the

@@ -74,6 +74,7 @@ export {
     type ConcessionDecisionResult,
 } from './ConcessionApprovalListener.js';
 export {
+    ApplyShareLimitMixTiers,
     FindConcessionTier,
     LoadConcessionTiers,
     FindUnapprovedConcessions,
@@ -82,8 +83,10 @@ export {
     LineConcessionTerms,
     LinePriceConcessionFor,
     LoadConcessionAuthority,
+    LoadShareLimitMixTiers,
     OrderConcessionTotal,
     OrderNetTotal,
+    OrderProductTypeCount,
     type ConcessionLineFacts,
     type LineConcessionFacts,
     type LinePriceConcession,

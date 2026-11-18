@@ -22,6 +22,7 @@ vi.mock('../PaymentTermsChange.js', () => terms);
 const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
 }));
 vi.mock('../ConcessionGate.js', () => gate);

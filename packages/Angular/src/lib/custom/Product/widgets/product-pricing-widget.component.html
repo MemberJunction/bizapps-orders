@@ -23,7 +23,7 @@
                     <span>Simulate price</span>
                 </button>
                 @if (RetiredCount > 0) {
-                    <button type="button" class="mjo-btn-subtle" (click)="ToggleRetired()" [title]="ShowRetired ? 'Hide inactive and expired prices' : 'Show inactive and expired prices'">
+                    <button type="button" class="mjo-btn-subtle" (click)="ToggleRetired()" [title]="ShowRetired ? 'Hide inactive, expired and older-order prices' : 'Show inactive, expired and older-order prices'">
                         <i [class]="ShowRetired ? 'fa-solid fa-eye-slash' : 'fa-solid fa-eye'"></i>
                         <span>{{ ShowRetired ? 'Hide inactive' : 'Show inactive (' + RetiredCount + ')' }}</span>
                     </button>
@@ -154,7 +154,7 @@
                                             </td>
                                             @if (EditMode) {
                                                 <td class="mjo-band-actions">
-                                                    @if (row.Retired) {
+                                                    @if (CanActivate(row.Record)) {
                                                         <button type="button" class="mjo-btn-subtle" (click)="RestorePrice(row.Record)" [disabled]="IsSaving" title="Make this band available to new order lines">Activate</button>
                                                     } @else {
                                                         <button type="button" class="mjo-btn-subtle" (click)="RetirePrice(row.Record)" [disabled]="IsSaving" title="Stop offering this band on new order lines. Existing lines keep their price.">Deactivate</button>
@@ -352,7 +352,7 @@
                                                     <span class="mjo-sub-label">Expiration date</span>
                                                     <input type="date" class="mjo-input-text" [ngModel]="EffectiveToInput(row.Record)" (ngModelChange)="OnEffectiveToChange(row.Record, $event)" [disabled]="IsSaving">
                                                 </label>
-                                                @if (row.Retired) {
+                                                @if (CanActivate(row.Record)) {
                                                     <button type="button" class="mjo-btn-subtle" (click)="RestorePrice(row.Record)" [disabled]="IsSaving" title="Make this price available to new order lines">Activate</button>
                                                 } @else {
                                                     <button type="button" class="mjo-btn-subtle" (click)="RetirePrice(row.Record)" [disabled]="IsSaving" title="Stop offering this price on new order lines. Existing lines keep their price.">Deactivate</button>

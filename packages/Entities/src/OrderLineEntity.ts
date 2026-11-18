@@ -17,7 +17,7 @@ import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
 import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
 import { anyFieldIsDirty } from './field-dirty';
-import { BuildLinePriceContext } from './pricing/linePriceContext';
+import { BuildLinePriceContext, PickedUndecidedBand } from './pricing/linePriceContext';
 import {
     isEnginePrice,
     isNamedListPick,
@@ -126,8 +126,8 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 new ValidationErrorInfo(
                     'UnitPrice',
                     engine
-                        ? `This line's price is not the engine price (${engine.PriceName ?? engine.ProductPriceID} · ${engine.UnitPrice}). Changing it requires MJ.BizApps.Orders.Price.OverrideList or OverrideAny.`
-                        : 'This line has a stated price and no engine price. Typing an amount requires MJ.BizApps.Orders.Price.OverrideAny.',
+                        ? `This price differs from the standard price (${engine.PriceName ?? engine.ProductPriceID} · ${engine.UnitPrice}). You don't have permission to override prices.`
+                        : "This product has no standard price, and you don't have permission to enter a custom price.",
                     this.UnitPrice,
                     ValidationErrorType.Failure,
                 ),
@@ -139,7 +139,7 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
                 try {
                     const ctx = await BuildLinePriceContext(this, provider, user);
                     const applicable = ctx ? await ListApplicablePrices(ctx, provider, user) : [];
-                    if (isNamedListPick(this, applicable.filter((p) => p.BandUndecided))) return;
+                    if (PickedUndecidedBand(this, applicable)) return;
                 } catch {
                     // Fall through to the refusal below.
                 }

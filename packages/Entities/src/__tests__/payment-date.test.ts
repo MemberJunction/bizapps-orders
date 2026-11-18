@@ -72,9 +72,9 @@ describe('IsPaymentDateCorrection — a captured payment moved to another day', 
 describe('PaymentDateCorrectionRefusal — finance only', () => {
     const correction = () => payment({ savedStatus: 'Captured', oldDate: '2026-11-01', newDate: '2026-10-30' });
 
-    it('refuses a user without the authorization, naming it', () => {
+    it('refuses a user without the authorization, in plain words', () => {
         expect(PaymentDateCorrectionRefusal(correction(), CLERK, catalog)).toBe(
-            `Changing the date of a captured payment requires the ${PAYMENT_DATE_CHANGE_AUTH} authorization (the Finance role).`,
+            "You don't have permission to change the date of a received payment. Please request this from Finance.",
         );
     });
 
