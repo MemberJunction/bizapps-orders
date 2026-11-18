@@ -50,6 +50,8 @@ const mocks = vi.hoisted(() => ({
 // repo's fake providers do not implement the real view pipeline. Everything else in core stays
 // real, including `BaseRemotableOperation` (which both operations extend) and `BaseEngine` (which
 // backs the `BusinessTimeZoneEngine` singleton these tests pin).
+// The finance gate (bc-aidp-next-golive#454) has its own tests; these drive what comes after it.
+vi.mock('../ReversalAuthority.js', () => ({ ReversalGate: () => null, WithGatewayRecord: (fn: () => Promise<unknown>) => fn() }));
 vi.mock('@memberjunction/core', async (importOriginal) => {
     const actual = await importOriginal<typeof import('@memberjunction/core')>();
     return {

@@ -94,6 +94,7 @@ export class BizAppsPaymentHeaderFormComponent extends mjBizAppsOrdersPaymentHea
     protected navigationService = inject(NavigationService, { optional: true });
 
     public readonly Math = Math;
+    public readonly OrderHeaderEntity = MJO_ENTITIES.OrderHeader;
 
     public ActiveTab: 'payment' | 'accounting' | 'details' | 'related' = 'payment';
 

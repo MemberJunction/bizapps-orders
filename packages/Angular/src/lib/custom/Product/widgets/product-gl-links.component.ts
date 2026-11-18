@@ -168,6 +168,7 @@ export class BizAppsProductGLLinksComponent implements OnInit, OnDestroy {
     /** After a link is added, edited, retired or removed, so the Effective accounts block re-reads. */
     @Output() public LinksChanged = new EventEmitter<void>();
 
+    public readonly LinkEntity = LINK_ENTITY;
     public Rows: ProductGLLinkRow[] = [];
     public Loading = true;
     /** Set when the links cannot be read at all. Shown instead of an empty list, which would lie. */

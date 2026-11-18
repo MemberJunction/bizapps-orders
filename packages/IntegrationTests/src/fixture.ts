@@ -1351,6 +1351,8 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         // so teardown had only ever been asked to delete rows that were not there, and it "worked"
         // by having nothing to do.
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
+        `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `DISABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,
@@ -1484,6 +1486,8 @@ function teardownStatements(companyIDs: string[], run: string): string[] {
         // silently, and every check that proves a correction is refused would pass having proved
         // the opposite.
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderLine_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderLine`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeader_ImmutableAfterConfirm ON ${ORDERS_SCHEMA}.OrderHeader`,
+        `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_OrderHeaderPaymentSchedule_Immutable ON ${ORDERS_SCHEMA}.OrderHeaderPaymentSchedule`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentLine_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentLine`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentHeader_ImmutableAfterCapture ON ${ORDERS_SCHEMA}.PaymentHeader`,
         `ENABLE TRIGGER ${ORDERS_SCHEMA}.trg_PaymentDetail_Immutable ON ${ORDERS_SCHEMA}.PaymentDetail`,

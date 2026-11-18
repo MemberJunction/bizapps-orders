@@ -3,6 +3,7 @@ import {
     PriceRenewal,
     PriorTermShare,
     RenewalCrossesAnniversary,
+    RenewalPriceStart,
     ResolveRenewalIncrease,
     type RenewalPriceInput,
 } from '../renewal-price.js';
@@ -80,6 +81,70 @@ describe('RenewalCrossesAnniversary', () => {
     });
 });
 
+describe('RenewalPriceStart (golive #478)', () => {
+    /** The increase decision as the pricer makes it: anchor, expiring term, its line's first term, renewal start. */
+    const crosses = (anchor: string, termStart: string, lineFirstTermStart: string | null | undefined, renewalStart: string) =>
+        RenewalCrossesAnniversary(anchor, RenewalPriceStart(termStart, lineFirstTermStart), renewalStart);
+
+    it('is the expiring term start when the line bought that one term', () => {
+        expect(RenewalPriceStart('2027-02-06', '2027-02-06')).toBe('2027-02-06');
+        expect(RenewalPriceStart('2027-02-06', null)).toBe('2027-02-06');
+        expect(RenewalPriceStart('2027-02-06', undefined)).toBe('2027-02-06');
+        expect(RenewalPriceStart('2027-02-06', '')).toBe('2027-02-06');
+    });
+
+    it('is the first term start when the line bought several terms', () => {
+        expect(RenewalPriceStart('2026-12-20', '2025-12-20')).toBe('2025-12-20');
+        expect(RenewalPriceStart(new Date('2026-12-20T00:00:00Z'), '2025-12-20')).toBe('2025-12-20');
+    });
+
+    it('never moves later than the expiring term start', () => {
+        expect(RenewalPriceStart('2026-12-20', '2027-01-01')).toBe('2026-12-20');
+    });
+
+    it('applies the increase after a 13-month line booked as a year and a remainder', () => {
+        // One line covering 12/20/2025-2/5/2027: terms start 12/20/2025 and 12/20/2026, renewal 2/6/2027.
+        expect(RenewalCrossesAnniversary('2025-12-20', '2026-12-20', '2027-02-06')).toBe(false); // the old reading
+        expect(crosses('2025-12-20', '2026-12-20', '2025-12-20', '2027-02-06')).toBe(true);
+        // The renewal after that is an ordinary one-term line and still crosses one.
+        expect(crosses('2025-12-20', '2027-02-06', '2027-02-06', '2028-02-06')).toBe(true);
+    });
+
+    it('applies the increase after an annual line with a one-day last term', () => {
+        expect(crosses('2026-01-01', '2027-01-01', '2026-01-01', '2027-01-02')).toBe(true);
+    });
+
+    it('applies it once after 24 months sold as one line', () => {
+        expect(crosses('2026-01-01', '2027-01-01', '2026-01-01', '2028-01-01')).toBe(true);
+    });
+
+    it('applies it after five quarters sold as one line, then waits for the next anniversary', () => {
+        expect(crosses('2026-01-01', '2027-01-01', '2026-01-01', '2027-04-01')).toBe(true);
+        expect(crosses('2026-01-01', '2027-04-01', '2027-04-01', '2027-07-01')).toBe(false);
+        expect(crosses('2026-01-01', '2027-10-01', '2027-10-01', '2028-01-01')).toBe(true);
+    });
+
+    it('changes nothing for a line that bought one term', () => {
+        // Annual: every renewal.
+        expect(crosses('2026-01-15', '2026-01-15', '2026-01-15', '2027-01-15')).toBe(true);
+        expect(crosses('2026-01-15', '2027-01-15', '2027-01-15', '2028-01-15')).toBe(true);
+        // Quarterly: once a year.
+        expect(crosses('2026-01-01', '2026-01-01', '2026-01-01', '2026-04-01')).toBe(false);
+        expect(crosses('2026-01-01', '2026-07-01', '2026-07-01', '2026-10-01')).toBe(false);
+        expect(crosses('2026-01-01', '2026-10-01', '2026-10-01', '2027-01-01')).toBe(true);
+        expect(crosses('2026-01-01', '2027-01-01', '2027-01-01', '2027-04-01')).toBe(false);
+        // Monthly: once a year.
+        expect(crosses('2026-01-15', '2026-11-15', '2026-11-15', '2026-12-15')).toBe(false);
+        expect(crosses('2026-01-15', '2026-12-15', '2026-12-15', '2027-01-15')).toBe(true);
+        expect(crosses('2026-01-15', '2027-01-15', '2027-01-15', '2027-02-15')).toBe(false);
+    });
+
+    it('gives no increase on the first full year after a trial sold as its own line', () => {
+        expect(crosses('2026-01-01', '2026-01-01', '2026-01-01', '2026-04-01')).toBe(false);
+        expect(crosses('2026-01-01', '2026-04-01', '2026-04-01', '2027-04-01')).toBe(true);
+    });
+});
+
 describe('PriceRenewal', () => {
     it('lets a first-term discount lapse and renews at the undiscounted price', () => {
         expect(PriceRenewal(input())).toEqual({
@@ -87,6 +152,9 @@ describe('PriceRenewal', () => {
             BaseSource: 'PriorPrice',
             IncreasePercent: 0,
             IncreaseSource: 'None',
+            IncreaseSetPercent: 0,
+            IncreaseSetSource: 'None',
+            IncreaseApplied: true,
             UnitPrice: 1000,
             DiscountPct: 0,
         });
@@ -240,5 +308,19 @@ describe('a line that bought several terms renews at one term of its price (goli
         const p = priced(24, 20000, { SuccessorListPrice: 12000 });
         expect(p.BaseSource).toBe('SuccessorList');
         expect(p.BasePrice).toBe(12000);
+    });
+});
+
+describe('PriceRenewal reports the increase that is set, applied or not', () => {
+    const base = { PriorUnitPrice: 1000, PriorDiscountPct: 0, PriorPriceOverridden: false, PriorListPrice: null, SuccessorListPrice: undefined, CarryDiscount: false, Increase: { Percent: 2, Source: 'Subscription' as const } };
+
+    it('applied: the set and applied figures agree', () => {
+        const p = PriceRenewal({ ...base, ApplyIncrease: true });
+        expect(p).toMatchObject({ IncreasePercent: 2, IncreaseSource: 'Subscription', IncreaseSetPercent: 2, IncreaseSetSource: 'Subscription', IncreaseApplied: true, UnitPrice: 1020 });
+    });
+
+    it('not applied: the price carries no increase, and the set rate is still reported', () => {
+        const p = PriceRenewal({ ...base, ApplyIncrease: false });
+        expect(p).toMatchObject({ IncreasePercent: 0, IncreaseSource: 'None', IncreaseSetPercent: 2, IncreaseSetSource: 'Subscription', IncreaseApplied: false, UnitPrice: 1000 });
     });
 });

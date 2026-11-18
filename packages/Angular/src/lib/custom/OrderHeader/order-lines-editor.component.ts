@@ -59,6 +59,7 @@ import {
     GetDiscountAuthority,
     GetExistingHolding,
     GetSubscriptionContinuation,
+    KeepSellingCompanyProducts,
     RankCatalogMatches,
     type MJODimensionOption,
     type MJODiscountAuthority,
@@ -191,6 +192,13 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     private pickerCache: { Key: string; Results: MJOProductOption[] } | null = null;
     public Pricing: MJOPricingState = { Result: null, Loading: false, Error: null };
     public ProductQuery = '';
+    /**
+     * "Only selling company products". Checked on open, so a user sees their own company's catalog
+     * first; unchecking it offers every company's products for a multi-company deal.
+     */
+    public SellingCompanyOnly = true;
+    /** Search matches the checkbox hides, so the list can say they exist. */
+    public PickerHiddenByCompany = 0;
     public PickerCursor = 0;
     public PickerOpen = false;
     /** True when the catalog list would overflow the viewport below the search box. */
@@ -229,18 +237,20 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     public get PickerResults(): MJOProductOption[] {
         const query = this.ProductQuery.trim().toLowerCase();
         const companyID = String(this._order?.CompanyID ?? '');
-        const key = `${this.catalogVersion}|${companyID}|${query}`;
+        const key = `${this.catalogVersion}|${companyID}|${this.SellingCompanyOnly}|${query}`;
         if (this.pickerCache?.Key !== key) {
+            const sellable = this.Catalog.filter((p) => !p.NotSellableNew);
+            const offered = this.SellingCompanyOnly ? KeepSellingCompanyProducts(sellable, companyID) : sellable;
+            const ranked = RankCatalogMatches(offered, query, companyID || null);
+            // Counted only for a typed search: with nothing typed, "N other products" says nothing
+            // about what the user is looking for.
+            this.PickerHiddenByCompany =
+                query && offered.length < sellable.length
+                    ? RankCatalogMatches(sellable, query, null).length - ranked.length
+                    : 0;
             this.pickerCache = {
                 Key: key,
-                Results: RankCatalogMatches(
-                    this.Catalog.filter((p) => !p.NotSellableNew),
-                    query,
-                    companyID || null,
-                ).slice(
-                    0,
-                    PICKER_RESULT_LIMIT,
-                ),
+                Results: ranked.slice(0, PICKER_RESULT_LIMIT),
             };
         }
         return this.pickerCache.Results;
@@ -256,6 +266,16 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
         // Back to the top on every edit. The list is RANKED now, so row 0 is the best match for what
         // was just typed — leaving the cursor where it was points it at whatever happens to occupy
         // that position in a different result set, which is what Enter would then add.
+        this.PickerCursor = 0;
+        if (this.PickerOpen) this.updatePickerFlip();
+    }
+
+    /** True when the order has a selling company the checkbox can narrow to. */
+    public get HasSellingCompany(): boolean {
+        return !!this._order?.CompanyID;
+    }
+
+    public OnSellingCompanyOnlyChange(): void {
         this.PickerCursor = 0;
         if (this.PickerOpen) this.updatePickerFlip();
     }
@@ -631,20 +651,50 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     }
 
     /**
-     * The extend choice's text for one line: {@link HoldingExtendText}, plus the end an "Add as next
-     * term" choice would give this line (golive #338). Only the next-term outcome takes the line's
-     * dates; a reactivation or a new subscription runs on the line's own dates.
+     * The extend choice's text for one line: {@link HoldingExtendText}, with the dates a renewal would
+     * give this line (golive #338, #480), and a warning when those are not the dates the line states.
+     * Only the next-term outcome takes the holding's dates; a reactivation or a new subscription runs
+     * on the line's own dates.
      */
     public HoldingExtendLineText(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): ExtendChoiceText {
         const text = this.HoldingExtendText(holding);
         const purchaseDay = AsDateValue(this._order?.OrderDate) ?? TodayAsDateValue();
         if (ExtendOutcomeFor(holding, purchaseDay).Kind !== 'NextTerm') return text;
+        const start = this.HoldingContinuationStart(holding);
         const end = this.HoldingContinuationEnd(line, holding);
-        if (!end) return text;
+        if (!start || !end) return text;
+        const own = this.ownTermDates(line);
+        // "As entered" is only true of a start somebody typed; a start the order date supplies was not.
+        const moved = !!line.ServicePeriodStart && !!own.Start && !!own.End && (own.Start !== start || own.End !== end);
         return {
-            Choice: text.Choice.endsWith(')') ? `${text.Choice.slice(0, -1)}, ends ${end})` : `${text.Choice} (ends ${end})`,
-            Hint: text.Hint.replace(/\.$/, ` and ending ${end}.`),
+            Choice: `Renew ${holding.SubscriptionNumber} (${start} to ${end})`,
+            Hint: moved
+                ? `${text.Hint} It will run ${start} to ${end}, not ${own.Start} to ${own.End} as entered, ` +
+                  `because a new term starts the day after the current one ends.`
+                : text.Hint,
         };
+    }
+
+    /**
+     * The "new subscription" choice's label, with the dates that subscription would run: the line's
+     * own (golive #480), so the two choices can be compared.
+     */
+    public HoldingNewSubscriptionText(line: mjBizAppsOrdersOrderLineEntity): string {
+        const own = this.ownTermDates(line);
+        return own.Start && own.End
+            ? `Create new subscription (${own.Start} to ${own.End})`
+            : `Create new subscription (keeps this line's dates)`;
+    }
+
+    /**
+     * The dates the line has when no existing coverage moves them: its stated or derived start, and
+     * its stated end or one type term from that start. What a separate subscription would run on.
+     */
+    private ownTermDates(line: mjBizAppsOrdersOrderLineEntity): { Start: string; End: string } {
+        const start = this.intendedTermStart(line);
+        const rules = this.termRules(line);
+        const end = line.ServicePeriodEnd ? new Date(line.ServicePeriodEnd) : start && rules ? DefaultTermEnd(rules, start, false) : null;
+        return { Start: this.dateInputValue(start), End: this.dateInputValue(end) };
     }
 
     /** Store the line's answer. Editable while the order's money is; a booked line's answer is history. */
@@ -747,7 +797,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     }
 
     /**
-     * The end an "Add as next term" choice would give this line: its stated length kept from the
+     * The end a "Renew" choice would give this line: its stated length kept from the
      * continuation date, or one type term from it.
      */
     public HoldingContinuationEnd(line: mjBizAppsOrdersOrderLineEntity, holding: MJOExistingHolding): string {
