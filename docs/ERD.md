@@ -15,17 +15,17 @@
 > node test-harnesses/gen-erd.mjs   /tmp/orders-schema.json docs/ERD.md
 > ```
 >
-> **Verified against the live database:** 2026-11-09 · latest migration `V202611120618__v5.50.x__OrderConcession_Withdrawn.sql`
+> **Verified against the live database:** 2026-11-16 · latest migration `V202611170400__v5.51.x__SalesAuthority_MixTiers.sql`
 >
 > **Schema:** `__mj_BizAppsOrders` · **Entity prefix:** `MJ_BizApps_Orders: ` · **Keys:** UUID throughout
-> **71 tables · 128 internal relationships · 78 cross-app foreign keys ·
-> 208 CHECK constraints · 60 unique indexes** beyond the primary keys ·
-> **14 business triggers** · 72 views.
+> **72 tables · 129 internal relationships · 78 cross-app foreign keys ·
+> 210 CHECK constraints · 61 unique indexes** beyond the primary keys ·
+> **14 business triggers** · 73 views.
 >
-> (71 is the app's own tables. `sys.tables` reports 72 because the migration runner keeps its
+> (72 is the app's own tables. `sys.tables` reports 73 because the migration runner keeps its
 > `flyway_schema_history` in this schema; that table belongs to the migration tool, not to the model.)
 >
-> **CHECK constraint bodies** (§4) were read from the same database, through `OBJECT_DEFINITION` (208/208).
+> **CHECK constraint bodies** (§4) were read from the same database, through `OBJECT_DEFINITION` (210/210).
 >
 > **How to read this.** §1 is the master map: every table, every connection, no columns — an
 > orientation tool, too wide to work from. §2 is the 10 area maps WITH full column lists, small
@@ -60,7 +60,7 @@ supply a total that disagrees with what was booked, and a booked figure cannot d
 ## 1. Master map — every table, every connection inside the app
 
 No columns; this is the shape only. **Cross-app foreign keys are deliberately NOT drawn here** — all
-78 of them would join the 128 edges below and hide the app's own structure, which is the one thing
+78 of them would join the 129 edges below and hide the app's own structure, which is the one thing
 this diagram exists to show. They get their own map and full register in §3.
 
 ```mermaid
@@ -178,6 +178,7 @@ erDiagram
     RevenueRecognitionType ||--o{ SubscriptionTerm : "RevenueRecognitionTypeID"
     SalesAuthority ||--o{ OrderAdjustment : "AuthorizedBySalesAuthorityID"
     SalesAuthority ||--o{ OrderConcession : "AuthorizedBySalesAuthorityID"
+    SalesAuthority ||--o{ SalesAuthorityMixTier : "SalesAuthorityID"
     SalesRule ||--o{ OrderConcession : "SalesRuleID"
     StoredValueAccount ||--o{ PaymentDetail : "StoredValueAccountID"
     StoredValueAccount ||--o{ StoredValueTransaction : "StoredValueAccountID"
@@ -411,7 +412,8 @@ tiered and volume models. The walk that reads all this is in §6.
 
 **`Promotion` is separated from `PromotionCode` on purpose**: one promotion can have many codes
 (per-campaign, per-partner, single-use), and `PromotionTarget` scopes what a promotion may apply to.
-`SalesAuthority` and `SalesRule` are the guardrails — who is allowed to give value away, and how much.
+`SalesAuthority` and `SalesRule` are the guardrails — who is allowed to give value away, and how much. A
+`SalesAuthorityMixTier` raises an authority's share limit on an order that spans several product types.
 `OrderConcession` records each concession on an order, whatever form it takes (price, duration, seats,
 scope or payment terms), with its computed value and the approval decision. An order cannot be
 confirmed, nor its documents sent, while a concession on it is `Pending`. A withdrawn concession stays on
@@ -427,6 +429,7 @@ erDiagram
     PromotionType ||--o{ Promotion : "PromotionTypeID"
     ReferralProgram ||--o{ OrderConcession : "ReferralProgramID"
     SalesAuthority ||--o{ OrderConcession : "AuthorizedBySalesAuthorityID"
+    SalesAuthority ||--o{ SalesAuthorityMixTier : "SalesAuthorityID"
     SalesRule ||--o{ OrderConcession : "SalesRuleID"
     ProductPrice {
         uuid ID PK "required"
@@ -555,6 +558,12 @@ erDiagram
         decimal_18_2 MaxConcessionValue
         int MaxTermExtensionDays
         decimal_7_4 MaxConcessionPctOfContract
+    }
+    SalesAuthorityMixTier {
+        uuid ID PK "required"
+        uuid SalesAuthorityID FK "required"
+        int MinProductTypes UK "required"
+        decimal_7_4 MaxConcessionPctOfContract "required"
     }
     SalesRule {
         uuid ID PK "required"
@@ -1303,9 +1312,7 @@ code, at confirm and at invoicing. An order with no rows is billed as a whole.
 completion) releases nothing at booking. Each `OrderLineProgressMeasurement` row is an attested
 observation of cumulative percent complete on a date, and `Orders.RecordProgress` posts the catch-up
 to it with its journal entry. A posted row never changes (§5): a correction is a new row that
-supersedes it, and the superseded row's recognition is reversed: on its own date, or on the first
-open day when finance has closed that month. No observation is dated on or before the company's
-`AccountingCompanyProfile.BooksClosedThroughDate`.
+supersedes it, and the superseded row's recognition is reversed.
 
 ```mermaid
 erDiagram
@@ -1727,7 +1734,7 @@ before writing a query — a value not on this list cannot be in the column. A c
 | `SubscriptionType.StartMode` | `Immediate` · `Deferred` · `CalendarAnchored` |
 | `SubscriptionType.SubscriberScope` | `Organization` · `Person` · `Either` |
 
-The other 127 CHECK constraints are rules rather than lists: exactly one of two party columns, a
+The other 129 CHECK constraints are rules rather than lists: exactly one of two party columns, a
 window whose end follows its start, a non-negative amount, a column that must hold valid JSON, a
 field required by another field's value. §2 does not show them; `sys.check_constraints` has their
 bodies.
@@ -1757,7 +1764,7 @@ show either, and code that ignores them will fail at runtime rather than at comp
 | `PaymentLine` | `trg_PaymentLine_ImmutableAfterCapture` | Once its payment is captured, an applied payment line cannot be deleted (51010), and its amount, order and order line cannot change (51011); the instalment it names (`OrderHeaderPaymentScheduleID`) is not covered. A set `BookedAt` is never cleared or replaced (51012). |
 | `PaymentLine` | `trg_PaymentLine_RollupTotals` | The order's `AmountPaid` and `Balance`, and its instalments', are recomputed from the lines of its captured payments. |
 
-The other 71 triggers are CodeGen's `trgUpdate*` `__mj_UpdatedAt` maintainers, one per table.
+The other 72 triggers are CodeGen's `trgUpdate*` `__mj_UpdatedAt` maintainers, one per table.
 They are not business logic and are omitted above.
 
 ---

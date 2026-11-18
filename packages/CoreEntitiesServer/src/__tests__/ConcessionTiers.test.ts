@@ -16,6 +16,7 @@ vi.mock('../ConcessionApprovalTask.js', () => approval);
 const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
