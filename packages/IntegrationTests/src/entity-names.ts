@@ -51,6 +51,7 @@ export const PRICE_LIST_ENTITY = 'MJ_BizApps_Orders: Price Lists';
 export const PRICE_LIST_ASSIGNMENT_ENTITY = 'MJ_BizApps_Orders: Price List Assignments';
 
 export const SALES_AUTHORITY_ENTITY = 'MJ_BizApps_Orders: Sales Authorities';
+export const SALES_AUTHORITY_MIX_TIER_ENTITY = 'MJ_BizApps_Orders: Sales Authority Mix Tiers';
 export const SALES_RULE_ENTITY = 'MJ_BizApps_Orders: Sales Rules';
 export const REFERRAL_PROGRAM_ENTITY = 'MJ_BizApps_Orders: Referral Programs';
 export const ORDER_CONCESSION_ENTITY = 'MJ_BizApps_Orders: Order Concessions';
@@ -145,6 +146,7 @@ export const ALL_ENTITY_NAMES: readonly string[] = [
     PRICE_LIST_ENTITY,
     PRICE_LIST_ASSIGNMENT_ENTITY,
     SALES_AUTHORITY_ENTITY,
+    SALES_AUTHORITY_MIX_TIER_ENTITY,
     SALES_RULE_ENTITY,
     REFERRAL_PROGRAM_ENTITY,
     ORDER_CONCESSION_ENTITY,

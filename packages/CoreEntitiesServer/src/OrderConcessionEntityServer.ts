@@ -145,6 +145,7 @@ import {
     type SelfApprovalEscalationResult,
 } from './ConcessionApprovalTask.js';
 import {
+    ApplyShareLimitMixTiers,
     FindConcessionTier,
     HeldManualDiscounts,
     LinePriceConcessionFor,
@@ -655,7 +656,13 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             }
         }
 
-        const authority = await LoadConcessionAuthority(user.ID, this.provider(), user);
+        // The share limit is the one this order earns: mix tiers raise it by the order's product types (golive #281).
+        const authority = await ApplyShareLimitMixTiers(
+            await LoadConcessionAuthority(user.ID, this.provider(), user),
+            this.OrderHeaderID,
+            this.provider(),
+            user,
+        );
         const assessment = AssessConcession(this.DeliveryForm, valued, authority, this.termDateChange?.ExtensionDays, share);
         const tier = await FindConcessionTier(measure, this.provider(), user);
         if (tier.Conflict) return tier.Conflict;
