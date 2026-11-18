@@ -172,6 +172,11 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
 
     @Input() public Provider: IMetadataProvider | null = null;
     @Input() public EditMode = true;
+    /**
+     * Why the order's lines are frozen from outside Orders, or null. The order form reads it from
+     * `Orders.ConfirmReadiness`; on the order of a closed sales deal it is the deal lock's refusal.
+     */
+    @Input() public LineEditRefusal: string | null = null;
 
     @Input()
     public set Order(value: OrderHeaderEntity | null) {
@@ -396,6 +401,21 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
      */
     public TermStartValue(line: mjBizAppsOrdersOrderLineEntity): string {
         return this.dateInputValue(line.ServicePeriodStart ?? this._order?.OrderDate ?? null);
+    }
+
+    /**
+     * A saved line's stated term start on an order whose lines are frozen from outside Orders, such as
+     * the order of a closed sales deal (golive #393). The save is refused there, so the field is shown
+     * read-only with the refusal as its hint rather than offered and then silently not saved.
+     *
+     * Only a start the line already STORES: filling a blank service period on a closed deal's order is
+     * allowed (golive #322, `OrderLineEntityServer.changesOnlyTheServicePeriod`), so a line still
+     * following the order date stays editable.
+     */
+    public TermStartLocked(line: mjBizAppsOrdersOrderLineEntity): boolean {
+        if (!this.LineEditRefusal || !line.IsSaved) return false;
+        const field = line.GetFieldByName('ServicePeriodStart');
+        return (field ? field.OldValue : line.ServicePeriodStart) != null;
     }
 
     /** True while the field is only showing the default, which is what the hint explains. */
@@ -704,7 +724,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
     }
 
     public SetTermStart(line: mjBizAppsOrdersOrderLineEntity, event: Event): void {
-        if (!this.EditMode) return;
+        if (!this.EditMode || this.TermStartLocked(line)) return;
         const target = event.target;
         if (!(target instanceof HTMLInputElement)) return;
 
@@ -726,7 +746,7 @@ export class MJOOrderLinesEditorComponent implements OnDestroy, DoCheck {
 
     /** Hand the line back to the order date — the term start stops being stated at all. */
     public ResetTermStart(line: mjBizAppsOrdersOrderLineEntity): void {
-        if (!this.EditMode) return;
+        if (!this.EditMode || this.TermStartLocked(line)) return;
         line.ServicePeriodStart = null;
     }
 

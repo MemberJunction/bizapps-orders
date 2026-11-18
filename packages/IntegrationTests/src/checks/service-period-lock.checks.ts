@@ -24,9 +24,13 @@
  *   SP5   the reported shape: the START is already set, only the END is filled, and that goes through
  *   SP6   the reported OUTCOME end to end: a confirm refused for want of a period, the period filled
  *         on the closed deal's order, and the confirm then going through
+ *   SP7   with NO deal lock at all, a booked line still refuses a new service period and the row holds
+ *         (golive #391): the period is frozen with the money, not only by the deal
+ *   SP8   the database refuses the same change written straight to the row (trigger 51003)
  *
  * CONNECTS TO:
  *   CODE: OrderLineEntityServer.refuseVetoedEdit / changesOnlyTheServicePeriod
+ *   CODE: OrderLineEntity.refuseBookedMoneyEdits (ORDER_LINE_MONEY_FIELDS), trigger 51003
  */
 import {
   Assert,
@@ -307,6 +311,55 @@ export const ServicePeriodLockChecks: NamedCheck[] = [
           `SELECT Status FROM ${ORDERS_SCHEMA}.OrderHeader WHERE ID = '${built.Order.ID}'`,
         );
         AssertEqual(status[0]?.Status, "Confirmed", "and the order really booked, with the deal still closed");
+      }),
+  },
+  {
+    Id: "service-period-lock.SP7",
+    Name: "SP7: a booked line refuses a new service period with no deal lock, and the row holds",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const booked = await ConfirmOrder(ctx.User, spec());
+        Assert(booked.Saved, `setup: the order must book — ${booked.Message}`);
+        const lineID = booked.Lines[0].Get("ID") as string;
+        const before = await storedPeriod(ctx, lineID);
+
+        // Reloaded fresh, as in SP3: the confirm's own object carries Orders' write marks.
+        const line = await ctx.Provider.GetEntityObject<mjBizAppsOrdersOrderLineEntity>(ORDER_LINE_ENTITY, ctx.User);
+        Assert(await line.Load(lineID), "setup: the booked line must load fresh");
+
+        line.Set("ServicePeriodEnd", "2028-06-30");
+        const saved = await line.Save();
+        AssertEqual(saved, false, "recognition was scheduled over the booked period, so it cannot move");
+        Assert(
+          /ServicePeriodEnd/.test(line.LatestResult?.CompleteMessage ?? ""),
+          `the refusal names the field: ${line.LatestResult?.CompleteMessage ?? "(none)"}`,
+        );
+
+        const after = await storedPeriod(ctx, lineID);
+        AssertEqual(after.e, before.e, "the stored end did not move");
+      }),
+  },
+  {
+    Id: "service-period-lock.SP8",
+    Name: "SP8: the database refuses a booked line's service period written straight to the row (51003)",
+    RequiresMutation: true,
+    Fn: async (ctx) =>
+      InRolledBackTransaction(ctx, async () => {
+        const booked = await ConfirmOrder(ctx.User, spec());
+        Assert(booked.Saved, `setup: the order must book — ${booked.Message}`);
+        const lineID = booked.Lines[0].Get("ID") as string;
+
+        let refusal = "";
+        try {
+          await TxQuery(
+            ctx,
+            `UPDATE ${ORDERS_SCHEMA}.OrderLine SET ServicePeriodEnd = '2028-06-30' WHERE ID = '${lineID}'`,
+          );
+        } catch (e) {
+          refusal = (e as Error).message;
+        }
+        Assert(/service period/.test(refusal), `refused by 51003: ${refusal || "the database accepted the write"}`);
       }),
   },
 ];

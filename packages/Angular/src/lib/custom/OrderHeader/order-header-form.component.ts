@@ -177,6 +177,12 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
     public ConcessionProblems: string[] = [];
     /** Set when the readiness check itself failed. Confirm stays offered: the server still checks. */
     public ConcessionCheckError: string | null = null;
+    /**
+     * Why this order's lines are frozen from outside Orders (the order of a closed sales deal), from the
+     * same readiness call; null when nothing freezes them. The lines editor shows a stated term start
+     * read-only with it, instead of offering an edit the save refuses (golive #393).
+     */
+    public LineEditRefusal: string | null = null;
     private readinessSeq = 0;
     private recordEvents: { unsubscribe(): void } | null = null;
 
@@ -389,19 +395,24 @@ export class BizAppsOrderHeaderFormComponent extends mjBizAppsOrdersOrderHeaderF
         if (!order?.IsSaved || !CanOfferConfirm(order.Status).Allowed) {
             this.ConcessionProblems = [];
             this.ConcessionCheckError = null;
+            this.LineEditRefusal = null;
             return;
         }
         let problems: string[] = [];
+        let lineEditRefusal: string | null = null;
         let error: string | null = null;
         try {
             const result = await new OrdersConfirmReadinessOperation().Execute({ OrderHeaderID: order.ID });
-            if (result.Success && result.Output) problems = result.Output.ConcessionProblems ?? [];
-            else error = result.ErrorMessage?.trim() || null;
+            if (result.Success && result.Output) {
+                problems = result.Output.ConcessionProblems ?? [];
+                lineEditRefusal = result.Output.LineEditRefusal ?? null;
+            } else error = result.ErrorMessage?.trim() || null;
         } catch (e) {
             error = e instanceof Error ? e.message : String(e);
         }
         if (seq !== this.readinessSeq || this.record !== order) return;
         this.ConcessionProblems = problems;
+        this.LineEditRefusal = lineEditRefusal;
         this.ConcessionCheckError = error
             ? `Whether concessions still need approval could not be checked (${error}). Confirm still checks.`
             : null;

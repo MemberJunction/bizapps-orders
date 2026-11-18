@@ -4,9 +4,9 @@
  *
  * The order is a stub; the operation is real. What the gate itself decides is ConcessionGate.test.ts.
  */
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { IMetadataProvider, UserInfo } from '@memberjunction/core';
-import type { ConfirmReadinessInput, ConfirmReadinessOutput } from '@mj-biz-apps/orders-entities';
+import { RegisterOrderLineEditVeto, type ConfirmReadinessInput, type ConfirmReadinessOutput } from '@mj-biz-apps/orders-entities';
 import { ConcessionProblemSentence, ConfirmReadinessOperation } from '../ConfirmReadinessOperation.js';
 
 const ORDER = 'aaaaaaaa-2222-4333-8444-555555555555';
@@ -107,5 +107,26 @@ describe('ConcessionProblemSentence', () => {
 
     it('leaves an empty clause empty', () => {
         expect(ConcessionProblemSentence('  ')).toBe('');
+    });
+
+    describe('lines frozen from outside Orders (golive #393)', () => {
+        afterEach(() => RegisterOrderLineEditVeto(null));
+
+        it('carries the host veto\'s refusal for an update to this order\'s lines', async () => {
+            const asked: unknown[] = [];
+            RegisterOrderLineEditVeto({
+                MayEdit: async (context) => {
+                    asked.push(context);
+                    return 'This deal is closed. Set the status back to Open before changing what was sold.';
+                },
+            });
+            const { output } = await ask(stubOrder('Quoted', []));
+            expect(output.LineEditRefusal).toBe('This deal is closed. Set the status back to Open before changing what was sold.');
+            expect(asked[0]).toMatchObject({ OrderHeaderID: ORDER, OrderLineID: null, Kind: 'update' });
+        });
+
+        it('is null when nothing freezes the lines', async () => {
+            expect((await ask(stubOrder('Draft', []))).output.LineEditRefusal).toBeNull();
+        });
     });
 });

@@ -294,6 +294,24 @@ export class OrderHeaderEntity extends mjBizAppsOrdersOrderHeaderEntity {
         return created;
     }
 
+    /**
+     * Discard reverts the lines too (golive #393).
+     *
+     * `BaseEntity.Revert` puts back the header's own fields only, so a Discard after editing a saved
+     * line (its term start, say) left the edited value on screen and in memory until a reload, and a
+     * later save would send it. A saved line that changed is put back, with its IS-A child (an event
+     * line's attendee). A line added in this edit has no saved values to go back to and is left as is.
+     */
+    public override Revert(): boolean {
+        const ok = super.Revert();
+        for (const line of this.Lines.Items) {
+            if (!line.IsSaved) continue;
+            line.ISAChild?.Revert();
+            if (line.Dirty) line.Revert();
+        }
+        return ok;
+    }
+
     public override Validate(): ValidationResult {
         if (this.InitialPaymentDetailID_Object) {
             if (this.isInitialPaymentDetailEmpty(this.InitialPaymentDetailID_Object)) {

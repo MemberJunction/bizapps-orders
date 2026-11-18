@@ -15,7 +15,7 @@ import {
 import { RegisterClass } from '@memberjunction/global';
 import { mjBizAppsOrdersOrderLineEntity } from './generated/entity_subclasses';
 import { OrderLineExtensionCompanion } from './OrderLineExtensionCompanion';
-import { ORDER_LINE_MONEY_FIELDS } from './booked-money';
+import { ORDER_LINE_MONEY_FIELDS, ORDER_LINE_SERVICE_PERIOD_FIELDS } from './booked-money';
 import { anyFieldIsDirty } from './field-dirty';
 import { BuildLinePriceContext, PickedUndecidedBand } from './pricing/linePriceContext';
 import {
@@ -161,13 +161,29 @@ export class OrderLineEntity extends mjBizAppsOrdersOrderLineEntity {
     }
 
     /**
-     * A line that already carries its booking journal cannot change quantity or
-     * price. New lines on a booked order are refused on the header (graph save)
-     * and again in the server subclass (standalone save).
+     * Whether this save is Orders' own re-dating of a booked line's service period: a subscription
+     * term amendment that moves the term and then the line with it (golive #391).
+     *
+     * False here, on every tier. Only the server subclass can answer true, and only for an object its
+     * own amendment code sanctioned, so a client that set a flag on its own object is still refused.
+     * The sanction covers the two date columns and nothing else; the money stays frozen. Trigger 51003
+     * is the backstop: it lets a booked line's dates change only to one of its own terms' windows.
+     */
+    protected BookedServicePeriodChangeSanctioned(): boolean {
+        return false;
+    }
+
+    /**
+     * A line that already carries its booking journal cannot change quantity,
+     * price or service period. New lines on a booked order are refused on the
+     * header (graph save) and again in the server subclass (standalone save).
      */
     private refuseBookedMoneyEdits(result: ValidationResult): void {
         if (!this.JournalEntryID) return;
-        const dirty = ORDER_LINE_MONEY_FIELDS.filter((name) => this.FieldIsDirty(name));
+        const redating = this.BookedServicePeriodChangeSanctioned();
+        const dirty = ORDER_LINE_MONEY_FIELDS.filter(
+            (name) => this.FieldIsDirty(name) && !(redating && ORDER_LINE_SERVICE_PERIOD_FIELDS.includes(name)),
+        );
         if (dirty.length === 0) return;
         result.Success = false;
         result.Errors.push(

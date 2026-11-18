@@ -6,6 +6,11 @@
  * amount than the order. Trigger 51003 freezes money columns on an *existing*
  * line update; it does not stop inserting a new line onto a confirmed order.
  *
+ * The service period is frozen with the money (golive #391): confirm schedules revenue
+ * recognition over it, so moving it afterwards leaves the order and the ledger disagreeing on
+ * when the work is delivered. Orders' own re-dating writers (a subscription term amendment) are
+ * sanctioned per save; see `OrderLineEntity.BookedServicePeriodChangeSanctioned`.
+ *
  * @module @mj-biz-apps/orders-entities
  */
 
@@ -20,7 +25,12 @@ export const ORDER_LINE_MONEY_FIELDS = [
     'ChargeAmount',
     'LineTotalNet',
     'LineTotalGross',
+    'ServicePeriodStart',
+    'ServicePeriodEnd',
 ] as const;
+
+/** The booked-line columns that say WHEN the work is delivered; a subset of `ORDER_LINE_MONEY_FIELDS`. */
+export const ORDER_LINE_SERVICE_PERIOD_FIELDS: readonly string[] = ['ServicePeriodStart', 'ServicePeriodEnd'];
 
 /**
  * Header columns that change what was booked.

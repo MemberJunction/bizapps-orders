@@ -11,6 +11,11 @@
  *
  * READ-ONLY: it loads the order and runs the gate's check, which writes nothing.
  *
+ * IT ALSO SAYS WHETHER THE LINES ARE FROZEN FROM OUTSIDE ORDERS (golive #393). The order of a closed
+ * sales deal refuses line edits through the host's line-edit veto, which only the server holds. The
+ * form already asks this operation on load and after every save, so the veto's answer rides along and
+ * the form can show a stated term start read-only instead of offering an edit the save refuses.
+ *
  * CONNECTS TO:
  *   CODE: OrderEntityServer.PreviewConcessionProblems, ConcessionGate.FindUnapprovedConcessions
  *   UI:   the order form's "Before this can be confirmed" list
@@ -21,6 +26,8 @@ import { BaseRemotableOperation, type IMetadataProvider, type UserInfo } from '@
 import { RegisterClass } from '@memberjunction/global';
 import {
     CanOfferConfirm,
+    HostOrderLineEditVeto,
+    ResolveOrderLineEditRefusal,
     OrdersConfirmReadinessOperation as OrdersConfirmReadinessOperationBase,
     type ConfirmReadinessInput,
     type ConfirmReadinessOutput,
@@ -58,8 +65,18 @@ export class ConfirmReadinessOperation extends OrdersConfirmReadinessOperationBa
         // A booked or voided order is past the confirm gate; there is nothing to report.
         if (!CanOfferConfirm(order.Status).Allowed) return { ConcessionProblems: [] };
 
-        const clauses = await order.PreviewConcessionProblems();
-        return { ConcessionProblems: clauses.map(ConcessionProblemSentence).filter((s) => s.length > 0) };
+        const [clauses, lineEditRefusal] = await Promise.all([
+            order.PreviewConcessionProblems(),
+            ResolveOrderLineEditRefusal(
+                HostOrderLineEditVeto(),
+                { OrderHeaderID: orderID, OrderLineID: null, Kind: 'update', ContextUser: user },
+                'The line was not changed.',
+            ),
+        ]);
+        return {
+            ConcessionProblems: clauses.map(ConcessionProblemSentence).filter((s) => s.length > 0),
+            LineEditRefusal: lineEditRefusal,
+        };
     }
 }
 

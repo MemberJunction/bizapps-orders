@@ -237,14 +237,14 @@
                          id is a dead control to a screen reader. -->
                     <label
                         class="mjo-ol-term__label"
-                        [attr.for]="EditMode && !TermStartIsDictated(line) ? 'mjo-ol-term-' + line.ID : null">
+                        [attr.for]="EditMode && !TermStartIsDictated(line) && !TermStartLocked(line) ? 'mjo-ol-term-' + line.ID : null">
                         Term start
                     </label>
                     <!-- A renewal of LIVE coverage has no choice to offer: the term begins the day
                          after the current one ends. Read-only rather than editable-and-ignored. -->
                     @if (TermStartIsDictated(line)) {
                         <span class="mjo-ol-term__value is-dictated">{{ ContinuationStartValue(line) }}</span>
-                    } @else if (EditMode) {
+                    } @else if (EditMode && !TermStartLocked(line)) {
                         <input
                             type="date"
                             class="mjo-ol-term__input"
@@ -267,7 +267,9 @@
                         <span class="mjo-ol-term__value">{{ TermStartValue(line) }}</span>
                     }
                     <span class="mjo-ol-term__hint">
-                        @if (IsSubscriptionBundleLine(line)) {
+                        @if (EditMode && TermStartLocked(line)) {
+                            {{ LineEditRefusal }}
+                        } @else if (IsSubscriptionBundleLine(line)) {
                             Applies to the subscriptions in this bundle.
                         } @else if (TermStartIsDictated(line)) {
                             Continuing existing coverage, so the term begins the day after the current
