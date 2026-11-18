@@ -9,6 +9,7 @@
 
 import type { CheckoutChoiceGroup } from './checkout-choices';
 import type { CheckoutQuestion } from './checkout-questions';
+import type { CheckoutProductOption } from './checkout-options';
 
 export interface CustomUIThemeConfiguration {
     primaryColor?: string;
@@ -184,6 +185,13 @@ export interface CheckoutWidgetConfiguration {
      * must sell a single line.
      */
     choiceGroups?: CheckoutChoiceGroup[];
+    /**
+     * The sold product's options (Tier, Size; golive #399), discovered by the server from the
+     * product's effective options when it hands the browser its configuration, the way extension
+     * fields are. Never authored: anything the Configuration JSON says here is replaced. The buyer's
+     * picks go back on the draft line as `OptionPicks` and are judged against the product as it is.
+     */
+    productOptions?: CheckoutProductOption[];
     /**
      * The PaymentProvider row id used to open payment intents for this widget's sessions.
      * Admin-authored, server-resolved — never accepted from the client. Required before a

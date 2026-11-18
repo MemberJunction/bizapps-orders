@@ -74,6 +74,12 @@ export { PersonOrdersOverviewPanel } from './lib/form-panels/person-orders-overv
 export { OrganizationOrdersOverviewPanel } from './lib/form-panels/organization-orders-overview.panel';
 export { PartyOrdersOverviewComponent } from './lib/panels/party-orders-overview.component';
 export { ProductCategoryHierarchyPanel } from './lib/form-panels/product-category-hierarchy.panel';
+// Product options (golive #399): the Options panel on the type, category and product forms, the
+// options catalog page, and the entitlement condition picker. Exporting fires their registrations.
+export { ProductOptionsPanel, ProductCategoryOptionsPanel, ProductTypeOptionsPanel } from './lib/form-panels/product-options.panels';
+export { MJOProductOptionsWidgetComponent } from './lib/custom/Product/widgets/product-options-widget.component';
+export * from './lib/custom/Product/widgets/product-option-rows';
+export { EntitlementConditionPanel, ReadEntitlementCondition, type EntitlementConditionState } from './lib/form-panels/entitlement-condition.panel';
 export {
     MJCheckoutWidgetComponent,
     type CheckoutWidgetConfig,
@@ -135,6 +141,7 @@ export * from './lib/pages/subscriptions/renewals.page';
 export * from './lib/pages/subscriptions/renewals-page.model';
 export * from './lib/pages/catalog/products.page';
 export * from './lib/pages/catalog/pricing.page';
+export * from './lib/pages/catalog/product-options.page';
 export * from './lib/pages/orders/return.page';
 
 /** The information architecture, as data — testable, and injectable for badges. */

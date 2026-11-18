@@ -1,0 +1,126 @@
+<div class="mjo-opts">
+    @if (!RecordID) {
+        <div class="mjo-opts__note">Save this record first, then assign the options it offers.</div>
+    } @else {
+        <div class="mjo-opts__note">
+            @switch (Level) {
+                @case ('Type') { Options assigned here are offered on every product of this type, unless a category or the product overrides them. }
+                @case ('Category') { Options assigned here are offered on every product in this category and the ones below it, unless a subcategory or the product overrides them. Product type defaults also apply to each product. }
+                @default { The options this product offers on an order line. Inherited options come from its product type and categories; an option assigned here replaces the inherited one whole. }
+            }
+        </div>
+
+        @if (Error) {
+            <div class="mjo-opts__err" role="alert">{{ Error }}</div>
+        }
+
+        <table class="mjo-opts__table">
+            <thead>
+                <tr>
+                    <th>Option</th>
+                    <th>Required</th>
+                    <th>Default</th>
+                    <th>Values</th>
+                    <th>Source</th>
+                    @if (EditMode) { <th class="mjo-opts__actions-head"><span class="mjo-sr-only">Actions</span></th> }
+                </tr>
+            </thead>
+            <tbody>
+                @for (row of Rows; track row.Option.ID) {
+                    <tr [class.is-excluded]="row.Status === 'Excluded'" [class.is-inherited]="row.Status === 'Inherited'">
+                        <td>
+                            <button type="button" class="mjo-opts__name" (click)="OpenOption(row.Option.ID, $event)">{{ row.Option.Name }}</button>
+                            <div class="mjo-opts__code">{{ row.Option.Code }}@if (!row.Option.CompanyID) { · shared }</div>
+                        </td>
+                        <td>{{ row.Status === 'Excluded' ? '—' : (row.IsRequired ? 'Yes' : 'No') }}</td>
+                        <td>{{ row.DefaultLabel || '—' }}</td>
+                        <td class="mjo-opts__values">{{ row.Status === 'Excluded' ? 'Not offered' : row.ValuesText }}</td>
+                        <td class="mjo-opts__source">
+                            @switch (row.Status) {
+                                @case ('Inherited') { {{ row.InheritedFrom }} }
+                                @case ('Excluded') { Excluded here @if (row.InheritedFrom) { ({{ row.InheritedFrom }}) } }
+                                @default { This {{ Level === 'Type' ? 'product type' : (Level === 'Category' ? 'category' : 'product') }} }
+                            }
+                        </td>
+                        @if (EditMode) {
+                            <td class="mjo-opts__actions">
+                                @if (row.Status === 'Inherited') {
+                                    <button type="button" class="mjo-opts__btn" [disabled]="Busy" (click)="StartEdit(row)">Override</button>
+                                    <button type="button" class="mjo-opts__btn" [disabled]="Busy" (click)="Exclude(row)">Exclude</button>
+                                } @else {
+                                    @if (row.Status === 'Assigned') {
+                                        <button type="button" class="mjo-opts__btn" [disabled]="Busy" (click)="StartEdit(row)">Edit</button>
+                                        @if (row.Inherited) {
+                                            <button type="button" class="mjo-opts__btn" [disabled]="Busy" (click)="Exclude(row)">Exclude</button>
+                                        }
+                                    }
+                                    <button type="button" class="mjo-opts__btn" [disabled]="Busy" (click)="Remove(row)">
+                                        {{ row.Status === 'Excluded' ? 'Offer again' : 'Remove' }}
+                                    </button>
+                                }
+                            </td>
+                        }
+                    </tr>
+                } @empty {
+                    <tr><td [attr.colspan]="EditMode ? 6 : 5" class="mjo-opts__empty">{{ Loaded ? 'No options are offered here.' : 'Loading options…' }}</td></tr>
+                }
+            </tbody>
+        </table>
+
+        @if (EditMode && !Draft) {
+            <div class="mjo-opts__add">
+                <label>
+                    <span>Add an option</span>
+                    <select [disabled]="Busy || !Assignable.length" (change)="StartAdd($event)">
+                        <option value="">{{ Assignable.length ? 'Choose an option…' : 'No more options to assign' }}</option>
+                        @for (option of Assignable; track option.ID) {
+                            <option [value]="option.ID">{{ option.Name }} ({{ option.Code }}){{ option.CompanyID ? '' : ' · shared' }}</option>
+                        }
+                    </select>
+                </label>
+                <span class="mjo-opts__rule">{{ CompanyRuleText }}</span>
+            </div>
+        }
+
+        @if (Draft; as draft) {
+            <div class="mjo-opts__editor" role="group" [attr.aria-label]="'Assign ' + OptionName(draft.OptionID)">
+                <div class="mjo-opts__editor-head">{{ draft.AssignmentID ? 'Edit' : 'Assign' }} {{ OptionName(draft.OptionID) }}</div>
+                <label class="mjo-opts__check">
+                    <input type="checkbox" [checked]="draft.IsRequired" (change)="SetDraftRequired($event)">
+                    <span>Required: a line must pick a value</span>
+                </label>
+                <fieldset class="mjo-opts__allowed">
+                    <legend>Allowed values <span class="mjo-opts__hint">(none ticked offers every active value)</span></legend>
+                    @for (value of ValuesOf(draft.OptionID); track value.ID) {
+                        <label class="mjo-opts__check">
+                            <input type="checkbox" [checked]="IsAllowed(value.ID)" (change)="ToggleAllowed(value.ID, $event)">
+                            <span>{{ value.Label }}</span>
+                        </label>
+                    } @empty {
+                        <span class="mjo-opts__hint">This option has no active values yet. Add them on the options catalog page.</span>
+                    }
+                </fieldset>
+                <label class="mjo-opts__field">
+                    <span>Default</span>
+                    <select (change)="SetDraftDefault($event)">
+                        <option value="" [selected]="!draft.DefaultValueID">No default</option>
+                        @for (value of DefaultChoices(); track value.ID) {
+                            <option [value]="value.ID" [selected]="draft.DefaultValueID === value.ID">{{ value.Label }}</option>
+                        }
+                    </select>
+                </label>
+                <label class="mjo-opts__field">
+                    <span>Sort order</span>
+                    <input type="number" step="1" [value]="draft.SortOrder" (change)="SetDraftSort($event)">
+                </label>
+                @if (DraftProblem; as problem) {
+                    <div class="mjo-opts__err" role="alert">{{ problem }}</div>
+                }
+                <div class="mjo-opts__editor-actions">
+                    <button type="button" class="mjo-opts__btn is-primary" [disabled]="Busy || !!DraftProblem" (click)="SaveDraft()">Save</button>
+                    <button type="button" class="mjo-opts__btn" [disabled]="Busy" (click)="CancelEdit()">Cancel</button>
+                </div>
+            </div>
+        }
+    }
+</div>

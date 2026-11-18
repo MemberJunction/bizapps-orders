@@ -20,7 +20,7 @@
  *
  * CONNECTS TO:
  *   CODE: orders-entities product-options.ts · ProductOptionRules.ts · OrderLineEntityServer.refuseBadOptionPicks
- *   PLAN: plans/product-options-and-variants.md
+ *   PLAN: plans/archive/product-options-and-variants.md
  */
 import {
     Assert,

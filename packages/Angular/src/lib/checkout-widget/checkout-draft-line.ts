@@ -13,6 +13,10 @@ export function buildCheckoutDraftLine(
         ProductID: productId,
         Quantity: event.quantity,
     };
+    // The product's option picks belong to the line; the server checks them against the product.
+    if (event.optionPicks && Object.keys(event.optionPicks).length > 0) {
+        line.OptionPicks = { ...event.optionPicks };
+    }
     const fields = event.extensionData?.fields;
     const units = event.extensionData?.units;
     if ((fields && Object.keys(fields).length > 0) || (units && units.length > 0)) {

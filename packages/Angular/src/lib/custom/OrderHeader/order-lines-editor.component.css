@@ -246,6 +246,41 @@
     margin-top: var(--mj-space-2);
 }
 
+/* Product options (golive #399): one compact field per option, wrapping on a narrow card. */
+.mjo-ol-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--mj-space-2) var(--mj-space-4);
+    margin-top: var(--mj-space-2);
+}
+
+.mjo-ol-options__field {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2);
+}
+
+.mjo-ol-options__label {
+    font-size: var(--mj-text-xs);
+    color: var(--mj-text-muted);
+}
+
+.mjo-ol-options__select {
+    height: 28px;
+    padding: 0 var(--mj-space-2);
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-md);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+    font-size: var(--mj-text-sm);
+}
+
+.mjo-ol-options__value {
+    font-size: var(--mj-text-sm);
+    color: var(--mj-text-primary);
+}
+
 /* Term start — subscription lines only. One row that wraps, so the hint drops below the field on a
    narrow card rather than squeezing the date input. */
 .mjo-ol-term {

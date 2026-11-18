@@ -172,3 +172,6 @@ export * from './renewal-price.js';
 export * from './renewal-worklist.js';
 // Product options (Tier, Size): inheritance walk, pick checks and the Option price source (golive #399).
 export * from './product-options.js';
+// Writing a line's option picks into its Choices, and the checkout's option picks (golive #399).
+export * from './line-option-picks.js';
+export * from './checkout-options.js';

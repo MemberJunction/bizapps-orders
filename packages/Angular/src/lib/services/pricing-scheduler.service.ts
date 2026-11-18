@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Metadata, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { MJO_ENTITIES } from '../data/entity-names';
-import { CanPriceOrderLocally, LoadOrdersEngine, OrderHeaderEntity, OrderPricingService, OrdersEngine, OrdersPriceOrderOperation, IsLinePriceOverridden, ReadPricedLineAmounts, StatedLineUnitPrice, type PreviewComponent, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
+import { CanPriceOrderLocally, LineOptionPicks, LoadOrdersEngine, OrderHeaderEntity, OrderPricingService, OrdersEngine, OrdersPriceOrderOperation, IsLinePriceOverridden, ReadPricedLineAmounts, StatedLineUnitPrice, type PreviewComponent, type PricedLineFacts, type ResolvedPrice, type mjBizAppsOrdersOrderLineEntity } from '@mj-biz-apps/orders-entities';
 
 /** The entity every order screen binds to. */
 
@@ -335,6 +335,20 @@ export class MJOPricingScheduler {
             // charge's share alone, so without this a saved shipping charge dropped out of the total
             // the header shows (#838).
             line.ChargeAmount = Number(source.ChargeAmount ?? 0);
+            // So do its option picks (Tier, Size; golive #399). A price rule can test them, and this
+            // copy is never saved, so the walk reads them from its own Choices: without them the
+            // copy would price as though nothing was picked. A saved line whose collection was never
+            // loaded has its picks read from the database.
+            const picks = (line as { Choices?: unknown }).Choices
+                ? await LineOptionPicks(source as unknown as PricedLineFacts, provider as unknown as IMetadataProvider, md.CurrentUser)
+                : [];
+            for (const pick of picks) {
+                const choice = await line.Choices.Create();
+                choice.ProductOptionID = pick.ProductOptionID ?? null;
+                choice.ProductOptionValueID = pick.ProductOptionValueID ?? null;
+                choice.GroupKey = pick.GroupKey ?? '';
+                choice.OptionValue = pick.OptionValue ?? '';
+            }
             lines.push(line);
         }
 

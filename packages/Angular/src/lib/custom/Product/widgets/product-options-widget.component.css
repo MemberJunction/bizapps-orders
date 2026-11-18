@@ -1,0 +1,178 @@
+.mjo-opts {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-3, 12px);
+    width: 100%;
+}
+
+.mjo-opts__note,
+.mjo-opts__rule,
+.mjo-opts__hint {
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted);
+}
+
+.mjo-opts__err {
+    font-size: var(--mj-text-sm, 13px);
+    color: var(--mj-status-error);
+}
+
+.mjo-opts__table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: var(--mj-text-sm, 13px);
+}
+
+.mjo-opts__table th {
+    text-align: left;
+    font-weight: 600;
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted);
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--mj-border-default);
+}
+
+.mjo-opts__table td {
+    padding: 8px;
+    border-bottom: 1px solid var(--mj-border-default);
+    vertical-align: top;
+    color: var(--mj-text-primary);
+}
+
+/* Inherited rows read quieter than this level's own, so it is clear which ones this level decides. */
+.mjo-opts__table tr.is-inherited td {
+    color: var(--mj-text-secondary);
+}
+
+.mjo-opts__table tr.is-excluded td {
+    color: var(--mj-text-muted);
+}
+
+.mjo-opts__name {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    font-weight: 600;
+    color: var(--mj-text-link);
+    cursor: pointer;
+}
+
+.mjo-opts__code {
+    font-size: var(--mj-text-xs, 12px);
+    color: var(--mj-text-muted);
+}
+
+.mjo-opts__source {
+    font-size: var(--mj-text-xs, 12px);
+}
+
+.mjo-opts__empty {
+    color: var(--mj-text-muted);
+}
+
+.mjo-opts__actions {
+    white-space: nowrap;
+    text-align: right;
+}
+
+.mjo-opts__btn {
+    height: 28px;
+    padding: 0 10px;
+    margin-left: 4px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-md, 6px);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+    font-size: var(--mj-text-xs, 12px);
+    cursor: pointer;
+}
+
+.mjo-opts__btn.is-primary {
+    background: var(--mj-brand-primary);
+    border-color: var(--mj-brand-primary);
+    color: var(--mj-text-inverse, #fff);
+}
+
+.mjo-opts__btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+.mjo-opts__add {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--mj-space-3, 12px);
+}
+
+.mjo-opts__add label,
+.mjo-opts__field {
+    display: flex;
+    align-items: center;
+    gap: var(--mj-space-2, 8px);
+    font-size: var(--mj-text-sm, 13px);
+}
+
+.mjo-opts__add select,
+.mjo-opts__field select,
+.mjo-opts__field input {
+    height: 28px;
+    padding: 0 8px;
+    border: 1px solid var(--mj-border-strong);
+    border-radius: var(--mj-radius-md, 6px);
+    background: var(--mj-bg-surface);
+    color: var(--mj-text-primary);
+    font: inherit;
+    font-size: var(--mj-text-sm, 13px);
+}
+
+.mjo-opts__editor {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mj-space-2, 8px);
+    padding: 12px;
+    border: 1px solid var(--mj-border-default);
+    border-radius: var(--mj-radius-md, 8px);
+    background: var(--mj-bg-surface-sunken, transparent);
+}
+
+.mjo-opts__editor-head {
+    font-weight: 600;
+}
+
+.mjo-opts__allowed {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+    border: 0;
+    padding: 0;
+    margin: 0;
+}
+
+.mjo-opts__allowed legend {
+    width: 100%;
+    font-size: var(--mj-text-sm, 13px);
+    margin-bottom: 4px;
+}
+
+.mjo-opts__check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--mj-text-sm, 13px);
+}
+
+.mjo-opts__editor-actions {
+    display: flex;
+    gap: 4px;
+}
+
+.mjo-sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+}
