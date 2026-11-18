@@ -347,10 +347,13 @@
                             } @else if (line.SubscriptionAction === 'ExtendExisting') {
                                 {{ HoldingExtendLineText(line, holding).Hint }}
                             } @else {
-                                Not chosen. If you confirm without choosing, the subscription type's default
-                                applies, and it may change this line's dates.
+                                Not chosen. Confirm will not go ahead until you choose.
                             }
                         </span>
+                        <!-- Instalments the next term would leave behind (golive #467): confirm refuses them. -->
+                        @if (HoldingScheduleWarning(line, holding); as warning) {
+                            <span class="mjo-ol-term__hint is-error" role="alert">{{ warning }}</span>
+                        }
                     </div>
                 }
             }
