@@ -128,6 +128,25 @@ export function OverdueSQL(alias: string, dueDateExpression: string = `${alias}.
 }
 
 /**
+ * Which schedule rows count as an UNPAID INSTALMENT: live, and still owing something.
+ *
+ * Stated once because two readers need it and must agree. `vwOrderHeaders.NextDueDate` is the
+ * earliest due date among these rows ({@link OverdueViewSQL}), and the aging screens split an
+ * order's balance across the same rows (bc-aidp-next-golive#481). If each typed its own list, an
+ * instalment could make an order overdue and yet not appear in its aging, or the reverse.
+ *
+ * `Paid`, `Canceled` and `WrittenOff` rows owe nothing; a `Scheduled` row counts although it is not
+ * invoiced yet, because that is what `NextDueDate` has always read.
+ *
+ * @param alias - The table alias the columns hang off (`s` in the view); omit for a `RunView` filter.
+ * @returns The clauses, to be joined with `AND`.
+ */
+export function UnpaidInstalmentClauses(alias?: string): string[] {
+    const column = (name: string): string => (alias ? `${alias}.${name}` : name);
+    return [`${column('Status')} IN ('Scheduled','Invoiced')`, `${column('Balance')} > 0`];
+}
+
+/**
  * The whole outer view, ready to paste into a migration. The migration is a COPY of this text and
  * `overdue.test.ts` asserts the newest one still matches, so the predicate cannot be retyped by hand.
  *
@@ -150,8 +169,7 @@ export function OverdueViewSQL(): string {
         '        (SELECT MIN(s.DueDate)\n' +
         '           FROM [${flyway:defaultSchema}].[OrderHeaderPaymentSchedule] s\n' +
         '          WHERE s.OrderHeaderID = g.ID\n' +
-        "            AND s.Status IN ('Scheduled','Invoiced')\n" +
-        '            AND s.Balance > 0),\n' +
+        UnpaidInstalmentClauses('s').map((clause) => `            AND ${clause}`).join('\n') + '),\n' +
         '        g.DueDate) AS NextDueDate\n' +
         ') nd\n' +
         'CROSS JOIN [__mj_BizAppsCommon].[fnBusinessToday]() AS bt;'

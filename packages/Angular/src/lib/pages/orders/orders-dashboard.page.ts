@@ -5,12 +5,12 @@ import { BuildDayBars } from '../../panels/day-bars';
 import { MJOStatTileComponent, MJOBarListComponent, type MJOBarRow } from '../../panels/stat-tile.component';
 
 import { DaysSince, FormatMoney, MJOMoneyPipe } from '../../panels/money-format';
-import { AgingBucketOf, EmptyAgingBuckets, type MJOAgingBuckets } from '../../panels/aging-bar.component';
+import { AddOrderToAgingBuckets, EmptyAgingBuckets, GroupInstalmentsByOrder, NextDueDayOf, PastDueAmountOf, type MJOAgingBuckets } from '../../panels/aging-bar.component';
 import { MJAlertComponent, MJEmptyStateComponent, MJTabNavComponent, type TabConfig, type MJAlertVariant } from '@memberjunction/ng-ui-components';
 import { EntityViewerModule } from '@memberjunction/ng-entity-viewer';
 import { CompositeKey, Metadata, type EntityInfo } from '@memberjunction/core';
 import { type MJUserViewEntityExtended } from '@memberjunction/core-entities';
-import { GetDashboardOrders, type MJODashboardOrderRow } from '../../data/orders-queries';
+import { GetDashboardOrders, GetOpenInstalments, type MJODashboardOrderRow, type MJOOpenInstalmentRow } from '../../data/orders-queries';
 import { CREDITS_HELD_WHERE } from '../../data/credit-statuses';
 import { OverdueFilter, Today, ToISODate } from '@mj-biz-apps/orders-entities';
 import { NavigationService } from '@memberjunction/ng-shared';
@@ -578,6 +578,11 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     public ViewError: string | null = null;
 
     private orders: MJODashboardOrderRow[] = [];
+    /**
+     * Unpaid instalments by order id (lower case), so aging reads each on its own due date
+     * (golive#481). Undefined until the first load; every order then ages on its header date.
+     */
+    private instalmentsByOrder: Map<string, MJOOpenInstalmentRow[]> | undefined;
     /** Bumped per preset request, so a slow earlier request cannot land after a later one. */
     private presetRequest = 0;
 
@@ -590,7 +595,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
     }
 
     private async loadOrders(): Promise<void> {
-        this.orders = await GetDashboardOrders();
+        const [orders, instalments] = await Promise.all([GetDashboardOrders(), GetOpenInstalments()]);
+        this.orders = orders;
+        this.instalmentsByOrder = GroupInstalmentsByOrder(instalments);
         this.cdr.detectChanges();
     }
 
@@ -764,17 +771,18 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
         const worst = this.overdue
             .slice()
-            .sort((a, b) => DaysSince(b.DueDate, today) - DaysSince(a.DueDate, today))[0];
+            .sort((a, b) => DaysSince(NextDueDayOf(b), today) - DaysSince(NextDueDayOf(a), today))[0];
         if (worst) {
             // The cell itself, never `String(cell)`: on a `Date` that is the long human form, which
             // no day reader can parse, and the headline read "0 days past due".
-            const days = DaysSince(worst.DueDate, today);
+            const days = DaysSince(NextDueDayOf(worst), today);
             items.push({
                 Order: worst,
                 Tone: 'error',
                 Icon: 'fa-solid fa-hourglass-half',
                 Headline: `${worst.OrderNumber} is ${days} days past due.`,
-                Detail: `${FormatMoney((worst.Balance ?? 0))} from ${this.customerOf(worst)}.`,
+                // What is late, not the whole balance: only some instalments may be (golive#481).
+                Detail: `${FormatMoney(PastDueAmountOf(worst, this.instalmentsByOrder?.get(String(worst.ID).toLowerCase()), today))} from ${this.customerOf(worst)}.`,
             });
         }
 
@@ -826,7 +834,9 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
 
     public get overdue(): MJODashboardOrderRow[] {
         const today = Today();
-        return this.owing.filter((o) => o.DueDate && DaysSince(o.DueDate, today) > 0);
+        // The next unpaid instalment's day, as `IsOverdue` reads it; the header date alone called an
+        // instalment order late by a day that never moves (golive#481).
+        return this.owing.filter((o) => NextDueDayOf(o) && DaysSince(NextDueDayOf(o), today) > 0);
     }
 
     public get credits(): MJODashboardOrderRow[] {
@@ -845,8 +855,21 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         return FormatMoney(this.owing.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
     }
 
+    /**
+     * The money that is actually late: the three past-due buckets, summed (bc-aidp-next-golive#481).
+     *
+     * This was the whole balance of every overdue order. For an order billed in instalments that
+     * counted instalments not due for months as late, and the tile then disagreed with the aging
+     * bar beside it. The tile and the past-due buckets are the same money (golive#361), so the
+     * tile reads the buckets.
+     */
+    public get OverdueValue(): number {
+        const b = this.AgingBuckets;
+        return Math.round((b.Days1To30 + b.Days31To60 + b.Days61Plus) * 100) / 100;
+    }
+
     public get OverdueValueDisplay(): string {
-        return FormatMoney(this.overdue.reduce((s, o) => s + (o.Balance ?? 0), 0), { Round: true });
+        return FormatMoney(this.OverdueValue, { Round: true });
     }
 
     public get OverdueDetail(): string {
@@ -867,7 +890,8 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
      * recently invoiced", while Receivables showed the same money as 1-30 days late. The breaks
      * differed too: 61-90 and 90+ here, 61+ there.
      *
-     * Now both screens bucket through `AgingBucketOf`, so neither can drift, and the tiles below are
+     * Now both screens bucket through `AddOrderToAgingBuckets` (which asks `AgingBucketOf` once per
+     * instalment, golive#481), so neither can drift, and the tiles below are
      * the four buckets the shared bar already draws -- including its colour ramp, which was validated
      * for exactly these four segments.
      */
@@ -875,7 +899,7 @@ export class MJOOrdersDashboardPageComponent implements OnInit {
         const today = Today();
         const buckets = EmptyAgingBuckets();
         for (const order of this.owing) {
-            buckets[AgingBucketOf(order.DueDate, today)] += order.Balance ?? 0;
+            AddOrderToAgingBuckets(buckets, order, this.instalmentsByOrder?.get(String(order.ID).toLowerCase()), today);
         }
         return buckets;
     }
