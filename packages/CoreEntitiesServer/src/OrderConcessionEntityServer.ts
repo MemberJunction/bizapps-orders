@@ -774,11 +774,17 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
     /**
      * Pending under `rule`, for a holder of its role other than the requester, or for the next approver up
      * when the requester holds the role and `ConcessionSelfApprovalEscalation` is set. Refused up front, with
-     * `why` leading the message, when no one other than the requester could decide it.
+     * `why` leading the message, when no one other than the requester could decide it. `ruleType` names the
+     * kind of rule `rule` is in those messages.
      */
-    private async pendForAnotherHolder(rule: ConcessionTierRule, user: UserInfo, why: string): Promise<string | null> {
+    private async pendForAnotherHolder(
+        rule: ConcessionTierRule,
+        user: UserInfo,
+        why: string,
+        ruleType: 'ConcessionLimit' | 'PaymentTiming' = 'ConcessionLimit',
+    ): Promise<string | null> {
         if (!rule.ApprovalRequiredRoleID) {
-            return `${why}, and ConcessionLimit rule '${rule.Name}' names no approving role, so no one could decide it.`;
+            return `${why}, and ${ruleType} rule '${rule.Name}' names no approving role, so no one could decide it.`;
         }
         const escalation = await this.selfApprovalEscalation(rule.ApprovalRequiredRoleID, user);
         if (escalation) {
@@ -789,7 +795,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
         const holders = await ActiveRoleHolderIDs(rule.ApprovalRequiredRoleID, { Provider: this.provider(), User: user });
         if (!holders.some((id) => !UUIDsEqual(id, user.ID))) {
             return (
-                `${why}, and no active user other than the requester holds the role ConcessionLimit rule ` +
+                `${why}, and no active user other than the requester holds the role ${ruleType} rule ` +
                 `'${rule.Name}' names. Assign that role to another approver.`
             );
         }
@@ -841,6 +847,7 @@ export class OrderConcessionEntityServer extends mjBizAppsOrdersOrderConcessionE
             },
             user,
             'A Timing concession cannot be decided by the person who asked for it',
+            'PaymentTiming',
         );
     }
 

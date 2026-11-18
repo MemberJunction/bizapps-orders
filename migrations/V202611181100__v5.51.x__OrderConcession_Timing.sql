@@ -202,20 +202,43 @@ GO
       END;
 
 
-/* SQL text to insert entity field value with ID 06aefed8-be86-42ee-857f-87a5703a58ca */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('06aefed8-be86-42ee-857f-87a5703a58ca', '8662A268-9580-42FD-9D59-A91BE9237AE9', 8, 'Timing', 'Timing', GETUTCDATE(), GETUTCDATE());
+/* Value lists: OrderConcession.DeliveryForm gains Timing, SalesRule.RuleType gains PaymentTiming.
+   Keyed on each field's entity and name, not the authoring database's EntityField IDs, which
+   exist only on the database CodeGen ran against. Each insert skips a value already present. */
+DECLARE @DeliveryFormFieldID UNIQUEIDENTIFIER = (
+    SELECT f.[ID]
+      FROM [${mjSchema}].[EntityField] f
+      JOIN [${mjSchema}].[Entity]      e ON e.[ID] = f.[EntityID]
+     WHERE e.[SchemaName] = '${flyway:defaultSchema}'
+       AND e.[BaseTable]  = 'OrderConcession'
+       AND f.[Name]       = 'DeliveryForm');
 
-/* SQL text to insert entity field value with ID 6590ba62-4eec-41e8-b434-b73a6ca1eb29 */
-INSERT INTO [${mjSchema}].[EntityFieldValue]
-                                       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
-                                    VALUES
-                                       ('6590ba62-4eec-41e8-b434-b73a6ca1eb29', '0A5E5AD8-EE0A-461B-A63D-987D7A3D8334', 6, 'PaymentTiming', 'PaymentTiming', GETUTCDATE(), GETUTCDATE());
+DECLARE @RuleTypeFieldID UNIQUEIDENTIFIER = (
+    SELECT f.[ID]
+      FROM [${mjSchema}].[EntityField] f
+      JOIN [${mjSchema}].[Entity]      e ON e.[ID] = f.[EntityID]
+     WHERE e.[SchemaName] = '${flyway:defaultSchema}'
+       AND e.[BaseTable]  = 'SalesRule'
+       AND f.[Name]       = 'RuleType');
 
-/* SQL text to update entity field value sequence */
-UPDATE [${mjSchema}].[EntityFieldValue] SET Sequence=7 WHERE ID='6A07B005-0DBE-4B33-914D-ABAEB08949B6';
+IF @DeliveryFormFieldID IS NULL OR @RuleTypeFieldID IS NULL
+    THROW 50000, 'OrderConcession.DeliveryForm or SalesRule.RuleType EntityField not found - CodeGen must run before this migration.', 1;
+
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+SELECT '06aefed8-be86-42ee-857f-87a5703a58ca', @DeliveryFormFieldID, 8, 'Timing', 'Timing', GETUTCDATE(), GETUTCDATE()
+ WHERE NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityFieldValue] x
+                    WHERE x.[EntityFieldID] = @DeliveryFormFieldID AND x.[Value] = 'Timing');
+
+INSERT INTO [${mjSchema}].[EntityFieldValue]
+       ([ID], [EntityFieldID], [Sequence], [Value], [Code], [__mj_CreatedAt], [__mj_UpdatedAt])
+SELECT '6590ba62-4eec-41e8-b434-b73a6ca1eb29', @RuleTypeFieldID, 6, 'PaymentTiming', 'PaymentTiming', GETUTCDATE(), GETUTCDATE()
+ WHERE NOT EXISTS (SELECT 1 FROM [${mjSchema}].[EntityFieldValue] x
+                    WHERE x.[EntityFieldID] = @RuleTypeFieldID AND x.[Value] = 'PaymentTiming');
+
+/* PaymentTiming sorts before ProductAuthorization, which moves from 6 to 7. */
+UPDATE [${mjSchema}].[EntityFieldValue] SET [Sequence] = 7
+ WHERE [EntityFieldID] = @RuleTypeFieldID AND [Value] = 'ProductAuthorization';
 
 
 /* Index for Foreign Keys for OrderConcession */

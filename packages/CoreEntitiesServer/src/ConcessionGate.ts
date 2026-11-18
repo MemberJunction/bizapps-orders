@@ -89,6 +89,7 @@ import {
     DescribePaymentTiming,
     IsNewSaleLine,
     LoadPaymentTimingFacts,
+    type PaymentTimingOrder,
     LoadPaymentTimingRule,
 } from './PaymentTiming.js';
 
@@ -306,7 +307,8 @@ function formatPct(fraction: number): string {
  * @param orderHeaderID  null for an order not yet saved — it can have no concession rows yet.
  * @param inMemoryLines  lines the caller holds, which win over their persisted copies.
  * @param includeLinePrices  check stated prices too (orders not yet confirmed).
- * @param header  the order's payment terms as the caller holds them; omitted, the saved terms are read.
+ * @param header  the order's terms fields as the caller holds them (./PaymentTiming.ts `PaymentTimingOrder`); omitted,
+ *                the saved header is read. With no terms stated, check 5 judges the terms the confirm save would stamp.
  */
 export async function FindUnapprovedConcessions(
     orderHeaderID: string | null,
@@ -314,7 +316,7 @@ export async function FindUnapprovedConcessions(
     includeLinePrices: boolean,
     provider: IMetadataProvider,
     user: UserInfo,
-    header?: { PaymentTermsTypeID: string | null },
+    header?: PaymentTimingOrder,
 ): Promise<string[]> {
     const problems: string[] = [];
     const rows = orderHeaderID ? await loadConcessions(orderHeaderID, provider, user) : [];
@@ -367,7 +369,7 @@ export async function FindUnapprovedConcessions(
 async function paymentTimingProblems(
     orderHeaderID: string | null,
     lines: readonly ConcessionLineFacts[],
-    header: { PaymentTermsTypeID: string | null } | undefined,
+    header: PaymentTimingOrder | undefined,
     rows: readonly ConcessionRow[],
     provider: IMetadataProvider,
     user: UserInfo,
@@ -379,7 +381,7 @@ async function paymentTimingProblems(
 
     const facts = await LoadPaymentTimingFacts(
         orderHeaderID,
-        { Lines: lines, PaymentTermsTypeID: header ? header.PaymentTermsTypeID : undefined },
+        { Lines: lines, Order: header },
         provider,
         user,
     );

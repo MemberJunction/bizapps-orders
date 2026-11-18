@@ -11,7 +11,10 @@
  *      service start of the order's new-sale lines. The invoicing SOP's semi-annual shape is allowed: on an
  *      order of {@link SCHEDULE_DEFAULTS}.RecurringSemiAnnualMinGross or more, two equal instalments six
  *      months apart, the first due on or before the start;
- *   3. payment terms other than due on receipt: the order's terms carry net days.
+ *   3. payment terms other than due on receipt: the terms the order carries at confirm have net days. An
+ *      order that states no terms is judged on the ones the confirm save stamps on it (./OrderPaymentTerms.ts):
+ *      the customer's negotiated terms, then the selling company's default. Inherited Net terms need the
+ *      same approval as Net terms chosen on the order.
  *
  * An order counts as a new sale when it has a line that renews no subscription (bundle components and
  * reversals aside). Renewal lines are not checked; their due date is the renewal pass's.
@@ -24,7 +27,8 @@
  *
  * CONNECTS TO:
  *   CALLER: ./ConcessionGate.ts (the confirm check) · ./OrderConcessionEntityServer.ts (recording a Timing concession)
- *   READS:  Order Headers · Order Lines · Payment Terms Types · Order Header Payment Schedules · Sales Rules
+ *   READS:  Order Headers · Order Lines · Payment Terms Types · Order Header Payment Schedules · Sales Rules ·
+ *           Customer Payment Terms and Order Company Policies (through ./OrderPaymentTerms.ts)
  */
 import { RunView, type IMetadataProvider, type IRunViewProvider, type UserInfo } from '@memberjunction/core';
 import { ToISODate } from '@mj-biz-apps/orders-entities';
@@ -32,6 +36,7 @@ import { CalendarDayOrToday } from './calendar-day.js';
 import { ORDER_HEADER_ENTITY, ORDER_HEADER_PAYMENT_SCHEDULE_ENTITY, ORDER_LINE_ENTITY } from './entity-names.js';
 import { AddMonths, SCHEDULE_DEFAULTS } from './PaymentScheduleBehavior.js';
 import { OrdersSettings } from './OrdersSettings.js';
+import { ResolveOrderPaymentTerms, type OrderTermsFacts } from './OrderPaymentTerms.js';
 import { RequireUUID } from './sql-guards.js';
 
 const PAYMENT_TERMS_TYPE_ENTITY = 'MJ_BizApps_Orders: Payment Terms Types';
@@ -217,13 +222,43 @@ export async function LoadPaymentTimingRule(provider: IMetadataProvider, user: U
     return res.Results[0] ?? null;
 }
 
+/** The order fields the timing check reads besides its lines; every one but the terms may be omitted. */
+export type PaymentTimingOrder = Partial<OrderTermsFacts> & { PaymentTermsTypeID: string | null };
+
+/**
+ * The payment terms the order carries once confirmed: the terms it states, else the ones the confirm save
+ * stamps (`OrderEntityServer.resolveDueDate`). Null is due on receipt, including when the walk cannot be read,
+ * which is what the confirm save falls back to as well.
+ */
+export async function TermsAtConfirm(order: PaymentTimingOrder, provider: IMetadataProvider, user: UserInfo): Promise<string | null> {
+    if (order.PaymentTermsTypeID) return order.PaymentTermsTypeID;
+    try {
+        const resolution = await ResolveOrderPaymentTerms(
+            {
+                OrderDate: order.OrderDate ?? null,
+                CompanyID: order.CompanyID ?? null,
+                BillToOrganizationID: order.BillToOrganizationID ?? null,
+                BillToPersonID: order.BillToPersonID ?? null,
+                DueDate: order.DueDate ?? null,
+                PaymentTermsTypeID: null,
+            },
+            provider,
+            user,
+        );
+        return resolution?.PaymentTermsTypeID ?? null;
+    } catch {
+        return null;
+    }
+}
+
 /**
  * Read an order's payment timing. `inMemory` carries what the caller holds and has not saved: its lines win
- * over the saved ones, and its payment terms over the saved terms.
+ * over the saved ones, and its order fields over the saved header. The terms judged are the ones the order
+ * carries at confirm ({@link TermsAtConfirm}).
  */
 export async function LoadPaymentTimingFacts(
     orderHeaderID: string | null,
-    inMemory: { Lines?: readonly PaymentTimingLine[]; PaymentTermsTypeID?: string | null } | null,
+    inMemory: { Lines?: readonly PaymentTimingLine[]; Order?: PaymentTimingOrder } | null,
     provider: IMetadataProvider,
     user: UserInfo,
 ): Promise<PaymentTimingFacts> {
@@ -247,15 +282,16 @@ export async function LoadPaymentTimingFacts(
               ])
             : []);
 
-    let termsID = inMemory?.PaymentTermsTypeID;
-    if (termsID === undefined && orderHeaderID) {
-        const [header] = await read<{ PaymentTermsTypeID: string | null }>(
+    let order = inMemory?.Order;
+    if (!order && orderHeaderID) {
+        const [header] = await read<OrderTermsFacts>(
             ORDER_HEADER_ENTITY,
             `ID = '${RequireUUID(orderHeaderID, 'OrderHeaderID')}'`,
-            ['PaymentTermsTypeID'],
+            ['PaymentTermsTypeID', 'OrderDate', 'CompanyID', 'BillToOrganizationID', 'BillToPersonID', 'DueDate'],
         );
-        termsID = header?.PaymentTermsTypeID ?? null;
+        order = header;
     }
+    const termsID = order ? await TermsAtConfirm(order, provider, user) : null;
     const [terms] = termsID
         ? await read<{ Name: string | null; NetDays: number | null }>(
               PAYMENT_TERMS_TYPE_ENTITY,

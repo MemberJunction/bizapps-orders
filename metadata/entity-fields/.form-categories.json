@@ -3609,6 +3609,18 @@
   },
   {
     "_comments": [
+      "The payment timing a Timing concession records sits with the concession's other details (golive #268)."
+    ],
+    "fields": {
+      "Category": "Concession Details",
+      "GeneratedFormSection": "Category"
+    },
+    "primaryKey": {
+      "ID": "@lookup:MJ: Entity Fields.EntityID=@lookup:MJ: Entities.Name=MJ_BizApps_Orders: Order Concessions&Name=TimingFacts"
+    }
+  },
+  {
+    "_comments": [
       "Referral Programs was generated without CodeGen's AI layout pass, so its fields are grouped here (golive #268)."
     ],
     "fields": {

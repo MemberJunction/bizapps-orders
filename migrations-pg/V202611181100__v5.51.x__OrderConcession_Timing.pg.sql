@@ -326,21 +326,39 @@ BEGIN
     END IF;
 END $$;
 
+-- Value lists: OrderConcession.DeliveryForm gains Timing, SalesRule.RuleType gains PaymentTiming.
+-- Keyed on each field's entity and name, not the authoring database's EntityField IDs.
 INSERT INTO ${mjSchema}."EntityFieldValue"
-                                       ("ID", "EntityFieldID", "Sequence", "Value", "Code", "__mj_CreatedAt", "__mj_UpdatedAt")
-                                    VALUES
-                                       ('06aefed8-be86-42ee-857f-87a5703a58ca', '8662A268-9580-42FD-9D59-A91BE9237AE9', 8, 'Timing', 'Timing', NOW(), NOW());
-
-/* SQL text to insert entity field value with ID 6590ba62-4eec-41e8-b434-b73a6ca1eb29 */
+       ("ID", "EntityFieldID", "Sequence", "Value", "Code", "__mj_CreatedAt", "__mj_UpdatedAt")
+SELECT '06aefed8-be86-42ee-857f-87a5703a58ca', f."ID", 8, 'Timing', 'Timing', NOW(), NOW()
+  FROM ${mjSchema}."EntityField" f
+  JOIN ${mjSchema}."Entity" e ON e."ID" = f."EntityID"
+ WHERE LOWER(e."SchemaName") = LOWER('${flyway:defaultSchema}')
+   AND e."BaseTable" = 'OrderConcession'
+   AND f."Name" = 'DeliveryForm'
+   AND NOT EXISTS (SELECT 1 FROM ${mjSchema}."EntityFieldValue" x
+                    WHERE x."EntityFieldID" = f."ID" AND x."Value" = 'Timing');
 
 INSERT INTO ${mjSchema}."EntityFieldValue"
-                                       ("ID", "EntityFieldID", "Sequence", "Value", "Code", "__mj_CreatedAt", "__mj_UpdatedAt")
-                                    VALUES
-                                       ('6590ba62-4eec-41e8-b434-b73a6ca1eb29', '0A5E5AD8-EE0A-461B-A63D-987D7A3D8334', 6, 'PaymentTiming', 'PaymentTiming', NOW(), NOW());
+       ("ID", "EntityFieldID", "Sequence", "Value", "Code", "__mj_CreatedAt", "__mj_UpdatedAt")
+SELECT '6590ba62-4eec-41e8-b434-b73a6ca1eb29', f."ID", 6, 'PaymentTiming', 'PaymentTiming', NOW(), NOW()
+  FROM ${mjSchema}."EntityField" f
+  JOIN ${mjSchema}."Entity" e ON e."ID" = f."EntityID"
+ WHERE LOWER(e."SchemaName") = LOWER('${flyway:defaultSchema}')
+   AND e."BaseTable" = 'SalesRule'
+   AND f."Name" = 'RuleType'
+   AND NOT EXISTS (SELECT 1 FROM ${mjSchema}."EntityFieldValue" x
+                    WHERE x."EntityFieldID" = f."ID" AND x."Value" = 'PaymentTiming');
 
-/* SQL text to update entity field value sequence */
-
-UPDATE ${mjSchema}."EntityFieldValue" SET "Sequence"=7 WHERE "ID"='6A07B005-0DBE-4B33-914D-ABAEB08949B6';
+-- PaymentTiming sorts before ProductAuthorization, which moves from 6 to 7.
+UPDATE ${mjSchema}."EntityFieldValue" v SET "Sequence" = 7
+  FROM ${mjSchema}."EntityField" f
+  JOIN ${mjSchema}."Entity" e ON e."ID" = f."EntityID"
+ WHERE v."EntityFieldID" = f."ID"
+   AND LOWER(e."SchemaName") = LOWER('${flyway:defaultSchema}')
+   AND e."BaseTable" = 'SalesRule'
+   AND f."Name" = 'RuleType'
+   AND v."Value" = 'ProductAuthorization';
 
 
 /* Index for Foreign Keys for OrderConcession */

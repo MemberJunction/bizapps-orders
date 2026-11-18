@@ -17,11 +17,21 @@ vi.mock('@memberjunction/core', async (importOriginal) => {
 });
 vi.mock('../calendar-day.js', () => ({ CalendarDayOrToday: async () => new Date('2026-07-01T00:00:00Z') }));
 vi.mock('../OrdersSettings.js', () => ({ OrdersSettings: { Load: vi.fn(), DelayedStartToleranceDays: 30 } }));
+vi.mock('@mj-biz-apps/orders-entities', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('@mj-biz-apps/orders-entities')>();
+    return {
+        ...actual,
+        LoadOrdersEngine: vi.fn(),
+        OrdersEngine: { Instance: { PaymentTermsTypes: [{ ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3309', NetDays: 30 }] } },
+    };
+});
 
 const { FindUnapprovedConcessions } = await import('../ConcessionGate.js');
-const { DescribePaymentTiming, PaymentTimingFactsOf } = await import('../PaymentTiming.js');
+const { DescribePaymentTiming, LoadPaymentTimingFacts, PaymentTimingFactsOf } = await import('../PaymentTiming.js');
 
 const ORDER_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
+const ORG_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3302';
+const COMPANY_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3303';
 const NET30_ID = '3f2504e0-4f89-41d3-9a0c-0305e82c3309';
 const provider = {} as never;
 const user = { ID: 'user-1' } as never;
@@ -30,10 +40,16 @@ const RULE = { ID: 'timing-rule', Name: 'Payment timing', ApprovalRequiredRoleID
 type Row = Record<string, unknown>;
 
 /** Answers each RunView by entity. Saved lines are read as none: the order's lines are held in memory. */
-function database(opts: { rules: Row[]; concessions?: Row[]; schedule?: Row[] }) {
+function database(opts: { rules: Row[]; concessions?: Row[]; schedule?: Row[]; customerTerms?: Row[]; companyPolicy?: Row[]; header?: Row[] }) {
     mockRunView.mockImplementation(async (params: { EntityName: string }) => {
         const name = params.EntityName;
-        const results = name.endsWith('Sales Rules')
+        const results = name.endsWith('Customer Payment Terms')
+            ? (opts.customerTerms ?? [])
+            : name.endsWith('Order Company Policies')
+              ? (opts.companyPolicy ?? [])
+              : name.endsWith('Order Headers')
+                ? (opts.header ?? [])
+                : name.endsWith('Sales Rules')
             ? opts.rules
             : name.endsWith('Order Concessions')
               ? (opts.concessions ?? [])
@@ -61,8 +77,19 @@ const line = (start: string | null) => ({
     ServicePeriodStart: start,
 });
 
-const gate = (lines: Row[], header = { PaymentTermsTypeID: NET30_ID as string | null }) =>
-    FindUnapprovedConcessions(ORDER_ID, lines as never, true, provider, user, header);
+/** An order that states no terms, for a customer and company whose own terms the confirm save would stamp. */
+const statesNoTerms = {
+    PaymentTermsTypeID: null,
+    OrderDate: '2026-07-01',
+    CompanyID: COMPANY_ID,
+    BillToOrganizationID: ORG_ID,
+    BillToPersonID: null,
+    DueDate: null,
+};
+const NET30_CUSTOMER_TERMS = { PaymentTermsTypeID: NET30_ID, CompanyID: null, StartedAt: null, EndedAt: null, Status: 'Active' };
+
+const gate = (lines: Row[], header: Record<string, unknown> = { PaymentTermsTypeID: NET30_ID as string | null }) =>
+    FindUnapprovedConcessions(ORDER_ID, lines as never, true, provider, user, header as never);
 
 beforeEach(() => {
     mockRunView.mockReset();
@@ -86,6 +113,38 @@ describe('the payment timing check', () => {
     it('passes an order due on receipt that starts within the tolerance', async () => {
         database({ rules: [RULE] });
         expect(await gate([line('2026-07-15')], { PaymentTermsTypeID: null })).toEqual([]);
+    });
+
+    it("holds a new sale that states no terms but inherits the customer's negotiated Net 30 at confirm", async () => {
+        database({ rules: [RULE], customerTerms: [NET30_CUSTOMER_TERMS] });
+        const [problem] = await gate([line('2026-07-15')], statesNoTerms);
+        expect(problem).toContain('its payment timing needs approval');
+        expect(problem).toContain('Net 30 (30 days)');
+    });
+
+    it("holds a new sale that states no terms but inherits the selling company's default Net 30 at confirm", async () => {
+        database({ rules: [RULE], companyPolicy: [{ DefaultPaymentTermsTypeID: NET30_ID }] });
+        const [problem] = await gate([line('2026-07-15')], statesNoTerms);
+        expect(problem).toContain('Net 30 (30 days)');
+    });
+
+    it('passes a new sale that states no terms and inherits none', async () => {
+        database({ rules: [RULE] });
+        expect(await gate([line('2026-07-15')], statesNoTerms)).toEqual([]);
+    });
+
+    it('does not read the terms walk while no PaymentTiming rule is active', async () => {
+        database({ rules: [], customerTerms: [NET30_CUSTOMER_TERMS] });
+        expect(await gate([line('2026-07-15')], statesNoTerms)).toEqual([]);
+        const read = mockRunView.mock.calls.map(([p]) => (p as { EntityName: string }).EntityName);
+        expect(read.some((n) => n.endsWith('Customer Payment Terms'))).toBe(false);
+    });
+
+    it('judges the saved order on the terms it inherits at confirm when recording a Timing concession', async () => {
+        database({ rules: [RULE], customerTerms: [NET30_CUSTOMER_TERMS], header: [statesNoTerms] });
+        const facts = await LoadPaymentTimingFacts(ORDER_ID, { Lines: [line('2026-07-15')] as never }, provider, user);
+        expect(facts.PaymentTermsName).toBe('Net 30');
+        expect(facts.NetDays).toBe(30);
     });
 
     it('passes an order whose approved Timing concession matches its facts', async () => {

@@ -19,6 +19,8 @@ const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
     LoadConcessionAuthority: vi.fn(),
+    OrderConcessionTotal: vi.fn(async () => 0),
+    OrderNetTotal: vi.fn(async () => 1000),
 }));
 vi.mock('../ConcessionGate.js', () => gate);
 
@@ -64,6 +66,11 @@ function timingConcession(opts: { status: string; user: { ID: string }; orderSta
         SalesRuleID: null,
         DecidedByUserID: null,
         DecidedAt: null,
+        Reason: null,
+        ReferralProgramID: null,
+        OrderNetTotal: null,
+        CumulativeShare: null,
+        AuthorizedBySalesAuthorityID: null,
     };
     for (const name of Object.keys(values)) {
         Object.defineProperty(row, name, { get: () => values[name], set: (v) => (values[name] = v) });
@@ -123,6 +130,37 @@ describe('recording a Timing concession', () => {
         expect(values.Status).toBe('Pending');
         expect(values.SalesRuleID).toBe('timing-rule');
         expect(gate.FindConcessionTier).not.toHaveBeenCalled();
+    });
+
+    it('is routed to the PaymentTiming rule when recorded, not escalated to a ConcessionLimit tier', async () => {
+        timing.LoadPaymentTimingRule.mockResolvedValue(RULE);
+        timing.CurrentPaymentTimingDeviations.mockResolvedValue(['its payment terms are not due on receipt']);
+        approval.ActiveRoleHolderIDs.mockResolvedValue([REQUESTER.ID, APPROVER.ID]);
+        const { row, values } = timingConcession({ status: 'Pending', user: REQUESTER });
+        values.Reason = 'Customer starts in January';
+        values.ReferralProgramID = null;
+
+        expect(await (row as unknown as { prepareNew(): Promise<string | null> }).prepareNew()).toBeNull();
+        expect(values.Status).toBe('Pending');
+        expect(values.SalesRuleID).toBe('timing-rule');
+        expect(gate.FindConcessionTier).not.toHaveBeenCalled();
+    });
+
+    it('names the PaymentTiming rule when only the requester holds its role', async () => {
+        timing.LoadPaymentTimingRule.mockResolvedValue(RULE);
+        approval.ActiveRoleHolderIDs.mockResolvedValue([REQUESTER.ID]);
+        const { row } = timingConcession({ status: 'Pending', user: REQUESTER });
+
+        const refusal = await row.routeTiming(REQUESTER);
+        expect(refusal).toContain("PaymentTiming rule 'Payment timing'");
+        expect(refusal).not.toContain('ConcessionLimit');
+    });
+
+    it('names the PaymentTiming rule when it names no approving role', async () => {
+        timing.LoadPaymentTimingRule.mockResolvedValue({ ...RULE, ApprovalRequiredRoleID: null });
+        const { row } = timingConcession({ status: 'Pending', user: REQUESTER });
+
+        expect(await row.routeTiming(REQUESTER)).toContain("PaymentTiming rule 'Payment timing' names no approving role");
     });
 
     it('is refused when only the requester holds the role', async () => {
