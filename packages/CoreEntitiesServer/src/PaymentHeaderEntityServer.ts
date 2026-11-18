@@ -86,7 +86,7 @@ import { ResolvePaymentProvider } from './PaymentProviderResolver.js';
 import { ShouldHoldForLateSettlement, SplitCapturedAmount } from './PaymentProviderBehavior.js';
 import { PaymentJournalEntryFactory, type PaymentJEDraft } from './PaymentJournalEntryFactory.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
-import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadGiftCardAccountID, LoadGiftCardSale, LoadInstalmentCashFacts, LoadIsAccountCredit, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import {
     PlanLineDeposits,
     ReversalDepositWorking,
@@ -639,6 +639,8 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
             user,
             this.PaymentDetailID,
         );
+        // A credit spent on another order moves a receivable and no cash; the allocation posts it so.
+        const accountCredit = await LoadIsAccountCredit(provider as unknown as IRunViewProvider, user, this.PaymentDetailID);
 
         for (const line of unbookedLines) {
             const orderLines = await LoadOrderLineShares(
@@ -691,14 +693,16 @@ export class PaymentHeaderEntityServer extends PaymentHeaderEntity {
                 PaymentDate: await CalendarDayOrToday(this.PaymentDate, provider, user),
                 IsReversal: isReversal,
                 GiftCardSale: giftCardSale,
+                AccountCredit: accountCredit,
             });
 
             allDrafts.push(...Drafts);
         }
 
-        if (allDrafts.length === 0) return;
-
-        const result = await this.createJournalEntries(allDrafts, provider, user);
+        // No drafts is a real outcome, not an early exit: an account credit applied inside one set of
+        // books moves nothing between accounts. Its lines are still stamped booked below, or every
+        // later save of this payment would find them unbooked and plan them again.
+        const result = allDrafts.length > 0 ? await this.createJournalEntries(allDrafts, provider, user) : { Success: true, Results: [] };
         if ((result.Results?.length ?? 0) !== allDrafts.length) {
             throw new Error(
                 `Accounting returned ${result.Results?.length ?? 0} journal entries for allocations that ` +

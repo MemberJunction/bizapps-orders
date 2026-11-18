@@ -54,6 +54,7 @@ import {
     ResolveSubscriptionTypeID,
     Today,
     ToISODate,
+    UnpaidInstalmentClauses,
     type DateCell,
 } from '@mj-biz-apps/orders-entities';
 import type {
@@ -61,6 +62,7 @@ import type {
     mjBizAppsOrdersChargeTypeEntity,
     mjBizAppsOrdersCustomerTaxExemptionEntity,
     mjBizAppsOrdersOrderHeaderEntity,
+    mjBizAppsOrdersOrderHeaderPaymentScheduleEntity,
     mjBizAppsOrdersOrderLineDimensionEntity,
     mjBizAppsOrdersOrderLineEntity,
     mjBizAppsOrdersPaymentHeaderEntity,
@@ -257,6 +259,7 @@ interface MJOSummaryRow {
     Balance?: number;
     TotalGross?: number;
     DueDate?: DateCell;
+    NextDueDate?: DateCell;
 }
 
 /**
@@ -415,7 +418,7 @@ export async function GetOrders(
         if (options.BillToOrganizationID) filters.push(`BillToOrganizationID = '${options.BillToOrganizationID}'`);
     }
     if (options.Search?.trim()) {
-        const escaped = likeText(options.Search);
+        const escaped = likeText(options.Search.trim());
         filters.push(
             `(OrderNumber LIKE '%${escaped}%' OR Description LIKE '%${escaped}%' ` +
                 `OR ExternalDocumentNumber LIKE '%${escaped}%' ` +
@@ -451,7 +454,8 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
         user,
         // Four columns, because that is what the arithmetic reads. Fetching fifty to sum three is
         // work with no answer attached.
-        ['Status', 'Balance', 'TotalGross', 'DueDate'],
+        // `NextDueDate` because the overdue list this count labels filters on it (`OverdueFilter`).
+        ['Status', 'Balance', 'TotalGross', 'DueDate', 'NextDueDate'],
     );
     // The operator's calendar day, not a UTC instant: an order due today is not overdue at 8pm in
     // New York just because it is already tomorrow in London.
@@ -468,7 +472,9 @@ export async function GetOrderSummary(user?: UserInfo): Promise<MJOOrderSummary>
         CreditsHeld: Math.abs(credits.reduce((sum, o) => sum + Number(o.Balance ?? 0), 0)),
         Counts: {
             all: rows.length,
-            overdue: owing.filter((o) => IsBefore(o.DueDate, today)).length,
+            // The next unpaid instalment's day, as the `overdue` preset reads it; the header date
+            // counted an instalment order by a day that never moves (golive#481).
+            overdue: owing.filter((o) => IsBefore(o.NextDueDate ?? o.DueDate, today)).length,
             unpaid: owing.length,
             booked: rows.filter((o) => o.Status === 'Confirmed').length,
             drafts: rows.filter((o) => ['Draft', 'Quoted'].includes(o.Status ?? '')).length,
@@ -489,6 +495,7 @@ export type MJODashboardOrderRow = Pick<
     | 'OrderNumber'
     | 'OrderDate'
     | 'DueDate'
+    | 'NextDueDate'
     | 'Status'
     | 'FulfillmentStatus'
     | 'TotalGross'
@@ -504,6 +511,7 @@ const DASHBOARD_ORDER_FIELDS: Array<keyof MJODashboardOrderRow & string> = [
     'OrderNumber',
     'OrderDate',
     'DueDate',
+    'NextDueDate',
     'Status',
     'FulfillmentStatus',
     'TotalGross',
@@ -529,6 +537,32 @@ export async function GetDashboardOrders(user?: UserInfo): Promise<MJODashboardO
         0,
         user,
         DASHBOARD_ORDER_FIELDS,
+    );
+}
+
+/** An unpaid instalment's three aging facts. */
+export type MJOOpenInstalmentRow = Pick<mjBizAppsOrdersOrderHeaderPaymentScheduleEntity, 'OrderHeaderID' | 'DueDate' | 'Balance'>;
+
+/**
+ * Every unpaid instalment, for the aging screens (bc-aidp-next-golive#481).
+ *
+ * The rows are the ones `vwOrderHeaders.NextDueDate` reads, from the same `UnpaidInstalmentClauses`
+ * (`overdue.ts`): live rows that still owe something. A second definition here would let the aging
+ * bar and the overdue flag disagree about which instalments count.
+ *
+ * Earliest due first, which is the order {@link AddOrderToAgingBuckets} takes them in.
+ *
+ * Uncapped and `'simple'`, like {@link GetDashboardOrders}: a capped read would silently age the
+ * instalments past the cap on their order's header date.
+ */
+export async function GetOpenInstalments(user?: UserInfo): Promise<MJOOpenInstalmentRow[]> {
+    return runRows<MJOOpenInstalmentRow>(
+        MJO_ENTITIES.OrderHeaderPaymentSchedule,
+        UnpaidInstalmentClauses(),
+        'DueDate',
+        0,
+        user,
+        ['OrderHeaderID', 'DueDate', 'Balance'],
     );
 }
 
@@ -2493,6 +2527,21 @@ export function RankCatalogMatches<T extends RankableProduct>(
                 CompareProductNames(a.option.Name ?? '', b.option.Name ?? ''),
         )
         .map((r) => r.option);
+}
+
+/**
+ * The products a picker offers when "Only selling company products" is checked.
+ *
+ * The picker opens with the box checked, so a user sees their own company's catalog by default and
+ * unchecks it to sell another company's product on a multi-company deal. With no selling company there
+ * is nothing to narrow to, so every product is returned rather than none.
+ */
+export function KeepSellingCompanyProducts<T extends RankableProduct>(
+    options: readonly T[],
+    sellingCompanyID: string | null | undefined,
+): T[] {
+    if (!sellingCompanyID) return [...options];
+    return options.filter((option) => !!option.CompanyID && UUIDsEqual(option.CompanyID, sellingCompanyID));
 }
 
 /** A number in a product name: digits, with an optional decimal part ("10", "1.25"). */

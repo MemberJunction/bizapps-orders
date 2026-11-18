@@ -44,6 +44,7 @@ interface PriceOrderInput {
         ProductID: string;
         Quantity: number;
         UnitPrice?: number | null;
+        ProductPriceID?: string | null;
         DiscountPct?: number | null;
         ServicePeriodStart?: string | null;
         ServicePeriodEnd?: string | null;
@@ -68,6 +69,8 @@ interface PricedLine {
     Components?: Array<{ Kind: string; Label: string; Amount: number }>;
     TaxExemptReason?: string | null;
     ProductPriceID?: string | null;
+    /** Why this line has no price while the rest of the order does (golive #470). */
+    Error?: string | null;
     Default?: { UnitPrice: number; ProductPriceID: string | null; PriceName: string | null } | null;
 }
 
@@ -100,6 +103,7 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
         RequireOptionalUUID(input.ShipToAddressID, 'ShipToAddressID');
         input.Lines.forEach((l, i) => {
             RequireUUID(l.ProductID, `Lines[${i}].ProductID`);
+            RequireOptionalUUID(l.ProductPriceID, `Lines[${i}].ProductPriceID`);
             RequireOptionalUUID(l.RenewsSubscriptionID, `Lines[${i}].RenewsSubscriptionID`);
             RequireOptionalUUID(l.ShipToAddressID, `Lines[${i}].ShipToAddressID`);
         });
@@ -121,7 +125,12 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
             line.Quantity = Number(spec.Quantity ?? 0);
             // An absent UnitPrice must stay UNTOUCHED so the engine resolves one. Assigning 0 would
             // look like a deliberate free line and suppress resolution — a silently free order.
-            if (spec.UnitPrice != null) line.UnitPrice = spec.UnitPrice;
+            if (spec.UnitPrice != null) {
+                line.UnitPrice = spec.UnitPrice;
+                // The rule the pinned price was picked from travels with it, as on a saved line
+                // (golive #470). Without a pinned price the engine decides the rule.
+                if (spec.ProductPriceID) line.ProductPriceID = spec.ProductPriceID;
+            }
             line.DiscountPct = spec.DiscountPct ?? 0;
             if (spec.ServicePeriodStart) line.ServicePeriodStart = new Date(spec.ServicePeriodStart);
             if (spec.ServicePeriodEnd) line.ServicePeriodEnd = new Date(spec.ServicePeriodEnd);
@@ -158,6 +167,8 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
                 // The editor asks this on every edit and needs the rules' answer for a pinned line
                 // too — it is what tells an override apart from a restatement of the default.
                 IncludeDefaultsForStatedLines: true,
+                // A band still to pick on one line leaves that line unpriced, not the order (golive #470).
+                LeaveUndecidedBandsUnpriced: true,
             });
 
             const priced: PricedLine[] = lines.map((line, i) => ({
@@ -177,7 +188,8 @@ export class PriceOrderOperation extends OrdersPriceOrderOperationBase {
                     Amount: Number((c as { Amount?: number }).Amount ?? 0),
                 })),
                 TaxExemptReason: result.TaxReasons.get(i) ?? null,
-                ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? null,
+                ProductPriceID: result.PriceComponents.get(line)?.ProductPriceID ?? line.ProductPriceID ?? null,
+                ...(result.LineErrors?.has(line) ? { Error: result.LineErrors.get(line) } : {}),
                 Default: engineDefault(result.EngineDefaults.get(line)),
             }));
 

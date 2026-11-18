@@ -51,17 +51,6 @@ export function ParseReturnReasons(raw: string | null | undefined): string[] {
     return reasons.length > 0 ? reasons : [...DEFAULT_RETURN_REASONS];
 }
 
-/** Label each returnable order with both its order number and bill-to customer so the picker can find and distinguish orders by customer name (#836). */
-export function OrderPickerLabel(order: {
-    OrderNumber?: string | null;
-    BillToOrganization?: string | null;
-    BillToPerson?: string | null;
-}): string {
-    const number = order.OrderNumber?.trim() || '—';
-    const customer = order.BillToOrganization?.trim() || order.BillToPerson?.trim() || '';
-    return customer ? `${number} · ${customer}` : number;
-}
-
 function configuredReturnReasons(): string[] {
     try {
         const apps = new Metadata().Applications;
@@ -72,6 +61,17 @@ function configuredReturnReasons(): string[] {
     } catch {
         return [...DEFAULT_RETURN_REASONS];
     }
+}
+
+/** How an order reads in the origin picker: order number and bill-to customer name (#836). */
+export function ReturnOrderPickerLabel(order: {
+    OrderNumber?: string | null;
+    BillToOrganization?: string | null;
+    BillToPerson?: string | null;
+}): string {
+    const number = String(order.OrderNumber ?? '').trim();
+    const customer = String(order.BillToOrganization ?? order.BillToPerson ?? '').trim();
+    return customer ? `${number} · ${customer}` : number;
 }
 
 /** A line being returned, with the cap the origin imposes. */
@@ -134,16 +134,22 @@ interface MJOReturnLine {
             </mj-alert>
         }
 
-        <!-- Work this page discarded on the user's behalf, or confirmation of the return it just booked (#834). -->
+        <!-- Work this page discarded on the user's behalf. -->
         @if (Notice) {
             <mj-alert Variant="warning" Icon="fa-solid fa-circle-info" class="mjo-rt__note"
                       data-testid="return-notice">
                 {{ Notice }}
-                @if (BookedReturnID) {
-                    <button type="button" mjButton variant="flat" size="sm"
-                            data-testid="open-booked-return"
-                            (click)="OpenBookedReturn()">
-                        Open {{ BookedReturnOrderNumber || 'return order' }}
+            </mj-alert>
+        }
+
+        @if (BookedReturn) {
+            <mj-alert Variant="success" Icon="fa-solid fa-circle-check" class="mjo-rt__note"
+                      data-testid="return-booked">
+                <strong>Return {{ BookedReturn.OrderNumber }} booked.</strong>
+                @if (BookedReturn.ID) {
+                    <button type="button" mjButton variant="flat" size="sm" (click)="OpenBookedReturn()">
+                        <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>
+                        Open {{ BookedReturn.OrderNumber }}
                     </button>
                 }
             </mj-alert>
@@ -170,7 +176,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="DisplayLabel"
+                            TextField="PickerLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -325,7 +331,7 @@ interface MJOReturnLine {
                             AriaLabel="Original order"
                             Placeholder="Choose an order…"
                             [Data]="PickerOrders"
-                            TextField="DisplayLabel"
+                            TextField="PickerLabel"
                             ValueField="ID"
                             [ValuePrimitive]="true"
                             [Filterable]="true"
@@ -478,11 +484,13 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
     /** Emitted AFTER the return is booked, carrying the new order's id. */
     @Output() ReturnCreated = new EventEmitter<string | null>();
 
-    /** Wired by `MJOSectionBaseComponent.wirePage` so the operator can open the newly booked return order (#834). */
-    @Output() OrderOpened = new EventEmitter<string>();
+    /** Emitted when the user clicks to open the newly booked return order (#834). */
+    @Output() OrderOpened = new EventEmitter<{ ID: string }>();
 
     public Busy = false;
     public Error: string | null = null;
+    /** Confirmation banner for the most recently booked return order (#834). */
+    public BookedReturn: { ID: string | null; OrderNumber: string } | null = null;
 
     public Origin: mjBizAppsOrdersOrderHeaderEntity | null = null;
     public Lines: MJOReturnLine[] = [];
@@ -491,11 +499,8 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
 
     public Reason = DEFAULT_RETURN_REASON;
 
-    /** A non-blocking note about something the page did on the user's behalf, such as clearing work or confirming the booked return (#834). */
+    /** A non-blocking note about something the page did on the user's behalf, such as clearing work. */
     public Notice: string | null = null;
-    /** The newly booked return order's ID and number, shown in the confirmation notice after `ConfirmReturn` succeeds (#834). */
-    public BookedReturnID: string | null = null;
-    public BookedReturnOrderNumber: string | null = null;
 
     public async ngOnInit(): Promise<void> {
         // The input is copied in, never written back — see `selectedOriginID`.
@@ -524,10 +529,11 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         this.ReturnReasons = configuredReturnReasons();
         try {
             const orders = await GetOrders({ Preset: 'returnable', MaxRows: 200, Search: search?.trim() || undefined });
-            for (const order of orders) {
-                if (order && typeof order === 'object') {
-                    Object.defineProperty(order, 'DisplayLabel', {
-                        get: () => OrderPickerLabel(order),
+            for (const o of orders) {
+                if (o && typeof o === 'object' && !('PickerLabel' in o)) {
+                    Object.defineProperty(o, 'PickerLabel', {
+                        get: () => ReturnOrderPickerLabel(o),
+                        enumerable: false,
                         configurable: true,
                     });
                 }
@@ -574,11 +580,10 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         // work is discarded rather than doing it quietly.
         const discarding = this.Lines.some((l) => l.Returning > 0);
         this.Reason = DEFAULT_RETURN_REASON;
-        this.BookedReturnID = null;
-        this.BookedReturnOrderNumber = null;
         this.Notice = discarding
             ? 'Quantities from the previous order were cleared — they belong to its lines, not this one.'
             : null;
+        this.BookedReturn = null;
         this.Error = null;
         this.selectedOriginID = orderID;
         this.PickerOpen = false;
@@ -772,11 +777,10 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
             // live after a success — and the second attempt exceeds the server's already-returned
             // cap and is refused, which before this PR went into an `Error` nobody rendered.
             this.Lines = this.Lines.map((l) => ({ ...l, AlreadyReturned: l.AlreadyReturned + l.Returning, Returning: 0 }));
-            this.BookedReturnID = draft.ID ?? null;
-            this.BookedReturnOrderNumber = draft.OrderNumber?.trim() || null;
-            this.Notice = this.BookedReturnOrderNumber
-                ? `Return ${this.BookedReturnOrderNumber} booked.`
-                : 'Return booked.';
+            this.BookedReturn = {
+                ID: draft.ID ?? null,
+                OrderNumber: draft.OrderNumber?.trim() || 'new return order',
+            };
             this.ReturnCreated.emit(draft.ID ?? null);
         } catch (e) {
             this.Error = e instanceof Error ? e.message : String(e);
@@ -786,10 +790,9 @@ export class MJOReturnPageComponent implements OnInit, OnChanges {
         }
     }
 
-    /** Open the newly booked return order in Explorer through the section shell's `OrderOpened` wiring (#834). */
     public OpenBookedReturn(): void {
-        if (this.BookedReturnID) {
-            this.OrderOpened.emit(this.BookedReturnID);
+        if (this.BookedReturn?.ID) {
+            this.OrderOpened.emit({ ID: this.BookedReturn.ID });
         }
     }
 

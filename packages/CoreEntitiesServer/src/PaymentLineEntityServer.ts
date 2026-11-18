@@ -60,7 +60,7 @@ import { mjBizAppsOrdersPaymentLineEntity } from '@mj-biz-apps/orders-entities';
 import { BuildGLAccountResolver, BuildIntercompanyLookup, BuildLegalEntityLookup, EntityIDFor, ResolveAccountingOperation } from './AccountingBridge.js';
 import { BookingErrorLogText, DescribeBookingErrors } from './booking-errors.js';
 import { CalendarDayOrToday } from './calendar-day.js';
-import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadOrderLineShares } from './PaymentAllocationInputs.js';
+import { LoadGiftCardSale, LoadInstalmentCashFacts, LoadIsAccountCredit, LoadOrderLineShares } from './PaymentAllocationInputs.js';
 import { PlanLineDeposits, ReversalDepositWorking, type InstalmentCashFacts } from './PaymentScheduleBehavior.js';
 import { AllocateByCompany, PaymentAllocationFactory } from './PaymentAllocationFactory.js';
 import { RequireUUID } from './sql-guards.js';
@@ -234,9 +234,12 @@ export class PaymentLineEntityServer extends mjBizAppsOrdersPaymentLineEntity {
                 user,
                 payment.PaymentDetailID,
             ),
+            AccountCredit: await LoadIsAccountCredit(provider as unknown as IRunViewProvider, user, payment.PaymentDetailID),
         });
 
-        const result = await this.createJournalEntries(Drafts, provider, user);
+        // An account credit applied inside one set of books moves nothing between accounts, so the
+        // allocation has no entry to book. The allocation itself is still stamped as booked below.
+        const result = Drafts.length > 0 ? await this.createJournalEntries(Drafts, provider, user) : { Success: true, Results: [] };
         if ((result.Results?.length ?? 0) !== Drafts.length) {
             throw new Error(
                 `Accounting returned ${result.Results?.length ?? 0} journal entries for an allocation that ` +

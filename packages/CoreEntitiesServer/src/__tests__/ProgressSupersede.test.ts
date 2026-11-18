@@ -180,7 +180,7 @@ describe('SupersedeRefusal', () => {
     const user = new UserInfo(null, { ID: 'U1', Name: 'Attester', UserRoles: [] });
 
     it('refuses when the authorization is not installed, rather than treating the gate as off', () => {
-        expect(SupersedeRefusal(user, [])).toMatch(/not installed/);
+        expect(SupersedeRefusal(user, [])).toMatch(/hasn't been set up/);
     });
 
     it('refuses a user whose roles do not hold the grant', () => {

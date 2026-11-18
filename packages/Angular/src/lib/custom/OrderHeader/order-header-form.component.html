@@ -247,6 +247,18 @@
                     }
                 </div>
                 @if (record.IsSaved && PaymentParams) {
+                    @if (ShowCheckExternalPayments) {
+                        <div class="mjo-oh-todo mjo-oh-todo--info" data-testid="order-check-external-payments">
+                            <i class="fa-solid fa-rotate" aria-hidden="true"></i>
+                            <span>Paid on the invoicing rail ({{ record.ExternalDocumentNumber }})?</span>
+                            <button type="button" [disabled]="CheckingExternalPayments" (click)="CheckExternalPaymentsNow()">
+                                {{ CheckingExternalPayments ? 'Checking…' : 'Check for payments now' }}
+                            </button>
+                            @if (ExternalPaymentNotice) {
+                                <span class="mjo-oh-todo__hint">{{ ExternalPaymentNotice }}</span>
+                            }
+                        </div>
+                    }
                     <mj-explorer-entity-data-grid
                         #paymentGrid
                         [Params]="PaymentParams"
@@ -274,7 +286,7 @@
                         <table class="mjo-oh-je__table mjo-oh-je__table--detail">
                             <thead>
                                 <tr>
-                                    <th>Instalment</th>
+                                    <th>Installment</th>
                                     <th>Due</th>
                                     <th class="is-num">Amount</th>
                                     <th>Status</th>

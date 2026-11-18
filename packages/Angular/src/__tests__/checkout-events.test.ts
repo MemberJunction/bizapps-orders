@@ -487,6 +487,34 @@ describe('CheckoutPublicHostComponent events', () => {
             expect(drafts[0]).not.toHaveProperty('attribution');
         });
 
+        it('sends the page URL and the cookies the host named in capture-cookies', async () => {
+            attrs = { 'capture-cookies': 'visitor, absent' };
+            vi.stubGlobal('window', { location: { href: 'https://example.com/pricing?utm_source=ad' } });
+            vi.stubGlobal('document', { cookie: 'other=1; visitor=abc123' });
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing?utm_source=ad', referrer: null, cookies: { visitor: 'abc123' } });
+        });
+
+        it('sends the page that linked to the checkout page', async () => {
+            vi.stubGlobal('window', { location: { href: 'https://example.com/pricing' } });
+            vi.stubGlobal('document', { cookie: '', referrer: 'https://www.google.com/' });
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing', referrer: 'https://www.google.com/', cookies: {} });
+        });
+
+        it('captures no cookies when the host names none', async () => {
+            vi.stubGlobal('window', { location: { href: 'https://example.com/pricing' } });
+            vi.stubGlobal('document', { cookie: 'visitor=abc123' });
+            const c = create();
+            await c.ngOnInit();
+            await c.onSubmitted(submission());
+            expect(drafts[0].tracking).toEqual({ pageUrl: 'https://example.com/pricing', referrer: null, cookies: {} });
+        });
+
         it('after a failed payment, resets without the Cancel events and starts a new session', async () => {
             responses['/draft'] = { Success: false, ErrorMessage: 'Could not price this checkout.' };
             const c = create();

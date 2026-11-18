@@ -14,6 +14,7 @@
  * installed, not that nobody needs one, so it gets its own message.
  */
 import { Metadata, type AuthorizationInfo, type IMetadataProvider, type UserInfo } from '@memberjunction/core';
+import { PermissionNotSetUp } from './permission-messages';
 import { UserHasAuthorization } from './pricing/priceOverride';
 
 export const ORDER_REVERSE_AUTH = 'MJ.BizApps.Orders.Order.Reverse';
@@ -33,13 +34,10 @@ export function UserCanReverse(user: UserInfo | null | undefined, provider?: Aut
 export function ReversalRefusal(action: string, user: UserInfo | null | undefined, provider?: AuthorizationSource): string | null {
     const auths = provider?.Authorizations ?? new Metadata().Authorizations ?? [];
     if (!auths.some((a) => a.Name === ORDER_REVERSE_AUTH)) {
-        return (
-            `The ${ORDER_REVERSE_AUTH} authorization is not installed, so no one can cancel, refund or move ` +
-            `credit. Sync the BizApps Orders metadata to install it.`
-        );
+        return PermissionNotSetUp(action, ORDER_REVERSE_AUTH);
     }
     if (!UserCanReverse(user, { Authorizations: auths })) {
-        return `${action} needs the ${ORDER_REVERSE_AUTH} authorization, held by the Finance role (and Developer). Ask finance to do it.`;
+        return `${action} is limited to the Finance role. Please request this from Finance.`;
     }
     return null;
 }

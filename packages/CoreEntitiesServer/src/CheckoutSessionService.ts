@@ -43,6 +43,10 @@ import {
     type ResolvedCheckoutAnswer,
     NormalizeCheckoutAttribution,
     type CheckoutAttribution,
+    MergeCheckoutTracking,
+    NormalizeCheckoutTracking,
+    NormalizeStoredCheckoutTracking,
+    type CheckoutTracking,
     CheckCheckoutChoices,
     ChoicesForStorage,
     ReadCheckoutChoiceGroups,
@@ -209,6 +213,8 @@ interface CheckoutSnapshot {
     BillingAddress?: BillingLocation;
     Answers?: CheckoutAnswersInput;
     Attribution?: CheckoutAttribution;
+    /** The embedding page and the cookies the host asked the widget to capture. */
+    Tracking?: CheckoutTracking;
     Choices?: CheckoutChoicesInput;
     /**
      * Promotion code a verified member token earned. The token itself is never stored. A draft
@@ -1519,6 +1525,16 @@ export class CheckoutSessionService {
         return [];
     }
 
+    /** The tracking an earlier draft of this session stored, read back through the same bounds. */
+    private static storedTracking(metadataJSON: string | null): CheckoutTracking | null {
+        if (!metadataJSON) return null;
+        try {
+            return NormalizeStoredCheckoutTracking((JSON.parse(metadataJSON) as { Tracking?: unknown }).Tracking);
+        } catch {
+            return null;
+        }
+    }
+
     /**
      * Builds and prices draft order lines in memory, persisting the checkout state to the
      * CheckoutSession without creating premature draft rows in the OrderHeader database table.
@@ -1534,7 +1550,7 @@ export class CheckoutSessionService {
         lines: CheckoutLineInput[],
         billingAddress: CheckoutBillingAddressInput | null | undefined,
         contextUser?: UserInfo,
-        options?: { Attribution?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string; PromotionCodes?: unknown }
+        options?: { Attribution?: unknown; Tracking?: unknown; Answers?: CheckoutAnswersInput; Choices?: CheckoutChoicesInput; MemberToken?: string; PromotionCodes?: unknown }
     ): Promise<UpdateDraftResult> {
         const failed = (message: string): UpdateDraftResult => ({
             Success: false,
@@ -1942,6 +1958,10 @@ export class CheckoutSessionService {
             }
         }
 
+        // The embedding page and captured cookies. Merged with an earlier draft's, since a tracker
+        // can set its cookie after the first one; dropped, never refused, when it cannot be read.
+        const tracking = MergeCheckoutTracking(this.storedTracking(session.MetadataJSON), NormalizeCheckoutTracking(options?.Tracking));
+
         // Store checkout state in session metadata JSON — no orphan OrderHeader rows
         // The applied code rides the snapshot so completion prices — and books — the same order the
         // buyer was shown and the payment intent was opened for. An unusable code is not kept.
@@ -1952,6 +1972,7 @@ export class CheckoutSessionService {
             BillingAddress: location,
             Answers: this.answersForStorage(draftAnswers.Answers),
             ...(attribution ? { Attribution: attribution } : {}),
+            ...(tracking ? { Tracking: tracking } : {}),
             Choices: ChoicesForStorage(draftChoices.Choices),
             MemberPromotionCode: memberDiscount.PromotionCode,
             PromotionCodes: appliedCodes,
@@ -3680,6 +3701,9 @@ export class CheckoutSessionService {
             // instead would let a later save in capture write the stale copy back, the overwrite #939 fixes.
             LogError(`[CheckoutSessionService] Could not re-read intent ${intent.ID} to stamp retrieved status ${retrieved.Status}`);
             return retrieved;
+        }
+        if (SETTLED_INTENT_STATUSES.includes(intent.Status) && !SETTLED_INTENT_STATUSES.includes(retrieved.Status)) {
+            return { ...retrieved, Status: intent.Status };
         }
         const amount = typeof retrieved.Amount === 'number' && retrieved.Amount > 0 ? retrieved.Amount : null;
         if (retrieved.Status === intent.Status && (amount === null || amount === intent.Amount)) {

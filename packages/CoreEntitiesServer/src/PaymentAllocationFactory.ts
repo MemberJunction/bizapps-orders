@@ -171,6 +171,14 @@ export interface PaymentLineAllocationContext {
      * product walk the sale used. Account credit and every other tender leave it unset.
      */
     GiftCardSale?: GiftCardSaleLine | null;
+    /**
+     * Set when the tender is ACCOUNT CREDIT (`PaymentDetail.SourceOrderHeaderID`): a credit one order
+     * holds is being spent on another. No cash moves, so the leg that would debit Cash sits on the
+     * collector's receivable instead, and lines that then cancel on one account and tag set are
+     * dropped. Applying a credit inside one set of books therefore posts nothing, and an application
+     * that crosses books or lands on a customer deposit posts only the lines that are left.
+     */
+    AccountCredit?: boolean;
 }
 
 /** What the sale's Gift Card Liability lookup walked from: the selling line's product and company. */
@@ -223,6 +231,42 @@ function dims(list: PaymentJELineDimension[]): { Dimensions?: PaymentJELineDimen
 function mirrorIf(reverse: boolean, lines: PaymentJELine[]): PaymentJELine[] {
     if (!reverse) return lines;
     return lines.map((l) => ({ ...l, DebitAmount: l.CreditAmount, CreditAmount: l.DebitAmount }));
+}
+
+/**
+ * What an entry and its lines call the event. An account credit is neither a payment nor a refund:
+ * nothing was received and nothing went back, so naming it either way misdescribes the entry to
+ * whoever reads the ledger.
+ */
+function LabelFor(ctx: Pick<PaymentLineAllocationContext, 'IsReversal' | 'AccountCredit'>): string {
+    if (ctx.AccountCredit) return ctx.IsReversal ? 'Credit spent' : 'Credit applied';
+    return ctx.IsReversal ? 'Refund' : 'Payment';
+}
+
+/**
+ * Net debits against credits per (account, dimension set), keeping what is left on the side it is
+ * left on and dropping what nets to zero.
+ *
+ * Pure and exported for unit tests. Lines keep their first-seen order and the description of the
+ * first line in each group, so an entry that nets nothing comes back line for line as it went in
+ * when no two of its lines share an account and tag set.
+ */
+export function NetOffsettingLines(lines: PaymentJELine[]): PaymentJELine[] {
+    const groups = new Map<string, { First: PaymentJELine; Net: number }>();
+    for (const l of lines) {
+        const k = `${key(l.GLAccountID)}#${dimKey(l.Dimensions)}`;
+        const signed = money((l.DebitAmount ?? 0) - (l.CreditAmount ?? 0));
+        const group = groups.get(k);
+        if (group) group.Net = money(group.Net + signed);
+        else groups.set(k, { First: l, Net: signed });
+    }
+    const out: PaymentJELine[] = [];
+    for (const { First, Net } of groups.values()) {
+        if (Net === 0) continue;
+        const { DebitAmount: _debit, CreditAmount: _credit, ...rest } = First;
+        out.push(Net > 0 ? { ...rest, DebitAmount: Net } : { ...rest, CreditAmount: -Net });
+    }
+    return out;
 }
 
 /**
@@ -449,7 +493,7 @@ export class PaymentAllocationFactory {
         // the same Due To / Due From pair a cash collection would use. Equal to ReceivingCompanyID in
         // the ordinary single-company case.
         const receiving = ctx.GiftCardSale?.CompanyID || ctx.ReceivingCompanyID;
-        const label = ctx.IsReversal ? 'Refund' : 'Payment';
+        const label = LabelFor(ctx);
 
         // Shares on the collector's own books (its own, and those of Divisions under the same legal
         // entity) are settled in the collector's entry. Only other legal entities get intercompany.
@@ -461,10 +505,12 @@ export class PaymentAllocationFactory {
         // ── The receiving company's entry ────────────────────────────────────
         // Payments are company-level: there is no product to walk from, so the company default is
         // both the start and the end of resolution (D12).
+        // An account credit moves a receivable and no cash, so its debit is the collector's own
+        // receivable: the account the credit already sits on.
         const debitAccount = ctx.GiftCardSale
             ? await this.resolveGiftCardLiability(ctx.GiftCardSale, asOf, ctx)
-            : await this._resolver.Resolve(GL_ROLE.Cash, null, null, receiving, asOf);
-        const debitWhat = ctx.GiftCardSale ? 'gift card redeemed' : 'cash';
+            : await this._resolver.Resolve(ctx.AccountCredit ? GL_ROLE.AccountsReceivable : GL_ROLE.Cash, null, null, receiving, asOf);
+        const debitWhat = ctx.GiftCardSale ? 'gift card redeemed' : ctx.AccountCredit ? 'receivable moved' : 'cash';
 
         // Every share, split again by the tags of the lines it settles (issue #238). An order whose
         // lines carry no dimensions yields one slice per company, and the entries below are then
@@ -608,7 +654,14 @@ export class PaymentAllocationFactory {
         drafts.push(...otherDrafts);
 
         for (const draft of drafts) this.assertBalanced(draft, ctx);
-        return { Drafts: drafts, Shares: shares };
+        if (!ctx.AccountCredit) return { Drafts: drafts, Shares: shares };
+
+        // Account credit only: a debit and a credit on one account and tag set say nothing, and an
+        // entry made only of such pairs is no entry. Every other tender keeps its lines as built.
+        const netted = drafts
+            .map((draft) => ({ ...draft, Lines: NetOffsettingLines(draft.Lines) }))
+            .filter((draft) => draft.Lines.length > 0);
+        return { Drafts: netted, Shares: shares };
     }
 
     /**
@@ -643,7 +696,7 @@ export class PaymentAllocationFactory {
             // Accounting's own vocabulary, not ours to extend (D-ENTRYTYPE).
             EntryType: ctx.IsReversal ? 'Refund' : 'PaymentReceipt',
             Description:
-                `${ctx.IsReversal ? 'Refund' : 'Payment'} ${ctx.PaymentNumber}${CustomerPart(ctx.CustomerName)} — ` +
+                `${LabelFor(ctx)} ${ctx.PaymentNumber}${CustomerPart(ctx.CustomerName)} — ` +
                 `order ${ctx.OrderNumber} (company ${companyID})`,
             // D25 provenance: the PAYMENT LINE is the causal record, so an auditor can walk from
             // any of these entries back to the one allocation that produced them.

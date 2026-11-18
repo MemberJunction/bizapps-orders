@@ -155,7 +155,7 @@ makes one order line produce one booking entry and \`N\` forward-dated release e
     {
         key: 'pricing', title: 'What it costs — price, promotion and who may discount',
         tables: ['ProductPrice', 'PriceList', 'PriceListAssignment', 'PriceTier', 'Promotion', 'PromotionCode',
-            'PromotionTarget', 'PromotionType', 'ChargeType', 'SalesAuthority', 'SalesRule', 'OrderConcession', 'ReferralProgram'],
+            'PromotionTarget', 'PromotionType', 'ChargeType', 'SalesAuthority', 'SalesAuthorityMixTier', 'SalesRule', 'OrderConcession', 'ReferralProgram'],
         blurb: () => `**Price is resolved, not stored on the product.** The price walk reads no price from \`Product\`; its
 \`StandaloneSellingPrice\` is used only by bundle expansion, to price \`SumOfParts\` components and to
 split a bundle's price across its \`Bundled\` ones. \`ProductPrice\` rows carry the money: each hangs on
@@ -166,7 +166,8 @@ tiered and volume models. The walk that reads all this is in §6.
 
 **\`Promotion\` is separated from \`PromotionCode\` on purpose**: one promotion can have many codes
 (per-campaign, per-partner, single-use), and \`PromotionTarget\` scopes what a promotion may apply to.
-\`SalesAuthority\` and \`SalesRule\` are the guardrails — who is allowed to give value away, and how much.
+\`SalesAuthority\` and \`SalesRule\` are the guardrails — who is allowed to give value away, and how much. A
+\`SalesAuthorityMixTier\` raises an authority's share limit on an order that spans several product types.
 \`ReferralProgram\` defines a company's published referral program and approves an in-program referral
 concession automatically. \`OrderConcession\` records each concession on an order, whatever form it takes
 (price, duration, seats, scope or payment terms), with its computed value and the approval decision. An

@@ -17,6 +17,7 @@ const gate = vi.hoisted(() => ({
     FindConcessionTier: vi.fn(),
     HeldManualDiscounts: vi.fn(),
     LinePriceConcessionFor: vi.fn(),
+    ApplyShareLimitMixTiers: vi.fn(async (authority: unknown) => authority),
     LoadConcessionAuthority: vi.fn(),
     OrderConcessionTotal: vi.fn(),
     OrderNetTotal: vi.fn(),
@@ -209,7 +210,7 @@ describe('recording a concession under tiers', () => {
         expect(await row.prepareNew()).toContain('whose thresholds it meets');
     });
 
-    it('evaluates tier thresholds against the line extended amount when a sale-approval product has no engine price (#714)', async () => {
+    it('values a sale-approval line with no engine price at its net amount and routes tiers on it (#714)', async () => {
         gate.OrderNetTotal.mockResolvedValue(50000);
         gate.OrderConcessionTotal.mockResolvedValue(0);
         gate.HeldManualDiscounts.mockResolvedValue(new Map());
@@ -230,7 +231,7 @@ describe('recording a concession under tiers', () => {
         Object.defineProperty(row, 'NewAmount', { get: () => null });
         delete (row as Record<string, unknown>).valueByForm;
         (row as Record<string, unknown>).loadLine = async () => ({
-            ID: 'line-1',
+            ID: '3f2504e0-4f89-41d3-9a0c-0305e82c3302',
             OrderHeaderID: 'order-1',
             LineNumber: 1,
             ProductID: 'prod-custom',
@@ -238,11 +239,14 @@ describe('recording a concession under tiers', () => {
             UnitPrice: 25000,
             ProductPriceID: null,
             DiscountPct: 0,
+            DiscountAmount: 0,
             RenewsSubscriptionID: null,
         });
+        // No Price or Scope concession already on the line.
+        (row as Record<string, unknown>).checkExistingLinePriceConcession = async () => null;
 
         expect(await row.prepareNew()).toBeNull();
-        expect(values.ComputedValue).toBe(0);
+        expect(values.ComputedValue).toBe(50000);
         expect(gate.FindConcessionTier).toHaveBeenCalledWith(
             expect.objectContaining({ Value: 50000 }),
             expect.anything(),
@@ -258,7 +262,7 @@ describe('deciding a concession under tiers', () => {
         row.approvingRule = async () => ({ Name: 'Director', ApprovalRequiredRoleID: 'role-director', RequiresDecisionWithinAuthority: false });
         roles.UserHoldsRole.mockImplementation(async (roleID: string) => roleID === 'role-manager');
 
-        expect(await row.applyDecision()).toBe('Only a holder of the role named by the ConcessionLimit rule can decide this concession.');
+        expect(await row.applyDecision()).toBe("You don't have permission to approve or decline this concession. Only its assigned approvers can.");
     });
 
     it('refuses the requester on a sign-off tier, even as a holder of its role', async () => {
@@ -266,7 +270,7 @@ describe('deciding a concession under tiers', () => {
         row.approvingRule = async () => ({ Name: 'Manager', ApprovalRequiredRoleID: 'role-manager', RequiresDecisionWithinAuthority: true });
         roles.UserHoldsRole.mockResolvedValue(true);
 
-        expect(await row.applyDecision()).toContain('requires a decision by someone other than the person who asked for it');
+        expect(await row.applyDecision()).toContain('Another approver needs to decide it');
     });
 
     it('lets another holder of a sign-off tier\'s role decide it', async () => {

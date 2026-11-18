@@ -6277,6 +6277,45 @@ export const mjBizAppsOrdersSalesAuthoritySchema = z.object({
 export type mjBizAppsOrdersSalesAuthorityEntityType = z.infer<typeof mjBizAppsOrdersSalesAuthoritySchema>;
 
 /**
+ * zod schema definition for the entity MJ_BizApps_Orders: Sales Authority Mix Tiers
+ */
+export const mjBizAppsOrdersSalesAuthorityMixTierSchema = z.object({
+    ID: z.string().describe(`
+        * * Field Name: ID
+        * * Display Name: ID
+        * * SQL Data Type: uniqueidentifier
+        * * Default Value: newsequentialid()`),
+    SalesAuthorityID: z.string().describe(`
+        * * Field Name: SalesAuthorityID
+        * * Display Name: Sales Authority
+        * * SQL Data Type: uniqueidentifier
+        * * Related Entity/Foreign Key: MJ_BizApps_Orders: Sales Authorities (vwSalesAuthorities.ID)
+        * * Description: The Sales Authority whose share limit this tier raises.`),
+    MinProductTypes: z.number().describe(`
+        * * Field Name: MinProductTypes
+        * * Display Name: Min Product Types
+        * * SQL Data Type: int
+        * * Description: The fewest distinct product types the order's lines must span for this tier to apply. Two or more, unique per authority.`),
+    MaxConcessionPctOfContract: z.number().describe(`
+        * * Field Name: MaxConcessionPctOfContract
+        * * Display Name: Max Concession Pct Of Contract
+        * * SQL Data Type: decimal(7, 4)
+        * * Description: The share limit, as a fraction from 0 to 1, on an order that meets this tier: the order's concessions as a share of its net total at or above it need approval, as for SalesAuthority.MaxConcessionPctOfContract. Only raises that limit; a value at or below it changes nothing.`),
+    __mj_CreatedAt: z.date().describe(`
+        * * Field Name: __mj_CreatedAt
+        * * Display Name: Created At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+    __mj_UpdatedAt: z.date().describe(`
+        * * Field Name: __mj_UpdatedAt
+        * * Display Name: Updated At
+        * * SQL Data Type: datetimeoffset
+        * * Default Value: getutcdate()`),
+});
+
+export type mjBizAppsOrdersSalesAuthorityMixTierEntityType = z.infer<typeof mjBizAppsOrdersSalesAuthorityMixTierSchema>;
+
+/**
  * zod schema definition for the entity MJ_BizApps_Orders: Sales Rules
  */
 export const mjBizAppsOrdersSalesRuleSchema = z.object({
@@ -25932,6 +25971,162 @@ export class mjBizAppsOrdersSalesAuthorityEntity extends BaseEntity<mjBizAppsOrd
     */
     get SalesRepUser(): string {
         return this.Get('SalesRepUser');
+    }
+}
+
+
+/**
+ * MJ_BizApps_Orders: Sales Authority Mix Tiers - strongly typed entity sub-class
+ * * Schema: __mj_BizAppsOrders
+ * * Base Table: SalesAuthorityMixTier
+ * * Base View: vwSalesAuthorityMixTiers
+ * * @description A tier of a rep's Sales Authority that raises its share limit (MaxConcessionPctOfContract) on an order whose lines span several product types, a product type being a product family. The highest tier the order meets applies. Bundle components and reversals are not counted.
+ * * Primary Key: ID
+ * @extends {BaseEntity}
+ * @class
+ * @public
+ */
+@RegisterClass(BaseEntity, 'MJ_BizApps_Orders: Sales Authority Mix Tiers')
+export class mjBizAppsOrdersSalesAuthorityMixTierEntity extends BaseEntity<mjBizAppsOrdersSalesAuthorityMixTierEntityType> {
+    /**
+    * Loads the MJ_BizApps_Orders: Sales Authority Mix Tiers record from the database
+    * @param ID: string - primary key value to load the MJ_BizApps_Orders: Sales Authority Mix Tiers record.
+    * @param EntityRelationshipsToLoad - (optional) the relationships to load
+    * @returns {Promise<boolean>} - true if successful, false otherwise
+    * @public
+    * @async
+    * @memberof mjBizAppsOrdersSalesAuthorityMixTierEntity
+    * @method
+    * @override
+    */
+    public async Load(ID: string, EntityRelationshipsToLoad?: string[]) : Promise<boolean> {
+        const compositeKey: CompositeKey = new CompositeKey();
+        compositeKey.KeyValuePairs.push({ FieldName: 'ID', Value: ID });
+        return await super.InnerLoad(compositeKey, EntityRelationshipsToLoad);
+    }
+
+    /**
+    * Validate() method override for MJ_BizApps_Orders: Sales Authority Mix Tiers entity. This is an auto-generated method that invokes the generated validators for this entity for the following fields:
+    * * MaxConcessionPctOfContract: Maximum concession percentage of contract must be between 0 and 1 (inclusive), representing a percentage from 0% to 100%.
+    * * MinProductTypes: Minimum product types must be at least 2.
+    * @public
+    * @method
+    * @override
+    */
+    public override Validate(): ValidationResult {
+        const result = super.Validate();
+        this.ValidateMaxConcessionPctOfContractRange(result);
+        this.ValidateMinProductTypesMinimum(result);
+        result.Success = result.Success && (result.Errors.length === 0);
+
+        return result;
+    }
+
+    /**
+    * Maximum concession percentage of contract must be between 0 and 1 (inclusive), representing a percentage from 0% to 100%.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMaxConcessionPctOfContractRange(result: ValidationResult) {
+    	if (this.MaxConcessionPctOfContract != null && (this.MaxConcessionPctOfContract < 0 || this.MaxConcessionPctOfContract > 1)) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MaxConcessionPctOfContract",
+    			"Maximum concession percentage of contract must be between 0 and 1.",
+    			this.MaxConcessionPctOfContract,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * Minimum product types must be at least 2.
+    * @param result - the ValidationResult object to add any errors or warnings to
+    * @public
+    * @method
+    */
+    public ValidateMinProductTypesMinimum(result: ValidationResult) {
+    	if (this.MinProductTypes != null && this.MinProductTypes < 2) {
+    		result.Errors.push(new ValidationErrorInfo(
+    			"MinProductTypes",
+    			"Minimum product types must be at least 2.",
+    			this.MinProductTypes,
+    			ValidationErrorType.Failure
+    		));
+    	}
+    }
+
+    /**
+    * * Field Name: ID
+    * * Display Name: ID
+    * * SQL Data Type: uniqueidentifier
+    * * Default Value: newsequentialid()
+    */
+    get ID(): string {
+        return this.Get('ID');
+    }
+    set ID(value: string) {
+        this.Set('ID', value);
+    }
+
+    /**
+    * * Field Name: SalesAuthorityID
+    * * Display Name: Sales Authority
+    * * SQL Data Type: uniqueidentifier
+    * * Related Entity/Foreign Key: MJ_BizApps_Orders: Sales Authorities (vwSalesAuthorities.ID)
+    * * Description: The Sales Authority whose share limit this tier raises.
+    */
+    get SalesAuthorityID(): string {
+        return this.Get('SalesAuthorityID');
+    }
+    set SalesAuthorityID(value: string) {
+        this.Set('SalesAuthorityID', value);
+    }
+
+    /**
+    * * Field Name: MinProductTypes
+    * * Display Name: Min Product Types
+    * * SQL Data Type: int
+    * * Description: The fewest distinct product types the order's lines must span for this tier to apply. Two or more, unique per authority.
+    */
+    get MinProductTypes(): number {
+        return this.Get('MinProductTypes');
+    }
+    set MinProductTypes(value: number) {
+        this.Set('MinProductTypes', value);
+    }
+
+    /**
+    * * Field Name: MaxConcessionPctOfContract
+    * * Display Name: Max Concession Pct Of Contract
+    * * SQL Data Type: decimal(7, 4)
+    * * Description: The share limit, as a fraction from 0 to 1, on an order that meets this tier: the order's concessions as a share of its net total at or above it need approval, as for SalesAuthority.MaxConcessionPctOfContract. Only raises that limit; a value at or below it changes nothing.
+    */
+    get MaxConcessionPctOfContract(): number {
+        return this.Get('MaxConcessionPctOfContract');
+    }
+    set MaxConcessionPctOfContract(value: number) {
+        this.Set('MaxConcessionPctOfContract', value);
+    }
+
+    /**
+    * * Field Name: __mj_CreatedAt
+    * * Display Name: Created At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_CreatedAt(): Date {
+        return this.Get('__mj_CreatedAt');
+    }
+
+    /**
+    * * Field Name: __mj_UpdatedAt
+    * * Display Name: Updated At
+    * * SQL Data Type: datetimeoffset
+    * * Default Value: getutcdate()
+    */
+    get __mj_UpdatedAt(): Date {
+        return this.Get('__mj_UpdatedAt');
     }
 }
 

@@ -51,8 +51,8 @@ import { resolve } from 'node:path';
 import {
     DEFAULT_RETURN_REASONS,
     MJOReturnPageComponent,
-    OrderPickerLabel,
     ParseReturnReasons,
+    ReturnOrderPickerLabel,
 } from '../orders/return.page';
 
 /** The component's own source, for the binding check at the end of this file. */
@@ -407,21 +407,21 @@ describe('the returns page can be reached', () => {
 
         await c.ngOnInit();
 
-        expect(OrderPickerLabel({ OrderNumber: 'ORD-000010', BillToOrganization: 'Acme Corp' })).toBe(
+        expect(ReturnOrderPickerLabel({ OrderNumber: 'ORD-000010', BillToOrganization: 'Acme Corp' })).toBe(
             'ORD-000010 · Acme Corp',
         );
-        expect(OrderPickerLabel({ OrderNumber: 'ORD-000011', BillToPerson: 'Alex Rivera' })).toBe(
+        expect(ReturnOrderPickerLabel({ OrderNumber: 'ORD-000011', BillToPerson: 'Alex Rivera' })).toBe(
             'ORD-000011 · Alex Rivera',
         );
-        expect(OrderPickerLabel({ OrderNumber: 'ORD-000012' })).toBe('ORD-000012');
-        expect((c.PickerOrders[0] as { DisplayLabel?: string }).DisplayLabel).toContain('ORD-000010');
+        expect(ReturnOrderPickerLabel({ OrderNumber: 'ORD-000012' })).toBe('ORD-000012');
+        expect((c.PickerOrders[0] as { PickerLabel?: string }).PickerLabel).toContain('ORD-000010');
 
         const source = returnPageSource();
         const orderDropdowns = (source.match(/<mj-dropdown[\s\S]*?\/>/g) ?? []).filter((d) =>
             d.includes('[Data]="PickerOrders"'),
         );
         for (const dropdown of orderDropdowns) {
-            expect(dropdown).toContain('TextField="DisplayLabel"');
+            expect(dropdown).toContain('TextField="PickerLabel"');
         }
     });
 
@@ -437,19 +437,17 @@ describe('the returns page can be reached', () => {
 
     it('emits OrderOpened when OpenBookedReturn is called for a newly booked return (#834)', () => {
         const c = page() as ReturnType<typeof page> & {
-            BookedReturnID: string | null;
-            BookedReturnOrderNumber: string | null;
+            BookedReturn: { ID: string | null; OrderNumber: string } | null;
             OrderOpened: { emit: ReturnType<typeof vi.fn> };
             OpenBookedReturn(): void;
         };
         const emit = vi.fn();
         c.OrderOpened = { emit };
-        c.BookedReturnID = 'ret-order-1';
-        c.BookedReturnOrderNumber = 'ORD-000099';
+        c.BookedReturn = { ID: 'ret-order-1', OrderNumber: 'ORD-000099' };
 
         c.OpenBookedReturn();
 
-        expect(emit).toHaveBeenCalledWith('ret-order-1');
+        expect(emit).toHaveBeenCalledWith({ ID: 'ret-order-1' });
     });
 });
 
