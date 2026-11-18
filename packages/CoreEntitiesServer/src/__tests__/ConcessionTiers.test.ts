@@ -215,7 +215,7 @@ describe('deciding a concession under tiers', () => {
         row.approvingRule = async () => ({ Name: 'Director', ApprovalRequiredRoleID: 'role-director', RequiresDecisionWithinAuthority: false });
         roles.UserHoldsRole.mockImplementation(async (roleID: string) => roleID === 'role-manager');
 
-        expect(await row.applyDecision()).toBe('Only a holder of the role named by the ConcessionLimit rule can decide this concession.');
+        expect(await row.applyDecision()).toBe("You don't have permission to approve or decline this concession. Only its assigned approvers can.");
     });
 
     it('refuses the requester on a sign-off tier, even as a holder of its role', async () => {
@@ -223,7 +223,7 @@ describe('deciding a concession under tiers', () => {
         row.approvingRule = async () => ({ Name: 'Manager', ApprovalRequiredRoleID: 'role-manager', RequiresDecisionWithinAuthority: true });
         roles.UserHoldsRole.mockResolvedValue(true);
 
-        expect(await row.applyDecision()).toContain('requires a decision by someone other than the person who asked for it');
+        expect(await row.applyDecision()).toContain('Another approver needs to decide it');
     });
 
     it('lets another holder of a sign-off tier\'s role decide it', async () => {

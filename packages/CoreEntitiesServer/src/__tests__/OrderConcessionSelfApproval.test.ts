@@ -208,14 +208,14 @@ describe('deciding a holder\'s own concession', () => {
         roles.UserHoldsRole.mockResolvedValue(true);
         const { row } = concession({ user: CEO, saved: true, status: 'Approved', salesRuleID: 'rule-top' });
 
-        expect(await row.applyDecision()).toContain('its requester cannot decide it');
+        expect(await row.applyDecision()).toBe("You can't approve or decline a concession you requested. It has been sent to the next approver.");
     });
 
     it('refuses another holder of the approving role who is not the escalation', async () => {
         roles.UserHoldsRole.mockResolvedValue(true);
         const { row, values } = concession({ user: PEER, saved: true, status: 'Approved', salesRuleID: 'rule-top' });
 
-        expect(await row.applyDecision()).toContain("only 'CompanyCFO' can decide it");
+        expect(await row.applyDecision()).toContain("only the company's CFO approver can approve or decline it");
         expect(values.DecidedByUserID).toBeNull();
     });
 
@@ -231,6 +231,6 @@ describe('deciding a holder\'s own concession', () => {
         roles.UserHoldsRole.mockResolvedValue(false);
         const { row } = concession({ user: CFO, saved: true, status: 'Approved', salesRuleID: 'rule-top' });
 
-        expect(await row.applyDecision()).toBe('Only a holder of the role named by the ConcessionLimit rule can decide this concession.');
+        expect(await row.applyDecision()).toBe("You don't have permission to approve or decline this concession. Only its assigned approvers can.");
     });
 });

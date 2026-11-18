@@ -871,7 +871,7 @@ export const ProgressMeasurementChecks: NamedCheck[] = [
                 const before = await counts();
                 const out = await record(ctx, { OrderLineID: lineID, MeasurementDate: '2026-07-31', PercentComplete: 0.4 }, withOnlyRole(ctx, roleName));
                 Assert(!out.Success, `a ${roleName} user must not be able to attest`);
-                Assert(/MJ\.BizApps\.Orders\.Progress\.Attest/.test(out.Message ?? ''), `the refusal names the authorization: ${out.Message}`);
+                Assert(/Engagement Lead role/.test(out.Message ?? ''), `the refusal names the role that can: ${out.Message}`);
                 const after = await counts();
                 AssertEqual(after.Obs, before.Obs, 'no observation row was written');
                 AssertEqual(after.JE, before.JE, 'no journal entry was written');
