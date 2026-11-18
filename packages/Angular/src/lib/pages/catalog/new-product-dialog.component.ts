@@ -56,7 +56,7 @@ const COMPANY_ENTITY = 'MJ: Companies';
                 <p class="mjo-np__lede">
                     The product is saved as Draft with its base price. The next step checks its GL accounts, then activates it.
                 </p>
-                <div class="mjo-np__grid">
+                <div class="mjo-np__grid" (input)="Errors = []" (change)="Errors = []">
                     <label class="mjo-np__field mjo-np__field--wide">
                         <span>Name</span>
                         <input type="text" maxlength="255" [(ngModel)]="Draft.Name" aria-label="Name" />
@@ -107,13 +107,19 @@ const COMPANY_ENTITY = 'MJ: Companies';
                     before the price's start date cannot use it.
                 </p>
             } @else if (Product) {
-                <bizapps-product-effective-gl-accounts
-                    #effective
-                    [Product]="Product"
-                    [RevenueRecognitionTypeID]="Product.RevenueRecognitionTypeID"
-                    [CompanyID]="Product.CompanyID">
-                </bizapps-product-effective-gl-accounts>
-                <bizapps-product-gl-links [Product]="Product" [EditMode]="true" (LinksChanged)="OnLinksChanged()"></bizapps-product-gl-links>
+                <div class="mjo-np__accounts">
+                    <section class="mjo-acct-card">
+                        <bizapps-product-effective-gl-accounts
+                            #effective
+                            [Product]="Product"
+                            [RevenueRecognitionTypeID]="Product.RevenueRecognitionTypeID"
+                            [CompanyID]="Product.CompanyID">
+                        </bizapps-product-effective-gl-accounts>
+                    </section>
+                    <section class="mjo-acct-card">
+                        <bizapps-product-gl-links [Product]="Product" [EditMode]="true" (LinksChanged)="OnLinksChanged()"></bizapps-product-gl-links>
+                    </section>
+                </div>
                 @if (Missing.length) {
                     <div class="mjo-np__missing" role="status">
                         <strong>Not ready to sell yet:</strong>
@@ -148,8 +154,17 @@ const COMPANY_ENTITY = 'MJ: Companies';
             </mj-dialog-actions>
         </mj-dialog>
     `,
+    // The GL panels' card chrome, shared with the product form's Accounting tab.
+    styleUrls: ['../../custom/Product/widgets/product-gl-cards.css'],
     styles: [
         `
+            .mjo-np__accounts {
+                display: flex;
+                flex-direction: column;
+                gap: var(--mj-space-4);
+                font-size: 14px;
+                line-height: 1.5;
+            }
             .mjo-np__lede { margin: 0 0 var(--mj-space-4); color: var(--mj-text-secondary); }
             .mjo-np__grid {
                 display: grid;
